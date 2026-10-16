@@ -1,11 +1,15 @@
 # OpenMixer CI Pipeline
 name: CI
 
+# Full matrix: runs only on release PRs (stage -> main) or manually
 on:
-  push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   BUILD_TYPE: Release
