@@ -22,7 +22,8 @@ OpenMixer is built under a strict clean-room doctrine:
 | [README.md](README.md) | Project overview (this file) |
 | [agents.md](agents.md) | **AI Agent setup and implementation guide** |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
-| [TODO.md](TODO.md) | Implementation progress |
+| [TODO.md](TODO.md) | Implementation task list |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | Per-task progress, gaps, and where to help |
 | [docs/adr/INDEX.md](docs/adr/INDEX.md) | Architecture decisions |
 | [docs/legal/](docs/legal/) | Legal documentation |
 
@@ -113,7 +114,7 @@ Planned: engine/ (Wave 2), analysis/ + stems/ (Waves 3, 7), library/ (4), ui/ (5
 | Wave | Focus | Status |
 |------|-------|--------|
 | 1 | Foundation, build system, basic window | ✅ COMPLETE |
-| 2 | Audio engine | ⏳ NEXT |
+| 2 | Audio engine | 🚧 IN PROGRESS |
 | 3 | Analysis pipeline | ⏳ |
 | 4 | Library & data | ⏳ |
 | 5 | User interface | ⏳ |
@@ -122,7 +123,7 @@ Planned: engine/ (Wave 2), analysis/ + stems/ (Waves 3, 7), library/ (4), ui/ (5
 | 8 | Pro features | ⏳ |
 | 9 | Release | ⏳ |
 
-See [TODO.md](TODO.md) for detailed task breakdown.
+See [TODO.md](TODO.md) for the task list and [docs/PROGRESS.md](docs/PROGRESS.md) for what each task entails, what is done, and what is missing.
 
 ## Important Notices
 
@@ -140,7 +141,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Wave 1 complete. Ready to begin Wave 2 (Audio Engine).
+**Current State:** Wave 1 complete. Wave 2 (Audio Engine) in progress: device layer and deck engine done; mixer, MIDI and debug panel next.
 
 ---
 
