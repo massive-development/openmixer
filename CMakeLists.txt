@@ -189,6 +189,7 @@ target_link_libraries(openmixer_controllers PUBLIC
 add_library(openmixer_ui STATIC
     src/ui/ChannelStripPanel.cpp
     src/ui/ChannelStripPanel.h
+    src/ui/ControlCaption.h
     src/ui/DebugPanel.cpp
     src/ui/DebugPanel.h
     src/ui/DeckStrip.cpp
