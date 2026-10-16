@@ -80,6 +80,13 @@ All code must follow modern C++ best practices (C++17 as configured; the C++ Cor
 - **Verification before opening a PR:** the test binary must run clean under Valgrind (`valgrind --leak-check=full --error-exitcode=1 <test binary>`) — no leaks, invalid reads/writes or uninitialised-value use — and, where practical, under AddressSanitizer/UBSan/ThreadSanitizer for concurrent code. Report the results in the PR's Testing section.
 - **Check current guidance:** when unsure about an API or idiom, consult the C++ Core Guidelines / cppreference / JUCE docs rather than reusing older patterns from memory.
 
+## Comments & Function Size (required)
+
+- **Comments are short.** One line, stating *why* (not what). No paragraph or block comments describing what code does.
+- **Long explanation = refactor.** If a function needs a long comment to be understood, split it into smaller, well-named functions instead.
+- **Rule of 10 (goal, not a requirement):** aim for functions of about 10 lines or fewer. Exceed it only when splitting would hurt clarity.
+- Prefer self-describing names over comments. Delete comments that restate the code.
+
 ## Build Instructions
 
 ### Dependencies
