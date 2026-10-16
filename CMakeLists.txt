@@ -57,13 +57,30 @@ function(openmixer_enable_warnings)
     endif()
 endfunction()
 
-# Sanitizer builds for concurrent/real-time code:
-#   cmake -B build-asan -DOPENMIXER_SANITIZE=address,undefined
-#   cmake -B build-tsan -DOPENMIXER_SANITIZE=thread
-set(OPENMIXER_SANITIZE "" CACHE STRING "Comma separated sanitizers (address,undefined | thread)")
-if(OPENMIXER_SANITIZE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(-fsanitize=${OPENMIXER_SANITIZE} -fno-omit-frame-pointer)
-    add_link_options(-fsanitize=${OPENMIXER_SANITIZE})
+# Sanitizer builds (TSan cannot combine with ASan):
+#   cmake -B build-asan -DENABLE_ASAN=ON -DENABLE_UBSAN=ON
+#   cmake -B build-tsan -DENABLE_TSAN=ON   (run tests under `setarch $(uname -m) -R` on WSL2)
+option(ENABLE_ASAN "Build with AddressSanitizer" OFF)
+option(ENABLE_UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN "Build with ThreadSanitizer" OFF)
+set(OPENMIXER_SANITIZE "" CACHE STRING "Comma separated sanitizers (legacy; prefer ENABLE_*)")
+set(_om_sanitizers ${OPENMIXER_SANITIZE})
+if(ENABLE_ASAN)
+    list(APPEND _om_sanitizers address)
+endif()
+if(ENABLE_UBSAN)
+    list(APPEND _om_sanitizers undefined)
+endif()
+if(ENABLE_TSAN)
+    list(APPEND _om_sanitizers thread)
+endif()
+if("thread" IN_LIST _om_sanitizers AND "address" IN_LIST _om_sanitizers)
+    message(FATAL_ERROR "ENABLE_TSAN cannot be combined with ENABLE_ASAN")
+endif()
+if(_om_sanitizers AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    list(JOIN _om_sanitizers "," _om_sanitizer_list)
+    add_compile_options(-fsanitize=${_om_sanitizer_list} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${_om_sanitizer_list})
 endif()
 
 # =============================================================================
@@ -178,6 +195,7 @@ target_link_libraries(openmixer_controllers PUBLIC
 add_library(openmixer_ui STATIC
     src/ui/ChannelStripPanel.cpp
     src/ui/ChannelStripPanel.h
+    src/ui/ControlCaption.h
     src/ui/DebugPanel.cpp
     src/ui/DebugPanel.h
     src/ui/DeckStrip.cpp
@@ -257,11 +275,22 @@ endif()
 
 enable_testing()
 
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+include(GoogleTest)
+
 juce_add_console_app(openmixer_tests
     PRODUCT_NAME "OpenMixer Tests"
 )
 
 target_sources(openmixer_tests PRIVATE
+    tests/unit/TestMain.cpp
     tests/unit/SmokeTest.cpp
     tests/unit/RingBufferTest.cpp
     tests/unit/AudioDeviceTest.cpp
@@ -290,10 +319,23 @@ target_link_libraries(openmixer_tests PRIVATE
     juce::juce_audio_formats
     juce::juce_core
     juce::juce_gui_basics
+    GTest::gtest
+    GTest::gmock
 )
 
-# Register tests with CTest
-add_test(NAME smoke COMMAND openmixer_tests)
+# Suites named *Slow use real threads/timing -> label "slow"; the rest -> "unit".
+gtest_discover_tests(openmixer_tests
+    TEST_FILTER "-*Slow.*"
+    PROPERTIES LABELS unit TIMEOUT 60
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+)
+gtest_discover_tests(openmixer_tests
+    TEST_FILTER "*Slow.*"
+    PROPERTIES LABELS slow TIMEOUT 120
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+)
 
 # =============================================================================
 # Tools

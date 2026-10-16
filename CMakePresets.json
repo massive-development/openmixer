@@ -37,6 +37,25 @@
       }
     },
     {
+      "name": "linux-asan",
+      "inherits": "base",
+      "displayName": "Linux Debug + ASan/UBSan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_ASAN": "ON",
+        "ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "linux-tsan",
+      "inherits": "base",
+      "displayName": "Linux Debug + TSan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TSAN": "ON"
+      }
+    },
+    {
       "name": "windows-debug",
       "displayName": "Windows Debug",
       "cacheVariables": {
@@ -56,12 +75,43 @@
       "configurePreset": "linux-release"
     },
     {
+      "name": "linux-asan",
+      "configurePreset": "linux-asan"
+    },
+    {
+      "name": "linux-tsan",
+      "configurePreset": "linux-tsan"
+    },
+    {
       "name": "macos-debug",
       "configurePreset": "macos-debug"
     },
     {
       "name": "windows-debug",
       "configurePreset": "windows-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-asan",
+      "configurePreset": "linux-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-tsan",
+      "configurePreset": "linux-tsan",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

@@ -56,16 +56,17 @@ OpenMixer is a clean-room, legally original implementation of professional DJ so
 
 ## Pull Request Workflow (required)
 
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
+All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
 
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`).
-2. Open a PR with `gh pr create`. The description must include:
+1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
+2. Open a PR into `stage` with `gh pr create --base stage`. Only the fast Linux test gate (`pr-tests.yml`) runs there. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key files/modules added or modified.
    - **Testing:** commands run and results (`ctest`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
+5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, license, progress, sign) runs only there. Pushes alone never trigger CI.
 
 ## C++ Standards & Memory Safety (required)
 
