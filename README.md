@@ -111,6 +111,8 @@ Planned: engine/ (Wave 2), analysis/ + stems/ (Waves 3, 7), library/ (4), ui/ (5
 
 ## Implementation Waves
 
+![OpenMixer progress heatmap](docs/progress-heatmap.svg)
+
 | Wave | Focus | Status |
 |------|-------|--------|
 | 1 | Foundation, build system, basic window | ✅ COMPLETE |

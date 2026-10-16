@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1572" height="538" viewBox="0 0 1572 538" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="16" y="28" font-size="15" font-weight="600" fill="#1f2328">OpenMixer progress heatmap</text>
+<text x="16" y="70.0" font-size="12" font-weight="600" fill="#1f2328">1 Foundation</text>
+<g><title>Repo &amp; legal: Done</title><rect x="136" y="44" width="118" height="44" rx="5" fill="#2da44e"/><text x="195.0" y="70.0" font-size="11" text-anchor="middle" fill="#ffffff">Repo &amp; legal</text></g>
+<g><title>Build system: Done</title><rect x="260" y="44" width="118" height="44" rx="5" fill="#2da44e"/><text x="319.0" y="70.0" font-size="11" text-anchor="middle" fill="#ffffff">Build system</text></g>
+<g><title>CI: Partial</title><rect x="384" y="44" width="118" height="44" rx="5" fill="#bf8700"/><text x="443.0" y="70.0" font-size="11" text-anchor="middle" fill="#ffffff">CI</text></g>
+<g><title>Test harness: Done</title><rect x="508" y="44" width="118" height="44" rx="5" fill="#2da44e"/><text x="567.0" y="70.0" font-size="11" text-anchor="middle" fill="#ffffff">Test harness</text></g>
+<text x="1500" y="70.0" font-size="12" fill="#57606a">88%</text>
+<text x="16" y="120.0" font-size="12" font-weight="600" fill="#1f2328">2 Audio engine</text>
+<g><title>7 Device layer: Done</title><rect x="136" y="94" width="118" height="44" rx="5" fill="#2da44e"/><text x="195.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">7 Device layer</text></g>
+<g><title>8 Deck: Done</title><rect x="260" y="94" width="118" height="44" rx="5" fill="#2da44e"/><text x="319.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">8 Deck</text></g>
+<g><title>10 Mixer: In progress</title><rect x="384" y="94" width="118" height="44" rx="5" fill="#fb8500"/><text x="443.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">10 Mixer</text></g>
+<g><title>32 MIDI map: In progress</title><rect x="508" y="94" width="118" height="44" rx="5" fill="#fb8500"/><text x="567.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">32 MIDI map</text></g>
+<g><title>33 Trace harness: In progress</title><rect x="632" y="94" width="118" height="44" rx="5" fill="#fb8500"/><text x="691.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">33 Trace harness</text></g>
+<g><title>26a Debug panel: In progress</title><rect x="756" y="94" width="118" height="44" rx="5" fill="#fb8500"/><text x="815.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">26a Debug panel</text></g>
+<g><title>13a Soak (short): Not started</title><rect x="880" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="939.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">13a Soak (short)</text></g>
+<g><title>9 Key-lock: Not started</title><rect x="1004" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1063.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">9 Key-lock</text></g>
+<g><title>12 Sync: Not started</title><rect x="1128" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1187.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">12 Sync</text></g>
+<g><title>11 FX rack: Not started</title><rect x="1252" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1311.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">11 FX rack</text></g>
+<g><title>13 Soak (10m): Not started</title><rect x="1376" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1435.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">13 Soak (10m)</text></g>
+<text x="1500" y="120.0" font-size="12" fill="#57606a">27%</text>
+<text x="16" y="170.0" font-size="12" font-weight="600" fill="#1f2328">3 Analysis</text>
+<g><title>14 Service+cache: Not started</title><rect x="136" y="144" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="170.0" font-size="11" text-anchor="middle" fill="#57606a">14 Service+cache</text></g>
+<g><title>15 BPM/grid: Not started</title><rect x="260" y="144" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="170.0" font-size="11" text-anchor="middle" fill="#57606a">15 BPM/grid</text></g>
+<g><title>16 Key: Not started</title><rect x="384" y="144" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="170.0" font-size="11" text-anchor="middle" fill="#57606a">16 Key</text></g>
+<g><title>17 Waveform: Not started</title><rect x="508" y="144" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="170.0" font-size="11" text-anchor="middle" fill="#57606a">17 Waveform</text></g>
+<g><title>18 Structure: Not started</title><rect x="632" y="144" width="118" height="44" rx="5" fill="#d0d7de"/><text x="691.0" y="170.0" font-size="11" text-anchor="middle" fill="#57606a">18 Structure</text></g>
+<g><title>19 Stems: Not started</title><rect x="756" y="144" width="118" height="44" rx="5" fill="#d0d7de"/><text x="815.0" y="170.0" font-size="11" text-anchor="middle" fill="#57606a">19 Stems</text></g>
+<text x="1500" y="170.0" font-size="12" fill="#57606a">0%</text>
+<text x="16" y="220.0" font-size="12" font-weight="600" fill="#1f2328">4 Library</text>
+<g><title>20 Schema: Not started</title><rect x="136" y="194" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="220.0" font-size="11" text-anchor="middle" fill="#57606a">20 Schema</text></g>
+<g><title>21 Ingest: Not started</title><rect x="260" y="194" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="220.0" font-size="11" text-anchor="middle" fill="#57606a">21 Ingest</text></g>
+<g><title>22 Import: Not started</title><rect x="384" y="194" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="220.0" font-size="11" text-anchor="middle" fill="#57606a">22 Import</text></g>
+<g><title>23 Search: Not started</title><rect x="508" y="194" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="220.0" font-size="11" text-anchor="middle" fill="#57606a">23 Search</text></g>
+<g><title>24 Prep queue: Not started</title><rect x="632" y="194" width="118" height="44" rx="5" fill="#d0d7de"/><text x="691.0" y="220.0" font-size="11" text-anchor="middle" fill="#57606a">24 Prep queue</text></g>
+<text x="1500" y="220.0" font-size="12" fill="#57606a">0%</text>
+<text x="16" y="270.0" font-size="12" font-weight="600" fill="#1f2328">5 UI</text>
+<g><title>25 Tokens: Not started</title><rect x="136" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">25 Tokens</text></g>
+<g><title>26 Decks: Not started</title><rect x="260" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">26 Decks</text></g>
+<g><title>27 Mixer UI: Not started</title><rect x="384" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">27 Mixer UI</text></g>
+<g><title>28 Browser: Not started</title><rect x="508" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">28 Browser</text></g>
+<g><title>29 Automix/settings: Not started</title><rect x="632" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="691.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">29 Automix/settings</text></g>
+<g><title>30 Stem pads: Not started</title><rect x="756" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="815.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">30 Stem pads</text></g>
+<g><title>31 UI gate: Not started</title><rect x="880" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="939.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">31 UI gate</text></g>
+<text x="1500" y="270.0" font-size="12" fill="#57606a">0%</text>
+<text x="16" y="320.0" font-size="12" font-weight="600" fill="#1f2328">6 Hardware</text>
+<g><title>34 Controller maps: Not started</title><rect x="136" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">34 Controller maps</text></g>
+<g><title>35 HID: Not started</title><rect x="260" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">35 HID</text></g>
+<g><title>36 Map editor: Not started</title><rect x="384" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">36 Map editor</text></g>
+<text x="1500" y="320.0" font-size="12" fill="#57606a">0%</text>
+<text x="16" y="370.0" font-size="12" font-weight="600" fill="#1f2328">7 Intelligence</text>
+<g><title>37 Stem DSP: Not started</title><rect x="136" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">37 Stem DSP</text></g>
+<g><title>38 Automix: Not started</title><rect x="260" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">38 Automix</text></g>
+<g><title>39 Stem transitions: Not started</title><rect x="384" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">39 Stem transitions</text></g>
+<g><title>40 Sampler: Not started</title><rect x="508" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">40 Sampler</text></g>
+<text x="1500" y="370.0" font-size="12" fill="#57606a">0%</text>
+<text x="16" y="420.0" font-size="12" font-weight="600" fill="#1f2328">8 Pro surface</text>
+<g><title>41 Recording: Not started</title><rect x="136" y="394" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="420.0" font-size="11" text-anchor="middle" fill="#57606a">41 Recording</text></g>
+<g><title>42 Broadcast: Not started</title><rect x="260" y="394" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="420.0" font-size="11" text-anchor="middle" fill="#57606a">42 Broadcast</text></g>
+<g><title>43 DVS: Not started</title><rect x="384" y="394" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="420.0" font-size="11" text-anchor="middle" fill="#57606a">43 DVS</text></g>
+<g><title>44 Video: Not started</title><rect x="508" y="394" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="420.0" font-size="11" text-anchor="middle" fill="#57606a">44 Video</text></g>
+<text x="1500" y="420.0" font-size="12" fill="#57606a">0%</text>
+<text x="16" y="470.0" font-size="12" font-weight="600" fill="#1f2328">9 Release</text>
+<g><title>47 Legal audit: Not started</title><rect x="136" y="444" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="470.0" font-size="11" text-anchor="middle" fill="#57606a">47 Legal audit</text></g>
+<g><title>48 Trademark: Not started</title><rect x="260" y="444" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="470.0" font-size="11" text-anchor="middle" fill="#57606a">48 Trademark</text></g>
+<g><title>49 Packaging: Not started</title><rect x="384" y="444" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="470.0" font-size="11" text-anchor="middle" fill="#57606a">49 Packaging</text></g>
+<g><title>50 Docs: Not started</title><rect x="508" y="444" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="470.0" font-size="11" text-anchor="middle" fill="#57606a">50 Docs</text></g>
+<g><title>51 v1.0.0: Not started</title><rect x="632" y="444" width="118" height="44" rx="5" fill="#d0d7de"/><text x="691.0" y="470.0" font-size="11" text-anchor="middle" fill="#57606a">51 v1.0.0</text></g>
+<text x="1500" y="470.0" font-size="12" fill="#57606a">0%</text>
+<rect x="136" y="506" width="14" height="14" rx="3" fill="#2da44e"/><text x="156" y="518" font-size="12" fill="#1f2328">Done</text>
+<rect x="256" y="506" width="14" height="14" rx="3" fill="#bf8700"/><text x="276" y="518" font-size="12" fill="#1f2328">Partial</text>
+<rect x="376" y="506" width="14" height="14" rx="3" fill="#fb8500"/><text x="396" y="518" font-size="12" fill="#1f2328">In progress</text>
+<rect x="496" y="506" width="14" height="14" rx="3" fill="#d0d7de"/><text x="516" y="518" font-size="12" fill="#1f2328">Not started</text>
+<text x="1556" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 13% (weighted)</text>
+</svg>
