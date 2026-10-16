@@ -20,7 +20,7 @@ Registry for agents and contributors. Check here before starting a large impleme
 ## Current patterns
 
 ### Interface + mock (Strategy / Adapter)
-- **Where:** `src/engine/AudioDevice.h` (`AudioDevice`, `JuceAudioDevice`, `MockAudioDevice`)
+- **Where:** `src/engine/AudioDevice.h`, `JuceAudioDevice.h`, `MockAudioDevice.h`
 - **Why:** swap hardware backends and run headless in CI.
 - **Reuse when:** wrapping any external I/O (MIDI input, file/network, HID) so tests need no hardware.
 - **Notes:** callers depend on the abstract interface only.
@@ -32,7 +32,7 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Notes:** exactly one producer and one consumer thread.
 
 ### Epoch handshake (producer-owned reset)
-- **Where:** `src/engine/Deck.h`
+- **Where:** `src/engine/Deck.h`, `DeckDecoder.cpp`
 - **Why:** seek/load without the producer resetting a ring the consumer is reading.
 - **Reuse when:** a realtime consumer must discard queued data after a state change.
 
@@ -42,7 +42,7 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** adding mixer/FX stages that process audio blocks.
 
 ### Lock-free metrics monitor
-- **Where:** `LatencyMonitor` in `src/engine/AudioDevice.h`
+- **Where:** `src/engine/LatencyMonitor.h`
 - **Why:** expose realtime stats (latency, xruns) to UI/tests without locking the audio thread.
 - **Reuse when:** adding any realtime telemetry.
 
