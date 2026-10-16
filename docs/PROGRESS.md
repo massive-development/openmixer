@@ -50,7 +50,8 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 |------|---------|------|---------|
 | 7 Audio device layer | Device abstraction, latency/xrun instrumentation, headless mock for CI | ✅ `AudioDevice`, `LatencyMonitor`, `JuceAudioDevice`, `MockAudioDevice` | Real-hardware test of `JuceAudioDevice`; device selection/settings UI |
 | 8 Deck engine | Streaming decode, lock-free buffer, play/pause/seek/rate | ✅ `Deck`, `RingBuffer`; JUCE decoders (WAV/AIFF/FLAC/OGG, MP3 where JUCE supports it) | FFmpeg backend (8b) for wide codec support; cue points, loops, scratching |
-| 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | ✅ | Headphone routing to a second physical device (debug panel, Todo 26a); smoothing of EQ/filter changes |
+| 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | ✅ | Headphone routing to a second physical device; EQ/filter smoothing |
+| 10a Plugin API | Versioned plugin interfaces, runtime loader, registry; hooks for audio pre/post-processing, FX, MIDI maps | ⬜ | All; required so users can extend without core changes |
 | 32 MIDI input + mapping | `MidiInput` → JSON map → engine parameters | ✅ | Learn mode; feedback/LED output (Wave 6) |
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | ✅ | Real controller recordings |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain JUCE widgets | 🟡 in progress | Replaced by real UI in Wave 5 |
@@ -90,6 +91,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | Todo | Entails | Missing |
 |------|---------|---------|
 | 25 Design tokens + LookAndFeel | Original visual identity (no copied layouts/artwork) | All |
+| 25a Theme/skin loader | User themes, colours and layouts loaded via the plugin API | All |
 | 26 Main window + decks | Waveforms, transport, hotcues, loops | All (a placeholder window exists) |
 | 27 Mixer widgets | Knobs, faders, meters | All |
 | 28 Library browser | Tree, track list, search | All |
