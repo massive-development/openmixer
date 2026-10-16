@@ -61,6 +61,19 @@ All commits must include a `Signed-off-by` line to certify you have the right to
 git commit -s -m "fix: description"
 ```
 
+## Pull Request Workflow (required)
+
+All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
+
+1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`).
+2. Open a PR with `gh pr create`. The description must include:
+   - **Summary:** what changed and why (link the Todo number from `TODO.md`).
+   - **Changes:** key files/modules added or modified.
+   - **Testing:** commands run and results (`ctest`, manual checks).
+   - **Follow-ups / known gaps:** anything left undone.
+3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
+4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
+
 ## Code Style
 
 ### Naming Conventions
