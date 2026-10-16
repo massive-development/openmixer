@@ -1,5 +1,5 @@
 #include <JuceHeader.h>
-#include "engine/AudioDevice.h"
+#include "engine/MockAudioDevice.h"
 
 namespace OpenMixerTests
 {

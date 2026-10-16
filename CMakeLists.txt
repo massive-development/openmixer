@@ -38,19 +38,57 @@ endif()
 # JUCE is already pulled in via FetchContent_MakeAvailable
 # The JUCE CMake functions should now be available
 
+# Strict warnings for first-party sources only (JUCE module sources compiled into our
+# targets are left alone). Usage: openmixer_enable_warnings(<sources...>)
+# -Wold-style-cast is opt-in because JUCE's own headers are not clean under it:
+#   cmake -B build -DOPENMIXER_STRICT_CASTS=ON 2>&1 and filter the build log for "/src/".
+option(OPENMIXER_STRICT_CASTS "Warn on C-style casts (noisy: JUCE headers trigger it too)" OFF)
+option(OPENMIXER_WERROR "Treat first-party warnings as errors" OFF)
+function(openmixer_enable_warnings)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set(flags -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Woverloaded-virtual)
+        if(OPENMIXER_STRICT_CASTS)
+            list(APPEND flags -Wold-style-cast)
+        endif()
+        if(OPENMIXER_WERROR)
+            list(APPEND flags -Werror)
+        endif()
+        set_source_files_properties(${ARGN} PROPERTIES COMPILE_OPTIONS "${flags}")
+    endif()
+endfunction()
+
+# Sanitizer builds for concurrent/real-time code:
+#   cmake -B build-asan -DOPENMIXER_SANITIZE=address,undefined
+#   cmake -B build-tsan -DOPENMIXER_SANITIZE=thread
+set(OPENMIXER_SANITIZE "" CACHE STRING "Comma separated sanitizers (address,undefined | thread)")
+if(OPENMIXER_SANITIZE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-fsanitize=${OPENMIXER_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${OPENMIXER_SANITIZE})
+endif()
+
 # =============================================================================
 # Engine library (audio device layer, deck, ring buffer)
 # =============================================================================
 
 add_library(openmixer_engine STATIC
-    src/engine/AudioDevice.cpp
-    src/engine/AudioDevice.h
     src/engine/Deck.cpp
     src/engine/Deck.h
+    src/engine/DeckDecoder.cpp
+    src/engine/DeckDecoder.h
+    src/engine/AudioDevice.h
+    src/engine/JuceAudioDevice.cpp
+    src/engine/JuceAudioDevice.h
+    src/engine/LatencyMonitor.cpp
+    src/engine/LatencyMonitor.h
+    src/engine/MockAudioDevice.cpp
+    src/engine/MockAudioDevice.h
     src/engine/RingBuffer.h
 )
 
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(
+    src/engine/Deck.cpp src/engine/DeckDecoder.cpp src/engine/JuceAudioDevice.cpp
+    src/engine/LatencyMonitor.cpp src/engine/MockAudioDevice.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
     juce::juce_audio_basics
