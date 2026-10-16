@@ -10,6 +10,13 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** situations that should use it
 - **Notes:** constraints (threading, ownership)
 
+## Planned patterns
+
+### Plugin registry / extension points
+- **Where:** not yet implemented (planned, see `CONTRIBUTING.md` "Extensibility & User Freedom")
+- **Why:** let users add audio processors, FX, analysers, importers, controller maps and themes without changing core.
+- **Reuse when:** adding any feature a user might reasonably want to replace or extend. Expose it via an interface + registry, not a hardcoded path.
+
 ## Current patterns
 
 ### Interface + mock (Strategy / Adapter)

@@ -120,6 +120,16 @@ Consult existing knowledge before computing or exploring. As the codebase grows,
 5. **Don't recompute:** reuse existing results (test output, benchmarks, analysis) instead of re-running or re-deriving them.
 6. **Keep outputs lean:** trim command output (`| tail`, `--quiet`), and keep PR descriptions and reports concise.
 
+## Extensibility & User Freedom (required)
+
+Users must always be able to modify OpenMixer with external plugins. Nothing may be locked down.
+
+- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, LookAndFeel, skins).
+- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, interfaces and data-driven configuration (JSON/files) over fixed code paths.
+- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
+- **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
+- **PR check:** every PR must state whether it adds, changes or could block an extension point.
+
 ## Code Style
 
 ### Naming Conventions
