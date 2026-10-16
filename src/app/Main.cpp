@@ -1,0 +1,96 @@
+/*
+  OpenMixer Main.cpp
+  Main entry point for the application
+*/
+
+#include <JuceHeader.h>
+#include "MainComponent.h"
+
+//==============================================================================
+class OpenMixerApplication : public JUCEApplication
+{
+public:
+    OpenMixerApplication() {}
+
+    const String getApplicationName() override       { return ProjectInfo::projectName; }
+    const String getApplicationVersion() override    { return ProjectInfo::versionString; }
+    bool moreThanOneInstanceAllowed() override       { return false; }
+
+    void initialise (const String& commandLine) override
+    {
+        // Check for smoke test mode
+        bool smokeTest = JUCEApplication::getCommandLineParameters().contains ("--smoke");
+        #if OPENMIXER_SMOKE
+        smokeTest = true;
+        #endif
+
+        if (smokeTest)
+        {
+            // Run smoke test and exit
+            Logger::writeToLog ("[Smoke Test] Application starting...");
+            
+            // Create and test MainComponent
+            auto mainComp = std::make_unique<MainComponent>();
+            
+            // Check it can be created
+            if (mainComp != nullptr)
+            {
+                Logger::writeToLog ("[Smoke Test] MainComponent created successfully");
+                Logger::writeToLog ("[Smoke Test] Smoke test PASSED");
+                quit();
+                return;
+            }
+        }
+
+        // Normal mode - create main window
+        mainWindow = std::make_unique<MainWindow> (getApplicationName());
+    }
+
+    void shutdown() override
+    {
+        mainWindow.reset();
+    }
+
+private:
+    class MainWindow : public DocumentWindow,
+                        private Button::Listener
+    {
+    public:
+        MainWindow (String title)
+            : DocumentWindow (title,
+                              Colours::black,
+                              DocumentWindow::allButtons)
+        {
+            setUsingNativeTitleBar (true);
+            setContentOwned (new MainComponent(), true);
+            setResizable (true, true);
+
+           #if JUCE_IOS || JUCE_ANDROID
+            setFullScreen (true);
+           #else
+            centreWithSize (getWidth(), getHeight());  // size comes from MainComponent::setSize
+           #endif
+
+            setVisible (true);
+        }
+
+        void closeButtonPressed() override
+        {
+            JUCEApplication::getInstance()->systemRequestedQuit();
+        }
+
+        void buttonClicked (juce::Button* button) override
+        {
+        }
+
+    private:
+        JUCE_DECLARE_NON_COPYABLE (MainWindow)
+    };
+
+    std::unique_ptr<MainWindow> mainWindow;
+
+    JUCE_DECLARE_NON_COPYABLE (OpenMixerApplication)
+};
+
+//==============================================================================
+START_JUCE_APPLICATION (OpenMixerApplication)

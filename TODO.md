@@ -1,0 +1,119 @@
+# OpenMixer TODO
+
+## Wave 1: Foundation (COMPLETE)
+
+- [x] Repository initialization
+- [x] Build system (CMake + JUCE 8)
+- [x] CI/CD pipeline
+- [x] Governance documents
+- [x] Legal framework
+- [x] Test harness
+
+## Wave 2: Audio Engine
+
+- [ ] **Todo 7:** Audio device layer + latency instrumentation + mock device
+  - `src/engine/AudioDevice.{h,cpp}`
+  - Mock device for CI testing
+  - Platform-specific backends
+
+- [ ] **Todo 8:** Deck engine (streaming decode + transport)
+  - `src/engine/Deck.{h,cpp}`
+  - Lock-free ring buffer
+  - FFmpeg decode backend
+
+- [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
+  - `src/engine/TimeStretch.{h,cpp}`
+  - Realtime mode
+  - Golden audio tests
+
+- [ ] **Todo 10:** Mixer (channels, EQ, filter, crossfader)
+  - `src/engine/Mixer.{h,cpp}`
+  - 3-band EQ
+  - PFL cue bus
+
+- [ ] **Todo 11:** FX rack (8 essential effects)
+  - `src/engine/fx/`
+  - Delay, reverb, flanger, etc.
+
+- [ ] **Todo 12:** Beat-sync + quantized cue/loop/slip
+  - `src/engine/Sync.{h,cpp}`
+  - Beat phase alignment
+
+- [ ] **Todo 13:** Engine soak test (10-minute headless mix)
+  - `tools/soak_mix.cpp`
+  - Performance verification
+
+**Gate:** All Wave 2 todos must pass before Wave 3
+
+## Wave 3: Analysis Pipeline
+
+- [ ] **Todo 14:** Analysis service skeleton + SQLite cache
+  - `src/analysis/AnalysisService.{h,cpp}`
+
+- [ ] **Todo 15:** BPM + beat-grid detection
+  - `src/analysis/BpmEstimator.{h,cpp}`
+
+- [ ] **Todo 16:** Musical key detection + Camelot mapping
+  - `src/analysis/KeyEstimator.{h,cpp}`
+
+- [ ] **Todo 17:** Waveform data model
+  - `src/analysis/WaveformBuilder.{h,cpp}`
+
+- [ ] **Todo 18:** Onset/energy/structure features
+  - `src/analysis/StructureAnalyzer.{h,cpp}`
+
+- [ ] **Todo 19:** Stems precompute (Demucs ONNX)
+  - `src/stems/StemSeparator.{h,cpp}`
+  - `src/stems/WeightManager.{h,cpp}`
+
+## Wave 4: Library & Data
+
+- [ ] **Todo 20:** Library schema + DAO layer
+- [ ] **Todo 21:** Metadata ingest + watch folders
+- [ ] **Todo 22:** Import (iTunes/Rekordbox XML)
+- [ ] **Todo 23:** Search + filter engine
+- [ ] **Todo 24:** Track prep queue
+
+## Wave 5: UI
+
+- [ ] **Todo 25:** Design tokens + LookAndFeel
+- [ ] **Todo 26:** Main window + deck widgets
+- [ ] **Todo 27:** Mixer widgets + metering
+- [ ] **Todo 28:** Library browser
+- [ ] **Todo 29:** Automix panel + settings
+- [ ] **Todo 30:** Stem pads UI
+- [ ] **Todo 31:** UI verification gate
+
+## Wave 6: Hardware I/O
+
+- [ ] **Todo 32:** MIDI mapping engine
+- [ ] **Todo 33:** Controller trace harness
+- [ ] **Todo 34:** Plug-and-play controller maps
+- [ ] **Todo 35:** HID layer
+- [ ] **Todo 36:** Mapping editor UI
+
+## Wave 7: Intelligence
+
+- [ ] **Todo 37:** Stem-aware mixing DSP
+- [ ] **Todo 38:** Automix transition engine
+- [ ] **Todo 39:** Stem transitions
+- [ ] **Todo 40:** 8-pad sampler
+
+## Wave 8: Pro Surface
+
+- [ ] **Todo 41:** Mix recording
+- [ ] **Todo 42:** Broadcasting
+- [ ] **Todo 43:** DVS (timecode vinyl)
+- [ ] **Todo 44:** Video mixing
+
+## Wave 9: Release
+
+- [ ] **Todo 47:** Legal audit
+- [ ] **Todo 48:** Trademark check
+- [ ] **Todo 49:** Packaging
+- [ ] **Todo 50:** Documentation
+- [ ] **Todo 51:** v1.0.0 release
+
+---
+
+**Next Work:** Wave 2 Todo 7 (Audio Device Layer)

@@ -1,0 +1,14 @@
+build/
+build-*/
+_deps/
+CMakeFiles/
+CMakeCache.txt
+.omo/
+.cache/
+compile_commands.json
+*.o
+*.a
+.vscode/
+.idea/
+.DS_Store
+graphify-out/

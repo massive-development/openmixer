@@ -1,0 +1,112 @@
+# OpenMixer CI Pipeline
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # Build and test on Linux
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libasound2-dev libx11-dev libxrender-dev libxrandr-dev libxcursor-dev libxi-dev
+
+      - name: Configure
+        run: |
+          cmake --preset linux-debug
+          cmake --build build-linux-debug -j$(nproc)
+
+      - name: Run tests
+        run: |
+          ctest --test-dir build-linux-debug --output-on-failure
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmixer-linux
+          path: build-linux-debug/
+
+  # Build and test on macOS
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake --preset macos-debug
+          cmake --build build-macos-debug
+
+      - name: Run tests
+        run: |
+          ctest --test-dir build-macos-debug --output-on-failure
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmixer-macos
+          path: build-macos-debug/
+
+  # Build and test on Windows
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake --preset windows-debug
+
+      - name: Build
+        run: |
+          cmake --build . --config Debug
+
+      - name: Run tests
+        run: |
+          ctest --config Debug --output-on-failure
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmixer-windows
+          path: Debug/
+
+  # License checker job
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run license check
+        run: |
+          python tools/license_check.py
+
+      - name: Check for ASIO SDK
+        run: |
+          if find . -name "*.h" | xargs grep -l "asiodrv\|ASIO SDK" 2>/dev/null; then
+            echo "ERROR: ASIO SDK detected in repository"
+            exit 1
+          fi
+
+  # Signing job (placeholder for future implementation)
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signing stub
+        run: echo "Pre-release decision - signing not implemented yet (todo 49)"
