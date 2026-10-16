@@ -16,7 +16,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | Wave | Area | Status |
 |------|------|--------|
 | 1 | Foundation | ✅ |
-| 2 | Audio engine | 🟡 device layer, deck, mixer, MIDI mapper + trace harness done; debug panel in progress |
+| 2 | Audio engine | 🟡 device, deck, mixer, MIDI mapper + trace harness, debug panel done; time-stretch, FX, sync, soak remain |
 | 3 | Analysis | ⬜ |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
@@ -25,7 +25,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 8 | Pro surface | ⬜ |
 | 9 | Release | ⬜ |
 
-**What you can do today:** build the app and get an empty window with audio device initialisation; run the unit tests. There is no playback UI yet — the engine is exercised by tests only.
+**What you can do today:** build and run the app: load files into two decks, play, mix with EQ/filter/crossfader/PFL, and drive it from a MIDI controller via a JSON map; run the unit tests.
 
 ---
 
@@ -53,7 +53,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | ✅ | Headphone routing to a second physical device (debug panel, Todo 26a); smoothing of EQ/filter changes |
 | 32 MIDI input + mapping | `MidiInput` → JSON map → engine parameters | ✅ | Learn mode; feedback/LED output (Wave 6) |
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | ✅ | Real controller recordings |
-| 26a Debug panel | Two decks, faders, EQ, meters on plain JUCE widgets | 🟡 in progress | Replaced by real UI in Wave 5 |
+| 26a Debug panel | Two decks, faders, EQ, meters on plain JUCE widgets | ✅ (not visually verified: no display in CI box) | Replaced by real UI in Wave 5 |
 | 13a Short soak test | 30–60 s headless mix in CI | ⬜ | `tools/soak_mix.cpp` |
 | 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ⬜ | Dependency integration (GPL-compatible), golden audio tests |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode | ⬜ | Needs beat grids from Wave 3 for full function |

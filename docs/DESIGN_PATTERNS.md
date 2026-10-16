@@ -76,3 +76,8 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/controllers/ParameterRouter.{h,cpp}`
 - **Why:** MIDI maps address `mixer.*`, `deck.N.*` or any user-registered prefix; plugins add targets without touching core. Longest prefix wins.
 - **Reuse when:** exposing a new controllable unit; register it, do not extend a switch.
+
+### Composition root for the signal path (DjEngine)
+- **Where:** `src/engine/DjEngine.{h,cpp}`
+- **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
+- **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
