@@ -94,8 +94,12 @@ target_link_libraries(openmixer PRIVATE
 )
 
 # Link required system libraries
-find_package(CURL REQUIRED)
-target_link_libraries(openmixer PRIVATE CURL::libcurl)
+set(OPENMIXER_CURL_LIBS "")
+if(NOT WIN32)
+    find_package(CURL REQUIRED)
+    set(OPENMIXER_CURL_LIBS CURL::libcurl)
+endif()
+target_link_libraries(openmixer PRIVATE ${OPENMIXER_CURL_LIBS})
 
 # Platform-specific settings
 if(APPLE)
@@ -133,7 +137,7 @@ target_include_directories(openmixer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/s
 
 target_link_libraries(openmixer_tests PRIVATE
     openmixer_engine
-    CURL::libcurl
+    ${OPENMIXER_CURL_LIBS}
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -162,6 +166,7 @@ add_custom_target(license-check
 include(GNUInstallDirs)
 
 install(TARGETS openmixer
+    BUNDLE DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
