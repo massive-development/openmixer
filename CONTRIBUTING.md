@@ -74,6 +74,19 @@ All changes — including those by AI agents and maintainers — land through a 
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
 
+## C++ Standards & Memory Safety (required)
+
+All code must follow modern C++ best practices (C++17 as configured; the C++ Core Guidelines are the reference). Outdated, unsafe or leaking code is not acceptable.
+
+- **Ownership:** RAII everywhere. Use `std::unique_ptr` / `std::make_unique` (or JUCE `OwnedArray`/`Component` ownership); no raw `new`/`delete`, `malloc`/`free`, or owning raw pointers. Use `std::shared_ptr` only when ownership is genuinely shared.
+- **Modern idioms:** `auto`, range-for, structured bindings, `std::optional`/`std::variant`/`std::string_view`/`std::span`-style views (or `juce::Span`), `enum class`, `constexpr`, `nullptr`, `override`/`final`, `[[nodiscard]]` where a result must not be ignored. No C-style casts (`static_cast` etc.), no `NULL`, no C arrays where `std::array`/`std::vector` fit.
+- **Const-correctness and rule of zero/five:** mark things `const`/`noexcept` where true; follow the rule of zero, otherwise define or delete all special members.
+- **Concurrency:** `std::atomic` with explicit memory orders, no data races, no allocation/locks/IO in audio callbacks. Document thread ownership in headers.
+- **Bounds & lifetime safety:** no unchecked indexing of untrusted data, no dangling references/iterators, no use of uninitialised memory.
+- **Warnings:** code must compile warning-free; do not suppress warnings to pass.
+- **Verification before opening a PR:** the test binary must run clean under Valgrind (`valgrind --leak-check=full --error-exitcode=1 <test binary>`) — no leaks, invalid reads/writes or uninitialised-value use — and, where practical, under AddressSanitizer/UBSan/ThreadSanitizer for concurrent code. Report the results in the PR's Testing section.
+- **Check current guidance:** when unsure about an API or idiom, consult the C++ Core Guidelines / cppreference / JUCE docs rather than reusing older patterns from memory.
+
 ## Code Style
 
 ### Naming Conventions
