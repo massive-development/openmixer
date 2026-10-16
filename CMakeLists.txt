@@ -39,6 +39,29 @@ endif()
 # The JUCE CMake functions should now be available
 
 # =============================================================================
+# Engine library (audio device layer, deck, ring buffer)
+# =============================================================================
+
+add_library(openmixer_engine STATIC
+    src/engine/AudioDevice.cpp
+    src/engine/AudioDevice.h
+    src/engine/Deck.cpp
+    src/engine/Deck.h
+    src/engine/RingBuffer.h
+)
+
+target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+target_link_libraries(openmixer_engine PUBLIC
+    juce::juce_audio_basics
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_core
+    juce::juce_events
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
 # Main Application
 # =============================================================================
 
@@ -58,6 +81,7 @@ target_sources(openmixer PRIVATE
 juce_generate_juce_header(openmixer)
 
 target_link_libraries(openmixer PRIVATE
+    openmixer_engine
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -98,14 +122,21 @@ juce_add_console_app(openmixer_tests
 
 target_sources(openmixer_tests PRIVATE
     tests/unit/SmokeTest.cpp
+    tests/unit/RingBufferTest.cpp
+    tests/unit/AudioDeviceTest.cpp
+    tests/unit/DeckTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
 
+target_include_directories(openmixer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 target_link_libraries(openmixer_tests PRIVATE
-CURL::libcurl
+    openmixer_engine
+    CURL::libcurl
     juce::juce_audio_basics
     juce::juce_audio_devices
+    juce::juce_audio_formats
     juce::juce_core
     juce::juce_gui_basics
 )
