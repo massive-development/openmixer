@@ -1,6 +1,3 @@
-# CMake Presets for OpenMixer
-# https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
-
 {
   "version": 3,
   "configurePresets": [
@@ -10,7 +7,8 @@
       "generator": "Unix Makefiles",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      }
+      },
+      "binaryDir": "${sourceDir}/build-${presetName}"
     },
     {
       "name": "linux-debug",
@@ -40,12 +38,12 @@
     },
     {
       "name": "windows-debug",
-      "generator": "Ninja",
       "displayName": "Windows Debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "OPENMIXER_SMOKETEST": "ON"
-      }
+      },
+      "binaryDir": "${sourceDir}/build-${presetName}"
     }
   ],
   "buildPresets": [
