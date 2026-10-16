@@ -81,3 +81,9 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/engine/DjEngine.{h,cpp}`
 - **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
 - **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
+
+### Grid interface with mock implementations (BeatGrid)
+- **Where:** `src/engine/BeatGrid.h`, consumed by `Sync` and `Quantizer`; `FixedTempoGrid` is the built-in implementation, tests use a mock.
+- **Why:** sync/quantize can be built and tested before Wave 3 analysis exists; analysis plugs in by implementing `BeatGrid`.
+- **Reuse when:** a feature depends on data another wave produces: define the minimal read-only interface first, test with a mock.
+- **Notes:** `Sync::step` is a pure function of deck states (control thread, ~20-50 Hz); only `apply` touches `Deck::setRate`. Grids are shared immutably (`shared_ptr<const BeatGrid>`).
