@@ -9,11 +9,11 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 | Wave | Phase | Focus |
 |------|-------|-------|
 | 1 | Foundation | Repo setup, legal rulebook, build system, CI, test harness |
-| 2 | Audio Engine | Device layer, decks, mixer, FX, sync, performance gate |
+| 2 | Audio Engine | Device layer, decks, mixer, MIDI input, debug panel, then time-stretch, sync, FX, performance gate |
 | 3 | Analysis | BPM/key detection, waveforms, structure features, stem separation |
 | 4 | Library | Database, metadata import, search, track loading |
 | 5 | UI | Design tokens, deck widgets, mixer, library browser |
-| 6 | Hardware | Controller mapping, HID, trace testing |
+| 6 | Hardware | Controller maps, HID, mapping editor (basic MIDI + trace harness land in Wave 2) |
 | 7 | Intelligence | Stem mixing, Automix, sampler |
 | 8 | Pro Surface | Recording, broadcast, DVS, video |
 | 9 | Release | Legal audit, packaging, docs, v1.0.0 |
@@ -25,6 +25,8 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 3. **Precomputed stems** - Offline separation, not real-time
 4. **Pure AGPLv3** - No contributor CLA required
 5. **Unsigned releases** - Signing is a pre-release decision
+
+6. **Audible vertical slice first** - mixer, MIDI and a minimal debug panel come before time-stretch, FX and heavy dependencies so sound can be tested early
 
 ## Milestones
 
