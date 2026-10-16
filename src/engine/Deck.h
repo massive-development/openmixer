@@ -1,6 +1,7 @@
 // Deck: transport plus streaming decode. See docs/adr for the seek/load epoch handshake.
 #pragma once
 
+#include "../core/ParameterTarget.h"
 #include "AudioDevice.h"
 #include "RingBuffer.h"
 
@@ -16,7 +17,7 @@ namespace openmixer
 
 class DeckDecoder;
 
-class Deck : public AudioCallback
+class Deck : public AudioCallback, public ParameterTarget
 {
 public:
     explicit Deck (size_t ringFrames = 1U << 16);
@@ -33,6 +34,9 @@ public:
     void setPlaying (bool shouldPlay) noexcept { playing.store (shouldPlay, std::memory_order_relaxed); }
     void seek (juce::int64 sourceFrame);
     void setRate (double newRate) noexcept;
+
+    // Ids: play (>= 0.5 plays), rate, seek (0..1 of length)
+    bool setParameter (const juce::String& id, double value) override;
 
     bool isLoaded() const noexcept        { return loaded.load (std::memory_order_relaxed); }
     bool isPlaying() const noexcept       { return playing.load (std::memory_order_relaxed); }

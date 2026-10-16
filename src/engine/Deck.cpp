@@ -79,6 +79,15 @@ void Deck::setRate (double newRate) noexcept
     rate.store (std::clamp (newRate, 0.0, 8.0), kRelaxed);
 }
 
+bool Deck::setParameter (const juce::String& id, double value)
+{
+    if (id == "play")      setPlaying (value >= 0.5);
+    else if (id == "rate") setRate (value);
+    else if (id == "seek") seek (static_cast<juce::int64> (std::clamp (value, 0.0, 1.0) * static_cast<double> (getLengthFrames())));
+    else return false;
+    return true;
+}
+
 void Deck::prepare (double sr, int maxBlockSize)
 {
     deviceSampleRate.store (sr > 0.0 ? sr : 44100.0, kRelaxed);

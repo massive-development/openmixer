@@ -67,10 +67,26 @@ if(OPENMIXER_SANITIZE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # =============================================================================
+# Core (shared interfaces) and DSP libraries
+# =============================================================================
+
+add_library(openmixer_core INTERFACE)
+target_include_directories(openmixer_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(openmixer_core INTERFACE juce::juce_core)
+
+add_library(openmixer_dsp STATIC src/dsp/Biquad.cpp src/dsp/Biquad.h)
+target_include_directories(openmixer_dsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(src/dsp/Biquad.cpp)
+
+# =============================================================================
 # Engine library (audio device layer, deck, ring buffer)
 # =============================================================================
 
 add_library(openmixer_engine STATIC
+    src/engine/ChannelStrip.cpp
+    src/engine/ChannelStrip.h
+    src/engine/Crossfader.cpp
+    src/engine/Crossfader.h
     src/engine/Deck.cpp
     src/engine/Deck.h
     src/engine/DeckDecoder.cpp
@@ -82,15 +98,30 @@ add_library(openmixer_engine STATIC
     src/engine/LatencyMonitor.h
     src/engine/MockAudioDevice.cpp
     src/engine/MockAudioDevice.h
+    src/engine/Mixer.cpp
+    src/engine/Mixer.h
+    src/engine/MixerParameters.cpp
+    src/engine/PeakMeter.h
+    src/engine/ProcessStage.h
     src/engine/RingBuffer.h
+    src/engine/StageChain.cpp
+    src/engine/StageChain.h
+    src/engine/SweepFilter.cpp
+    src/engine/SweepFilter.h
+    src/engine/ThreeBandEq.cpp
+    src/engine/ThreeBandEq.h
 )
 
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
-    src/engine/Deck.cpp src/engine/DeckDecoder.cpp src/engine/JuceAudioDevice.cpp
-    src/engine/LatencyMonitor.cpp src/engine/MockAudioDevice.cpp)
+    src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
+    src/engine/DeckDecoder.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
+    src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
+    openmixer_core
+    openmixer_dsp
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -163,6 +194,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/RingBufferTest.cpp
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
+    tests/unit/MixerTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
