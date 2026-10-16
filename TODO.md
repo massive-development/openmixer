@@ -28,6 +28,11 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - 3-band EQ
   - PFL cue bus
 
+- [ ] **Todo 10a:** Plugin API + registry (extension points)
+  - `src/plugins/` library: versioned interfaces, runtime loader, registry
+  - Audio pre/post-processing stages (per deck/channel/master), FX, MIDI map loading
+  - No signing/allow-list gatekeeping (see CONTRIBUTING "Extensibility")
+
 - [x] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
   - `src/controllers/MidiMapper.{h,cpp}`
   - `juce::MidiInput` -> JSON map file -> mixer/deck parameters
@@ -96,6 +101,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 5: UI
 
+- [ ] **Todo 25a:** Theme/skin loader (user-supplied themes, colours, layouts via plugin API)
 - [ ] **Todo 25:** Design tokens + LookAndFeel
 - [ ] **Todo 26:** Main window + deck widgets
 - [ ] **Todo 27:** Mixer widgets + metering
