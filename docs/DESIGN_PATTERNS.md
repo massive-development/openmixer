@@ -50,3 +50,19 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `openmixer_engine` in `CMakeLists.txt`
 - **Why:** shared, independently testable modules.
 - **Reuse when:** every new `src/<area>/` (controllers, analysis, library, ui).
+
+### Parameter target (Command-style control surface)
+- **Where:** `src/core/ParameterTarget.h`; implemented by `Mixer` (`ch0.fader`, `crossfader`, ...) and `Deck` (`play`, `rate`, `seek`).
+- **Why:** MIDI, UI and tests drive the engine through one string-id API instead of bespoke setters.
+- **Reuse when:** adding any user-controllable engine unit; route by id prefix, return false for unknown ids.
+- **Trade-off:** string parsing is off the audio thread (control side only); typed setters remain for hot paths.
+
+### Versioned process stage + stage chain (extension point)
+- **Where:** `src/engine/ProcessStage.h`, `StageChain.{h,cpp}`; `Mixer::setChannelInsert` / `setMasterInsert`.
+- **Why:** users/plugins can insert, replace or remove audio processors at runtime without core changes.
+- **Reuse when:** any per-deck/channel/master processing (FX rack, time-stretch, user plugins).
+- **Notes:** fixed slots of atomic non-owning pointers; `kInterfaceVersion` is checked on insert; replacing/removing waits for two audio passes (max 50 ms) so the old stage can then be destroyed. Caller owns the stage.
+
+### Small units composed by a coordinator
+- **Where:** `ThreeBandEq`, `SweepFilter`, `Crossfader`, `PeakMeter`, `ChannelStrip` composed by `Mixer`; shared filter maths in `src/dsp` (`openmixer_dsp`).
+- **Why:** one responsibility per file; DSP is reusable by FX and tests without the mixer.

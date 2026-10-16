@@ -23,7 +23,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Lock-free ring buffer
   - JUCE AudioFormatManager decode first; FFmpeg backend deferred (see Todo 8b)
 
-- [ ] **Todo 10:** Mixer (channels, EQ, filter, crossfader)
+- [x] **Todo 10:** Mixer (channels, EQ, filter, crossfader)
   - `src/engine/Mixer.{h,cpp}`
   - 3-band EQ
   - PFL cue bus
