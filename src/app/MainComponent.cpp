@@ -1,70 +1,62 @@
-/*
-  OpenMixer MainComponent.cpp
-  Main application component implementation
-*/
-
-#include <JuceHeader.h>
 #include "MainComponent.h"
 
-//==============================================================================
+namespace
+{
+    constexpr int kWindowWidth = 900, kWindowHeight = 640;
+    constexpr int kMaxOutputs = 8;
+
+    juce::File userMapFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("OpenMixer").getChildFile ("controller_map.json");
+    }
+}
+
 MainComponent::MainComponent()
 {
-    // Initialize UI
-    addAndMakeVisible (titleLabel);
-    titleLabel.setText ("OpenMixer", dontSendNotification);
-    titleLabel.setFont (juce::Font (juce::FontOptions ("Arial", 48.0f, juce::Font::bold)));
-    titleLabel.setJustificationType (juce::Justification::centred);
-    titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    
-    addAndMakeVisible (versionLabel);
-    versionLabel.setText (ProjectInfo::versionString, dontSendNotification);
-    versionLabel.setFont (juce::Font (juce::FontOptions ("Arial", 14.0f, juce::Font::plain)));
-    versionLabel.setJustificationType (juce::Justification::centred);
-    versionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-
-    // Without an explicit size the window opens at 0x0
-    setSize (900, 600);
-
-    // AudioAppComponent owns its own deviceManager; use it so the audio callbacks actually run
+    addAndMakeVisible (panel);
+    setSize (kWindowWidth, kWindowHeight);
+    setUpMidi();
     setAudioChannels (0, 2);
-    audioInitialized = deviceManager.getCurrentAudioDevice() != nullptr;
 }
 
 MainComponent::~MainComponent()
 {
+    midiInput.disableAll();
     shutdownAudio();
 }
 
-//==============================================================================
+void MainComponent::setUpMidi()
+{
+    router.registerTarget ("mixer", &engine.getMixer());
+    for (int i = 0; i < engine.getNumDecks(); ++i)
+        router.registerTarget ("deck." + juce::String (i), &engine.getDeck (i));
+
+    mapper.setTarget (&router);
+    if (const auto map = userMapFile(); map.existsAsFile())
+        if (const auto r = mapper.loadFromFile (map); r.failed())
+            juce::Logger::writeToLog ("controller_map.json: " + r.getErrorMessage());
+    midiInput.enableAll();
+}
+
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
-    // Audio preparation
+    engine.prepare (sampleRate, samplesPerBlockExpected);
 }
 
-void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFill)
+void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
 {
-    // Silent audio - will be replaced by actual deck audio
-    for (int channel = 0; channel < bufferToFill.buffer->getNumChannels(); ++channel)
-    {
-        bufferToFill.buffer->clear (channel, bufferToFill.startSample, bufferToFill.numSamples);
-    }
+    auto* buffer = info.buffer;
+    float* outputs[kMaxOutputs] {};
+    const int numOutputs = std::min (buffer->getNumChannels(), kMaxOutputs);
+    for (int c = 0; c < numOutputs; ++c)
+        outputs[c] = buffer->getWritePointer (c, info.startSample);
+    engine.process (nullptr, 0, outputs, numOutputs, info.numSamples);
 }
 
-void MainComponent::releaseResources()
-{
-    // Audio cleanup
-}
-
-//==============================================================================
-void MainComponent::paint (juce::Graphics& g)
-{
-    // Dark theme background; child labels draw their own text
-    g.fillAll (juce::Colour (0xFF1a1a2e));
-}
+void MainComponent::releaseResources() {}
 
 void MainComponent::resized()
 {
-    auto bounds = getLocalBounds().reduced (40);
-    titleLabel.setBounds (bounds.removeFromTop (60));
-    versionLabel.setBounds (bounds.removeFromBottom (30));
+    panel.setBounds (getLocalBounds());
 }

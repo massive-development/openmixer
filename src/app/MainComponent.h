@@ -1,33 +1,34 @@
-/*
-  OpenMixer MainComponent.h
-  Main application component
-*/
-
+// Main window content: audio device glue, engine, MIDI, and the debug panel.
 #pragma once
 
 #include <JuceHeader.h>
 
-//==============================================================================
-class MainComponent : public AudioAppComponent
+#include "controllers/MidiInputRouter.h"
+#include "controllers/MidiMapper.h"
+#include "controllers/ParameterRouter.h"
+#include "engine/DjEngine.h"
+#include "ui/DebugPanel.h"
+
+class MainComponent : public juce::AudioAppComponent
 {
 public:
     MainComponent();
     ~MainComponent() override;
 
     void prepareToPlay (int samplesPerBlockExpected, double sampleRate) override;
-    void getNextAudioBlock (const AudioSourceChannelInfo& bufferToFill) override;
+    void getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill) override;
     void releaseResources() override;
 
-    void paint (juce::Graphics& g) override;
     void resized() override;
 
 private:
-    // UI components
-    juce::Label titleLabel;
-    juce::Label versionLabel;
+    void setUpMidi();
 
-    // Audio device state (device manager is inherited from AudioAppComponent)
-    bool audioInitialized = false;
+    openmixer::DjEngine engine;
+    openmixer::ParameterRouter router;
+    openmixer::MidiMapper mapper;
+    openmixer::MidiInputRouter midiInput { deviceManager, mapper };
+    openmixer::ui::DebugPanel panel { engine };
 
-    JUCE_DECLARE_NON_COPYABLE (MainComponent)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
