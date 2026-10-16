@@ -94,6 +94,12 @@ All code must follow modern C++ best practices (C++17 as configured; the C++ Cor
 - **Rule of 10 (goal, not a requirement):** aim for functions of about 10 lines or fewer. Exceed it only when splitting would hurt clarity.
 - Prefer self-describing names over comments. Delete comments that restate the code.
 
+## Modularity (required)
+
+- **No monolithic files.** One focused responsibility per file/class; split anything that grows large or mixes concerns.
+- **Build shared libraries.** Put reusable code in small CMake library targets (e.g. `openmixer_engine`) under `src/<area>/` and link them where needed, instead of duplicating code or piling it into the app target.
+- **Keep dependencies one-way** (app → ui → engine/library → core); libraries must not depend on app code and should be testable on their own.
+
 ## Code Style
 
 ### Naming Conventions
