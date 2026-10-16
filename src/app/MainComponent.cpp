@@ -12,13 +12,13 @@ MainComponent::MainComponent()
     // Initialize UI
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("OpenMixer", dontSendNotification);
-    titleLabel.setFont (juce::Font ("Arial", 48.0f, juce::Font::bold));
+    titleLabel.setFont (juce::Font (juce::FontOptions ("Arial", 48.0f, juce::Font::bold)));
     titleLabel.setJustificationType (juce::Justification::centred);
     titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     
     addAndMakeVisible (versionLabel);
     versionLabel.setText (ProjectInfo::versionString, dontSendNotification);
-    versionLabel.setFont (juce::Font ("Arial", 14.0f, 0));
+    versionLabel.setFont (juce::Font (juce::FontOptions ("Arial", 14.0f, juce::Font::plain)));
     versionLabel.setJustificationType (juce::Justification::centred);
     versionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
