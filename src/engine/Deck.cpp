@@ -1,96 +1,25 @@
 #include "Deck.h"
 
+#include "DeckDecoder.h"
+
 #include <algorithm>
-#include <cstring>
 
 namespace openmixer
 {
 
-//==============================================================================
-class Deck::DecoderThread : public juce::Thread
+namespace
 {
-public:
-    explicit DecoderThread (Deck& d) : juce::Thread ("OpenMixer Deck Decoder"), deck (d) {}
-
-    void run() override
-    {
-        constexpr int chunk = 2048;
-        juce::AudioBuffer<float> tmp (2, chunk);
-        std::vector<float> interleaved ((size_t) chunk * 2);
-
-        std::unique_ptr<juce::AudioFormatReader> reader;
-        juce::int64 readPos = 0;
-        juce::uint32 localAck = 0;
-
-        while (! threadShouldExit())
-        {
-            // Read the epoch first, then the pending reader: a reader is always
-            // published before the epoch bump that refers to it.
-            const auto epoch = deck.requestEpoch.load (std::memory_order_acquire);
-            {
-                std::lock_guard<std::mutex> lock (deck.pendingMutex);
-                if (deck.hasPendingReader)
-                {
-                    reader = std::move (deck.pendingReader);
-                    deck.hasPendingReader = false;
-                }
-            }
-
-            if (epoch != localAck)
-            {
-                const auto len = reader != nullptr ? reader->lengthInSamples : 0;
-                readPos = std::clamp<juce::int64> (deck.seekTarget.load(), 0, len);
-                deck.ackTarget.store (readPos);
-                deck.endOfStream.store (reader == nullptr || readPos >= len);
-                localAck = epoch;
-                deck.ackEpoch.store (epoch, std::memory_order_release);
-            }
-
-            if (deck.drainedEpoch.load (std::memory_order_acquire) != localAck
-                || reader == nullptr
-                || deck.ring.getWritableCount() < (size_t) chunk * 2)
-            {
-                wait (3);
-                continue;
-            }
-
-            if (readPos >= reader->lengthInSamples)
-            {
-                deck.endOfStream.store (true, std::memory_order_release);
-                wait (10);
-                continue;
-            }
-
-            const int n = (int) std::min<juce::int64> (chunk, reader->lengthInSamples - readPos);
-            const int fileChans = (int) std::min<unsigned int> (reader->numChannels, 2u);
-            tmp.clear();
-            reader->read (tmp.getArrayOfWritePointers(), fileChans, readPos, n);
-            if (fileChans == 1)
-                tmp.copyFrom (1, 0, tmp, 0, 0, n);
-
-            const float* l = tmp.getReadPointer (0);
-            const float* r = tmp.getReadPointer (1);
-            for (int i = 0; i < n; ++i)
-            {
-                interleaved[(size_t) i * 2] = l[i];
-                interleaved[(size_t) i * 2 + 1] = r[i];
-            }
-            deck.ring.write (interleaved.data(), (size_t) n * 2);
-            readPos += n;
-            if (readPos >= reader->lengthInSamples)
-                deck.endOfStream.store (true, std::memory_order_release);
-        }
-    }
-
-private:
-    Deck& deck;
-};
+    constexpr auto kRelaxed = std::memory_order_relaxed;
+    constexpr auto kAcquire = std::memory_order_acquire;
+    constexpr auto kRelease = std::memory_order_release;
+}
 
 //==============================================================================
 Deck::Deck (size_t ringFrames) : ring (ringFrames * 2)
 {
     formatManager.registerBasicFormats();
-    decoder = std::make_unique<DecoderThread> (*this);
+    monoSink.assign (4096, 0.0F);
+    decoder = std::make_unique<DeckDecoder> (*this);
     decoder->startThread();
 }
 
@@ -105,169 +34,191 @@ bool Deck::load (const juce::File& file)
     if (reader == nullptr)
         return false;
 
-    playing.store (false);
-    finished.store (false);
-    fileSampleRate.store (reader->sampleRate);
-    lengthFrames.store (reader->lengthInSamples);
+    playing.store (false, kRelaxed);
+    finished.store (false, kRelaxed);
+    fileSampleRate.store (reader->sampleRate, kRelaxed);
+    lengthFrames.store (reader->lengthInSamples, kRelaxed);
     {
-        std::lock_guard<std::mutex> lock (pendingMutex);
+        const std::lock_guard<std::mutex> lock (pendingMutex);
         pendingReader = std::move (reader);
         hasPendingReader = true;
     }
-    loaded.store (true);
+    loaded.store (true, kRelaxed);
     requestReposition (0);
     return true;
 }
 
 void Deck::unload()
 {
-    playing.store (false);
-    loaded.store (false);
-    lengthFrames.store (0);
+    playing.store (false, kRelaxed);
+    loaded.store (false, kRelaxed);
+    lengthFrames.store (0, kRelaxed);
     {
-        std::lock_guard<std::mutex> lock (pendingMutex);
+        const std::lock_guard<std::mutex> lock (pendingMutex);
         pendingReader.reset();
-        hasPendingReader = true;   // hand the decoder a null reader
+        hasPendingReader = true;   // hands the decoder a null reader
     }
     requestReposition (0);
 }
 
 void Deck::seek (juce::int64 sourceFrame)
 {
-    finished.store (false);
+    finished.store (false, kRelaxed);
     requestReposition (std::max<juce::int64> (0, sourceFrame));
 }
 
 void Deck::requestReposition (juce::int64 target)
 {
-    seekTarget.store (target);
-    requestEpoch.fetch_add (1, std::memory_order_release);
+    seekTarget.store (target, kRelaxed);
+    requestEpoch.fetch_add (1, kRelease);
     decoder->notify();
 }
 
 void Deck::setRate (double newRate) noexcept
 {
-    rate.store (std::clamp (newRate, 0.0, 8.0));
+    rate.store (std::clamp (newRate, 0.0, 8.0), kRelaxed);
 }
 
-void Deck::prepare (double sr, int)
+bool Deck::setParameter (const juce::String& id, double value)
 {
-    deviceSampleRate.store (sr > 0.0 ? sr : 44100.0);
+    if (id == "play")      setPlaying (value >= 0.5);
+    else if (id == "rate") setRate (value);
+    else if (id == "seek") seek (static_cast<juce::int64> (std::clamp (value, 0.0, 1.0) * static_cast<double> (getLengthFrames())));
+    else return false;
+    return true;
+}
+
+void Deck::prepare (double sr, int maxBlockSize)
+{
+    deviceSampleRate.store (sr > 0.0 ? sr : 44100.0, kRelaxed);
+    monoSink.assign (static_cast<size_t> (std::max (1, maxBlockSize)), 0.0F);
 }
 
 void Deck::process (const float* const*, int, float* const* outputs, int numOutputs, int numSamples)
 {
     if (numOutputs <= 0)
         return;
+
     if (numOutputs == 1)
     {
-        // Mono device: render into the left channel only (right is a dummy sink).
-        static thread_local float dummy[8192];
-        for (int done = 0; done < numSamples;)
-        {
-            const int n = std::min(numSamples - done, 8192);
-            renderStereo (outputs[0] + done, dummy, n);
-            done += n;
-        }
+        const int cap = static_cast<int> (monoSink.size());
+        for (int done = 0; done < numSamples; done += cap)
+            renderStereo (outputs[0] + done, monoSink.data(), std::min (cap, numSamples - done));
         return;
     }
+
     renderStereo (outputs[0], outputs[1], numSamples);
     for (int c = 2; c < numOutputs; ++c)
         juce::FloatVectorOperations::clear (outputs[c], numSamples);
 }
 
-void Deck::renderStereo (float* left, float* right, int numSamples) noexcept
+//==============================================================================
+void Deck::clearTail (float* left, float* right, int from, int numSamples) const noexcept
 {
-    auto silence = [&] (int from)
-    {
-        if (from < numSamples)
-        {
-            juce::FloatVectorOperations::clear (left + from, numSamples - from);
-            juce::FloatVectorOperations::clear (right + from, numSamples - from);
-        }
-    };
-
-    // Epoch handshake (see header).
-    const auto req = requestEpoch.load (std::memory_order_acquire);
-    const auto ack = ackEpoch.load (std::memory_order_acquire);
-    if (ack != req)
-    {
-        silence (0);
+    if (from >= numSamples)
         return;
-    }
-    if (drainedEpoch.load (std::memory_order_relaxed) != ack)
+    juce::FloatVectorOperations::clear (left + from, numSamples - from);
+    juce::FloatVectorOperations::clear (right + from, numSamples - from);
+}
+
+bool Deck::serviceHandshake() noexcept
+{
+    const auto req = requestEpoch.load (kAcquire);
+    const auto ack = ackEpoch.load (kAcquire);
+    if (ack != req)
+        return false;
+
+    if (drainedEpoch.load (kRelaxed) != ack)
     {
-        ring.skip (ring.getReadableCount());     // stale data from before the ack
-        pos = ackTarget.load();
+        ring.skip (ring.getReadableCount());   // everything before the ack is stale
+        pos = ackTarget.load (kRelaxed);
         primed = false;
         phase = 0.0;
-        positionFrames.store (pos);
-        drainedEpoch.store (ack, std::memory_order_release);
+        positionFrames.store (pos, kRelaxed);
+        drainedEpoch.store (ack, kRelease);
     }
+    return true;
+}
 
-    if (! playing.load (std::memory_order_relaxed) || ! loaded.load (std::memory_order_relaxed))
+bool Deck::reachedEnd() noexcept
+{
+    // Re-check readability after seeing end-of-stream: the producer's last write may race.
+    if (endOfStream.load (kAcquire) && ring.getReadableCount() < 2)
     {
-        silence (0);
+        playing.store (false, kRelaxed);
+        finished.store (true, kRelaxed);
+        return true;
+    }
+    return false;
+}
+
+void Deck::noteStarved() noexcept
+{
+    if (! reachedEnd())
+        underruns.fetch_add (1, kRelaxed);
+}
+
+bool Deck::popFrame() noexcept
+{
+    float f[2];
+    if (ring.read (f, 2) < 2)
+        return false;
+    prev[0] = next[0]; prev[1] = next[1];
+    next[0] = f[0];    next[1] = f[1];
+    return true;
+}
+
+bool Deck::primeInterpolator() noexcept
+{
+    float two[4];
+    if (ring.read (two, 4) < 4)
+        return false;
+    prev[0] = two[0]; prev[1] = two[1];
+    next[0] = two[2]; next[1] = two[3];
+    primed = true;
+    phase = 0.0;
+    return true;
+}
+
+void Deck::renderStereo (float* left, float* right, int numSamples) noexcept
+{
+    const bool running = serviceHandshake() && playing.load (kRelaxed) && loaded.load (kRelaxed);
+    if (! running)
+    {
+        clearTail (left, right, 0, numSamples);
         return;
     }
 
-    auto reachedEnd = [&]
+    if (! primed && ring.getReadableCount() < 4)
     {
-        // Re-check readability after observing end-of-stream to avoid a race
-        // with the producer's final write.
-        if (endOfStream.load (std::memory_order_acquire) && ring.getReadableCount() < 2)
-        {
-            playing.store (false);
-            finished.store (true);
-            return true;
-        }
-        return false;
-    };
-
-    if (! primed)
-    {
-        float two[4];
-        if (ring.getReadableCount() < 4)
-        {
-            if (! reachedEnd())
-                underruns.fetch_add (1, std::memory_order_relaxed);
-            silence (0);
-            return;
-        }
-        ring.read (two, 4);
-        prev[0] = two[0]; prev[1] = two[1];
-        next[0] = two[2]; next[1] = two[3];
-        primed = true;
-        phase = 0.0;
+        noteStarved();
+        clearTail (left, right, 0, numSamples);
+        return;
     }
+    if (! primed)
+        primeInterpolator();
 
-    const double ratio = rate.load (std::memory_order_relaxed)
-                         * (fileSampleRate.load (std::memory_order_relaxed) / deviceSampleRate.load (std::memory_order_relaxed));
-
+    const double ratio = rate.load (kRelaxed) * (fileSampleRate.load (kRelaxed) / deviceSampleRate.load (kRelaxed));
     for (int i = 0; i < numSamples; ++i)
     {
         while (phase >= 1.0)
         {
-            float f[2];
-            if (ring.read (f, 2) < 2)
+            if (! popFrame())
             {
-                if (! reachedEnd())
-                    underruns.fetch_add (1, std::memory_order_relaxed);
-                silence (i);
-                positionFrames.store (pos, std::memory_order_relaxed);
+                noteStarved();
+                clearTail (left, right, i, numSamples);
+                positionFrames.store (pos, kRelaxed);
                 return;
             }
-            prev[0] = next[0]; prev[1] = next[1];
-            next[0] = f[0]; next[1] = f[1];
             phase -= 1.0;
             ++pos;
         }
-        const float t = (float) phase;
+        const auto t = static_cast<float> (phase);
         left[i]  = prev[0] + (next[0] - prev[0]) * t;
         right[i] = prev[1] + (next[1] - prev[1]) * t;
         phase += ratio;
     }
-    positionFrames.store (pos, std::memory_order_relaxed);
+    positionFrames.store (pos, kRelaxed);
 }
 
 } // namespace openmixer

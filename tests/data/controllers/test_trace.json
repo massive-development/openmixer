@@ -1,0 +1,17 @@
+{
+  "name": "Fader sweep, EQ nudge, play toggle, pitch bend",
+  "events": [
+    { "time": 0.00, "bytes": "B0 07 00" },
+    { "time": 0.01, "bytes": "B0 07 7F" },
+    { "time": 0.02, "bytes": "B0 15 41" },
+    { "time": 0.03, "bytes": "B0 15 41" },
+    { "time": 0.04, "bytes": "B0 15 3F" },
+    { "time": 0.05, "bytes": "90 24 64" },
+    { "time": 0.06, "bytes": "80 24 00" },
+    { "time": 0.07, "bytes": "90 24 64" },
+    { "time": 0.08, "bytes": "80 24 00" },
+    { "time": 0.09, "bytes": "E0 7F 7F" },
+    { "time": 0.10, "bytes": "E0 00 00" },
+    { "time": 0.11, "bytes": "B5 07 40" }
+  ]
+}

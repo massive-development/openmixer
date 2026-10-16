@@ -38,26 +38,155 @@ endif()
 # JUCE is already pulled in via FetchContent_MakeAvailable
 # The JUCE CMake functions should now be available
 
+# Strict warnings for first-party sources only (JUCE module sources compiled into our
+# targets are left alone). Usage: openmixer_enable_warnings(<sources...>)
+# -Wold-style-cast is opt-in because JUCE's own headers are not clean under it:
+#   cmake -B build -DOPENMIXER_STRICT_CASTS=ON 2>&1 and filter the build log for "/src/".
+option(OPENMIXER_STRICT_CASTS "Warn on C-style casts (noisy: JUCE headers trigger it too)" OFF)
+option(OPENMIXER_WERROR "Treat first-party warnings as errors" OFF)
+function(openmixer_enable_warnings)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set(flags -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Woverloaded-virtual)
+        if(OPENMIXER_STRICT_CASTS)
+            list(APPEND flags -Wold-style-cast)
+        endif()
+        if(OPENMIXER_WERROR)
+            list(APPEND flags -Werror)
+        endif()
+        set_source_files_properties(${ARGN} PROPERTIES COMPILE_OPTIONS "${flags}")
+    endif()
+endfunction()
+
+# Sanitizer builds for concurrent/real-time code:
+#   cmake -B build-asan -DOPENMIXER_SANITIZE=address,undefined
+#   cmake -B build-tsan -DOPENMIXER_SANITIZE=thread
+set(OPENMIXER_SANITIZE "" CACHE STRING "Comma separated sanitizers (address,undefined | thread)")
+if(OPENMIXER_SANITIZE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-fsanitize=${OPENMIXER_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${OPENMIXER_SANITIZE})
+endif()
+
+# =============================================================================
+# Core (shared interfaces) and DSP libraries
+# =============================================================================
+
+add_library(openmixer_core INTERFACE)
+target_include_directories(openmixer_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(openmixer_core INTERFACE juce::juce_core)
+
+add_library(openmixer_dsp STATIC src/dsp/Biquad.cpp src/dsp/Biquad.h)
+target_include_directories(openmixer_dsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(src/dsp/Biquad.cpp)
+
 # =============================================================================
 # Engine library (audio device layer, deck, ring buffer)
 # =============================================================================
 
 add_library(openmixer_engine STATIC
-    src/engine/AudioDevice.cpp
-    src/engine/AudioDevice.h
+    src/engine/ChannelStrip.cpp
+    src/engine/ChannelStrip.h
+    src/engine/Crossfader.cpp
+    src/engine/Crossfader.h
     src/engine/Deck.cpp
     src/engine/Deck.h
+    src/engine/DeckDecoder.cpp
+    src/engine/DeckDecoder.h
+    src/engine/DjEngine.cpp
+    src/engine/DjEngine.h
+    src/engine/AudioDevice.h
+    src/engine/JuceAudioDevice.cpp
+    src/engine/JuceAudioDevice.h
+    src/engine/LatencyMonitor.cpp
+    src/engine/LatencyMonitor.h
+    src/engine/MockAudioDevice.cpp
+    src/engine/MockAudioDevice.h
+    src/engine/Mixer.cpp
+    src/engine/Mixer.h
+    src/engine/MixerParameters.cpp
+    src/engine/PeakMeter.h
+    src/engine/ProcessStage.h
     src/engine/RingBuffer.h
+    src/engine/StageChain.cpp
+    src/engine/StageChain.h
+    src/engine/SweepFilter.cpp
+    src/engine/SweepFilter.h
+    src/engine/ThreeBandEq.cpp
+    src/engine/ThreeBandEq.h
 )
 
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(
+    src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
+    src/engine/DeckDecoder.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
+    src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
+    openmixer_core
+    openmixer_dsp
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
     juce::juce_core
     juce::juce_events
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
+# Controllers library (MIDI mapping, trace harness)
+# =============================================================================
+
+add_library(openmixer_controllers STATIC
+    src/controllers/MidiEvent.cpp
+    src/controllers/MidiEvent.h
+    src/controllers/MidiInputRouter.cpp
+    src/controllers/MidiInputRouter.h
+    src/controllers/MidiMap.cpp
+    src/controllers/MidiMap.h
+    src/controllers/MidiMapper.cpp
+    src/controllers/MidiMapper.h
+    src/controllers/MidiTrace.cpp
+    src/controllers/MidiTrace.h
+    src/controllers/ParameterRouter.cpp
+    src/controllers/ParameterRouter.h
+    src/controllers/RecordingTarget.h
+)
+
+target_include_directories(openmixer_controllers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(
+    src/controllers/MidiEvent.cpp src/controllers/MidiInputRouter.cpp src/controllers/MidiMap.cpp
+    src/controllers/MidiMapper.cpp src/controllers/MidiTrace.cpp src/controllers/ParameterRouter.cpp)
+
+target_link_libraries(openmixer_controllers PUBLIC
+    openmixer_core
+    juce::juce_audio_devices
+    juce::juce_audio_basics
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
+# UI library (debug panel; real UI arrives in Wave 5)
+# =============================================================================
+
+add_library(openmixer_ui STATIC
+    src/ui/ChannelStripPanel.cpp
+    src/ui/ChannelStripPanel.h
+    src/ui/DebugPanel.cpp
+    src/ui/DebugPanel.h
+    src/ui/DeckStrip.cpp
+    src/ui/DeckStrip.h
+    src/ui/MeterBar.cpp
+    src/ui/MeterBar.h
+)
+
+target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(
+    src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/MeterBar.cpp)
+
+target_link_libraries(openmixer_ui PUBLIC
+    openmixer_engine
+    juce::juce_gui_basics
     juce::juce_recommended_config_flags
 )
 
@@ -81,6 +210,8 @@ target_sources(openmixer PRIVATE
 juce_generate_juce_header(openmixer)
 
 target_link_libraries(openmixer PRIVATE
+    openmixer_ui
+    openmixer_controllers
     openmixer_engine
     juce::juce_audio_basics
     juce::juce_audio_devices
@@ -129,13 +260,22 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/RingBufferTest.cpp
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
+    tests/unit/MixerTest.cpp
+    tests/unit/MidiMapperTest.cpp
+    tests/unit/DjEngineTest.cpp
+    tests/unit/DebugPanelTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
 
 target_include_directories(openmixer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+target_compile_definitions(openmixer_tests PRIVATE
+    OPENMIXER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_ui
+    openmixer_controllers
     openmixer_engine
     ${OPENMIXER_CURL_LIBS}
     juce::juce_audio_basics
