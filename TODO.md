@@ -9,35 +9,55 @@
 - [x] Legal framework
 - [x] Test harness
 
-## Wave 2: Audio Engine
+## Wave 2: Audio Engine (vertical slice: make sound, control it, test it)
+
+Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
 - [ ] **Todo 7:** Audio device layer + latency instrumentation + mock device
   - `src/engine/AudioDevice.{h,cpp}`
   - Mock device for CI testing
-  - Platform-specific backends
+  - Platform-specific backends via JUCE
 
 - [ ] **Todo 8:** Deck engine (streaming decode + transport)
   - `src/engine/Deck.{h,cpp}`
   - Lock-free ring buffer
-  - FFmpeg decode backend
-
-- [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
-  - `src/engine/TimeStretch.{h,cpp}`
-  - Realtime mode
-  - Golden audio tests
+  - JUCE AudioFormatManager decode first; FFmpeg backend deferred (see Todo 8b)
 
 - [ ] **Todo 10:** Mixer (channels, EQ, filter, crossfader)
   - `src/engine/Mixer.{h,cpp}`
   - 3-band EQ
   - PFL cue bus
 
-- [ ] **Todo 11:** FX rack (8 essential effects)
-  - `src/engine/fx/`
-  - Delay, reverb, flanger, etc.
+- [ ] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
+  - `src/controllers/MidiMapper.{h,cpp}`
+  - `juce::MidiInput` -> JSON map file -> mixer/deck parameters
+  - Mapping editor UI stays in Wave 6 (Todo 36)
+
+- [ ] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
+  - Replay recorded MIDI streams headlessly to test mappings
+
+- [ ] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
+  - 2 decks: load/play, faders, EQ knobs, level meters
+  - Plain JUCE components, no design tokens; replaced by Wave 5 UI
+
+- [ ] **Todo 13a:** Short soak test in CI (30-60s headless mix)
+  - `tools/soak_mix.cpp`
+  - Full 10-minute run remains the Wave 2 gate (Todo 13)
+
+- [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
+  - `src/engine/TimeStretch.{h,cpp}`
+  - Realtime mode
+  - Golden audio tests
 
 - [ ] **Todo 12:** Beat-sync + quantized cue/loop/slip
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
+
+- [ ] **Todo 11:** FX rack (8 essential effects)
+  - `src/engine/fx/`
+  - Delay, reverb, flanger, etc.
+
+- [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
 - [ ] **Todo 13:** Engine soak test (10-minute headless mix)
   - `tools/soak_mix.cpp`
@@ -86,8 +106,7 @@
 
 ## Wave 6: Hardware I/O
 
-- [ ] **Todo 32:** MIDI mapping engine
-- [ ] **Todo 33:** Controller trace harness
+- Todos 32/33 moved to Wave 2
 - [ ] **Todo 34:** Plug-and-play controller maps
 - [ ] **Todo 35:** HID layer
 - [ ] **Todo 36:** Mapping editor UI
@@ -116,4 +135,4 @@
 
 ---
 
-**Next Work:** Wave 2 Todo 7 (Audio Device Layer)
+**Next Work:** Wave 2 Todos 7, 8, then 10 (Mixer), 32/33 (MIDI), 26a (debug panel)
