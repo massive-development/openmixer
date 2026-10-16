@@ -320,11 +320,13 @@ gtest_discover_tests(openmixer_tests
     TEST_FILTER "-*Slow.*"
     PROPERTIES LABELS unit TIMEOUT 60
     DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
 )
 gtest_discover_tests(openmixer_tests
     TEST_FILTER "*Slow.*"
     PROPERTIES LABELS slow TIMEOUT 120
     DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
 )
 
 # =============================================================================

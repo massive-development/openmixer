@@ -4,7 +4,12 @@
 
 int main (int argc, char** argv)
 {
-    juce::ScopedJuceInitialiser_GUI gui;
     ::testing::InitGoogleTest (&argc, argv);
+
+    // Test discovery only lists names; skip slow GUI init so it fits CTest's timeout
+    if (::testing::GTEST_FLAG (list_tests))
+        return RUN_ALL_TESTS();
+
+    juce::ScopedJuceInitialiser_GUI gui;
     return RUN_ALL_TESTS();
 }
