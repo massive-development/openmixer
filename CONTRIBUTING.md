@@ -87,6 +87,49 @@ All code must follow modern C++ best practices (C++17 as configured; the C++ Cor
 - **Verification before opening a PR:** the test binary must run clean under Valgrind (`valgrind --leak-check=full --error-exitcode=1 <test binary>`) — no leaks, invalid reads/writes or uninitialised-value use — and, where practical, under AddressSanitizer/UBSan/ThreadSanitizer for concurrent code. Report the results in the PR's Testing section.
 - **Check current guidance:** when unsure about an API or idiom, consult the C++ Core Guidelines / cppreference / JUCE docs rather than reusing older patterns from memory.
 
+## Comments & Function Size (required)
+
+- **Comments are short.** One line, stating *why* (not what). No paragraph or block comments describing what code does.
+- **Long explanation = refactor.** If a function needs a long comment to be understood, split it into smaller, well-named functions instead.
+- **Rule of 10 (goal, not a requirement):** aim for functions of about 10 lines or fewer. Exceed it only when splitting would hurt clarity.
+- Prefer self-describing names over comments. Delete comments that restate the code.
+
+## Modularity (required)
+
+- **No monolithic files.** One focused responsibility per file/class; split anything that grows large or mixes concerns.
+- **Build shared libraries.** Put reusable code in small CMake library targets (e.g. `openmixer_engine`) under `src/<area>/` and link them where needed, instead of duplicating code or piling it into the app target.
+- **Keep dependencies one-way** (app → ui → engine/library → core); libraries must not depend on app code and should be testable on their own.
+
+## Architecture & Design Patterns (required)
+
+Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new `src/<area>/`):
+
+1. Read `docs/DESIGN_PATTERNS.md` and review how similar code is already structured.
+2. Reuse an existing pattern wherever it fits rather than inventing a new one.
+3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
+4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
+
+## Token Efficiency & Knowledge Reuse (required)
+
+Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
+
+1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base (e.g. the `lumen-kb` MCP `search_kb`), then `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md` and `TODO.md`.
+2. **Read narrowly:** read only the needed line ranges or symbols, not whole files; prefer grep/glob to locate code. Do not re-read files already in context.
+3. **Delegate broad searches** to a search subagent so only conclusions return to the main context.
+4. **Keep the graph fresh:** after structural changes (new modules, moved files) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
+5. **Don't recompute:** reuse existing results (test output, benchmarks, analysis) instead of re-running or re-deriving them.
+6. **Keep outputs lean:** trim command output (`| tail`, `--quiet`), and keep PR descriptions and reports concise.
+
+## Extensibility & User Freedom (required)
+
+Users must always be able to modify OpenMixer with external plugins. Nothing may be locked down.
+
+- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, LookAndFeel, skins).
+- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, interfaces and data-driven configuration (JSON/files) over fixed code paths.
+- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
+- **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
+- **PR check:** every PR must state whether it adds, changes or could block an extension point.
+
 ## Code Style
 
 ### Naming Conventions
@@ -111,33 +154,7 @@ src/
 
 ### Comment Requirements
 
-**Files:**
-```cpp
-/*
-  OpenMixer <filename>
-  Brief description of file's purpose
-*/
-```
-
-**Classes:**
-```cpp
-/**
-  ClassName brief description
-
-  Detailed description if needed.
-  @see RelatedClass
-*/
-```
-
-**Functions:**
-```cpp
-/**
-  Brief description of function
-
-  @param param Description
-  @return Description
-*/
-```
+See "Comments & Function Size" above. Files get a one-line header (`// OpenMixer <filename> - purpose`); public classes and functions get at most a one-line `///` summary, and only when the name does not already say it.
 
 ## Testing
 
