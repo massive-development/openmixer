@@ -42,6 +42,6 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 
 ## Current Status
 
-**Phase**: Wave 1 - Foundation
+**Phase**: Wave 2 - Audio Engine (Wave 1 complete)
 
 Progressing through initial repository setup, governance documentation, and build system establishment.
