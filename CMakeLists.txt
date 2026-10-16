@@ -288,6 +288,23 @@ target_link_libraries(openmixer_tests PRIVATE
 # Register tests with CTest
 add_test(NAME smoke COMMAND openmixer_tests)
 
+# Short headless soak (label "soak"); the 10-minute gate is Todo 13: openmixer_soak --seconds 600
+add_executable(openmixer_soak tools/soak_mix.cpp tools/soak/OutputChecker.h)
+target_include_directories(openmixer_soak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+openmixer_enable_warnings(tools/soak_mix.cpp)
+target_link_libraries(openmixer_soak PRIVATE
+    openmixer_engine
+    ${OPENMIXER_CURL_LIBS}
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_audio_basics
+    juce::juce_events
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+add_test(NAME soak_short COMMAND openmixer_soak --seconds 30)
+set_tests_properties(soak_short PROPERTIES LABELS soak TIMEOUT 120)
+
 # =============================================================================
 # Tools
 # =============================================================================

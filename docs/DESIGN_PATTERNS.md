@@ -81,3 +81,9 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/engine/DjEngine.{h,cpp}`
 - **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
 - **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
+
+### Checking decorator for headless runs (OutputChecker)
+- **Where:** `tools/soak/OutputChecker.h`, used by `tools/soak_mix.cpp`.
+- **Why:** wrap any `AudioCallback` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
+- **Reuse when:** long-running or fuzz-style runs (soak, golden-audio, plugin stress) need output assertions.
+- **Notes:** atomics only, no allocation in `process`.
