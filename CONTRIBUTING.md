@@ -100,6 +100,15 @@ All code must follow modern C++ best practices (C++17 as configured; the C++ Cor
 - **Build shared libraries.** Put reusable code in small CMake library targets (e.g. `openmixer_engine`) under `src/<area>/` and link them where needed, instead of duplicating code or piling it into the app target.
 - **Keep dependencies one-way** (app → ui → engine/library → core); libraries must not depend on app code and should be testable on their own.
 
+## Architecture & Design Patterns (required)
+
+Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new `src/<area>/`):
+
+1. Read `docs/DESIGN_PATTERNS.md` and review how similar code is already structured.
+2. Reuse an existing pattern wherever it fits rather than inventing a new one.
+3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
+4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
+
 ## Code Style
 
 ### Naming Conventions
