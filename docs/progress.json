@@ -1,23 +1,253 @@
 {
-  "waves": [
-    {"name": "1 Foundation", "items": [
-      ["Repo & legal", "done"], ["Build system", "done"], ["CI", "partial"], ["Test harness", "done"]]},
-    {"name": "2 Audio engine", "items": [
-      ["7 Device layer", "done"], ["8 Deck", "done"], ["10 Mixer", "done"], ["32 MIDI map", "done"], ["33 Trace harness", "done"],
-      ["26a Debug panel", "done"], ["13a Soak (short)", "todo"], ["9 Key-lock", "todo"], ["12 Sync", "todo"], ["11 FX rack", "todo"], ["13 Soak (10m)", "todo"]]},
-    {"name": "3 Analysis", "items": [
-      ["14 Service+cache", "todo"], ["15 BPM/grid", "todo"], ["16 Key", "todo"], ["17 Waveform", "todo"], ["18 Structure", "todo"], ["19 Stems", "todo"]]},
-    {"name": "4 Library", "items": [
-      ["20 Schema", "todo"], ["21 Ingest", "todo"], ["22 Import", "todo"], ["23 Search", "todo"], ["24 Prep queue", "todo"]]},
-    {"name": "5 UI", "items": [
-      ["25 Tokens", "todo"], ["26 Decks", "todo"], ["27 Mixer UI", "todo"], ["28 Browser", "todo"], ["29 Automix/settings", "todo"], ["30 Stem pads", "todo"], ["31 UI gate", "todo"]]},
-    {"name": "6 Hardware", "items": [
-      ["34 Controller maps", "todo"], ["35 HID", "todo"], ["36 Map editor", "todo"]]},
-    {"name": "7 Intelligence", "items": [
-      ["37 Stem DSP", "todo"], ["38 Automix", "todo"], ["39 Stem transitions", "todo"], ["40 Sampler", "todo"]]},
-    {"name": "8 Pro surface", "items": [
-      ["41 Recording", "todo"], ["42 Broadcast", "todo"], ["43 DVS", "todo"], ["44 Video", "todo"]]},
-    {"name": "9 Release", "items": [
-      ["47 Legal audit", "todo"], ["48 Trademark", "todo"], ["49 Packaging", "todo"], ["50 Docs", "todo"], ["51 v1.0.0", "todo"]]}
-  ]
+ "waves": [
+  {
+   "name": "1 Foundation",
+   "items": [
+    [
+     "Repo & legal",
+     "done"
+    ],
+    [
+     "Build system",
+     "done"
+    ],
+    [
+     "CI",
+     "partial"
+    ],
+    [
+     "Test harness",
+     "done"
+    ]
+   ]
+  },
+  {
+   "name": "2 Audio engine",
+   "items": [
+    [
+     "7 Device layer",
+     "done"
+    ],
+    [
+     "8 Deck",
+     "done"
+    ],
+    [
+     "10 Mixer",
+     "done"
+    ],
+    [
+     "10a Plugin API",
+     "todo"
+    ],
+    [
+     "32 MIDI map",
+     "done"
+    ],
+    [
+     "33 Trace harness",
+     "done"
+    ],
+    [
+     "26a Debug panel",
+     "done"
+    ],
+    [
+     "13a Soak (short)",
+     "todo"
+    ],
+    [
+     "9 Key-lock",
+     "todo"
+    ],
+    [
+     "12 Sync",
+     "todo"
+    ],
+    [
+     "11 FX rack",
+     "todo"
+    ],
+    [
+     "13 Soak (10m)",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "3 Analysis",
+   "items": [
+    [
+     "14 Service+cache",
+     "todo"
+    ],
+    [
+     "15 BPM/grid",
+     "todo"
+    ],
+    [
+     "16 Key",
+     "todo"
+    ],
+    [
+     "17 Waveform",
+     "todo"
+    ],
+    [
+     "18 Structure",
+     "todo"
+    ],
+    [
+     "19 Stems",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "4 Library",
+   "items": [
+    [
+     "20 Schema",
+     "todo"
+    ],
+    [
+     "21 Ingest",
+     "todo"
+    ],
+    [
+     "22 Import",
+     "todo"
+    ],
+    [
+     "23 Search",
+     "todo"
+    ],
+    [
+     "24 Prep queue",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "5 UI",
+   "items": [
+    [
+     "25 Tokens",
+     "todo"
+    ],
+    [
+     "25a Theme loader",
+     "todo"
+    ],
+    [
+     "26 Decks",
+     "todo"
+    ],
+    [
+     "27 Mixer UI",
+     "todo"
+    ],
+    [
+     "28 Browser",
+     "todo"
+    ],
+    [
+     "29 Automix/settings",
+     "todo"
+    ],
+    [
+     "30 Stem pads",
+     "todo"
+    ],
+    [
+     "31 UI gate",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "6 Hardware",
+   "items": [
+    [
+     "34 Controller maps",
+     "todo"
+    ],
+    [
+     "35 HID",
+     "todo"
+    ],
+    [
+     "36 Map editor",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "7 Intelligence",
+   "items": [
+    [
+     "37 Stem DSP",
+     "todo"
+    ],
+    [
+     "38 Automix",
+     "todo"
+    ],
+    [
+     "39 Stem transitions",
+     "todo"
+    ],
+    [
+     "40 Sampler",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "8 Pro surface",
+   "items": [
+    [
+     "41 Recording",
+     "todo"
+    ],
+    [
+     "42 Broadcast",
+     "todo"
+    ],
+    [
+     "43 DVS",
+     "todo"
+    ],
+    [
+     "44 Video",
+     "todo"
+    ]
+   ]
+  },
+  {
+   "name": "9 Release",
+   "items": [
+    [
+     "47 Legal audit",
+     "todo"
+    ],
+    [
+     "48 Trademark",
+     "todo"
+    ],
+    [
+     "49 Packaging",
+     "todo"
+    ],
+    [
+     "50 Docs",
+     "todo"
+    ],
+    [
+     "51 v1.0.0",
+     "todo"
+    ]
+   ]
+  }
+ ]
 }
