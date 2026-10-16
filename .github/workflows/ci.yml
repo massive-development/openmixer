@@ -20,7 +20,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ libasound2-dev libx11-dev libxrender-dev libxrandr-dev libxcursor-dev libxi-dev
+          sudo apt-get install -y cmake g++ libasound2-dev libx11-dev libxrender-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libfreetype-dev libfontconfig1-dev libcurl4-openssl-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev pkg-config
 
       - name: Configure
         run: |
@@ -70,17 +72,17 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build . --config Debug
+          cmake --build build-windows-debug --config Debug
 
       - name: Run tests
         run: |
-          ctest --config Debug --output-on-failure
+          ctest --test-dir build-windows-debug -C Debug --output-on-failure
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: openmixer-windows
-          path: Debug/
+          path: build-windows-debug/
 
   # License checker job
   license-check:
@@ -91,7 +93,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.12'
 
       - name: Run license check
         run: |
@@ -103,6 +105,15 @@ jobs:
             echo "ERROR: ASIO SDK detected in repository"
             exit 1
           fi
+
+  # Fails if the progress heatmap does not match docs/progress.json
+  progress-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check heatmap is current
+        run: python3 tools/progress_heatmap.py --check
 
   # Signing job (placeholder for future implementation)
   sign:

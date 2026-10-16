@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render docs/progress.json to docs/progress-heatmap.svg (one cell per task, one row per wave)."""
-import json, pathlib
+import json, pathlib, sys
 from xml.sax.saxutils import escape
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -42,5 +42,12 @@ for status in ("done", "partial", "wip", "todo"):
     lx += 120
 out.append(f'<text x="{width - PAD}" y="{ly + 12}" font-size="12" text-anchor="end" fill="#1f2328">Overall: {round(100 * done / total)}% (weighted)</text>')
 out.append('</svg>')
-(ROOT / "docs" / "progress-heatmap.svg").write_text("\n".join(out) + "\n")
-print(f"wrote docs/progress-heatmap.svg ({round(100 * done / total)}% overall)")
+svg = "\n".join(out) + "\n"
+target = ROOT / "docs" / "progress-heatmap.svg"
+if "--check" in sys.argv:
+    if not target.exists() or target.read_text() != svg:
+        sys.exit("docs/progress-heatmap.svg is stale: run python3 tools/progress_heatmap.py and commit it")
+    print("heatmap up to date")
+else:
+    target.write_text(svg)
+    print(f"wrote docs/progress-heatmap.svg ({round(100 * done / total)}% overall)")
