@@ -28,12 +28,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - 3-band EQ
   - PFL cue bus
 
-- [ ] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
+- [x] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
   - `src/controllers/MidiMapper.{h,cpp}`
   - `juce::MidiInput` -> JSON map file -> mixer/deck parameters
   - Mapping editor UI stays in Wave 6 (Todo 36)
 
-- [ ] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
+- [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
 
 - [ ] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
