@@ -63,16 +63,17 @@ git commit -s -m "fix: description"
 
 ## Pull Request Workflow (required)
 
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
+All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
 
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`).
-2. Open a PR with `gh pr create`. The description must include:
+1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
+2. Open a PR into `stage` with `gh pr create --base stage`. Only the fast Linux test gate (`pr-tests.yml`) runs there. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key files/modules added or modified.
    - **Testing:** commands run and results (`ctest`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
+5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, license, progress, sign) runs only there. Pushes alone never trigger CI.
 
 ## C++ Standards & Memory Safety (required)
 
@@ -183,29 +184,36 @@ See "Comments & Function Size" above. Files get a one-line header (`// OpenMixer
 
 ### Adding Tests
 
-```cpp
-// tests/unit/AudioEngineTest.cpp
-#include <JuceHeader.h>
+Tests use GoogleTest/GoogleMock (fetched by CMake, v1.17.0) in `tests/unit/*Test.cpp`; `TestMain.cpp` initialises JUCE and runs gtest. Add new files to `target_sources(openmixer_tests ...)` in `CMakeLists.txt`.
 
-TEST_CASE("Deck can load audio")
-{
-    AudioFileReader reader;
-    auto buffer = reader.loadFile("fixture.wav");
-    CHECK(buffer.getNumSamples() > 0);
-}
+```cpp
+#include <JuceHeader.h>
+#include <gtest/gtest.h>
+
+TEST (DeckTest, LoadReportsLength) { /* ASSERT_* for preconditions, EXPECT_* otherwise, EXPECT_NEAR for floats */ }
 ```
+
+- Use `TEST_F` fixtures for shared setup (unique temp dirs per test so `ctest -j` is safe).
+- Suites whose name ends in `Slow` (real threads/timing) get the CTest label `slow`; all others get `unit`. Do not sleep to synchronise: use condition variables or bounded waits.
+- Every test is registered with CTest individually (`gtest_discover_tests`).
 
 ### Verification Commands
 
 ```bash
-# Run all tests
-ctest --output-on-failure
+cmake --preset linux-debug && cmake --build build-linux-debug --target openmixer_tests
+ctest --test-dir build-linux-debug --output-on-failure -j4   # everything
+ctest --test-dir build-linux-debug -L unit                   # fast subset (-L slow for threaded)
+ctest --test-dir build-linux-debug -R Mixer                  # by name regex
+ctest --test-dir build-linux-debug -N                        # list tests
+build-linux-debug/openmixer_tests_artefacts/Debug/openmixer_tests --gtest_filter='MixerTest.*'
 
-# Run specific test
-ctest -R audio_engine
+# Sanitizers (ENABLE_ASAN / ENABLE_UBSAN / ENABLE_TSAN; TSan excludes ASan)
+cmake --preset linux-asan && cmake --build build-linux-asan --target openmixer_tests && ctest --test-dir build-linux-asan
+cmake --preset linux-tsan && cmake --build build-linux-tsan --target openmixer_tests
+setarch "$(uname -m)" -R ctest --test-dir build-linux-tsan   # needed on WSL2 kernels (ASLR vs TSan)
 
-# With AddressSanitizer
-ctest --test-dir build
+# Leaks
+valgrind --leak-check=full --error-exitcode=1 build-linux-debug/openmixer_tests_artefacts/Debug/openmixer_tests
 ```
 
 ## Build Requirements
