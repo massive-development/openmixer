@@ -1,10 +1,37 @@
 #include "PluginLoader.h"
 
+#if JUCE_WINDOWS
+ #define WIN32_LEAN_AND_MEAN
+ #define NOMINMAX
+ #include <windows.h>
+#endif
+
 namespace openmixer
 {
 
+namespace
+{
+    // A bad DLL otherwise raises a modal "Bad Image" box, which blocks forever when headless.
+    class ScopedNoLoaderDialogs
+    {
+    public:
+#if JUCE_WINDOWS
+        ScopedNoLoaderDialogs() noexcept { SetThreadErrorMode (SEM_FAILCRITICALERRORS, &previous); }
+        ~ScopedNoLoaderDialogs() { SetThreadErrorMode (previous, nullptr); }
+        ScopedNoLoaderDialogs (const ScopedNoLoaderDialogs&) = delete;
+        ScopedNoLoaderDialogs& operator= (const ScopedNoLoaderDialogs&) = delete;
+
+    private:
+        DWORD previous = 0;
+#else
+        ScopedNoLoaderDialogs() noexcept = default;
+#endif
+    };
+}
+
 juce::Result loadPluginLibrary (const juce::File& file, LoadedPlugin& out)
 {
+    [[maybe_unused]] const ScopedNoLoaderDialogs noDialogs;
     auto lib = std::make_unique<juce::DynamicLibrary>();
     if (! lib->open (file.getFullPathName()))
         return juce::Result::fail ("Cannot open " + file.getFileName());
