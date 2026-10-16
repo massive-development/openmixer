@@ -1,9 +1,4 @@
-/*
-  OpenMixer - lock-free single-producer / single-consumer ring buffer.
-  Original implementation (AGPLv3). Capacity is rounded up to a power of two.
-  Exactly one thread may call the write-side methods and exactly one thread
-  the read-side methods. Neither side allocates, locks or blocks.
-*/
+// Lock-free SPSC ring buffer; one writer thread, one reader thread, capacity rounded to a power of two.
 #pragma once
 
 #include <atomic>
@@ -28,7 +23,7 @@ public:
             cap <<= 1;
         capacity = cap;
         mask = cap - 1;
-        storage.reset (new T[cap]());
+        storage = std::make_unique<T[]> (cap);
     }
 
     size_t getCapacity() const noexcept { return capacity; }
@@ -41,7 +36,6 @@ public:
         return capacity - (w - r);
     }
 
-    /** Writes up to n items; returns the number actually written. */
     size_t write (const T* src, size_t n) noexcept
     {
         const auto w = writePos.load (std::memory_order_relaxed);
@@ -61,7 +55,6 @@ public:
         return w - r;
     }
 
-    /** Reads up to n items; returns the number actually read. */
     size_t read (T* dst, size_t n) noexcept
     {
         const auto r = readPos.load (std::memory_order_relaxed);
@@ -73,7 +66,6 @@ public:
         return toRead;
     }
 
-    /** Discards up to n items (consumer side); returns the number discarded. */
     size_t skip (size_t n) noexcept
     {
         const auto r = readPos.load (std::memory_order_relaxed);
