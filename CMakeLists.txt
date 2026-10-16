@@ -322,6 +322,7 @@ target_link_libraries(openmixer_tests PRIVATE
 
 # Register tests with CTest
 add_test(NAME smoke COMMAND openmixer_tests)
+set_tests_properties(smoke PROPERTIES TIMEOUT 180)
 
 # =============================================================================
 # Tools
