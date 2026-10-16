@@ -130,6 +130,12 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
+## Progress Files (required)
+
+Every PR that completes or advances a task must update, in the same PR:
+- `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
+- the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
+
 ## Code Style
 
 ### Naming Conventions
