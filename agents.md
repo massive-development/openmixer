@@ -123,6 +123,14 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
+## CI Workflow Changes (required)
+
+Any change to `.github/workflows/` must be tested locally with [`act`](https://github.com/nektos/act) before opening the PR.
+
+1. Run the affected job(s): `act -j <job> [-W .github/workflows/<file>.yml]` (add `--container-architecture linux/amd64` if needed). List jobs with `act -l`.
+2. Fix failures locally; don't push to find out.
+3. Put the `act` command and result in the PR's Testing section. Note anything `act` can't cover (e.g. macOS/Windows runners, secrets).
+
 ## Build Instructions
 
 ### Dependencies
