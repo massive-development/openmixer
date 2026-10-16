@@ -1,3 +1,4 @@
+// OpenMixer MidiMapperTest - MIDI map parsing, value modes, trace replay and parameter routing
 #include <JuceHeader.h>
 #include "controllers/MidiMapper.h"
 #include "controllers/MidiTrace.h"
@@ -6,178 +7,175 @@
 #include "engine/Deck.h"
 #include "engine/Mixer.h"
 
-namespace OpenMixerTests
+#include <gtest/gtest.h>
+
+using namespace openmixer;
+
+namespace
 {
-    class MidiMapperTest : public juce::UnitTest
-    {
-    public:
-        MidiMapperTest() : juce::UnitTest ("MIDI Mapper", "OpenMixer Controllers") {}
+juce::File dataDir() { return juce::File (OPENMIXER_TEST_DATA_DIR).getChildFile ("controllers"); }
 
-        static juce::File dataDir() { return juce::File (OPENMIXER_TEST_DATA_DIR).getChildFile ("controllers"); }
+juce::uint8 u8 (int v) { return static_cast<juce::uint8> (v); }
+}
 
-        void runTest() override
-        {
-            using namespace openmixer;
+class MidiMapperTest : public ::testing::Test
+{
+protected:
+    MidiMapperTest() { m.setTarget (&t); }
 
-            beginTest ("Rejects invalid maps without changing state");
-            {
-                MidiMapper m;
-                expect (m.loadFromJson ("not json").failed());
-                expect (m.loadFromJson ("{}").failed());
-                expect (m.loadFromJson (R"({"mappings":[{"type":"cc","number":1}]})").failed(), "missing target");
-                expect (m.loadFromJson (R"({"mappings":[{"type":"zzz","number":1,"target":"a"}]})").failed());
-                expect (m.loadFromJson (R"({"mappings":[{"type":"cc","number":200,"target":"a"}]})").failed());
-                expect (m.loadFromJson (R"({"mappings":[{"type":"cc","number":1,"target":"a","mode":"x"}]})").failed());
-                expect (m.loadFromJson (R"({"mappings":[{"type":"cc","number":1,"target":"a","min":1,"max":1}]})").failed());
-                expectEquals ((int) m.getNumMappings(), 0);
-                expect (m.loadFromFile (dataDir().getChildFile ("missing.json")).failed());
-            }
+    MidiMapper m;
+    RecordingTarget t;
+};
 
-            beginTest ("Absolute CC scales, inverts and respects channel filter");
-            {
-                MidiMapper m; RecordingTarget t; m.setTarget (&t);
-                expect (m.loadFromJson (R"({"mappings":[
-                    {"type":"cc","channel":2,"number":7,"target":"a","min":10,"max":20},
-                    {"type":"cc","number":8,"target":"b","invert":true}]})").wasOk());
-                expectEquals (m.handleMessage (juce::MidiMessage::controllerEvent (1, 7, 127)), 0);   // wrong channel
-                expectEquals (m.handleMessage (juce::MidiMessage::controllerEvent (2, 7, 127)), 1);
-                expectWithinAbsoluteError (t.last ("a"), 20.0, 1e-9);
-                m.handleMessage (juce::MidiMessage::controllerEvent (2, 7, 0));
-                expectWithinAbsoluteError (t.last ("a"), 10.0, 1e-9);
-                m.handleMessage (juce::MidiMessage::controllerEvent (9, 8, 127));   // any channel
-                expectWithinAbsoluteError (t.last ("b"), 0.0, 1e-9);
-                expectWithinAbsoluteError (m.getValue ("b"), 0.0, 1e-9);
-            }
+TEST_F (MidiMapperTest, RejectsInvalidMapsWithoutChangingState)
+{
+    EXPECT_TRUE (m.loadFromJson ("not json").failed());
+    EXPECT_TRUE (m.loadFromJson ("{}").failed());
+    EXPECT_TRUE (m.loadFromJson (R"({"mappings":[{"type":"cc","number":1}]})").failed()) << "missing target";
+    EXPECT_TRUE (m.loadFromJson (R"({"mappings":[{"type":"zzz","number":1,"target":"a"}]})").failed());
+    EXPECT_TRUE (m.loadFromJson (R"({"mappings":[{"type":"cc","number":200,"target":"a"}]})").failed());
+    EXPECT_TRUE (m.loadFromJson (R"({"mappings":[{"type":"cc","number":1,"target":"a","mode":"x"}]})").failed());
+    EXPECT_TRUE (m.loadFromJson (R"({"mappings":[{"type":"cc","number":1,"target":"a","min":1,"max":1}]})").failed());
+    EXPECT_EQ (static_cast<int> (m.getNumMappings()), 0);
+    EXPECT_TRUE (m.loadFromFile (dataDir().getChildFile ("missing.json")).failed());
+}
 
-            beginTest ("Relative modes accumulate and clamp");
-            {
-                MidiMapper m; RecordingTarget t; m.setTarget (&t);
-                m.loadFromJson (R"({"mappings":[
-                    {"type":"cc","number":1,"target":"r","mode":"relative","step":0.1,"min":0,"max":1,"initial":0.5},
-                    {"type":"cc","number":2,"target":"c","mode":"relative2c","step":0.1,"min":0,"max":1,"initial":0.5}]})");
-                for (int i = 0; i < 3; ++i) m.handleMessage (juce::MidiMessage::controllerEvent (1, 1, 65));
-                expectWithinAbsoluteError (t.last ("r"), 0.8, 1e-9);
-                for (int i = 0; i < 100; ++i) m.handleMessage (juce::MidiMessage::controllerEvent (1, 1, 127));
-                expectWithinAbsoluteError (t.last ("r"), 1.0, 1e-9);
-                m.handleMessage (juce::MidiMessage::controllerEvent (1, 2, 127));   // -1 in two's complement
-                expectWithinAbsoluteError (t.last ("c"), 0.4, 1e-9);
-                m.handleMessage (juce::MidiMessage::controllerEvent (1, 2, 2));
-                expectWithinAbsoluteError (t.last ("c"), 0.6, 1e-9);
-            }
+TEST_F (MidiMapperTest, AbsoluteCcScalesInvertsAndRespectsChannelFilter)
+{
+    ASSERT_TRUE (m.loadFromJson (R"({"mappings":[
+        {"type":"cc","channel":2,"number":7,"target":"a","min":10,"max":20},
+        {"type":"cc","number":8,"target":"b","invert":true}]})").wasOk());
+    EXPECT_EQ (m.handleMessage (juce::MidiMessage::controllerEvent (1, 7, 127)), 0);   // wrong channel
+    EXPECT_EQ (m.handleMessage (juce::MidiMessage::controllerEvent (2, 7, 127)), 1);
+    EXPECT_NEAR (t.last ("a"), 20.0, 1e-9);
+    m.handleMessage (juce::MidiMessage::controllerEvent (2, 7, 0));
+    EXPECT_NEAR (t.last ("a"), 10.0, 1e-9);
+    m.handleMessage (juce::MidiMessage::controllerEvent (9, 8, 127));   // any channel
+    EXPECT_NEAR (t.last ("b"), 0.0, 1e-9);
+    EXPECT_NEAR (m.getValue ("b"), 0.0, 1e-9);
+}
 
-            beginTest ("Button, toggle and pitch bend");
-            {
-                MidiMapper m; RecordingTarget t; m.setTarget (&t);
-                m.loadFromJson (R"({"mappings":[
-                    {"type":"note","number":60,"target":"btn"},
-                    {"type":"note","number":61,"target":"tog","mode":"toggle"},
-                    {"type":"pitchbend","target":"pb","min":-1,"max":1}]})");
-                m.handleMessage (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100));
-                expectEquals (t.last ("btn"), 1.0);
-                m.handleMessage (juce::MidiMessage::noteOff (1, 60));
-                expectEquals (t.last ("btn"), 0.0);
-                m.handleMessage (juce::MidiMessage::noteOn (1, 61, (juce::uint8) 100));
-                m.handleMessage (juce::MidiMessage::noteOff (1, 61));
-                expectEquals (t.count ("tog"), 1);          // release ignored
-                expectEquals (t.last ("tog"), 1.0);
-                m.handleMessage (juce::MidiMessage::noteOn (1, 61, (juce::uint8) 100));
-                expectEquals (t.last ("tog"), 0.0);
-                m.handleMessage (juce::MidiMessage::pitchWheel (1, 16383));
-                expectWithinAbsoluteError (t.last ("pb"), 1.0, 1e-9);
-                m.handleMessage (juce::MidiMessage::pitchWheel (1, 0));
-                expectWithinAbsoluteError (t.last ("pb"), -1.0, 1e-9);
-                expectEquals (m.handleMessage (juce::MidiMessage::programChange (1, 3)), 0);   // unsupported type
-            }
+TEST_F (MidiMapperTest, RelativeModesAccumulateAndClamp)
+{
+    m.loadFromJson (R"({"mappings":[
+        {"type":"cc","number":1,"target":"r","mode":"relative","step":0.1,"min":0,"max":1,"initial":0.5},
+        {"type":"cc","number":2,"target":"c","mode":"relative2c","step":0.1,"min":0,"max":1,"initial":0.5}]})");
+    for (int i = 0; i < 3; ++i) m.handleMessage (juce::MidiMessage::controllerEvent (1, 1, 65));
+    EXPECT_NEAR (t.last ("r"), 0.8, 1e-9);
+    for (int i = 0; i < 100; ++i) m.handleMessage (juce::MidiMessage::controllerEvent (1, 1, 127));
+    EXPECT_NEAR (t.last ("r"), 1.0, 1e-9);
+    m.handleMessage (juce::MidiMessage::controllerEvent (1, 2, 127));   // -1 in two's complement
+    EXPECT_NEAR (t.last ("c"), 0.4, 1e-9);
+    m.handleMessage (juce::MidiMessage::controllerEvent (1, 2, 2));
+    EXPECT_NEAR (t.last ("c"), 0.6, 1e-9);
+}
 
-            beginTest ("Trace replay of a recorded stream through a map file");
-            {
-                MidiMapper m; RecordingTarget t; m.setTarget (&t);
-                auto r = m.loadFromFile (dataDir().getChildFile ("test_map.json"));
-                expect (r.wasOk(), r.getErrorMessage());
-                expectEquals ((int) m.getNumMappings(), 7);
+TEST_F (MidiMapperTest, ButtonToggleAndPitchBend)
+{
+    m.loadFromJson (R"({"mappings":[
+        {"type":"note","number":60,"target":"btn"},
+        {"type":"note","number":61,"target":"tog","mode":"toggle"},
+        {"type":"pitchbend","target":"pb","min":-1,"max":1}]})");
+    m.handleMessage (juce::MidiMessage::noteOn (1, 60, u8 (100)));
+    EXPECT_EQ (t.last ("btn"), 1.0);
+    m.handleMessage (juce::MidiMessage::noteOff (1, 60));
+    EXPECT_EQ (t.last ("btn"), 0.0);
+    m.handleMessage (juce::MidiMessage::noteOn (1, 61, u8 (100)));
+    m.handleMessage (juce::MidiMessage::noteOff (1, 61));
+    EXPECT_EQ (t.count ("tog"), 1);   // release ignored
+    EXPECT_EQ (t.last ("tog"), 1.0);
+    m.handleMessage (juce::MidiMessage::noteOn (1, 61, u8 (100)));
+    EXPECT_EQ (t.last ("tog"), 0.0);
+    m.handleMessage (juce::MidiMessage::pitchWheel (1, 16383));
+    EXPECT_NEAR (t.last ("pb"), 1.0, 1e-9);
+    m.handleMessage (juce::MidiMessage::pitchWheel (1, 0));
+    EXPECT_NEAR (t.last ("pb"), -1.0, 1e-9);
+    EXPECT_EQ (m.handleMessage (juce::MidiMessage::programChange (1, 3)), 0);   // unsupported type
+}
 
-                MidiTrace trace;
-                r = MidiTrace::fromFile (dataDir().getChildFile ("test_trace.json"), trace);
-                expect (r.wasOk(), r.getErrorMessage());
-                expectEquals ((int) trace.events.size(), 12);
+TEST_F (MidiMapperTest, TraceReplayOfARecordedStreamThroughAMapFile)
+{
+    auto r = m.loadFromFile (dataDir().getChildFile ("test_map.json"));
+    ASSERT_TRUE (r.wasOk()) << r.getErrorMessage();
+    EXPECT_EQ (static_cast<int> (m.getNumMappings()), 7);
 
-                const int fired = replayTrace (trace, m);
-                // 2 fader + 3 eq + 2 toggle presses + 2 pitch bend; note-offs on toggle and the
-                // channel-6 CC match nothing.
-                expectEquals (fired, 9);
-                expectEquals (t.count ("mixer.ch0.fader"), 2);
-                expectWithinAbsoluteError (t.last ("mixer.ch0.fader"), 1.0, 1e-9);
-                expectWithinAbsoluteError (t.last ("mixer.ch0.eq.low"), 0.5, 1e-9);   // +0.5 +0.5 -0.5
-                expectEquals (t.count ("deck.0.play"), 2);
-                expectEquals (t.last ("deck.0.play", -1.0), 0.0);                     // toggled on, then off
-                expectWithinAbsoluteError (t.last ("deck.0.rate"), 0.92, 1e-9);
-                expectEquals (t.count ("mixer.ch0.pfl"), 0);
-            }
+    MidiTrace trace;
+    r = MidiTrace::fromFile (dataDir().getChildFile ("test_trace.json"), trace);
+    ASSERT_TRUE (r.wasOk()) << r.getErrorMessage();
+    EXPECT_EQ (static_cast<int> (trace.events.size()), 12);
 
-            beginTest ("Trace JSON round-trips");
-            {
-                MidiTrace a;
-                a.name = "rt";
-                a.add (0.0, juce::MidiMessage::controllerEvent (3, 11, 99));
-                a.add (0.5, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127));
-                MidiTrace b;
-                expect (MidiTrace::fromJson (a.toJson(), b).wasOk());
-                expectEquals ((int) b.events.size(), 2);
-                expectEquals (b.name, a.name);
-                expect (b.events[0].message.isController());
-                expectEquals (b.events[0].message.getControllerValue(), 99);
-                expectWithinAbsoluteError (b.events[1].time, 0.5, 1e-9);
-                expect (MidiTrace::fromJson ("{\"events\":[{\"bytes\":\"B0 07\"}]}", b).failed(), "truncated message");
-            }
+    const int fired = replayTrace (trace, m);
+    // 2 fader + 3 eq + 2 toggle presses + 2 pitch bend; note-offs on toggle and the
+    // channel-6 CC match nothing.
+    EXPECT_EQ (fired, 9);
+    EXPECT_EQ (t.count ("mixer.ch0.fader"), 2);
+    EXPECT_NEAR (t.last ("mixer.ch0.fader"), 1.0, 1e-9);
+    EXPECT_NEAR (t.last ("mixer.ch0.eq.low"), 0.5, 1e-9);   // +0.5 +0.5 -0.5
+    EXPECT_EQ (t.count ("deck.0.play"), 2);
+    EXPECT_EQ (t.last ("deck.0.play", -1.0), 0.0);          // toggled on, then off
+    EXPECT_NEAR (t.last ("deck.0.rate"), 0.92, 1e-9);
+    EXPECT_EQ (t.count ("mixer.ch0.pfl"), 0);
+}
 
-            beginTest ("ParameterRouter drives Mixer and Deck from a replayed trace");
-            {
-                Mixer mixer (2);
-                mixer.prepare (48000.0, 256);
-                Deck deck;
-                ParameterRouter router;
-                router.registerTarget ("mixer", &mixer);
-                router.registerTarget ("deck.0", &deck);
-                MidiMapper m; m.setTarget (&router);
-                expect (m.loadFromFile (dataDir().getChildFile ("test_map.json")).wasOk());
-                MidiTrace trace;
-                expect (MidiTrace::fromFile (dataDir().getChildFile ("test_trace.json"), trace).wasOk());
-                replayTrace (trace, m);
-                expectWithinAbsoluteError (mixer.getFader (0), 1.0f, 1e-6f);
-                expectWithinAbsoluteError (mixer.getEq (0, 0), 0.5f, 1e-6f);
-                expectWithinAbsoluteError (deck.getRate(), 0.92, 1e-9);
-                expect (! deck.isPlaying(), "toggled on then off");
-                expectEquals (router.getUnknownCount(), 0);
+TEST (MidiTraceTest, JsonRoundTrips)
+{
+    MidiTrace a;
+    a.name = "rt";
+    a.add (0.0, juce::MidiMessage::controllerEvent (3, 11, 99));
+    a.add (0.5, juce::MidiMessage::noteOn (1, 36, u8 (127)));
+    MidiTrace b;
+    ASSERT_TRUE (MidiTrace::fromJson (a.toJson(), b).wasOk());
+    ASSERT_EQ (static_cast<int> (b.events.size()), 2);
+    EXPECT_EQ (b.name, a.name);
+    EXPECT_TRUE (b.events[0].message.isController());
+    EXPECT_EQ (b.events[0].message.getControllerValue(), 99);
+    EXPECT_NEAR (b.events[1].time, 0.5, 1e-9);
+    EXPECT_TRUE (MidiTrace::fromJson ("{\"events\":[{\"bytes\":\"B0 07\"}]}", b).failed()) << "truncated message";
+}
 
-                m.handleMessage (juce::MidiMessage::noteOn (1, 40, (juce::uint8) 127));
-                expect (mixer.getPfl (0));
-                m.handleMessage (juce::MidiMessage::noteOff (1, 40));
-                expect (! mixer.getPfl (0));
-                m.handleMessage (juce::MidiMessage::controllerEvent (1, 8, 127));   // inverted ch1 fader
-                expectWithinAbsoluteError (mixer.getFader (1), 0.0f, 1e-6f);
+TEST_F (MidiMapperTest, ParameterRouterDrivesMixerAndDeckFromAReplayedTrace)
+{
+    Mixer mixer (2);
+    mixer.prepare (48000.0, 256);
+    Deck deck;
+    ParameterRouter router;
+    router.registerTarget ("mixer", &mixer);
+    router.registerTarget ("deck.0", &deck);
+    m.setTarget (&router);
+    ASSERT_TRUE (m.loadFromFile (dataDir().getChildFile ("test_map.json")).wasOk());
+    MidiTrace trace;
+    ASSERT_TRUE (MidiTrace::fromFile (dataDir().getChildFile ("test_trace.json"), trace).wasOk());
+    replayTrace (trace, m);
+    EXPECT_NEAR (mixer.getFader (0), 1.0f, 1e-6f);
+    EXPECT_NEAR (mixer.getEq (0, 0), 0.5f, 1e-6f);
+    EXPECT_NEAR (deck.getRate(), 0.92, 1e-9);
+    EXPECT_FALSE (deck.isPlaying()) << "toggled on then off";
+    EXPECT_EQ (router.getUnknownCount(), 0);
 
-                expect (! router.setParameter ("mixer.nonsense", 1.0));
-                expect (! router.setParameter ("nobody.home", 1.0));
-                expectEquals (router.getUnknownCount(), 2);
-            }
+    m.handleMessage (juce::MidiMessage::noteOn (1, 40, u8 (127)));
+    EXPECT_TRUE (mixer.getPfl (0));
+    m.handleMessage (juce::MidiMessage::noteOff (1, 40));
+    EXPECT_FALSE (mixer.getPfl (0));
+    m.handleMessage (juce::MidiMessage::controllerEvent (1, 8, 127));   // inverted ch1 fader
+    EXPECT_NEAR (mixer.getFader (1), 0.0f, 1e-6f);
 
-            beginTest ("ParameterRouter: user targets can be registered, replaced and removed");
-            {
-                RecordingTarget a, b;
-                ParameterRouter router;
-                router.registerTarget ("fx", &a);
-                router.registerTarget ("fx.delay", &b);   // longer prefix wins
-                expect (router.setParameter ("fx.delay.time", 0.3));
-                expectEquals (b.last ("time"), 0.3);
-                expect (router.setParameter ("fx.reverb.size", 0.7));
-                expectEquals (a.last ("reverb.size"), 0.7);
-                router.unregisterTarget ("fx.delay");
-                expect (router.setParameter ("fx.delay.time", 0.9));
-                expectEquals (a.last ("delay.time"), 0.9);
-                expect (! router.setParameter ("fxx.time", 1.0), "prefix must match a whole segment");
-            }
-        }
-    };
+    EXPECT_FALSE (router.setParameter ("mixer.nonsense", 1.0));
+    EXPECT_FALSE (router.setParameter ("nobody.home", 1.0));
+    EXPECT_EQ (router.getUnknownCount(), 2);
+}
 
-    MidiMapperTest midiMapperTest;
+TEST (ParameterRouterTest, UserTargetsCanBeRegisteredReplacedAndRemoved)
+{
+    RecordingTarget a, b;
+    ParameterRouter router;
+    router.registerTarget ("fx", &a);
+    router.registerTarget ("fx.delay", &b);   // longer prefix wins
+    EXPECT_TRUE (router.setParameter ("fx.delay.time", 0.3));
+    EXPECT_EQ (b.last ("time"), 0.3);
+    EXPECT_TRUE (router.setParameter ("fx.reverb.size", 0.7));
+    EXPECT_EQ (a.last ("reverb.size"), 0.7);
+    router.unregisterTarget ("fx.delay");
+    EXPECT_TRUE (router.setParameter ("fx.delay.time", 0.9));
+    EXPECT_EQ (a.last ("delay.time"), 0.9);
+    EXPECT_FALSE (router.setParameter ("fxx.time", 1.0)) << "prefix must match a whole segment";
 }
