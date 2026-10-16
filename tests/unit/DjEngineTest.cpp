@@ -52,7 +52,7 @@ protected:
     void SetUp() override
     {
         dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                  .getNonexistentChildFile ("openmixer_engine_test", {}, false);
+                  .getChildFile ("openmixer_engine_test_" + juce::Uuid().toString());   // unique per test process: ctest -j runs them in parallel
         ASSERT_TRUE (dir.createDirectory());
         file = writeSine (dir.getChildFile ("sine.wav"));
     }
