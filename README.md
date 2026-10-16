@@ -23,6 +23,7 @@ OpenMixer is built under a strict clean-room doctrine:
 | [agents.md](agents.md) | **AI Agent setup and implementation guide** |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 | [TODO.md](TODO.md) | Implementation task list |
+| [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md) | Design patterns in use and when to reuse them |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | Per-task progress, gaps, and where to help |
 | [docs/adr/INDEX.md](docs/adr/INDEX.md) | Architecture decisions |
 | [docs/legal/](docs/legal/) | Legal documentation |
