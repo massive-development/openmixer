@@ -91,6 +91,8 @@ add_library(openmixer_engine STATIC
     src/engine/Deck.h
     src/engine/DeckDecoder.cpp
     src/engine/DeckDecoder.h
+    src/engine/DjEngine.cpp
+    src/engine/DjEngine.h
     src/engine/AudioDevice.h
     src/engine/JuceAudioDevice.cpp
     src/engine/JuceAudioDevice.h
@@ -115,7 +117,7 @@ add_library(openmixer_engine STATIC
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
-    src/engine/DeckDecoder.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/DeckDecoder.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
     src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/ThreeBandEq.cpp)
 
@@ -164,6 +166,31 @@ target_link_libraries(openmixer_controllers PUBLIC
 )
 
 # =============================================================================
+# UI library (debug panel; real UI arrives in Wave 5)
+# =============================================================================
+
+add_library(openmixer_ui STATIC
+    src/ui/ChannelStripPanel.cpp
+    src/ui/ChannelStripPanel.h
+    src/ui/DebugPanel.cpp
+    src/ui/DebugPanel.h
+    src/ui/DeckStrip.cpp
+    src/ui/DeckStrip.h
+    src/ui/MeterBar.cpp
+    src/ui/MeterBar.h
+)
+
+target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(
+    src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/MeterBar.cpp)
+
+target_link_libraries(openmixer_ui PUBLIC
+    openmixer_engine
+    juce::juce_gui_basics
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
 # Main Application
 # =============================================================================
 
@@ -183,6 +210,8 @@ target_sources(openmixer PRIVATE
 juce_generate_juce_header(openmixer)
 
 target_link_libraries(openmixer PRIVATE
+    openmixer_ui
+    openmixer_controllers
     openmixer_engine
     juce::juce_audio_basics
     juce::juce_audio_devices
@@ -229,6 +258,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/DeckTest.cpp
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
+    tests/unit/DjEngineTest.cpp
+    tests/unit/DebugPanelTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -239,6 +270,7 @@ target_compile_definitions(openmixer_tests PRIVATE
     OPENMIXER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_ui
     openmixer_controllers
     openmixer_engine
     CURL::libcurl

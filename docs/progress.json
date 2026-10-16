@@ -4,7 +4,7 @@
       ["Repo & legal", "done"], ["Build system", "done"], ["CI", "partial"], ["Test harness", "done"]]},
     {"name": "2 Audio engine", "items": [
       ["7 Device layer", "done"], ["8 Deck", "done"], ["10 Mixer", "done"], ["32 MIDI map", "done"], ["33 Trace harness", "done"],
-      ["26a Debug panel", "wip"], ["13a Soak (short)", "todo"], ["9 Key-lock", "todo"], ["12 Sync", "todo"], ["11 FX rack", "todo"], ["13 Soak (10m)", "todo"]]},
+      ["26a Debug panel", "done"], ["13a Soak (short)", "todo"], ["9 Key-lock", "todo"], ["12 Sync", "todo"], ["11 FX rack", "todo"], ["13 Soak (10m)", "todo"]]},
     {"name": "3 Analysis", "items": [
       ["14 Service+cache", "todo"], ["15 BPM/grid", "todo"], ["16 Key", "todo"], ["17 Waveform", "todo"], ["18 Structure", "todo"], ["19 Stems", "todo"]]},
     {"name": "4 Library", "items": [
