@@ -1,0 +1,12 @@
+{
+  "name": "Generic test controller",
+  "mappings": [
+    { "type": "cc", "channel": 1, "number": 7,  "target": "mixer.ch0.fader" },
+    { "type": "cc", "channel": 1, "number": 8,  "target": "mixer.ch1.fader", "invert": true },
+    { "type": "cc", "channel": 1, "number": 21, "target": "mixer.ch0.eq.low", "mode": "relative", "step": 0.5, "min": -48, "max": 6, "initial": 0 },
+    { "type": "cc", "number": 10, "target": "mixer.crossfader" },
+    { "type": "note", "channel": 1, "number": 36, "target": "deck.0.play", "mode": "toggle" },
+    { "type": "note", "channel": 1, "number": 40, "target": "mixer.ch0.pfl" },
+    { "type": "pitchbend", "channel": 1, "target": "deck.0.rate", "min": 0.92, "max": 1.08 }
+  ]
+}

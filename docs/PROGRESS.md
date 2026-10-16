@@ -16,7 +16,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | Wave | Area | Status |
 |------|------|--------|
 | 1 | Foundation | ✅ |
-| 2 | Audio engine | 🟡 device layer + deck + mixer done; MIDI, debug panel in progress |
+| 2 | Audio engine | 🟡 device layer + deck + mixer done; MIDI mapper + trace harness done; debug panel in progress |
 | 3 | Analysis | ⬜ |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
@@ -51,8 +51,8 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 7 Audio device layer | Device abstraction, latency/xrun instrumentation, headless mock for CI | ✅ `AudioDevice`, `LatencyMonitor`, `JuceAudioDevice`, `MockAudioDevice` | Real-hardware test of `JuceAudioDevice`; device selection/settings UI |
 | 8 Deck engine | Streaming decode, lock-free buffer, play/pause/seek/rate | ✅ `Deck`, `RingBuffer`; JUCE decoders (WAV/AIFF/FLAC/OGG, MP3 where JUCE supports it) | FFmpeg backend (8b) for wide codec support; cue points, loops, scratching |
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | ✅ | Headphone routing to a second physical device (wired in the debug panel, Todo 26a) |
-| 32 MIDI input + mapping | `MidiInput` → JSON map → engine parameters | 🟡 in progress | Learn mode; feedback/LED output (Wave 6) |
-| 33 Controller trace harness | Replay recorded MIDI streams headlessly | 🟡 in progress | Real controller recordings |
+| 32 MIDI input + mapping | `MidiInput` → JSON map → engine parameters | ✅ | Learn mode; feedback/LED output (Wave 6); live router untested without hardware |
+| 33 Controller trace harness | Replay recorded MIDI streams headlessly | ✅ | Real controller recordings (use MidiInputRouter::startRecording) |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain JUCE widgets | 🟡 in progress | Replaced by real UI in Wave 5 |
 | 13a Short soak test | 30–60 s headless mix in CI | ⬜ | `tools/soak_mix.cpp` |
 | 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ⬜ | Dependency integration (GPL-compatible), golden audio tests |
