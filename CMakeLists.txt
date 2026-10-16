@@ -365,6 +365,11 @@ gtest_discover_tests(openmixer_tests
     DISCOVERY_TIMEOUT 60
 )
 
+# DIAGNOSTIC (temporary): the whole suite in one process, like the old single `smoke` test
+add_test(NAME diag_single_process COMMAND openmixer_tests)
+add_test(NAME diag_plugin_repeat COMMAND openmixer_tests --gtest_filter=Plugin*:*Plugin* --gtest_repeat=50)
+set_tests_properties(diag_single_process diag_plugin_repeat PROPERTIES TIMEOUT 120 LABELS diag)
+
 # =============================================================================
 # Tools
 # =============================================================================
