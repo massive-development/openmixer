@@ -66,3 +66,13 @@ Registry for agents and contributors. Check here before starting a large impleme
 ### Small units composed by a coordinator
 - **Where:** `ThreeBandEq`, `SweepFilter`, `Crossfader`, `PeakMeter`, `ChannelStrip` composed by `Mixer`; shared filter maths in `src/dsp` (`openmixer_dsp`).
 - **Why:** one responsibility per file; DSP is reusable by FX and tests without the mixer.
+
+### Data-driven map + trace replay harness
+- **Where:** `src/controllers/MidiMap.{h,cpp}` (JSON schema in header), `MidiMapper`, `MidiTrace` (`replayTrace`), `RecordingTarget`.
+- **Why:** controller mappings are user JSON, not code; mappings are tested by replaying recorded MIDI with no hardware.
+- **Reuse when:** any user-editable config or hardware-driven feature (HID, OSC): parse into a plain struct, apply via `ParameterTarget`, test with recorded input.
+
+### Prefix registry (ParameterRouter)
+- **Where:** `src/controllers/ParameterRouter.{h,cpp}`
+- **Why:** MIDI maps address `mixer.*`, `deck.N.*` or any user-registered prefix; plugins add targets without touching core. Longest prefix wins.
+- **Reuse when:** exposing a new controllable unit; register it, do not extend a switch.

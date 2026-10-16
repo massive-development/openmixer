@@ -131,6 +131,39 @@ target_link_libraries(openmixer_engine PUBLIC
 )
 
 # =============================================================================
+# Controllers library (MIDI mapping, trace harness)
+# =============================================================================
+
+add_library(openmixer_controllers STATIC
+    src/controllers/MidiEvent.cpp
+    src/controllers/MidiEvent.h
+    src/controllers/MidiInputRouter.cpp
+    src/controllers/MidiInputRouter.h
+    src/controllers/MidiMap.cpp
+    src/controllers/MidiMap.h
+    src/controllers/MidiMapper.cpp
+    src/controllers/MidiMapper.h
+    src/controllers/MidiTrace.cpp
+    src/controllers/MidiTrace.h
+    src/controllers/ParameterRouter.cpp
+    src/controllers/ParameterRouter.h
+    src/controllers/RecordingTarget.h
+)
+
+target_include_directories(openmixer_controllers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(
+    src/controllers/MidiEvent.cpp src/controllers/MidiInputRouter.cpp src/controllers/MidiMap.cpp
+    src/controllers/MidiMapper.cpp src/controllers/MidiTrace.cpp src/controllers/ParameterRouter.cpp)
+
+target_link_libraries(openmixer_controllers PUBLIC
+    openmixer_core
+    juce::juce_audio_devices
+    juce::juce_audio_basics
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
 # Main Application
 # =============================================================================
 
@@ -195,13 +228,18 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
     tests/unit/MixerTest.cpp
+    tests/unit/MidiMapperTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
 
 target_include_directories(openmixer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+target_compile_definitions(openmixer_tests PRIVATE
+    OPENMIXER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_controllers
     openmixer_engine
     CURL::libcurl
     juce::juce_audio_basics
