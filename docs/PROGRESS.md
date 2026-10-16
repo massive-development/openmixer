@@ -9,6 +9,10 @@ _Last updated: after Wave 2 Todos 7–8. Update this file in the same PR that ch
 
 ## At a glance
 
+![OpenMixer progress heatmap](docs/progress-heatmap.svg)
+
+_Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progress.json`. Weighting: done = 1, partial = 0.5, in progress = 0.25._
+
 | Wave | Area | Status |
 |------|------|--------|
 | 1 | Foundation | ✅ |
