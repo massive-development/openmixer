@@ -3,6 +3,7 @@
 
 #include "../engine/DjEngine.h"
 #include "ChannelStripPanel.h"
+#include "ControlCaption.h"
 #include "DeckStrip.h"
 #include "MeterBar.h"
 
@@ -26,6 +27,8 @@ public:
 private:
     void timerCallback() override;
     void addMasterControls();
+    void layoutMaster (juce::Rectangle<int> column);
+    void layoutBottom (juce::Rectangle<int> row);
 
     DjEngine& engine;
     std::vector<std::unique_ptr<DeckStrip>> decks;
@@ -33,7 +36,8 @@ private:
     juce::Slider crossfader { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::Slider master { juce::Slider::LinearVertical, juce::Slider::NoTextBox };
     juce::Slider cueMix { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
-    juce::Label crossfaderLabel { {}, "Crossfader" }, masterLabel { {}, "Master" }, cueLabel { {}, "Cue / Master" };
+    juce::Slider cueLevel { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
+    juce::Label crossfaderLabel, masterLabel, cueLabel, cueLevelLabel, meterLabelL, meterLabelR;
     MeterBar masterMeterL, masterMeterR;
 };
 
