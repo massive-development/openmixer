@@ -47,6 +47,8 @@ add_library(openmixer_engine STATIC
     src/engine/AudioDevice.h
     src/engine/Deck.cpp
     src/engine/Deck.h
+    src/engine/Mixer.cpp
+    src/engine/Mixer.h
     src/engine/RingBuffer.h
 )
 
@@ -125,6 +127,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/RingBufferTest.cpp
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
+    tests/unit/MixerTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
