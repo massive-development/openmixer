@@ -13,12 +13,12 @@
 
 Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
-- [ ] **Todo 7:** Audio device layer + latency instrumentation + mock device
+- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device
   - `src/engine/AudioDevice.{h,cpp}`
   - Mock device for CI testing
   - Platform-specific backends via JUCE
 
-- [ ] **Todo 8:** Deck engine (streaming decode + transport)
+- [x] **Todo 8:** Deck engine (streaming decode + transport)
   - `src/engine/Deck.{h,cpp}`
   - Lock-free ring buffer
   - JUCE AudioFormatManager decode first; FFmpeg backend deferred (see Todo 8b)
