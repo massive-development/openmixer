@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "ui/ChannelStripPanel.h"
 #include "ui/DebugPanel.h"
+#include "ui/DeckStrip.h"
 
 namespace OpenMixerTests
 {
@@ -17,6 +18,83 @@ namespace OpenMixerTests
                     if (seen++ == sliderIndex)
                         return s;
             return nullptr;
+        }
+
+
+        static juce::StringArray labelTexts (juce::Component& parent)
+        {
+            juce::StringArray texts;
+            for (auto* child : parent.getChildren())
+                if (auto* l = dynamic_cast<juce::Label*> (child))
+                    texts.add (l->getText());
+            return texts;
+        }
+
+        // Every visible child must be non-empty, inside the parent, and clear of its siblings.
+        void expectCleanLayout (juce::Component& parent, const juce::String& context)
+        {
+            const auto bounds = parent.getLocalBounds();
+            for (int i = 0; i < parent.getNumChildComponents(); ++i)
+            {
+                auto* a = parent.getChildComponent (i);
+                expect (! a->getBounds().isEmpty() && bounds.contains (a->getBounds()), context + ": child " + juce::String (i) + " clipped");
+                for (int j = i + 1; j < parent.getNumChildComponents(); ++j)
+                    expect (! a->getBounds().intersects (parent.getChildComponent (j)->getBounds()),
+                            context + ": children " + juce::String (i) + "/" + juce::String (j) + " overlap");
+            }
+        }
+
+        void testLabels()
+        {
+            beginTest ("Every mixer control has a caption");
+            openmixer::Mixer mixer (2);
+            openmixer::ui::ChannelStripPanel strip (mixer, 0);
+            strip.setSize (300, 440);
+            const auto texts = labelTexts (strip);
+            for (const char* name : { "Hi", "Mid", "Lo", "Trim", "Filter", "Fader", "X-fader", "Lvl", "Channel 1" })
+                expect (texts.contains (name), juce::String ("missing channel caption ") + name);
+
+            openmixer::DjEngine engine (2);
+            openmixer::ui::DebugPanel panel (engine);
+            panel.setSize (900, 640);
+            const auto panelTexts = labelTexts (panel);
+            for (const char* name : { "Crossfader", "Master", "Cue mix", "Cue level" })
+                expect (panelTexts.contains (name), juce::String ("missing panel caption ") + name);
+        }
+
+        void testLayoutStable()
+        {
+            beginTest ("Layout is clipped-free and overlap-free across sizes");
+            openmixer::DjEngine engine (2);
+            openmixer::ui::DebugPanel panel (engine);
+            for (auto [w, h] : { std::pair { 900, 640 }, std::pair { 760, 560 }, std::pair { 1400, 900 } })
+            {
+                panel.setSize (w, h);
+                expectCleanLayout (panel, "panel " + juce::String (w) + "x" + juce::String (h));
+                for (auto* child : panel.getChildren())
+                    if (dynamic_cast<openmixer::ui::ChannelStripPanel*> (child) != nullptr
+                        || dynamic_cast<openmixer::ui::DeckStrip*> (child) != nullptr)
+                        expectCleanLayout (*child, "strip in " + juce::String (w) + "x" + juce::String (h));
+            }
+        }
+
+        void testNoRelayoutOnRefresh()
+        {
+            beginTest ("Refresh keeps bounds and position readout width constant");
+            openmixer::DjEngine engine (2);
+            openmixer::ui::DeckStrip deck (engine.getDeck (0), "Deck 1");
+            deck.setSize (400, 96);
+            juce::Array<juce::Rectangle<int>> before;
+            for (auto* c : deck.getChildren())
+                before.add (c->getBounds());
+            for (int i = 0; i < 10; ++i)
+                deck.refresh();
+            for (int i = 0; i < deck.getNumChildComponents(); ++i)
+                expect (deck.getChildComponent (i)->getBounds() == before[i], "refresh moved a child");
+
+            const auto shortText = openmixer::ui::DeckStrip::formatPosition (0.0, 0.0);
+            const auto longText = openmixer::ui::DeckStrip::formatPosition (1111.1, 3599.9);
+            expectEquals (shortText.length(), longText.length());
         }
 
         void runTest() override
@@ -60,6 +138,10 @@ namespace OpenMixerTests
                 crossfader->setValue (0.9, juce::sendNotificationSync);
                 expect (engine.getMixer().setParameter ("crossfader", 0.9));
             }
+
+            testLabels();
+            testLayoutStable();
+            testNoRelayoutOnRefresh();
         }
     };
 
