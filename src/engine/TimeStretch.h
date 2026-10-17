@@ -21,8 +21,10 @@ public:
     void prepare (double sampleRate, int maxBlockSize);
     bool isPrepared() const noexcept { return stretcher != nullptr; }
 
-    // Clears state and feeds the preferred start pad; returns output samples to discard.
-    int restart() noexcept;
+    // Clears state (cheap). Callers then feed getStartPad() silent frames and discard getStartDelay() output.
+    void reset() noexcept;
+    int getStartPad() const noexcept;
+    void processSilence (int numFrames) noexcept;
     // timeRatio = output/input length, pitchScale = output/input pitch.
     void setRatios (double timeRatio, double pitchScale) noexcept;
 

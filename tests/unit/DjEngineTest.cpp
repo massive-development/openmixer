@@ -107,6 +107,10 @@ TEST_F (DjEngineSlow, WorksOnATwoChannelAndAOneChannelDevice)
         dev.start (engine);
         engine.getDeck (1).play();
         ASSERT_TRUE (pumpUntil (dev, [&] { return engine.getDeck (1).getPositionFrames() > 2000; }));
+        // Unpaced pumping can outrun a slow decoder (Valgrind): let it refill before sampling output.
+        const auto end = juce::Time::getMillisecondCounter() + 3000;
+        while (engine.getDeck (1).getBufferedFrames() < 1024 && juce::Time::getMillisecondCounter() < end)
+            std::this_thread::yield();
         dev.renderBlocks (2);
         EXPECT_GT (dev.getLastOutput().getMagnitude (0, 0, 256), 0.1f);
     }

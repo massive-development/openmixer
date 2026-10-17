@@ -158,9 +158,10 @@ void Deck::prepare (double sr, int maxBlockSize)
     deviceSampleRate.store (sr > 0.0 ? sr : 44100.0, kRelaxed);
     monoSink.assign (static_cast<size_t> (std::max (1, maxBlockSize)), 0.0F);
     stretch.prepare (deviceSampleRate.load (kRelaxed), std::max (1, maxBlockSize));
-    for (auto& ch : stretchIn)
-        ch.assign (static_cast<size_t> (stretch.getMaxFeed()), 0.0F);
-    stretchActive = false;
+    for (auto* buffers : { stretchIn, stretchSink })
+        for (int c = 0; c < 2; ++c)
+            buffers[c].assign (static_cast<size_t> (stretch.getMaxFeed()), 0.0F);
+    stretchMode = StretchMode::off;
 }
 
 void Deck::process (const float* const*, int, float* const* outputs, int numOutputs, int numSamples)
