@@ -58,9 +58,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
 
-- [ ] **Todo 11:** FX rack (8 essential effects)
-  - `src/engine/fx/`
-  - Delay, reverb, flanger, etc.
+- [x] **Todo 11:** FX rack (8 essential effects)
+  - `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop
+  - `FxUnit`/`FxRack` as `ProcessStage` inserts; `fxN.*` parameter ids; beat-synced via `setTempo`/`BeatGrid`
+  - Follow-up: wire a rack into `DjEngine` + `ParameterRouter` (`fx` prefix), beat-phase lock, FX UI
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
@@ -72,8 +73,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 3: Analysis Pipeline
 
-- [ ] **Todo 14:** Analysis service skeleton + SQLite cache
-  - `src/analysis/AnalysisService.{h,cpp}`
+- [x] **Todo 14:** Analysis service skeleton + SQLite cache
+  - `src/analysis/AnalysisService.{h,cpp}`, `JobRunner`, `AnalyzerRegistry`, `SqliteResultCache`, `ClipSource`
 
 - [ ] **Todo 15:** BPM + beat-grid detection
   - `src/analysis/BpmEstimator.{h,cpp}`

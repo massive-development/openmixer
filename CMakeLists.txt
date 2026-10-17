@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Include our custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+# Platform-specific settings (before any dependency target: targets copy these when created)
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
+    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
+elseif(WIN32)
+    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 # FetchContent for JUCE and dependencies
 include(FetchContent)
 include(Dependencies)
@@ -14,14 +22,6 @@ include(Dependencies)
 # Configure build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Platform-specific settings
-if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
-    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
-elseif(WIN32)
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
 # Enable position independent code
@@ -156,6 +156,55 @@ target_link_libraries(openmixer_engine PUBLIC
 )
 
 # =============================================================================
+# FX library (effects rack; ProcessStage inserts, independent of the mixer core)
+# =============================================================================
+
+add_library(openmixer_fx STATIC
+    src/engine/fx/CrushFx.cpp
+    src/engine/fx/CrushFx.h
+    src/engine/fx/DelayLine.cpp
+    src/engine/fx/DelayLine.h
+    src/engine/fx/EchoFx.cpp
+    src/engine/fx/EchoFx.h
+    src/engine/fx/Effect.cpp
+    src/engine/fx/Effect.h
+    src/engine/fx/FlangerFx.cpp
+    src/engine/fx/FlangerFx.h
+    src/engine/fx/FxFactory.cpp
+    src/engine/fx/FxFactory.h
+    src/engine/fx/FxPresets.cpp
+    src/engine/fx/FxPresets.h
+    src/engine/fx/FxRack.cpp
+    src/engine/fx/FxRack.h
+    src/engine/fx/FxUnit.cpp
+    src/engine/fx/FxUnit.h
+    src/engine/fx/GateFx.cpp
+    src/engine/fx/GateFx.h
+    src/engine/fx/PhaserFx.cpp
+    src/engine/fx/PhaserFx.h
+    src/engine/fx/ReverbFx.cpp
+    src/engine/fx/ReverbFx.h
+    src/engine/fx/RollFx.cpp
+    src/engine/fx/RollFx.h
+    src/engine/fx/TapeStopFx.cpp
+    src/engine/fx/TapeStopFx.h
+    src/engine/fx/FxMath.h
+    src/engine/fx/ReverbParts.h
+)
+
+target_include_directories(openmixer_fx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(src/engine/fx/CrushFx.cpp src/engine/fx/DelayLine.cpp src/engine/fx/EchoFx.cpp src/engine/fx/Effect.cpp src/engine/fx/FlangerFx.cpp src/engine/fx/FxFactory.cpp src/engine/fx/FxPresets.cpp src/engine/fx/FxRack.cpp src/engine/fx/FxUnit.cpp src/engine/fx/GateFx.cpp src/engine/fx/PhaserFx.cpp src/engine/fx/ReverbFx.cpp src/engine/fx/RollFx.cpp src/engine/fx/TapeStopFx.cpp)
+
+# Only header-only engine interfaces (ProcessStage, BeatGrid) are used, so no engine link.
+target_link_libraries(openmixer_fx PUBLIC
+    openmixer_core
+    openmixer_dsp
+    juce::juce_audio_basics
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
 # Controllers library (MIDI mapping, trace harness)
 # =============================================================================
 
@@ -186,6 +235,48 @@ target_link_libraries(openmixer_controllers PUBLIC
     juce::juce_audio_basics
     juce::juce_core
     juce::juce_recommended_config_flags
+)
+
+# =============================================================================
+# Analysis library (background jobs, result cache, analysers). Depends on core only;
+# engine adapters include engine headers that are header-only interfaces.
+# =============================================================================
+
+set(OPENMIXER_ANALYSIS_SOURCES
+    src/analysis/AnalysisJob.cpp
+    src/analysis/AnalysisService.cpp
+    src/analysis/AnalyzerRegistry.cpp
+    src/analysis/ClipSource.cpp
+    src/analysis/JobRunner.cpp
+    src/analysis/SqliteResultCache.cpp
+)
+
+add_library(openmixer_analysis STATIC
+    ${OPENMIXER_ANALYSIS_SOURCES}
+    src/analysis/AnalysisJob.h
+    src/analysis/AnalysisService.h
+    src/analysis/Analyzer.h
+    src/analysis/AnalyzerRegistry.h
+    src/analysis/AudioClip.h
+    src/analysis/ClipSource.h
+    src/analysis/JobRunner.h
+    src/analysis/ResultCache.h
+    src/analysis/SqliteResultCache.h
+)
+
+target_include_directories(openmixer_analysis PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(${OPENMIXER_ANALYSIS_SOURCES})
+
+target_link_libraries(openmixer_analysis
+    PUBLIC
+        openmixer_core
+        juce::juce_audio_basics
+        juce::juce_audio_formats
+        juce::juce_core
+        juce::juce_cryptography
+        juce::juce_recommended_config_flags
+    PRIVATE
+        openmixer_sqlite3
 )
 
 # =============================================================================
@@ -332,6 +423,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/DebugPanelTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
+    tests/unit/FxTest.cpp
+    tests/unit/AnalysisCacheTest.cpp
+    tests/unit/AnalysisServiceTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -344,7 +438,9 @@ target_compile_definitions(openmixer_tests PRIVATE
 add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_analysis
     openmixer_plugins
+    openmixer_fx
     openmixer_ui
     openmixer_controllers
     openmixer_engine
