@@ -6,14 +6,14 @@
 namespace openmixer::ui
 {
 
-class MeterBar : public juce::Component
-{
-public:
-    void setLevel (float linear);
-    void paint (juce::Graphics& g) override;
+    class MeterBar : public juce::Component
+    {
+    public:
+        void setLevel(float linear);
+        void paint(juce::Graphics &g) override;
 
-private:
-    float level = 0.0F;
-};
+    private:
+        float level = 0.0F;
+    };
 
 } // namespace openmixer::ui
