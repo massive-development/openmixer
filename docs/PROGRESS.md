@@ -17,7 +17,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|------|--------|
 | 1 | Foundation | ✅ |
 | 2 | Audio engine | 🟡 device, deck, mixer, MIDI mapper + trace harness, debug panel done; time-stretch, sync, soak remain |
-| 3 | Analysis | 🟡 service + SQLite cache, BPM/beat grid, key, waveform, structure done; stems remain |
+| 3 | Analysis | 🟡 service + SQLite cache, BPM/beat grid, key, waveform, structure done; stems partial (no inference backend yet) |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
 | 6 | Hardware | ⬜ (basic MIDI pulled into Wave 2) |
@@ -74,7 +74,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 16 Key detection ✅ | Chroma-based key, Camelot mapping | Done: `Chromagram` (8192-pt STFT, 100-5000 Hz bins folded to 12 pitch classes, per-frame normalised), `KeyEstimator` (Pearson correlation with 24 rotations of project-designed major/minor templates, confidence = margin), `MusicalKey` (names, Camelot code both ways, relative key, harmonic compatibility), `KeyAnalyzer` (id `key`). Synthetic cadences in 8 keys (incl. with drums + noise) detected. Missing: tuning-offset estimation (assumes A440), key changes within a track, real-music benchmark |
 | 17 Waveform model ✅ | Multi-resolution overview/zoom data, colour/band data | Done: `WaveformBuilder` (24 dB/oct biquad crossovers at 250 Hz / 4 kHz via `openmixer_dsp`; 128-sample base points with min/max + low/mid/high RMS), `WaveformData` (x4 levels down to ~2048-point overview, `levelFor(samplesPerPixel)`, 5 bytes/point base64 JSON, coarser levels rebuilt on load), `WaveformAnalyzer` (id `waveform`). Missing: stereo/per-stem waveforms, rendering (Wave 5), progressive (partial) results while analysing |
 | 18 Structure features ✅ | Onset/energy/section detection (feeds Automix) | Done: `OnsetPicker` (adaptive-threshold peak picking on the shared onset envelope), `Segmenter` (0.5 s loudness curve over a 40 dB range; boundaries where the 8 s mean before/after differs most, min 8 s apart; labels intro/main/breakdown/outro relative to the loudest section), `StructureAnalyzer` (id `structure`, onsets + energy + sections + mix-in/out). Missing: bar-aligned boundaries (snap to the beat grid), timbre/repetition features (chorus vs verse), real-music evaluation |
-| 19 Stem precompute | Demucs ONNX, weights downloaded on first use with license shown | All |
+| 19 Stem precompute 🟡 | Demucs ONNX, weights downloaded on first use with license shown | Done: `openmixer_stems` with versioned `StemSeparator` extension point + `StemSet`, `ModelManifest` (JSON: id, url, sha256, size, licence name/text), `WeightManager` (licence prompt before any download, acceptance remembered per licence text, `.part` download, size + SHA-256 check, verified marker; injectable `Downloader`, `UrlDownloader`). Missing: ONNX Runtime dependency (prebuilt per platform, MIT) behind a CMake option; Demucs (MIT) model export to ONNX and a hosted manifest; chunked overlap-add inference backend; stem storage (rendered stems keyed by content hash + separator version) and an `Analyzer`/prep-queue hook; UI licence dialog |
 
 ## Wave 4 — Library ⬜
 
