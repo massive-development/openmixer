@@ -106,6 +106,22 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** a few fields change rarely from control threads and must be read together in realtime.
 - **Notes:** writers serialise on a mutex (control side only); readers retry a bounded number of times and keep their previous snapshot on contention.
 
+### Effect template method + wrapping unit (FX rack)
+- **Where:** `src/engine/fx/` (`openmixer_fx`): `Effect` (non-virtual `prepare`/`process` call `prepareEffect`/`render`), `FxUnit`, `FxRack`.
+- **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in `FxUnit`, so new effects stay small.
+- **Reuse when:** adding an effect or any per-block processor that needs the same enable/mix/tail behaviour; subclass `Effect`, declare params as `FxParamSpec`s, call `tickParams()` per sample.
+- **Notes:** params are atomics written on the control thread and smoothed per sample (`smoothSeconds` 0 for step controls). `FxUnit` processes in fixed 64-sample chunks with member scratch arrays (no allocation); buffers are sized in `prepare` for `kMinBpm`. Tail effects (`hasTail`) stop receiving input on disable and go idle after `tailSilenceWindow` samples below -100 dBFS; others fade out over 10 ms. Idle units return immediately (bit-exact dry). `FxUnit` and `FxRack` are both `ProcessStage`s, so either inserts via `Mixer::setChannelInsert`/`setMasterInsert`.
+
+### Name registry for effects (FxFactory)
+- **Where:** `src/engine/fx/FxFactory.{h,cpp}`; consumed by `FxRack (layout, factory)`.
+- **Why:** rack layouts are lists of names, so users/plugins add effects (`registerEffect`) without touching core; built-ins can't be silently overridden.
+- **Reuse when:** any user-extensible family of processors (sampler voices, analysis stages): register creators by name, build from data.
+
+### Data-driven presets
+- **Where:** `src/engine/fx/FxPresets.{h,cpp}` (`builtInPresets`, `applyPreset`).
+- **Why:** presets are plain data applied through the same parameter API, so they can later load from JSON; all values are original to OpenMixer.
+- **Reuse when:** shipping starting points for any parameterised unit (EQ curves, mapping defaults).
+
 ### Background job service (worker pool + shared job handle)
 - **Where:** `src/analysis/AnalysisService.{h,cpp}`, `AnalysisJob`, `JobRunner`
 - **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
