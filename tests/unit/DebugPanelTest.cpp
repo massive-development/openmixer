@@ -131,3 +131,30 @@ TEST (DebugPanelTest, RefreshKeepsBoundsAndPositionReadoutWidthConstant)
     const auto longText = openmixer::ui::DeckStrip::formatPosition (1111.1, 3599.9);
     EXPECT_EQ (shortText.length(), longText.length());
 }
+
+TEST (DebugPanelTest, ChannelKnobsShareOneRowAndCellSize)
+{
+    openmixer::DjEngine engine (2);
+    openmixer::ui::DebugPanel panel (engine);
+    for (auto [w, h] : { std::pair { 900, 640 }, std::pair { 760, 560 }, std::pair { 1400, 900 } })
+    {
+        panel.setSize (w, h);
+        for (auto* child : panel.getChildren())
+        {
+            auto* strip = dynamic_cast<openmixer::ui::ChannelStripPanel*> (child);
+            if (strip == nullptr)
+                continue;
+            juce::Array<juce::Rectangle<int>> knobs;
+            for (auto* c : strip->getChildren())
+                if (auto* s = dynamic_cast<juce::Slider*> (c); s != nullptr && s->isRotary())
+                    knobs.add (s->getBounds());
+            ASSERT_EQ (knobs.size(), 5);
+            for (const auto& k : knobs)
+            {
+                EXPECT_EQ (k.getY(), knobs[0].getY()) << w << "x" << h << ": knob off the row";
+                EXPECT_EQ (k.getHeight(), knobs[0].getHeight());
+                EXPECT_NEAR (k.getWidth(), knobs[0].getWidth(), 1);
+            }
+        }
+    }
+}
