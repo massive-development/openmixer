@@ -93,3 +93,21 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** a new feature should be replaceable: add a `register...` method to `PluginHost` (bump `kPluginApiVersion` only on breaking changes), never a hardcoded path.
 - **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
 - **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
+
+### Background job service (worker pool + shared job handle)
+- **Where:** `src/analysis/AnalysisService.{h,cpp}`, `AnalysisJob`, `JobRunner`
+- **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
+- **Reuse when:** any long-running background task (library scan, stem precompute, export).
+- **Notes:** `submit()` returns `shared_ptr<AnalysisJob>` (shared by caller and worker); cancellation is a polled atomic flag; listeners run on the worker thread after the final status; the destructor cancels everything and joins. The job body is a free function (`runAnalysisJob`) so it is testable without threads.
+
+### Content-addressed result cache
+- **Where:** `src/analysis/ResultCache.h` (interface), `SqliteResultCache.{h,cpp}`, hashing in `ClipSource.cpp`
+- **Why:** analysis is expensive; results key on SHA-256 of the audio bytes + producer id + producer version, so renames/moves keep results and bumping a version invalidates old rows.
+- **Reuse when:** caching anything derived from file content (waveforms, stems, artwork thumbnails).
+- **Notes:** SQLite opened `FULLMUTEX` and statements serialised by a mutex; tests use `":memory:"`. Payloads are JSON strings owned by each analyser.
+
+### Analyzer registry (extension point)
+- **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
+- **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
+- **Reuse when:** adding any analysis feature; register an `Analyzer`, do not special-case it in the service.
+- **Notes:** `analyze()` is `const` and may run concurrently; registry hands out `shared_ptr<const Analyzer>` so removal during a running job is safe.
