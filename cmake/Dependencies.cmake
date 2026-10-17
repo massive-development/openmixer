@@ -37,3 +37,20 @@ if(OPENMIXER_ENABLE_ASIO)
     endif()
     include_directories(${ASIO_SDK_PATH})
 endif()
+
+# SQLite (public domain) - official amalgamation, compiled as a static C library.
+# Pin: SQLITE_VERSION in JUCEPin.cmake; update the URL and hash together.
+FetchContent_Declare(
+    sqlite3_amalgamation
+    URL https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
+    URL_HASH SHA256=712a7d09d2a22652fb06a49af516e051979a3984adb067da86760e60ed51a7f5
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(sqlite3_amalgamation)
+
+find_package(Threads REQUIRED)
+add_library(openmixer_sqlite3 STATIC ${sqlite3_amalgamation_SOURCE_DIR}/sqlite3.c)
+target_include_directories(openmixer_sqlite3 SYSTEM PUBLIC ${sqlite3_amalgamation_SOURCE_DIR})
+target_compile_definitions(openmixer_sqlite3 PRIVATE
+    SQLITE_THREADSAFE=1 SQLITE_DQS=0 SQLITE_OMIT_LOAD_EXTENSION SQLITE_DEFAULT_FOREIGN_KEYS=1)
+target_link_libraries(openmixer_sqlite3 PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
