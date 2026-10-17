@@ -54,7 +54,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Realtime mode
   - Golden audio tests
 
-- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip done; real grids Wave 3, Deck loop playback open)
+- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip, gapless Deck loop playback + hotcues done; real grids Wave 3, app/UI wiring open)
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
 
