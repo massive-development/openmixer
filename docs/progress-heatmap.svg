@@ -18,9 +18,9 @@
 <g><title>13a Soak (short): Done</title><rect x="1004" y="94" width="118" height="44" rx="5" fill="#2da44e"/><text x="1063.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">13a Soak (short)</text></g>
 <g><title>9 Key-lock: Not started</title><rect x="1128" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1187.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">9 Key-lock</text></g>
 <g><title>12 Sync: Partial</title><rect x="1252" y="94" width="118" height="44" rx="5" fill="#bf8700"/><text x="1311.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">12 Sync</text></g>
-<g><title>11 FX rack: Not started</title><rect x="1376" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1435.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">11 FX rack</text></g>
+<g><title>11 FX rack: Done</title><rect x="1376" y="94" width="118" height="44" rx="5" fill="#2da44e"/><text x="1435.0" y="120.0" font-size="11" text-anchor="middle" fill="#ffffff">11 FX rack</text></g>
 <g><title>13 Soak (10m): Not started</title><rect x="1500" y="94" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1559.0" y="120.0" font-size="11" text-anchor="middle" fill="#57606a">13 Soak (10m)</text></g>
-<text x="1624" y="120.0" font-size="12" fill="#57606a">71%</text>
+<text x="1624" y="120.0" font-size="12" fill="#57606a">79%</text>
 <text x="16" y="170.0" font-size="12" font-weight="600" fill="#1f2328">3 Analysis</text>
 <g><title>14 Service+cache: Done</title><rect x="136" y="144" width="118" height="44" rx="5" fill="#2da44e"/><text x="195.0" y="170.0" font-size="11" text-anchor="middle" fill="#ffffff">14 Service+cache</text></g>
 <g><title>15 BPM/grid: Done</title><rect x="260" y="144" width="118" height="44" rx="5" fill="#2da44e"/><text x="319.0" y="170.0" font-size="11" text-anchor="middle" fill="#ffffff">15 BPM/grid</text></g>
@@ -74,5 +74,5 @@
 <rect x="256" y="506" width="14" height="14" rx="3" fill="#bf8700"/><text x="276" y="518" font-size="12" fill="#1f2328">Partial</text>
 <rect x="376" y="506" width="14" height="14" rx="3" fill="#fb8500"/><text x="396" y="518" font-size="12" fill="#1f2328">In progress</text>
 <rect x="496" y="506" width="14" height="14" rx="3" fill="#d0d7de"/><text x="516" y="518" font-size="12" fill="#1f2328">Not started</text>
-<text x="1680" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 31% (weighted)</text>
+<text x="1680" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 33% (weighted)</text>
 </svg>
