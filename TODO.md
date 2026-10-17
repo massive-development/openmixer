@@ -28,7 +28,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - 3-band EQ
   - PFL cue bus
 
-- [ ] **Todo 10a:** Plugin API + registry (extension points)
+- [x] **Todo 10a:** Plugin API + registry (extension points)
   - `src/plugins/` library: versioned interfaces, runtime loader, registry
   - Audio pre/post-processing stages (per deck/channel/master), FX, MIDI map loading
   - No signing/allow-list gatekeeping (see CONTRIBUTING "Extensibility")
