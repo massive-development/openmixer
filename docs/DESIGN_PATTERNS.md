@@ -105,3 +105,10 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** audio and decoder threads need a consistent {start, end, enabled} without locks.
 - **Reuse when:** a few fields change rarely from control threads and must be read together in realtime.
 - **Notes:** writers serialise on a mutex (control side only); readers retry a bounded number of times and keep their previous snapshot on contention.
+
+### Third-party DSP behind a pimpl wrapper
+- **Where:** `src/engine/TimeStretch.{h,cpp}` (Rubber Band), `cmake/RubberBand.cmake`.
+- **Why:** keeps the dependency's headers out of engine headers and states the RT contract in one place.
+- **Reuse when:** wrapping any external DSP/codec library (FFmpeg, ONNX Runtime).
+- **Notes:** `prepare()` allocates (control thread); all other calls are audio-thread, allocation-free. Vendored code builds as its own target with its warnings off and -O2 in Debug.
+

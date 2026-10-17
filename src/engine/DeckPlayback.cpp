@@ -46,6 +46,7 @@ void Deck::resetPlayhead (juce::uint32 ack) noexcept
     playingLoadId = ackLoadId.load (kRelaxed);
     readIdx = ringWanted = prevIdx = nextIdx = ringIdx;
     primed = haveFirst = false;
+    stretchActive = false;   // a seek restarts the stretcher too
     phase = 0.0;
     releaseSlot();
     positionFrames.store (ringIdx, kRelaxed);
@@ -193,6 +194,18 @@ void Deck::renderStereo (float* left, float* right, int numSamples) noexcept
     }
 
     loopState.load (loopSnap);   // keeps the previous snapshot while a writer is mid-update
+    if (keylock.load (kRelaxed) && stretch.isPrepared())
+    {
+        renderKeylocked (left, right, numSamples);
+        return;
+    }
+    if (stretchActive)
+        leaveKeylock();
+    renderInterpolated (left, right, numSamples);
+}
+
+void Deck::renderInterpolated (float* left, float* right, int numSamples) noexcept
+{
     if (! primed && ! primeInterpolator())
     {
         noteStarved();

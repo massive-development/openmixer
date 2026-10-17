@@ -10,6 +10,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # FetchContent for JUCE and dependencies
 include(FetchContent)
 include(Dependencies)
+include(RubberBand)
 
 # Configure build type
 if(NOT CMAKE_BUILD_TYPE)
@@ -108,6 +109,9 @@ add_library(openmixer_engine STATIC
     src/engine/Deck.h
     src/engine/DeckDecoder.cpp
     src/engine/DeckPlayback.cpp
+    src/engine/DeckKeylock.cpp
+    src/engine/TimeStretch.cpp
+    src/engine/TimeStretch.h
     src/engine/HotcueBank.h
     src/engine/LoopPrefetch.cpp
     src/engine/LoopPrefetch.h
@@ -145,13 +149,14 @@ add_library(openmixer_engine STATIC
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
-    src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DeckKeylock.cpp src/engine/TimeStretch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
     openmixer_core
     openmixer_dsp
+    openmixer_rubberband
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -332,6 +337,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
     tests/unit/DeckLoopTest.cpp
+    tests/unit/DeckKeylockTest.cpp
     tests/unit/DeckTestUtil.h
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp

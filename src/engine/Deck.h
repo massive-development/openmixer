@@ -9,6 +9,7 @@
 #include "LoopState.h"
 #include "Quantizer.h"
 #include "RingBuffer.h"
+#include "TimeStretch.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -40,6 +41,9 @@ public:
     void setPlaying (bool shouldPlay) noexcept { playing.store (shouldPlay, std::memory_order_relaxed); }
     void seek (juce::int64 sourceFrame);
     void setRate (double newRate) noexcept;
+    // Key-lock: tempo follows rate, pitch stays put (Rubber Band). Needs prepare() first.
+    void setKeylock (bool enabled) noexcept { keylock.store (enabled, std::memory_order_relaxed); }
+    bool isKeylock() const noexcept { return keylock.load (std::memory_order_relaxed); }
 
     // Loops: bounds in source frames (quantize them with Quantizer first). Control threads.
     // An active loop captures the playhead once it is past the loop start; seeking outside exits it.
@@ -56,7 +60,7 @@ public:
     std::optional<juce::int64> getHotcue (int index) const noexcept { return hotcues.get (index); }
     void setHotcue (int index, juce::int64 frame) noexcept { hotcues.set (index, frame); }
 
-    // Ids: play (>= 0.5 plays), rate, seek (0..1 of length), loop.exit, loop.reloop, hotcueN, hotcueN.clear
+    // Ids: play (>= 0.5 plays), rate, keylock, seek (0..1 of length), loop.exit, loop.reloop, hotcueN, hotcueN.clear
     bool setParameter (const juce::String& id, double value) override;
 
     bool isLoaded() const noexcept        { return loaded.load (std::memory_order_relaxed); }
@@ -96,13 +100,21 @@ private:
     bool reachedEnd() noexcept;
     void noteStarved() noexcept;
     void clearTail (float* left, float* right, int from, int numSamples) const noexcept;
+    void renderInterpolated (float* left, float* right, int numSamples) noexcept;
+
+    // Audio thread, key-lock path (DeckKeylock.cpp)
+    void renderKeylocked (float* left, float* right, int numSamples) noexcept;
+    void enterKeylock() noexcept;
+    void leaveKeylock() noexcept;
+    bool feedStretch() noexcept;
+    int drainStretch (float* left, float* right, int wanted) noexcept;
 
     SpscRingBuffer<float> ring;   // interleaved L,R
     LoopPrefetch prefetch;
     LoopState loopState;
     HotcueBank hotcues;
 
-    std::atomic<bool> playing { false }, loaded { false }, finished { false };
+    std::atomic<bool> playing { false }, loaded { false }, finished { false }, keylock { false };
     std::atomic<double> rate { 1.0 };
     std::atomic<double> deviceSampleRate { 44100.0 };
     std::atomic<double> fileSampleRate { 44100.0 };
@@ -138,6 +150,12 @@ private:
     const LoopPrefetch::Slot* slot = nullptr;
     LoopSnapshot loopSnap;
     std::vector<float> monoSink;
+    TimeStretch stretch;
+    std::vector<float> stretchIn[2];
+    bool stretchActive = false, feedNextFirst = false;
+    int stretchDiscard = 0;
+    double stretchRatio = 1.0;
+    juce::int64 lastFedIdx = 0;
 
     std::unique_ptr<DeckDecoder> decoder;
 };
