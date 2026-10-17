@@ -88,9 +88,9 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 18:** Onset/energy/structure features
   - `src/analysis/StructureAnalyzer.{h,cpp}`, `OnsetPicker`, `Segmenter`
 
-- [ ] **Todo 19:** Stems precompute (Demucs ONNX)
+- [~] **Todo 19:** Stems precompute (Demucs ONNX) (partial: separator interface, model manifest, licence-gated verified download done; ONNX Runtime backend open)
   - `src/stems/StemSeparator.{h,cpp}`
-  - `src/stems/WeightManager.{h,cpp}`
+  - `src/stems/WeightManager.{h,cpp}`, `ModelManifest`
 
 ## Wave 4: Library & Data
 
