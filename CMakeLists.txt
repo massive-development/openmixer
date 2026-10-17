@@ -249,7 +249,7 @@ target_link_libraries(openmixer_controllers PUBLIC
 )
 
 # =============================================================================
-# Analysis library (background jobs, result cache, analysers). Depends on core only;
+# Analysis library (background jobs, result cache, analysers). Depends on core + dsp;
 # engine adapters include engine headers that are header-only interfaces.
 # =============================================================================
 
@@ -265,9 +265,14 @@ set(OPENMIXER_ANALYSIS_SOURCES
     src/analysis/KeyEstimator.cpp
     src/analysis/MusicalKey.cpp
     src/analysis/OnsetEnvelope.cpp
+    src/analysis/OnsetPicker.cpp
+    src/analysis/Segmenter.cpp
     src/analysis/SqliteResultCache.cpp
     src/analysis/Stft.cpp
+    src/analysis/StructureAnalyzer.cpp
     src/analysis/TempoSearch.cpp
+    src/analysis/WaveformBuilder.cpp
+    src/analysis/WaveformData.cpp
 )
 
 add_library(openmixer_analysis STATIC
@@ -286,10 +291,15 @@ add_library(openmixer_analysis STATIC
     src/analysis/KeyEstimator.h
     src/analysis/MusicalKey.h
     src/analysis/OnsetEnvelope.h
+    src/analysis/OnsetPicker.h
     src/analysis/ResultCache.h
+    src/analysis/Segmenter.h
     src/analysis/SqliteResultCache.h
     src/analysis/Stft.h
+    src/analysis/StructureAnalyzer.h
     src/analysis/TempoSearch.h
+    src/analysis/WaveformBuilder.h
+    src/analysis/WaveformData.h
 )
 
 target_include_directories(openmixer_analysis PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -298,6 +308,7 @@ openmixer_enable_warnings(${OPENMIXER_ANALYSIS_SOURCES})
 target_link_libraries(openmixer_analysis
     PUBLIC
         openmixer_core
+        openmixer_dsp
         juce::juce_audio_basics
         juce::juce_audio_formats
         juce::juce_core
@@ -460,6 +471,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/AnalysisServiceTest.cpp
     tests/unit/BpmEstimatorTest.cpp
     tests/unit/KeyEstimatorTest.cpp
+    tests/unit/WaveformBuilderTest.cpp
+    tests/unit/StructureAnalyzerTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
