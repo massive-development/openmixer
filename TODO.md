@@ -65,7 +65,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
-- [ ] **Todo 13:** Engine soak test (10-minute headless mix)
+- [x] **Todo 13:** Engine soak test (10-minute headless mix)
   - `tools/soak_mix.cpp`
   - Performance verification
 
