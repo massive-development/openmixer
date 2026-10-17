@@ -109,3 +109,21 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/engine/fx/FxPresets.{h,cpp}` (`builtInPresets`, `applyPreset`).
 - **Why:** presets are plain data applied through the same parameter API, so they can later load from JSON; all values are original to OpenMixer.
 - **Reuse when:** shipping starting points for any parameterised unit (EQ curves, mapping defaults).
+
+### Background job service (worker pool + shared job handle)
+- **Where:** `src/analysis/AnalysisService.{h,cpp}`, `AnalysisJob`, `JobRunner`
+- **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
+- **Reuse when:** any long-running background task (library scan, stem precompute, export).
+- **Notes:** `submit()` returns `shared_ptr<AnalysisJob>` (shared by caller and worker); cancellation is a polled atomic flag; listeners run on the worker thread after the final status; the destructor cancels everything and joins. The job body is a free function (`runAnalysisJob`) so it is testable without threads.
+
+### Content-addressed result cache
+- **Where:** `src/analysis/ResultCache.h` (interface), `SqliteResultCache.{h,cpp}`, hashing in `ClipSource.cpp`
+- **Why:** analysis is expensive; results key on SHA-256 of the audio bytes + producer id + producer version, so renames/moves keep results and bumping a version invalidates old rows.
+- **Reuse when:** caching anything derived from file content (waveforms, stems, artwork thumbnails).
+- **Notes:** SQLite opened `FULLMUTEX` and statements serialised by a mutex; tests use `":memory:"`. Payloads are JSON strings owned by each analyser.
+
+### Analyzer registry (extension point)
+- **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
+- **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
+- **Reuse when:** adding any analysis feature; register an `Analyzer`, do not special-case it in the service.
+- **Notes:** `analyze()` is `const` and may run concurrently; registry hands out `shared_ptr<const Analyzer>` so removal during a running job is safe.
