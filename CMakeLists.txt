@@ -107,6 +107,11 @@ add_library(openmixer_engine STATIC
     src/engine/Deck.cpp
     src/engine/Deck.h
     src/engine/DeckDecoder.cpp
+    src/engine/DeckPlayback.cpp
+    src/engine/HotcueBank.h
+    src/engine/LoopPrefetch.cpp
+    src/engine/LoopPrefetch.h
+    src/engine/LoopState.h
     src/engine/DeckDecoder.h
     src/engine/DjEngine.cpp
     src/engine/DjEngine.h
@@ -140,7 +145,7 @@ add_library(openmixer_engine STATIC
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
-    src/engine/DeckDecoder.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
@@ -446,6 +451,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/RingBufferTest.cpp
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
+    tests/unit/DeckLoopTest.cpp
+    tests/unit/DeckTestUtil.h
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp

@@ -94,6 +94,18 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
 - **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
 
+### Prefetched jump slot (hazard-slot double buffer)
+- **Where:** `src/engine/LoopPrefetch.{h,cpp}`, used by `Deck` (`DeckPlayback.cpp`) and `DeckDecoder`.
+- **Why:** the audio thread jumps (loop wrap) without waiting for the decoder to refill the ring.
+- **Reuse when:** any realtime jump target that can be predicted (hotcues, saved loops, sampler pads).
+- **Notes:** two slots; decoder unpublishes, then fills the slot the audio thread is not holding; audio publishes `inUse` then re-checks `published` (seq_cst). The audio thread also asks the decoder to move the ring to the slot end (`ringReq*`, tagged with the control epoch so stale requests are dropped).
+
+### Seqlock snapshot for small multi-field state
+- **Where:** `src/engine/LoopState.h`.
+- **Why:** audio and decoder threads need a consistent {start, end, enabled} without locks.
+- **Reuse when:** a few fields change rarely from control threads and must be read together in realtime.
+- **Notes:** writers serialise on a mutex (control side only); readers retry a bounded number of times and keep their previous snapshot on contention.
+
 ### Effect template method + wrapping unit (FX rack)
 - **Where:** `src/engine/fx/` (`openmixer_fx`): `Effect` (non-virtual `prepare`/`process` call `prepareEffect`/`render`), `FxUnit`, `FxRack`.
 - **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in `FxUnit`, so new effects stay small.
