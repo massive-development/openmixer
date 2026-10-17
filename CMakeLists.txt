@@ -111,6 +111,12 @@ add_library(openmixer_engine STATIC
     src/engine/DjEngine.cpp
     src/engine/DjEngine.h
     src/engine/AudioDevice.h
+    src/engine/BeatGrid.h
+    src/engine/Quantizer.cpp
+    src/engine/Quantizer.h
+    src/engine/SlipTracker.h
+    src/engine/Sync.cpp
+    src/engine/Sync.h
     src/engine/JuceAudioDevice.cpp
     src/engine/JuceAudioDevice.h
     src/engine/LatencyMonitor.cpp
@@ -136,7 +142,7 @@ openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
     src/engine/DeckDecoder.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
-    src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/ThreeBandEq.cpp)
+    src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
     openmixer_core
@@ -324,6 +330,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp
     tests/unit/DebugPanelTest.cpp
+    tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
 )
 
