@@ -106,6 +106,12 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** caching anything derived from file content (waveforms, stems, artwork thumbnails).
 - **Notes:** SQLite opened `FULLMUTEX` and statements serialised by a mutex; tests use `":memory:"`. Payloads are JSON strings owned by each analyser.
 
+### Estimator + analyser wrapper + engine adapter
+- **Where:** `src/analysis/BpmEstimator.{h,cpp}` (`BpmEstimator` pure, `BpmAnalyzer` JSON wrapper), `BeatGridModel` (editable value type), `AnalysedBeatGrid.h` (implements engine `BeatGrid`).
+- **Why:** algorithms stay testable without the service; the cached payload is plain JSON; the engine sees an immutable snapshot through its own interface, so analysis never links the engine.
+- **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator -> `Analyzer` wrapper with `toJson`/`fromJson` -> adapter for the consumer's interface.
+- **Notes:** `analysis` includes only header-only `engine/BeatGrid.h`; if more engine interfaces are needed, move them to `src/core` instead of linking `openmixer_engine`.
+
 ### Analyzer registry (extension point)
 - **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
 - **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
