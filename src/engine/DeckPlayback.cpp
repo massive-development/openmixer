@@ -46,6 +46,9 @@ void Deck::resetPlayhead (juce::uint32 ack) noexcept
     playingLoadId = ackLoadId.load (kRelaxed);
     readIdx = ringWanted = prevIdx = nextIdx = ringIdx;
     primed = haveFirst = false;
+    lookahead.clear();
+    if (stretchMode == StretchMode::priming)
+        stretchMode = StretchMode::off;   // re-primes next block; a running stretcher just streams on
     phase = 0.0;
     releaseSlot();
     positionFrames.store (ringIdx, kRelaxed);
@@ -154,13 +157,25 @@ bool Deck::pullFrame (float* out, juce::int64& index) noexcept
     return true;
 }
 
+bool Deck::nextSourceFrame (float* out, juce::int64& index) noexcept
+{
+    if (lookahead.pop (out, index))
+        return true;
+    if (! pullFrame (out, index))
+        return false;
+    if (stretchMode == StretchMode::priming)
+        teeFrame (out, index);
+    return true;
+}
+
 //==============================================================================
 bool Deck::popFrame() noexcept
 {
     float f[2];
     juce::int64 idx = 0;
-    if (! pullFrame (f, idx))
+    if (! nextSourceFrame (f, idx))
         return false;
+    ++primingPops;
     prev[0] = next[0]; prev[1] = next[1];
     next[0] = f[0];    next[1] = f[1];
     prevIdx = nextIdx;
@@ -172,7 +187,7 @@ bool Deck::primeInterpolator() noexcept
 {
     if (! haveFirst)
     {
-        if (! pullFrame (next, nextIdx))
+        if (! nextSourceFrame (next, nextIdx))
             return false;
         haveFirst = true;
     }
@@ -193,6 +208,18 @@ void Deck::renderStereo (float* left, float* right, int numSamples) noexcept
     }
 
     loopState.load (loopSnap);   // keeps the previous snapshot while a writer is mid-update
+    if (keylock.load (kRelaxed) && stretch.isPrepared())
+    {
+        renderKeylocked (left, right, numSamples);
+        return;
+    }
+    if (stretchMode != StretchMode::off)
+        leaveKeylock();
+    renderInterpolated (left, right, numSamples);
+}
+
+void Deck::renderInterpolated (float* left, float* right, int numSamples) noexcept
+{
     if (! primed && ! primeInterpolator())
     {
         noteStarved();
