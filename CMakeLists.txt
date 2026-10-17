@@ -166,6 +166,55 @@ target_link_libraries(openmixer_engine PUBLIC
 )
 
 # =============================================================================
+# FX library (effects rack; ProcessStage inserts, independent of the mixer core)
+# =============================================================================
+
+add_library(openmixer_fx STATIC
+    src/engine/fx/CrushFx.cpp
+    src/engine/fx/CrushFx.h
+    src/engine/fx/DelayLine.cpp
+    src/engine/fx/DelayLine.h
+    src/engine/fx/EchoFx.cpp
+    src/engine/fx/EchoFx.h
+    src/engine/fx/Effect.cpp
+    src/engine/fx/Effect.h
+    src/engine/fx/FlangerFx.cpp
+    src/engine/fx/FlangerFx.h
+    src/engine/fx/FxFactory.cpp
+    src/engine/fx/FxFactory.h
+    src/engine/fx/FxPresets.cpp
+    src/engine/fx/FxPresets.h
+    src/engine/fx/FxRack.cpp
+    src/engine/fx/FxRack.h
+    src/engine/fx/FxUnit.cpp
+    src/engine/fx/FxUnit.h
+    src/engine/fx/GateFx.cpp
+    src/engine/fx/GateFx.h
+    src/engine/fx/PhaserFx.cpp
+    src/engine/fx/PhaserFx.h
+    src/engine/fx/ReverbFx.cpp
+    src/engine/fx/ReverbFx.h
+    src/engine/fx/RollFx.cpp
+    src/engine/fx/RollFx.h
+    src/engine/fx/TapeStopFx.cpp
+    src/engine/fx/TapeStopFx.h
+    src/engine/fx/FxMath.h
+    src/engine/fx/ReverbParts.h
+)
+
+target_include_directories(openmixer_fx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(src/engine/fx/CrushFx.cpp src/engine/fx/DelayLine.cpp src/engine/fx/EchoFx.cpp src/engine/fx/Effect.cpp src/engine/fx/FlangerFx.cpp src/engine/fx/FxFactory.cpp src/engine/fx/FxPresets.cpp src/engine/fx/FxRack.cpp src/engine/fx/FxUnit.cpp src/engine/fx/GateFx.cpp src/engine/fx/PhaserFx.cpp src/engine/fx/ReverbFx.cpp src/engine/fx/RollFx.cpp src/engine/fx/TapeStopFx.cpp)
+
+# Only header-only engine interfaces (ProcessStage, BeatGrid) are used, so no engine link.
+target_link_libraries(openmixer_fx PUBLIC
+    openmixer_core
+    openmixer_dsp
+    juce::juce_audio_basics
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+
+# =============================================================================
 # Controllers library (MIDI mapping, trace harness)
 # =============================================================================
 
@@ -387,6 +436,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/DebugPanelTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
+    tests/unit/FxTest.cpp
     tests/unit/AnalysisCacheTest.cpp
     tests/unit/AnalysisServiceTest.cpp
 )
@@ -403,6 +453,7 @@ add_dependencies(openmixer_tests openmixer_example_gain)
 target_link_libraries(openmixer_tests PRIVATE
     openmixer_analysis
     openmixer_plugins
+    openmixer_fx
     openmixer_ui
     openmixer_controllers
     openmixer_engine
