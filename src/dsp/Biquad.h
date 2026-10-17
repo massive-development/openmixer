@@ -21,6 +21,14 @@ public:
     void setCoeffs (const BiquadCoeffs& c) noexcept { k = c; }
     void reset() noexcept;
     void process (int channel, float* samples, int numSamples) noexcept;
+    // Per-sample form for feedback loops (e.g. FX delay lines).
+    float processSample (int channel, float in) noexcept
+    {
+        const float out = k.b0 * in + z1[channel];
+        z1[channel] = k.b1 * in - k.a1 * out + z2[channel];
+        z2[channel] = k.b2 * in - k.a2 * out;
+        return out;
+    }
 
 private:
     BiquadCoeffs k;
