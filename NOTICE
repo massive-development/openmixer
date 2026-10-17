@@ -11,7 +11,7 @@ This file lists third-party components used in OpenMixer.
 | FFmpeg 7.x | LGPL | https://ffmpeg.org |
 | libsndfile 1.2.x | LGPL | https://libsndfile.github.io/libsndfile/ |
 | TagLib 2.x | LGPL/MPL | https://taglib.org |
-| SQLite 3.x | Public Domain | https://sqlite.org |
+| SQLite 3.46.0 (amalgamation, fetched by CMake) | Public Domain | https://sqlite.org |
 | ONNX Runtime 1.x | MIT | https://github.com/microsoft/onnxruntime |
 
 ## Notes
