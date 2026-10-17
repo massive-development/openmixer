@@ -112,6 +112,12 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator -> `Analyzer` wrapper with `toJson`/`fromJson` -> adapter for the consumer's interface.
 - **Notes:** `analysis` includes only header-only `engine/BeatGrid.h`; if more engine interfaces are needed, move them to `src/core` instead of linking `openmixer_engine`.
 
+### Pyramid of levels (multi-resolution data)
+- **Where:** `src/analysis/WaveformData.{h,cpp}`
+- **Why:** zoomed and overview views read pre-reduced data instead of scanning samples per paint.
+- **Reuse when:** any per-time data drawn at many zooms (energy, stems, spectrogram).
+- **Notes:** only the finest level is persisted; coarser levels are derived on load. Merge rules must be associative (min/max, RMS via mean of squares).
+
 ### Analyzer registry (extension point)
 - **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
 - **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
