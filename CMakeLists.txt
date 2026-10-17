@@ -257,22 +257,39 @@ set(OPENMIXER_ANALYSIS_SOURCES
     src/analysis/AnalysisJob.cpp
     src/analysis/AnalysisService.cpp
     src/analysis/AnalyzerRegistry.cpp
+    src/analysis/BeatGridModel.cpp
+    src/analysis/BpmEstimator.cpp
+    src/analysis/Chromagram.cpp
     src/analysis/ClipSource.cpp
     src/analysis/JobRunner.cpp
+    src/analysis/KeyEstimator.cpp
+    src/analysis/MusicalKey.cpp
+    src/analysis/OnsetEnvelope.cpp
     src/analysis/SqliteResultCache.cpp
+    src/analysis/Stft.cpp
+    src/analysis/TempoSearch.cpp
 )
 
 add_library(openmixer_analysis STATIC
     ${OPENMIXER_ANALYSIS_SOURCES}
+    src/analysis/AnalysedBeatGrid.h
     src/analysis/AnalysisJob.h
     src/analysis/AnalysisService.h
     src/analysis/Analyzer.h
     src/analysis/AnalyzerRegistry.h
     src/analysis/AudioClip.h
+    src/analysis/BeatGridModel.h
+    src/analysis/BpmEstimator.h
+    src/analysis/Chromagram.h
     src/analysis/ClipSource.h
     src/analysis/JobRunner.h
+    src/analysis/KeyEstimator.h
+    src/analysis/MusicalKey.h
+    src/analysis/OnsetEnvelope.h
     src/analysis/ResultCache.h
     src/analysis/SqliteResultCache.h
+    src/analysis/Stft.h
+    src/analysis/TempoSearch.h
 )
 
 target_include_directories(openmixer_analysis PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -285,6 +302,7 @@ target_link_libraries(openmixer_analysis
         juce::juce_audio_formats
         juce::juce_core
         juce::juce_cryptography
+        juce::juce_dsp
         juce::juce_recommended_config_flags
     PRIVATE
         openmixer_sqlite3
@@ -440,6 +458,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/FxTest.cpp
     tests/unit/AnalysisCacheTest.cpp
     tests/unit/AnalysisServiceTest.cpp
+    tests/unit/BpmEstimatorTest.cpp
+    tests/unit/KeyEstimatorTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
