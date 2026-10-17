@@ -26,14 +26,20 @@ void TimeStretch::prepare (double sampleRate, int maxBlockSize)
     std::fill_n (zeros.get(), maxFeed, 0.0F);
 }
 
-int TimeStretch::restart() noexcept
+void TimeStretch::reset() noexcept
 {
     stretcher->reset();
-    auto pad = static_cast<int> (stretcher->getPreferredStartPad());
+}
+
+int TimeStretch::getStartPad() const noexcept
+{
+    return static_cast<int> (stretcher->getPreferredStartPad());
+}
+
+void TimeStretch::processSilence (int numFrames) noexcept
+{
     const float* silent[2] { zeros.get(), zeros.get() };
-    for (; pad > 0; pad -= maxFeed)
-        stretcher->process (silent, static_cast<size_t> (std::min (pad, maxFeed)), false);
-    return getStartDelay();
+    stretcher->process (silent, static_cast<size_t> (std::clamp (numFrames, 0, maxFeed)), false);
 }
 
 void TimeStretch::setRatios (double timeRatio, double pitchScale) noexcept

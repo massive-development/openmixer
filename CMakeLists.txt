@@ -112,6 +112,7 @@ add_library(openmixer_engine STATIC
     src/engine/DeckKeylock.cpp
     src/engine/TimeStretch.cpp
     src/engine/TimeStretch.h
+    src/engine/FrameRing.h
     src/engine/HotcueBank.h
     src/engine/LoopPrefetch.cpp
     src/engine/LoopPrefetch.h
