@@ -75,6 +75,12 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
 - **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
 
+### Checking decorator for headless runs (OutputChecker)
+- **Where:** `tools/soak/OutputChecker.h`, used by `tools/soak_mix.cpp`.
+- **Why:** wrap any `AudioCallback` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
+- **Reuse when:** long-running or fuzz-style runs (soak, golden-audio, plugin stress) need output assertions.
+- **Notes:** atomics only, no allocation in `process`.
+
 ### Plugin registry / extension points (openmixer_plugins)
 - **Where:** `src/plugins/` (`PluginApi.h` public API, `PluginLoader`, `PluginRegistry`, `StageCatalog`); example in `examples/plugins/GainPlugin.cpp`.
 - **Why:** users add audio stages (pre/post-processing, FX), MIDI maps and parameter targets without touching core and without any signing or allow-list.
