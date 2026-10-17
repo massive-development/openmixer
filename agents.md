@@ -67,6 +67,8 @@ All changes — including those by AI agents and maintainers — land through a 
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
 5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, license, progress, sign) runs only there. Pushes alone never trigger CI.
+6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
+7. Promote early: open a `stage` -> `main` PR at every major milestone (a finished Todo or feature group), not only at the end of a wave, so release PRs stay small and reviewable.
 
 ## C++ Standards & Memory Safety (required)
 
