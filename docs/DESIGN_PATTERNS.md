@@ -151,3 +151,10 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
 - **Reuse when:** adding any analysis feature; register an `Analyzer`, do not special-case it in the service.
 - **Notes:** `analyze()` is `const` and may run concurrently; registry hands out `shared_ptr<const Analyzer>` so removal during a running job is safe.
+
+### Third-party DSP behind a pimpl wrapper
+- **Where:** `src/engine/TimeStretch.{h,cpp}` (Rubber Band), `cmake/RubberBand.cmake`.
+- **Why:** keeps the dependency's headers out of engine headers and states the RT contract in one place.
+- **Reuse when:** wrapping any external DSP/codec library (FFmpeg, ONNX Runtime).
+- **Notes:** `prepare()` allocates (control thread); all other calls are audio-thread, allocation-free. Vendored code builds as its own target with its warnings off and -O2 in Debug.
+

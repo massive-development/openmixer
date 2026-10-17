@@ -4,11 +4,13 @@
 
 #include "../core/ParameterTarget.h"
 #include "AudioDevice.h"
+#include "FrameRing.h"
 #include "HotcueBank.h"
 #include "LoopPrefetch.h"
 #include "LoopState.h"
 #include "Quantizer.h"
 #include "RingBuffer.h"
+#include "TimeStretch.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -40,6 +42,9 @@ public:
     void setPlaying (bool shouldPlay) noexcept { playing.store (shouldPlay, std::memory_order_relaxed); }
     void seek (juce::int64 sourceFrame);
     void setRate (double newRate) noexcept;
+    // Key-lock: tempo follows rate, pitch stays put (Rubber Band). Needs prepare() first.
+    void setKeylock (bool enabled) noexcept { keylock.store (enabled, std::memory_order_relaxed); }
+    bool isKeylock() const noexcept { return keylock.load (std::memory_order_relaxed); }
 
     // Loops: bounds in source frames (quantize them with Quantizer first). Control threads.
     // An active loop captures the playhead once it is past the loop start; seeking outside exits it.
@@ -56,7 +61,7 @@ public:
     std::optional<juce::int64> getHotcue (int index) const noexcept { return hotcues.get (index); }
     void setHotcue (int index, juce::int64 frame) noexcept { hotcues.set (index, frame); }
 
-    // Ids: play (>= 0.5 plays), rate, seek (0..1 of length), loop.exit, loop.reloop, hotcueN, hotcueN.clear
+    // Ids: play (>= 0.5 plays), rate, keylock, seek (0..1 of length), loop.exit, loop.reloop, hotcueN, hotcueN.clear
     bool setParameter (const juce::String& id, double value) override;
 
     bool isLoaded() const noexcept        { return loaded.load (std::memory_order_relaxed); }
@@ -88,6 +93,7 @@ private:
     bool primeInterpolator() noexcept;
     bool popFrame() noexcept;
     bool pullFrame (float* out, juce::int64& index) noexcept;
+    bool nextSourceFrame (float* out, juce::int64& index) noexcept;
     void enterLoopSlot() noexcept;
     bool readSlotFrame (float* out) noexcept;
     bool readRingFrame (float* out) noexcept;
@@ -96,13 +102,31 @@ private:
     bool reachedEnd() noexcept;
     void noteStarved() noexcept;
     void clearTail (float* left, float* right, int from, int numSamples) const noexcept;
+    void renderInterpolated (float* left, float* right, int numSamples) noexcept;
+
+    // Audio thread, key-lock path (DeckKeylock.cpp). Priming fills the stretcher over several blocks
+    // while the interpolator keeps playing, so switching costs no CPU spike and no gap.
+    enum class StretchMode { off, priming, on };
+    void renderKeylocked (float* left, float* right, int numSamples) noexcept;
+    void renderStretched (float* left, float* right, int numSamples) noexcept;
+    void beginPriming() noexcept;
+    void stepPriming() noexcept;
+    void pullAhead (int numFrames) noexcept;
+    bool discardTowardsAlignment() noexcept;
+    void leaveKeylock() noexcept;
+    void teeFrame (const float* frame, juce::int64 index) noexcept;
+    void flushTee() noexcept;
+    bool feedStretch() noexcept;
+    int drainStretch (float* left, float* right, int wanted) noexcept;
+    int retrieveToSink (int numFrames) noexcept;
+    juce::int64 stretchLatencyFrames() const noexcept;
 
     SpscRingBuffer<float> ring;   // interleaved L,R
     LoopPrefetch prefetch;
     LoopState loopState;
     HotcueBank hotcues;
 
-    std::atomic<bool> playing { false }, loaded { false }, finished { false };
+    std::atomic<bool> playing { false }, loaded { false }, finished { false }, keylock { false };
     std::atomic<double> rate { 1.0 };
     std::atomic<double> deviceSampleRate { 44100.0 };
     std::atomic<double> fileSampleRate { 44100.0 };
@@ -138,6 +162,14 @@ private:
     const LoopPrefetch::Slot* slot = nullptr;
     LoopSnapshot loopSnap;
     std::vector<float> monoSink;
+    TimeStretch stretch;
+    StretchMode stretchMode = StretchMode::off;
+    std::vector<float> stretchIn[2], stretchSink[2];
+    int teeCount = 0, stretchDiscard = 0;
+    juce::int64 primingPops = 0;
+    double stretchRatio = 1.0, alignedSource = 0.0;
+    juce::int64 lastFedIdx = 0;
+    FrameRing lookahead { 16384 }, history { 16384 };   // frames the interpolator replays before pulling new ones
 
     std::unique_ptr<DeckDecoder> decoder;
 };

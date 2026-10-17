@@ -49,7 +49,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `tools/soak_mix.cpp`
   - Full 10-minute run remains the Wave 2 gate (Todo 13)
 
-- [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
+- [x] **Todo 9:** Key-lock time-stretch via Rubber Band
   - `src/engine/TimeStretch.{h,cpp}`
   - Realtime mode
   - Golden audio tests
