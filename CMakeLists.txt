@@ -183,6 +183,37 @@ target_link_libraries(openmixer_controllers PUBLIC
 )
 
 # =============================================================================
+# Plugin API + registry (extension point; links engine and controllers one-way)
+# =============================================================================
+
+add_library(openmixer_plugins STATIC
+    src/plugins/PluginApi.h
+    src/plugins/PluginLoader.cpp
+    src/plugins/PluginLoader.h
+    src/plugins/PluginRegistry.cpp
+    src/plugins/PluginRegistry.h
+    src/plugins/StageCatalog.cpp
+    src/plugins/StageCatalog.h
+)
+
+target_include_directories(openmixer_plugins PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(src/plugins/PluginLoader.cpp src/plugins/PluginRegistry.cpp src/plugins/StageCatalog.cpp)
+
+target_link_libraries(openmixer_plugins PUBLIC
+    openmixer_engine
+    openmixer_controllers
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+
+# Example plugin: a shared library loaded at runtime (also used by the tests)
+add_library(openmixer_example_gain MODULE examples/plugins/GainPlugin.cpp)
+target_include_directories(openmixer_example_gain PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set_target_properties(openmixer_example_gain PROPERTIES PREFIX "" CXX_VISIBILITY_PRESET hidden)
+openmixer_enable_warnings(examples/plugins/GainPlugin.cpp)
+target_link_libraries(openmixer_example_gain PRIVATE juce::juce_core juce::juce_recommended_config_flags)
+
+# =============================================================================
 # UI library (debug panel; real UI arrives in Wave 5)
 # =============================================================================
 
@@ -293,6 +324,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp
     tests/unit/DebugPanelTest.cpp
+    tests/unit/PluginRegistryTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -300,9 +332,12 @@ juce_generate_juce_header(openmixer_tests)
 target_include_directories(openmixer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_compile_definitions(openmixer_tests PRIVATE
-    OPENMIXER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+    OPENMIXER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+    OPENMIXER_EXAMPLE_PLUGIN_PATH="$<TARGET_FILE:openmixer_example_gain>")
+add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_plugins
     openmixer_ui
     openmixer_controllers
     openmixer_engine

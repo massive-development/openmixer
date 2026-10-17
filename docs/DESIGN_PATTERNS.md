@@ -10,13 +10,6 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** situations that should use it
 - **Notes:** constraints (threading, ownership)
 
-## Planned patterns
-
-### Plugin registry / extension points
-- **Where:** not yet implemented (planned, see `CONTRIBUTING.md` "Extensibility & User Freedom")
-- **Why:** let users add audio processors, FX, analysers, importers, controller maps and themes without changing core.
-- **Reuse when:** adding any feature a user might reasonably want to replace or extend. Expose it via an interface + registry, not a hardcoded path.
-
 ## Current patterns
 
 ### Interface + mock (Strategy / Adapter)
@@ -81,3 +74,10 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/engine/DjEngine.{h,cpp}`
 - **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
 - **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
+
+### Plugin registry / extension points (openmixer_plugins)
+- **Where:** `src/plugins/` (`PluginApi.h` public API, `PluginLoader`, `PluginRegistry`, `StageCatalog`); example in `examples/plugins/GainPlugin.cpp`.
+- **Why:** users add audio stages (pre/post-processing, FX), MIDI maps and parameter targets without touching core and without any signing or allow-list.
+- **Reuse when:** a new feature should be replaceable: add a `register...` method to `PluginHost` (bump `kPluginApiVersion` only on breaking changes), never a hardcoded path.
+- **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
+- **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
