@@ -73,8 +73,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 3: Analysis Pipeline
 
-- [ ] **Todo 14:** Analysis service skeleton + SQLite cache
-  - `src/analysis/AnalysisService.{h,cpp}`
+- [x] **Todo 14:** Analysis service skeleton + SQLite cache
+  - `src/analysis/AnalysisService.{h,cpp}`, `JobRunner`, `AnalyzerRegistry`, `SqliteResultCache`, `ClipSource`
 
 - [ ] **Todo 15:** BPM + beat-grid detection
   - `src/analysis/BpmEstimator.{h,cpp}`
