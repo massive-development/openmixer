@@ -45,7 +45,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - 2 decks: load/play, faders, EQ knobs, level meters
   - Plain JUCE components, no design tokens; replaced by Wave 5 UI
 
-- [ ] **Todo 13a:** Short soak test in CI (30-60s headless mix)
+- [x] **Todo 13a:** Short soak test in CI (30-60s headless mix)
   - `tools/soak_mix.cpp`
   - Full 10-minute run remains the Wave 2 gate (Todo 13)
 
