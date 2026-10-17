@@ -199,8 +199,11 @@ set(OPENMIXER_ANALYSIS_SOURCES
     src/analysis/AnalyzerRegistry.cpp
     src/analysis/BeatGridModel.cpp
     src/analysis/BpmEstimator.cpp
+    src/analysis/Chromagram.cpp
     src/analysis/ClipSource.cpp
     src/analysis/JobRunner.cpp
+    src/analysis/KeyEstimator.cpp
+    src/analysis/MusicalKey.cpp
     src/analysis/OnsetEnvelope.cpp
     src/analysis/SqliteResultCache.cpp
     src/analysis/Stft.cpp
@@ -217,8 +220,11 @@ add_library(openmixer_analysis STATIC
     src/analysis/AudioClip.h
     src/analysis/BeatGridModel.h
     src/analysis/BpmEstimator.h
+    src/analysis/Chromagram.h
     src/analysis/ClipSource.h
     src/analysis/JobRunner.h
+    src/analysis/KeyEstimator.h
+    src/analysis/MusicalKey.h
     src/analysis/OnsetEnvelope.h
     src/analysis/ResultCache.h
     src/analysis/SqliteResultCache.h
@@ -389,6 +395,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/AnalysisCacheTest.cpp
     tests/unit/AnalysisServiceTest.cpp
     tests/unit/BpmEstimatorTest.cpp
+    tests/unit/KeyEstimatorTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
