@@ -70,8 +70,8 @@ bool report (const Options& o, const openmixer::LatencyStats& stats, const openm
 {
     const auto underruns = scenario.getSteadyUnderruns();
     const auto& c = scenario.getCounts();
-    std::printf ("soak: actions loops=%u loop-exits=%u hotcue-jumps=%u keylock-toggles=%u seeks=%u\n",
-                 c.loops, c.loopExits, c.hotcueJumps, c.keylockToggles, c.seeks);
+    std::printf ("soak: actions loops=%u loop-exits=%u hotcue-jumps=%u keylock-toggles=%u fx-changes=%u seeks=%u\n",
+                 c.loops, c.loopExits, c.hotcueJumps, c.keylockToggles, c.fxChanges, c.seeks);
     std::printf ("soak: %llu callbacks, xruns=%llu, max callback %.0f us (budget %.0f us), avg cpu %.1f%%\n",
                  static_cast<unsigned long long> (stats.callbackCount), static_cast<unsigned long long> (stats.xrunCount),
                  stats.maxCallbackUs, 1.0e6 * kBlock / kRate, 100.0 * stats.cpuLoad);
@@ -93,6 +93,8 @@ int main (int argc, char** argv)
     dir.createDirectory();
 
     openmixer::DjEngine engine;
+    openmixer::fx::FxRack masterFx;   // declared before the device so it outlives the audio thread
+    engine.getMixer().setMasterInsert (0, &masterFx);
     openmixer::OutputChecker checker (engine);
     openmixer::MockAudioDevice device (kRate, kBlock, 0, 4);
 
@@ -111,7 +113,7 @@ int main (int argc, char** argv)
     device.start (checker);
     device.startRealtime();
 
-    openmixer::soak::Scenario scenario (engine);
+    openmixer::soak::Scenario scenario (engine, masterFx);
     const auto start = juce::Time::getMillisecondCounter();
     scenario.begin (start);
     for (auto now = start; now - start < static_cast<juce::uint32> (options.seconds) * 1000U;

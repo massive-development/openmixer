@@ -1,8 +1,9 @@
-// Scripted DJ for the soak: moves mixer controls and rates, and drives loops, hotcues, key-lock and seeks.
+// Scripted DJ for the soak: moves mixer controls and rates, and drives loops, hotcues, key-lock, FX and seeks.
 // Control thread only. Gapless actions (loop wraps/exits, key-lock on) are not excused from the underrun budget.
 #pragma once
 
 #include "engine/DjEngine.h"
+#include "engine/fx/FxRack.h"
 
 #include <cmath>
 
@@ -11,7 +12,7 @@ namespace openmixer::soak
 
 struct ActionCounts
 {
-    unsigned loops = 0, loopExits = 0, hotcueJumps = 0, keylockToggles = 0, seeks = 0;
+    unsigned loops = 0, loopExits = 0, hotcueJumps = 0, keylockToggles = 0, fxChanges = 0, seeks = 0;
 };
 
 // Underruns right after a seek or restart are expected while the decoder refills; only steady-state ones count.
@@ -43,12 +44,13 @@ class Scenario
 public:
     static constexpr int kControlPeriodMs = 50;
 
-    explicit Scenario (DjEngine& e) : engine (e) {}
+    Scenario (DjEngine& e, fx::FxRack& masterFx) : engine (e), rack (masterFx) {}
 
     void begin (juce::uint32 nowMs)
     {
         underruns.noteDisturbance (nowMs);
         engine.getDeck (0).setKeylock (true);
+        rack.setTempo (120.0);
     }
 
     void step (juce::uint32 nowMs, double seconds)
@@ -57,6 +59,7 @@ public:
         maybeLoop();
         maybeHotcue (nowMs);
         maybeToggleKeylock (nowMs);
+        maybeChangeFx();
         maybeSeek (nowMs);
         restartFinishedDecks (nowMs);
         underruns.tick (engine, nowMs);
@@ -128,6 +131,17 @@ private:
         underruns.noteDisturbance (nowMs);
     }
 
+    // Flips one master FX unit and sets a random wet mix; tails ring out on disable.
+    void maybeChangeFx()
+    {
+        if (rng.nextInt (30) != 0 || rack.getNumUnits() == 0)
+            return;
+        const auto unit = "fx" + juce::String (rng.nextInt (rack.getNumUnits()));
+        rack.setParameter (unit + ".enable", rng.nextBool() ? 1.0 : 0.0);
+        rack.setParameter (unit + ".mix", 0.2 + 0.6 * rng.nextDouble());
+        ++counts.fxChanges;
+    }
+
     void maybeSeek (juce::uint32 nowMs)
     {
         if (rng.nextInt (40) != 0)
@@ -149,6 +163,7 @@ private:
     }
 
     DjEngine& engine;
+    fx::FxRack& rack;
     juce::Random rng { 1234 };
     UnderrunTracker underruns;
     ActionCounts counts;

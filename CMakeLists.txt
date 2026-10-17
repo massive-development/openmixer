@@ -487,6 +487,7 @@ add_executable(openmixer_soak tools/soak_mix.cpp tools/soak/OutputChecker.h tool
 target_include_directories(openmixer_soak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 openmixer_enable_warnings(tools/soak_mix.cpp)
 target_link_libraries(openmixer_soak PRIVATE
+    openmixer_fx
     openmixer_engine
     ${OPENMIXER_CURL_LIBS}
     juce::juce_audio_formats
