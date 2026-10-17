@@ -62,7 +62,7 @@ protected:
     void SetUp() override
     {
         dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                  .getNonexistentChildFile ("openmixer_deck_test", {}, false);
+                  .getChildFile ("openmixer_deck_test_" + juce::Uuid().toString());   // unique per test process: ctest -j runs them in parallel
         ASSERT_TRUE (dir.createDirectory());
         wavFile = writeRamp (dir.getChildFile ("ramp.wav"), 2);
     }
