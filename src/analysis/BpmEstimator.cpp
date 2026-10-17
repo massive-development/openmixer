@@ -10,7 +10,6 @@ namespace openmixer::analysis
 namespace
 {
 constexpr double kMinSeconds = 4.0;
-constexpr double kOnsetLatencySeconds = -0.002;   // flux peaks ~2 ms before the onset (calibrated on clicks)
 const FrequencyBand kFullBand { 30.0, 16000.0 };
 const FrequencyBand kKickBand { 30.0, 200.0 };
 
@@ -42,7 +41,7 @@ double firstDownbeatFrame (const OnsetEnvelope& env, const BeatPhase& beats, int
                            double sampleRate)
 {
     const auto index = beats.phase + offset * periodFrames (env, beats.bpm);
-    const auto seconds = env.timeOf (index) - kOnsetLatencySeconds;
+    const auto seconds = env.timeOf (index);
     const auto barSeconds = beatsPerBar * 60.0 / beats.bpm;
     return (seconds - barSeconds * std::floor (seconds / barSeconds)) * sampleRate;
 }
