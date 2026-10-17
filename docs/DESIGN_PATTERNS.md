@@ -10,13 +10,6 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** situations that should use it
 - **Notes:** constraints (threading, ownership)
 
-## Planned patterns
-
-### Plugin registry / extension points
-- **Where:** not yet implemented (planned, see `CONTRIBUTING.md` "Extensibility & User Freedom")
-- **Why:** let users add audio processors, FX, analysers, importers, controller maps and themes without changing core.
-- **Reuse when:** adding any feature a user might reasonably want to replace or extend. Expose it via an interface + registry, not a hardcoded path.
-
 ## Current patterns
 
 ### Interface + mock (Strategy / Adapter)
@@ -87,3 +80,16 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** sync/quantize can be built and tested before Wave 3 analysis exists; analysis plugs in by implementing `BeatGrid`.
 - **Reuse when:** a feature depends on data another wave produces: define the minimal read-only interface first, test with a mock.
 - **Notes:** `Sync::step` is a pure function of deck states (control thread, ~20-50 Hz); only `apply` touches `Deck::setRate`. Grids are shared immutably (`shared_ptr<const BeatGrid>`).
+
+### Plugin registry / extension points (openmixer_plugins)
+- **Where:** `src/plugins/` (`PluginApi.h` public API, `PluginLoader`, `PluginRegistry`, `StageCatalog`); example in `examples/plugins/GainPlugin.cpp`.
+- **Why:** users add audio stages (pre/post-processing, FX), MIDI maps and parameter targets without touching core and without any signing or allow-list.
+- **Reuse when:** a new feature should be replaceable: add a `register...` method to `PluginHost` (bump `kPluginApiVersion` only on breaking changes), never a hardcoded path.
+- **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
+- **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
+
+### Checking decorator for headless runs (OutputChecker)
+- **Where:** `tools/soak/OutputChecker.h`, used by `tools/soak_mix.cpp`.
+- **Why:** wrap any `AudioCallback` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
+- **Reuse when:** long-running or fuzz-style runs (soak, golden-audio, plugin stress) need output assertions.
+- **Notes:** atomics only, no allocation in `process`.
