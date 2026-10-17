@@ -93,3 +93,37 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** a new feature should be replaceable: add a `register...` method to `PluginHost` (bump `kPluginApiVersion` only on breaking changes), never a hardcoded path.
 - **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
 - **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
+
+### Effect template method + wrapping unit (FX rack)
+- **Where:** `src/engine/fx/` (`openmixer_fx`): `Effect` (non-virtual `prepare`/`process` call `prepareEffect`/`render`), `FxUnit`, `FxRack`.
+- **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in `FxUnit`, so new effects stay small.
+- **Reuse when:** adding an effect or any per-block processor that needs the same enable/mix/tail behaviour; subclass `Effect`, declare params as `FxParamSpec`s, call `tickParams()` per sample.
+- **Notes:** params are atomics written on the control thread and smoothed per sample (`smoothSeconds` 0 for step controls). `FxUnit` processes in fixed 64-sample chunks with member scratch arrays (no allocation); buffers are sized in `prepare` for `kMinBpm`. Tail effects (`hasTail`) stop receiving input on disable and go idle after `tailSilenceWindow` samples below -100 dBFS; others fade out over 10 ms. Idle units return immediately (bit-exact dry). `FxUnit` and `FxRack` are both `ProcessStage`s, so either inserts via `Mixer::setChannelInsert`/`setMasterInsert`.
+
+### Name registry for effects (FxFactory)
+- **Where:** `src/engine/fx/FxFactory.{h,cpp}`; consumed by `FxRack (layout, factory)`.
+- **Why:** rack layouts are lists of names, so users/plugins add effects (`registerEffect`) without touching core; built-ins can't be silently overridden.
+- **Reuse when:** any user-extensible family of processors (sampler voices, analysis stages): register creators by name, build from data.
+
+### Data-driven presets
+- **Where:** `src/engine/fx/FxPresets.{h,cpp}` (`builtInPresets`, `applyPreset`).
+- **Why:** presets are plain data applied through the same parameter API, so they can later load from JSON; all values are original to OpenMixer.
+- **Reuse when:** shipping starting points for any parameterised unit (EQ curves, mapping defaults).
+
+### Background job service (worker pool + shared job handle)
+- **Where:** `src/analysis/AnalysisService.{h,cpp}`, `AnalysisJob`, `JobRunner`
+- **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
+- **Reuse when:** any long-running background task (library scan, stem precompute, export).
+- **Notes:** `submit()` returns `shared_ptr<AnalysisJob>` (shared by caller and worker); cancellation is a polled atomic flag; listeners run on the worker thread after the final status; the destructor cancels everything and joins. The job body is a free function (`runAnalysisJob`) so it is testable without threads.
+
+### Content-addressed result cache
+- **Where:** `src/analysis/ResultCache.h` (interface), `SqliteResultCache.{h,cpp}`, hashing in `ClipSource.cpp`
+- **Why:** analysis is expensive; results key on SHA-256 of the audio bytes + producer id + producer version, so renames/moves keep results and bumping a version invalidates old rows.
+- **Reuse when:** caching anything derived from file content (waveforms, stems, artwork thumbnails).
+- **Notes:** SQLite opened `FULLMUTEX` and statements serialised by a mutex; tests use `":memory:"`. Payloads are JSON strings owned by each analyser.
+
+### Analyzer registry (extension point)
+- **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
+- **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
+- **Reuse when:** adding any analysis feature; register an `Analyzer`, do not special-case it in the service.
+- **Notes:** `analyze()` is `const` and may run concurrently; registry hands out `shared_ptr<const Analyzer>` so removal during a running job is safe.

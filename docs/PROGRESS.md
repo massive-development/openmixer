@@ -16,8 +16,8 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | Wave | Area | Status |
 |------|------|--------|
 | 1 | Foundation | ✅ |
-| 2 | Audio engine | 🟡 device, deck, mixer, MIDI mapper + trace harness, debug panel done; time-stretch, FX, sync, soak remain |
-| 3 | Analysis | ⬜ |
+| 2 | Audio engine | 🟡 device, deck, mixer, MIDI mapper + trace harness, debug panel done; time-stretch, sync, soak remain |
+| 3 | Analysis | 🟡 service + SQLite cache done |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
 | 6 | Hardware | ⬜ (basic MIDI pulled into Wave 2) |
@@ -58,18 +58,18 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 13a Short soak test | 30–60 s headless mix in CI | ✅ `tools/soak_mix.cpp` (`openmixer_soak`, CTest `soak_short`, label `soak`): 2 looping decks, moving controls, asserts 0 xruns, 0 steady-state underruns, no NaN/Inf/overflow | Runs on a paced mock device, not real hardware; not yet in CI (workflow owned elsewhere) |
 | 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ⬜ | Dependency integration (GPL-compatible), golden audio tests |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode | 🟡 `BeatGrid` interface + `FixedTempoGrid`, `Sync` (tempo match + beat/bar phase nudge, `ParameterTarget`), `Quantizer` (snap, quantized loop bounds), `SlipTracker`; tested with mock grids | Real grids (Wave 3); audio-thread loop playback and hotcue storage in `Deck` (loops are planned bounds only); wiring `Sync::apply` into the app timer/UI |
-| 11 FX rack | 8 effects (delay, reverb, flanger, …) with wet/dry and beat-sync | ⬜ | All effects; original presets only (no copied FX presets) |
+| 11 FX rack | 8 effects (delay, reverb, flanger, …) with wet/dry and beat-sync | ✅ `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop; `FxUnit` (enable, smoothed mix, tails, idle) and `FxRack` as `ProcessStage` inserts; `FxFactory` registry; 8 original presets; ids `bpm`, `fxN.enable/mix/<param>`; `FxTest` | Not yet wired into `DjEngine`/`ParameterRouter` or the UI; LFO/gate phase free-runs from engage (no beat-phase lock to the grid yet); MIDI value scaling for natural-unit params |
 | 13 Full soak test | 10-minute headless mix, glitch/xrun budget | ⬜ | The Wave 2 gate |
 
-**Parity gap vs. pro DJ apps in this wave:** key-lock, sync, loops/hotcues, FX, 4-deck support, recording-quality resampling.
+**Parity gap vs. pro DJ apps in this wave:** key-lock, sync, loops/hotcues, FX UI/wiring, 4-deck support, recording-quality resampling.
 
 ---
 
-## Wave 3 — Analysis ⬜
+## Wave 3 — Analysis 🟡
 
 | Todo | Entails | Missing |
 |------|---------|---------|
-| 14 Analysis service + cache | Background job runner, SQLite result cache keyed by file hash | All |
+| 14 Analysis service + cache ✅ | Background job runner, SQLite result cache keyed by file hash | Done: `openmixer_analysis` with `AnalysisService` (worker pool, FIFO, per-job progress/cancel/wait, listener), `AnalyzerRegistry` (versioned `Analyzer` extension point), `SqliteResultCache` (SQLite 3.46 amalgamation via FetchContent; key = SHA-256 of file bytes + analyser id + version), `FileClipSource`/`MemoryClipSource`. Missing: app wiring (cache path in user data dir), priority queue / prep-queue integration (Todo 24) |
 | 15 BPM + beat grid | Tempo estimation, grid with downbeat, manual correction data model | All |
 | 16 Key detection | Chroma-based key, Camelot mapping | All |
 | 17 Waveform model | Multi-resolution overview/zoom data, colour/band data | All |
