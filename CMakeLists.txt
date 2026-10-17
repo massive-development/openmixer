@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Include our custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+# Platform-specific settings (before any dependency target: targets copy these when created)
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
+    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
+elseif(WIN32)
+    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 # FetchContent for JUCE and dependencies
 include(FetchContent)
 include(Dependencies)
@@ -15,14 +23,6 @@ include(RubberBand)
 # Configure build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Platform-specific settings
-if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
-    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
-elseif(WIN32)
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
 # Enable position independent code
