@@ -85,8 +85,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 17:** Waveform data model
   - `src/analysis/WaveformBuilder.{h,cpp}`, `WaveformData`
 
-- [ ] **Todo 18:** Onset/energy/structure features
-  - `src/analysis/StructureAnalyzer.{h,cpp}`
+- [x] **Todo 18:** Onset/energy/structure features
+  - `src/analysis/StructureAnalyzer.{h,cpp}`, `OnsetPicker`, `Segmenter`
 
 - [ ] **Todo 19:** Stems precompute (Demucs ONNX)
   - `src/stems/StemSeparator.{h,cpp}`
