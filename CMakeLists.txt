@@ -320,6 +320,27 @@ target_link_libraries(openmixer_analysis
 )
 
 # =============================================================================
+# Stems library (separator interface, licence-gated model download). Depends on analysis.
+# =============================================================================
+
+set(OPENMIXER_STEMS_SOURCES
+    src/stems/ModelManifest.cpp
+    src/stems/StemSeparator.cpp
+    src/stems/WeightManager.cpp
+)
+
+add_library(openmixer_stems STATIC
+    ${OPENMIXER_STEMS_SOURCES}
+    src/stems/ModelManifest.h
+    src/stems/StemSeparator.h
+    src/stems/WeightManager.h
+)
+
+target_include_directories(openmixer_stems PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(${OPENMIXER_STEMS_SOURCES})
+target_link_libraries(openmixer_stems PUBLIC openmixer_analysis juce::juce_core juce::juce_recommended_config_flags)
+
+# =============================================================================
 # Plugin API + registry (extension point; links engine and controllers one-way)
 # =============================================================================
 
@@ -479,6 +500,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/KeyEstimatorTest.cpp
     tests/unit/WaveformBuilderTest.cpp
     tests/unit/StructureAnalyzerTest.cpp
+    tests/unit/StemsTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -491,6 +513,7 @@ target_compile_definitions(openmixer_tests PRIVATE
 add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_stems
     openmixer_analysis
     openmixer_plugins
     openmixer_fx

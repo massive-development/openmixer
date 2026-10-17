@@ -146,6 +146,12 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** any per-time data drawn at many zooms (energy, stems, spectrogram).
 - **Notes:** only the finest level is persisted; coarser levels are derived on load. Merge rules must be associative (min/max, RMS via mean of squares).
 
+### Licence-gated, verified download
+- **Where:** `src/stems/ModelManifest.{h,cpp}`, `WeightManager.{h,cpp}` (`Downloader` interface, `UrlDownloader`)
+- **Why:** third-party weights/assets are fetched only after the user accepts their licence and only installed if the SHA-256 matches the manifest.
+- **Reuse when:** any large optional asset not shipped in the repo (models, sample packs, skins from a catalogue).
+- **Notes:** blocking, call off the UI thread; manifests are JSON so users can point at mirrors; tests use `file://` URLs, no network.
+
 ### Analyzer registry (extension point)
 - **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
 - **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
