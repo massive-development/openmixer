@@ -515,11 +515,12 @@ gtest_discover_tests(openmixer_tests
     DISCOVERY_TIMEOUT 60
 )
 
-# Short headless soak (label "soak"); the 10-minute gate is Todo 13: openmixer_soak --seconds 600
-add_executable(openmixer_soak tools/soak_mix.cpp tools/soak/OutputChecker.h)
+# Short headless soak (label "soak"); the 10-minute Wave 2 gate (Todo 13) is soak_10min below
+add_executable(openmixer_soak tools/soak_mix.cpp tools/soak/OutputChecker.h tools/soak/Scenario.h)
 target_include_directories(openmixer_soak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 openmixer_enable_warnings(tools/soak_mix.cpp)
 target_link_libraries(openmixer_soak PRIVATE
+    openmixer_fx
     openmixer_engine
     ${OPENMIXER_CURL_LIBS}
     juce::juce_audio_formats
@@ -532,6 +533,12 @@ target_link_libraries(openmixer_soak PRIVATE
 # Shared CI runners hiccup (one 15 ms callback seen on Windows); allow a few xruns, systemic ones still fail
 add_test(NAME soak_short COMMAND openmixer_soak --seconds 30 --max-xruns 5)
 set_tests_properties(soak_short PROPERTIES LABELS soak TIMEOUT 120)
+# Wave 2 gate (Todo 13): 10 minutes, so opt-in: cmake -DOPENMIXER_LONG_SOAK=ON, then ctest -L soak_long
+option(OPENMIXER_LONG_SOAK "Register the 10-minute soak test" OFF)
+if(OPENMIXER_LONG_SOAK)
+    add_test(NAME soak_10min COMMAND openmixer_soak --seconds 600 --max-xruns 5)
+    set_tests_properties(soak_10min PROPERTIES LABELS soak_long TIMEOUT 720)
+endif()
 
 # =============================================================================
 # Tools

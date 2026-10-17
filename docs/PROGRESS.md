@@ -16,7 +16,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | Wave | Area | Status |
 |------|------|--------|
 | 1 | Foundation | ✅ |
-| 2 | Audio engine | 🟡 device, deck (loops, hotcues, key-lock), mixer, FX rack, MIDI mapper + trace harness, debug panel done; sync/FX wiring, soak remain |
+| 2 | Audio engine | 🟡 device, deck (loops, hotcues, key-lock), mixer, FX rack, MIDI mapper + trace harness, debug panel done; sync/FX wiring remain |
 | 3 | Analysis | 🟡 service + SQLite cache, BPM/beat grid, key, waveform, structure done; stems remain |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
@@ -59,7 +59,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ✅ Rubber Band 4.0.0 (R3 engine, realtime) via FetchContent single-file build (`openmixer_rubberband`, -O2 even in Debug); `TimeStretch` wrapper; `Deck::setKeylock` / id `keylock`; pitch held under rate change and device/file rate mismatch; tests measure pitch by zero crossings | Toggling key-lock off skips ahead by the stretcher latency (~tens of ms); end-of-track tail (latency) not flushed; per-deck CPU not yet profiled (Todo 13 soak); R2/R3 engine choice not user-selectable |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode | 🟡 `BeatGrid` interface + `FixedTempoGrid`, `Sync` (tempo match + beat/bar phase nudge, `ParameterTarget`), `Quantizer` (snap, quantized loop bounds), `SlipTracker`; tested with mock grids; `Deck` gapless loops (sample-accurate wrap into a decoder-prefetched `LoopPrefetch` slot, phase-kept resize, exit/reloop) and 8 hotcues (`HotcueBank`, ids `hotcueN`, `hotcueN.clear`, `loop.exit`, `loop.reloop`) | Real grids (Wave 3); wiring `Sync::apply`, `Quantizer` loops and `SlipTracker` into the app/UI and MIDI maps; hotcue persistence (Wave 4 library) |
 | 11 FX rack | 8 effects (delay, reverb, flanger, …) with wet/dry and beat-sync | ✅ `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop; `FxUnit` (enable, smoothed mix, tails, idle) and `FxRack` as `ProcessStage` inserts; `FxFactory` registry; 8 original presets; ids `bpm`, `fxN.enable/mix/<param>`; `FxTest` | Not yet wired into `DjEngine`/`ParameterRouter` or the UI; LFO/gate phase free-runs from engage (no beat-phase lock to the grid yet); MIDI value scaling for natural-unit params |
-| 13 Full soak test | 10-minute headless mix, glitch/xrun budget | ⬜ | The Wave 2 gate |
+| 13 Full soak test | 10-minute headless mix, glitch/xrun budget | ✅ `soak_10min` (opt-in: `-DOPENMIXER_LONG_SOAK=ON`, `ctest -L soak_long`). A scripted DJ (`tools/soak/Scenario.h`) moves mixer controls and rates and drives loops, hotcues, key-lock toggles, master FX and seeks. Last run (linux-debug): 112,508 callbacks, 1 xrun (budget 5), 0 steady-state underruns, 0 non-finite, 0 overflow, avg CPU 17.9%, max callback 7.7 ms | Not in CI yet (10 min); paced mock device, not real hardware; the one slow callback is likely `FxUnit` clearing its delay buffer on the audio thread when a tail ends |
 
 **Parity gap vs. pro DJ apps in this wave:** sync wiring, FX UI/wiring, 4-deck support, recording-quality resampling.
 
