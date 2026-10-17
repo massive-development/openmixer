@@ -58,9 +58,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
 
-- [ ] **Todo 11:** FX rack (8 essential effects)
-  - `src/engine/fx/`
-  - Delay, reverb, flanger, etc.
+- [x] **Todo 11:** FX rack (8 essential effects)
+  - `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop
+  - `FxUnit`/`FxRack` as `ProcessStage` inserts; `fxN.*` parameter ids; beat-synced via `setTempo`/`BeatGrid`
+  - Follow-up: wire a rack into `DjEngine` + `ParameterRouter` (`fx` prefix), beat-phase lock, FX UI
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
