@@ -17,7 +17,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|------|--------|
 | 1 | Foundation | ✅ |
 | 2 | Audio engine | 🟡 device, deck (loops, hotcues, key-lock), mixer, FX rack, MIDI mapper + trace harness, debug panel done; sync/FX wiring, soak remain |
-| 3 | Analysis | 🟡 service + SQLite cache done |
+| 3 | Analysis | 🟡 service + SQLite cache, BPM/beat grid, key done |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
 | 6 | Hardware | ⬜ (basic MIDI pulled into Wave 2) |
@@ -70,8 +70,8 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | Todo | Entails | Missing |
 |------|---------|---------|
 | 14 Analysis service + cache ✅ | Background job runner, SQLite result cache keyed by file hash | Done: `openmixer_analysis` with `AnalysisService` (worker pool, FIFO, per-job progress/cancel/wait, listener), `AnalyzerRegistry` (versioned `Analyzer` extension point), `SqliteResultCache` (SQLite 3.46 amalgamation via FetchContent; key = SHA-256 of file bytes + analyser id + version), `FileClipSource`/`MemoryClipSource`. Missing: app wiring (cache path in user data dir), priority queue / prep-queue integration (Todo 24) |
-| 15 BPM + beat grid | Tempo estimation, grid with downbeat, manual correction data model | All |
-| 16 Key detection | Chroma-based key, Camelot mapping | All |
+| 15 BPM + beat grid ✅ | Tempo estimation, grid with downbeat, manual correction data model | Done: `BpmEstimator` (log spectral-flux onsets -> autocorrelation tempo -> tempo/phase grid search -> least-squares onset fit; downbeat from 30-200 Hz band; octave folding into 70-180 BPM), `BeatGridModel` (tempo markers, shift/setBpm/setDownbeatNear/insertTempoChange, JSON, manual flag), `AnalysedBeatGrid` adapter to engine `BeatGrid`, `BpmAnalyzer` (id `bpm`). Click tracks: BPM within 0.05, beats within 3 ms. Missing: automatic variable-tempo detection (manual markers only), time signatures other than the configured beats-per-bar, accuracy benchmark on real music, wiring grids into decks/UI |
+| 16 Key detection ✅ | Chroma-based key, Camelot mapping | Done: `Chromagram` (8192-pt STFT, 100-5000 Hz bins folded to 12 pitch classes, per-frame normalised), `KeyEstimator` (Pearson correlation with 24 rotations of project-designed major/minor templates, confidence = margin), `MusicalKey` (names, Camelot code both ways, relative key, harmonic compatibility), `KeyAnalyzer` (id `key`). Synthetic cadences in 8 keys (incl. with drums + noise) detected. Missing: tuning-offset estimation (assumes A440), key changes within a track, real-music benchmark |
 | 17 Waveform model | Multi-resolution overview/zoom data, colour/band data | All |
 | 18 Structure features | Onset/energy/section detection (feeds Automix) | All |
 | 19 Stem precompute | Demucs ONNX, weights downloaded on first use with license shown | All |
