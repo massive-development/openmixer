@@ -259,8 +259,11 @@ set(OPENMIXER_ANALYSIS_SOURCES
     src/analysis/KeyEstimator.cpp
     src/analysis/MusicalKey.cpp
     src/analysis/OnsetEnvelope.cpp
+    src/analysis/OnsetPicker.cpp
+    src/analysis/Segmenter.cpp
     src/analysis/SqliteResultCache.cpp
     src/analysis/Stft.cpp
+    src/analysis/StructureAnalyzer.cpp
     src/analysis/TempoSearch.cpp
     src/analysis/WaveformBuilder.cpp
     src/analysis/WaveformData.cpp
@@ -282,9 +285,12 @@ add_library(openmixer_analysis STATIC
     src/analysis/KeyEstimator.h
     src/analysis/MusicalKey.h
     src/analysis/OnsetEnvelope.h
+    src/analysis/OnsetPicker.h
     src/analysis/ResultCache.h
+    src/analysis/Segmenter.h
     src/analysis/SqliteResultCache.h
     src/analysis/Stft.h
+    src/analysis/StructureAnalyzer.h
     src/analysis/TempoSearch.h
     src/analysis/WaveformBuilder.h
     src/analysis/WaveformData.h
@@ -459,6 +465,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/BpmEstimatorTest.cpp
     tests/unit/KeyEstimatorTest.cpp
     tests/unit/WaveformBuilderTest.cpp
+    tests/unit/StructureAnalyzerTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
