@@ -46,6 +46,9 @@ std::optional<KeyResult> estimate (const AudioClip& clip)
 }
 
 struct KeyCase { int midi; bool minor; const char* name; const char* camelot; };
+
+// gtest would otherwise dump raw bytes, including struct padding (Valgrind flags it).
+void PrintTo (const KeyCase& c, std::ostream* os) { *os << c.name; }
 class KeyAccuracy : public ::testing::TestWithParam<KeyCase> {};
 } // namespace
 
