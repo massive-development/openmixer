@@ -4,6 +4,7 @@
 
 #include "../core/ParameterTarget.h"
 #include "AudioDevice.h"
+#include "FrameRing.h"
 #include "HotcueBank.h"
 #include "LoopPrefetch.h"
 #include "LoopState.h"
@@ -92,6 +93,7 @@ private:
     bool primeInterpolator() noexcept;
     bool popFrame() noexcept;
     bool pullFrame (float* out, juce::int64& index) noexcept;
+    bool nextSourceFrame (float* out, juce::int64& index) noexcept;
     void enterLoopSlot() noexcept;
     bool readSlotFrame (float* out) noexcept;
     bool readRingFrame (float* out) noexcept;
@@ -102,12 +104,22 @@ private:
     void clearTail (float* left, float* right, int from, int numSamples) const noexcept;
     void renderInterpolated (float* left, float* right, int numSamples) noexcept;
 
-    // Audio thread, key-lock path (DeckKeylock.cpp)
+    // Audio thread, key-lock path (DeckKeylock.cpp). Priming fills the stretcher over several blocks
+    // while the interpolator keeps playing, so switching costs no CPU spike and no gap.
+    enum class StretchMode { off, priming, on };
     void renderKeylocked (float* left, float* right, int numSamples) noexcept;
-    void enterKeylock() noexcept;
+    void renderStretched (float* left, float* right, int numSamples) noexcept;
+    void beginPriming() noexcept;
+    void stepPriming() noexcept;
+    void pullAhead (int numFrames) noexcept;
+    bool discardTowardsAlignment() noexcept;
     void leaveKeylock() noexcept;
+    void teeFrame (const float* frame, juce::int64 index) noexcept;
+    void flushTee() noexcept;
     bool feedStretch() noexcept;
     int drainStretch (float* left, float* right, int wanted) noexcept;
+    int retrieveToSink (int numFrames) noexcept;
+    juce::int64 stretchLatencyFrames() const noexcept;
 
     SpscRingBuffer<float> ring;   // interleaved L,R
     LoopPrefetch prefetch;
@@ -151,11 +163,13 @@ private:
     LoopSnapshot loopSnap;
     std::vector<float> monoSink;
     TimeStretch stretch;
-    std::vector<float> stretchIn[2];
-    bool stretchActive = false, feedNextFirst = false;
-    int stretchDiscard = 0;
-    double stretchRatio = 1.0;
+    StretchMode stretchMode = StretchMode::off;
+    std::vector<float> stretchIn[2], stretchSink[2];
+    int teeCount = 0, stretchDiscard = 0;
+    juce::int64 primingPops = 0;
+    double stretchRatio = 1.0, alignedSource = 0.0;
     juce::int64 lastFedIdx = 0;
+    FrameRing lookahead { 16384 }, history { 16384 };   // frames the interpolator replays before pulling new ones
 
     std::unique_ptr<DeckDecoder> decoder;
 };
