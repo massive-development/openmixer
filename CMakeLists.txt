@@ -194,6 +194,48 @@ target_link_libraries(openmixer_controllers PUBLIC
 )
 
 # =============================================================================
+# Analysis library (background jobs, result cache, analysers). Depends on core only;
+# engine adapters include engine headers that are header-only interfaces.
+# =============================================================================
+
+set(OPENMIXER_ANALYSIS_SOURCES
+    src/analysis/AnalysisJob.cpp
+    src/analysis/AnalysisService.cpp
+    src/analysis/AnalyzerRegistry.cpp
+    src/analysis/ClipSource.cpp
+    src/analysis/JobRunner.cpp
+    src/analysis/SqliteResultCache.cpp
+)
+
+add_library(openmixer_analysis STATIC
+    ${OPENMIXER_ANALYSIS_SOURCES}
+    src/analysis/AnalysisJob.h
+    src/analysis/AnalysisService.h
+    src/analysis/Analyzer.h
+    src/analysis/AnalyzerRegistry.h
+    src/analysis/AudioClip.h
+    src/analysis/ClipSource.h
+    src/analysis/JobRunner.h
+    src/analysis/ResultCache.h
+    src/analysis/SqliteResultCache.h
+)
+
+target_include_directories(openmixer_analysis PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(${OPENMIXER_ANALYSIS_SOURCES})
+
+target_link_libraries(openmixer_analysis
+    PUBLIC
+        openmixer_core
+        juce::juce_audio_basics
+        juce::juce_audio_formats
+        juce::juce_core
+        juce::juce_cryptography
+        juce::juce_recommended_config_flags
+    PRIVATE
+        openmixer_sqlite3
+)
+
+# =============================================================================
 # Plugin API + registry (extension point; links engine and controllers one-way)
 # =============================================================================
 
@@ -339,6 +381,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/DebugPanelTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
+    tests/unit/AnalysisCacheTest.cpp
+    tests/unit/AnalysisServiceTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -351,6 +395,7 @@ target_compile_definitions(openmixer_tests PRIVATE
 add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_analysis
     openmixer_plugins
     openmixer_ui
     openmixer_controllers
