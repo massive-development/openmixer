@@ -16,7 +16,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | Wave | Area | Status |
 |------|------|--------|
 | 1 | Foundation | ✅ |
-| 2 | Audio engine | 🟡 device, deck, mixer, MIDI mapper + trace harness, debug panel done; time-stretch, FX, sync, soak remain |
+| 2 | Audio engine | 🟡 device, deck (loops, hotcues, key-lock), mixer, MIDI mapper + trace harness, debug panel done; FX, sync wiring, soak remain |
 | 3 | Analysis | ⬜ |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
@@ -56,12 +56,12 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | ✅ | Real controller recordings |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain JUCE widgets | ✅ (not visually verified: no display in CI box) | Replaced by real UI in Wave 5 |
 | 13a Short soak test | 30–60 s headless mix in CI | ✅ `tools/soak_mix.cpp` (`openmixer_soak`, CTest `soak_short`, label `soak`): 2 looping decks, moving controls, asserts 0 xruns, 0 steady-state underruns, no NaN/Inf/overflow | Runs on a paced mock device, not real hardware; not yet in CI (workflow owned elsewhere) |
-| 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ⬜ | Dependency integration (GPL-compatible), golden audio tests |
+| 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ✅ Rubber Band 4.0.0 (R3 engine, realtime) via FetchContent single-file build (`openmixer_rubberband`, -O2 even in Debug); `TimeStretch` wrapper; `Deck::setKeylock` / id `keylock`; pitch held under rate change and device/file rate mismatch; tests measure pitch by zero crossings | Toggling key-lock off skips ahead by the stretcher latency (~tens of ms); end-of-track tail (latency) not flushed; per-deck CPU not yet profiled (Todo 13 soak); R2/R3 engine choice not user-selectable |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode | 🟡 `BeatGrid` interface + `FixedTempoGrid`, `Sync` (tempo match + beat/bar phase nudge, `ParameterTarget`), `Quantizer` (snap, quantized loop bounds), `SlipTracker`; tested with mock grids; `Deck` gapless loops (sample-accurate wrap into a decoder-prefetched `LoopPrefetch` slot, phase-kept resize, exit/reloop) and 8 hotcues (`HotcueBank`, ids `hotcueN`, `hotcueN.clear`, `loop.exit`, `loop.reloop`) | Real grids (Wave 3); wiring `Sync::apply`, `Quantizer` loops and `SlipTracker` into the app/UI and MIDI maps; hotcue persistence (Wave 4 library) |
 | 11 FX rack | 8 effects (delay, reverb, flanger, …) with wet/dry and beat-sync | ⬜ | All effects; original presets only (no copied FX presets) |
 | 13 Full soak test | 10-minute headless mix, glitch/xrun budget | ⬜ | The Wave 2 gate |
 
-**Parity gap vs. pro DJ apps in this wave:** key-lock, sync, loops/hotcues, FX, 4-deck support, recording-quality resampling.
+**Parity gap vs. pro DJ apps in this wave:** sync wiring, FX, 4-deck support, recording-quality resampling.
 
 ---
 

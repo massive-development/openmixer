@@ -129,6 +129,7 @@ bool Deck::setParameter (const juce::String& id, double value)
 {
     if (id == "play")             setPlaying (value >= 0.5);
     else if (id == "rate")        setRate (value);
+    else if (id == "keylock")     setKeylock (value >= 0.5);
     else if (id == "seek")        seek (static_cast<juce::int64> (std::clamp (value, 0.0, 1.0) * static_cast<double> (getLengthFrames())));
     else if (id == "loop.exit")   { if (value >= 0.5) exitLoop(); }
     else if (id == "loop.reloop") { if (value >= 0.5) reloop(); }
@@ -156,6 +157,10 @@ void Deck::prepare (double sr, int maxBlockSize)
 {
     deviceSampleRate.store (sr > 0.0 ? sr : 44100.0, kRelaxed);
     monoSink.assign (static_cast<size_t> (std::max (1, maxBlockSize)), 0.0F);
+    stretch.prepare (deviceSampleRate.load (kRelaxed), std::max (1, maxBlockSize));
+    for (auto& ch : stretchIn)
+        ch.assign (static_cast<size_t> (stretch.getMaxFeed()), 0.0F);
+    stretchActive = false;
 }
 
 void Deck::process (const float* const*, int, float* const* outputs, int numOutputs, int numSamples)
