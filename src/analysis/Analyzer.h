@@ -29,6 +29,24 @@ public:
     void setProgress (float) noexcept override {}
 };
 
+// Maps a sub-step's 0..1 progress into [start, start + length] of a parent context.
+class SubProgressContext final : public AnalysisContext
+{
+public:
+    SubProgressContext (AnalysisContext& parentContext, float start, float length) noexcept
+        : parent (parentContext), base (start), span (length) {}
+
+    bool isCancelled() const noexcept override { return parent.isCancelled(); }
+    void setProgress (float fraction) noexcept override
+    {
+        parent.setProgress (base + span * juce::jlimit (0.0f, 1.0f, fraction));
+    }
+
+private:
+    AnalysisContext& parent;
+    float base, span;
+};
+
 class Analyzer
 {
 public:
