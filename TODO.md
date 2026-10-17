@@ -79,8 +79,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 15:** BPM + beat-grid detection
   - `src/analysis/BpmEstimator.{h,cpp}`, `TempoSearch`, `OnsetEnvelope`, `Stft`, `BeatGridModel`, `AnalysedBeatGrid` (engine adapter)
 
-- [ ] **Todo 16:** Musical key detection + Camelot mapping
-  - `src/analysis/KeyEstimator.{h,cpp}`
+- [x] **Todo 16:** Musical key detection + Camelot mapping
+  - `src/analysis/KeyEstimator.{h,cpp}`, `Chromagram`, `MusicalKey` (Camelot)
 
 - [ ] **Todo 17:** Waveform data model
   - `src/analysis/WaveformBuilder.{h,cpp}`
