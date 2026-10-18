@@ -68,6 +68,9 @@ Each phase lands as small PRs into `stage`; the C++ tree is deleted once phase 5
 ## Documentation rewrite
 Every doc that mentions C++/JUCE/CMake must be rewritten for Rust: `README.md`, `agents.md`, `CONTRIBUTING.md`, `TODO.md`, `ROADMAP.md`, `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md`, ADR index plus new ADR 0004, CI workflow docs, `CLAUDE`/agent skills references. Bulk rewrites are delegated to the cheapest capable model (haiku) and reviewed against this design; `docs/progress.json` and the heatmap tool are kept, with task statuses reset to the Rust state.
 
+## GPUI go/no-go gate (agreed)
+The first Phase 1 spike is a hard gate: `vulkaninfo --summary` on the dev WSL, a GPUI window with a custom-painted waveform on Linux and Windows, and a note on whether GPUI must be pinned to a git commit of Zed (no authoritative crates.io status was found). If it fails on a platform, the fallback is switching toolkit (iced first, then Slint), not dropping the platform or stopping. WSL-only trouble is a dev-loop issue and does not fail the gate on its own.
+
 ## Answers from the builder check (all **(call)**)
 - **Parity inventory:** `docs/PROGRESS.md` and `TODO.md` at `cpp-final` are authoritative; the README status text is stale and is fixed in the docs rewrite. Phase 0 produces `docs/parity.md`: one row per TODO item with its C++ test(s) and the Rust test that replaces it.
 - **Gates:** carry over the C++ definitions: Wave 2 gate = 10-minute headless engine soak (`tools/soak_mix.cpp`: zero xruns, no audio-thread allocation); Wave 5 gate = scripted UI-driven 10-minute mix (`tools/ui_gate`) plus a `--smoke` startup check. Latency/xrun targets are measured and reported by the latency monitor; the default is a 256-frame buffer at 48 kHz on ALSA/WASAPI/CoreAudio, zero xruns in the soak.
