@@ -102,7 +102,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/library/`: `LibraryImporter` registry (extension point), `ItunesImporter`, `RekordboxImporter`, `ImportWriter` (one transaction, merge by path), `fileUrlToPath`
 - [x] **Todo 23:** Search + filter engine
   - `src/library/`: `SearchFieldRegistry` (extension point), `parseQuery`, `compileSearch` (parameterised SQL), `SearchEngine`; migration v3 indexes. LIKE-based (SQLite build has no FTS5)
-- [ ] **Todo 24:** Track prep queue
+- [x] **Todo 24:** Track prep queue
+  - `src/library/`: `PrepQueueDao` (persisted order/priority/status), `PrepQueue` (bounded in-flight submits to `AnalysisService`, `pump()` on the owner thread writes bpm/key back via `applyPrepResults`), migration v4
 
 ## Wave 5: UI
 

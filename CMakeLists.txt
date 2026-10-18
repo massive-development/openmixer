@@ -320,8 +320,8 @@ target_link_libraries(openmixer_analysis
 )
 
 # =============================================================================
-# Library (SQLite schema + DAOs, metadata ingest, watch folders). Depends on core; analysis for the
-# shared content-hash helper.
+# Library (SQLite schema + DAOs, metadata ingest, watch folders). Depends on core; analysis (same tier) for the
+# content-hash helper and the prep queue, which submits to AnalysisService.
 # =============================================================================
 
 set(OPENMIXER_LIBRARY_SOURCES
@@ -343,6 +343,9 @@ set(OPENMIXER_LIBRARY_SOURCES
     src/library/Migrations.cpp
     src/library/OrderedList.cpp
     src/library/PlaylistDao.cpp
+    src/library/PrepQueue.cpp
+    src/library/PrepQueueDao.cpp
+    src/library/PrepResults.cpp
     src/library/SearchCompiler.cpp
     src/library/SearchEngine.cpp
     src/library/SearchFields.cpp
@@ -377,6 +380,9 @@ add_library(openmixer_library STATIC
     src/library/Migrations.h
     src/library/OrderedList.h
     src/library/PlaylistDao.h
+    src/library/PrepQueue.h
+    src/library/PrepQueueDao.h
+    src/library/PrepResults.h
     src/library/SearchCompiler.h
     src/library/SearchEngine.h
     src/library/SearchFields.h
@@ -586,6 +592,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/LibraryWatchFoldersTest.cpp
     tests/unit/LibrarySearchTest.cpp
     tests/unit/LibraryImportTest.cpp
+    tests/unit/LibraryPrepQueueTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
