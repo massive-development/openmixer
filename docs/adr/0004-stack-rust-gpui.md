@@ -53,7 +53,7 @@ for non-critical audio such as library preview.
 GPUI is accepted provisionally. The first Phase 1 spike is a hard gate:
 
 - `vulkaninfo --summary` on the dev WSL machine;
-- a GPUI window with a custom-painted waveform on Linux and Windows;
+- a GPUI window with a custom-painted waveform on Linux, Windows and macOS;
 - a note on whether GPUI must be pinned to a git commit of Zed (resolved: `gpui =0.2.2` is on crates.io, so no git pin is needed).
 
 Status: the gate is OPEN. WSL2 X11 is provisional (window not visually seen, probably software-rendered; the Wayland backend panics on WSLg). Windows and macOS runs are pending the user (see `docs/spikes/DECISIONS.md`).

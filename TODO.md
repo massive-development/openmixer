@@ -68,7 +68,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
   - Realtime mode
   - Golden audio tests
-  - Stretcher not yet chosen: pure Rust is preferred; Rubber Band via FFI is the fallback (plan task 8)
+  - Stretcher choice pending the user: plan task 8 is done; no pure-Rust candidate passed the stereo CPU bar; the choice (Signalsmith FFI, Rubber Band R3 FFI, or tune pure Rust) is pending the user, see `docs/spikes/DECISIONS.md`
 
 - [ ] **Todo 12:** Beat-sync + quantized cue/loop/slip
   - Beat phase alignment

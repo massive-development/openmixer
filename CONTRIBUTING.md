@@ -82,7 +82,7 @@ All changes — including those by AI agents and maintainers — land through a 
 
 All code must follow idiomatic Rust (edition 2021, MSRV per `rust-version` in the workspace `Cargo.toml`). The Rust API Guidelines and the Rust reference are the reference. Unsafe or leaking code is not acceptable.
 
-- **Unsafe policy:** every crate starts with `#![forbid(unsafe_code)]`, enforced by the workspace lint. The only exception is a dedicated FFI crate (for example a Rubber Band binding, if the Phase 1 spike selects it), where each `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on. Do not add `unsafe` to any other crate.
+- **Unsafe policy:** every crate starts with `#![forbid(unsafe_code)]`, enforced by the workspace lint. The only exception is a dedicated FFI crate (for example a Rubber Band binding, only if/when the stretcher decision selects an FFI engine, see `docs/spikes/DECISIONS.md`), where each `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on. Do not add `unsafe` to any other crate.
 - **Ownership:** let ownership and borrowing express lifetimes. Use `Box`, `Arc` or `Rc` only where ownership is genuinely needed; no `Box::leak` or `mem::forget` to silence the borrow checker.
 - **Idioms:** iterators over index loops where clearer, `?` for error propagation, enums with exhaustive `match`, `#[must_use]` where a result must not be ignored, `Option`/`Result` instead of sentinel values.
 - **Errors:** `thiserror` in library crates, `anyhow` in the `openmixer` binary. Avoid `unwrap()` and `expect()` outside tests and documented invariants.
