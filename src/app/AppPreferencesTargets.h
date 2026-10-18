@@ -15,10 +15,17 @@
 namespace openmixer
 {
 
+// The device manager as the targets see it (a fake in tests). Both run on the message thread.
+struct AudioDeviceControl
+{
+    std::function<juce::String()> currentState;                           // AudioDeviceManager state XML now
+    std::function<juce::String (const juce::XmlElement&)> initialise;     // error message, empty on success
+};
+
 class AppPreferencesTargets : public ui::PreferencesTargets
 {
 public:
-    AppPreferencesTargets (juce::AudioDeviceManager& devices, MidiInputRouter& midi, MidiMapper& mapper,
+    AppPreferencesTargets (AudioDeviceControl audioDevice, MidiInputRouter& midi, MidiMapper& mapper,
                            PluginRegistry& plugins, ui::ThemeRegistry& themes, OutputRouter& outputs);
 
     void applyPluginFolder (const juce::File& folder) override;
@@ -27,18 +34,19 @@ public:
     void applyMidi (const ui::MidiPrefs& midi) override;
 
     void reloadPlugins() { applyPluginFolder (pluginFolder); }   // re-scan the folder applied last
-    // The state the app asked the device manager for at start-up, so applyAudio does not repeat it.
+    // The state the app asked (call before the first apply, so start-up opens the device only once)
+    //  the device manager for at start-up, so applyAudio does not repeat it.
     void noteAudioRequested (const juce::String& stateXml) { lastAudioState = stateXml; }
 
 private:
-    juce::AudioDeviceManager& devices;
+    AudioDeviceControl audioDevice;
     MidiInputRouter& midi;
     MidiMapper& mapper;
     PluginRegistry& plugins;
     ui::ThemeRegistry& themes;
     OutputRouter& outputs;
     juce::File pluginFolder;
-    juce::String lastAudioState, lastMapPath;
+    juce::String lastAudioState, lastMapPath, wantedTheme;   // wantedTheme: re-selected after a plugin reload
 };
 
 } // namespace openmixer

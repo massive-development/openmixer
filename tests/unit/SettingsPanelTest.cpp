@@ -1,6 +1,7 @@
 // OpenMixer SettingsPanelTest - settings pages reflect stored values and write edits back (audio model faked: no real device)
 #include <JuceHeader.h>
 #include "LibraryUiTestUtil.h"
+#include "app/AppPreferencesTargets.h"
 #include "ui/GlassLookAndFeel.h"
 #include "ui/SettingsPanel.h"
 
@@ -548,4 +549,31 @@ TEST (SettingsPanelTest, RendersEveryTabInBothThemes)
             EXPECT_GT (distinctPixels (panel->createComponentSnapshot (panel->getLocalBounds())), 20) << id << " tab " << p;
         }
     }
+}
+
+TEST (SettingsAudioPageTest, OneUiDeviceChangeIsOneDeviceChangeNotTwo)
+{
+    PanelRig rig;
+    int inits = 0;
+    AudioDeviceControl control { [&] { return rig.audio.getStateXml(); },
+                                 [&] (const juce::XmlElement&) { ++inits; return juce::String(); } };
+    juce::AudioDeviceManager dm;   // never initialised
+    MidiMapper mapper;
+    MidiInputRouter midi { dm, mapper };
+    PluginRegistry plugins;
+    OutputRouter outputs;
+    AppPreferencesTargets targets (control, midi, mapper, plugins, rig.themes, outputs);
+    PreferencesApplier applier (targets);
+    rig.prefs.audio.deviceState = rig.audio.getStateXml();
+    targets.noteAudioRequested (rig.prefs.audio.deviceState);   // start-up: the app opened the device itself
+    applier.apply (rig.prefs);
+    EXPECT_EQ (inits, 0);
+
+    AudioSettingsPage page (rig.prefs, rig.audio, nullptr);
+    page.changed = [&] { applier.apply (rig.prefs); };   // what the app does on every settings change
+    page.getRateBox().setSelectedItemIndex (2, juce::sendNotificationSync);
+    EXPECT_EQ (rig.audio.calls.size(), 1) << "the model changed the device once";
+    EXPECT_EQ (inits, 0) << "the applier must not initialise the device again";
+    page.getBufferBox().setSelectedItemIndex (0, juce::sendNotificationSync);
+    EXPECT_EQ (inits, 0);
 }

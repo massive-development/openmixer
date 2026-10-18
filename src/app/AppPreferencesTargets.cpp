@@ -1,13 +1,12 @@
 #include "AppPreferencesTargets.h"
 
-#include "ui/JuceAudioSettingsModel.h"
 
 namespace openmixer
 {
 
-AppPreferencesTargets::AppPreferencesTargets (juce::AudioDeviceManager& d, MidiInputRouter& m, MidiMapper& map,
+AppPreferencesTargets::AppPreferencesTargets (AudioDeviceControl d, MidiInputRouter& m, MidiMapper& map,
                                               PluginRegistry& p, ui::ThemeRegistry& t, OutputRouter& o)
-    : devices (d), midi (m), mapper (map), plugins (p), themes (t), outputs (o)
+    : audioDevice (std::move (d)), midi (m), mapper (map), plugins (p), themes (t), outputs (o)
 {
 }
 
@@ -25,16 +24,21 @@ void AppPreferencesTargets::applyPluginFolder (const juce::File& folder)
         if (const auto r = themes.addJson (t.json, ui::ThemeRegistry::Source::Plugin, t.owner); r.failed())
             juce::Logger::writeToLog ("plugin theme " + t.id + ": " + r.getErrorMessage());
     juce::Logger::writeToLog ("plugins: " + juce::String (loaded) + " loaded from " + folder.getFullPathName());
+    if (wantedTheme.isNotEmpty())   // removing the plugin themes dropped the selection to the default
+        themes.select (wantedTheme);
 }
 
 bool AppPreferencesTargets::applyTheme (const juce::String& themeId)
 {
+    wantedTheme = themeId;
     if (themes.select (themeId))
         return true;
     juce::Logger::writeToLog ("theme '" + themeId + "' not found, keeping the current one");
     return false;
 }
 
+// A device change made in the settings UI already reached the device (its state equals the stored one), and
+// start-up opens the device itself (noteAudioRequested): both skip the re-initialise.
 void AppPreferencesTargets::applyAudio (const ui::AudioPrefs& audio)
 {
     outputs.setMasterPair (audio.masterPair);
@@ -42,24 +46,27 @@ void AppPreferencesTargets::applyAudio (const ui::AudioPrefs& audio)
     if (audio.deviceState.isEmpty() || audio.deviceState == lastAudioState)
         return;
     lastAudioState = audio.deviceState;
-    const auto xml = juce::parseXML (audio.deviceState);
-    if (xml == nullptr)
+    if (audioDevice.currentState && audioDevice.currentState() == audio.deviceState)
         return;
-    if (const auto error = devices.initialise (0, ui::JuceAudioSettingsModel::kMaxOutputs, xml.get(), true); error.isNotEmpty())
+    const auto xml = juce::parseXML (audio.deviceState);
+    if (xml == nullptr || ! audioDevice.initialise)
+        return;
+    if (const auto error = audioDevice.initialise (*xml); error.isNotEmpty())
         juce::Logger::writeToLog ("audio: " + error);
 }
 
+// The map is loaded before inputs are (re)enabled so no message meets a half-built or stale map.
 void AppPreferencesTargets::applyMidi (const ui::MidiPrefs& prefs)
 {
+    const auto file = prefs.mapFile.isEmpty() ? ui::Preferences::defaultMapFile() : juce::File (prefs.mapFile);
+    if (file.getFullPathName() != lastMapPath && file.existsAsFile())
+    {
+        lastMapPath = file.getFullPathName();
+        if (const auto r = mapper.loadFromFile (file); r.failed())
+            juce::Logger::writeToLog ("MIDI map " + file.getFileName() + ": " + r.getErrorMessage());
+    }
     midi.disableAll();
     midi.enable (prefs.enabledInputs, prefs.enableAll);
-    const auto map = ui::Preferences::defaultMapFile();
-    const auto file = prefs.mapFile.isEmpty() ? map : juce::File (prefs.mapFile);
-    if (file.getFullPathName() == lastMapPath || ! file.existsAsFile())
-        return;
-    lastMapPath = file.getFullPathName();
-    if (const auto r = mapper.loadFromFile (file); r.failed())
-        juce::Logger::writeToLog ("MIDI map " + file.getFileName() + ": " + r.getErrorMessage());
 }
 
 } // namespace openmixer
