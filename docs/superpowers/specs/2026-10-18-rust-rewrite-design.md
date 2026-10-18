@@ -25,7 +25,7 @@ The tag `cpp-final` (main @ c6d2747) is the frozen C++ implementation. It is the
 | Area | Choice |
 |---|---|
 | Language / UI | Rust, GPUI (decided by user) |
-| Audio I/O | `cpal` |
+| Audio I/O | `cpal` for the engine's output callback (rodio is built on cpal; its pull-based `Source` chain and managed output thread don't give the sample-accurate, allocation-free, buffer-size-controlled render loop, or the second headphone-cue stream, that decks and a mixer need). `rodio` is acceptable for non-critical audio such as library preview/audition. |
 | Decode | `symphonia`; tags via `lofty` |
 | FFT / DSP | `realfft`/`rustfft`; own biquad/EQ/FX in `om-dsp` |
 | Time-stretch / keylock | Spike required: Rubber Band via thin FFI vs a pure-Rust stretcher. Prefer pure Rust if quality holds; FFI is the fallback (kept in one `unsafe` crate). |
