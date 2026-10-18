@@ -1,4 +1,5 @@
-// Minimal two-deck debug UI (Todo 26a); plain JUCE widgets, replaced by the Wave 5 UI.
+// Main console (Todo 26a, restyled): deck cards on top, channel strips around the master
+// section, crossfader + cue bar at the bottom, all on a glass backdrop. Message thread only.
 #pragma once
 
 #include "../engine/DjEngine.h"
@@ -21,12 +22,16 @@ public:
     explicit DebugPanel (DjEngine& engine);
     ~DebugPanel() override { stopTimer(); }
 
+    // 1 = solid backdrop; below 1 the desktop shows through a semi-transparent window.
+    void setBackdropOpacity (float opacity);
+
     void paint (juce::Graphics& g) override;
     void resized() override;
 
 private:
     void timerCallback() override;
     void addMasterControls();
+    void layoutMixerRow (juce::Rectangle<int> row);
     void layoutMaster (juce::Rectangle<int> column);
     void layoutBottom (juce::Rectangle<int> row);
 
@@ -39,6 +44,8 @@ private:
     juce::Slider cueLevel { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::Label crossfaderLabel, masterLabel, cueLabel, cueLevelLabel, meterLabelL, meterLabelR;
     MeterBar masterMeterL, masterMeterR;
+    juce::Rectangle<int> headerArea, masterCard, bottomCard;
+    float backdropOpacity = 1.0F;
 };
 
 } // namespace openmixer::ui

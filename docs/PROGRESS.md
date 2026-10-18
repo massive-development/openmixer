@@ -90,7 +90,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 | Todo | Entails | Missing |
 |------|---------|---------|
-| 25 Design tokens + LookAndFeel | Original visual identity (no copied layouts/artwork) | All |
+| 25 Design tokens + LookAndFeel 🟡 | Original visual identity (no copied layouts/artwork) | Done: `ui/Theme.h` (translucent glass surfaces, per-deck accents, spacing/type), `GlassLookAndFeel` (ring knobs with value arc from the reset point, capped faders with scale, pill/segmented buttons, frosted title bar), dB meters with peak hold, aligned channel-strip grid, `--translucent` / `OPENMIXER_TRANSLUCENT=1` see-through window. Missing: runtime theme loading (25a), combo/popup/text-editor styling |
 | 25a Theme/skin loader | User themes, colours and layouts loaded via the plugin API | All |
 | 26 Main window + decks | Waveforms, transport, hotcues, loops | All (a placeholder window exists) |
 | 27 Mixer widgets | Knobs, faders, meters | All |
