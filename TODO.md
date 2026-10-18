@@ -49,7 +49,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `tools/soak_mix.cpp`
   - Full 10-minute run remains the Wave 2 gate (Todo 13)
 
-- [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
+- [x] **Todo 9:** Key-lock time-stretch via Rubber Band
   - `src/engine/TimeStretch.{h,cpp}`
   - Realtime mode
   - Golden audio tests
@@ -65,7 +65,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
-- [ ] **Todo 13:** Engine soak test (10-minute headless mix)
+- [x] **Todo 13:** Engine soak test (10-minute headless mix)
   - `tools/soak_mix.cpp`
   - Performance verification
 
@@ -85,12 +85,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 17:** Waveform data model
   - `src/analysis/WaveformBuilder.{h,cpp}`, `WaveformData`
 
-- [ ] **Todo 18:** Onset/energy/structure features
-  - `src/analysis/StructureAnalyzer.{h,cpp}`
+- [x] **Todo 18:** Onset/energy/structure features
+  - `src/analysis/StructureAnalyzer.{h,cpp}`, `OnsetPicker`, `Segmenter`
 
-- [ ] **Todo 19:** Stems precompute (Demucs ONNX)
+- [~] **Todo 19:** Stems precompute (Demucs ONNX) (partial: separator interface, model manifest, licence-gated verified download done; ONNX Runtime backend open)
   - `src/stems/StemSeparator.{h,cpp}`
-  - `src/stems/WeightManager.{h,cpp}`
+  - `src/stems/WeightManager.{h,cpp}`, `ModelManifest`
 
 ## Wave 4: Library & Data
 
