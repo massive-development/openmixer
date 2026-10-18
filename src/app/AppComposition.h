@@ -4,6 +4,8 @@
 // so both exercise the same wiring. Message thread only (except the engine's own audio entry point).
 #pragma once
 
+#include "EngineStateReader.h"
+#include "controllers/MidiFeedback.h"
 #include "controllers/MidiMapper.h"
 #include "controllers/ParameterRouter.h"
 #include "engine/DjEngine.h"
@@ -56,6 +58,8 @@ public:
     DjEngine engine;
     ParameterRouter router;
     MidiMapper mapper;
+    EngineStateReader stateReader { engine };
+    MidiFeedback feedback { stateReader, mapper };   // LEDs: the device owner calls feedback.setSink (none = no output)
     PluginRegistry plugins;   // after engine/router: unloaded first
     ui::Preferences prefs;
 

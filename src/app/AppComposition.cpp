@@ -12,10 +12,12 @@ AppComposition::AppComposition (juce::Component& hostComponent, ui::ThemeRegistr
     setUpRouter();   // the router must hold its targets before the view is built
     buildContent();
     buildLibrary (std::move (libraryOptions));
+    feedback.start();   // idle until a sink is set
 }
 
 AppComposition::~AppComposition()
 {
+    feedback.stop();
     trackLoader.reset();   // before the view it updates
 }
 

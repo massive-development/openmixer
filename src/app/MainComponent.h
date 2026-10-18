@@ -7,6 +7,7 @@
 #include "AppComposition.h"
 #include "AppPreferencesTargets.h"
 #include "controllers/MidiInputRouter.h"
+#include "controllers/MidiOutputRouter.h"
 #include "engine/LatencyMonitor.h"
 #include "engine/OutputRouter.h"
 #include "ui/JuceAudioSettingsModel.h"
@@ -34,6 +35,7 @@ public:
 private:
     void timerCallback() override;   // control tick: sync, FX tempo, slip
     void preferencesChanged();       // a settings page edited the preferences (already saved): apply
+    void refreshMidiOutputs();       // open the output ports paired with the enabled inputs and point the feedback at them
     openmixer::AudioDeviceControl audioControl();
     openmixer::LatencyStats latencyStats() const { return latency.getStats(); }
 
@@ -41,6 +43,7 @@ private:
     openmixer::ui::JuceAudioSettingsModel audioModel { deviceManager };   // before composition: its settings panel uses it and runs a timer, so it dies first
     openmixer::AppComposition composition;   // engine, router, mapper, plugins, preferences, view, library, settings
     openmixer::MidiInputRouter midiInput { deviceManager, composition.mapper };
+    openmixer::MidiOutputRouter midiOutputs;   // LED feedback ports, paired with the enabled inputs by device name
     openmixer::OutputRouter outputs;
     openmixer::LatencyMonitor latency;   // written on the audio thread, read by the settings page
     openmixer::AppPreferencesTargets targets { audioControl(), midiInput, composition.mapper, composition.plugins, themes, outputs };

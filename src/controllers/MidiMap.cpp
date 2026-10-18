@@ -43,7 +43,20 @@ namespace
         else if (mode == "relative2c") m.mode = MapMode::RelativeTwosComplement;
         else if (mode == "button")     m.mode = MapMode::Button;
         else if (mode == "toggle")     m.mode = MapMode::Toggle;
+        else if (mode == "absolute14") m.mode = MapMode::Absolute14;
         else return juce::Result::fail ("unknown mode \"" + mode + "\"");
+        return juce::Result::ok();
+    }
+
+    juce::Result parseLsb (const juce::DynamicObject& o, Mapping& m)
+    {
+        if (m.mode != MapMode::Absolute14)
+            return juce::Result::ok();
+        if (m.kind != MidiEvent::Kind::CC)
+            return juce::Result::fail ("absolute14 needs type cc");
+        m.lsbNumber = o.hasProperty ("lsb") ? static_cast<int> (o.getProperty ("lsb")) : m.number + 32;
+        if (m.lsbNumber < 0 || m.lsbNumber > 127 || m.lsbNumber == m.number)
+            return juce::Result::fail ("lsb must be 0-127 and differ from number");
         return juce::Result::ok();
     }
 
@@ -57,7 +70,7 @@ namespace
         m.step = o.hasProperty ("step") ? static_cast<double> (o.getProperty ("step")) : (m.max - m.min) / 127.0;
         m.initial = o.hasProperty ("initial") ? static_cast<double> (o.getProperty ("initial")) : m.min;
         m.invert = static_cast<bool> (o.getProperty ("invert"));
-        return juce::Result::ok();
+        return parseLsb (o, m);
     }
 
     juce::Result parseMapping (const juce::var& v, Mapping& m)
@@ -69,6 +82,18 @@ namespace
         for (auto step : { &parseKind, &parseAddress, &parseMode, &parseRange })
             if (const auto r = step (*o, m); r.failed())
                 return r;
+        return juce::Result::ok();
+    }
+
+    juce::Result parseOutputs (const juce::var& list, MidiMap& result)
+    {
+        for (int i = 0; i < list.size(); ++i)
+        {
+            OutputRule rule;
+            if (const auto r = OutputRule::parse (list[i], rule); r.failed())
+                return juce::Result::fail ("output " + juce::String (i) + ": " + r.getErrorMessage());
+            result.outputs.push_back (std::move (rule));
+        }
         return juce::Result::ok();
     }
 }
@@ -85,6 +110,9 @@ juce::Result MidiMap::parse (const juce::String& json, MidiMap& out)
         return juce::Result::fail ("Map has no \"mappings\" array");
 
     MidiMap result;
+    result.version = root->hasProperty ("version") ? static_cast<int> (root->getProperty ("version")) : 1;
+    if (result.version < 1 || result.version > kVersion)
+        return juce::Result::fail ("Map version " + juce::String (result.version) + " is not supported");
     result.name = root->getProperty ("name").toString();
     for (int i = 0; i < list.size(); ++i)
     {
@@ -93,8 +121,44 @@ juce::Result MidiMap::parse (const juce::String& json, MidiMap& out)
             return juce::Result::fail ("mapping " + juce::String (i) + ": " + r.getErrorMessage());
         result.mappings.push_back (std::move (m));
     }
+    if (const auto r = parseOutputs (root->getProperty ("outputs"), result); r.failed())
+        return r;
     out = std::move (result);
     return juce::Result::ok();
+}
+
+bool Mapping::operator== (const Mapping& o) const noexcept
+{
+    return kind == o.kind && channel == o.channel && number == o.number && target == o.target && mode == o.mode
+        && min == o.min && max == o.max && step == o.step && initial == o.initial && invert == o.invert
+        && lsbNumber == o.lsbNumber;
+}
+
+juce::Result Mapping::validate() const
+{
+    if (target.isEmpty())
+        return juce::Result::fail ("missing target");
+    if (channel < 0 || channel > 16 || number < 0 || number > 127)
+        return juce::Result::fail ("channel must be 0-16 and number 0-127");
+    if (min == max)
+        return juce::Result::fail ("min and max must differ");
+    if (mode == MapMode::Absolute14 && (kind != MidiEvent::Kind::CC || lsbNumber < 0 || lsbNumber > 127 || lsbNumber == number))
+        return juce::Result::fail ("absolute14 needs a cc with a distinct lsb");
+    return juce::Result::ok();
+}
+
+juce::String toString (MapMode mode)
+{
+    switch (mode)
+    {
+        case MapMode::Absolute:               return "absolute";
+        case MapMode::Relative:               return "relative";
+        case MapMode::RelativeTwosComplement: return "relative2c";
+        case MapMode::Button:                 return "button";
+        case MapMode::Toggle:                 return "toggle";
+        case MapMode::Absolute14:             return "absolute14";
+    }
+    return "absolute";
 }
 
 } // namespace openmixer

@@ -230,11 +230,21 @@ add_library(openmixer_controllers STATIC
     src/controllers/MidiEvent.cpp
     src/controllers/MidiEvent.h
     src/controllers/MidiInputRouter.cpp
+    src/controllers/MidiFeedback.cpp
+    src/controllers/MidiFeedback.h
     src/controllers/MidiInputRouter.h
+    src/controllers/MidiLearn.cpp
+    src/controllers/MidiLearn.h
     src/controllers/MidiMap.cpp
     src/controllers/MidiMap.h
+    src/controllers/MidiMapWriter.cpp
     src/controllers/MidiMapper.cpp
     src/controllers/MidiMapper.h
+    src/controllers/MidiOutputRouter.cpp
+    src/controllers/MidiOutputRouter.h
+    src/controllers/MidiOutputRule.cpp
+    src/controllers/MidiOutputRule.h
+    src/controllers/MidiOutputSink.h
     src/controllers/MidiTrace.cpp
     src/controllers/MidiTrace.h
     src/controllers/ParameterRouter.cpp
@@ -245,13 +255,16 @@ add_library(openmixer_controllers STATIC
 target_include_directories(openmixer_controllers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/controllers/MidiEvent.cpp src/controllers/MidiInputRouter.cpp src/controllers/MidiMap.cpp
-    src/controllers/MidiMapper.cpp src/controllers/MidiTrace.cpp src/controllers/ParameterRouter.cpp)
+    src/controllers/MidiMapper.cpp src/controllers/MidiTrace.cpp src/controllers/ParameterRouter.cpp
+    src/controllers/MidiFeedback.cpp src/controllers/MidiLearn.cpp src/controllers/MidiMapWriter.cpp
+    src/controllers/MidiOutputRouter.cpp src/controllers/MidiOutputRule.cpp)
 
 target_link_libraries(openmixer_controllers PUBLIC
     openmixer_core
     juce::juce_audio_devices
     juce::juce_audio_basics
     juce::juce_core
+    juce::juce_events
     juce::juce_recommended_config_flags
 )
 
@@ -608,7 +621,8 @@ target_link_libraries(openmixer_ui PRIVATE openmixer_theme_data)
 # =============================================================================
 
 # Device-free app composition (engine + router + view + library + settings), shared by the app and the UI gate
-add_library(openmixer_app_core STATIC src/app/AppComposition.cpp src/app/AppComposition.h)
+add_library(openmixer_app_core STATIC src/app/AppComposition.cpp src/app/AppComposition.h
+    src/app/EngineStateReader.cpp src/app/EngineStateReader.h)
 target_include_directories(openmixer_app_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(openmixer_app_core PUBLIC
     openmixer_ui
@@ -706,6 +720,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/DeckTestUtil.h
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
+    tests/unit/MidiLearnTest.cpp
+    tests/unit/MidiFeedbackTest.cpp
+    tests/unit/MidiLearnConcurrencySlowTest.cpp
     tests/unit/DjEngineTest.cpp
     tests/unit/ValueFormatTest.cpp
     tests/unit/ThemeJsonTest.cpp
@@ -760,6 +777,7 @@ target_link_libraries(openmixer_tests PRIVATE
     openmixer_plugins
     openmixer_fx
     openmixer_ui
+    openmixer_app_core
     openmixer_controllers
     openmixer_engine
     ${OPENMIXER_CURL_LIBS}

@@ -23,6 +23,7 @@ MainComponent::MainComponent (openmixer::ui::ThemeRegistry& themeRegistry)
     auto& prefs = composition.prefs;
     targets.noteAudioRequested (prefs.audio.deviceState);   // setAudioChannels below opens the device: not twice
     applier.apply (prefs);
+    refreshMidiOutputs();
     if (const auto wanted = juce::SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", {}); wanted.isNotEmpty())
         targets.applyTheme (wanted);   // also the wanted theme, so a plugin reload keeps it
     const auto savedAudio = juce::parseXML (prefs.audio.deviceState);   // null: the system default device
@@ -52,6 +53,7 @@ void MainComponent::timerCallback()
 MainComponent::~MainComponent()
 {
     stopTimer();
+    composition.feedback.setSink (nullptr);
     midiInput.disableAll();
     shutdownAudio();
 }
@@ -66,6 +68,14 @@ openmixer::AudioDeviceControl MainComponent::audioControl()
 void MainComponent::preferencesChanged()
 {
     applier.apply (composition.prefs);
+    refreshMidiOutputs();
+}
+
+void MainComponent::refreshMidiOutputs()
+{
+    const auto& midi = composition.prefs.midi;
+    const int opened = midiOutputs.openPairedWith (midi.enabledInputs, midi.enableAll);
+    composition.feedback.setSink (opened > 0 ? &midiOutputs : nullptr);
 }
 
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
