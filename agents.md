@@ -10,13 +10,13 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 
 ```
 /home/brandon/projects/openmixer/
-├── .github/workflows/        # CI/CD workflows (rust.yml, pr-tests.yml, ci.yml)
+├── .github/workflows/        # rust.yml = Rust CI (every PR); pr-tests.yml and ci.yml = legacy C++ workflows, kept until Phase 5
 ├── crates/                   # Cargo workspace members
-│   ├── om-core/              # parameter/target traits, state snapshots, command enum (no I/O)
-│   ├── om-dsp/               # filters, EQ, FX primitives, resampling helpers
-│   ├── om-engine/            # decks, channel strips, crossfader, FX routing, sync, loops
-│   ├── om-audio/             # cpal device layer, latency monitor
-│   └── openmixer/            # binary: composition root, preferences, --smoke
+│   ├── om-core/              # currently exposes only VERSION; parameter/target traits, state snapshots, command enum planned (no I/O)
+│   ├── om-dsp/               # empty scaffold; filters, EQ, FX primitives, resampling helpers planned
+│   ├── om-engine/            # empty scaffold; decks, channel strips, crossfader, FX routing, sync, loops planned
+│   ├── om-audio/             # empty scaffold; cpal device layer, latency monitor planned
+│   └── openmixer/            # binary: currently supports --smoke and --version; composition root and preferences planned
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── legal/                # Legal documentation
@@ -33,16 +33,18 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 
 Planned crates, added in their phases: `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`, `om-ui`.
 
-## Current State (Rust rewrite, Phase 0)
+## Current State (Rust rewrite, Phase 0 in progress)
+
+Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending).
 
 **Implemented:**
 - Repository initialization and governance documents (LICENSE, ADRs, CONTRIBUTING)
-- Cargo workspace scaffold with the `om-core`, `om-dsp`, `om-engine`, `om-audio` crates and the `openmixer` binary (`--smoke`)
+- Cargo workspace with the `om-core`, `om-dsp`, `om-engine`, `om-audio` crates (`om-core` exposes only `VERSION`; the other three are empty scaffolds) and the `openmixer` binary (`--smoke`, `--version`)
 - Rust CI matrix (`rust.yml`): fmt, clippy, test on Linux, macOS and Windows; `cargo deny` on Linux
 - Frozen C++ baseline at tag `cpp-final`, the behavioural reference for parity
 
 **In progress / planned:**
-- Phase 0 scaffolding: lint and deny policy, ADR 0004, docs rewrite, `docs/parity.md` (generated from `cpp-final`)
+- Phase 0 remainder: docs rewrite (task 5, in review), spikes and Phase 1 decision record (tasks 6-9, pending); `docs/parity.md` is already generated from `cpp-final`
 - Phase 1 spikes: GPUI window with a custom waveform view on all three OSes, cpal output callback, time-stretch quality. The GPUI go/no-go gate is hard (see ADR 0004).
 
 ## Architecture Decisions
@@ -75,14 +77,14 @@ Planned crates, added in their phases: `om-analysis`, `om-library`, `om-midi`, `
 All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
 
 1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
-2. Open a PR into `stage` with `gh pr create --base stage`. Only the fast Linux test gate (`pr-tests.yml`) runs there. The description must include:
+2. Open a PR into `stage` with `gh pr create --base stage`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, macOS and Windows, `cargo deny`) runs on every pull request. `pr-tests.yml` and `ci.yml` are the legacy C++ workflows, kept until Phase 5; `pr-tests.yml` still runs on PRs into `stage`, but it is not the Rust gate. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key crates/modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, licence, progress, sign) runs only there. Pushes alone never trigger CI.
+5. Release: batch `stage` into `main` with a PR (`--base main`); the legacy full C++ matrix (`ci.yml`, kept until Phase 5) runs only there, and `rust.yml` runs as on every PR. Pushes alone never trigger CI.
 6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
 7. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
 8. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
@@ -321,7 +323,7 @@ Work follows the design phasing. The parity inventory in `docs/parity.md` lists 
 3. Mock device for CI testing
 4. Latency probing
 
-**Tests:**
+**Tests (illustrative — not existing code):**
 ```rust
 #[test]
 fn device_opens_and_closes() {

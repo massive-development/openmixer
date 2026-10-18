@@ -7,11 +7,11 @@ C++ reference: see `cpp-final`.
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: Rust rewrite Phase 0 (plan tasks 1-4: workspace, CI, ADR 0004, parity inventory). Update this file in the same PR that changes a task's status._
+_Last updated: Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending). Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
-![OpenMixer progress heatmap](docs/progress-heatmap.svg)
+![OpenMixer progress heatmap](progress-heatmap.svg)
 
 _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progress.json`. Weighting: done = 1, partial = 0.5, in progress = 0.25._
 
@@ -27,7 +27,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 8 | Pro surface | ⬜ |
 | 9 | Release | ⬜ |
 
-**Rust rewrite status:** Phase 0 (scaffolding) is done. Phase 1 (GPUI, cpal and time-stretch spikes) is next; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
+**Rust rewrite status:** Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending). Phase 1 (GPUI, cpal and time-stretch spikes) is next; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
 
 **What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test`), and check startup with `cargo run -p openmixer -- --smoke`. No audio, analysis, library or UI features exist yet.
 
@@ -38,11 +38,11 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | Task | Entails | Status |
 |------|---------|--------|
 | Repo, governance, legal | AGPLv3 licence, clean-room ADRs (ADR 0004 records the Rust + GPUI stack), contributing guide and code of conduct, asset provenance record, licence check | ✅ |
-| Build system | Cargo workspace (resolver 2, shared lints that forbid `unsafe` outside the FFI crate), `rust-toolchain.toml`, `cargo deny` licence policy | ✅ (scaffold builds; cross-platform CI result not yet confirmed) |
-| CI | `.github/workflows/rust.yml`: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` and `cargo deny` on Linux, macOS and Windows | 🟡 present; not yet confirmed green on all platforms |
+| Build system | Cargo workspace (resolver 2, shared lints that forbid `unsafe` outside the FFI crate), `rust-toolchain.toml`, `cargo deny` licence policy | ✅ |
+| CI | `.github/workflows/rust.yml`: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` and `cargo deny` on Linux, macOS and Windows | ✅ green on Linux, macOS and Windows, plus `cargo deny` |
 | Test harness | `cargo test`; `openmixer --smoke` mode (prints `smoke ok`, exit 0) checked by an integration test | ✅ |
 
-**Missing:** confirmed green CI on all three platforms; packaging.
+**Missing:** packaging.
 
 ---
 

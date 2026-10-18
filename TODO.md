@@ -10,7 +10,7 @@ Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`
 - [x] Plan task 2: Rust CI and licence policy
 - [x] Plan task 3: ADR 0004 supersedes ADR 0002
 - [x] Plan task 4: Parity inventory
-- [ ] Plan task 5: Documentation rewrite (in progress)
+- [ ] Plan task 5: Documentation rewrite (in review)
 - [ ] Plan task 6: Spike A, GPUI window (go/no-go)
 - [ ] Plan task 7: Spike B, cpal output callback
 - [ ] Plan task 8: Spike C, time-stretch quality

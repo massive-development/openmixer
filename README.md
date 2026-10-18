@@ -127,11 +127,11 @@ A Cargo workspace. Dependency arrows point toward `om-core`, which has no I/O.
 
 ```
 crates/
-├── om-core/      # Parameters, state snapshots, command enum (implemented)
-├── om-dsp/       # Filters, EQ, FX primitives, resampling helpers (scaffold)
-├── om-engine/    # Decks, channel strips, crossfader, FX routing, sync, loops (scaffold)
-├── om-audio/     # Device layer over cpal, latency monitor (scaffold)
-└── openmixer/    # Binary: composition root, preferences, --smoke (implemented)
+├── om-core/      # Currently exposes only VERSION; state snapshots and command enum planned
+├── om-dsp/       # Empty scaffold; planned: filters, EQ, FX primitives, resampling helpers
+├── om-engine/    # Empty scaffold; planned: decks, channel strips, crossfader, FX routing, sync, loops
+├── om-audio/     # Empty scaffold; planned: device layer over cpal, latency monitor
+└── openmixer/    # Binary: currently supports --smoke and --version; composition root and preferences planned
 
 Planned: om-analysis and om-library (Phase 3), om-midi (Phase 4), om-ui (Phase 5), om-stems and om-plugins (their waves)
 ```
@@ -174,7 +174,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Rust rewrite in progress. Phase 0 (scaffolding) has landed: the workspace, CI matrix, lint and deny configuration, and ADR 0004. Docs and the parity inventory are being rewritten. Phase 1 (GPUI, cpal and time-stretch spikes, including the GPUI go/no-go gate) is next. Wave 1 is complete for the Rust scaffold.
+**Current State:** Rust rewrite. Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending). Phase 1 (GPUI, cpal and time-stretch spikes, including the GPUI go/no-go gate) is next. Wave 1 is complete for the Rust scaffold.
 
 ---
 
