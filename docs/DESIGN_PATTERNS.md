@@ -69,11 +69,13 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/controllers/ParameterRouter.{h,cpp}`
 - **Why:** MIDI maps address `mixer.*`, `deck.N.*` or any user-registered prefix; plugins add targets without touching core. Longest prefix wins.
 - **Reuse when:** exposing a new controllable unit; register it, do not extend a switch.
+- **Notes:** the app registers `mixer`, `fx` (`FxRouting`), `sync` and `deck.<N>` (`DeckControl`, a decorator that handles sync/loop.quantized/slip and forwards the rest to `Deck`). Engine units cannot link `controllers`, so `DjEngine` exposes targets and the app does the registering.
 
 ### Composition root for the signal path (DjEngine)
 - **Where:** `src/engine/DjEngine.{h,cpp}`
 - **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
 - **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
+- **Notes:** FX racks, `Sync` and `DeckControl` live here; keep `DjEngine` thin by giving each its own file (`FxRouting`, `DeckControl`). `updateControl(dt)` is the one control-timer entry.
 
 ### Grid interface with mock implementations (BeatGrid)
 - **Where:** `src/engine/BeatGrid.h`, consumed by `Sync` and `Quantizer`; `FixedTempoGrid` is the built-in implementation, tests use a mock.

@@ -19,6 +19,8 @@ public:
     bool hasTail() const noexcept override { return true; }
     int tailSilenceWindow (const FxContext& ctx) const noexcept override;
     void reset() noexcept override;
+    void beginReset() noexcept override;
+    bool clearSome (int maxFrames) noexcept override { return line.clearSome (maxFrames); }
 
 protected:
     void prepareEffect (double sampleRate, int maxBlockSize) override;

@@ -54,14 +54,15 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Realtime mode
   - Golden audio tests
 
-- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip, gapless Deck loop playback + hotcues done; real grids Wave 3, app/UI wiring open)
+- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip, gapless Deck loop playback + hotcues done; ids wired through `DeckControl`: `deck.N.sync`, `sync.master`, `loop.quantized.<beats>`, `slip`; real grids Wave 3, UI open)
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
 
 - [x] **Todo 11:** FX rack (8 essential effects)
   - `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop
   - `FxUnit`/`FxRack` as `ProcessStage` inserts; `fxN.*` parameter ids; beat-synced via `setTempo`/`BeatGrid`
-  - Follow-up: wire a rack into `DjEngine` + `ParameterRouter` (`fx` prefix), beat-phase lock, FX UI
+  - Wired into `DjEngine` via `FxRouting` (`fx.master.*`, `fx.ch<N>.*`); idle delay-line clear amortised off the audio thread
+  - Follow-up: beat-phase lock, FX UI
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 

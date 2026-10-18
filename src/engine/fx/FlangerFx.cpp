@@ -29,6 +29,13 @@ void FlangerFx::reset() noexcept
     lastL = lastR = 0.0F;
 }
 
+void FlangerFx::beginReset() noexcept
+{
+    line.beginClear();
+    phase = 0.0;
+    lastL = lastR = 0.0F;
+}
+
 float FlangerFx::delayFor (double ph, double sampleRate) const noexcept
 {
     const double sweep = 0.5 - 0.5 * std::cos (kTwoPi * ph);
