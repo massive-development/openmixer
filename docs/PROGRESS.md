@@ -60,7 +60,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | — | All |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | — | All; removed once Todo 28 lands |
 | 13a Short soak test | 30–60 s headless mix in CI, asserting zero xruns, no steady-state underruns, no NaN/Inf/overflow | — | All; soak mix tool to be carried over from `cpp-final` |
-| 9 Key-lock time-stretch | Tempo change without pitch change. Stretcher to be chosen by plan task 8: pure Rust preferred, Rubber Band via FFI as fallback | — | All |
+| 9 Key-lock time-stretch | Tempo change without pitch change. Stretcher choice pending the user: plan task 8 is done; no pure-Rust candidate passed the stereo CPU bar; the choice (Signalsmith FFI, Rubber Band R3 FFI, or tune pure Rust) is pending the user, see `docs/spikes/DECISIONS.md` | — | All |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode, gapless deck loops, 8 hotcues. Control ids `deck.N.sync`, `sync.master`, `deck.N.loop.quantized.<beats>`, `deck.N.slip` | — | All; UI buttons; hotcue persistence (Wave 4 library) |
 | 11 FX rack | 8 effects (echo, reverb, flanger, phaser, crush, gate, roll, tape stop) with wet/dry and beat-sync; one rack per mixer channel and one on master (`fx.ch<N>.*`, `fx.master.*`); no allocation on the audio thread, buffer clears amortised | — | All; UI; beat-phase lock to the grid |
 | 13 Full soak test | 10-minute headless mix with a scripted DJ (loops, hotcues, key-lock toggles, master FX, seeks); glitch and xrun budget (zero xruns, no audio-thread allocation) | — | All; not in CI (10 minutes); paced mock device, not real hardware |

@@ -68,7 +68,7 @@ Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the
 - **Audio I/O:** `cpal` for the engine output callback; `rodio` only for non-critical audio such as library preview
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
-- **Time-stretch:** pure Rust preferred; Rubber Band via thin FFI as fallback, kept in one `unsafe` crate
+- **Time-stretch:** pending the user (plan task 8 is done; no pure-Rust candidate passed the stereo CPU bar; the choice (Signalsmith FFI, Rubber Band R3 FFI, or tune pure Rust) is pending the user, see `docs/spikes/DECISIONS.md`); any FFI is kept in one `unsafe` crate
 - **MIDI:** `midir`; **Library:** `rusqlite` (bundled SQLite)
 - **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
 
