@@ -39,7 +39,7 @@ TEST_F (DeckPlaybackSlow, PausedDeckOutputsSilenceAndDoesNotAdvance)
     openmixer::Deck deck;
     deck.prepare (kRate, 256);
     deck.load (wavFile);
-    pumpUntilBuffered (deck, 1000);
+    ASSERT_TRUE (pumpUntilBuffered (deck, 1000)) << "decoder did not buffer in time";
     std::vector<float> l (256, 1.0f), r (256, 1.0f);
     deck.renderStereo (l.data(), r.data(), 256);
     for (auto v : l)
@@ -52,7 +52,7 @@ TEST_F (DeckPlaybackSlow, PlaybackAtRateOneReproducesTheSourceAndFinishes)
     openmixer::Deck deck (1 << 12);   // small ring forces many wraparounds
     deck.prepare (kRate, 256);
     deck.load (wavFile);
-    pumpUntilBuffered (deck, 512);
+    ASSERT_TRUE (pumpUntilBuffered (deck, 512)) << "decoder did not buffer in time";
     deck.play();
 
     std::vector<float> out;
@@ -89,7 +89,7 @@ TEST_F (DeckPlaybackSlow, UnderrunIsCountedAndOutputsSilenceWhenDecoderIsStarved
     openmixer::Deck deck (1 << 12);
     deck.prepare (kRate, 256);
     deck.load (wavFile);
-    pumpUntilBuffered (deck, 2048);
+    ASSERT_TRUE (pumpUntilBuffered (deck, 2048)) << "decoder did not buffer in time";
     deck.setRate (8.0);   // consume far faster than the ring can hold
     deck.play();
     std::vector<float> l (4096, 1.0f), r (4096, 1.0f);
@@ -105,7 +105,7 @@ TEST_F (DeckPlaybackSlow, SeekRepositionsPlayback)
     openmixer::Deck deck;
     deck.prepare (kRate, 256);
     deck.load (wavFile);
-    pumpUntilBuffered (deck, 512);
+    ASSERT_TRUE (pumpUntilBuffered (deck, 512)) << "decoder did not buffer in time";
     deck.seek (10000);
     std::vector<float> l (64), r (64);
     const bool synced = waitFor ([&]
@@ -128,7 +128,7 @@ TEST_F (DeckPlaybackSlow, RateHalfAdvancesHalfAsFastAndInterpolates)
     deck.load (wavFile);
     deck.seek (4000);
     deck.setRate (0.5);
-    pumpUntilBuffered (deck, 2048, 4000);
+    ASSERT_TRUE (pumpUntilBuffered (deck, 2048, 4000)) << "decoder did not buffer in time";
     deck.play();
     std::vector<float> l (1000), r (1000);
     deck.renderStereo (l.data(), r.data(), 1000);
@@ -143,7 +143,7 @@ TEST_F (DeckPlaybackSlow, MonoFilesPlayOnBothChannels)
     openmixer::Deck deck;
     deck.prepare (kRate, 256);
     deck.load (mono);
-    pumpUntilBuffered (deck, 512);
+    ASSERT_TRUE (pumpUntilBuffered (deck, 512)) << "decoder did not buffer in time";
     deck.seek (5000);
     std::vector<float> l (64), r (64);
     waitFor ([&]
