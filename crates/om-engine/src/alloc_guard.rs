@@ -72,3 +72,69 @@ fn mixer_and_deck_render_paths_do_not_allocate() {
         "every block should carry deck audio"
     );
 }
+
+#[test]
+fn loop_playback_does_not_allocate() {
+    use crate::quantizer::Loop;
+    let fixture = crate::deck::tests::Fixture::new();
+    let wav = fixture.path("loop.wav");
+    let frames = BLOCK * BLOCKS + 4096;
+    let mut samples = Vec::with_capacity(frames * 2);
+    for n in 0..frames {
+        let v = (n % 1000) as f32 / 1000.0;
+        samples.push(v);
+        samples.push(-v);
+    }
+    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+
+    let (mut mixer, _control) = Mixer::new(2);
+    mixer.prepare(RATE, BLOCK);
+    let (deck, mut audio) = Deck::new(1 << 16);
+    audio.prepare(RATE, BLOCK);
+    deck.load(&wav).expect("fixture loads");
+    assert!(
+        crate::deck::tests::pump_until_buffered(&deck, &mut audio, BLOCK * 4, 0),
+        "decoder did not buffer in time"
+    );
+    assert!(deck.set_loop(Loop {
+        start: 1024,
+        end: 5120
+    }));
+    assert!(
+        crate::deck::tests::wait_for(
+            || deck.is_loop_prefetched(),
+            std::time::Duration::from_secs(10)
+        ),
+        "loop start was not prefetched"
+    );
+    deck.play();
+
+    let mut dl = [0.0_f32; BLOCK];
+    let mut dr = [0.0_f32; BLOCK];
+    let mut ml = [0.0_f32; BLOCK];
+    let mut mr = [0.0_f32; BLOCK];
+    let mut cl = [0.0_f32; BLOCK];
+    let mut cr = [0.0_f32; BLOCK];
+    let mut audible_blocks = 0_usize;
+
+    // Playing a loop wraps every 4096 frames, so several wraps happen inside the guarded blocks.
+    // The loop start is prefetched, so the wraps take the slot path (no ring waits here).
+    for _ in 0..BLOCKS {
+        assert_no_alloc(|| audio.render_stereo(&mut dl, &mut dr));
+        assert_no_alloc(|| {
+            let inputs = [ChannelInput {
+                left: Some(&dl),
+                right: Some(&dr),
+            }];
+            mixer.process(&inputs, &mut ml, &mut mr, &mut cl, &mut cr);
+        });
+        if ml.iter().any(|&v| v != 0.0) {
+            audible_blocks += 1;
+        }
+    }
+    assert!(deck.is_looping());
+    assert_eq!(
+        audible_blocks, BLOCKS,
+        "every block should carry loop audio"
+    );
+}

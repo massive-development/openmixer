@@ -2,6 +2,7 @@
 //! seek and ring-reposition requests from the audio thread's handshake and keeps the ring topped
 //! up in chunks. Never runs on the audio thread.
 
+use super::loop_state::LoopSnapshot;
 use super::shared::Shared;
 use super::source::SourceReader;
 use om_core::SpscProducer;
@@ -22,6 +23,9 @@ pub(super) struct DecoderWorker {
     local_seq: u32,
     local_ring_req: u32,
     local_written: u64,
+    reader_load_id: u32,
+    /// Loop start the prefetch slot currently holds, or -1.
+    prefetched_start: i64,
     chunk: Vec<[f32; 2]>,
 }
 
@@ -36,6 +40,8 @@ impl DecoderWorker {
             local_seq: 0,
             local_ring_req: 0,
             local_written: 0,
+            reader_load_id: 0,
+            prefetched_start: -1,
             chunk: vec![[0.0; 2]; CHUNK_FRAMES],
         }
     }
@@ -50,6 +56,7 @@ impl DecoderWorker {
             } else {
                 self.service_ring_request();
             }
+            self.service_prefetch();
 
             if self.can_produce() {
                 self.produce_chunk();
@@ -65,7 +72,10 @@ impl DecoderWorker {
         };
         if pending.has {
             self.reader = pending.reader.take();
+            self.reader_load_id = pending.load_id;
             pending.has = false;
+            self.shared.prefetch.withdraw();
+            self.prefetched_start = -1;
         }
     }
 
@@ -89,9 +99,44 @@ impl DecoderWorker {
     fn sync_to(&mut self, epoch: u32) {
         let target = self.shared.seek_target.load(Relaxed);
         self.publish_ack(target);
+        self.shared.ack_load_id.store(self.reader_load_id, Relaxed);
         self.local_ack = epoch;
         // After ack_seq: the audio thread reads the epoch first.
         self.shared.ack_epoch.store(epoch, Release);
+    }
+
+    /// Fills a prefetch slot when the loop start changes. Loops that are not set, or are invalid,
+    /// leave the slot alone.
+    fn service_prefetch(&mut self) {
+        let mut loop_snap = LoopSnapshot::default();
+        if self.reader.is_none()
+            || !self.shared.loop_state.load(&mut loop_snap)
+            || !loop_snap.valid()
+            || loop_snap.start == self.prefetched_start
+        {
+            return;
+        }
+        self.fill_prefetch(loop_snap.start);
+    }
+
+    fn fill_prefetch(&mut self, start: i64) {
+        let prefetch = &self.shared.prefetch;
+        let index = prefetch.begin_fill();
+        let len = (self.length() - start).clamp(0, prefetch.capacity());
+        let mut done = 0;
+        while done < len {
+            let n = (len - done).min(CHUNK_FRAMES as i64) as usize;
+            if let Some(reader) = self.reader.as_mut() {
+                reader.read_stereo(start + done, &mut self.chunk[..n]);
+            }
+            for (i, frame) in self.chunk[..n].iter().enumerate() {
+                prefetch.write_frame(index, done as usize + i, *frame);
+            }
+            done += n as i64;
+        }
+        prefetch.set_meta(index, start, len, self.reader_load_id);
+        prefetch.publish(index);
+        self.prefetched_start = start;
     }
 
     fn service_ring_request(&mut self) {

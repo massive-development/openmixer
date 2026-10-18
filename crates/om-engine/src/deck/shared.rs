@@ -3,6 +3,8 @@
 //! which the audio thread never takes.
 
 use super::hotcues::HotcueBank;
+use super::loop_state::LoopState;
+use super::prefetch::LoopPrefetch;
 use super::source::SourceReader;
 use crate::fx::math::AtomicF64;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64};
@@ -45,6 +47,12 @@ pub(super) struct Shared {
     pub ring_req_base: AtomicU32,
     pub ring_req_target: AtomicI64,
 
+    /// Load id of the reader the last control ack belongs to (loop prefetch slots carry the same id).
+    pub ack_load_id: AtomicU32,
+
+    pub loop_state: LoopState,
+    pub prefetch: LoopPrefetch,
+
     /// Floats written to / read from the ring. Their difference is the buffered sample count and
     /// is readable from any thread without touching the consumer.
     pub written_samples: AtomicU64,
@@ -56,7 +64,7 @@ pub(super) struct Shared {
 
 impl Shared {
     /// Initial state of an unloaded deck. Device and file rates match the C++ defaults (44.1 kHz).
-    pub fn new() -> Self {
+    pub fn new(prefetch_frames: i64) -> Self {
         Self {
             playing: AtomicBool::new(false),
             loaded: AtomicBool::new(false),
@@ -78,6 +86,9 @@ impl Shared {
             ring_req_epoch: AtomicU32::new(0),
             ring_req_base: AtomicU32::new(0),
             ring_req_target: AtomicI64::new(0),
+            ack_load_id: AtomicU32::new(0),
+            loop_state: LoopState::default(),
+            prefetch: LoopPrefetch::new(prefetch_frames),
             written_samples: AtomicU64::new(0),
             read_samples: AtomicU64::new(0),
             pending: Mutex::new(Pending::default()),
