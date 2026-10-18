@@ -41,6 +41,7 @@ public:
     void setLeader (int deck);
     void setEnabled (int deck, bool on);
     void setMode (SyncMode m);
+    std::shared_ptr<const BeatGrid> getGrid (int deck) const;
     bool isEnabled (int deck) const;
     int getLeader() const;
 
