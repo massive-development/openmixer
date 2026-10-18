@@ -18,7 +18,7 @@ juce::Result CueDao::clearCue (std::int64_t trackId, int slot)
     return s.run();
 }
 
-std::vector<CuePoint> CueDao::cues (std::int64_t trackId)
+std::vector<CuePoint> CueDao::cues (std::int64_t trackId, juce::Result* status)
 {
     auto s = db.prepare ("SELECT slot, position_frames, colour_argb, label FROM cues"
                          " WHERE track_id=?1 ORDER BY slot;");
@@ -27,6 +27,7 @@ std::vector<CuePoint> CueDao::cues (std::int64_t trackId)
     std::vector<CuePoint> out;
     while (s.nextRow())
         out.push_back ({ trackId, s.integer (0), s.int64 (1), static_cast<std::uint32_t> (s.int64 (2)), s.text (3) });
+    db.report (s, status);
     return out;
 }
 
@@ -45,7 +46,7 @@ juce::Result CueDao::clearLoop (std::int64_t trackId, int slot)
     return s.run();
 }
 
-std::vector<SavedLoop> CueDao::loops (std::int64_t trackId)
+std::vector<SavedLoop> CueDao::loops (std::int64_t trackId, juce::Result* status)
 {
     auto s = db.prepare ("SELECT slot, start_frames, end_frames, colour_argb, label FROM loops"
                          " WHERE track_id=?1 ORDER BY slot;");
@@ -54,6 +55,7 @@ std::vector<SavedLoop> CueDao::loops (std::int64_t trackId)
     std::vector<SavedLoop> out;
     while (s.nextRow())
         out.push_back ({ trackId, s.integer (0), s.int64 (1), s.int64 (2), static_cast<std::uint32_t> (s.int64 (3)), s.text (4) });
+    db.report (s, status);
     return out;
 }
 

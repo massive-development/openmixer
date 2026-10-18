@@ -22,7 +22,7 @@ const std::vector<Migration>& coreMigrations();
 // Fails if the list is not strictly increasing or the database is newer than the list (no downgrades).
 juce::Result migrate (Database& db, const std::vector<Migration>& migrations);
 
-// 0 for a database that has never been migrated.
+// 0 for a database that has never been migrated; -1 if the version could not be read.
 int currentSchemaVersion (Database& db);
 
 } // namespace openmixer::library

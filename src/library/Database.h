@@ -23,6 +23,9 @@ public:
     // Invalid Statement when the SQL does not compile (see lastError()).
     Statement prepare (const char* sql);
     juce::Result exec (const char* sql);
+    // Outcome of a read: fails when the statement did not prepare or stepping hit an error (e.g. BUSY).
+    juce::Result status (const Statement& s) const;
+    void report (const Statement& s, juce::Result* out) const { if (out != nullptr) *out = status (s); }
 
     std::int64_t lastInsertRowId() const;
     int changes() const;
@@ -40,6 +43,7 @@ public:
 
 private:
     juce::Result configure (OpenMode mode, bool inMemory);
+    juce::Result enableWal();
 
     std::unique_ptr<sqlite3, Closer> handle;
     int savepointCounter = 0;

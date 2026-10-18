@@ -138,3 +138,21 @@ TEST (LibraryDatabase, OpeningNonexistentReadOnlyFileFails)
     EXPECT_EQ (Library::open ("/nonexistent-dir/none.db", Database::OpenMode::ReadOnly, coreMigrations(), &error), nullptr);
     EXPECT_TRUE (error.isNotEmpty());
 }
+
+TEST (LibraryDatabase, ReadErrorFromMissingTableSurfacesInStatus)
+{
+    auto db = memoryDb();
+    auto s = db->prepare ("SELECT * FROM nope;");
+    EXPECT_FALSE (s.valid());
+    EXPECT_TRUE (db->status (s).failed());
+}
+
+TEST (LibraryDatabase, BusyTimeoutIsConfigured)
+{
+    juce::TemporaryFile file (".db");
+    auto db = Database::open (file.getFile().getFullPathName());
+    ASSERT_NE (db, nullptr);
+    auto s = db->prepare ("PRAGMA busy_timeout;");
+    ASSERT_TRUE (s.nextRow());
+    EXPECT_GT (s.integer (0), 0);
+}

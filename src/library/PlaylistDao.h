@@ -41,15 +41,16 @@ public:
     // Re-parents and/or reorders. Fails when the new parent is not a folder or is inside the node.
     juce::Result move (std::int64_t id, std::optional<std::int64_t> newParentId, int index);
 
-    std::optional<Playlist> find (std::int64_t id);
-    std::vector<Playlist> children (std::optional<std::int64_t> parentId);   // ordered by position
+    // Reads take an optional `status` to distinguish a failed read from "not found" / empty.
+    std::optional<Playlist> find (std::int64_t id, juce::Result* status = nullptr);
+    std::vector<Playlist> children (std::optional<std::int64_t> parentId, juce::Result* status = nullptr);   // ordered by position
 
     // index < 0 appends. Fails for folders and unknown tracks.
     std::optional<std::int64_t> addTrack (std::int64_t playlistId, std::int64_t trackId, int index = -1);
     juce::Result removeEntry (std::int64_t entryId);
     juce::Result moveEntry (std::int64_t entryId, int newIndex);
-    std::optional<PlaylistEntry> findEntry (std::int64_t entryId);
-    std::vector<PlaylistEntry> entries (std::int64_t playlistId);   // ordered by position
+    std::optional<PlaylistEntry> findEntry (std::int64_t entryId, juce::Result* status = nullptr);
+    std::vector<PlaylistEntry> entries (std::int64_t playlistId, juce::Result* status = nullptr);   // ordered by position
 
 private:
     juce::Result detach (const Playlist& node);
