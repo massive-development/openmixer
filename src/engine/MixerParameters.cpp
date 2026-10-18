@@ -45,6 +45,11 @@ bool Mixer::setParameter (const juce::String& id, double value)
     if (parts.size() >= 2 && parts[0].startsWith ("ch"))
         return setChannelParameter (parts, value);
     if (parts.size() == 1 && parts[0] == "crossfader") { setCrossfader (v); return true; }
+    if (parts.size() == 2 && parts[0] == "crossfader" && parts[1] == "curve")
+    {
+        setCrossfaderCurve (v >= 0.5F ? CrossfaderCurve::ConstantPower : CrossfaderCurve::Linear);
+        return true;
+    }
     if (parts.size() == 1 && parts[0] == "master")     { setMasterGain (v); return true; }
     if (parts.size() == 2 && parts[0] == "cue" && parts[1] == "level") { setCueLevel (v); return true; }
     if (parts.size() == 2 && parts[0] == "cue" && parts[1] == "mix")   { setCueMix (v); return true; }

@@ -139,6 +139,8 @@ add_library(openmixer_engine STATIC
     src/engine/MockAudioDevice.h
     src/engine/Mixer.cpp
     src/engine/Mixer.h
+    src/engine/OutputRouter.cpp
+    src/engine/OutputRouter.h
     src/engine/MixerParameters.cpp
     src/engine/PeakMeter.h
     src/engine/ProcessStage.h
@@ -155,7 +157,7 @@ target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp src/engine/DeckControl.cpp src/engine/FxRouting.cpp
     src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DeckKeylock.cpp src/engine/TimeStretch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
-    src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
+    src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp src/engine/OutputRouter.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
@@ -469,39 +471,154 @@ openmixer_enable_warnings(examples/plugins/GainPlugin.cpp)
 target_link_libraries(openmixer_example_gain PRIVATE juce::juce_core juce::juce_recommended_config_flags)
 
 # =============================================================================
-# UI library (debug panel; real UI arrives in Wave 5)
+# UI library (Glass widgets, deck/mixer/library views; depends on engine, analysis and library, never the reverse)
 # =============================================================================
 
+# Built-in theme JSON, embedded so the binary needs no data files next to it.
+juce_add_binary_data(openmixer_theme_data
+    HEADER_NAME ThemeBinaryData.h
+    NAMESPACE openmixer_themes
+    SOURCES
+        resources/themes/openmixer-dark.json
+        resources/themes/openmixer-daylight.json
+)
+set_target_properties(openmixer_theme_data PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_library(openmixer_ui STATIC
-    src/ui/ChannelStripPanel.cpp
-    src/ui/ChannelStripPanel.h
+    src/ui/AppearanceSettingsPage.cpp
+    src/ui/AppearanceSettingsPage.h
+    src/ui/AudioSettingsPage.cpp
+    src/ui/AudioSettingsPage.h
+    src/ui/JuceAudioSettingsModel.cpp
+    src/ui/JuceAudioSettingsModel.h
+    src/ui/LibrarySettingsPage.cpp
+    src/ui/LibrarySettingsPage.h
+    src/ui/MidiSettingsPage.cpp
+    src/ui/MidiSettingsPage.h
+    src/ui/PathRow.cpp
+    src/ui/PathRow.h
+    src/ui/PluginsSettingsPage.cpp
+    src/ui/PluginsSettingsPage.h
+    src/ui/Preferences.cpp
+    src/ui/Preferences.h
+    src/ui/PreferencesApplier.cpp
+    src/ui/PreferencesApplier.h
+    src/ui/SettingsPage.cpp
+    src/ui/SettingsPage.h
+    src/ui/SettingsPanel.cpp
+    src/ui/SettingsPanel.h
+    src/ui/AudioSettingsModel.h
+    src/ui/ChannelStripWidget.cpp
+    src/ui/ChannelStripWidget.h
+    src/ui/CrossfaderSection.cpp
+    src/ui/CrossfaderSection.h
+    src/ui/CueSection.cpp
+    src/ui/CueSection.h
+    src/ui/FxPanel.cpp
+    src/ui/FxPanel.h
+    src/ui/LabeledKnob.cpp
+    src/ui/LabeledKnob.h
+    src/ui/MasterSection.cpp
+    src/ui/MasterSection.h
+    src/ui/MeterBallistics.cpp
+    src/ui/MeterBallistics.h
+    src/ui/MixerBinding.h
+    src/ui/MixerPanel.cpp
+    src/ui/MixerPanel.h
     src/ui/ControlCaption.h
-    src/ui/DebugPanel.cpp
-    src/ui/DebugPanel.h
-    src/ui/DeckStrip.cpp
-    src/ui/DeckStrip.h
     src/ui/GlassLookAndFeel.cpp
     src/ui/GlassLookAndFeel.h
+    src/ui/GlassWidgets.cpp
     src/ui/MeterBar.cpp
     src/ui/MeterBar.h
+    src/ui/Theme.cpp
     src/ui/Theme.h
+    src/ui/ThemeJson.cpp
+    src/ui/ThemeJson.h
+    src/ui/ThemeRegistry.cpp
+    src/ui/ThemeRegistry.h
+    src/ui/ThemeTokens.h
     src/ui/ValueFormat.h
+    src/ui/DeckBinding.h
+    src/ui/DeckWidget.cpp
+    src/ui/DeckWidget.h
+    src/ui/HotcuePads.cpp
+    src/ui/HotcuePads.h
+    src/ui/LibraryBrowser.cpp
+    src/ui/LibraryBrowser.h
+    src/ui/LibraryServices.cpp
+    src/ui/LibraryServices.h
+    src/ui/SidebarModel.cpp
+    src/ui/SidebarModel.h
+    src/ui/SidebarTree.cpp
+    src/ui/SidebarTree.h
+    src/ui/ClockFormat.h
+    src/ui/TrackDrag.h
+    src/ui/TrackLoader.cpp
+    src/ui/TrackLoader.h
+    src/ui/TrackSource.cpp
+    src/ui/TrackSource.h
+    src/ui/TrackTableModel.cpp
+    src/ui/TrackTableModel.h
+    src/ui/LoopControls.cpp
+    src/ui/LoopControls.h
+    src/ui/MainLayout.cpp
+    src/ui/MainLayout.h
+    src/ui/MainView.cpp
+    src/ui/MainView.h
+    src/ui/OverviewWaveform.cpp
+    src/ui/OverviewWaveform.h
+    src/ui/PitchFader.cpp
+    src/ui/PitchFader.h
+    src/ui/TrackHeader.cpp
+    src/ui/TrackHeader.h
+    src/ui/TransportPanel.cpp
+    src/ui/TransportPanel.h
+    src/ui/WaveformGeometry.cpp
+    src/ui/WaveformGeometry.h
+    src/ui/WaveformPainter.cpp
+    src/ui/WaveformPainter.h
+    src/ui/ZoomWaveform.cpp
+    src/ui/ZoomWaveform.h
 )
 
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
-    src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
-    src/ui/MeterBar.cpp)
+    src/ui/AppearanceSettingsPage.cpp src/ui/AudioSettingsPage.cpp src/ui/JuceAudioSettingsModel.cpp src/ui/LibrarySettingsPage.cpp src/ui/MidiSettingsPage.cpp src/ui/PathRow.cpp src/ui/PluginsSettingsPage.cpp src/ui/Preferences.cpp src/ui/PreferencesApplier.cpp src/ui/SettingsPage.cpp src/ui/SettingsPanel.cpp
+    src/ui/ChannelStripWidget.cpp src/ui/CrossfaderSection.cpp src/ui/CueSection.cpp src/ui/FxPanel.cpp
+    src/ui/LabeledKnob.cpp src/ui/MasterSection.cpp src/ui/MeterBallistics.cpp src/ui/MixerPanel.cpp src/ui/GlassLookAndFeel.cpp
+    src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp
+    src/ui/DeckWidget.cpp src/ui/HotcuePads.cpp src/ui/LibraryBrowser.cpp src/ui/LibraryServices.cpp
+    src/ui/SidebarModel.cpp src/ui/SidebarTree.cpp src/ui/TrackLoader.cpp src/ui/TrackSource.cpp src/ui/TrackTableModel.cpp src/ui/LoopControls.cpp src/ui/MainLayout.cpp src/ui/MainView.cpp src/ui/OverviewWaveform.cpp src/ui/PitchFader.cpp src/ui/TrackHeader.cpp src/ui/TransportPanel.cpp
+    src/ui/WaveformGeometry.cpp src/ui/WaveformPainter.cpp src/ui/ZoomWaveform.cpp)
 
 target_link_libraries(openmixer_ui PUBLIC
     openmixer_engine
+    openmixer_analysis
+    openmixer_library
     juce::juce_gui_basics
+    juce::juce_audio_devices
+    juce::juce_events
     juce::juce_recommended_config_flags
 )
+target_link_libraries(openmixer_ui PRIVATE openmixer_theme_data)
 
 # =============================================================================
 # Main Application
 # =============================================================================
+
+# Device-free app composition (engine + router + view + library + settings), shared by the app and the UI gate
+add_library(openmixer_app_core STATIC src/app/AppComposition.cpp src/app/AppComposition.h)
+target_include_directories(openmixer_app_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
+target_link_libraries(openmixer_app_core PUBLIC
+    openmixer_ui
+    openmixer_plugins
+    openmixer_controllers
+    openmixer_engine
+    juce::juce_gui_basics
+    juce::juce_events
+    juce::juce_recommended_config_flags
+)
 
 juce_add_gui_app(openmixer
     PRODUCT_NAME "OpenMixer"
@@ -514,12 +631,16 @@ target_sources(openmixer PRIVATE
     src/app/Main.cpp
     src/app/MainComponent.cpp
     src/app/MainComponent.h
+    src/app/AppPreferencesTargets.cpp
+    src/app/AppPreferencesTargets.h
 )
 
 juce_generate_juce_header(openmixer)
 
 target_link_libraries(openmixer PRIVATE
+    openmixer_app_core
     openmixer_ui
+    openmixer_plugins
     openmixer_controllers
     openmixer_engine
     juce::juce_audio_basics
@@ -586,8 +707,23 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp
-    tests/unit/DebugPanelTest.cpp
     tests/unit/ValueFormatTest.cpp
+    tests/unit/ThemeJsonTest.cpp
+    tests/unit/ThemeRegistryTest.cpp
+    tests/unit/GlassLookAndFeelTest.cpp
+    tests/unit/DeckWidgetTest.cpp
+    tests/unit/MainLayoutTest.cpp
+    tests/unit/MixerWidgetTest.cpp
+    tests/unit/MeterBallisticsTest.cpp
+    tests/unit/FxPanelTest.cpp
+    tests/unit/LibraryBrowserTest.cpp
+    tests/unit/PreferencesTest.cpp
+    tests/unit/OutputRouterTest.cpp
+    tests/unit/SettingsPanelTest.cpp
+    tests/unit/ControlThreadSafetyTest.cpp
+    tests/unit/AppPreferencesTargetsTest.cpp
+    src/app/AppPreferencesTargets.cpp
+    tests/unit/TrackLoaderTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp
@@ -673,6 +809,48 @@ option(OPENMIXER_LONG_SOAK "Register the 10-minute soak test" OFF)
 if(OPENMIXER_LONG_SOAK)
     add_test(NAME soak_10min COMMAND openmixer_soak --seconds 600 --max-xruns 5)
     set_tests_properties(soak_10min PROPERTIES LABELS soak_long TIMEOUT 720)
+endif()
+
+# App smoke (Todo 31): opens the main window for ~0.5 s and exits 0; exit 77 (no display) is reported as skipped.
+# Isolated prefs/library so the run never touches user data.
+add_test(NAME app_smoke COMMAND openmixer --smoke)
+set_tests_properties(app_smoke PROPERTIES LABELS smoke TIMEOUT 60 SKIP_RETURN_CODE 77
+    ENVIRONMENT "OPENMIXER_PREFS=${CMAKE_BINARY_DIR}/smoke/preferences.json;OPENMIXER_LIBRARY_DB=${CMAKE_BINARY_DIR}/smoke/library.db")
+
+# UI gate (Todo 31): the full main window driven through its widgets over a mock device (label "ui_gate");
+# the 10-minute variant shares OPENMIXER_LONG_SOAK (label "uigate_long": not matched by the regex -L ui_gate)
+add_executable(openmixer_ui_gate tools/ui_gate.cpp tools/ui_gate/UiRig.h tools/ui_gate/UiScenario.h
+    tools/soak/OutputChecker.h tools/soak/Scenario.h tools/soak/ToneWriter.h)
+target_include_directories(openmixer_ui_gate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+openmixer_enable_warnings(tools/ui_gate.cpp)
+# the gate pumps the message loop in slices between control ticks
+target_compile_definitions(openmixer_ui_gate PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(openmixer_ui_gate PRIVATE
+    openmixer_app_core
+    openmixer_ui
+    openmixer_library
+    openmixer_analysis
+    openmixer_controllers
+    openmixer_fx
+    openmixer_engine
+    ${OPENMIXER_CURL_LIBS}
+    juce::juce_gui_basics
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_audio_basics
+    juce::juce_events
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+# A JUCE leak-detector report at exit (debug builds) fails the test even though the exit code is 0
+set(OPENMIXER_UI_GATE_FAIL_REGEX "Leaked objects detected|JUCE Assertion failure")
+add_test(NAME ui_gate_short COMMAND openmixer_ui_gate --seconds 40 --max-xruns 5)
+set_tests_properties(ui_gate_short PROPERTIES LABELS ui_gate TIMEOUT 180
+    FAIL_REGULAR_EXPRESSION "${OPENMIXER_UI_GATE_FAIL_REGEX}")
+if(OPENMIXER_LONG_SOAK)
+    add_test(NAME ui_gate_10min COMMAND openmixer_ui_gate --seconds 600 --max-xruns 5)
+    set_tests_properties(ui_gate_10min PROPERTIES LABELS uigate_long TIMEOUT 780
+        FAIL_REGULAR_EXPRESSION "${OPENMIXER_UI_GATE_FAIL_REGEX}")
 endif()
 
 # =============================================================================

@@ -1,102 +1,154 @@
-// Design tokens (Todo 25): colours, spacing and type for the glass UI. Message thread only.
-// Surfaces are translucent white over the backdrop, so they read correctly over any backdrop,
-// including the desktop itself when the window runs semi-transparent.
+// Design tokens (Todo 25): runtime theme read through accessors, so a theme switch reaches every widget.
+// The current theme is a ThemeTokens value (built-in dark until ThemeRegistry selects another).
+// Widgets read tokens when painting, and re-apply cached ones (fonts, accents) in lookAndFeelChanged().
+// Message thread only.
 #pragma once
 
-#include <juce_gui_basics/juce_gui_basics.h>
+#include "ThemeTokens.h"
 
-#include <algorithm>
-#include <array>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace openmixer::ui::theme
 {
 
-// Backdrop: deep blue-black gradient with two soft glows the glass surfaces pick up.
-inline const juce::Colour backdropTop { 0xFF0E1220 };
-inline const juce::Colour backdropBottom { 0xFF07090F };
-inline const juce::Colour glowCool { 0x3038BDF8 };
-inline const juce::Colour glowWarm { 0x28F472B6 };
+// Told after the current theme was replaced; the Glass look-and-feel uses it to repaint all windows.
+class ThemeListener
+{
+public:
+    virtual ~ThemeListener() = default;
+    virtual void themeChanged() = 0;
+};
 
-// Glass surfaces, from the card itself to the sunken wells that hold tracks and meters.
-inline const juce::Colour surface { 0x14FFFFFF };
-inline const juce::Colour surfaceRaised { 0x1FFFFFFF };
-inline const juce::Colour surfaceHover { 0x2EFFFFFF };
-inline const juce::Colour well { 0x59000000 };
-inline const juce::Colour border { 0x1FFFFFFF };
-inline const juce::Colour highlight { 0x26FFFFFF };   // top-edge sheen
-inline const juce::Colour shadow { 0x66000000 };
+const ThemeTokens& current();
+void setCurrent (const ThemeTokens& tokens);
+void addListener (ThemeListener* listener);
+void removeListener (ThemeListener* listener);
 
-inline const juce::Colour textPrimary { 0xF2F4F6FB };
-inline const juce::Colour textSecondary { 0xA6C9D1E3 };
-inline const juce::Colour textMuted { 0x6BC9D1E3 };
+// Backdrop and glow.
+inline juce::Colour backdropTop() { return current().backdropTop; }
+inline juce::Colour backdropBottom() { return current().backdropBottom; }
+inline juce::Colour glowCool() { return current().glowCool; }
+inline juce::Colour glowWarm() { return current().glowWarm; }
 
-inline const juce::Colour meterLow { 0xFF34D399 };
-inline const juce::Colour meterMid { 0xFFFBBF24 };
-inline const juce::Colour meterHigh { 0xFFF43F5E };
+// Glass surfaces (alpha follows the theme's surface opacity).
+inline juce::Colour surface() { return current().surface.withMultipliedAlpha (current().surfaceOpacity); }
+inline juce::Colour surfaceRaised() { return current().surfaceRaised.withMultipliedAlpha (current().surfaceOpacity); }
+inline juce::Colour surfaceHover() { return current().surfaceHover.withMultipliedAlpha (current().surfaceOpacity); }
+inline juce::Colour well() { return current().well; }
+inline juce::Colour border() { return current().border; }
+inline juce::Colour highlight() { return current().highlight; }   // top-edge sheen
+inline juce::Colour shadow() { return current().shadow; }
 
-inline const juce::Colour master { 0xFFE2E8F0 };
+inline juce::Colour textPrimary() { return current().textPrimary; }
+inline juce::Colour textSecondary() { return current().textSecondary; }
+inline juce::Colour textMuted() { return current().textMuted; }
+inline juce::Colour onAccent() { return current().onAccent; }
+
+inline juce::Colour meterLow() { return current().meterLow; }
+inline juce::Colour meterMid() { return current().meterMid; }
+inline juce::Colour meterHigh() { return current().meterHigh; }
+inline juce::Colour master() { return current().master; }
+
+inline juce::Colour waveLow() { return current().waveLow; }
+inline juce::Colour waveMid() { return current().waveMid; }
+inline juce::Colour waveHigh() { return current().waveHigh; }
+
+inline juce::Colour popup() { return current().popup; }
+inline juce::Colour capTop() { return current().capTop; }
+inline juce::Colour capBottom() { return current().capBottom; }
 
 // One accent per deck/channel; channels beyond the palette wrap.
-inline juce::Colour accentFor (int index)
-{
-    static const std::array<juce::Colour, 4> accents { juce::Colour { 0xFF38BDF8 }, juce::Colour { 0xFFF472B6 },
-                                                       juce::Colour { 0xFFA3E635 }, juce::Colour { 0xFFFBBF24 } };
-    const auto n = static_cast<int> (accents.size());
-    return accents[static_cast<size_t> (((index % n) + n) % n)];
-}
+juce::Colour accentFor (int index);
 
 // Spacing scale (px) and shape.
-constexpr int kGap = 12, kPad = 12, kInnerGap = 8;
-constexpr float kCardRadius = 14.0F, kControlRadius = 8.0F;
+inline int gap() { return current().gap; }
+inline int pad() { return current().pad; }
+inline int innerGap() { return current().innerGap; }
+inline float cardRadius() { return current().cardRadius; }
+inline float controlRadius() { return current().controlRadius; }
 
-inline juce::Font font (float height, bool bold = false)
-{
-    return juce::Font (juce::FontOptions (height, bold ? juce::Font::bold : juce::Font::plain));
-}
+// Type scale.
+inline float typeSmall() { return current().typeSmall; }
+inline float typeCaption() { return current().typeCaption; }
+inline float typeBody() { return current().typeBody; }
+inline float typeLabel() { return current().typeLabel; }
+inline float typeTitle() { return current().typeTitle; }
+inline float typeHeading() { return current().typeHeading; }
+inline float typeMono() { return current().typeMono; }
 
-inline juce::Font monoFont (float height)
-{
-    return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height, juce::Font::plain));
-}
+// Deck widget metrics and overlay strengths.
+inline int deckHeaderHeight() { return juce::roundToInt (current().deckHeaderHeight); }
+inline int deckOverviewHeight() { return juce::roundToInt (current().deckOverviewHeight); }
+inline int deckTransportHeight() { return juce::roundToInt (current().deckTransportHeight); }
+inline int deckRowHeight() { return juce::roundToInt (current().deckRowHeight); }
+inline int deckPitchWidth() { return juce::roundToInt (current().deckPitchWidth); }
+inline int deckMinZoomHeight() { return juce::roundToInt (current().deckMinZoomHeight); }
+inline int deckReadoutWidth() { return juce::roundToInt (current().deckReadoutWidth); }
+inline int deckRangeBoxHeight() { return juce::roundToInt (current().deckRangeBoxHeight); }
+inline float playheadWidth() { return current().playheadWidth; }
+inline float cueMarkerWidth() { return current().cueMarkerWidth; }
+inline float gridBarAlpha() { return current().gridBarAlpha; }
+inline float gridBeatAlpha() { return current().gridBeatAlpha; }
+inline float loopActiveAlpha() { return current().loopActiveAlpha; }
+inline float loopIdleAlpha() { return current().loopIdleAlpha; }
+
+// Mixer metrics and meter ballistics.
+inline int mixerKnobHeight() { return juce::roundToInt (current().mixerKnobHeight); }
+inline int mixerButtonHeight() { return juce::roundToInt (current().mixerButtonHeight); }
+inline int mixerMeterWidth() { return juce::roundToInt (current().mixerMeterWidth); }
+inline int mixerMasterWidth() { return juce::roundToInt (current().mixerMasterWidth); }
+inline int mixerTabHeight() { return juce::roundToInt (current().mixerTabHeight); }
+inline int mixerCrossfaderHeight() { return juce::roundToInt (current().mixerCrossfaderHeight); }
+inline int mixerCueHeight() { return juce::roundToInt (current().mixerCueHeight); }
+inline int mixerTitleHeight() { return juce::roundToInt (current().mixerTitleHeight); }
+inline int mixerFaderWidth() { return juce::roundToInt (current().mixerFaderWidth); }
+inline int mixerCurveWidth() { return juce::roundToInt (current().mixerCurveWidth); }
+inline int mixerFxBoxWidth() { return juce::roundToInt (current().mixerFxBoxWidth); }
+inline int mixerFxEnableWidth() { return juce::roundToInt (current().mixerFxEnableWidth); }
+inline int mixerPageButtonWidth() { return juce::roundToInt (current().mixerPageButtonWidth); }
+inline int mixerPadX() { return juce::roundToInt (current().mixerPadX); }
+inline int mixerPadY() { return juce::roundToInt (current().mixerPadY); }
+inline float mixerAccentDot() { return current().mixerAccentDot; }
+inline float meterHoldTickHeight() { return current().meterHoldTickHeight; }
+inline float meterFloorDb() { return current().meterFloorDb; }
+inline float meterMidDb() { return current().meterMidDb; }
+inline float meterHighDb() { return current().meterHighDb; }
+inline float meterClipLevel() { return current().meterClipLevel; }
+inline float meterReleaseSeconds() { return current().meterReleaseSeconds; }
+inline float meterHoldSeconds() { return current().meterHoldSeconds; }
+inline float meterClipSeconds() { return current().meterClipSeconds; }
+inline float meterSegment() { return current().meterSegment; }
+inline float meterSegmentGap() { return current().meterSegmentGap; }
+
+// Library browser metrics and row tints.
+inline int libraryRowHeight() { return juce::roundToInt (current().libraryRowHeight); }
+inline int libraryHeaderHeight() { return juce::roundToInt (current().libraryHeaderHeight); }
+inline int librarySidebarWidth() { return juce::roundToInt (current().librarySidebarWidth); }
+inline int libraryToolbarHeight() { return juce::roundToInt (current().libraryToolbarHeight); }
+inline int libraryButtonWidth() { return juce::roundToInt (current().libraryButtonWidth); }
+inline int librarySidebarRowHeight() { return juce::roundToInt (current().librarySidebarRowHeight); }
+inline int librarySearchMinWidth() { return juce::roundToInt (current().librarySearchMinWidth); }
+inline float libraryRatingDot() { return current().libraryRatingDot; }
+inline float libraryCompatAlpha() { return current().libraryCompatAlpha; }
+inline float libraryStripeAlpha() { return current().libraryStripeAlpha; }
+inline float libraryDropAlpha() { return current().libraryDropAlpha; }
+
+// Settings panel metrics.
+inline int settingsPanelWidth() { return juce::roundToInt (current().settingsPanelWidth); }
+inline int settingsPanelHeight() { return juce::roundToInt (current().settingsPanelHeight); }
+inline int settingsTabHeight() { return juce::roundToInt (current().settingsTabHeight); }
+inline int settingsRowHeight() { return juce::roundToInt (current().settingsRowHeight); }
+inline int settingsLabelWidth() { return juce::roundToInt (current().settingsLabelWidth); }
+inline int settingsButtonWidth() { return juce::roundToInt (current().settingsButtonWidth); }
+inline float settingsDimAlpha() { return current().settingsDimAlpha; }
+
+juce::Font font (float height, bool bold = false);
+juce::Font monoFont (float height);
 
 // A frosted card: soft drop shadow, translucent fill, sheen on the top edge, hairline border.
-inline void paintGlassCard (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint = juce::Colours::transparentBlack)
-{
-    g.setColour (shadow.withMultipliedAlpha (0.5F));
-    g.fillRoundedRectangle (r.translated (0.0F, 3.0F), kCardRadius);
-
-    g.setColour (surface);
-    g.fillRoundedRectangle (r, kCardRadius);
-    if (! tint.isTransparent())
-    {
-        g.setGradientFill (juce::ColourGradient (tint.withAlpha (0.12F), r.getX(), r.getY(),
-                                                 tint.withAlpha (0.0F), r.getX(), r.getY() + r.getHeight() * 0.6F, false));
-        g.fillRoundedRectangle (r, kCardRadius);
-    }
-
-    g.setGradientFill (juce::ColourGradient (highlight, r.getX(), r.getY(),
-                                             juce::Colours::transparentWhite, r.getX(), r.getY() + 24.0F, false));
-    g.fillRoundedRectangle (r.withHeight (std::min (24.0F, r.getHeight())), kCardRadius);
-
-    g.setColour (border);
-    g.drawRoundedRectangle (r.reduced (0.5F), kCardRadius, 1.0F);
-}
+void paintGlassCard (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint = juce::Colours::transparentBlack);
 
 // Full-window backdrop; opacity < 1 lets the desktop show through a semi-transparent window.
-inline void paintBackdrop (juce::Graphics& g, juce::Rectangle<float> r, float opacity)
-{
-    g.setGradientFill (juce::ColourGradient (backdropTop.withMultipliedAlpha (opacity), r.getX(), r.getY(),
-                                             backdropBottom.withMultipliedAlpha (opacity), r.getX(), r.getBottom(), false));
-    g.fillRect (r);
-
-    const auto radius = std::max (r.getWidth(), r.getHeight()) * 0.55F;
-    const auto glow = [&g, radius] (juce::Colour c, juce::Point<float> centre)
-    {
-        g.setGradientFill (juce::ColourGradient (c, centre, c.withAlpha (0.0F), centre.translated (radius, 0.0F), true));
-        g.fillEllipse (juce::Rectangle<float> (radius * 2.0F, radius * 2.0F).withCentre (centre));
-    };
-    glow (glowCool.withMultipliedAlpha (opacity), { r.getX() + r.getWidth() * 0.15F, r.getY() + r.getHeight() * 0.1F });
-    glow (glowWarm.withMultipliedAlpha (opacity), { r.getRight() - r.getWidth() * 0.15F, r.getBottom() - r.getHeight() * 0.15F });
-}
+void paintBackdrop (juce::Graphics& g, juce::Rectangle<float> r, float opacity);
 
 } // namespace openmixer::ui::theme
