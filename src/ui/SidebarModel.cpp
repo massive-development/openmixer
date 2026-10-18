@@ -13,6 +13,16 @@ namespace
         return n;
     }
 
+    // Leaf name, or "leaf (parent)" when another watch folder shares the leaf, so rows stay distinguishable.
+    juce::String watchLabel (const juce::String& path, const std::vector<juce::String>& all)
+    {
+        const juce::File f (path);
+        int same = 0;
+        for (const auto& other : all)
+            same += juce::File (other).getFileName() == f.getFileName() ? 1 : 0;
+        return same > 1 ? f.getFileName() + " (" + f.getParentDirectory().getFullPathName() + ")" : f.getFileName();
+    }
+
     bool addPlaylists (library::PlaylistDao& dao, std::optional<std::int64_t> parent, std::vector<SidebarNode>& out, int depth)
     {
         constexpr int kMaxDepth = 16;   // folders cannot cycle, but a corrupt file must not recurse forever
@@ -37,7 +47,7 @@ juce::String SidebarNode::scopeQuery() const
     switch (kind)
     {
         case Kind::Playlist: return "playlist:#" + juce::String (playlistId);
-        case Kind::WatchFolder: return "path:\"" + path.removeCharacters ("\"") + "\"";   // contains-match on the path
+        case Kind::WatchFolder: return "folder:\"" + path.removeCharacters ("\"") + "\"";   // anchored prefix, not a substring
         default: return {};
     }
 }
@@ -53,9 +63,10 @@ std::vector<SidebarNode> buildSidebar (library::Library& library)
     top.push_back (std::move (playlists));
 
     auto watch = node (SidebarNode::Kind::WatchGroup, "Watch folders");
-    for (const auto& path : library.watchFolders().list())
+    const auto paths = library.watchFolders().list();
+    for (const auto& path : paths)
     {
-        auto n = node (SidebarNode::Kind::WatchFolder, juce::File (path).getFileName());
+        auto n = node (SidebarNode::Kind::WatchFolder, watchLabel (path, paths));
         n.path = path;
         watch.children.push_back (std::move (n));
     }

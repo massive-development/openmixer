@@ -53,15 +53,19 @@ void MainComponent::buildLibrary()
         return;
     }
     trackLoader = std::make_unique<openmixer::ui::TrackLoader> (engine, *mainView, *libraryServices);
-    const auto report = [this] (const juce::Result& r) { if (r.failed()) juce::Logger::writeToLog ("load: " + r.getErrorMessage()); };
-
     auto browser = std::make_unique<openmixer::ui::LibraryBrowser> (*libraryServices, engine.getNumDecks());
-    browser->onLoadRequested = [this, report] (int deck, const openmixer::library::TrackRecord& t) { report (trackLoader->load (deck, t)); };
+    browser->onLoadRequested = [this] (int deck, const openmixer::library::TrackRecord& t) { return trackLoader->load (deck, t); };
     browser->defaultDeck = [this] { return trackLoader->suggestedDeck(); };
     browser->referenceKey = [this] { return trackLoader->referenceCamelot(); };
+    const juce::Component::SafePointer<openmixer::ui::LibraryBrowser> shown (browser.get());
     mainView->setSlotContent (openmixer::ui::LayoutSpec::kLibrarySlot, std::move (browser));
     for (int d = 0; d < mainView->getNumDecks(); ++d)
-        mainView->getDeck (d)->onTrackDropped = [this, d, report] (std::int64_t id) { report (trackLoader->load (d, id)); };
+        mainView->getDeck (d)->onTrackDropped = [this, d, shown] (std::int64_t id)
+        {
+            if (shown != nullptr)
+                if (const auto track = libraryServices->getLibrary().tracks().findById (id))
+                    shown->requestLoad (d, *track);
+        };
 }
 
 void MainComponent::setBackdropOpacity (float opacity)

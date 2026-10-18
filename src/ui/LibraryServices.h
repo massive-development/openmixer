@@ -48,7 +48,7 @@ public:
         int pumpIntervalMs = 100;               // prep queue / scan-done polling
         int analysisWorkers = 2;
         std::shared_ptr<analysis::AnalyzerRegistry> analyzers;   // null: bpm, key, waveform, structure
-        std::function<void (const juce::String&)> onError;
+        std::function<void (const juce::String&)> onError;   // always called on the message thread
     };
 
     // OPENMIXER_LIBRARY_DB overrides the default <user data>/OpenMixer/library.db.
@@ -90,6 +90,7 @@ private:
     Options opts;
     std::atomic<int> finishedScans { 0 };   // bumped on the scan thread, read by pump()
     int seenScans = 0;
+    std::shared_ptr<bool> alive = std::make_shared<bool> (true);   // message-thread flag guarding async error delivery
     juce::ListenerList<Listener> listeners;
     std::unique_ptr<library::Library> lib;
     library::SearchEngine search;

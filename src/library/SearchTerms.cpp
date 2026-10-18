@@ -124,6 +124,22 @@ void appendTextPredicate (const std::string& column, const juce::String& value, 
     out.args.emplace_back (likePattern (value));
 }
 
+// folder:<dir> matches tracks under dir (anchored at the start, followed by a separator), not siblings sharing a prefix.
+juce::Result compileFolderTerm (const FilterTerm& term, SqlFragment& out)
+{
+    auto dir = term.value;
+    while (dir.length() > 1 && (dir.endsWithChar ('/') || dir.endsWithChar ('\\')))
+        dir = dir.dropLastCharacters (1);
+    if (dir.isEmpty())
+        return juce::Result::fail ("folder: empty path");
+    const auto escaped = likePattern (dir).substring (1).dropLastCharacters (1);
+    const auto root = dir == "/";   // "/" + "/%" would never match
+    out.sql += std::string (term.negated ? "NOT (" : "(") + "tracks.path LIKE ? ESCAPE '\\' OR tracks.path LIKE ? ESCAPE '\\')";
+    out.args.emplace_back (escaped + (root ? "%" : "/%"));
+    out.args.emplace_back (escaped + (root ? "%" : "\\\\%"));
+    return juce::Result::ok();
+}
+
 juce::Result compileTextTerm (const SearchField& field, const FilterTerm& term, SqlFragment& out)
 {
     SqlFragment f;

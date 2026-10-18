@@ -67,6 +67,7 @@ LibraryServices::LibraryServices (Key, std::unique_ptr<library::Library> library
 
 LibraryServices::~LibraryServices()
 {
+    *alive = false;   // queued error deliveries become no-ops
     stopTimer();   // then members unwind in reverse start-up order
 }
 
@@ -104,7 +105,10 @@ void LibraryServices::startWatching()
     wo.intervalMs = opts.scanIntervalMs;
     wo.scanOnStart = opts.scanOnStart;
     wo.onScanDone = [this] (const library::IngestSummary&) { ++finishedScans; };   // scan thread: only bump a counter
-    wo.onError = [this] (const juce::String& m) { report (m); };
+    wo.onError = [this, flag = alive] (const juce::String& m)   // scan thread: hop to the message thread
+    {
+        juce::MessageManager::callAsync ([this, flag, m] { if (*flag) report (m); });
+    };
     juce::String error;
     watch = library::WatchFolders::create (opts.dbPath, library::MetadataReaderRegistry::withDefaults(), std::move (wo), &error);
     if (watch == nullptr)
