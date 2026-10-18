@@ -796,6 +796,47 @@ if(OPENMIXER_LONG_SOAK)
     set_tests_properties(soak_10min PROPERTIES LABELS soak_long TIMEOUT 720)
 endif()
 
+# App smoke (Todo 31): opens the main window for ~0.5 s and exits 0; exit 77 (no display) is reported as skipped.
+# Isolated prefs/library so the run never touches user data.
+add_test(NAME app_smoke COMMAND openmixer --smoke)
+set_tests_properties(app_smoke PROPERTIES LABELS smoke TIMEOUT 60 SKIP_RETURN_CODE 77
+    ENVIRONMENT "OPENMIXER_PREFS=${CMAKE_BINARY_DIR}/smoke/preferences.json;OPENMIXER_LIBRARY_DB=${CMAKE_BINARY_DIR}/smoke/library.db")
+
+# UI gate (Todo 31): the full main window driven through its widgets over a mock device (label "ui_gate");
+# the 10-minute variant shares OPENMIXER_LONG_SOAK (label "uigate_long": not matched by the regex -L ui_gate)
+add_executable(openmixer_ui_gate tools/ui_gate.cpp tools/ui_gate/UiRig.h tools/ui_gate/UiScenario.h
+    tools/soak/OutputChecker.h tools/soak/Scenario.h tools/soak/ToneWriter.h)
+target_include_directories(openmixer_ui_gate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+openmixer_enable_warnings(tools/ui_gate.cpp)
+# the gate pumps the message loop in slices between control ticks
+target_compile_definitions(openmixer_ui_gate PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(openmixer_ui_gate PRIVATE
+    openmixer_ui
+    openmixer_library
+    openmixer_analysis
+    openmixer_controllers
+    openmixer_fx
+    openmixer_engine
+    ${OPENMIXER_CURL_LIBS}
+    juce::juce_gui_basics
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_audio_basics
+    juce::juce_events
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+# A JUCE leak-detector report at exit (debug builds) fails the test even though the exit code is 0
+set(OPENMIXER_UI_GATE_FAIL_REGEX "Leaked objects detected|JUCE Assertion failure")
+add_test(NAME ui_gate_short COMMAND openmixer_ui_gate --seconds 40 --max-xruns 5)
+set_tests_properties(ui_gate_short PROPERTIES LABELS ui_gate TIMEOUT 180
+    FAIL_REGULAR_EXPRESSION "${OPENMIXER_UI_GATE_FAIL_REGEX}")
+if(OPENMIXER_LONG_SOAK)
+    add_test(NAME ui_gate_10min COMMAND openmixer_ui_gate --seconds 600 --max-xruns 5)
+    set_tests_properties(ui_gate_10min PROPERTIES LABELS uigate_long TIMEOUT 780
+        FAIL_REGULAR_EXPRESSION "${OPENMIXER_UI_GATE_FAIL_REGEX}")
+endif()
+
 # =============================================================================
 # Tools
 # =============================================================================

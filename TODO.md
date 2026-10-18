@@ -120,8 +120,9 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/ui/`: `LibraryServices`, `TrackLoader`, `LibraryBrowser`, `TrackTableModel` over `TrackSource` (`SearchTrackSource`, `PrepQueueSource`), `SidebarModel` + `SidebarTree`, `TrackDrag.h` (`DeckWidget` is a drop target); theme `library` section; `DebugPanel`/`DeckStrip` and `OPENMIXER_DEBUG_PANEL` removed (the browser loads tracks); `OPENMIXER_LIBRARY_DB=<file>` selects another library
 - [~] **Todo 29:** Automix panel + settings (done: settings overlay with audio device/rate/buffer/master+headphone output pairs + latency/xrun/CPU, MIDI inputs + map file, library watch folders + rescan, theme picker, plugin folder; versioned `preferences.json` applied at start and on change; plugins loaded at start with their themes forwarded; missing: Automix panel (Wave 7, needs Todo 38), live scan-interval change)
   - `src/ui/`: `Preferences`, `PreferencesApplier` (+ `PreferencesTargets`), `SettingsPanel` over `SettingsPage` tabs (`AudioSettingsPage` + `AudioSettingsModel`/`JuceAudioSettingsModel`, `MidiSettingsPage`, `LibrarySettingsPage`, `AppearanceSettingsPage`, `PluginsSettingsPage`, `PathRow`); `src/engine/OutputRouter`; `src/app/AppPreferencesTargets`; theme `settings` section; `--settings` / `OPENMIXER_SETTINGS=1` opens the panel, `OPENMIXER_PREFS=<file>` selects another preferences file
-- [ ] **Todo 30:** Stem pads UI
-- [ ] **Todo 31:** UI verification gate
+- [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
+- [x] **Todo 31:** UI verification gate
+  - `tools/ui_gate.cpp` + `tools/ui_gate/{UiRig,UiScenario}.h` (`openmixer_ui_gate`): full main window over a paced mock device, scripted DJ operating the widgets; CTest `ui_gate_short` (label `ui_gate`), `ui_gate_10min` (opt-in with `-DOPENMIXER_LONG_SOAK=ON`, label `uigate_long`); `app_smoke` (`openmixer --smoke`, label `smoke`, skipped without a display)
 
 ## Wave 6: Hardware I/O
 

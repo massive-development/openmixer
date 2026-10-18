@@ -5,6 +5,7 @@
 #include "engine/MockAudioDevice.h"
 #include "soak/OutputChecker.h"
 #include "soak/Scenario.h"
+#include "soak/ToneWriter.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -38,31 +39,6 @@ Options parseArgs (int argc, char** argv)
         else if (std::strcmp (argv[i], "--max-underruns") == 0) o.maxUnderruns = value;
     }
     return o;
-}
-
-juce::File writeTone (const juce::File& file, double hz)
-{
-    const int frames = static_cast<int> (kRate) * kToneSeconds;
-    juce::AudioBuffer<float> buf (2, frames);
-    juce::Random noise (7);
-    for (int i = 0; i < frames; ++i)
-    {
-        const auto tone = 0.4F * std::sin (juce::MathConstants<float>::twoPi * static_cast<float> (hz * i / kRate));
-        for (int c = 0; c < 2; ++c)
-            buf.setSample (c, i, tone + 0.1F * (noise.nextFloat() - 0.5F));
-    }
-
-    file.deleteFile();
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
-    if (stream == nullptr)
-        return {};
-    std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (stream.get(), kRate, 2, 24, {}, 0));
-    if (writer == nullptr)
-        return {};
-    stream.release();   // the writer owns the stream
-    writer->writeFromAudioSampleBuffer (buf, 0, frames);
-    return file;
 }
 
 bool report (const Options& o, const openmixer::LatencyStats& stats, const openmixer::soak::Scenario& scenario,
@@ -99,7 +75,8 @@ int main (int argc, char** argv)
 
     for (int d = 0; d < engine.getNumDecks(); ++d)
     {
-        const auto file = writeTone (dir.getChildFile ("tone" + juce::String (d) + ".wav"), 220.0 * (d + 1));
+        const auto file = openmixer::soak::writeTone (dir.getChildFile ("tone" + juce::String (d) + ".wav"),
+                                                      { 220.0 * (d + 1), kToneSeconds, kRate });
         if (! file.existsAsFile() || ! engine.getDeck (d).load (file))
         {
             std::fprintf (stderr, "soak: cannot prepare deck %d\n", d);

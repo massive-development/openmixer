@@ -14,6 +14,20 @@ namespace
     // --translucent (or OPENMIXER_TRANSLUCENT=1) lets the desktop show through the glass.
     constexpr float kTranslucentBackdrop = 0.82F;
 
+    constexpr int kSmokeRunMs = 500;
+    constexpr int kSmokeSkipCode = 77;   // matches SKIP_RETURN_CODE of the ctest entry
+
+    // Windows and macOS always have a window server; a Linux session needs X11 or Wayland.
+    bool displayAvailable()
+    {
+       #if JUCE_LINUX || JUCE_BSD
+        return SystemStats::getEnvironmentVariable ("DISPLAY", {}).isNotEmpty()
+            || SystemStats::getEnvironmentVariable ("WAYLAND_DISPLAY", {}).isNotEmpty();
+       #else
+        return true;
+       #endif
+    }
+
     bool wantsTranslucentWindow()
     {
         return JUCEApplication::getCommandLineParameters().contains ("--translucent")
@@ -36,32 +50,24 @@ public:
         LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
         selectTheme();
 
-        // Check for smoke test mode
+        // --smoke: open the main window, run briefly, exit 0 (kSmokeSkipCode when there is no display)
         bool smokeTest = JUCEApplication::getCommandLineParameters().contains ("--smoke");
         #if OPENMIXER_SMOKE
         smokeTest = true;
         #endif
 
-        if (smokeTest)
+        if (smokeTest && ! displayAvailable())
         {
-            // Run smoke test and exit
-            Logger::writeToLog ("[Smoke Test] Application starting...");
-            
-            // Create and test MainComponent
-            auto mainComp = std::make_unique<MainComponent> (themes);
-            
-            // Check it can be created
-            if (mainComp != nullptr)
-            {
-                Logger::writeToLog ("[Smoke Test] MainComponent created successfully");
-                Logger::writeToLog ("[Smoke Test] Smoke test PASSED");
-                quit();
-                return;
-            }
+            Logger::writeToLog ("[Smoke Test] no display available, skipping");
+            setApplicationReturnValue (kSmokeSkipCode);
+            quit();
+            return;
         }
 
         // Normal mode - create main window
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), wantsTranslucentWindow(), themes);
+        if (smokeTest)
+            Timer::callAfterDelay (kSmokeRunMs, [this] { finishSmoke(); });
     }
 
     void shutdown() override
@@ -71,6 +77,15 @@ public:
     }
 
 private:
+    // The window must have shown and still hold its content after the run, else the smoke test fails.
+    void finishSmoke()
+    {
+        const bool ok = mainWindow != nullptr && mainWindow->isShowing() && mainWindow->getContentComponent() != nullptr;
+        Logger::writeToLog (ok ? "[Smoke Test] PASSED" : "[Smoke Test] FAILED: main window is not showing");
+        setApplicationReturnValue (ok ? 0 : 1);
+        quit();
+    }
+
     // Built-in + user themes, default selected; MainComponent applies the saved theme (and OPENMIXER_THEME).
     void selectTheme()
     {
