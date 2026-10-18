@@ -81,6 +81,17 @@ TEST (ThemeRegistryTest, BuiltInDarkJsonMatchesTheCompiledDefault)
     EXPECT_FLOAT_EQ (json.gridBarAlpha, compiled.gridBarAlpha);
     EXPECT_FLOAT_EQ (json.loopIdleAlpha, compiled.loopIdleAlpha);
     EXPECT_FLOAT_EQ (json.mixerKnobHeight, compiled.mixerKnobHeight);
+    EXPECT_FLOAT_EQ (json.libraryRowHeight, compiled.libraryRowHeight);
+    EXPECT_FLOAT_EQ (json.libraryHeaderHeight, compiled.libraryHeaderHeight);
+    EXPECT_FLOAT_EQ (json.librarySidebarWidth, compiled.librarySidebarWidth);
+    EXPECT_FLOAT_EQ (json.libraryToolbarHeight, compiled.libraryToolbarHeight);
+    EXPECT_FLOAT_EQ (json.libraryButtonWidth, compiled.libraryButtonWidth);
+    EXPECT_FLOAT_EQ (json.librarySidebarRowHeight, compiled.librarySidebarRowHeight);
+    EXPECT_FLOAT_EQ (json.libraryRatingDot, compiled.libraryRatingDot);
+    EXPECT_FLOAT_EQ (json.librarySearchMinWidth, compiled.librarySearchMinWidth);
+    EXPECT_FLOAT_EQ (json.libraryCompatAlpha, compiled.libraryCompatAlpha);
+    EXPECT_FLOAT_EQ (json.libraryStripeAlpha, compiled.libraryStripeAlpha);
+    EXPECT_FLOAT_EQ (json.libraryDropAlpha, compiled.libraryDropAlpha);
     EXPECT_FLOAT_EQ (json.mixerTitleHeight, compiled.mixerTitleHeight);
     EXPECT_FLOAT_EQ (json.mixerFaderWidth, compiled.mixerFaderWidth);
     EXPECT_FLOAT_EQ (json.mixerCurveWidth, compiled.mixerCurveWidth);

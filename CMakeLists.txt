@@ -469,7 +469,7 @@ openmixer_enable_warnings(examples/plugins/GainPlugin.cpp)
 target_link_libraries(openmixer_example_gain PRIVATE juce::juce_core juce::juce_recommended_config_flags)
 
 # =============================================================================
-# UI library (debug panel; real UI arrives in Wave 5)
+# UI library (Glass widgets, deck/mixer/library views; depends on engine, analysis and library, never the reverse)
 # =============================================================================
 
 # Built-in theme JSON, embedded so the binary needs no data files next to it.
@@ -501,10 +501,6 @@ add_library(openmixer_ui STATIC
     src/ui/MixerPanel.cpp
     src/ui/MixerPanel.h
     src/ui/ControlCaption.h
-    src/ui/DebugPanel.cpp
-    src/ui/DebugPanel.h
-    src/ui/DeckStrip.cpp
-    src/ui/DeckStrip.h
     src/ui/GlassLookAndFeel.cpp
     src/ui/GlassLookAndFeel.h
     src/ui/GlassWidgets.cpp
@@ -523,6 +519,21 @@ add_library(openmixer_ui STATIC
     src/ui/DeckWidget.h
     src/ui/HotcuePads.cpp
     src/ui/HotcuePads.h
+    src/ui/LibraryBrowser.cpp
+    src/ui/LibraryBrowser.h
+    src/ui/LibraryServices.cpp
+    src/ui/LibraryServices.h
+    src/ui/SidebarModel.cpp
+    src/ui/SidebarModel.h
+    src/ui/SidebarTree.cpp
+    src/ui/SidebarTree.h
+    src/ui/TrackDrag.h
+    src/ui/TrackLoader.cpp
+    src/ui/TrackLoader.h
+    src/ui/TrackSource.cpp
+    src/ui/TrackSource.h
+    src/ui/TrackTableModel.cpp
+    src/ui/TrackTableModel.h
     src/ui/LoopControls.cpp
     src/ui/LoopControls.h
     src/ui/MainLayout.cpp
@@ -548,14 +559,16 @@ add_library(openmixer_ui STATIC
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/ui/ChannelStripWidget.cpp src/ui/CrossfaderSection.cpp src/ui/CueSection.cpp src/ui/FxPanel.cpp
-    src/ui/LabeledKnob.cpp src/ui/MasterSection.cpp src/ui/MeterBallistics.cpp src/ui/MixerPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
+    src/ui/LabeledKnob.cpp src/ui/MasterSection.cpp src/ui/MeterBallistics.cpp src/ui/MixerPanel.cpp src/ui/GlassLookAndFeel.cpp
     src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp
-    src/ui/DeckWidget.cpp src/ui/HotcuePads.cpp src/ui/LoopControls.cpp src/ui/MainLayout.cpp src/ui/MainView.cpp src/ui/OverviewWaveform.cpp src/ui/PitchFader.cpp src/ui/TrackHeader.cpp src/ui/TransportPanel.cpp
+    src/ui/DeckWidget.cpp src/ui/HotcuePads.cpp src/ui/LibraryBrowser.cpp src/ui/LibraryServices.cpp
+    src/ui/SidebarModel.cpp src/ui/SidebarTree.cpp src/ui/TrackLoader.cpp src/ui/TrackSource.cpp src/ui/TrackTableModel.cpp src/ui/LoopControls.cpp src/ui/MainLayout.cpp src/ui/MainView.cpp src/ui/OverviewWaveform.cpp src/ui/PitchFader.cpp src/ui/TrackHeader.cpp src/ui/TransportPanel.cpp
     src/ui/WaveformGeometry.cpp src/ui/WaveformPainter.cpp src/ui/ZoomWaveform.cpp)
 
 target_link_libraries(openmixer_ui PUBLIC
     openmixer_engine
     openmixer_analysis
+    openmixer_library
     juce::juce_gui_basics
     juce::juce_events
     juce::juce_recommended_config_flags
@@ -649,7 +662,6 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp
-    tests/unit/DebugPanelTest.cpp
     tests/unit/ValueFormatTest.cpp
     tests/unit/ThemeJsonTest.cpp
     tests/unit/ThemeRegistryTest.cpp
@@ -659,6 +671,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MixerWidgetTest.cpp
     tests/unit/MeterBallisticsTest.cpp
     tests/unit/FxPanelTest.cpp
+    tests/unit/LibraryBrowserTest.cpp
+    tests/unit/TrackLoaderTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp

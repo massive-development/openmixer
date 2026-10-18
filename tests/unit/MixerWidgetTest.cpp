@@ -2,7 +2,6 @@
 // (needs the GUI init from TestMain)
 #include <JuceHeader.h>
 #include "MixerTestUtil.h"
-#include "ui/DebugPanel.h"
 #include "ui/GlassLookAndFeel.h"
 #include "ui/MainView.h"
 #include "ui/MixerPanel.h"
@@ -373,16 +372,4 @@ TEST (MixerWidgetTest, MixerSlotAcceptsThePanelInTheMainView)
     ASSERT_NE (panel, nullptr);
     EXPECT_EQ (panel->getBounds(), view.getSlot (LayoutSpec::kMixerSlot)->getBounds());
     EXPECT_GE (panel->getWidth(), 360);
-}
-
-TEST (MixerWidgetTest, DebugPanelHostsDeckStripsAboveTheMixer)
-{
-    Rig rig;
-    DebugPanel panel (rig.engine, rig.recorder);
-    panel.setSize (900, 760);
-    EXPECT_FALSE (panel.getMixer().getBounds().isEmpty());
-    EXPECT_EQ (panel.getMixer().getNumChannels(), 2);
-    panel.getMixer().getChannel (0).getFader().setValue (0.4, juce::sendNotificationSync);
-    EXPECT_TRUE (rig.recorder.saw ("mixer.ch0.fader", 0.4));
-    EXPECT_TRUE (hasContent (render (panel, 900, 760)));
 }

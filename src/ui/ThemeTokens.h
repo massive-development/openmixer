@@ -42,6 +42,11 @@ struct ThemeTokens
     float mixerFxEnableWidth = 56.0F, mixerPageButtonWidth = 80.0F, mixerPadX = 6.0F, mixerPadY = 10.0F, mixerAccentDot = 8.0F;
     float meterSegment = 4.0F, meterSegmentGap = 1.0F, meterHoldTickHeight = 2.0F;
 
+    // Library browser metrics (px) and row tint strengths (0..1 alpha).
+    float libraryRowHeight = 26.0F, libraryHeaderHeight = 26.0F, librarySidebarWidth = 190.0F, libraryToolbarHeight = 34.0F;
+    float libraryButtonWidth = 78.0F, librarySidebarRowHeight = 24.0F, libraryRatingDot = 5.0F, librarySearchMinWidth = 160.0F;
+    float libraryCompatAlpha = 0.22F, libraryStripeAlpha = 0.04F, libraryDropAlpha = 0.18F;
+
     float surfaceOpacity = 1.0F;   // scales the alpha of surface/raised/hover (glass strength)
     float backdropOpacity = 1.0F;  // default backdrop opacity before a window asks for less
 

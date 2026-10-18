@@ -81,6 +81,17 @@ namespace
                                               { "meterHoldTickHeight", &ThemeTokens::meterHoldTickHeight, 0.0F, 20.0F },
                                               { "meterSegment", &ThemeTokens::meterSegment, 1.0F, 20.0F },
                                               { "meterSegmentGap", &ThemeTokens::meterSegmentGap, 0.0F, 10.0F } } };
+    const std::array<FloatKey, 11> kLibrary { { { "rowHeight", &ThemeTokens::libraryRowHeight, 0.0F, kMaxPx },
+                                                { "headerHeight", &ThemeTokens::libraryHeaderHeight, 0.0F, kMaxPx },
+                                                { "sidebarWidth", &ThemeTokens::librarySidebarWidth, 0.0F, kMaxPx },
+                                                { "toolbarHeight", &ThemeTokens::libraryToolbarHeight, 0.0F, kMaxPx },
+                                                { "buttonWidth", &ThemeTokens::libraryButtonWidth, 0.0F, kMaxPx },
+                                                { "sidebarRowHeight", &ThemeTokens::librarySidebarRowHeight, 0.0F, kMaxPx },
+                                                { "ratingDot", &ThemeTokens::libraryRatingDot, 0.0F, 20.0F },
+                                                { "searchMinWidth", &ThemeTokens::librarySearchMinWidth, 0.0F, kMaxPx },
+                                                { "compatAlpha", &ThemeTokens::libraryCompatAlpha, 0.0F, 1.0F },
+                                                { "stripeAlpha", &ThemeTokens::libraryStripeAlpha, 0.0F, 1.0F },
+                                                { "dropAlpha", &ThemeTokens::libraryDropAlpha, 0.0F, 1.0F } } };
     const std::array<FloatKey, 2> kTranslucency { { { "surface", &ThemeTokens::surfaceOpacity, 0.0F, 1.0F },
                                                     { "backdrop", &ThemeTokens::backdropOpacity, 0.0F, 1.0F } } };
 
@@ -211,9 +222,10 @@ namespace
         withSection (root, "translucency", status, [&] (const auto& s) { return readFloats (s, kTranslucency, "translucency", t, w); });
         withSection (root, "deck", status, [&] (const auto& s) { return readFloats (s, kDeck, "deck", t, w); });
         withSection (root, "mixer", status, [&] (const auto& s) { return readFloats (s, kMixer, "mixer", t, w); });
+        withSection (root, "library", status, [&] (const auto& s) { return readFloats (s, kLibrary, "library", t, w); });
         if (status.wasOk() && root.hasProperty ("accents"))
             status = readAccents (root.getProperty ("accents"), t);
-        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck", "mixer" }, "", w);
+        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck", "mixer", "library" }, "", w);
         return status;
     }
 }

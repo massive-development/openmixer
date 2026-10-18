@@ -40,9 +40,33 @@ void DeckWidget::refresh()
     loops.refresh();
 }
 
+bool DeckWidget::isInterestedInDragSource (const SourceDetails& details)
+{
+    return onTrackDropped && trackdrag::parse (details.description).has_value();
+}
+
+void DeckWidget::itemDropped (const SourceDetails& details)
+{
+    setDropHover (false);
+    if (const auto id = trackdrag::parse (details.description); id && onTrackDropped)
+        onTrackDropped (*id);
+}
+
+void DeckWidget::setDropHover (bool hover)
+{
+    dropHover = hover;
+    repaint();
+}
+
 void DeckWidget::paint (juce::Graphics& g)
 {
-    theme::paintGlassCard (g, getLocalBounds().toFloat().reduced (0.5F), theme::accentFor (deckRef.index));
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5F);
+    theme::paintGlassCard (g, bounds, theme::accentFor (deckRef.index));
+    if (dropHover)   // drop target feedback
+    {
+        g.setColour (theme::accentFor (deckRef.index).withAlpha (theme::libraryDropAlpha()));
+        g.fillRoundedRectangle (bounds, theme::cardRadius());
+    }
 }
 
 void DeckWidget::resized()

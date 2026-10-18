@@ -120,6 +120,19 @@ inline float meterClipSeconds() { return current().meterClipSeconds; }
 inline float meterSegment() { return current().meterSegment; }
 inline float meterSegmentGap() { return current().meterSegmentGap; }
 
+// Library browser metrics and row tints.
+inline int libraryRowHeight() { return juce::roundToInt (current().libraryRowHeight); }
+inline int libraryHeaderHeight() { return juce::roundToInt (current().libraryHeaderHeight); }
+inline int librarySidebarWidth() { return juce::roundToInt (current().librarySidebarWidth); }
+inline int libraryToolbarHeight() { return juce::roundToInt (current().libraryToolbarHeight); }
+inline int libraryButtonWidth() { return juce::roundToInt (current().libraryButtonWidth); }
+inline int librarySidebarRowHeight() { return juce::roundToInt (current().librarySidebarRowHeight); }
+inline int librarySearchMinWidth() { return juce::roundToInt (current().librarySearchMinWidth); }
+inline float libraryRatingDot() { return current().libraryRatingDot; }
+inline float libraryCompatAlpha() { return current().libraryCompatAlpha; }
+inline float libraryStripeAlpha() { return current().libraryStripeAlpha; }
+inline float libraryDropAlpha() { return current().libraryDropAlpha; }
+
 juce::Font font (float height, bool bold = false);
 juce::Font monoFont (float height);
 

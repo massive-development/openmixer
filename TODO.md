@@ -112,11 +112,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/ui/`: `ThemeTokens`, `Theme` (runtime accessors), `ThemeJson`, `ThemeRegistry`; `resources/themes/*.json` embedded via `juce_add_binary_data`
 - [x] **Todo 25:** Design tokens + LookAndFeel
   - `GlassLookAndFeel` covers knobs, faders, buttons, ComboBox, PopupMenu, TextEditor, ToggleButton, TabbedButtonBar, ScrollBar, TableHeader, tooltip (`GlassWidgets.cpp`)
-- [~] **Todo 26:** Main window + deck widgets (done: window, widgets and tests; missing: waveform/metadata feed from analysis/library (Task 4), a real main-cue point, mixer + library slots (Todos 27/28))
-  - `src/ui/`: `MainView` + `MainLayout` (data-driven rows/cells/slots), `DeckWidget` = `TrackHeader`, `OverviewWaveform`, `ZoomWaveform`, `TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`; `DeckBinding` routes ids; `DebugPanel` kept behind `OPENMIXER_DEBUG_PANEL=1`
+- [~] **Todo 26:** Main window + deck widgets (done: window, widgets and tests; missing: a real main-cue point; the library feed landed with Todo 28)
+  - `src/ui/`: `MainView` + `MainLayout` (data-driven rows/cells/slots), `DeckWidget` = `TrackHeader`, `OverviewWaveform`, `ZoomWaveform`, `TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`; `DeckBinding` routes ids
 - [~] **Todo 27:** Mixer widgets + metering (done: strips, EQ + kill, crossfader + curve, master, cue, FX panel, stereo peak meters with hold + clip; missing: RMS meters, FX assign beyond the per-channel rack shortcut)
-  - `src/ui/`: `MixerPanel` (mixer slot; Mixer/FX pages), `ChannelStripWidget`, `MasterSection`, `CrossfaderSection`, `CueSection`, `FxPanel`, `LabeledKnob`, `MeterBar`/`StereoMeter` over `MeterBallistics`; `MixerBinding` routes `mixer.*` / `fx.*` ids; engine: `crossfader.curve` id, stereo channel peaks, state getters; `DebugPanel` now = deck strips (file loading) above `MixerPanel`
-- [ ] **Todo 28:** Library browser
+  - `src/ui/`: `MixerPanel` (mixer slot; Mixer/FX pages), `ChannelStripWidget`, `MasterSection`, `CrossfaderSection`, `CueSection`, `FxPanel`, `LabeledKnob`, `MeterBar`/`StereoMeter` over `MeterBallistics`; `MixerBinding` routes `mixer.*` / `fx.*` ids; engine: `crossfader.curve` id, stereo channel peaks, state getters
+- [~] **Todo 28:** Library browser + app wiring (done: sidebar tree, paged sortable table with Camelot compatibility tint, search box on the query syntax, load buttons/double-click/drag to decks, prep queue view + enqueue, iTunes/Rekordbox import, `LibraryServices` composition (library, analysis cache, prep queue pumped on a timer, watch folders), `TrackLoader` feeds waveform + beat grid + metadata to decks; missing: watch-folder add/remove UI and preferences (Task 5), playlist editing, prep queue reorder/remove UI, auto-enqueue after scans)
+  - `src/ui/`: `LibraryServices`, `TrackLoader`, `LibraryBrowser`, `TrackTableModel` over `TrackSource` (`SearchTrackSource`, `PrepQueueSource`), `SidebarModel` + `SidebarTree`, `TrackDrag.h` (`DeckWidget` is a drop target); theme `library` section; `DebugPanel`/`DeckStrip` and `OPENMIXER_DEBUG_PANEL` removed (the browser loads tracks); `OPENMIXER_LIBRARY_DB=<file>` selects another library
 - [ ] **Todo 29:** Automix panel + settings
 - [ ] **Todo 30:** Stem pads UI
 - [ ] **Todo 31:** UI verification gate
