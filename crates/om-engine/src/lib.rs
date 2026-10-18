@@ -11,9 +11,11 @@ pub mod callback;
 pub mod deck;
 pub mod fx;
 pub mod fx_routing;
+pub mod grid;
 pub mod latency;
 pub mod mixer;
 pub mod output;
+pub mod quantizer;
 mod stage;
 
 pub use callback::AudioCallback;
