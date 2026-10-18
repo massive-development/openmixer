@@ -174,7 +174,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Rust rewrite. Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending). Phase 1 (GPUI, cpal and time-stretch spikes, including the GPUI go/no-go gate) is next. Wave 1 is complete for the Rust scaffold.
+**Current State:** Rust rewrite. Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test. See `docs/spikes/DECISIONS.md`. Wave 1 is complete for the Rust scaffold.
 
 ---
 

@@ -7,7 +7,7 @@ C++ reference: see `cpp-final`.
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending). Update this file in the same PR that changes a task's status._
+_Last updated: Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -27,7 +27,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 8 | Pro surface | ⬜ |
 | 9 | Release | ⬜ |
 
-**Rust rewrite status:** Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending). Phase 1 (GPUI, cpal and time-stretch spikes) is next; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
+**Rust rewrite status:** Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test; see `docs/spikes/DECISIONS.md`; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
 
 **What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test`), and check startup with `cargo run -p openmixer -- --smoke`. No audio, analysis, library or UI features exist yet.
 

@@ -33,9 +33,9 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 
 Planned crates, added in their phases: `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`, `om-ui`.
 
-## Current State (Rust rewrite, Phase 0 in progress)
+## Current State (Rust rewrite, Phase 1 spikes run)
 
-Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending).
+Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test.
 
 **Implemented:**
 - Repository initialization and governance documents (LICENSE, ADRs, CONTRIBUTING)
@@ -44,8 +44,8 @@ Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pen
 - Frozen C++ baseline at tag `cpp-final`, the behavioural reference for parity
 
 **In progress / planned:**
-- Phase 0 remainder: docs rewrite (task 5, in review), spikes and Phase 1 decision record (tasks 6-9, pending); `docs/parity.md` is already generated from `cpp-final`
-- Phase 1 spikes: GPUI window with a custom waveform view on all three OSes, cpal output callback, time-stretch quality. The GPUI go/no-go gate is hard (see ADR 0004).
+- Phase 1 decision record: `docs/spikes/DECISIONS.md`; `docs/parity.md` is already generated from `cpp-final`
+- Pending the user: GPUI Windows/macOS runs (the gate is hard and still open, see ADR 0004), cpal real-device runs, and the time-stretch A/B listening and decision.
 
 ## Architecture Decisions
 
