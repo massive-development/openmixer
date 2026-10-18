@@ -26,12 +26,6 @@ MainComponent::MainComponent()
 // OPENMIXER_LAYOUT=<file> replaces the default arrangement with a LayoutSpec JSON file.
 void MainComponent::buildContent()
 {
-    if (juce::SystemStats::getEnvironmentVariable ("OPENMIXER_DEBUG_PANEL", {}) == "1")
-    {
-        debugPanel = std::make_unique<openmixer::ui::DebugPanel> (engine, router);
-        addAndMakeVisible (*debugPanel);
-        return;
-    }
     auto layout = openmixer::ui::LayoutSpec::standard (engine.getNumDecks());
     const juce::File custom (juce::SystemStats::getEnvironmentVariable ("OPENMIXER_LAYOUT", {}));
     if (custom.existsAsFile())
@@ -45,14 +39,35 @@ void MainComponent::buildContent()
     mainView->setSlotContent (openmixer::ui::LayoutSpec::kMixerSlot,
                               std::make_unique<openmixer::ui::MixerPanel> (openmixer::ui::MixerBinding { engine, router }));
     addAndMakeVisible (*mainView);
+    buildLibrary();
+}
+
+// OPENMIXER_LIBRARY_DB=<file> points the app at another library database (default: user data dir).
+void MainComponent::buildLibrary()
+{
+    juce::String error;
+    libraryServices = openmixer::ui::LibraryServices::create (openmixer::ui::LibraryServices::defaultOptions(), &error);
+    if (libraryServices == nullptr)
+    {
+        juce::Logger::writeToLog ("library unavailable: " + error);   // decks and mixer still work without it
+        return;
+    }
+    trackLoader = std::make_unique<openmixer::ui::TrackLoader> (engine, *mainView, *libraryServices);
+    const auto report = [this] (const juce::Result& r) { if (r.failed()) juce::Logger::writeToLog ("load: " + r.getErrorMessage()); };
+
+    auto browser = std::make_unique<openmixer::ui::LibraryBrowser> (*libraryServices, engine.getNumDecks());
+    browser->onLoadRequested = [this, report] (int deck, const openmixer::library::TrackRecord& t) { report (trackLoader->load (deck, t)); };
+    browser->defaultDeck = [this] { return trackLoader->suggestedDeck(); };
+    browser->referenceKey = [this] { return trackLoader->referenceCamelot(); };
+    mainView->setSlotContent (openmixer::ui::LayoutSpec::kLibrarySlot, std::move (browser));
+    for (int d = 0; d < mainView->getNumDecks(); ++d)
+        mainView->getDeck (d)->onTrackDropped = [this, d, report] (std::int64_t id) { report (trackLoader->load (d, id)); };
 }
 
 void MainComponent::setBackdropOpacity (float opacity)
 {
     if (mainView != nullptr)
         mainView->setBackdropOpacity (opacity);
-    if (debugPanel != nullptr)
-        debugPanel->setBackdropOpacity (opacity);
 }
 
 void MainComponent::timerCallback()
@@ -65,6 +80,7 @@ void MainComponent::timerCallback()
 MainComponent::~MainComponent()
 {
     stopTimer();
+    trackLoader.reset();   // before the view it updates
     midiInput.disableAll();
     shutdownAudio();
 }
@@ -105,6 +121,4 @@ void MainComponent::resized()
 {
     if (mainView != nullptr)
         mainView->setBounds (getLocalBounds());
-    if (debugPanel != nullptr)
-        debugPanel->setBounds (getLocalBounds());
 }

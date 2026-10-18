@@ -21,6 +21,7 @@ public:
     explicit ZoomWaveform (DeckBinding binding);
 
     void setWaveform (std::shared_ptr<const analysis::WaveformData> data);
+    std::shared_ptr<const analysis::WaveformData> getWaveform() const noexcept { return waveform; }
     void setFramesPerPixel (double framesPerPixel);   // clamped to wave::kMin/MaxFramesPerPixel
     double getFramesPerPixel() const noexcept { return framesPerPixel; }
     void zoomBy (double factor) { setFramesPerPixel (framesPerPixel * factor); }

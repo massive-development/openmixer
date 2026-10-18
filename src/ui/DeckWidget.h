@@ -10,6 +10,7 @@
 #include "LoopControls.h"
 #include "OverviewWaveform.h"
 #include "PitchFader.h"
+#include "TrackDrag.h"
 #include "TrackHeader.h"
 #include "TransportPanel.h"
 #include "ZoomWaveform.h"
@@ -19,7 +20,7 @@
 namespace openmixer::ui
 {
 
-class DeckWidget : public juce::Component
+class DeckWidget : public juce::Component, public juce::DragAndDropTarget
 {
 public:
     explicit DeckWidget (DeckBinding binding);
@@ -27,6 +28,13 @@ public:
     void setWaveform (std::shared_ptr<const analysis::WaveformData> data);
     void setTrack (const TrackInfo& info) { header.setTrack (info); }
     void setGrid (std::shared_ptr<const BeatGrid> grid);   // forwards to the engine; the zoom view reads it back
+
+    // A library track dropped on the deck (see TrackDrag.h); the app wires this to the track loader.
+    std::function<void (std::int64_t trackId)> onTrackDropped;
+    bool isInterestedInDragSource (const SourceDetails& details) override;
+    void itemDragEnter (const SourceDetails&) override { setDropHover (true); }
+    void itemDragExit (const SourceDetails&) override { setDropHover (false); }
+    void itemDropped (const SourceDetails& details) override;
 
     void refresh();   // one frame tick: pulls state from the deck and repaints what changed
 
@@ -42,6 +50,9 @@ public:
     void resized() override;
 
 private:
+    void setDropHover (bool hover);
+
+    bool dropHover = false;
     DeckBinding deckRef;
     TrackHeader header;
     OverviewWaveform overview;

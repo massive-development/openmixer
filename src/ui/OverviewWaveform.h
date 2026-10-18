@@ -21,6 +21,7 @@ public:
     explicit OverviewWaveform (DeckBinding binding);
 
     void setWaveform (std::shared_ptr<const analysis::WaveformData> data);   // nullptr -> empty state
+    std::shared_ptr<const analysis::WaveformData> getWaveform() const noexcept { return waveform; }
     void refresh();   // frame tick: repaints only what changed
 
     // Seeks to the track fraction under x (also what clicks/drags use). Returns the fraction sent.

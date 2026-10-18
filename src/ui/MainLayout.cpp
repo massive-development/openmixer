@@ -8,7 +8,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr float kDeckRowsShare = 0.70F, kMixerWeight = 0.85F;
+    constexpr float kDeckRowsShare = 0.68F, kMixerWeight = 0.85F;
 
     CellSpec deckCell (int i) { CellSpec c; c.deck = i; return c; }
     CellSpec slotCell (const char* name, float weight = 1.0F) { CellSpec c; c.slot = name; c.weight = weight; return c; }

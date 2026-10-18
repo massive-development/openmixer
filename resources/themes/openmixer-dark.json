@@ -41,5 +41,7 @@
              "meterClipLevel": 0.99, "meterReleaseSeconds": 0.3, "meterHoldSeconds": 1.0, "meterClipSeconds": 2.0,
              "titleHeight": 22, "faderWidth": 40, "curveWidth": 128, "fxBoxWidth": 150, "fxEnableWidth": 56, "pageButtonWidth": 80, "padX": 6, "padY": 10, "accentDot": 8, "meterHoldTickHeight": 2,
              "meterSegment": 4, "meterSegmentGap": 1 },
+  "library": { "rowHeight": 26, "headerHeight": 26, "sidebarWidth": 190, "toolbarHeight": 34, "buttonWidth": 78,
+               "sidebarRowHeight": 24, "ratingDot": 5, "searchMinWidth": 160, "compatAlpha": 0.22, "stripeAlpha": 0.04, "dropAlpha": 0.18 },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }

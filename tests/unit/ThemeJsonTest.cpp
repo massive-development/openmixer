@@ -52,6 +52,18 @@ TEST (ThemeJsonTest, ParsesEverySection)
     EXPECT_FLOAT_EQ (p.tokens.typeBody, ThemeTokens::builtinDark().typeBody);   // untouched keys keep the default
 }
 
+TEST (ThemeJsonTest, ParsesLibraryMetricsAndRejectsOutOfRangeValues)
+{
+    const auto p = parse (R"({ "id": "t.lib", "library": { "rowHeight": 30, "sidebarWidth": 210, "compatAlpha": 0.5, "ratingDot": 6 } })");
+    ASSERT_TRUE (p.status.wasOk()) << p.status.getErrorMessage();
+    EXPECT_FLOAT_EQ (p.tokens.libraryRowHeight, 30.0F);
+    EXPECT_FLOAT_EQ (p.tokens.librarySidebarWidth, 210.0F);
+    EXPECT_FLOAT_EQ (p.tokens.libraryCompatAlpha, 0.5F);
+    EXPECT_FLOAT_EQ (p.tokens.libraryToolbarHeight, ThemeTokens::builtinDark().libraryToolbarHeight);   // untouched keys keep the default
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "library": { "rowHeight": -1 } })").status.failed());
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "library": { "compatAlpha": 2 } })").status.failed());
+}
+
 TEST (ThemeJsonTest, ParsesMixerMetricsAndMeterBallistics)
 {
     const auto p = parse (R"({ "id": "t.mix", "mixer": { "knobHeight": 50, "meterHoldSeconds": 2.5, "meterFloorDb": -60 } })");
