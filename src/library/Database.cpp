@@ -30,10 +30,24 @@ std::unique_ptr<Database> Database::open (const juce::String& path, OpenMode mod
 juce::Result Database::configure (OpenMode mode, bool inMemory)
 {
     // Cascading deletes (cues, playlist entries) depend on this; it is off by default in SQLite.
+    sqlite3_busy_timeout (handle.get(), 5000);   // reader and writer connections may briefly contend
     auto result = exec ("PRAGMA foreign_keys = ON;");
     if (result.wasOk() && mode == OpenMode::ReadWrite && ! inMemory)
-        result = exec ("PRAGMA journal_mode = WAL;");   // lets the UI read while the writer commits
+        result = enableWal();   // lets the UI read while the writer commits
     return result;
+}
+
+juce::Result Database::enableWal()
+{
+    auto s = prepare ("PRAGMA journal_mode = WAL;");
+    if (! s.nextRow())
+        return status (s);
+    return s.text (0).equalsIgnoreCase ("wal") ? juce::Result::ok() : juce::Result::fail ("WAL unavailable: " + s.text (0));
+}
+
+juce::Result Database::status (const Statement& s) const
+{
+    return s.valid() ? s.lastResult() : juce::Result::fail (lastError());
 }
 
 Statement Database::prepare (const char* sql)

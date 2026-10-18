@@ -36,11 +36,11 @@ public:
     // Insert or replace the cue/loop in (trackId, slot). Fails for an unknown track.
     juce::Result setCue (const CuePoint& cue);
     juce::Result clearCue (std::int64_t trackId, int slot);
-    std::vector<CuePoint> cues (std::int64_t trackId);   // ordered by slot
+    std::vector<CuePoint> cues (std::int64_t trackId, juce::Result* status = nullptr);   // ordered by slot
 
     juce::Result setLoop (const SavedLoop& loop);
     juce::Result clearLoop (std::int64_t trackId, int slot);
-    std::vector<SavedLoop> loops (std::int64_t trackId);
+    std::vector<SavedLoop> loops (std::int64_t trackId, juce::Result* status = nullptr);
 
 private:
     Database& db;

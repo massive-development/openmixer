@@ -69,7 +69,11 @@ std::optional<std::int64_t> TrackDao::insert (const TrackRecord& track)
 std::optional<std::int64_t> TrackDao::upsertByPath (const TrackRecord& track)
 {
     Transaction tx (db);
-    if (auto existing = findByPath (track.path))
+    juce::Result read = juce::Result::ok();
+    auto existing = findByPath (track.path, &read);
+    if (read.failed())
+        return std::nullopt;   // do not insert blindly when the lookup itself failed
+    if (existing)
     {
         auto merged = track;
         merged.id = existing->id;
@@ -99,41 +103,54 @@ juce::Result TrackDao::remove (std::int64_t id)
     return runChecked (s);
 }
 
-std::vector<TrackRecord> TrackDao::query (const char* where, const juce::String& arg)
+template <typename Arg>
+std::vector<TrackRecord> TrackDao::query (const char* where, const Arg& arg, juce::Result* status)
 {
     auto s = db.prepare (("SELECT " + juce::String (kColumns) + " FROM tracks " + where + ";").toRawUTF8());
-    if (arg.isNotEmpty())
-        s.bindAll (arg);
+    s.bindAll (arg);   // bound unconditionally: '' is a real value, not "no argument"
 
     std::vector<TrackRecord> rows;
     while (s.nextRow())
         rows.push_back (readRow (s));
+    db.report (s, status);
     return rows;
 }
 
-std::optional<TrackRecord> TrackDao::findById (std::int64_t id)
+std::vector<TrackRecord> TrackDao::queryAll (juce::Result* status)
 {
-    auto rows = query (("WHERE id = " + juce::String (id)).toRawUTF8(), {});
+    auto s = db.prepare (("SELECT " + juce::String (kColumns) + " FROM tracks ORDER BY id;").toRawUTF8());
+    std::vector<TrackRecord> rows;
+    while (s.nextRow())
+        rows.push_back (readRow (s));
+    db.report (s, status);
+    return rows;
+}
+
+std::optional<TrackRecord> TrackDao::findById (std::int64_t id, juce::Result* status)
+{
+    auto rows = query ("WHERE id = ?1", id, status);
     return rows.empty() ? std::nullopt : std::optional<TrackRecord> (rows.front());
 }
 
-std::optional<TrackRecord> TrackDao::findByPath (const juce::String& path)
+std::optional<TrackRecord> TrackDao::findByPath (const juce::String& path, juce::Result* status)
 {
-    auto rows = query ("WHERE path = ?1", path);
+    auto rows = query ("WHERE path = ?1", path, status);
     return rows.empty() ? std::nullopt : std::optional<TrackRecord> (rows.front());
 }
 
-std::vector<TrackRecord> TrackDao::findByContentHash (const juce::String& hash)
+std::vector<TrackRecord> TrackDao::findByContentHash (const juce::String& hash, juce::Result* status)
 {
-    return query ("WHERE content_hash = ?1 ORDER BY id", hash);
+    return query ("WHERE content_hash = ?1 ORDER BY id", hash, status);
 }
 
-std::vector<TrackRecord> TrackDao::all() { return query ("ORDER BY id", {}); }
+std::vector<TrackRecord> TrackDao::all (juce::Result* status) { return queryAll (status); }
 
-int TrackDao::count()
+int TrackDao::count (juce::Result* status)
 {
     auto s = db.prepare ("SELECT COUNT(*) FROM tracks;");
-    return s.nextRow() ? s.integer (0) : 0;
+    const auto n = s.nextRow() ? s.integer (0) : 0;
+    db.report (s, status);
+    return n;
 }
 
 juce::Result TrackDao::setAnalysis (std::int64_t id, double bpm, const juce::String& key, const juce::String& camelot)

@@ -109,10 +109,10 @@ const std::vector<Migration>& coreMigrations()
 int currentSchemaVersion (Database& db)
 {
     if (! db.exec (kVersionTable).wasOk())
-        return 0;
+        return -1;
 
     auto s = db.prepare ("SELECT COALESCE(MAX(version), 0) FROM schema_version;");
-    return s.nextRow() ? s.integer (0) : 0;
+    return s.nextRow() ? s.integer (0) : -1;
 }
 
 juce::Result migrate (Database& db, const std::vector<Migration>& migrations)
@@ -121,6 +121,8 @@ juce::Result migrate (Database& db, const std::vector<Migration>& migrations)
         return juce::Result::fail ("migration versions must be strictly increasing");
 
     const auto current = currentSchemaVersion (db);
+    if (current < 0)
+        return juce::Result::fail ("cannot read schema version: " + db.lastError());
     if (! migrations.empty() && current > migrations.back().version)
         return juce::Result::fail ("library database is newer than this app (schema " + juce::String (current) + ")");
 

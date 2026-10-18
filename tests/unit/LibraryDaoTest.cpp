@@ -340,3 +340,51 @@ TEST (LibraryPlaylists, RenameAndFailedMoveRollsBack)
     EXPECT_EQ (names (p.children (std::nullopt)), (std::vector<juce::String> { "Renamed", "B" }));
     EXPECT_EQ (p.find (b)->position, 1);
 }
+
+TEST (LibraryTracks, EmptyStringHashLookupMatchesDefaultColumn)
+{
+    auto lib = memoryLibrary();
+    TrackRecord t;
+    t.path = "/m/nohash.wav";   // content_hash defaults to ''
+    ASSERT_TRUE (lib->tracks().insert (t).has_value());
+
+    juce::Result status = juce::Result::ok();
+    EXPECT_EQ (lib->tracks().findByContentHash ("", &status).size(), 1u);
+    EXPECT_TRUE (status.wasOk());
+    EXPECT_TRUE (lib->tracks().findByPath ("", &status) == std::nullopt);
+}
+
+TEST (LibraryTracks, FindByIdUsesBoundParameter)
+{
+    auto lib = memoryLibrary();
+    auto id = addTrack (*lib, "/m/a.wav");
+    EXPECT_TRUE (lib->tracks().findById (id).has_value());
+    EXPECT_FALSE (lib->tracks().findById (id + 1).has_value());
+}
+
+TEST (LibraryReads, FailedReadsAreDistinguishableFromEmpty)
+{
+    auto lib = memoryLibrary();
+    juce::Result status = juce::Result::ok();
+    EXPECT_TRUE (lib->tracks().all (&status).empty());
+    EXPECT_TRUE (status.wasOk());   // genuinely empty
+
+    ASSERT_TRUE (lib->database().exec ("DROP TABLE playlist_entries; DROP TABLE cues; DROP TABLE loops;"
+                                       " DROP TABLE tracks;").wasOk());
+    EXPECT_TRUE (lib->tracks().all (&status).empty());
+    EXPECT_TRUE (status.failed());
+
+    status = juce::Result::ok();
+    lib->tracks().count (&status);
+    EXPECT_TRUE (status.failed());
+    status = juce::Result::ok();
+    lib->tracks().findById (1, &status);
+    EXPECT_TRUE (status.failed());
+    status = juce::Result::ok();
+    lib->cues().cues (1, &status);
+    EXPECT_TRUE (status.failed());
+    status = juce::Result::ok();
+    lib->playlists().entries (1, &status);
+    EXPECT_TRUE (status.failed());
+    EXPECT_FALSE (lib->tracks().upsertByPath (sampleTrack ("/x")).has_value());
+}

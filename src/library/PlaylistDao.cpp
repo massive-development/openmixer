@@ -108,14 +108,16 @@ juce::Result PlaylistDao::move (std::int64_t id, std::optional<std::int64_t> new
     return tx.commit();
 }
 
-std::optional<Playlist> PlaylistDao::find (std::int64_t id)
+std::optional<Playlist> PlaylistDao::find (std::int64_t id, juce::Result* status)
 {
     auto s = db.prepare ("SELECT id, parent_id, name, is_folder, position FROM playlists WHERE id=?1;");
     s.bindAll (id);
-    return s.nextRow() ? std::optional<Playlist> (readPlaylist (s)) : std::nullopt;
+    auto row = s.nextRow() ? std::optional<Playlist> (readPlaylist (s)) : std::nullopt;
+    db.report (s, status);
+    return row;
 }
 
-std::vector<Playlist> PlaylistDao::children (std::optional<std::int64_t> parentId)
+std::vector<Playlist> PlaylistDao::children (std::optional<std::int64_t> parentId, juce::Result* status)
 {
     auto s = db.prepare ("SELECT id, parent_id, name, is_folder, position FROM playlists"
                          " WHERE parent_id IS ?1 ORDER BY position;");
@@ -124,6 +126,7 @@ std::vector<Playlist> PlaylistDao::children (std::optional<std::int64_t> parentI
     std::vector<Playlist> out;
     while (s.nextRow())
         out.push_back (readPlaylist (s));
+    db.report (s, status);
     return out;
 }
 
@@ -176,14 +179,16 @@ juce::Result PlaylistDao::moveEntry (std::int64_t entryId, int newIndex)
     return tx.commit();
 }
 
-std::optional<PlaylistEntry> PlaylistDao::findEntry (std::int64_t entryId)
+std::optional<PlaylistEntry> PlaylistDao::findEntry (std::int64_t entryId, juce::Result* status)
 {
     auto s = db.prepare ("SELECT id, playlist_id, track_id, position FROM playlist_entries WHERE id=?1;");
     s.bindAll (entryId);
-    return s.nextRow() ? std::optional<PlaylistEntry> (readEntry (s)) : std::nullopt;
+    auto row = s.nextRow() ? std::optional<PlaylistEntry> (readEntry (s)) : std::nullopt;
+    db.report (s, status);
+    return row;
 }
 
-std::vector<PlaylistEntry> PlaylistDao::entries (std::int64_t playlistId)
+std::vector<PlaylistEntry> PlaylistDao::entries (std::int64_t playlistId, juce::Result* status)
 {
     auto s = db.prepare ("SELECT id, playlist_id, track_id, position FROM playlist_entries"
                          " WHERE playlist_id=?1 ORDER BY position;");
@@ -192,6 +197,7 @@ std::vector<PlaylistEntry> PlaylistDao::entries (std::int64_t playlistId)
     std::vector<PlaylistEntry> out;
     while (s.nextRow())
         out.push_back (readEntry (s));
+    db.report (s, status);
     return out;
 }
 

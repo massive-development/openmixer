@@ -23,11 +23,12 @@ public:
     juce::Result update (const TrackRecord& track);
     juce::Result remove (std::int64_t id);
 
-    std::optional<TrackRecord> findById (std::int64_t id);
-    std::optional<TrackRecord> findByPath (const juce::String& path);
-    std::vector<TrackRecord> findByContentHash (const juce::String& hash);
-    std::vector<TrackRecord> all();   // ordered by id
-    int count();
+    // Reads: pass `status` to tell a failed read (e.g. database busy) from "not found" / empty.
+    std::optional<TrackRecord> findById (std::int64_t id, juce::Result* status = nullptr);
+    std::optional<TrackRecord> findByPath (const juce::String& path, juce::Result* status = nullptr);
+    std::vector<TrackRecord> findByContentHash (const juce::String& hash, juce::Result* status = nullptr);
+    std::vector<TrackRecord> all (juce::Result* status = nullptr);   // ordered by id
+    int count (juce::Result* status = nullptr);
 
     // Narrow writers so analysis and playback do not rewrite whole rows.
     juce::Result setAnalysis (std::int64_t id, double bpm, const juce::String& key, const juce::String& camelot);
@@ -35,7 +36,9 @@ public:
     juce::Result recordPlay (std::int64_t id, std::int64_t whenMs);
 
 private:
-    std::vector<TrackRecord> query (const char* where, const juce::String& arg);
+    template <typename Arg>
+    std::vector<TrackRecord> query (const char* where, const Arg& arg, juce::Result* status);
+    std::vector<TrackRecord> queryAll (juce::Result* status);
     juce::Result runChecked (Statement& s);
 
     Database& db;
