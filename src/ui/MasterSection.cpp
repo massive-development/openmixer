@@ -5,7 +5,7 @@
 namespace openmixer::ui
 {
 
-namespace { constexpr double kMaxMaster = 1.5; constexpr int kMaxFaderWidth = 40; }
+namespace { constexpr double kMaxMaster = Mixer::kMaxGain; }
 
 MasterSection::MasterSection (MixerBinding b) : binding (b)
 {
@@ -51,8 +51,8 @@ void MasterSection::paint (juce::Graphics& g)
 void MasterSection::resized()
 {
     const int gap = theme::innerGap() / 2;
-    auto area = getLocalBounds().reduced (theme::pad() - 4, theme::pad() - 2);
-    title.setBounds (area.removeFromTop (22));
+    auto area = getLocalBounds().reduced (theme::mixerPadX(), theme::mixerPadY());
+    title.setBounds (area.removeFromTop (theme::mixerTitleHeight()));
     area.removeFromTop (gap);
 
     auto meterColumn = area.removeFromRight (theme::mixerMeterWidth() * 2 + 2);
@@ -60,7 +60,7 @@ void MasterSection::resized()
     meter.setBounds (meterColumn);
     area.removeFromRight (gap);
     faderCaption.setBounds (area.removeFromTop (kCaptionHeight));
-    fader.setBounds (area.withSizeKeepingCentre (std::min (area.getWidth(), kMaxFaderWidth), area.getHeight()));
+    fader.setBounds (area.withSizeKeepingCentre (std::min (area.getWidth(), theme::mixerFaderWidth()), area.getHeight()));
 }
 
 } // namespace openmixer::ui

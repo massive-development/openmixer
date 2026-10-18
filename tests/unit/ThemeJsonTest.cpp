@@ -59,6 +59,15 @@ TEST (ThemeJsonTest, ParsesMixerMetricsAndMeterBallistics)
     EXPECT_FLOAT_EQ (p.tokens.mixerKnobHeight, 50.0F);
     EXPECT_FLOAT_EQ (p.tokens.meterHoldSeconds, 2.5F);
     EXPECT_FLOAT_EQ (p.tokens.meterFloorDb, -60.0F);
+    const auto sized = parse (R"({ "id": "t.sz", "mixer": { "titleHeight": 30, "faderWidth": 50, "curveWidth": 100, "fxBoxWidth": 120,
+                                  "fxEnableWidth": 40, "pageButtonWidth": 70, "padX": 4, "padY": 5, "accentDot": 6, "meterHoldTickHeight": 3 } })");
+    ASSERT_TRUE (sized.status.wasOk()) << sized.status.getErrorMessage();
+    EXPECT_FLOAT_EQ (sized.tokens.mixerTitleHeight, 30.0F);
+    EXPECT_FLOAT_EQ (sized.tokens.mixerFxBoxWidth, 120.0F);
+    EXPECT_FLOAT_EQ (sized.tokens.mixerAccentDot, 6.0F);
+    EXPECT_FLOAT_EQ (sized.tokens.meterHoldTickHeight, 3.0F);
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "mixer": { "faderWidth": -1 } })").status.failed());
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "mixer": { "meterHoldTickHeight": 99 } })").status.failed());
     EXPECT_FLOAT_EQ (p.tokens.mixerCueHeight, ThemeTokens::builtinDark().mixerCueHeight);
     EXPECT_TRUE (parse (R"({ "id": "t.bad", "mixer": { "meterClipLevel": 3 } })").status.failed());
     EXPECT_TRUE (parse (R"({ "id": "t.bad", "mixer": { "meterReleaseSeconds": 0 } })").status.failed());

@@ -5,7 +5,7 @@
 namespace openmixer::ui
 {
 
-namespace { constexpr int kCurveGroup = 1002, kCurveWidth = 128; }
+namespace { constexpr int kCurveGroup = 1002; }
 
 CrossfaderSection::CrossfaderSection (MixerBinding b) : binding (b)
 {
@@ -58,7 +58,7 @@ void CrossfaderSection::paint (juce::Graphics& g)
 void CrossfaderSection::resized()
 {
     auto area = getLocalBounds().reduced (theme::pad(), theme::pad() - 4);
-    auto right = area.removeFromRight (kCurveWidth);
+    auto right = area.removeFromRight (theme::mixerCurveWidth());
     curveCaption.setBounds (right.removeFromTop (kCaptionHeight));
     auto segments = right.removeFromTop (theme::mixerButtonHeight());
     curves[0].setBounds (segments.removeFromLeft (segments.getWidth() / 2));

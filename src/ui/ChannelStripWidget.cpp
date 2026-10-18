@@ -8,7 +8,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kTitleHeight = 22, kAssignGroup = 1001, kMaxFaderWidth = 40;
+    constexpr int kAssignGroup = 1001;
     constexpr const char* kEqIds[ChannelStripWidget::kBands] { "eq.low", "eq.mid", "eq.high" };
     constexpr const char* kEqText[ChannelStripWidget::kBands] { "Lo", "Mid", "Hi" };
     constexpr const char* kAssignText[3] { "Mid", "L", "R" };
@@ -148,7 +148,8 @@ void ChannelStripWidget::paint (juce::Graphics& g)
     theme::paintGlassCard (g, bounds, accent);
     const auto t = title.getBounds().toFloat();
     g.setColour (accent);
-    g.fillEllipse (juce::Rectangle<float> (8.0F, 8.0F).withCentre ({ t.getX() - 8.0F, t.getCentreY() }));
+    const float dot = theme::mixerAccentDot();
+    g.fillEllipse (juce::Rectangle<float> (dot, dot).withCentre ({ t.getX() - dot, t.getCentreY() }));
 }
 
 void ChannelStripWidget::layoutKnobs (juce::Rectangle<int>& area)
@@ -185,8 +186,8 @@ void ChannelStripWidget::layoutButtons (juce::Rectangle<int>& area)
 void ChannelStripWidget::resized()
 {
     const int gap = theme::innerGap() / 2;
-    auto area = getLocalBounds().reduced (theme::pad() - 6, theme::pad() - 2);
-    title.setBounds (area.removeFromTop (kTitleHeight).withTrimmedLeft (14));
+    auto area = getLocalBounds().reduced (theme::mixerPadX(), theme::mixerPadY());
+    title.setBounds (area.removeFromTop (theme::mixerTitleHeight()).withTrimmedLeft (14));
     area.removeFromTop (gap);
     layoutKnobs (area);
     area.removeFromTop (gap);
@@ -195,7 +196,7 @@ void ChannelStripWidget::resized()
 
     faderCaption.setBounds (area.removeFromTop (kCaptionHeight));
     const int meterWidth = theme::mixerMeterWidth() * 2 + 2;
-    auto group = area.withSizeKeepingCentre (std::min (area.getWidth(), kMaxFaderWidth + gap + meterWidth), area.getHeight());
+    auto group = area.withSizeKeepingCentre (std::min (area.getWidth(), theme::mixerFaderWidth() + gap + meterWidth), area.getHeight());
     meter.setBounds (group.removeFromRight (meterWidth));
     group.removeFromRight (gap);
     fader.setBounds (group);
