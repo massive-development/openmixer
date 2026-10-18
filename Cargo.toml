@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/om-core",
+    "crates/om-dsp",
+    "crates/om-engine",
+    "crates/om-audio",
+    "crates/openmixer",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+repository = "https://github.com/heyitsmass/openmixer"
+rust-version = "1.91"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
