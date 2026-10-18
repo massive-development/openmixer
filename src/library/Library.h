@@ -5,6 +5,7 @@
 #include "CueDao.h"
 #include "Migrations.h"
 #include "PlaylistDao.h"
+#include "PrepQueueDao.h"
 #include "TrackDao.h"
 #include "TrackFileDao.h"
 #include "WatchFolderDao.h"
@@ -26,6 +27,7 @@ public:
     PlaylistDao& playlists() noexcept { return playlistDao; }
     TrackFileDao& trackFiles() noexcept { return fileDao; }
     WatchFolderDao& watchFolders() noexcept { return folderDao; }
+    PrepQueueDao& prepQueue() noexcept { return prepDao; }
 
 private:
     struct OpenKey { explicit OpenKey() = default; };
@@ -40,6 +42,7 @@ private:
     PlaylistDao playlistDao;
     TrackFileDao fileDao;
     WatchFolderDao folderDao;
+    PrepQueueDao prepDao;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Library)
 };

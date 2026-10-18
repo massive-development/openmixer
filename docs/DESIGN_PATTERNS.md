@@ -200,3 +200,9 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** importers only turn a foreign XML document into the neutral `ImportedLibrary` (no database code, recognised by XML root since both formats are `.xml`); one `ImportWriter` merges any importer's output in a single `Transaction`, so every format gets the same dedupe-by-path and rollback behaviour.
 - **Reuse when:** adding another library format (`registry.add(...)`, later registration wins) or another bulk write that must be all-or-nothing and re-runnable.
 - **Notes:** merge policy (local data wins, imports fill gaps and default rating/play count) is documented in `ImportMerge.h`; re-import is idempotent; a failed lookup aborts the import rather than counting as "new".
+
+### Owner-thread pump over a background service (PrepQueue)
+- **Where:** `src/library/PrepQueue.{h,cpp}`, `PrepQueueDao`, `PrepResults`.
+- **Why:** analysis workers must not touch the Library's sqlite connection, so their listener only copies the final job snapshot into a mutex-guarded inbox; the thread that owns the connection calls `pump()` to apply results, update rows, fire the observer and submit more. At most `maxInFlight` jobs sit in the service, so priority and order stay editable (the service itself is plain FIFO).
+- **Reuse when:** a persisted queue feeds `AnalysisService` or another worker pool and results must land in the database (stem precompute, export).
+- **Notes:** the inbox is a `shared_ptr` captured by listeners so late callbacks after destruction are safe; progress is read live from the job on `list()` rather than written to the DB; running rows are reset to queued on start. Library depends on analysis (same tier) for this.

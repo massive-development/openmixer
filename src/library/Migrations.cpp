@@ -97,6 +97,19 @@ CREATE INDEX idx_tracks_genre ON tracks (genre);
 CREATE INDEX idx_tracks_camelot ON tracks (camelot);
 )sql";
 
+constexpr const char* kSchemaV4 = R"sql(
+CREATE TABLE prep_queue (
+  id INTEGER PRIMARY KEY,
+  track_id INTEGER NOT NULL UNIQUE REFERENCES tracks (id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'running', 'done', 'failed', 'cancelled')),
+  error TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_prep_queue_order ON prep_queue (status, priority DESC, position);
+)sql";
+
 bool isStrictlyIncreasing (const std::vector<Migration>& list)
 {
     int previous = 0;
@@ -129,6 +142,7 @@ const std::vector<Migration>& coreMigrations()
         { 1, "tracks, cues, loops, playlists", kSchemaV1 },
         { 2, "track file state, watch folders", kSchemaV2 },
         { 3, "search indexes", kSchemaV3 },
+        { 4, "track prep queue", kSchemaV4 },
     };
     return list;
 }
