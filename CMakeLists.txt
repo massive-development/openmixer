@@ -320,6 +320,98 @@ target_link_libraries(openmixer_analysis
 )
 
 # =============================================================================
+# Library (SQLite schema + DAOs, metadata ingest, watch folders). Depends on core; analysis (same tier) for the
+# content-hash helper and the prep queue, which submits to AnalysisService.
+# =============================================================================
+
+set(OPENMIXER_LIBRARY_SOURCES
+    src/library/CueDao.cpp
+    src/library/FileUrl.cpp
+    src/library/ImportCues.cpp
+    src/library/ImportMerge.cpp
+    src/library/ImportWriter.cpp
+    src/library/ItunesImporter.cpp
+    src/library/LibraryImport.cpp
+    src/library/LibraryImporter.cpp
+    src/library/PlistReader.cpp
+    src/library/RekordboxImporter.cpp
+    src/library/TrackKey.cpp
+    src/library/Ingestor.cpp
+    src/library/JuceMetadataReader.cpp
+    src/library/Database.cpp
+    src/library/Library.cpp
+    src/library/MetadataReader.cpp
+    src/library/Migrations.cpp
+    src/library/OrderedList.cpp
+    src/library/PlaylistDao.cpp
+    src/library/PrepQueue.cpp
+    src/library/PrepQueueDao.cpp
+    src/library/PrepResults.cpp
+    src/library/SearchCompiler.cpp
+    src/library/SearchEngine.cpp
+    src/library/SearchFields.cpp
+    src/library/SearchKeys.cpp
+    src/library/SearchParser.cpp
+    src/library/SearchTerms.cpp
+    src/library/Statement.cpp
+    src/library/TrackDao.cpp
+    src/library/TrackFileDao.cpp
+    src/library/WatchFolderDao.cpp
+    src/library/WatchFolders.cpp
+)
+
+add_library(openmixer_library STATIC
+    ${OPENMIXER_LIBRARY_SOURCES}
+    src/library/CueDao.h
+    src/library/FileUrl.h
+    src/library/ImportCues.h
+    src/library/ImportMerge.h
+    src/library/ImportWriter.h
+    src/library/ItunesImporter.h
+    src/library/LibraryImport.h
+    src/library/LibraryImporter.h
+    src/library/PlistReader.h
+    src/library/RekordboxImporter.h
+    src/library/ImportModel.h
+    src/library/Database.h
+    src/library/Ingestor.h
+    src/library/JuceMetadataReader.h
+    src/library/Library.h
+    src/library/MetadataReader.h
+    src/library/Migrations.h
+    src/library/OrderedList.h
+    src/library/PlaylistDao.h
+    src/library/PrepQueue.h
+    src/library/PrepQueueDao.h
+    src/library/PrepResults.h
+    src/library/SearchCompiler.h
+    src/library/SearchEngine.h
+    src/library/SearchFields.h
+    src/library/SearchKeys.h
+    src/library/SearchParser.h
+    src/library/SearchQuery.h
+    src/library/Statement.h
+    src/library/TrackDao.h
+    src/library/TrackFileDao.h
+    src/library/TrackRecord.h
+    src/library/WatchFolderDao.h
+    src/library/WatchFolders.h
+)
+
+target_include_directories(openmixer_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(${OPENMIXER_LIBRARY_SOURCES})
+target_link_libraries(openmixer_library
+    PUBLIC
+        openmixer_core
+        openmixer_analysis
+        juce::juce_audio_formats
+        juce::juce_core
+        juce::juce_recommended_config_flags
+    PRIVATE
+        openmixer_sqlite3
+)
+
+# =============================================================================
 # Stems library (separator interface, licence-gated model download). Depends on analysis.
 # =============================================================================
 
@@ -501,6 +593,13 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/WaveformBuilderTest.cpp
     tests/unit/StructureAnalyzerTest.cpp
     tests/unit/StemsTest.cpp
+    tests/unit/LibraryDatabaseTest.cpp
+    tests/unit/LibraryDaoTest.cpp
+    tests/unit/LibraryIngestTest.cpp
+    tests/unit/LibraryWatchFoldersTest.cpp
+    tests/unit/LibrarySearchTest.cpp
+    tests/unit/LibraryImportTest.cpp
+    tests/unit/LibraryPrepQueueTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -513,6 +612,7 @@ target_compile_definitions(openmixer_tests PRIVATE
 add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_library
     openmixer_stems
     openmixer_analysis
     openmixer_plugins
