@@ -228,6 +228,7 @@ dependencies = [
  "assert_no_alloc",
  "om-core",
  "om-dsp",
+ "om-stretch",
  "rtrb",
  "symphonia",
  "thiserror",

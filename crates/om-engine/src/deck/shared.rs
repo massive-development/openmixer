@@ -25,6 +25,7 @@ pub(super) struct Shared {
     pub finished: AtomicBool,
     pub end_of_stream: AtomicBool,
     pub stop: AtomicBool,
+    pub keylock: AtomicBool,
 
     pub rate: AtomicF64,
     pub device_sample_rate: AtomicF64,
@@ -71,6 +72,7 @@ impl Shared {
             finished: AtomicBool::new(false),
             end_of_stream: AtomicBool::new(false),
             stop: AtomicBool::new(false),
+            keylock: AtomicBool::new(false),
             rate: AtomicF64::new(1.0),
             device_sample_rate: AtomicF64::new(44_100.0),
             file_sample_rate: AtomicF64::new(44_100.0),

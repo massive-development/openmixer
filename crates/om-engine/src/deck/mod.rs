@@ -4,7 +4,7 @@
 //! Threads: control methods (`load`, `seek`, `set_parameter`, ...) take `&self` and may be called
 //! from any non-audio thread. `prepare` and the [`AudioCallback`] methods belong to the audio side.
 //! Loops wrap on the audio thread into a decoder-prefetched slot, so loop jumps are gapless.
-//! Key-lock is added on top of this core in a later task.
+//! Key-lock renders through a [`om_stretch::Stretcher`] (see `playback/keylock.rs`).
 
 mod decoder;
 mod hotcues;
@@ -278,6 +278,15 @@ impl Deck {
     pub fn hotcue(&self, index: usize) -> Option<i64> {
         self.shared.hotcues.get(index)
     }
+
+    /// Key-lock: tempo follows rate while pitch stays put. Needs [`DeckAudio::prepare`] first.
+    pub fn set_keylock(&self, enabled: bool) {
+        self.shared.keylock.store(enabled, Relaxed);
+    }
+
+    pub fn is_keylock(&self) -> bool {
+        self.shared.keylock.load(Relaxed)
+    }
 }
 
 impl Drop for Deck {
@@ -305,6 +314,8 @@ impl DeckAudio {
         };
         self.shared.device_sample_rate.store(rate);
         self.mono_sink.resize(max_block_size.max(1), 0.0);
+        self.playback
+            .prepare_keylock(rate as u32, max_block_size.max(1));
     }
 }
 
@@ -348,6 +359,7 @@ impl ParameterTarget for Deck {
         match id {
             "play" => self.set_playing(value >= 0.5),
             "rate" => self.set_rate(value),
+            "keylock" => self.set_keylock(value >= 0.5),
             "loop.exit" => {
                 if value >= 0.5 {
                     self.exit_loop();
@@ -396,6 +408,8 @@ fn parse_hotcue_id(id: &str) -> Option<(usize, bool)> {
         _ => None,
     }
 }
+#[cfg(test)]
+mod keylock_tests;
 #[cfg(test)]
 mod loop_tests;
 #[cfg(test)]
