@@ -33,8 +33,7 @@ LibraryBrowser::LibraryBrowser (LibraryServices& s, int numDecks) : services (s)
 
     model.onActivate = [this] (const library::TrackRecord& t)
     {
-        if (onLoadRequested)
-            onLoadRequested (defaultDeck ? defaultDeck() : 0, t);
+        requestLoad (defaultDeck ? defaultDeck() : 0, t);
     };
     model.onSortChanged = [this] (const juce::String& field, bool descending)
     {
@@ -144,12 +143,30 @@ void LibraryBrowser::flushPending()
     }
 }
 
+juce::Result LibraryBrowser::requestLoad (int deck, const library::TrackRecord& track)
+{
+    if (! onLoadRequested)
+        return juce::Result::fail ("loading is not available");
+    const auto result = onLoadRequested (deck, track);
+    showResult (result, track);
+    return result;
+}
+
+void LibraryBrowser::showResult (const juce::Result& result, const library::TrackRecord& track)
+{
+    const auto name = juce::File (track.path).getFileName();
+    if (result.failed())
+        setStatus ("Couldn't load " + name + ": " + result.getErrorMessage(), true);
+    else
+        setStatus ("Loaded " + name, false);
+}
+
 void LibraryBrowser::loadSelected (int deck)
 {
     if (! onLoadRequested)
         return;
     if (const auto* t = model.rowAt (table.getSelectedRow()); t != nullptr)
-        onLoadRequested (deck, *t);
+        requestLoad (deck, *t);
     else
         setStatus ("Select a track first", true);
 }
@@ -221,6 +238,8 @@ void LibraryBrowser::resized()
         bar.removeFromRight (gap);
     }
     search.setBounds (bar);
+    const auto font = theme::font (theme::typeBody());
+    search.setIndents (theme::innerGap(), juce::jmax (0, (search.getHeight() - juce::roundToInt (font.getHeight())) / 2));   // vertical centre
     area.removeFromTop (gap);
 
     status.setBounds (area.removeFromBottom (theme::libraryHeaderHeight()));

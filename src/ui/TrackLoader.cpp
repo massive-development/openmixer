@@ -28,7 +28,7 @@ juce::Result TrackLoader::load (int deck, const library::TrackRecord& track)
         return juce::Result::fail ("no such deck");
     const juce::File file (track.path);
     if (! file.existsAsFile())
-        return juce::Result::fail ("file is missing: " + track.path);
+        return juce::Result::fail ("file is missing");
     if (! engine.getDeck (deck).load (file))
         return juce::Result::fail ("cannot decode " + file.getFileName());
 

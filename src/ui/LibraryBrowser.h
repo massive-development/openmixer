@@ -22,7 +22,8 @@ public:
     ~LibraryBrowser() override;
 
     // deck = target deck index; the browser never touches decks itself.
-    std::function<void (int deck, const library::TrackRecord& track)> onLoadRequested;
+    // Returns the load outcome; a failure is shown in the status line.
+    std::function<juce::Result (int deck, const library::TrackRecord& track)> onLoadRequested;
     // Which deck double-click / Enter loads into (default 0).
     std::function<int()> defaultDeck;
     // Camelot code to highlight compatible keys against (default: none).
@@ -31,6 +32,8 @@ public:
     void setSearchText (const juce::String& text);   // applies immediately (typing is debounced)
     void flushPending();                             // applies a debounced search / deferred refresh now (the timer calls it)
     void refresh();                                  // rebuild sidebar and re-query
+    juce::Result requestLoad (int deck, const library::TrackRecord& track);   // onLoadRequested + status line
+    void showResult (const juce::Result& result, const library::TrackRecord& track);   // for loads started elsewhere (drops)
     void loadSelected (int deck);                    // first selected row -> onLoadRequested
     int prepSelected();                              // queues every selected row; returns how many
     juce::Result importFrom (const juce::File& xml); // iTunes / Rekordbox XML, summary goes to the status line

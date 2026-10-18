@@ -280,7 +280,7 @@ TEST (LibraryBrowserTest, LoadButtonsAndActivationRequestTheRightDeck)
 {
     BrowserRig rig;
     std::vector<std::pair<int, juce::String>> loads;
-    rig.browser.onLoadRequested = [&] (int deck, const library::TrackRecord& t) { loads.emplace_back (deck, t.title); };
+    rig.browser.onLoadRequested = [&] (int deck, const library::TrackRecord& t) { loads.emplace_back (deck, t.title); return juce::Result::ok(); };
     rig.browser.defaultDeck = [] { return 1; };
 
     rig.browser.getLoadButton (0).onClick();   // nothing selected: no load
@@ -295,6 +295,68 @@ TEST (LibraryBrowserTest, LoadButtonsAndActivationRequestTheRightDeck)
     rig.browser.getModel().returnKeyPressed (2);   // Enter / double-click path
     ASSERT_EQ (loads.size(), 3u);
     EXPECT_EQ (loads[2], std::make_pair (1, juce::String ("Charlie")));
+}
+
+TEST (LibraryBrowserTest, FailedLoadsShowTheReasonInTheStatusLine)
+{
+    BrowserRig rig;
+    rig.browser.onLoadRequested = [] (int, const library::TrackRecord&) { return juce::Result::fail ("file is missing"); };
+    rig.browser.getTable().selectRow (0);
+    rig.browser.getLoadButton (0).onClick();
+    EXPECT_EQ (rig.browser.getStatusLabel().getText(), "Couldn't load " + juce::File (rig.browser.getModel().rowAt (0)->path).getFileName() + ": file is missing");
+    rig.browser.onLoadRequested = [] (int, const library::TrackRecord&) { return juce::Result::ok(); };
+    rig.browser.getLoadButton (0).onClick();
+    EXPECT_EQ (rig.browser.getStatusLabel().getText().substring (0, 6), "Loaded");
+    EXPECT_TRUE (rig.browser.requestLoad (0, *rig.browser.getModel().rowAt (0)).wasOk());
+}
+
+TEST (LibraryBrowserTest, SearchBoxTextIsVerticallyCentred)
+{
+    BrowserRig rig;
+    rig.browser.setSize (1280, 300);
+    const auto indent = rig.browser.getSearchBox().getTopIndent();
+    EXPECT_GT (indent, 2);
+    EXPECT_NEAR (indent * 2 + theme::font (theme::typeBody()).getHeight(), static_cast<float> (rig.browser.getSearchBox().getHeight()), 2.0F);
+}
+
+TEST (LibraryBrowserTest, WatchFolderScopeIsAnchoredAndDoesNotMatchSiblings)
+{
+    BrowserRig rig;
+    auto& lib = rig.services->getLibrary();
+    addTrack (lib, { "In", "A", 100.0, "1A", "", 0 }, "/music/house/in.wav");
+    addTrack (lib, { "Deep", "A", 100.0, "1A", "", 0 }, "/music/house/sub/deep.wav");
+    addTrack (lib, { "Sibling", "A", 100.0, "1A", "", 0 }, "/music/house2/sib.wav");
+    addTrack (lib, { "Elsewhere", "A", 100.0, "1A", "", 0 }, "/x/music/house/e.wav");
+    addTrack (lib, { "Pct", "A", 100.0, "1A", "", 0 }, "/music/100%_x/p.wav");
+    addTrack (lib, { "PctOther", "A", 100.0, "1A", "", 0 }, "/music/100abx/p.wav");
+    lib.watchFolders().add ("/music/house");
+    lib.watchFolders().add ("/music/100%_x");
+    rig.browser.refresh();
+    ASSERT_TRUE (rig.browser.getSidebar().select (SidebarNode::Kind::WatchFolder, 0, "/music/house"));
+    ASSERT_EQ (rig.browser.getModel().getNumRows(), 2);
+    juce::StringArray titles { rig.title (0), rig.title (1) };
+    EXPECT_TRUE (titles.contains ("In") && titles.contains ("Deep"));
+    ASSERT_TRUE (rig.browser.getSidebar().select (SidebarNode::Kind::WatchFolder, 0, "/music/100%_x"));
+    ASSERT_EQ (rig.browser.getModel().getNumRows(), 1);   // LIKE wildcards in the folder name are escaped
+    EXPECT_EQ (rig.title (0), "Pct");
+    ASSERT_TRUE (rig.browser.getSidebar().select (SidebarNode::Kind::AllTracks));
+    rig.browser.setSearchText ("folder:/music/house/ -title:deep");   // trailing slash accepted; composes with other terms
+    ASSERT_EQ (rig.browser.getModel().getNumRows(), 1);
+}
+
+TEST (LibraryBrowserTest, WatchFoldersWithTheSameLeafNameGetDistinctLabels)
+{
+    BrowserRig rig;
+    auto& lib = rig.services->getLibrary();
+    lib.watchFolders().add ("/a/music");
+    lib.watchFolders().add ("/b/music");
+    lib.watchFolders().add ("/c/other");
+    const auto nodes = buildSidebar (lib);
+    const auto& kids = nodes[2].children;
+    ASSERT_EQ (kids.size(), 3u);
+    EXPECT_NE (kids[0].label, kids[1].label);
+    EXPECT_NE (kids[0].label.indexOf ("/a"), -1);
+    EXPECT_EQ (kids[2].label, "other");
 }
 
 TEST (LibraryBrowserTest, RowsAreDraggableAndDecksAcceptTheDrop)
@@ -450,4 +512,44 @@ TEST (LibraryServicesTest, UnopenableDatabaseReportsAnError)
     juce::String error;
     EXPECT_EQ (LibraryServices::create (std::move (options), &error), nullptr);
     EXPECT_TRUE (error.isNotEmpty());
+}
+
+namespace
+{
+// Runs queued callAsync messages: a stop request queued behind them ends the loop.
+void drainMessages()
+{
+    juce::MessageManager::callAsync ([] { juce::MessageManager::getInstance()->stopDispatchLoop(); });
+    juce::MessageManager::getInstance()->runDispatchLoop();
+}
+}
+
+TEST (LibraryServicesTest, ScanThreadErrorsAreDeliveredOnTheMessageThread)
+{
+    library::test::TempDir dir;
+    std::vector<std::pair<juce::String, bool>> errors;   // message, delivered on the test (message) thread
+    const auto messageThread = std::this_thread::get_id();
+    auto options = memoryOptions();
+    options.dbPath = dir.dir.getChildFile("library.db").getFullPathName();
+    options.scanOnStart = false;
+    options.onError = [&] (const juce::String& m) { errors.emplace_back (m, std::this_thread::get_id() == messageThread); };
+    auto services = makeServices (std::move (options));
+    ASSERT_NE (services, nullptr);
+    ASSERT_TRUE (services->getLibrary().database().exec ("INSERT INTO schema_version (version, name, applied_at) VALUES (99, 'future', 0);").wasOk());
+
+    services->getWatchFolders()->triggerScan();   // the scan thread cannot open the "newer" database
+    ASSERT_TRUE (services->getWatchFolders()->waitForScans (1, 8000));
+    for (int i = 0; i < 100 && errors.empty(); ++i)
+    {
+        juce::Thread::sleep (10);
+        drainMessages();
+    }
+    ASSERT_FALSE (errors.empty());
+    EXPECT_TRUE (errors[0].second);
+    EXPECT_TRUE (errors[0].first.contains ("newer"));
+
+    services->getWatchFolders()->triggerScan();   // an error still queued when the services die must be dropped safely
+    services->getWatchFolders()->waitForScans (2, 8000);
+    services.reset();
+    drainMessages();
 }

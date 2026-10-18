@@ -334,3 +334,21 @@ TEST (LibrarySearch, MigrationAddsIndexes)
     ASSERT_TRUE (s.nextRow());
     EXPECT_EQ (s.integer (0), 1);
 }
+
+TEST (LibrarySearchFolder, FolderTermIsAnchoredAndEscaped)
+{
+    auto lib = Library::open (":memory:");
+    for (const char* path : { "/m/house/a.wav", "/m/house/sub/b.wav", "/m/house2/c.wav", "/x/m/house/d.wav", "/m/h_use/e.wav", "/m/hxuse/f.wav" })
+    {
+        TrackRecord t;
+        t.path = path;
+        t.title = path;
+        ASSERT_TRUE (lib->tracks().insert (t).has_value());
+    }
+    SearchEngine engine (lib->database());
+    EXPECT_EQ (engine.search ("folder:/m/house").size(), 2u);
+    EXPECT_EQ (engine.search ("folder:/m/house/").size(), 2u);
+    EXPECT_EQ (engine.search ("folder:/m/h_use").size(), 1u);   // '_' is literal
+    EXPECT_EQ (engine.search ("-folder:/m/house").size(), 4u);
+    EXPECT_EQ (engine.search ("folder:/m").size(), 5u);
+}
