@@ -41,6 +41,7 @@ namespace
                                             { "heading", &ThemeTokens::typeHeading, kMinType, kMaxType },
                                             { "mono", &ThemeTokens::typeMono, kMinType, kMaxType } } };
     constexpr float kMaxPx = 400.0F;
+    constexpr float kMaxWindowPx = 4000.0F;   // whole-panel sizes
     const std::array<FloatKey, 14> kDeck { { { "headerHeight", &ThemeTokens::deckHeaderHeight, 0.0F, kMaxPx },
                                              { "overviewHeight", &ThemeTokens::deckOverviewHeight, 0.0F, kMaxPx },
                                              { "transportHeight", &ThemeTokens::deckTransportHeight, 0.0F, kMaxPx },
@@ -92,6 +93,13 @@ namespace
                                                 { "compatAlpha", &ThemeTokens::libraryCompatAlpha, 0.0F, 1.0F },
                                                 { "stripeAlpha", &ThemeTokens::libraryStripeAlpha, 0.0F, 1.0F },
                                                 { "dropAlpha", &ThemeTokens::libraryDropAlpha, 0.0F, 1.0F } } };
+    const std::array<FloatKey, 7> kSettings { { { "panelWidth", &ThemeTokens::settingsPanelWidth, 0.0F, kMaxWindowPx },
+                                                { "panelHeight", &ThemeTokens::settingsPanelHeight, 0.0F, kMaxWindowPx },
+                                                { "tabHeight", &ThemeTokens::settingsTabHeight, 0.0F, kMaxPx },
+                                                { "rowHeight", &ThemeTokens::settingsRowHeight, 0.0F, kMaxPx },
+                                                { "labelWidth", &ThemeTokens::settingsLabelWidth, 0.0F, kMaxPx },
+                                                { "buttonWidth", &ThemeTokens::settingsButtonWidth, 0.0F, kMaxPx },
+                                                { "dimAlpha", &ThemeTokens::settingsDimAlpha, 0.0F, 1.0F } } };
     const std::array<FloatKey, 2> kTranslucency { { { "surface", &ThemeTokens::surfaceOpacity, 0.0F, 1.0F },
                                                     { "backdrop", &ThemeTokens::backdropOpacity, 0.0F, 1.0F } } };
 
@@ -223,9 +231,10 @@ namespace
         withSection (root, "deck", status, [&] (const auto& s) { return readFloats (s, kDeck, "deck", t, w); });
         withSection (root, "mixer", status, [&] (const auto& s) { return readFloats (s, kMixer, "mixer", t, w); });
         withSection (root, "library", status, [&] (const auto& s) { return readFloats (s, kLibrary, "library", t, w); });
+        withSection (root, "settings", status, [&] (const auto& s) { return readFloats (s, kSettings, "settings", t, w); });
         if (status.wasOk() && root.hasProperty ("accents"))
             status = readAccents (root.getProperty ("accents"), t);
-        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck", "mixer", "library" }, "", w);
+        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck", "mixer", "library", "settings" }, "", w);
         return status;
     }
 }

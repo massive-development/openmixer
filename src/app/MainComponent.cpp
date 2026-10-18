@@ -3,24 +3,38 @@
 namespace
 {
     constexpr int kWindowWidth = 1280, kWindowHeight = 800;
-    constexpr int kMaxOutputs = 8;
+    constexpr int kMaxOutputs = openmixer::ui::JuceAudioSettingsModel::kMaxOutputs;
     constexpr int kControlTickHz = 30;
+    constexpr double kMicrosPerSecond = 1.0e6;
 
-    juce::File userMapFile()
+    bool wantsSettingsOpen()
     {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("OpenMixer").getChildFile ("controller_map.json");
+        return juce::JUCEApplicationBase::getCommandLineParameters().contains ("--settings")
+            || juce::SystemStats::getEnvironmentVariable ("OPENMIXER_SETTINGS", {}) == "1";
     }
 }
 
-MainComponent::MainComponent()
+// Preferences load first: they feed the library options, the saved audio state and (through the
+// applier) plugins, theme, MIDI inputs and map. OPENMIXER_THEME=<id> still wins for the session.
+MainComponent::MainComponent (openmixer::ui::ThemeRegistry& themeRegistry)
+    : themes (themeRegistry), prefsFile (openmixer::ui::Preferences::defaultFile())
 {
+    if (const auto r = openmixer::ui::Preferences::load (prefsFile, prefs); r.failed())
+        juce::Logger::writeToLog (r.getErrorMessage());
     setUpMidi();   // the router must hold its targets before the view is built
     buildContent();
     setSize (kWindowWidth, kWindowHeight);
-    setAudioChannels (0, 2);
+    applier.apply (prefs);
+    if (const auto wanted = juce::SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", {}); wanted.isNotEmpty())
+        themes.select (wanted);
+    const auto savedAudio = juce::parseXML (prefs.audio.deviceState);   // null: the system default device
+    targets.noteAudioRequested (prefs.audio.deviceState);
+    setAudioChannels (0, kMaxOutputs, savedAudio.get());
+    buildSettings();
     lastTickMs = juce::Time::getMillisecondCounterHiRes();
     startTimerHz (kControlTickHz);
+    if (wantsSettingsOpen())
+        openSettings();
 }
 
 // OPENMIXER_LAYOUT=<file> replaces the default arrangement with a LayoutSpec JSON file.
@@ -46,7 +60,10 @@ void MainComponent::buildContent()
 void MainComponent::buildLibrary()
 {
     juce::String error;
-    libraryServices = openmixer::ui::LibraryServices::create (openmixer::ui::LibraryServices::defaultOptions(), &error);
+    auto options = openmixer::ui::LibraryServices::defaultOptions();
+    options.scanOnStart = prefs.library.scanOnStart;
+    options.scanIntervalMs = static_cast<std::int64_t> (prefs.library.scanIntervalMinutes) * 60 * 1000;
+    libraryServices = openmixer::ui::LibraryServices::create (std::move (options), &error);
     if (libraryServices == nullptr)
     {
         juce::Logger::writeToLog ("library unavailable: " + error);   // decks and mixer still work without it
@@ -98,25 +115,70 @@ void MainComponent::setUpMidi()
         router.registerTarget ("deck." + juce::String (i), &engine.getDeckControl (i));   // decorates the Deck
 
     mapper.setTarget (&router);
-    if (const auto map = userMapFile(); map.existsAsFile())
-        if (const auto r = mapper.loadFromFile (map); r.failed())
-            juce::Logger::writeToLog ("controller_map.json: " + r.getErrorMessage());
-    midiInput.enableAll();
+    plugins.bindRouter (&router);   // plugin parameter targets appear under the router
+}
+
+void MainComponent::buildSettings()
+{
+    settingsButton.onClick = [this] { openSettings(); };
+    addAndMakeVisible (settingsButton);
+}
+
+void MainComponent::openSettings()
+{
+    if (settingsPanel == nullptr)
+    {
+        openmixer::ui::SettingsServices services { prefs, themes, &audioModel, [this] { return latencyStats(); },
+                                                   [] { return juce::MidiInput::getAvailableDevices(); },
+                                                   libraryServices.get(),
+                                                   [this] { return plugins.getPluginIds(); },
+                                                   [this] { targets.reloadPlugins(); } };
+        settingsPanel = std::make_unique<openmixer::ui::SettingsPanel> (std::move (services));
+        settingsPanel->onChanged = [this] { preferencesChanged(); };
+        settingsPanel->onClose = [this] { closeSettings(); };
+        addChildComponent (*settingsPanel);
+    }
+    settingsPanel->reflectAll();
+    settingsPanel->setBounds (getLocalBounds());
+    settingsPanel->setVisible (true);
+    settingsPanel->toFront (true);
+}
+
+void MainComponent::closeSettings()
+{
+    if (settingsPanel != nullptr)
+        settingsPanel->setVisible (false);
+    settingsButton.grabKeyboardFocus();
+}
+
+void MainComponent::preferencesChanged()
+{
+    if (const auto r = prefs.save (prefsFile); r.failed())
+        juce::Logger::writeToLog ("preferences: " + r.getErrorMessage());
+    applier.apply (prefs);
 }
 
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
     engine.prepare (sampleRate, samplesPerBlockExpected);
+    outputs.prepare (samplesPerBlockExpected);
+    latency.reset();
+    latency.configure (sampleRate, samplesPerBlockExpected);
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        latency.setDeviceLatency (device->getInputLatencyInSamples(), device->getOutputLatencyInSamples());
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
 {
     auto* buffer = info.buffer;
-    float* outputs[kMaxOutputs] {};
+    float* outputPtrs[kMaxOutputs] {};
     const int numOutputs = std::min (buffer->getNumChannels(), kMaxOutputs);
     for (int c = 0; c < numOutputs; ++c)
-        outputs[c] = buffer->getWritePointer (c, info.startSample);
-    engine.process (nullptr, 0, outputs, numOutputs, info.numSamples);
+        outputPtrs[c] = buffer->getWritePointer (c, info.startSample);
+    const auto start = juce::Time::getHighResolutionTicks();
+    outputs.process (engine, outputPtrs, numOutputs, info.numSamples);
+    latency.recordCallback (juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start) * kMicrosPerSecond,
+                            info.numSamples);
 }
 
 void MainComponent::releaseResources() {}
@@ -125,4 +187,17 @@ void MainComponent::resized()
 {
     if (mainView != nullptr)
         mainView->setBounds (getLocalBounds());
+    placeSettingsButton();
+    if (settingsPanel != nullptr)
+        settingsPanel->setBounds (getLocalBounds());
+}
+
+// Sits in the free end of the mixer's tab row, so it never covers a control.
+void MainComponent::placeSettingsButton()
+{
+    const auto* mixer = mainView != nullptr ? mainView->getSlot (openmixer::ui::LayoutSpec::kMixerSlot) : nullptr;
+    if (mixer == nullptr)
+        return;
+    auto row = mixer->getBounds().withHeight (openmixer::ui::theme::mixerTabHeight());
+    settingsButton.setBounds (row.removeFromRight (openmixer::ui::theme::mixerPageButtonWidth()));
 }

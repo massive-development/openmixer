@@ -92,6 +92,13 @@ TEST (ThemeRegistryTest, BuiltInDarkJsonMatchesTheCompiledDefault)
     EXPECT_FLOAT_EQ (json.libraryCompatAlpha, compiled.libraryCompatAlpha);
     EXPECT_FLOAT_EQ (json.libraryStripeAlpha, compiled.libraryStripeAlpha);
     EXPECT_FLOAT_EQ (json.libraryDropAlpha, compiled.libraryDropAlpha);
+    EXPECT_FLOAT_EQ (json.settingsPanelWidth, compiled.settingsPanelWidth);
+    EXPECT_FLOAT_EQ (json.settingsPanelHeight, compiled.settingsPanelHeight);
+    EXPECT_FLOAT_EQ (json.settingsTabHeight, compiled.settingsTabHeight);
+    EXPECT_FLOAT_EQ (json.settingsRowHeight, compiled.settingsRowHeight);
+    EXPECT_FLOAT_EQ (json.settingsLabelWidth, compiled.settingsLabelWidth);
+    EXPECT_FLOAT_EQ (json.settingsButtonWidth, compiled.settingsButtonWidth);
+    EXPECT_FLOAT_EQ (json.settingsDimAlpha, compiled.settingsDimAlpha);
     EXPECT_FLOAT_EQ (json.mixerTitleHeight, compiled.mixerTitleHeight);
     EXPECT_FLOAT_EQ (json.mixerFaderWidth, compiled.mixerFaderWidth);
     EXPECT_FLOAT_EQ (json.mixerCurveWidth, compiled.mixerCurveWidth);

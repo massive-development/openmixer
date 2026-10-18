@@ -16,6 +16,7 @@ juce::File ThemeRegistry::defaultUserDirectory()
 
 juce::Result ThemeRegistry::addJson (const juce::String& json, Source source, const juce::String& owner)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     auto parsed = parseTheme (json);
     if (parsed.status.failed())
         return parsed.status;
@@ -26,6 +27,7 @@ juce::Result ThemeRegistry::addJson (const juce::String& json, Source source, co
 
 void ThemeRegistry::add (ThemeInfo info, ThemeTokens tokens, Source source, const juce::String& owner)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     addEntry ({ std::move (info), std::move (tokens), source, owner });
     entriesChanged();
 }
@@ -41,6 +43,7 @@ void ThemeRegistry::addEntry (Entry&& entry)
 
 int ThemeRegistry::loadBuiltIns()
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     int loaded = 0;
     for (int i = 0; i < openmixer_themes::namedResourceListSize; ++i)
     {
@@ -55,6 +58,7 @@ int ThemeRegistry::loadBuiltIns()
 
 int ThemeRegistry::loadUserDirectory (const juce::File& dir, juce::StringArray* errors)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     entries.erase (std::remove_if (entries.begin(), entries.end(), [] (const Entry& e) { return e.source == Source::User; }), entries.end());
     int loaded = 0;
     auto files = dir.findChildFiles (juce::File::findFiles, false, "*.json");
@@ -77,12 +81,14 @@ int ThemeRegistry::loadUserDirectory (const juce::File& dir, juce::StringArray* 
 
 void ThemeRegistry::removeOwner (const juce::String& owner)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     entries.erase (std::remove_if (entries.begin(), entries.end(), [&owner] (const Entry& e) { return e.owner == owner; }), entries.end());
     entriesChanged();
 }
 
 void ThemeRegistry::removeSource (Source source)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     entries.erase (std::remove_if (entries.begin(), entries.end(), [source] (const Entry& e) { return e.source == source; }), entries.end());
     entriesChanged();
 }
@@ -111,6 +117,7 @@ std::vector<ThemeRegistry::Entry> ThemeRegistry::getThemes() const
 
 bool ThemeRegistry::select (const juce::String& id)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
     const auto* entry = find (id);
     if (entry == nullptr)
         return false;

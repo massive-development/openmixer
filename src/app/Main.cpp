@@ -48,7 +48,7 @@ public:
             Logger::writeToLog ("[Smoke Test] Application starting...");
             
             // Create and test MainComponent
-            auto mainComp = std::make_unique<MainComponent>();
+            auto mainComp = std::make_unique<MainComponent> (themes);
             
             // Check it can be created
             if (mainComp != nullptr)
@@ -61,7 +61,7 @@ public:
         }
 
         // Normal mode - create main window
-        mainWindow = std::make_unique<MainWindow> (getApplicationName(), wantsTranslucentWindow());
+        mainWindow = std::make_unique<MainWindow> (getApplicationName(), wantsTranslucentWindow(), themes);
     }
 
     void shutdown() override
@@ -71,14 +71,12 @@ public:
     }
 
 private:
-    // Built-in + user themes; OPENMIXER_THEME=<id> picks one until a settings screen exists.
+    // Built-in + user themes, default selected; MainComponent applies the saved theme (and OPENMIXER_THEME).
     void selectTheme()
     {
         themes.loadBuiltIns();
         themes.loadUserDirectory (openmixer::ui::ThemeRegistry::defaultUserDirectory());
-        const auto wanted = SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", openmixer::ui::ThemeRegistry::defaultId());
-        if (! themes.select (wanted))
-            themes.select (openmixer::ui::ThemeRegistry::defaultId());
+        themes.select (openmixer::ui::ThemeRegistry::defaultId());
     }
 
     class MainWindow : public DocumentWindow,
@@ -87,7 +85,7 @@ private:
     public:
         // A semi-transparent window needs a transparent background from construction (the peer
         // is created then) and JUCE's own title bar, since native frames can't be see-through.
-        MainWindow (String title, bool translucent)
+        MainWindow (String title, bool translucent, openmixer::ui::ThemeRegistry& themeRegistry)
             : DocumentWindow (title,
                               translucent && Desktop::canUseSemiTransparentWindows() ? Colours::transparentBlack
                                                                                        : openmixer::ui::theme::backdropTop(),
@@ -95,7 +93,7 @@ private:
         {
             const bool seeThrough = ! isOpaque();
             setUsingNativeTitleBar (! seeThrough);
-            auto content = std::make_unique<MainComponent>();
+            auto content = std::make_unique<MainComponent> (themeRegistry);
             if (seeThrough)
                 content->setBackdropOpacity (kTranslucentBackdrop);
             setContentOwned (content.release(), true);

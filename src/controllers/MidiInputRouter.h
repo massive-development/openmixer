@@ -19,6 +19,8 @@ public:
 
     /** Enables every available MIDI input. Returns how many were enabled. */
     int enableAll();
+    /** Enables only the inputs with these identifiers (all of them when `all`). Call disableAll() first to replace a selection. */
+    int enable (const juce::StringArray& identifiers, bool all = false);
     void disableAll();
 
     /** While recording, incoming messages are also stored in the trace. */

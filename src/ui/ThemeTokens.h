@@ -47,6 +47,10 @@ struct ThemeTokens
     float libraryButtonWidth = 78.0F, librarySidebarRowHeight = 24.0F, libraryRatingDot = 5.0F, librarySearchMinWidth = 160.0F;
     float libraryCompatAlpha = 0.22F, libraryStripeAlpha = 0.04F, libraryDropAlpha = 0.18F;
 
+    // Settings panel metrics (px) and the dimming of the window behind it (0..1 alpha).
+    float settingsPanelWidth = 760.0F, settingsPanelHeight = 540.0F, settingsTabHeight = 32.0F, settingsRowHeight = 30.0F;
+    float settingsLabelWidth = 150.0F, settingsButtonWidth = 96.0F, settingsDimAlpha = 0.55F;
+
     float surfaceOpacity = 1.0F;   // scales the alpha of surface/raised/hover (glass strength)
     float backdropOpacity = 1.0F;  // default backdrop opacity before a window asks for less
 
