@@ -41,6 +41,16 @@ Findings:
 - Rubber Band's GPL-2.0-or-later is AGPLv3-compatible, already used in the C++ build, and accepted by the design, so licence is not an argument against it.
 - Caveats: synthetic mono material for pitch and transients; no real music, no stereo pitch/transient metrics, no callback worst-case timing, no live tempo-ramp test.
 
+### Listening files (for the user)
+
+The A/B files are generated locally and are **not committed** (`spikes/stretch/out/` is gitignored). Regenerate them offline, which opens no audio device and plays nothing:
+
+```
+cd spikes/stretch && cargo run --release -- eval
+```
+
+This writes about 42 WAVs (2 originals plus 40 stretched) and `results.md` into `spikes/stretch/out/`, in roughly 35 s. Then listen to them by hand. See `docs/spikes/stretch.md` ("User listening checklist") for what to listen for.
+
 ### Options (for the user)
 
 - **A. Signalsmith via a thin FFI crate.** Cheapest CPU and passes every measured bar. Costs: not pure Rust, so FFI becomes the default path instead of the fallback; needs a C++ toolchain on every OS (MSVC, Xcode tools); Windows/macOS build cost unmeasured. MIT, so no `deny.toml` change.
