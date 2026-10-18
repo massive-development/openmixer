@@ -27,6 +27,7 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 5. **Unsigned releases** - Signing is a pre-release decision
 6. **Audible vertical slice first** - mixer, MIDI and a minimal debug panel come before time-stretch, FX and heavy dependencies so sound can be tested early
 7. **Rust with GPUI** - The application is rewritten in Rust with GPUI for the UI (ADR 0004, superseding ADR 0002). The frozen C++ baseline (`cpp-final`) is the behavioural reference until Phase 5 passes
+8. **Linux first** - Phase 2 and later target Linux only; Windows and macOS are a later porting phase. CI still builds and tests the Rust workspace on all three OSes
 
 ## Milestones
 
@@ -43,13 +44,14 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 ## Rust Rewrite Phases
 
 0. **Scaffolding** - workspace, CI matrix, lint and deny configuration, ADR 0004, docs rewrite, parity inventory. Scaffold, CI, ADR 0004 and the docs rewrite (plan task 5) have landed.
-1. **Spikes** (throwaway, labelled) - GPUI window with a custom waveform view on Linux, Windows and macOS (the go/no-go gate); cpal output callback; time-stretch quality. Next.
-2. **Engine** - audio I/O, engine, headless mix test and soak gate. Planned.
+1. **Spikes** (throwaway, labelled) - GPUI window with a custom waveform view on Linux (the go/no-go gate, closed on Linux); cpal output callback; time-stretch quality (decided: Rubber Band R3 via FFI behind a `Stretcher` trait). Done on Linux.
+2. **Engine** - audio I/O (Linux ALSA/PipeWire first), engine, headless mix test and soak gate, plus the `om-stretch` crate. Next.
 3. **Analysis and library** - analysis against golden vectors from the baseline, then the library. Planned.
 4. **MIDI** - mapper, learn, feedback. Planned.
 5. **UI** - UI over the stable API; UI-driven 10-minute mix gate. Planned. The C++ tree is deleted once this passes.
 6. **Remaining waves** - stems, Automix, pro surface, release. Planned.
+7. **Porting** - Windows (WASAPI) and macOS (CoreAudio) runtime targets: GPUI checks, device runs, listening tests and the Rubber Band FFI build cost on both. Starts after phase 6; CI keeps building and testing on all three OSes throughout. Planned.
 
 ## Current Status
 
-**Phase**: Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test. Wave 1 is complete for the Rust scaffold; the other waves are not started in Rust.
+**Phase**: Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase. Wave 1 is complete for the Rust scaffold; the other waves are not started in Rust.

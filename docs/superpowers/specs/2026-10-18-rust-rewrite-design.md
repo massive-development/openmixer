@@ -3,7 +3,7 @@
 Status: draft for approval. Items marked **(call)** are the author's decisions, not yet agreed.
 
 ## Intent
-Rewrite OpenMixer from C++/JUCE to Rust with GPUI for the UI. Why: easier to audit (memory safety, a smaller unsafe surface, one toolchain via Cargo), and a GPU-accelerated, component-style UI without a webview. The product goal is unchanged: a clean-room, AGPLv3, djay-Pro-class DJ app for Windows, macOS and Linux (see `README.md`, ADR 0001, ADR 0003).
+Rewrite OpenMixer from C++/JUCE to Rust with GPUI for the UI. Why: easier to audit (memory safety, a smaller unsafe surface, one toolchain via Cargo), and a GPU-accelerated, component-style UI without a webview. The product goal is unchanged: a clean-room, AGPLv3, djay-Pro-class DJ app for Windows, macOS and Linux. Scope is Linux-first: Windows and macOS follow in a later porting phase (see `README.md`, ADR 0001, ADR 0003).
 
 ## Baseline
 The tag `cpp-final` (main @ c6d2747) is the frozen C++ implementation. It is the behavioural reference: the old tests, fixtures and `docs/PROGRESS.md` define what "ported" means. The C++ tree is removed from `main` only after the Rust engine passes parity (see Phasing).
@@ -13,7 +13,7 @@ The tag `cpp-final` (main @ c6d2747) is the frozen C++ implementation. It is the
 - Real-time safety enforced by tooling, not convention: no allocation, locks or syscalls on the audio thread, checked in tests.
 - `unsafe` confined to a few small, documented modules; `#![forbid(unsafe_code)]` everywhere else.
 - Headless-first: engine, analysis, library and MIDI are fully testable without a window; UI is a thin layer over a state/command API.
-- Cross-platform CI (Linux, macOS, Windows) from the first crate.
+- Cross-platform CI (Linux, macOS, Windows) from the first crate, so portability does not rot. Linux is the only runtime target until the porting phase.
 
 ## Non-goals / anti-goals
 - No line-by-line translation of C++ idioms (no OO port of JUCE patterns); port behaviour, not structure.
@@ -24,11 +24,11 @@ The tag `cpp-final` (main @ c6d2747) is the frozen C++ implementation. It is the
 ## Stack (all **(call)** unless stated)
 | Area | Choice |
 |---|---|
-| Language / UI | Rust, GPUI `=0.2.2` from crates.io (decided by user; no Zed git pin needed). Phase 1 gate is OPEN: provisional on WSL2 X11 only, Windows and macOS runs pending the user; fallback iced then Slint |
-| Audio I/O | `cpal` for the engine's output callback. The case for cpal is owning the render callback (allocation-free, SPSC-driven) and opening multiple streams (headphone cue), not buffer control: rodio 0.23 does have `with_buffer_size`. The cue second stream failed on WSLg ("Invalid argument", cause not isolated) so it is unproven on every backend; real-device latency/xrun numbers on Windows/macOS/native Linux are pending the user. `rodio` is acceptable for non-critical audio such as library preview/audition. |
+| Language / UI | Rust, GPUI `=0.2.2` from crates.io (decided by user; no Zed git pin needed). Phase 1 gate CLOSED on Linux (WSL2 X11 ran; a native-Linux GPU run is nice-to-have, not blocking). Windows and macOS checks move to the porting phase; fallback iced then Slint only on a Linux failure |
+| Audio I/O | `cpal` for the engine's output callback. The case for cpal is owning the render callback (allocation-free, SPSC-driven) and opening multiple streams (headphone cue), not buffer control: rodio 0.23 does have `with_buffer_size`. The cue second stream failed on WSLg ("Invalid argument", cause not isolated) so it is unproven on every backend; real-device latency/xrun numbers on native Linux (ALSA/PipeWire) are a Phase 2 item; Windows (WASAPI) and macOS (CoreAudio) move to the porting phase. `rodio` is acceptable for non-critical audio such as library preview/audition. |
 | Decode | `symphonia`; tags via `lofty` |
 | FFT / DSP | `realfft`/`rustfft`; own biquad/EQ/FX in `om-dsp` |
-| Time-stretch / keylock | Pure Rust did not pass the design bar in stereo in the Phase 1 spike. Decision pending the user (A/B listening plus Windows/macOS build check); options in `docs/spikes/DECISIONS.md`: (A) Signalsmith via thin FFI, (B) Rubber Band R3 via FFI, (C) keep looking for or tune a pure-Rust stretcher. Any FFI is kept in one `unsafe` crate. |
+| Time-stretch / keylock | Decided (author call; the user may revisit by ear): Rubber Band R3 via FFI in `om-stretch`, the one `unsafe` crate, behind a `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Pure Rust did not pass the design bar in stereo in the Phase 1 spike; alternatives are in `docs/spikes/DECISIONS.md`. The `GPL-2.0-or-later` `deny.toml` entry is enabled when `om-stretch` lands in Phase 2. |
 | MIDI | `midir`; HID later |
 | Library | `rusqlite` (bundled SQLite) |
 | RT plumbing | `rtrb` (SPSC), `arc-swap` for param/snapshot publishing, `assert_no_alloc` in tests |
@@ -38,7 +38,9 @@ The tag `cpp-final` (main @ c6d2747) is the frozen C++ implementation. It is the
 | Tests | built-in `cargo test`, `proptest` for parsers/search, golden-vector fixtures carried over from C++ tests, `criterion` for DSP |
 | Lints | `clippy -D warnings`, `cargo deny` (licences must stay AGPL-compatible), `cargo audit` |
 
-Risks to verify early: GPUI's release/stability story and licence (expected Apache-2.0, AGPL-compatible) and its Linux/WSL/Windows support; time-stretch quality; Windows audio latency via cpal (WASAPI).
+Risks to verify early: GPUI's release/stability story and licence (expected Apache-2.0, AGPL-compatible) and its Linux/WSL support; time-stretch quality in the real engine; Linux audio latency and the headphone-cue second stream via cpal (ALSA/PipeWire).
+
+**Adoption rule:** well-established crates (cpal, symphonia, rusqlite, midir and similar) are adopted directly; spikes are reserved for genuine unknowns.
 
 ## Architecture
 Cargo workspace; dependency arrows point toward `om-core`.
@@ -57,24 +59,25 @@ Control flow: UI/MIDI → command channel → engine (audio thread drains SPSC) 
 
 ## Phasing
 0. Scaffolding: workspace, CI matrix, lint/deny config, new ADR 0004 (supersedes ADR 0002), docs rewrite.
-1. Spikes (throwaway, labelled): GPUI window + custom waveform view on all three OSes; cpal duplex callback; time-stretch quality.
-2. Engine + audio I/O + headless mix test + soak gate.
+1. Spikes (throwaway, labelled): GPUI window + custom waveform view on Linux (the gate, closed on Linux); cpal duplex callback; time-stretch quality.
+2. Engine + audio I/O (Linux ALSA/PipeWire first) + headless mix test + soak gate.
 3. Analysis (golden vectors from C++ fixtures), then library.
 4. MIDI (mapper, learn, feedback).
 5. UI over the stable API; UI-driven 10-minute mix gate.
 6. Remaining waves (stems, Automix, pro surface), release.
+7. Porting phase (after 6; Linux-first until then): Windows (WASAPI) and macOS (CoreAudio) runtime targets; GPUI window and waveform checks on both; cpal device runs on both; the Rubber Band FFI build cost on both; re-measure the stretch CPU bar on both. CI keeps building and testing all three OSes throughout.
 Each phase lands as small PRs into `stage`; the C++ tree is deleted once phase 5 passes.
 
 ## Documentation rewrite
 Every doc that mentions C++/JUCE/CMake must be rewritten for Rust: `README.md`, `agents.md`, `CONTRIBUTING.md`, `TODO.md`, `ROADMAP.md`, `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md`, ADR index plus new ADR 0004, CI workflow docs, `CLAUDE`/agent skills references. Bulk rewrites are delegated to the cheapest capable model (haiku) and reviewed against this design; `docs/progress.json` and the heatmap tool are kept, with task statuses reset to the Rust state.
 
 ## GPUI go/no-go gate (agreed)
-The first Phase 1 spike is a hard gate: `vulkaninfo --summary` on the dev WSL, a GPUI window with a custom-painted waveform on Linux and Windows, and a note on whether GPUI must be pinned to a git commit of Zed (no authoritative crates.io status was found). If it fails on a platform, the fallback is switching toolkit (iced first, then Slint), not dropping the platform or stopping. WSL-only trouble is a dev-loop issue and does not fail the gate on its own.
+The first Phase 1 spike was a hard gate, and it is CLOSED on Linux: `vulkaninfo --summary` on the dev WSL, a GPUI window with a custom-painted waveform, and a note on whether GPUI must be pinned to a git commit of Zed (resolved: `gpui =0.2.2` is on crates.io, so no git pin is needed). WSL2 X11 ran; a native-Linux run on a real GPU is nice-to-have and not blocking. If the Linux gate fails, the fallback is switching toolkit (iced first, then Slint), not dropping the platform or stopping. WSL-only trouble is a dev-loop issue and does not fail the gate on its own. Windows and macOS GPUI checks move to the porting phase.
 
 ## Answers from the builder check (all **(call)**)
 - **Parity inventory:** `docs/PROGRESS.md` and `TODO.md` at `cpp-final` are authoritative; the README status text is stale and is fixed in the docs rewrite. Phase 0 produces `docs/parity.md`: one row per TODO item with its C++ test(s) and the Rust test that replaces it.
-- **Gates:** carry over the C++ definitions: Wave 2 gate = 10-minute headless engine soak (`tools/soak_mix.cpp`: zero xruns, no audio-thread allocation); Wave 5 gate = scripted UI-driven 10-minute mix (`tools/ui_gate`) plus a `--smoke` startup check. Latency/xrun targets are measured and reported by the latency monitor; the default is a 256-frame buffer at 48 kHz on ALSA/WASAPI/CoreAudio, zero xruns in the soak.
-- **Time-stretch bar:** pure Rust is accepted only if an A/B listening test and an offline pitch/transient comparison against Rubber Band are acceptable and one deck fits in a small share of one core. Rubber Band is GPL-2.0-or-later, which is AGPLv3-compatible and already used in the C++ build, so the FFI fallback is licence-acceptable.
+- **Gates:** carry over the C++ definitions: Wave 2 gate = 10-minute headless engine soak (`tools/soak_mix.cpp`: zero xruns, no audio-thread allocation); Wave 5 gate = scripted UI-driven 10-minute mix (`tools/ui_gate`) plus a `--smoke` startup check. Latency/xrun targets are measured and reported by the latency monitor; the default is a 256-frame buffer at 48 kHz on ALSA (Linux; WASAPI and CoreAudio in the porting phase), zero xruns in the soak.
+- **Time-stretch bar:** pure Rust is accepted only if an A/B listening test and an offline pitch/transient comparison against Rubber Band are acceptable and one deck fits in a small share of one core. Rubber Band is GPL-2.0-or-later, which is AGPLv3-compatible and already used in the C++ build, so the FFI route is licence-acceptable. Decided: Rubber Band R3 via FFI (author call), behind a `Stretcher` trait.
 - **Migration:** the project is pre-release (no `v*` tags), so the Rust version starts fresh: no SQLite/preferences/cache migration.
 - **Input capture:** out of scope until the pro-surface wave (DVS/recording). The Phase 1 audio spike is output-only; the "duplex" wording above means separate input and output streams, deferred.
 

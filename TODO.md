@@ -4,7 +4,7 @@ OpenMixer is being rewritten in Rust with GPUI. The statuses below are the Rust 
 
 ## Rust rewrite Phase 0-1
 
-**Status:** Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test.
+**Status:** Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase.
 
 Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`. Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
 
@@ -32,7 +32,7 @@ Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`
 Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
 - [ ] **Todo 7:** Audio device layer + latency instrumentation + mock device
-  - Output via `cpal` (ALSA, WASAPI, CoreAudio backends)
+  - Output via `cpal` (ALSA backend first; WASAPI and CoreAudio in the porting phase)
   - Mock device for CI testing
 
 - [ ] **Todo 8:** Deck engine (streaming decode + transport)
@@ -68,7 +68,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
   - Realtime mode
   - Golden audio tests
-  - Stretcher choice pending the user: plan task 8 is done; no pure-Rust candidate passed the stereo CPU bar; the choice (Signalsmith FFI, Rubber Band R3 FFI, or tune pure Rust) is pending the user, see `docs/spikes/DECISIONS.md`
+  - Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`). Enable `GPL-2.0-or-later` in `deny.toml` when this lands
 
 - [ ] **Todo 12:** Beat-sync + quantized cue/loop/slip
   - Beat phase alignment
@@ -204,4 +204,4 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ---
 
-**Next Work:** Rust plan tasks 5-9 (documentation rewrite, GPUI, cpal and time-stretch spikes, decision record), then Wave 2 Todos 7, 8, 10, 32/33 (MIDI), 26a (debug panel).
+**Next Work:** Wave 2 Todos 7, 8, 10, 32/33 (MIDI), 26a (debug panel), then Todo 9 (`om-stretch`), Linux first.

@@ -4,7 +4,7 @@ THROWAWAY spike code in `spikes/stretch/` (own `[workspace]`; not built by the r
 
 ## Verdict
 
-**Provisional, not final: the numbers narrow the field but cannot close this spike; the user's A/B listen on real music is still required.** The design bar is judged on STEREO decks (measured, L/R correlated at 7.5 ms (R = 0.9x copy of L delayed 331 samples), whole-file render, wall-clock, +-20% noise on a shared WSL2 VM):
+**Decided (author call; see `docs/spikes/DECISIONS.md`, Rescope): Rubber Band R3 via FFI behind a `Stretcher` trait. The numbers below are the basis. The user may revisit by ear; the choice is re-measured in the real engine.** The design bar is judged on STEREO decks (measured, L/R correlated at 7.5 ms (R = 0.9x copy of L delayed 331 samples), whole-file render, wall-clock, +-20% noise on a shared WSL2 VM):
 
 | Candidate | Pitch < 5 cents | Transients (attack rise vs 2.2 ms orig) | Stereo CPU per deck (< 5% of a core) | Overall on numbers |
 |---|---|---|---|---|
@@ -161,7 +161,7 @@ All numbers below are output of `cargo build --release && ./target/release/stret
 - **Transients.** NCC alone barely separates engines (0.83-0.93). By attack rise time: Rubber Band R2 defaults/offline (2.7-3.2 ms), `wsola` (2.6 / 4.6 ms) and `rubberband-rt-smoothing` (3.7-4.6) are crisp; `signalsmith` 3.7-7.2; R3 5.4-7.1; every `timestretch` profile 12-15 ms (smeared; I did not supply its pre-analysis artifact for the real-time engine, which the crate says steers splices around onsets, so its real-time number may be pessimistic; the batch path does compute it and was no better). `wsola`'s +11/+12 ms best lag is a fixed output delay (about one hop), not smear.
 - **CPU (stereo is the judged number).** Stereo per deck: signalsmith 0.8-1.0%, timestretch Keylock/batch 2.1-3.1%, Rubber Band R2 variants 1.5-3.0%, Rubber Band R3 4.9-5.6%, timestretch-wide 5.0-5.7% (4.98% at 0.92), wsola 5.3-6.2%. So wsola (5.3-6.2%) is over the 5% line, while timestretch-wide (4.98% at 0.92, 5.71% at 1.08) and R3 (4.86% at 1.08, 5.60% at 0.92) straddle it in stereo; only signalsmith and the cheap (but pitch- or transient-failing) variants are clearly under. Stereo cost roughly 1.6-2.2x mono for wsola, Rubber Band and timestretch-wide, and about 1.7x for signalsmith (not "doubled"), but barely changed `timestretch` Keylock/batch (cause not investigated). Each figure is the median of 5 wall-clock runs, +-20% plausible. Single-render throughput only, not callback worst case.
 
-## User listening checklist
+## Listening checklist (optional)
 
 Nothing below was heard by me. Play the files in `spikes/stretch/out/` (regenerate with `cd spikes/stretch && cargo build --release && ./target/release/stretch-spike eval`, ~35 s). Files are 16-bit mono 44.1 kHz, peak <= 0.5. Originals: `chord_orig.wav`, `drums_orig.wav`. Stretched: `<material>_r<ratio>_<engine>.wav` for material in {`chord`, `drums`}, ratio in {`0.92`, `1.08`}, engine in {`wsola`, `timestretch-keylock`, `timestretch-wide`, `timestretch-batch`, `signalsmith`, `rubberband-rt`, `rubberband-rt-r3`, `rubberband-offline`, `rubberband-rt-smoothing`, `rubberband-rt-mixed`}, e.g. `drums_r1.08_wsola.wav`, `chord_r0.92_rubberband-rt-r3.wav`. 40 files plus 2 originals plus `results.md`.
 
@@ -175,4 +175,4 @@ Listen for, on `drums_*`: kick/snare/click attacks softened, pre-echo before hit
 - Engine configs were mostly defaults; only Rubber Band got an option sweep. Other engines may have untried settings (`wsola` hop/search, `timestretch` profiles with pre-analysis, Signalsmith presets).
 - Peak memory not measured. Candidate maintenance: all four are young (0.x) crates with a single maintainer visible; I did not audit upkeep, issue trackers, or security beyond the licence field.
 - Timing is wall-clock on a shared WSL2 VM.
-- The decision on `deny.toml` (`GPL-2.0-or-later`) is left to Task 9. Signalsmith and `wsola`/`timestretch` need no licence change.
+- The `deny.toml` `GPL-2.0-or-later` entry is enabled when `om-stretch` lands in Phase 2 (decided, see `docs/spikes/DECISIONS.md`). Signalsmith and `wsola`/`timestretch` need no licence change.
