@@ -5,6 +5,7 @@
 #pragma once
 
 #include "Effect.h"
+#include "Wipe.h"
 #include "core/ParameterTarget.h"
 #include "engine/ProcessStage.h"
 
@@ -19,7 +20,7 @@ class FxUnit final : public ProcessStage, public ParameterTarget
 {
 public:
     static constexpr int kChunk = 64;
-    static constexpr int kClearSlice = 512;   // frames wiped per idle chunk after a tail ends
+    static constexpr int kClearSlice = Wipe::kSlice;   // frames wiped per chunk (idle or engaged) after a tail ends
 
     explicit FxUnit (std::unique_ptr<Effect> effect);
 

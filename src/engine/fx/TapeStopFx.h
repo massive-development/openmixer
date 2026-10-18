@@ -18,7 +18,8 @@ public:
 
     TapeStopFx() noexcept;
     std::string_view getName() const noexcept override { return "tapestop"; }
-    // Engaging restarts the slow-down from full speed.
+    // Engaging restarts the slow-down from full speed. reset() only rewinds counters (reads never
+    // pass `written`), so it is O(1) on the audio thread and needs no sliced clear.
     void reset() noexcept override;
 
 protected:

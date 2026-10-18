@@ -12,7 +12,7 @@ void DelayLine::allocate (int maxDelaySamples)
     for (auto& b : buffers)
         b.assign (static_cast<size_t> (size), 0.0F);
     writePos = 0;
-    clearPos = size;
+    wipe.finish (size);
 }
 
 void DelayLine::reset() noexcept
@@ -20,22 +20,22 @@ void DelayLine::reset() noexcept
     for (auto& b : buffers)
         std::fill (b.begin(), b.end(), 0.0F);
     writePos = 0;
-    clearPos = size;
+    wipe.finish (size);
 }
 
 void DelayLine::beginClear() noexcept
 {
     writePos = 0;
-    clearPos = 0;
+    wipe.begin();
 }
 
 bool DelayLine::clearSome (int maxFrames) noexcept
 {
-    const int upTo = clearPos + std::min (std::max (0, maxFrames), size - clearPos);   // no overflow for INT_MAX
+    int from = 0;
+    const int count = wipe.claim (size, maxFrames, from);
     for (auto& b : buffers)
-        std::fill (b.begin() + clearPos, b.begin() + upTo, 0.0F);
-    clearPos = upTo;
-    return clearPos >= size;
+        std::fill_n (b.begin() + from, count, 0.0F);
+    return wipe.done (size);
 }
 
 void DelayLine::push (float left, float right) noexcept
@@ -45,6 +45,7 @@ void DelayLine::push (float left, float right) noexcept
     const auto i = static_cast<size_t> (writePos);
     buffers[0][i] = left;
     buffers[1][i] = right;
+    wipe.wrote (writePos);
     writePos = writePos + 1 == size ? 0 : writePos + 1;
 }
 
@@ -56,7 +57,11 @@ float DelayLine::read (int channel, float delaySamples) const noexcept
     const auto whole = static_cast<int> (std::floor (d));
     const float frac = d - static_cast<float> (whole);
     const auto& b = buffers[static_cast<size_t> (channel & 1)];
-    const auto at = [&] (int back) { return b[static_cast<size_t> ((writePos - back + size) % size)]; };
+    const auto at = [&] (int back)
+    {
+        const int slot = (writePos - back + size) % size;
+        return wipe.live (slot) ? b[static_cast<size_t> (slot)] : 0.0F;
+    };
     return at (whole) + frac * (at (whole + 1) - at (whole));
 }
 
