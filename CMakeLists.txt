@@ -552,6 +552,7 @@ add_library(openmixer_ui STATIC
     src/ui/SidebarModel.h
     src/ui/SidebarTree.cpp
     src/ui/SidebarTree.h
+    src/ui/ClockFormat.h
     src/ui/TrackDrag.h
     src/ui/TrackLoader.cpp
     src/ui/TrackLoader.h

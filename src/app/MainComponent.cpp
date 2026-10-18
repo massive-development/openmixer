@@ -24,7 +24,7 @@ MainComponent::MainComponent (openmixer::ui::ThemeRegistry& themeRegistry)
     targets.noteAudioRequested (prefs.audio.deviceState);   // setAudioChannels below opens the device: not twice
     applier.apply (prefs);
     if (const auto wanted = juce::SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", {}); wanted.isNotEmpty())
-        themes.select (wanted);
+        targets.applyTheme (wanted);   // also the wanted theme, so a plugin reload keeps it
     const auto savedAudio = juce::parseXML (prefs.audio.deviceState);   // null: the system default device
     setAudioChannels (0, kMaxOutputs, savedAudio.get());
     composition.setUpSettings ({ &audioModel, [this] { return latencyStats(); },

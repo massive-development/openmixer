@@ -109,6 +109,20 @@ TEST (AppPreferencesTargetsTest, ActivePluginThemeFallsBackWhenItsPluginGoesAndR
     EXPECT_EQ (rig.themes.getActiveId(), kExampleTheme) << "an unknown id keeps the current theme";
 }
 
+TEST (AppPreferencesTargetsTest, SessionThemeOverrideSurvivesAPluginReload)
+{
+    library::test::TempDir tmp;
+    Rig rig;
+    AppPreferencesTargets targets (rig.control(), rig.midi, rig.mapper, rig.plugins, rig.themes, rig.outputs);
+    const auto withPlugin = pluginFolderWithExample (tmp.dir);
+    targets.applyPluginFolder (withPlugin);
+    ASSERT_TRUE (targets.applyTheme (ThemeRegistry::defaultId()));   // the saved preference
+    ASSERT_TRUE (targets.applyTheme (kExampleTheme));                // OPENMIXER_THEME, applied by the app after it
+
+    targets.reloadPlugins();
+    EXPECT_EQ (rig.themes.getActiveId(), kExampleTheme) << "the override wins over the saved theme after a reload";
+}
+
 TEST (AppPreferencesTargetsTest, AudioStateIsInitialisedOnlyWhenItDiffersFromTheDevice)
 {
     Rig rig;

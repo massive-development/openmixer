@@ -1,5 +1,6 @@
 #include "TrackHeader.h"
 
+#include "ClockFormat.h"
 #include "Theme.h"
 
 #include <cmath>
@@ -44,9 +45,7 @@ void TrackHeader::applyTheme()
 
 juce::String TrackHeader::formatTime (double seconds, bool isRemaining)
 {
-    const double s = std::max (0.0, seconds);
-    const int whole = static_cast<int> (s);
-    const auto text = juce::String (whole / 60) + ":" + juce::String (whole % 60).paddedLeft ('0', 2) + "." + juce::String (static_cast<int> ((s - whole) * 10.0));
+    const auto text = formatClock (seconds, true);
     return isRemaining ? "-" + text : text;
 }
 
