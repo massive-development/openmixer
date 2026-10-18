@@ -164,3 +164,15 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** wrapping any external DSP/codec library (FFmpeg, ONNX Runtime).
 - **Notes:** `prepare()` allocates (control thread); all other calls are audio-thread, allocation-free. Vendored code builds as its own target with its warnings off and -O2 in Debug.
 
+
+### Forward-only migration list (extension point)
+- **Where:** `src/library/Migrations.{h,cpp}`, `Library::open`.
+- **Why:** the schema evolves by appending numbered `Migration`s; each runs in its own transaction and is recorded in `schema_version`.
+- **Reuse when:** any later subsystem (search index, history, plugin tables) needs library tables; append a `Migration` with the next version and pass the list to `Library::open`. Never edit a shipped migration.
+- **Notes:** a database newer than the list is refused (no downgrades). Versions must be strictly increasing.
+
+### DAO per entity over an RAII database wrapper
+- **Where:** `src/library/Database.{h,cpp}`, `Statement`, `TrackDao`, `CueDao`, `PlaylistDao`, `OrderedList`.
+- **Why:** keeps SQL out of callers; `Transaction` nests via savepoints so DAO calls compose and roll back together.
+- **Reuse when:** adding a table; add a `*Dao` that borrows `Database&` and returns plain value records.
+- **Notes:** one writer thread; the UI reads through its own `OpenMode::ReadOnly` connection (WAL). `OrderedList` keeps dense `position` columns for any ordered child set.

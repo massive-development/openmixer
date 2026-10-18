@@ -320,6 +320,45 @@ target_link_libraries(openmixer_analysis
 )
 
 # =============================================================================
+# Library (SQLite schema + DAOs: tracks, cues, loops, playlists). Depends on core only.
+# =============================================================================
+
+set(OPENMIXER_LIBRARY_SOURCES
+    src/library/CueDao.cpp
+    src/library/Database.cpp
+    src/library/Library.cpp
+    src/library/Migrations.cpp
+    src/library/OrderedList.cpp
+    src/library/PlaylistDao.cpp
+    src/library/Statement.cpp
+    src/library/TrackDao.cpp
+)
+
+add_library(openmixer_library STATIC
+    ${OPENMIXER_LIBRARY_SOURCES}
+    src/library/CueDao.h
+    src/library/Database.h
+    src/library/Library.h
+    src/library/Migrations.h
+    src/library/OrderedList.h
+    src/library/PlaylistDao.h
+    src/library/Statement.h
+    src/library/TrackDao.h
+    src/library/TrackRecord.h
+)
+
+target_include_directories(openmixer_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(${OPENMIXER_LIBRARY_SOURCES})
+target_link_libraries(openmixer_library
+    PUBLIC
+        openmixer_core
+        juce::juce_core
+        juce::juce_recommended_config_flags
+    PRIVATE
+        openmixer_sqlite3
+)
+
+# =============================================================================
 # Stems library (separator interface, licence-gated model download). Depends on analysis.
 # =============================================================================
 
@@ -495,6 +534,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/WaveformBuilderTest.cpp
     tests/unit/StructureAnalyzerTest.cpp
     tests/unit/StemsTest.cpp
+    tests/unit/LibraryDatabaseTest.cpp
+    tests/unit/LibraryDaoTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -507,6 +548,7 @@ target_compile_definitions(openmixer_tests PRIVATE
 add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_library
     openmixer_stems
     openmixer_analysis
     openmixer_plugins
