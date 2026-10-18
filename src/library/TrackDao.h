@@ -15,6 +15,10 @@ class TrackDao
 public:
     explicit TrackDao (Database& database) noexcept : db (database) {}
 
+    // Column list and row mapper for `SELECT <selectColumns()> FROM tracks`; shared with the search engine.
+    static const char* selectColumns() noexcept;
+    static TrackRecord readRow (const Statement& row);
+
     // Fails if the path already exists. Fills dateAddedMs with now when it is 0.
     std::optional<std::int64_t> insert (const TrackRecord& track);
     // Insert or refresh by path. File-derived fields are overwritten; id, rating, play count, last

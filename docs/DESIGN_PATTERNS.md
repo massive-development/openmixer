@@ -188,3 +188,10 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** a worker thread owns its own DB connection and re-evaluates `clock()` on a short poll; tests drive time with a fake clock plus `poke()`/`triggerScan()`/`waitForScans()` instead of sleeping.
 - **Reuse when:** any periodic background task over the library (import refresh, analysis queue feeding).
 - **Notes:** one connection per thread (WAL + busy timeout) rather than locking a shared one; the destructor aborts a scan between files.
+
+### Search field registry + compile-to-SQL (extension point)
+- **Where:** `src/library/Search{Fields,Parser,Compiler,Terms,Engine}.{h,cpp}`.
+- **Why:** a query string parses to generic `FilterTerm`s; each registered `SearchField` (column + kind, or a Custom compile hook) turns its term into SQL text made of code-constant names and `?` placeholders, with user values only in the bound args.
+- **Reuse when:** adding a filterable/sortable attribute (e.g. a plugin tag); `engine.registry().add(field)`. Custom hooks must never splice user text into `SqlFragment::sql`.
+- **Notes:** reads report failure via the trailing `juce::Result*` (a bad field/value fails rather than returning "no results"). Text match is LIKE-contains with escaped wildcards (`=value` for exact); the SQLite build has no FTS5, so a future FTS index would be a new migration plus a Text-field compile swap.
+
