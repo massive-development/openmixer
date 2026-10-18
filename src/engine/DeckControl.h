@@ -3,7 +3,7 @@
 // here, everything else goes to Deck::setParameter, so existing maps keep working.
 // Ids: sync (>=0.5 follow the leader), sync.master (>=0.5 make this deck the leader, <0.5 release),
 //      loop.quantized.<beats> (>=0.5 loop <beats> from the nearest grid step), slip (>=0.5 on).
-// Threads: control threads only (MIDI/UI/timer); the mutex guards slip state, never the audio thread.
+// Threads: control threads only (several may call it: MIDI + UI + timer); the mutex guards slip state, never the audio thread.
 #pragma once
 
 #include "Deck.h"
