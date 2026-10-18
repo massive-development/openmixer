@@ -2,6 +2,8 @@
 //  - text, year, duration, BPM, key, last-played: imported value fills a field only when the local one is empty/unset;
 //  - rating and play count: imported value is taken only when the local one is still the default (0);
 //  - id, path, content hash, analysis, date added are never touched;
+//  - playlists: an imported playlist/folder merges into an existing sibling with the same name and kind
+//    (folder vs playlist) under the same parent; only tracks not already in it are appended;
 //  - cues and loops: an imported one is added only into a slot that is free locally and not already
 //    present at the same position (so re-importing the same file adds nothing).
 #pragma once
