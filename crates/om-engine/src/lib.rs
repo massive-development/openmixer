@@ -4,6 +4,9 @@
 //! and sync follow. Nothing here allocates, locks or does I/O in `process` paths; buffers are sized
 //! in `prepare`.
 
+#[cfg(all(test, debug_assertions))]
+mod alloc_guard;
+
 pub mod callback;
 pub mod deck;
 pub mod fx;
