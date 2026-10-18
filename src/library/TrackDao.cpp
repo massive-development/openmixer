@@ -1,5 +1,7 @@
 #include "TrackDao.h"
 
+#include "TrackKey.h"
+
 namespace openmixer::library
 {
 namespace
@@ -160,6 +162,24 @@ juce::Result TrackDao::setAnalysis (std::int64_t id, double bpm, const juce::Str
 {
     auto s = db.prepare ("UPDATE tracks SET bpm=?2, musical_key=?3, camelot=?4 WHERE id=?1;");
     s.bindAll (id, bpm, key, camelot);
+    return runChecked (s);
+}
+
+juce::Result TrackDao::updateAnalysis (std::int64_t id, std::optional<double> bpm,
+                                       std::optional<analysis::MusicalKey> key)
+{
+    // why: COALESCE leaves an unset value's column untouched, in one atomic statement
+    auto s = db.prepare ("UPDATE tracks SET bpm=COALESCE(?2, bpm), musical_key=COALESCE(?3, musical_key),"
+                         " camelot=COALESCE(?4, camelot) WHERE id=?1;");
+    std::optional<juce::String> name, camelot;
+    if (key)
+    {
+        TrackRecord scratch;
+        setKey (scratch, *key);
+        name = scratch.key;
+        camelot = scratch.camelot;
+    }
+    s.bindAll (id, bpm, name, camelot);
     return runChecked (s);
 }
 

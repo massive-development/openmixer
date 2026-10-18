@@ -1,5 +1,7 @@
 // Composition root for the library database: opens, migrates and hands out the DAOs.
-// Threading: owned and written by one thread; open a second Library with OpenMode::ReadOnly for the UI.
+// Threading: a read-write Library belongs to one thread (the "owner"); writes from it may wait up to the
+// 5 s busy timeout when another connection holds the write lock. ReadOnly opens (e.g. for the UI) require
+// a writer to have opened and migrated the file first.
 #pragma once
 
 #include "CueDao.h"

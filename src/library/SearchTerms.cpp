@@ -5,14 +5,14 @@
 
 namespace openmixer::library
 {
-namespace
-{
-constexpr std::int64_t kDayMs = 86400000;
-
 juce::String likePattern (const juce::String& text)
 {
     return "%" + text.replace ("\\", "\\\\").replace ("%", "\\%").replace ("_", "\\_") + "%";
 }
+
+namespace
+{
+constexpr std::int64_t kDayMs = 86400000;
 
 std::string wrapNegation (const std::string& predicate, bool negated)
 {

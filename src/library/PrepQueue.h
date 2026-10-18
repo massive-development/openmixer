@@ -1,7 +1,8 @@
 // Track prep queue: feeds the persisted queue (PrepQueueDao) to the shared AnalysisService and
 // writes bpm/key results back into the library.
 //
-// Threading: owned by the thread that owns the Library connection (the "owner thread"). Every
+// Threading: owned by the thread that owns the read-write Library connection (the "owner thread"); its
+// writes may wait up to the 5 s busy timeout while a WatchFolders scan holds the write lock. Every
 // public method, every Library access and every Observer call happens on that thread; analysis
 // worker threads only push finished jobs into a mutex-guarded inbox, so a sqlite connection is
 // never shared. The owner calls pump() regularly (a UI timer, or pumpUntilIdle() in tests):

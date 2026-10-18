@@ -1,5 +1,7 @@
 #include "ImportMerge.h"
 
+#include "TrackKey.h"
+
 namespace openmixer::library
 {
 namespace
@@ -28,6 +30,13 @@ bool fillOptional (std::optional<double>& local, const std::optional<double>& im
     local = imported;
     return true;
 }
+
+bool completeKey (TrackRecord& local)
+{
+    const auto before = std::make_pair (local.key, local.camelot);
+    normaliseKey (local);   // why: a filled key needs its camelot or key: search misses it
+    return before != std::make_pair (local.key, local.camelot);
+}
 } // namespace
 
 bool mergeTrackRecord (TrackRecord& local, const TrackRecord& imported)
@@ -43,6 +52,7 @@ bool mergeTrackRecord (TrackRecord& local, const TrackRecord& imported)
     changed |= fillDefault (local.rating, imported.rating);
     changed |= fillDefault (local.playCount, imported.playCount);
     changed |= fillOptional (local.bpm, imported.bpm);
+    changed |= completeKey (local);
     if (! local.lastPlayedMs.has_value() && imported.lastPlayedMs.has_value())
     {
         local.lastPlayedMs = imported.lastPlayedMs;

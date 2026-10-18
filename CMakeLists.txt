@@ -335,6 +335,7 @@ set(OPENMIXER_LIBRARY_SOURCES
     src/library/LibraryImporter.cpp
     src/library/PlistReader.cpp
     src/library/RekordboxImporter.cpp
+    src/library/TrackKey.cpp
     src/library/Ingestor.cpp
     src/library/JuceMetadataReader.cpp
     src/library/Database.cpp
