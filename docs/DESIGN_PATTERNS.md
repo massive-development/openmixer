@@ -169,7 +169,7 @@ pub trait AudioProcessor: Send {
 - **Notes:** `analyze(&self)` may run concurrently. The registry hands out `Arc<dyn Analyzer + Send + Sync>`, so removal during a running job is safe.
 
 ### Safe wrapper over a native library (pimpl replacement, planned)
-- **Where:** `om-engine` time-stretch (spike); the FFI crate if the Rubber Band fallback is chosen (the C++ version was `TimeStretch.{h,cpp}` at `cpp-final`)
+- **Where:** `om-engine` time-stretch (spike); the FFI crate only if the stretcher decision selects an FFI engine (see `docs/spikes/DECISIONS.md`) (the C++ version was `TimeStretch.{h,cpp}` at `cpp-final`)
 - **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
 - **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
 - **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe`, each block with a `// SAFETY:` line.
