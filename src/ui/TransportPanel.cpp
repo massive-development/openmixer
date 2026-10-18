@@ -11,7 +11,7 @@ namespace
     constexpr Spec kSpecs[TransportPanel::NumButtons] = {
         { "Play", "play", true, "Play / pause" },          { "Cue", "cue", false, "Stop and return to start" },
         { "Sync", "sync", true, "Follow the sync leader" }, { "Mstr", "sync.master", true, "Make this deck the sync master" },
-        { "Key", "keylock", true, "Key lock: tempo changes keep the pitch" }, { "Quant", "quantize", true, "Quantize loop starts to the beat grid" },
+        { "Key", "keylock", true, "Key lock: tempo changes keep the pitch" }, { "Qnt", "quantize", true, "Quantize loop starts to the beat grid" },
         { "Slip", "slip", true, "Slip mode: the track keeps running under loops and scratches" },
     };
 }
@@ -76,11 +76,11 @@ void TransportPanel::refresh()
 void TransportPanel::resized()
 {
     auto area = getLocalBounds();
-    const int cell = (area.getWidth() - theme::innerGap() * (NumButtons - 1)) / NumButtons;
+    const int cell = (area.getWidth() - theme::innerGap() / 2 * (NumButtons - 1)) / NumButtons;
     for (auto& b : buttons)
     {
         b.setBounds (area.removeFromLeft (cell));
-        area.removeFromLeft (theme::innerGap());
+        area.removeFromLeft (theme::innerGap() / 2);
     }
 }
 

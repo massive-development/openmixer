@@ -92,6 +92,24 @@ inline float gridBeatAlpha() { return current().gridBeatAlpha; }
 inline float loopActiveAlpha() { return current().loopActiveAlpha; }
 inline float loopIdleAlpha() { return current().loopIdleAlpha; }
 
+// Mixer metrics and meter ballistics.
+inline int mixerKnobHeight() { return juce::roundToInt (current().mixerKnobHeight); }
+inline int mixerButtonHeight() { return juce::roundToInt (current().mixerButtonHeight); }
+inline int mixerMeterWidth() { return juce::roundToInt (current().mixerMeterWidth); }
+inline int mixerMasterWidth() { return juce::roundToInt (current().mixerMasterWidth); }
+inline int mixerTabHeight() { return juce::roundToInt (current().mixerTabHeight); }
+inline int mixerCrossfaderHeight() { return juce::roundToInt (current().mixerCrossfaderHeight); }
+inline int mixerCueHeight() { return juce::roundToInt (current().mixerCueHeight); }
+inline float meterFloorDb() { return current().meterFloorDb; }
+inline float meterMidDb() { return current().meterMidDb; }
+inline float meterHighDb() { return current().meterHighDb; }
+inline float meterClipLevel() { return current().meterClipLevel; }
+inline float meterReleaseSeconds() { return current().meterReleaseSeconds; }
+inline float meterHoldSeconds() { return current().meterHoldSeconds; }
+inline float meterClipSeconds() { return current().meterClipSeconds; }
+inline float meterSegment() { return current().meterSegment; }
+inline float meterSegmentGap() { return current().meterSegmentGap; }
+
 juce::Font font (float height, bool bold = false);
 juce::Font monoFont (float height);
 

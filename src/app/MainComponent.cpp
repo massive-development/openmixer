@@ -28,7 +28,7 @@ void MainComponent::buildContent()
 {
     if (juce::SystemStats::getEnvironmentVariable ("OPENMIXER_DEBUG_PANEL", {}) == "1")
     {
-        debugPanel = std::make_unique<openmixer::ui::DebugPanel> (engine);
+        debugPanel = std::make_unique<openmixer::ui::DebugPanel> (engine, router);
         addAndMakeVisible (*debugPanel);
         return;
     }
@@ -42,6 +42,8 @@ void MainComponent::buildContent()
             juce::Logger::writeToLog ("OPENMIXER_LAYOUT: invalid layout, using the default");
     }
     mainView = std::make_unique<openmixer::ui::MainView> (engine, router, layout);
+    mainView->setSlotContent (openmixer::ui::LayoutSpec::kMixerSlot,
+                              std::make_unique<openmixer::ui::MixerPanel> (openmixer::ui::MixerBinding { engine, router }));
     addAndMakeVisible (*mainView);
 }
 

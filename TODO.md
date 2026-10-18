@@ -114,7 +114,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `GlassLookAndFeel` covers knobs, faders, buttons, ComboBox, PopupMenu, TextEditor, ToggleButton, TabbedButtonBar, ScrollBar, TableHeader, tooltip (`GlassWidgets.cpp`)
 - [~] **Todo 26:** Main window + deck widgets (done: window, widgets and tests; missing: waveform/metadata feed from analysis/library (Task 4), a real main-cue point, mixer + library slots (Todos 27/28))
   - `src/ui/`: `MainView` + `MainLayout` (data-driven rows/cells/slots), `DeckWidget` = `TrackHeader`, `OverviewWaveform`, `ZoomWaveform`, `TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`; `DeckBinding` routes ids; `DebugPanel` kept behind `OPENMIXER_DEBUG_PANEL=1`
-- [ ] **Todo 27:** Mixer widgets + metering
+- [~] **Todo 27:** Mixer widgets + metering (done: strips, EQ + kill, crossfader + curve, master, cue, FX panel, stereo peak meters with hold + clip; missing: RMS meters, FX assign beyond the per-channel rack shortcut)
+  - `src/ui/`: `MixerPanel` (mixer slot; Mixer/FX pages), `ChannelStripWidget`, `MasterSection`, `CrossfaderSection`, `CueSection`, `FxPanel`, `LabeledKnob`, `MeterBar`/`StereoMeter` over `MeterBallistics`; `MixerBinding` routes `mixer.*` / `fx.*` ids; engine: `crossfader.curve` id, stereo channel peaks, state getters; `DebugPanel` now = deck strips (file loading) above `MixerPanel`
 - [ ] **Todo 28:** Library browser
 - [ ] **Todo 29:** Automix panel + settings
 - [ ] **Todo 30:** Stem pads UI

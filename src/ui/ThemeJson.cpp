@@ -55,6 +55,22 @@ namespace
                                              { "gridBeatAlpha", &ThemeTokens::gridBeatAlpha, 0.0F, 1.0F },
                                              { "loopActiveAlpha", &ThemeTokens::loopActiveAlpha, 0.0F, 1.0F },
                                              { "loopIdleAlpha", &ThemeTokens::loopIdleAlpha, 0.0F, 1.0F } } };
+    const std::array<FloatKey, 16> kMixer { { { "knobHeight", &ThemeTokens::mixerKnobHeight, 0.0F, kMaxPx },
+                                              { "buttonHeight", &ThemeTokens::mixerButtonHeight, 0.0F, kMaxPx },
+                                              { "meterWidth", &ThemeTokens::mixerMeterWidth, 0.0F, kMaxPx },
+                                              { "masterWidth", &ThemeTokens::mixerMasterWidth, 0.0F, kMaxPx },
+                                              { "tabHeight", &ThemeTokens::mixerTabHeight, 0.0F, kMaxPx },
+                                              { "crossfaderHeight", &ThemeTokens::mixerCrossfaderHeight, 0.0F, kMaxPx },
+                                              { "cueHeight", &ThemeTokens::mixerCueHeight, 0.0F, kMaxPx },
+                                              { "meterFloorDb", &ThemeTokens::meterFloorDb, -96.0F, -6.0F },
+                                              { "meterMidDb", &ThemeTokens::meterMidDb, -96.0F, 0.0F },
+                                              { "meterHighDb", &ThemeTokens::meterHighDb, -96.0F, 0.0F },
+                                              { "meterClipLevel", &ThemeTokens::meterClipLevel, 0.1F, 1.0F },
+                                              { "meterReleaseSeconds", &ThemeTokens::meterReleaseSeconds, 0.01F, 10.0F },
+                                              { "meterHoldSeconds", &ThemeTokens::meterHoldSeconds, 0.0F, 10.0F },
+                                              { "meterClipSeconds", &ThemeTokens::meterClipSeconds, 0.0F, 30.0F },
+                                              { "meterSegment", &ThemeTokens::meterSegment, 1.0F, 20.0F },
+                                              { "meterSegmentGap", &ThemeTokens::meterSegmentGap, 0.0F, 10.0F } } };
     const std::array<FloatKey, 2> kTranslucency { { { "surface", &ThemeTokens::surfaceOpacity, 0.0F, 1.0F },
                                                     { "backdrop", &ThemeTokens::backdropOpacity, 0.0F, 1.0F } } };
 
@@ -184,9 +200,10 @@ namespace
         withSection (root, "type", status, [&] (const auto& s) { return readFloats (s, kType, "type", t, w); });
         withSection (root, "translucency", status, [&] (const auto& s) { return readFloats (s, kTranslucency, "translucency", t, w); });
         withSection (root, "deck", status, [&] (const auto& s) { return readFloats (s, kDeck, "deck", t, w); });
+        withSection (root, "mixer", status, [&] (const auto& s) { return readFloats (s, kMixer, "mixer", t, w); });
         if (status.wasOk() && root.hasProperty ("accents"))
             status = readAccents (root.getProperty ("accents"), t);
-        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck" }, "", w);
+        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck", "mixer" }, "", w);
         return status;
     }
 }

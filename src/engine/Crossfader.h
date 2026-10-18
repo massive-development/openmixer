@@ -17,6 +17,8 @@ public:
     void setPosition (float p) noexcept;
     void setCurve (CrossfaderCurve c) noexcept { curve.store (c, std::memory_order_relaxed); }
 
+    float getPosition() const noexcept { return position.load (std::memory_order_relaxed); }
+    CrossfaderCurve getCurve() const noexcept { return curve.load (std::memory_order_relaxed); }
     CrossfaderGains gains() const noexcept;
     static float gainFor (const CrossfaderGains& g, CrossfaderAssign a) noexcept;
 

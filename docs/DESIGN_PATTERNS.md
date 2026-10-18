@@ -222,6 +222,11 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** adding a panel (mixer, library, a plugin's view): name a slot in the spec and call `MainView::setSlotContent (name, component)`; empty slots show a `SlotPlaceholder`.
 - **Notes:** decks the engine lacks are skipped. Slot content is owned by the view.
 
+### Mixer widgets: binding + descriptor-built FX controls (MixerBinding, FxPanel)
+- **Where:** `src/ui/MixerBinding.h`, `MixerPanel`, `ChannelStripWidget`, `FxPanel`, `MeterBallistics`.
+- **Why:** same router-id rule as decks (`mixer.<id>`, `fx.<scope>.fx<U>.<param>`); widgets mirror engine getters in `refresh (dt)` without echoing. `FxPanel` builds one `LabeledKnob` per `FxParamSpec`, so a plugin-registered effect in a rack gets controls with no UI code. `MeterBallistics` is drawing-free (peak, release, hold, clip latch, dt-based) so it is tested with synthetic levels; all metrics and thresholds are theme tokens (`mixer` JSON section).
+- **Reuse when:** adding a control surface for another engine object, or another meter.
+
 ### Widgets write through router ids only (DeckBinding)
 - **Where:** `src/ui/DeckBinding.h` and the deck components (`TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`, `OverviewWaveform`).
 - **Why:** every control calls `binding.send ("<id>", value)` which becomes `deck.<N>.<id>` on the app's `ParameterRouter`, the same path MIDI maps use; reads (position, loop, hotcues, sync state) are the engine's existing atomic getters on the message thread. Toggles send the opposite of the engine state and mirror it back in `refresh()`.
