@@ -1,6 +1,6 @@
 # OpenMixer
 
-A free, open-source DJ application for Windows, Mac, and Linux.
+A free, open-source DJ application: Linux first, with Windows and Mac to follow in a porting phase.
 
 ## Mission
 
@@ -50,9 +50,9 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 sudo apt-get install pkg-config libasound2-dev
 ```
 
-GPUI system dependencies are added after the Phase 1 spike.
+GPUI system dependencies are documented in `docs/spikes/gpui.md`.
 
-**macOS and Windows:** no extra system packages are listed yet.
+**macOS and Windows:** not runtime targets yet (porting phase). CI still builds them, and no extra system packages are listed yet.
 
 Optional, for the licence and ban policy check:
 ```bash
@@ -174,7 +174,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Rust rewrite. Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test. See `docs/spikes/DECISIONS.md`. Wave 1 is complete for the Rust scaffold.
+**Current State:** Rust rewrite. Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase. See `docs/spikes/DECISIONS.md`. Wave 1 is complete for the Rust scaffold.
 
 ---
 

@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted (supersedes ADR 0002; GPUI conditional on the Phase 1 gate, which is still open; time-stretch choice pending the user)
+Accepted (supersedes ADR 0002). Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase
 
 ## Context
 
 ADR 0002 chose JUCE 8.x (C++) as the application framework. The product is a
-clean-room, AGPLv3, djay-Pro-class DJ application for Windows, macOS and Linux
+clean-room, AGPLv3, djay-Pro-class DJ application for Windows, macOS and Linux (Linux first; Windows and macOS follow in a porting phase)
 (see ADR 0001 and ADR 0003). We are rewriting the application in Rust because
 it is easier to audit: memory safety, a smaller `unsafe` surface, and one
 toolchain via Cargo. We want a GPU-accelerated, component-style UI without a
@@ -28,7 +28,7 @@ Key choices:
 | Audio I/O | `cpal` for the engine output callback. `rodio` is acceptable only for non-critical audio such as library preview. |
 | Decode / tags | `symphonia`; `lofty` |
 | FFT / DSP | `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp` |
-| Time-stretch / keylock | Pending the user. No pure-Rust candidate passed the design bar in stereo in the Phase 1 spike; options (Signalsmith FFI, Rubber Band R3 FFI, tune pure Rust) in `docs/spikes/DECISIONS.md`. Any FFI is kept in one `unsafe` crate |
+| Time-stretch / keylock | Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Decided by the author; no pure-Rust candidate passed the design bar in stereo in the Phase 1 spike (`docs/spikes/DECISIONS.md`) |
 | MIDI | `midir`; HID later |
 | Library | `rusqlite` (bundled SQLite) |
 | RT plumbing | `rtrb` (SPSC), `arc-swap`, `assert_no_alloc` in tests |
@@ -45,20 +45,20 @@ rodio is built on cpal. The case for cpal is not buffer control (rodio 0.23 has
 an SPSC queue) and opening multiple streams for the headphone cue. The cue's
 second stream failed on WSLg ("Invalid argument", cause not isolated), so it
 is unproven on every backend; real-device latency and xrun numbers on
-Windows, macOS and native Linux are pending the user. rodio remains acceptable
+native Linux (Phase 2) and Windows and macOS (porting phase) are still to be measured. rodio remains acceptable
 for non-critical audio such as library preview.
 
-### GPUI go/no-go gate (conditional)
+### GPUI go/no-go gate (closed on Linux)
 
-GPUI is accepted provisionally. The first Phase 1 spike is a hard gate:
+GPUI is accepted. The first Phase 1 spike was a hard gate, now closed on Linux:
 
 - `vulkaninfo --summary` on the dev WSL machine;
-- a GPUI window with a custom-painted waveform on Linux, Windows and macOS;
+- a GPUI window with a custom-painted waveform on Linux (Windows and macOS move to the porting phase);
 - a note on whether GPUI must be pinned to a git commit of Zed (resolved: `gpui =0.2.2` is on crates.io, so no git pin is needed).
 
-Status: the gate is OPEN. WSL2 X11 is provisional (window not visually seen, probably software-rendered; the Wayland backend panics on WSLg). Windows and macOS runs are pending the user (see `docs/spikes/DECISIONS.md`).
+Status: CLOSED on Linux. WSL2 X11 ran (window not visually seen, probably software-rendered; the Wayland backend panics on WSLg). A native-Linux run on a real GPU is nice-to-have and not blocking. Windows and macOS checks move to the porting phase (see `docs/spikes/DECISIONS.md`).
 
-If the gate fails on a platform, the fallback is to switch toolkit (iced first,
+If the Linux gate fails, the fallback is to switch toolkit (iced first,
 then Slint). We do not drop the platform or stop the project. WSL-only trouble
 is a dev-loop issue and does not fail the gate on its own.
 
@@ -70,12 +70,12 @@ Positive:
 - Headless-first: engine, analysis, library and MIDI are testable without a window.
 
 Negative / risks:
-- GPUI's release stability, licence (expected Apache-2.0, AGPL-compatible) and Linux/WSL/Windows support are unverified until the gate passes.
-- No pure-Rust time-stretcher passed the design bar in the Phase 1 spike; an FFI stretcher (or further pure-Rust work) is needed. Decision pending the user.
-- Windows latency via cpal (WASAPI) must be measured.
+- GPUI's release stability and licence (expected Apache-2.0, AGPL-compatible) are unverified beyond the Linux spike; Windows support is unverified until the porting phase.
+- No pure-Rust time-stretcher passed the design bar in the Phase 1 spike. Decided: Rubber Band R3 via FFI behind a `Stretcher` trait, to be re-measured in the real engine.
+- Windows (WASAPI) and macOS (CoreAudio) latency via cpal is measured in the porting phase.
 - A full rewrite: the C++ tree stays on `main` until the Rust engine reaches parity. It is deleted only after Phase 5 passes.
 
-Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`. Rubber Band (GPLv2+) remains AGPL-compatible if it is chosen; its `deny.toml` entry stays commented out until then.
+Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`. Rubber Band (GPL-2.0-or-later) is AGPL-compatible and is chosen; its `deny.toml` entry is enabled when `om-stretch` lands in Phase 2, not before.
 
 ## References
 

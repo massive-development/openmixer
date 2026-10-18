@@ -31,21 +31,21 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 └── deny.toml                 # Licence and ban policy (cargo deny)
 ```
 
-Planned crates, added in their phases: `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`, `om-ui`.
+Planned crates, added in their phases: `om-stretch` (Phase 2, the only crate allowed `unsafe`), `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`, `om-ui`.
 
 ## Current State (Rust rewrite, Phase 1 spikes run)
 
-Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test.
+Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase.
 
 **Implemented:**
 - Repository initialization and governance documents (LICENSE, ADRs, CONTRIBUTING)
 - Cargo workspace with the `om-core`, `om-dsp`, `om-engine`, `om-audio` crates (`om-core` exposes only `VERSION`; the other three are empty scaffolds) and the `openmixer` binary (`--smoke`, `--version`)
-- Rust CI matrix (`rust.yml`): fmt, clippy, test on Linux, macOS and Windows; `cargo deny` on Linux
+- Rust CI matrix (`rust.yml`): fmt, clippy, test on Linux, macOS and Windows; `cargo deny` on Linux (all three OSes stay in CI so portability does not rot; Linux is the only runtime target until the porting phase)
 - Frozen C++ baseline at tag `cpp-final`, the behavioural reference for parity
 
 **In progress / planned:**
 - Phase 1 decision record: `docs/spikes/DECISIONS.md`; `docs/parity.md` is already generated from `cpp-final`
-- Pending the user: GPUI Windows/macOS runs (the gate is hard and still open, see ADR 0004), cpal real-device runs, and the time-stretch A/B listening and decision.
+- Linux first (see `docs/spikes/DECISIONS.md`, Rescope): the GPUI gate is closed on Linux; the time-stretch decision is made (Rubber Band R3 via FFI behind a `Stretcher` trait). Open for Phase 2 on Linux: native-Linux cpal device runs and the headphone-cue second stream. Porting phase: Windows and macOS GPUI, WASAPI and CoreAudio checks.
 
 ## Architecture Decisions
 
@@ -64,11 +64,11 @@ Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the
 - DCO sign-off required
 
 ### ADR-0004: Technology Stack - Rust with GPUI
-- **Language / UI:** Rust, with GPUI for the UI (conditional on the Phase 1 gate)
+- **Language / UI:** Rust, with GPUI for the UI (gate closed on Linux)
 - **Audio I/O:** `cpal` for the engine output callback; `rodio` only for non-critical audio such as library preview
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
-- **Time-stretch:** pending the user (plan task 8 is done; no pure-Rust candidate passed the stereo CPU bar; the choice (Signalsmith FFI, Rubber Band R3 FFI, or tune pure Rust) is pending the user, see `docs/spikes/DECISIONS.md`); any FFI is kept in one `unsafe` crate
+- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
 - **MIDI:** `midir`; **Library:** `rusqlite` (bundled SQLite)
 - **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
 
@@ -95,7 +95,7 @@ All changes — including those by AI agents and maintainers — land through a 
 All code must follow Rust best practices (edition 2021, toolchain pinned in `rust-toolchain.toml`). Outdated, unsafe or leaking code is not acceptable.
 
 - **Ownership:** owned values and borrows by default. Use `Arc` only when ownership is genuinely shared across threads, and `Rc` never on the audio path. Pass data by value or by reference; avoid `'static` leaks and `Box::leak`.
-- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate (planned, only if the stretcher decision selects an FFI engine — see docs/spikes/DECISIONS.md). Every `unsafe` block there has a `// SAFETY:` line stating the invariant.
+- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate `om-stretch` (planned for Phase 2: Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md). Every `unsafe` block there has a `// SAFETY:` line stating the invariant.
 - **Idioms:** `enum`s and `match` for state and commands, newtypes for ids and units, `Option`/`Result` instead of sentinel values, `?` for propagation, `#[must_use]` where a result must not be ignored, iterators over index loops where clearer. Prefer `&str`/`&[T]` parameters.
 - **Errors:** `thiserror` for typed errors in library crates, `anyhow` only in the `openmixer` binary. Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
 - **Logging:** `tracing` macros with structured fields. Never log from the audio thread.
@@ -103,6 +103,7 @@ All code must follow Rust best practices (edition 2021, toolchain pinned in `rus
 - **Real-time safety (audio thread):** no allocation, locks (`Mutex`, `RwLock`), blocking channel calls, file or network I/O, or syscalls in the render path. Create buffers and graphs off the audio thread. Enforce this in tests with `assert_no_alloc` around the render function; a failing check is a bug, not a flaky test.
 - **Lints:** `cargo clippy --all-targets -- -D warnings` must pass. Do not add `#[allow(...)]` to get past a lint without a comment stating why.
 - **Licences and bans:** `cargo deny check` must pass (`deny.toml`). New dependencies must be AGPL-compatible.
+- **Adopting crates:** well-established crates (cpal, symphonia, rusqlite, midir and similar) are adopted directly; reserve spikes for genuine unknowns.
 - **Check current guidance:** when unsure about an API, check docs.rs for the crate version in `Cargo.lock` rather than reusing older patterns from memory.
 - **Skills:** the Rust skills in `.agents/skills/` (`rust-best-practices`, `rust-patterns`, `rust-async-patterns`) are the reference for idioms and async code. The directory is planned for this rewrite; check it exists before relying on it. Async is not the default: prefer threads and channels for the audio and analysis paths.
 
@@ -179,7 +180,7 @@ sudo apt-get install libasound2-dev pkg-config
 ```
 
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
-- GPUI platform dependencies are planned to be documented with the Phase 1 spike.
+- GPUI platform dependencies (Linux) are documented in `docs/spikes/gpui.md`.
 
 ### Build Commands
 
@@ -217,7 +218,7 @@ The design maps these waves onto Phases 0–6 (see `docs/superpowers/specs/2026-
 ### Wave 2: Audio Engine (Rust, Phases 1–2)
 - Audio device layer over `cpal` (with a mock device for CI)
 - Deck streaming decoder (`symphonia`)
-- Time-stretch / keylock (spike: pure Rust vs Rubber Band)
+- Time-stretch / keylock (Rubber Band R3 via `om-stretch`, behind a `Stretcher` trait)
 - Mixer (EQ/filter/crossfader)
 - FX rack (8 effects)
 - Beat sync + quantized cue/loop/slip
@@ -309,7 +310,7 @@ pub use mixer::Mixer;
 - Real-time tests: render the engine inside `assert_no_alloc`
 - Screenshot tests for UI (planned)
 
-## Next Steps (Phase 0–1)
+## Next Steps (Phase 2, Linux first)
 
 Work follows the design phasing. The parity inventory in `docs/parity.md` lists which C++ test each Todo replaces.
 
@@ -319,7 +320,7 @@ Work follows the design phasing. The parity inventory in `docs/parity.md` lists 
 
 **Implementation:**
 1. `cpal` output stream behind a device trait
-2. Platform backends via cpal (ALSA, WASAPI, CoreAudio)
+2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio in the porting phase)
 3. Mock device for CI testing
 4. Latency probing
 
@@ -348,12 +349,12 @@ fn device_opens_and_closes() {
 - Golden audio tests
 - Transport state transitions
 
-### Todo 9: Time-Stretch (spike)
+### Todo 9: Time-Stretch (`om-stretch`)
 
-**Crate:** `crates/om-dsp` (pure Rust) or the FFI crate (fallback)
+**Crate:** `crates/om-stretch` (Rubber Band R3 via FFI, decided; the `Stretcher` trait is the seam for swapping engines)
 
 **Implementation:**
-1. Spike: A/B listening test and offline pitch/transient comparison against Rubber Band
+1. Wrap Rubber Band R3 behind the `Stretcher` trait; the A/B listen stays optional (by ear)
 2. Key-lock toggle
 3. RT-safety verification
 

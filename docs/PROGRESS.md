@@ -7,7 +7,7 @@ C++ reference: see `cpp-final`.
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test. Update this file in the same PR that changes a task's status._
+_Last updated: Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -27,7 +27,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 8 | Pro surface | ⬜ |
 | 9 | Release | ⬜ |
 
-**Rust rewrite status:** Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test; see `docs/spikes/DECISIONS.md`; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
+**Rust rewrite status:** Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase; see `docs/spikes/DECISIONS.md`; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
 
 **What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test`), and check startup with `cargo run -p openmixer -- --smoke`. No audio, analysis, library or UI features exist yet.
 
@@ -60,7 +60,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | — | All |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | — | All; removed once Todo 28 lands |
 | 13a Short soak test | 30–60 s headless mix in CI, asserting zero xruns, no steady-state underruns, no NaN/Inf/overflow | — | All; soak mix tool to be carried over from `cpp-final` |
-| 9 Key-lock time-stretch | Tempo change without pitch change. Stretcher choice pending the user: plan task 8 is done; no pure-Rust candidate passed the stereo CPU bar; the choice (Signalsmith FFI, Rubber Band R3 FFI, or tune pure Rust) is pending the user, see `docs/spikes/DECISIONS.md` | — | All |
+| 9 Key-lock time-stretch | Tempo change without pitch change. Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`) | — | All |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode, gapless deck loops, 8 hotcues. Control ids `deck.N.sync`, `sync.master`, `deck.N.loop.quantized.<beats>`, `deck.N.slip` | — | All; UI buttons; hotcue persistence (Wave 4 library) |
 | 11 FX rack | 8 effects (echo, reverb, flanger, phaser, crush, gate, roll, tape stop) with wet/dry and beat-sync; one rack per mixer channel and one on master (`fx.ch<N>.*`, `fx.master.*`); no allocation on the audio thread, buffer clears amortised | — | All; UI; beat-phase lock to the grid |
 | 13 Full soak test | 10-minute headless mix with a scripted DJ (loops, hotcues, key-lock toggles, master FX, seeks); glitch and xrun budget (zero xruns, no audio-thread allocation) | — | All; not in CI (10 minutes); paced mock device, not real hardware |

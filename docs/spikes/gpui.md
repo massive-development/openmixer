@@ -6,16 +6,16 @@ THROWAWAY spike code in `spikes/gpui-window/` (own `[workspace]`; not built by t
 
 | Platform | Verdict | Basis |
 |---|---|---|
-| Linux / WSL2 (X11 via WSLg) | **PROVISIONAL GO** | Compiled and ran; window created, 60 fps counter in release (software-rendered likely, window not visually seen). Vulkan device in use not confirmed (likely CPU llvmpipe). |
+| Linux / WSL2 (X11 via WSLg) | **GO (gate closed on Linux)** | Compiled and ran; window created, 60 fps counter in release (software-rendered likely, window not visually seen). Vulkan device in use not confirmed (likely CPU llvmpipe). |
 | Linux / WSL2 (Wayland via WSLg) | Fails at startup (dev-loop issue) | Panic `UnsupportedVersion` in gpui `wayland/client.rs:151`. Workaround: `WAYLAND_DISPLAY= ` (forces X11). Per the design this does not fail the gate on its own. |
-| Windows | **pending user** | Not run. |
-| macOS | **pending user** | Not run. |
+| Windows | **Porting phase** | Not run; not a gate (Linux-first rescope, see `docs/spikes/DECISIONS.md`). |
+| macOS | **Porting phase** | Not run; not a gate (Linux-first rescope, see `docs/spikes/DECISIONS.md`). |
 
-The gate is NOT closed: Windows and macOS are unrun. If either fails, the fallback is switching toolkit: iced first, then Slint (not dropping the platform).
+The gate is closed on Linux (Linux-first rescope). Windows and macOS are unrun and moved to the porting phase. A Linux failure would trigger the fallback: switch toolkit, iced first, then Slint (not dropping the platform).
 
 ## Step 1: Vulkan on the dev WSL
 
-- `vulkaninfo` is not installed (`vulkan-tools` missing), so `vulkaninfo --summary` could not be recorded. **pending user: `sudo apt install vulkan-tools`, then paste `vulkaninfo --summary` here.**
+- `vulkaninfo` is not installed (`vulkan-tools` missing), so `vulkaninfo --summary` could not be recorded. **Optional, not blocking: `sudo apt install vulkan-tools`, then paste `vulkaninfo --summary` here.**
 - `/usr/share/vulkan/icd.d`: asahi, gfxstream_vk, intel_hasvk, intel, lvp, nouveau, radeon, virtio ICD json files. No `dzn` (Dozen/D3D12) ICD.
 - `ldconfig -p | grep -i vulkan`: `libvulkan.so.1` plus libvulkan_{virtio,radeon,nouveau,lvp,intel_hasvk,intel,gfxstream,asahi}.so. No `libvulkan_dzn.so`.
 - `/dev/dri` does not exist; `/dev/dxg` does (WSL GPU paravirtualisation). With no dzn driver and no `/dev/dri`, the only usable Vulkan device here is most likely `lvp` (llvmpipe, software). This matches the observed ~114% CPU while rendering. Not confirmed without vulkaninfo.
@@ -34,7 +34,7 @@ Toolchain: repo `rust-toolchain.toml` (1.91.1) applies inside `spikes/` and was 
 Problems hit, in order:
 
 1. **libc/xattr incompatibility (dependency resolution).** A fresh resolve picked `libc 0.2.191`, which breaks `xattr 0.2.3` (pulled by `zed-async-tar` via `gpui_http_client`): `error[E0425]: cannot find value ENOATTR in crate libc`. Fix: `cargo update -p libc --precise 0.2.188` (0.2.182 and 0.2.184 also fail; 0.2.186 and 0.2.188 work; `rustix` needs >= 0.2.182). The committed `spikes/gpui-window/Cargo.lock` carries this pin. A future gpui or xattr release may remove the need.
-2. **Link error: `unable to find library -lxkbcommon-x11`.** The runtime lib `libxkbcommon-x11.so.0` is installed but the dev symlink is not. **pending user: `sudo apt install libxkbcommon-x11-dev`** (also likely `libxkbcommon-dev`, `libwayland-dev`, `libfontconfig-dev`, `libfreetype-dev` for a clean machine; those linked fine here). Workaround used (no install, no sudo): `mkdir -p /tmp/libshim && ln -s /lib/x86_64-linux-gnu/libxkbcommon-x11.so.0 /tmp/libshim/libxkbcommon-x11.so`, then `RUSTFLAGS="-L /tmp/libshim" cargo build --release`.
+2. **Link error: `unable to find library -lxkbcommon-x11`.** The runtime lib `libxkbcommon-x11.so.0` is installed but the dev symlink is not. **Build note: `sudo apt install libxkbcommon-x11-dev`** (also likely `libxkbcommon-dev`, `libwayland-dev`, `libfontconfig-dev`, `libfreetype-dev` for a clean machine; those linked fine here). Workaround used (no install, no sudo): `mkdir -p /tmp/libshim && ln -s /lib/x86_64-linux-gnu/libxkbcommon-x11.so.0 /tmp/libshim/libxkbcommon-x11.so`, then `RUSTFLAGS="-L /tmp/libshim" cargo build --release`.
 3. **API friction:** `Pixels.0` is private in 0.2.2; use `f32::from(px_value)`.
 
 Build times (12 cores, WSL2, registry cache warm after first download):
@@ -66,7 +66,7 @@ Unexplained: the 30 fps debug reading is not understood; it could be CPU-bound i
 - `Pixels` internals private, edition 2024 dependency, and fragile transitive pinning (libc/xattr) suggest budgeting for dependency churn; pin `=version` and commit `Cargo.lock`.
 - Wayland backend panics (unwrap) instead of falling back to X11 when the compositor lacks a protocol version.
 
-## Run on Windows/macOS (user)
+## Run on Windows/macOS (porting phase, not a gate)
 
 Prereqs: Rust 1.91.1 (rustup picks it up from `rust-toolchain.toml`). Windows: MSVC build tools + Windows SDK. macOS: Xcode (full app, for the Metal toolchain) and `xcode-select`.
 
@@ -95,12 +95,12 @@ Fill in:
 | Multi-monitor drag test | | | not tested |
 | GPU backend actually used (D3D11 / Vulkan / Metal) | | | not confirmed (likely lvp, software) |
 | Resize / HiDPI / focus issues | | | not tested |
-| Verdict GO / NO-GO | | | PROVISIONAL GO |
+| Verdict GO / NO-GO | | | GO (gate closed on Linux) |
 
-## What the user must run (checklist)
+## Open items (Linux first)
 
-- [ ] WSL: `sudo apt install vulkan-tools libxkbcommon-x11-dev`, then `vulkaninfo --summary` and paste the output under Step 1 (confirm whether the device is llvmpipe or a real GPU via dzn; optionally `mesa-vulkan-drivers` is already present).
+- [ ] Optional (Linux, not blocking): `sudo apt install vulkan-tools libxkbcommon-x11-dev`, then `vulkaninfo --summary` and paste the output under Step 1 (confirm whether the device is llvmpipe or a real GPU via dzn; optionally `mesa-vulkan-drivers` is already present).
 - [ ] WSL: `cd spikes/gpui-window && cargo build --release && WAYLAND_DISPLAY= ./target/release/gpui-window-spike`, look at the window, confirm the waveform visibly scrolls and the overlay reads ~60 fps.
-- [ ] Windows: run the commands above, fill the table column.
-- [ ] macOS: run the commands above, fill the table column.
-- [ ] Decide GO / NO-GO per platform. NO-GO on Windows or macOS means: switch toolkit to iced, then Slint if iced also fails, and stop for input per the plan. WSL-only trouble (Wayland panic, software rendering) does not fail the gate by itself.
+- [ ] Porting phase: Windows run, fill the table column.
+- [ ] Porting phase: macOS run, fill the table column.
+- [x] Linux GO / NO-GO decided: GO, gate closed on Linux. A Linux NO-GO would mean switching toolkit to iced, then Slint. Windows and macOS verdicts move to the porting phase. WSL-only trouble (Wayland panic, software rendering) does not fail the gate by itself.

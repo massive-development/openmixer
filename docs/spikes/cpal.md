@@ -6,13 +6,13 @@ THROWAWAY spike code in `spikes/cpal-out/` (own `[workspace]`; not built by the 
 
 | Platform | Verdict | Basis |
 |---|---|---|
-| Linux / WSL2 (ALSA backend) | **BUILD-ONLY / PENDING** (no usable device here; render path is allocation-free) | Compiles with `libasound2-dev` + `pkg-config` (both present). Render path proven allocation-free under test. No ALSA hardware (`/dev/snd` has only `timer`), so the ALSA host cannot open a device here. |
-| Linux / WSL2 (cpal PulseAudio host -> WSLg `RDPSink`) | **PROVISIONAL GO** | Real stream ran 60 s at 256-frame request, zero xruns reported. Jitter is virtualised-audio jitter, not representative of hardware. Second stream failed to open (see below). |
-| Windows (WASAPI) | **pending user** | Not run. |
-| macOS (CoreAudio) | **pending user** | Not run. |
-| Linux native (ALSA / PipeWire / JACK) | **pending user** | Not run on real hardware. |
+| Linux / WSL2 (ALSA backend) | **BUILD-ONLY** (no usable device here; native-Linux device run open for Phase 2; render path is allocation-free) | Compiles with `libasound2-dev` + `pkg-config` (both present). Render path proven allocation-free under test. No ALSA hardware (`/dev/snd` has only `timer`), so the ALSA host cannot open a device here. |
+| Linux / WSL2 (cpal PulseAudio host -> WSLg `RDPSink`) | **GO on WSL2** (native-Linux device run open for Phase 2) | Real stream ran 60 s at 256-frame request, zero xruns reported. Jitter is virtualised-audio jitter, not representative of hardware. Second stream failed to open (see below). |
+| Windows (WASAPI) | **Porting phase** | Not run; not a gate. |
+| macOS (CoreAudio) | **Porting phase** | Not run; not a gate. |
+| Linux native (ALSA / PipeWire / JACK) | **Phase 2 (open)** | Not run on real hardware yet. |
 
-Not closed: latency/xrun targets for the Wave 2 soak need real hardware on each OS. The second-output-stream (headphone cue) question is open: it failed on the only device available here, and the cause was not isolated.
+Linux-first: latency/xrun targets for the Wave 2 soak need real hardware, which on Linux is a Phase 2 item (Windows and macOS are in the porting phase). The second-output-stream (headphone cue) question is an open Linux item for Phase 2: it failed on the only device available here, and the cause was not isolated.
 
 ## Silent-by-default rule (hard rule for all spikes/tests)
 
@@ -52,7 +52,7 @@ Code path: `--cue` enumerates `host.output_devices()`, prefers a device differen
 - rodio: its playback feature depends on cpal (`playback = ["dep:cpal"]`); sources implement `trait Source: Iterator<Item = Sample>` (pull model, one sample at a time), mixed on rodio's own output thread.
 - Correction to the ADR/design wording: rodio is not unable to control buffer size. `DeviceSinkBuilder::with_buffer_size(BufferSize)` exists and, when left at `Default`, rodio picks `Fixed` of about 50 ms (`sample_rate / 20`, rounded to a power of two). The remaining argument for cpal is the direct callback (you own the render loop, no iterator-per-sample interface, no hidden thread/mixer) and direct stream/device management, not buffer-size control. Whether rodio can open two devices at once was not checked.
 
-## Run on Windows / macOS / Linux native (user)
+## Run on native Linux (Phase 2); Windows and macOS in the porting phase
 
 Prereqs: Rust 1.91.1 via `rust-toolchain.toml`. Linux: `sudo apt install libasound2-dev pkg-config`. Windows: MSVC build tools. macOS: Xcode command line tools.
 
@@ -76,14 +76,14 @@ Run once with the default device, again with a pro interface if available, and a
 | Second stream opens (other device)? | | | | n/a (single device) |
 | Second stream opens (same device)? | | | | no (Invalid argument) |
 | Audible glitches? | | | | not listened |
-| Verdict GO / NO-GO | | | | PROVISIONAL GO |
+| Verdict GO / NO-GO | | | | GO on WSL2 (see Verdict) |
 
 Also record, per OS: the actual period delivered if different from 256 (log `data.len() / channels` in the callback), and measured round-trip/output latency if you have a loopback method (not covered by this spike; the soak gate will use the real latency monitor).
 
-## Pending user checklist
+## Open items (Linux first)
 
-- [ ] Windows: run the commands above, fill the table (WASAPI shared mode: confirm whether `Fixed(256)` is honoured or the engine period is used).
-- [ ] macOS: same (CoreAudio honours fixed buffer sizes within the device range; verify).
-- [ ] Linux with real ALSA/PipeWire hardware: same.
-- [ ] On at least one OS, test `--cue` with two physical output devices; decide whether the headphone-cue design is viable per backend.
+- [ ] Porting phase, Windows: run the commands above, fill the table (WASAPI shared mode: confirm whether `Fixed(256)` is honoured or the engine period is used).
+- [ ] Porting phase, macOS: same (CoreAudio honours fixed buffer sizes within the device range; verify).
+- [ ] Phase 2, Linux with real ALSA/PipeWire hardware: same.
+- [ ] Phase 2, Linux: test `--cue` with two physical output devices; decide whether the headphone-cue design is viable on ALSA/PipeWire.
 - [ ] Optional on WSL: install `alsa-utils` (`aplay -l`) to confirm no card, and `libasound2-plugins` to see whether the ALSA host can route to WSLg Pulse.
