@@ -93,8 +93,7 @@ int main (int argc, char** argv)
     dir.createDirectory();
 
     openmixer::DjEngine engine;
-    openmixer::fx::FxRack masterFx;   // declared before the device so it outlives the audio thread
-    engine.getMixer().setMasterInsert (0, &masterFx);
+    auto& masterFx = engine.getFx().getMasterRack();   // engine outlives the device below
     openmixer::OutputChecker checker (engine);
     openmixer::MockAudioDevice device (kRate, kBlock, 0, 4);
 

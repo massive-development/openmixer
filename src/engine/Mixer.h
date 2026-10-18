@@ -51,6 +51,7 @@ public:
     float getMasterPeakRight() const noexcept { return masterPeakR.get(); }
 
     // Extension points: insert a stage into a channel or master chain at runtime.
+    // Insert slot 0 is owned by the FX racks (FxRouting); use other slots.
     bool setChannelInsert (int ch, int slot, ProcessStage* stage) { return strip (ch).getInserts().set (slot, stage); }
     bool setMasterInsert (int slot, ProcessStage* stage) { return masterInserts.set (slot, stage); }
 

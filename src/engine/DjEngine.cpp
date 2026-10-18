@@ -5,10 +5,24 @@
 namespace openmixer
 {
 
-DjEngine::DjEngine (int numDecks) : mixer (std::min (numDecks, Mixer::kMaxChannels))
+DjEngine::DjEngine (int numDecks)
+    : mixer (std::min (numDecks, Mixer::kMaxChannels)), sync (mixer.getNumChannels())
 {
     for (int i = 0; i < mixer.getNumChannels(); ++i)
+    {
         decks.push_back (std::make_unique<Deck>());
+        deckPointers.push_back (decks.back().get());
+        controls.push_back (std::make_unique<DeckControl> (*decks.back(), sync, i));
+    }
+    fxRouting = std::make_unique<FxRouting> (mixer, mixer.getNumChannels());
+}
+
+void DjEngine::updateControl (double elapsedSeconds)
+{
+    sync.apply (deckPointers);
+    fxRouting->followDecks (deckPointers, sync);
+    for (auto& c : controls)
+        c->tick (elapsedSeconds);
 }
 
 void DjEngine::prepare (double sampleRate, int maxBlockSize)

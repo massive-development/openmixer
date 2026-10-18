@@ -15,6 +15,8 @@ public:
     FlangerFx() noexcept;
     std::string_view getName() const noexcept override { return "flanger"; }
     void reset() noexcept override;
+    void beginReset() noexcept override;
+    bool clearSome (int maxFrames) noexcept override { return line.clearSome (maxFrames); }
 
 protected:
     void prepareEffect (double sampleRate, int maxBlockSize) override;
