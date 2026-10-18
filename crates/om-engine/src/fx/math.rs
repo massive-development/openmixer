@@ -76,7 +76,7 @@ impl AtomicF32 {
 }
 
 /// `f64` cell shared between the control thread (writer) and the audio thread (reader).
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AtomicF64(AtomicU64);
 
 impl AtomicF64 {

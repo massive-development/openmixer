@@ -1,38 +1,44 @@
 //! Series chain of FX units sharing one tempo; plugs into a mixer insert via `ProcessStage`.
 //!
-//! Threads: build and `set_parameter`/`set_tempo` on the control thread; `process` on the audio
-//! thread.
+//! Threads: `set_parameter` and the tempo setters work from any thread through an
+//! [`FxRackControl`] (atomics); `prepare` and `process` run on the audio side that owns the rack.
 
 use super::factory::FxFactory;
-use super::unit::FxUnit;
+use super::unit::{FxUnit, FxUnitControl};
 use crate::ProcessStage;
 use om_core::ParameterTarget;
 
 pub struct FxRack {
     units: Vec<FxUnit>,
+    control: FxRackControl,
 }
 
 impl FxRack {
     /// One unit per known effect name, in order; unknown names are skipped.
     pub fn new(layout: &[&str], factory: &FxFactory) -> Self {
-        let units = layout
+        let units: Vec<FxUnit> = layout
             .iter()
             .filter_map(|name| factory.create(name))
             .map(FxUnit::new)
             .collect();
-        Self { units }
+        let control = FxRackControl::new(&units);
+        Self { units, control }
+    }
+
+    /// Control-thread handle; keeps working after the rack has been moved into a mixer insert.
+    pub fn control(&self) -> FxRackControl {
+        self.control.clone()
     }
 
     pub fn set_tempo(&self, bpm: f64) {
-        for unit in &self.units {
-            unit.set_tempo(bpm);
-        }
+        self.control.set_tempo(bpm);
     }
 
     /// Follow a deck's grid tempo: `grid_bpm * playback_rate`. Call from the control thread
     /// whenever the grid or rate changes.
     pub fn set_tempo_from_grid_bpm(&self, grid_bpm: f64, playback_rate: f64) {
-        self.set_tempo(grid_bpm * playback_rate);
+        self.control
+            .set_tempo_from_grid_bpm(grid_bpm, playback_rate);
     }
 
     pub fn num_units(&self) -> usize {
@@ -49,15 +55,53 @@ impl FxRack {
 
     /// Index of the first unit running the named effect.
     pub fn find_unit(&self, effect_name: &str) -> Option<usize> {
-        self.units
-            .iter()
-            .position(|u| u.effect().name() == effect_name)
+        self.control.find_unit(effect_name)
     }
 }
 
 impl Default for FxRack {
     fn default() -> Self {
         Self::new(FxFactory::builtin_names(), &FxFactory::with_built_ins())
+    }
+}
+
+/// Control-thread view of an [`FxRack`]: the same units, addressed by index and id.
+#[derive(Debug, Clone)]
+pub struct FxRackControl {
+    units: Vec<FxUnitControl>,
+}
+
+impl FxRackControl {
+    fn new(units: &[FxUnit]) -> Self {
+        Self {
+            units: units.iter().map(FxUnit::control).collect(),
+        }
+    }
+
+    pub fn set_tempo(&self, bpm: f64) {
+        for unit in &self.units {
+            unit.set_tempo(bpm);
+        }
+    }
+
+    /// See [`FxRack::set_tempo_from_grid_bpm`].
+    pub fn set_tempo_from_grid_bpm(&self, grid_bpm: f64, playback_rate: f64) {
+        self.set_tempo(grid_bpm * playback_rate);
+    }
+
+    pub fn num_units(&self) -> usize {
+        self.units.len()
+    }
+
+    pub fn unit(&self, index: usize) -> Option<&FxUnitControl> {
+        self.units.get(index)
+    }
+
+    /// Index of the first unit running the named effect.
+    pub fn find_unit(&self, effect_name: &str) -> Option<usize> {
+        self.units
+            .iter()
+            .position(|u| u.effect_name() == effect_name)
     }
 }
 
@@ -72,7 +116,7 @@ fn parse_unit_id(id: &str) -> Option<(usize, &str)> {
     Some((digits.parse().ok()?, &rest[dot + 1..]))
 }
 
-impl ParameterTarget for FxRack {
+impl ParameterTarget for FxRackControl {
     /// Ids: "bpm", "fx<N>.enable", "fx<N>.mix", "fx<N>.<effect param>" (N = unit index).
     fn set_parameter(&self, id: &str, value: f64) -> bool {
         if id == "bpm" {
@@ -85,6 +129,13 @@ impl ParameterTarget for FxRack {
                 .is_some_and(|unit| unit.set_parameter(unit_id, value)),
             None => false,
         }
+    }
+}
+
+impl ParameterTarget for FxRack {
+    /// Ids: "bpm", "fx<N>.enable", "fx<N>.mix", "fx<N>.<effect param>" (N = unit index).
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
+        self.control.set_parameter(id, value)
     }
 }
 

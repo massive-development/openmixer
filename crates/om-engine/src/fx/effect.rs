@@ -3,6 +3,7 @@
 //! `process` and `clear_some` on the audio thread (no allocation, locks or I/O).
 
 use super::math::{AtomicF32, Smoother};
+use std::sync::Arc;
 
 /// Tempo range the FX buffers are sized for; beat-synced times are clamped to it.
 pub const MIN_BPM: f64 = 50.0;
@@ -67,7 +68,7 @@ impl ParamSpec {
 #[derive(Debug)]
 pub struct ParamSet {
     specs: [ParamSpec; MAX_PARAMS],
-    targets: [AtomicF32; MAX_PARAMS],
+    targets: Arc<[AtomicF32; MAX_PARAMS]>,
     block_targets: [f32; MAX_PARAMS],
     smoothers: [Smoother; MAX_PARAMS],
     len: usize,
@@ -77,7 +78,7 @@ impl ParamSet {
     pub fn new(specs: &[ParamSpec]) -> Self {
         let mut set = Self {
             specs: [ParamSpec::EMPTY; MAX_PARAMS],
-            targets: std::array::from_fn(|_| AtomicF32::new(0.0)),
+            targets: Arc::new(std::array::from_fn(|_| AtomicF32::new(0.0))),
             block_targets: [0.0; MAX_PARAMS],
             smoothers: [Smoother::default(); MAX_PARAMS],
             len: 0,
@@ -109,12 +110,17 @@ impl ParamSet {
 
     /// Clamps to the declared range. Returns `false` for an unknown index or a non-finite value.
     pub fn set(&self, index: usize, value: f32) -> bool {
-        if index >= self.len || !value.is_finite() {
-            return false;
+        store_clamped(&self.specs, self.len, &self.targets, index, value)
+    }
+
+    /// Control-thread view that shares the target cells, so a unit that has been moved into the
+    /// audio chain can still be driven by name.
+    pub fn control(&self) -> ParamControl {
+        ParamControl {
+            specs: self.specs,
+            len: self.len,
+            targets: Arc::clone(&self.targets),
         }
-        let s = &self.specs[index];
-        self.targets[index].store(value.clamp(s.min, s.max));
-        true
     }
 
     /// Current control-thread target; 0 for an unknown index.
@@ -151,6 +157,48 @@ impl ParamSet {
     /// Smoothed value of parameter `index` for the current sample.
     pub fn value(&self, index: usize) -> f32 {
         self.smoothers[index].current()
+    }
+}
+
+fn store_clamped(
+    specs: &[ParamSpec],
+    len: usize,
+    targets: &[AtomicF32; MAX_PARAMS],
+    index: usize,
+    value: f32,
+) -> bool {
+    if index >= len || !value.is_finite() {
+        return false;
+    }
+    let s = &specs[index];
+    targets[index].store(value.clamp(s.min, s.max));
+    true
+}
+
+/// Control-thread handle to a [`ParamSet`]'s names, ranges and target cells. Clones share state.
+#[derive(Debug, Clone)]
+pub struct ParamControl {
+    specs: [ParamSpec; MAX_PARAMS],
+    len: usize,
+    targets: Arc<[AtomicF32; MAX_PARAMS]>,
+}
+
+impl ParamControl {
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn find(&self, name: &str) -> Option<usize> {
+        self.specs[..self.len].iter().position(|s| s.name == name)
+    }
+
+    /// Same contract as [`ParamSet::set`].
+    pub fn set(&self, index: usize, value: f32) -> bool {
+        store_clamped(&self.specs, self.len, &self.targets, index, value)
     }
 }
 

@@ -4,12 +4,13 @@
 //! Threads: `set_parameter`/`set_*` on the control thread (atomics, so `&self`); `prepare` before
 //! insertion; `process` on the audio thread (fixed-size scratch, no allocation, locks or I/O).
 
-use super::effect::{Effect, FxContext, MAX_BPM, MIN_BPM};
+use super::effect::{Effect, FxContext, ParamControl, MAX_BPM, MIN_BPM};
 use super::math::{AtomicF32, AtomicF64, Smoother};
 use super::wipe::SLICE;
 use crate::ProcessStage;
 use om_core::ParameterTarget;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 const RELAXED: Ordering = Ordering::Relaxed;
 const ENABLE_RAMP_SEC: f64 = 0.01;
@@ -24,12 +25,18 @@ fn samples_per_beat(sample_rate: f64, bpm: f64) -> f64 {
     sample_rate * 60.0 / bpm
 }
 
-pub struct FxUnit {
-    effect: Box<dyn Effect>,
+/// Control-written, audio-read state. Shared by `Arc` with [`FxUnitControl`].
+#[derive(Debug)]
+struct UnitShared {
     enabled: AtomicBool,
     active: AtomicBool,
     mix_target: AtomicF32,
     bpm: AtomicF64,
+}
+
+pub struct FxUnit {
+    effect: Box<dyn Effect>,
+    shared: Arc<UnitShared>,
 
     ctx: FxContext,
     enable_ramp: Smoother,
@@ -52,10 +59,12 @@ impl FxUnit {
     pub fn new(effect: Box<dyn Effect>) -> Self {
         Self {
             effect,
-            enabled: AtomicBool::new(false),
-            active: AtomicBool::new(false),
-            mix_target: AtomicF32::new(1.0),
-            bpm: AtomicF64::new(120.0),
+            shared: Arc::new(UnitShared {
+                enabled: AtomicBool::new(false),
+                active: AtomicBool::new(false),
+                mix_target: AtomicF32::new(1.0),
+                bpm: AtomicF64::new(120.0),
+            }),
             ctx: FxContext::default(),
             enable_ramp: Smoother::default(),
             mix_ramp: Smoother::default(),
@@ -71,36 +80,45 @@ impl FxUnit {
     }
 
     pub fn set_enabled(&self, on: bool) {
-        self.enabled.store(on, RELAXED);
+        self.shared.enabled.store(on, RELAXED);
     }
 
     pub fn set_mix(&self, mix: f32) {
         if mix.is_finite() {
-            self.mix_target.store(mix.clamp(0.0, 1.0));
+            self.shared.mix_target.store(mix.clamp(0.0, 1.0));
         }
     }
 
     pub fn set_tempo(&self, bpm: f64) {
         if bpm.is_finite() {
-            self.bpm.store(bpm.clamp(MIN_BPM, MAX_BPM));
+            self.shared.bpm.store(bpm.clamp(MIN_BPM, MAX_BPM));
         }
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.enabled.load(RELAXED)
+        self.shared.enabled.load(RELAXED)
     }
 
     /// False once a disabled unit has finished its tail and stopped processing.
     pub fn is_active(&self) -> bool {
-        self.active.load(RELAXED)
+        self.shared.active.load(RELAXED)
     }
 
     pub fn mix(&self) -> f32 {
-        self.mix_target.load()
+        self.shared.mix_target.load()
     }
 
     pub fn tempo(&self) -> f64 {
-        self.bpm.load()
+        self.shared.bpm.load()
+    }
+
+    /// Control-thread handle that keeps driving this unit after it has been moved into a chain.
+    pub fn control(&self) -> FxUnitControl {
+        FxUnitControl {
+            shared: Arc::clone(&self.shared),
+            params: self.effect.params().control(),
+            effect_name: self.effect.name(),
+        }
     }
 
     pub fn effect(&self) -> &dyn Effect {
@@ -167,7 +185,7 @@ impl FxUnit {
         self.effect.begin_reset();
         self.clearing = true;
         self.idle = true;
-        self.active.store(false, RELAXED);
+        self.shared.active.store(false, RELAXED);
     }
 
     fn process_chunk(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -179,7 +197,7 @@ impl FxUnit {
         if self.idle {
             self.idle = false;
             self.quiet_samples = 0;
-            self.active.store(true, RELAXED);
+            self.shared.active.store(true, RELAXED);
         }
         self.slice_clear(SLICE); // an early re-engage keeps wiping in slices
         let spb = samples_per_beat(self.ctx.sample_rate, self.tempo());
@@ -203,6 +221,56 @@ impl ParameterTarget for FxUnit {
     /// Ids: "enable" (>= 0.5 on), "mix" (0..1), "bpm", plus the effect's own names (e.g. "time").
     /// Returns `false` for unknown ids and non-finite values.
     fn set_parameter(&self, id: &str, value: f64) -> bool {
+        self.control().set_parameter(id, value)
+    }
+}
+
+/// Control-thread handle to one [`FxUnit`]: same ids, same atomics. Cheap to clone.
+#[derive(Debug, Clone)]
+pub struct FxUnitControl {
+    shared: Arc<UnitShared>,
+    params: ParamControl,
+    effect_name: &'static str,
+}
+
+impl FxUnitControl {
+    pub fn effect_name(&self) -> &'static str {
+        self.effect_name
+    }
+
+    pub fn set_enabled(&self, on: bool) {
+        self.shared.enabled.store(on, RELAXED);
+    }
+
+    pub fn set_mix(&self, mix: f32) {
+        if mix.is_finite() {
+            self.shared.mix_target.store(mix.clamp(0.0, 1.0));
+        }
+    }
+
+    pub fn set_tempo(&self, bpm: f64) {
+        if bpm.is_finite() {
+            self.shared.bpm.store(bpm.clamp(MIN_BPM, MAX_BPM));
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.shared.enabled.load(RELAXED)
+    }
+
+    pub fn mix(&self) -> f32 {
+        self.shared.mix_target.load()
+    }
+
+    pub fn tempo(&self) -> f64 {
+        self.shared.bpm.load()
+    }
+}
+
+impl ParameterTarget for FxUnitControl {
+    /// Ids: "enable" (>= 0.5 on), "mix" (0..1), "bpm", plus the effect's own names (e.g. "time").
+    /// Returns `false` for unknown ids and non-finite values.
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
         match id {
             "enable" => {
                 self.set_enabled(value >= 0.5);
@@ -216,8 +284,8 @@ impl ParameterTarget for FxUnit {
                 self.set_tempo(value);
                 true
             }
-            _ => match self.effect.find_param(id) {
-                Some(index) => self.effect.set_param(index, value as f32),
+            _ => match self.params.find(id) {
+                Some(index) => self.params.set(index, value as f32),
                 None => false,
             },
         }
@@ -240,7 +308,7 @@ impl ProcessStage for FxUnit {
         self.idle = !on;
         self.clearing = false;
         self.quiet_samples = 0;
-        self.active.store(on, RELAXED);
+        self.shared.active.store(on, RELAXED);
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {

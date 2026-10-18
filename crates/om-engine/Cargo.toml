@@ -13,3 +13,4 @@ workspace = true
 [dependencies]
 om-core = { path = "../om-core" }
 om-dsp = { path = "../om-dsp" }
+rtrb = "0.4"
