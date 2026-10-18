@@ -250,6 +250,17 @@ pub fn transient_smear(orig: &[f32], out: &[f32], tempo: f64) -> Smear {
 }
 
 // ---------- eval driver ----------
+/// Decorrelated stereo from a mono source: L = x, R = 0.9 * x delayed by 331 samples (7.5 ms).
+pub fn make_stereo(x: &[f32]) -> Vec<f32> {
+    let d = 331;
+    let mut o = Vec::with_capacity(x.len() * 2);
+    for i in 0..x.len() {
+        o.push(x[i]);
+        o.push(if i >= d { 0.9 * x[i - d] } else { 0.0 });
+    }
+    o
+}
+
 fn median(v: &mut Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
@@ -267,24 +278,38 @@ pub fn eval_all() {
     let (mut pt, mut tt, mut ct) = (String::new(), String::new(), String::new());
     writeln!(pt, "| engine | tempo | sine 440 Hz, FFT peak (cents) | chord, centroid (cents, max of 3) | chord, FFT peak (cents, max of 3) |\n|---|---|---|---|---|").unwrap();
     writeln!(tt, "| engine | tempo | onset NCC | best lag (ms) | attack rise orig -> out (ms) |\n|---|---|---|---|---|").unwrap();
-    writeln!(ct, "| engine | tempo | ms CPU per audio-second (chord / drums) | % of one core (worst, mono) |\n|---|---|---|---|").unwrap();
+    writeln!(ct, "| engine | tempo | mono ms CPU per audio-s (chord / drums) | mono % core | STEREO ms CPU per audio-s (chord / drums) | STEREO % core per deck (worst) |\n|---|---|---|---|---|---|").unwrap();
     for e in engines::all() {
         for &tempo in &[0.92f64, 1.08] {
             let mut cpu = [0.0f64; 2];
             let mut res: [Vec<f32>; 2] = [vec![], vec![]];
             for (mi, (name, x)) in [("chord", &chord), ("drums", &drums)].iter().enumerate() {
-                let _ = (e.run)(x, tempo); // warm-up
+                let _ = (e.run)(x, 1, tempo); // warm-up
                 let mut ts = vec![];
                 for _ in 0..runs {
                     let t0 = Instant::now();
-                    let y = (e.run)(x, tempo);
+                    let y = (e.run)(x, 1, tempo);
                     ts.push(t0.elapsed().as_secs_f64());
                     res[mi] = y;
                 }
                 cpu[mi] = median(&mut ts) / secs * 1000.0;
                 write_wav_mono(&out_dir.join(format!("{name}_r{tempo:.2}_{}.wav", e.name)), &res[mi], SR);
             }
-            let ysine = (e.run)(&sine, tempo);
+            let mut scpu = [0.0f64; 2];
+            for (mi, x) in [&chord, &drums].iter().enumerate() {
+                let st = make_stereo(x);
+                let _ = (e.run)(&st, 2, tempo);
+                let mut ts = vec![];
+                for _ in 0..runs {
+                    let t0 = Instant::now();
+                    let y = (e.run)(&st, 2, tempo);
+                    ts.push(t0.elapsed().as_secs_f64());
+                    assert_eq!(y.len() % 2, 0);
+                }
+                scpu[mi] = median(&mut ts) / secs * 1000.0;
+            }
+            let sworst = scpu[0].max(scpu[1]);
+            let ysine = (e.run)(&sine, 1, tempo);
             let p_sine = pitch_error_cents(&sine, &ysine, &[440.0]);
             let p_cen = pitch_error_centroid(&chord, &res[0], &synth::CHORD_HZ);
             let p_pk = pitch_error_cents(&chord, &res[0], &synth::CHORD_HZ);
@@ -292,7 +317,7 @@ pub fn eval_all() {
             let worst = cpu[0].max(cpu[1]);
             writeln!(pt, "| {} | {tempo:.2} | {p_sine:.2} | {p_cen:.2} | {p_pk:.2} |", e.name).unwrap();
             writeln!(tt, "| {} | {tempo:.2} | {:.3} | {:+.1} | {:.1} -> {:.1} |", e.name, sm.ncc, sm.lag_ms, sm.rise_orig_ms, sm.rise_out_ms).unwrap();
-            writeln!(ct, "| {} | {tempo:.2} | {:.1} / {:.1} | {:.2} |", e.name, cpu[0], cpu[1], worst / 10.0).unwrap();
+            writeln!(ct, "| {} | {tempo:.2} | {:.1} / {:.1} | {:.2} | {:.1} / {:.1} | {:.2} |", e.name, cpu[0], cpu[1], worst / 10.0, scpu[0], scpu[1], sworst / 10.0).unwrap();
             eprintln!("done {} @ {tempo}", e.name);
         }
     }
@@ -349,7 +374,7 @@ mod tests {
     fn ratio_one_preserves_length_for_every_engine() {
         let x = synth::chord(2.0);
         for e in engines::all() {
-            let y = (e.run)(&x, 1.0);
+            let y = (e.run)(&x, 1, 1.0);
             let d = (y.len() as f64 - x.len() as f64).abs() / x.len() as f64;
             assert!(d < 0.005, "{}: {} vs {}", e.name, y.len(), x.len());
             assert!(y.iter().all(|v| v.is_finite()), "{} non-finite", e.name);
@@ -357,10 +382,27 @@ mod tests {
     }
 
     #[test]
+    fn stereo_runs_and_keeps_channels_distinct_for_every_engine() {
+        let m = synth::chord(2.0);
+        let st = make_stereo(&m);
+        for e in engines::all() {
+            let y = (e.run)(&st, 2, 1.08);
+            let frames = y.len() / 2;
+            let want = m.len() as f64 / 1.08;
+            assert!((frames as f64 - want).abs() / want < 0.005, "{}", e.name);
+            assert!(y.iter().all(|v| v.is_finite()), "{}", e.name);
+            let (l, r): (Vec<f32>, Vec<f32>) = (y.iter().step_by(2).copied().collect(), y.iter().skip(1).step_by(2).copied().collect());
+            let e_l: f64 = l.iter().map(|v| (*v as f64).powi(2)).sum();
+            let e_r: f64 = r.iter().map(|v| (*v as f64).powi(2)).sum();
+            assert!(e_l > 0.0 && e_r > 0.0, "{} silent channel", e.name);
+        }
+    }
+
+    #[test]
     fn ratio_changes_length_for_every_engine() {
         let x = synth::chord(2.0);
         for e in engines::all() {
-            let y = (e.run)(&x, 1.08);
+            let y = (e.run)(&x, 1, 1.08);
             let want = x.len() as f64 / 1.08;
             assert!((y.len() as f64 - want).abs() / want < 0.005, "{}", e.name);
         }
@@ -372,7 +414,7 @@ pub fn debug_pitch() {
     let chord = synth::chord(8.0);
     for e in engines::all() {
         for &t in &[0.92f64, 1.08] {
-            let y = (e.run)(&chord, t);
+            let y = (e.run)(&chord, 1, t);
             let v: Vec<String> = synth::CHORD_HZ
                 .iter()
                 .map(|&f| format!("{:.2}->{:.2}({:+.1}c)", peak_hz(&chord, f), peak_hz(&y, f), cents(peak_hz(&y, f), peak_hz(&chord, f))))
@@ -386,7 +428,7 @@ pub fn debug_pitch() {
 pub fn debug_sine(name: &str, tempo: f64) {
     let e = engines::all().into_iter().find(|e| e.name == name).unwrap();
     let x = synth::sine(440.0, 8.0);
-    let y = (e.run)(&x, tempo);
+    let y = (e.run)(&x, 1, tempo);
     println!("peak {:.3} centroid {:.3}", peak_hz(&y, 440.0), centroid_hz(&y, 440.0));
     // amplitude over time of the output (200 ms blocks)
     for c in y.chunks(8820).take(10) {

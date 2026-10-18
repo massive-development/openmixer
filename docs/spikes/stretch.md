@@ -4,12 +4,24 @@ THROWAWAY spike code in `spikes/stretch/` (own `[workspace]`; not built by the r
 
 ## Verdict
 
-**Provisional, not final: the numbers cannot close this spike; ears are required.**
+**Provisional, not final: the numbers narrow the field but cannot close this spike; the user's A/B listen on real music is still required.** The design bar is judged on STEREO decks (measured, decorrelated L/R, whole-file render, wall-clock, +-20% noise on a shared WSL2 VM):
 
-- No pure-Rust candidate is a clean pass on every measured axis. `wsola` (pure Rust, MIT) passes every numeric bar here (pitch < 1 cent, transients the closest to Rubber Band, ~3.6% of a core mono) but it is the simplest algorithm, is brand new, and my test material is far easier than real dense music, so its numbers say little about how it sounds on a full mix. The `timestretch` crate (pure Rust, MIT, the most DJ-targeted) keeps pitch only in its `WideKeylock` profile and smears transients about 5x (12-15 ms attack vs 2.2 ms), failing the objective transient comparison.
-- Best measured all-round: **Signalsmith Stretch via `signalsmith-stretch` (MIT, C++ compiled with `cc`, so FFI, not pure Rust)**: pitch < 1 cent, mid transients, and by far the lowest CPU (~0.6% of a core mono). Rubber Band R3 (finer) is also clean on pitch with the highest CPU (~2.8% mono, so ~5.5% stereo by simple doubling, unmeasured, right at the 5% line).
-- Recommendation for Task 9, to be confirmed by the user's A/B listen: if `wsola` sounds acceptable on real music, take it (pure Rust, ADR preference). If not, take **Signalsmith via a thin FFI crate** before Rubber Band: it is MIT, so it does **not** need the GPL-2.0-or-later entry in `deny.toml`, and it measured best on CPU. Choosing Rubber Band FFI instead means enabling the `GPL-2.0-or-later` line in `deny.toml` (a Task 9 decision, not made here); use its R3 engine (`ENGINE_FINER`), not the defaults, see the finding below.
-- Design bar status: pitch error < 5 cents: wsola, timestretch-wide, signalsmith, rubberband-rt-r3 pass; timestretch-keylock/batch fail at 0.92 (5.6 cents on a pure sine). One deck < 5% of a core: all pass in mono; see stereo caveat.
+| Candidate | Pitch < 5 cents | Transients (attack rise vs 2.2 ms orig) | Stereo CPU per deck (< 5% of a core) | Overall on numbers |
+|---|---|---|---|---|
+| `wsola` (pure Rust, MIT) | pass (< 1 cent) | good (2.6 / 4.6 ms) | **FAIL: 5.3% at 1.08, 6.2% at 0.92** (mono 3.1-3.8%) | fails the CPU bar as shipped |
+| `timestretch` `WideKeylock` (pure Rust, MIT) | pass (0 cents) | **poor (12-15 ms)** | **FAIL: 5.0% at 0.92, 5.7% at 1.08** | fails transients and CPU |
+| `timestretch` `Keylock` / batch (pure Rust) | **fail at 0.92 (5.6 cents sine)** | poor (13-15 ms) | pass (2.1-3.1%) | fails pitch and transients |
+| `signalsmith-stretch` (MIT, C++ via `cc`) | pass (< 1 cent) | fair (3.7-7.2 ms) | pass (0.8-1.0%) | passes every measured bar |
+| Rubber Band 4.0.0 R3 (`ENGINE_FINER`, GPL-2.0-or-later) | pass (<= 3.4 cents strict, 0 on sine) | fair (5.4-7.1 ms) | **marginal / FAIL: 5.6% at 0.92, 4.9% at 1.08** | borderline on CPU |
+| Rubber Band 4.0.0 R2 (default options) | **anomalous: ~20 cents on a steady sine** | crisp (2.7-3.2 ms) but unreliable | pass (1.5-2.3%) | not usable as evidence |
+
+Consequences, stated for Task 9:
+
+1. **No pure-Rust candidate passes the design bar as measured.** The only pure-Rust options that keep pitch (`wsola`, `timestretch-wide`) exceed 5% of a core per stereo deck here; the one that is cheap (`timestretch` Keylock) fails pitch. `wsola`'s crate is an unoptimised brute-force search, so a cheaper config (smaller search range, larger hop) or our own optimisation might bring it under 5%, but that is untested, and a 4-deck mixer needs margin well under 5% each. By the design's own rule ("pure Rust is accepted only if ... one deck fits in a small share of one core") pure Rust is not yet accepted. Whether `wsola` sounds good enough to be worth optimising is a question for ears.
+2. **Licence is not an argument against Rubber Band.** The design states Rubber Band's GPL-2.0-or-later is AGPLv3-compatible, already used in the C++ build, and licence-acceptable. Needing the `GPL-2.0-or-later` line in `deny.toml` is therefore a one-line change, not a reason to prefer Signalsmith. (That change remains a Task 9 decision.)
+3. **Signalsmith is not pure Rust.** `signalsmith-stretch` is C++ compiled by `cc`, i.e. FFI. Picking it contradicts the design's pure-Rust-first stance and would make FFI the default path rather than the fallback, with a C++ toolchain requirement on every OS (MSVC on Windows, Xcode tools on macOS; the Rubber Band route has the same C++ build cost, plus `bindgen`/libclang through `rubberband-sys`). I only built it on Linux here; the Windows/macOS build cost is unmeasured.
+4. **Only Rubber Band R3 is a trustworthy Rubber Band reference.** R2's ~20-cent drift on steady tones (see findings) makes every R2 comparison, including its crisp transient numbers, unreliable. R3 is clean on pitch, but at 4.9-5.6% stereo CPU it sits on the bar.
+5. **Measured-best all-round is Signalsmith** (cheapest, passes pitch/CPU, fair transients), with the FFI and C++ build caveats of point 3. Whether to take an FFI default (Signalsmith or Rubber Band R3) versus invest in making a pure-Rust stretcher fast enough is the Task 9 decision; I do not make it. I have not heard any output.
 
 ## Candidates considered
 
@@ -33,7 +45,7 @@ Only the first four rows were built and measured. "Not evaluated" means metadata
 
 ## Method
 
-Harness: `spikes/stretch/` (`cargo build --release`; run from that directory). Commands: `stretch <in.wav> <ratio> <out.wav> [engine]`, `stretch gen`, `stretch eval`, `stretch engines`. `ratio` is the DJ tempo factor: `1.08` = 8% faster, output length = input / ratio, pitch preserved. `hound` for WAV (16-bit mono out). Engines (mono, 44.1 kHz, single thread):
+Harness: `spikes/stretch/` (`cargo build --release`; run from that directory). Commands: `stretch <in.wav> <ratio> <out.wav> <engine>` (engine required; mono or stereo WAV), `stretch gen`, `stretch eval`, `stretch engines`. `ratio` is the DJ tempo factor: `1.08` = 8% faster, output length = input / ratio, pitch preserved. `hound` for WAV (16-bit mono out). Engines (44.1 kHz, single thread; quality metrics run mono, CPU also run stereo):
 
 - `wsola`: wsola 0.2.0 default config, streamed in 512-sample chunks.
 - `timestretch-keylock` / `timestretch-wide`: the real-time `Engine` with `EngineProfile::Keylock` / `WideKeylock`, 512-frame callbacks, **no pre-analysis supplied** (online transient detection).
@@ -49,9 +61,22 @@ Metrics (unit-tested on known signals: `cargo test --release`; silent):
 - **Transient smear.** (a) Onset-envelope correlation: RMS envelope (1.5 ms window, 0.5 ms hop), sqrt-compressed, half-wave-rectified difference, 5 ms smoothed; the original's onset envelope is time-warped by 1/ratio and compared with the output's by normalised cross-correlation, maximised over +-20 ms lag (lag reported separately; it is latency, not smear). 1.0 = identical. (b) Attack rise time: mean over detected drum onsets of the time from the RMS envelope falling below 10% of the local peak to the peak; original = 2.2 ms. Rise time is the more sensitive smear indicator; NCC is dominated by the loud kicks.
 - **CPU.** `std::time::Instant` wall-clock for the whole 8 s mono render (includes engine construction), 1 warm-up + 5 timed runs, median, divided by the 8 s of audio. Reported as ms per audio-second; ms / 10 = % of one core. Release build on this WSL2 box (12 logical CPUs, not otherwise idle-controlled), so +-20% noise is plausible. Peak memory: not measured.
 
+### Deviations from the brief
+
+- **Pitch estimator:** the brief said autocorrelation; I used an FFT peak (parabolic interpolation) plus a power-weighted centroid, because the chord is polyphonic (autocorrelation does not give three fundamentals).
+- **CPU timing:** the brief said `criterion`; I used `std::time::Instant` (1 warm-up + 5 runs, median) over whole-file renders.
+- **Channel coverage:** the first pass was mono only; stereo CPU was added in the review-fix round. Pitch and transient metrics are still mono-only (stereo outputs are only tested for length, finiteness and non-silent channels).
+- **Rubber Band** is vendored through `rubberband-sys` (the brief allowed an existing -sys crate) rather than from `_deps/`, which has no `rubberband-src`.
+- Peak memory (optional) not measured.
+
+### Metric limits
+
+- Pitch: one 65536-sample (1.49 s) window at the centre of the output, so it misses pitch drift or glitches elsewhere in the file; steady synthetic tones only.
+- Smear: the rise-time number is a mean over detected onsets with a +-30 ms peak pick around each, so one wrong pick or a mix of good and badly smeared hits is hidden, and neighbouring events within 30 ms can contaminate it; it is noisy at the 0.5 ms envelope resolution, and NCC is dominated by the loud kicks.
+
 ## Results
 
-All numbers below are output of `cargo build --release && ./target/release/stretch-spike eval` (also saved to `spikes/stretch/out/results.md`, not committed). Design bar: pitch < 5 cents; one deck < 5% of a core.
+All numbers below are output of `cargo build --release && ./target/release/stretch-spike eval` (also saved to `spikes/stretch/out/results.md`, not committed). Pitch and transient tables are mono; the CPU table has mono and STEREO (L = material, R = 0.9x copy delayed 7.5 ms, so decorrelated) columns. Design bar: pitch < 5 cents; one deck < 5% of a core, **judged on the stereo column**.
 
 #### Pitch
 
@@ -105,28 +130,28 @@ All numbers below are output of `cargo build --release && ./target/release/stret
 
 #### CPU
 
-| engine | tempo | ms CPU per audio-second (chord / drums) | % of one core (worst, mono) |
-|---|---|---|---|
-| wsola | 0.92 | 35.9 / 35.5 | 3.59 |
-| wsola | 1.08 | 29.6 / 30.2 | 3.02 |
-| timestretch-keylock | 0.92 | 16.9 / 17.0 | 1.70 |
-| timestretch-keylock | 1.08 | 20.8 / 21.1 | 2.11 |
-| timestretch-wide | 0.92 | 24.8 / 18.3 | 2.48 |
-| timestretch-wide | 1.08 | 29.8 / 23.2 | 2.98 |
-| timestretch-batch | 0.92 | 25.8 / 24.6 | 2.58 |
-| timestretch-batch | 1.08 | 29.7 / 28.8 | 2.97 |
-| signalsmith | 0.92 | 5.7 / 5.6 | 0.57 |
-| signalsmith | 1.08 | 4.9 / 5.0 | 0.50 |
-| rubberband-rt | 0.92 | 12.1 / 9.4 | 1.21 |
-| rubberband-rt | 1.08 | 8.0 / 6.7 | 0.80 |
-| rubberband-rt-r3 | 0.92 | 27.7 / 26.9 | 2.77 |
-| rubberband-rt-r3 | 1.08 | 25.2 / 24.2 | 2.52 |
-| rubberband-offline | 0.92 | 10.2 / 8.3 | 1.02 |
-| rubberband-offline | 1.08 | 12.8 / 10.7 | 1.28 |
-| rubberband-rt-smoothing | 0.92 | 15.1 / 12.5 | 1.51 |
-| rubberband-rt-smoothing | 1.08 | 9.9 / 8.8 | 0.99 |
-| rubberband-rt-mixed | 0.92 | 14.9 / 12.8 | 1.49 |
-| rubberband-rt-mixed | 1.08 | 10.2 / 8.9 | 1.02 |
+| engine | tempo | mono ms CPU per audio-s (chord / drums) | mono % core | STEREO ms CPU per audio-s (chord / drums) | STEREO % core per deck (worst) |
+|---|---|---|---|---|---|
+| wsola | 0.92 | 38.0 / 37.8 | 3.80 | 61.0 / 61.9 | 6.19 |
+| wsola | 1.08 | 31.3 / 30.8 | 3.13 | 53.1 / 50.2 | 5.31 |
+| timestretch-keylock | 0.92 | 16.9 / 16.7 | 1.69 | 20.8 / 19.7 | 2.08 |
+| timestretch-keylock | 1.08 | 21.4 / 21.2 | 2.14 | 22.1 / 23.0 | 2.30 |
+| timestretch-wide | 0.92 | 26.2 / 18.2 | 2.62 | 49.8 / 35.7 | 4.98 |
+| timestretch-wide | 1.08 | 32.2 / 24.4 | 3.22 | 57.1 / 40.4 | 5.71 |
+| timestretch-batch | 0.92 | 27.1 / 25.3 | 2.71 | 26.7 / 28.9 | 2.89 |
+| timestretch-batch | 1.08 | 29.6 / 30.1 | 3.01 | 27.4 / 31.3 | 3.13 |
+| signalsmith | 0.92 | 5.9 / 5.9 | 0.59 | 9.8 / 9.6 | 0.98 |
+| signalsmith | 1.08 | 4.9 / 4.8 | 0.49 | 7.7 / 8.2 | 0.82 |
+| rubberband-rt | 0.92 | 11.4 / 9.0 | 1.14 | 22.9 / 19.8 | 2.29 |
+| rubberband-rt | 1.08 | 8.0 / 6.4 | 0.80 | 15.3 / 12.7 | 1.53 |
+| rubberband-rt-r3 | 0.92 | 27.7 / 26.8 | 2.77 | 56.0 / 54.3 | 5.60 |
+| rubberband-rt-r3 | 1.08 | 25.4 / 23.5 | 2.54 | 48.6 / 46.8 | 4.86 |
+| rubberband-offline | 0.92 | 10.7 / 8.8 | 1.07 | 18.9 / 14.9 | 1.89 |
+| rubberband-offline | 1.08 | 12.4 / 10.3 | 1.24 | 23.0 / 19.1 | 2.30 |
+| rubberband-rt-smoothing | 0.92 | 14.2 / 12.3 | 1.42 | 30.2 / 26.7 | 3.02 |
+| rubberband-rt-smoothing | 1.08 | 9.8 / 8.4 | 0.98 | 19.6 / 16.9 | 1.96 |
+| rubberband-rt-mixed | 0.92 | 15.0 / 12.9 | 1.50 | 29.1 / 26.5 | 2.91 |
+| rubberband-rt-mixed | 1.08 | 10.1 / 9.4 | 1.01 | 21.2 / 17.4 | 2.12 |
 
 
 ## What the numbers say
@@ -134,17 +159,17 @@ All numbers below are output of `cargo build --release && ./target/release/stret
 - **Pitch.** `wsola`, `timestretch-wide` and `signalsmith` are within ~1 cent on both estimators. `rubberband-rt-r3` is within 3.4 cents on the stricter chord peak estimator and exact on the sine. `timestretch-keylock` and `-batch` read 5.6 cents on the sine at 0.92 (fail < 5) and 12-27 cents on the strict chord-peak estimator, 2.6-5.0 cents on the centroid estimator.
 - **Finding, Rubber Band defaults on steady synthetic tones.** Rubber Band 4.0.0 with default options (R2 engine, crisp transients) shifts a pure 440 Hz sine by 20-23 cents (a 434 Hz zero-crossing count confirms it is a real pitch change in the output, not a metric artifact). With `TRANSIENTS_SMOOTH`, `WINDOW_LONG` or `SMOOTHING_ON` the offline sine came out exact in a one-off option sweep (`stretch debug-rb`), so I believe the transient phase-reset logic fires on the perfectly steady tone, but **I did not root-cause it**, and I cannot rule out a build-flag issue in the vendored `rubberband-sys` single-file build (R3 on the same build is exact). Treat the R2 pitch numbers as "these defaults on perfectly steady sines", not as Rubber Band's behaviour on music. The `smoothing`/`mixed` variants were chosen only after seeing results, so their pitch numbers are tuned on this material and should not be over-trusted (and `rubberband-rt-mixed` costs transient quality: 14-17 ms rise).
 - **Transients.** NCC alone barely separates engines (0.83-0.93). By attack rise time: Rubber Band R2 defaults/offline (2.7-3.2 ms), `wsola` (2.6 / 4.6 ms) and `rubberband-rt-smoothing` (3.7-4.6) are crisp; `signalsmith` 3.7-7.2; R3 5.4-7.1; every `timestretch` profile 12-15 ms (smeared; I did not supply its pre-analysis artifact for the real-time engine, which the crate says steers splices around onsets, so its real-time number may be pessimistic; the batch path does compute it and was no better). `wsola`'s +11/+12 ms best lag is a fixed output delay (about one hop), not smear.
-- **CPU.** Everything is far under 5% of a core for mono: signalsmith 0.5-0.7%, rubberband R2 0.8-1.5%, timestretch 1.7-3.1%, wsola 3.0-3.6%, rubberband R3 2.5-2.8%. A real deck is stereo; I measured mono only, so doubling gives wsola ~7% and R3 ~5.5%, over the bar, signalsmith ~1.2%. (Stereo cost for each library may not be exactly 2x; not measured.) The `wsola` crate is an unoptimised brute-force similarity search and could likely be sped up, but that is untested.
+- **CPU (stereo is the judged number).** Stereo per deck: signalsmith 0.8-1.0%, timestretch Keylock/batch 2.1-3.1%, Rubber Band R2 variants 1.5-3.0%, Rubber Band R3 4.9-5.6%, timestretch-wide 5.0-5.7%, wsola 5.3-6.2%. So wsola, timestretch-wide and R3 are at or over the 5% line in stereo; only signalsmith and the cheap (but pitch- or transient-failing) variants are clearly under. Stereo roughly doubled the cost of wsola, Rubber Band, signalsmith and timestretch-wide, but barely changed `timestretch` Keylock/batch (cause not investigated). Each figure is the median of 5 wall-clock runs, +-20% plausible. Single-render throughput only, not callback worst case.
 
 ## User listening checklist
 
 Nothing below was heard by me. Play the files in `spikes/stretch/out/` (regenerate with `cd spikes/stretch && cargo build --release && ./target/release/stretch-spike eval`, ~35 s). Files are 16-bit mono 44.1 kHz, peak <= 0.5. Originals: `chord_orig.wav`, `drums_orig.wav`. Stretched: `<material>_r<ratio>_<engine>.wav` for material in {`chord`, `drums`}, ratio in {`0.92`, `1.08`}, engine in {`wsola`, `timestretch-keylock`, `timestretch-wide`, `timestretch-batch`, `signalsmith`, `rubberband-rt`, `rubberband-rt-r3`, `rubberband-offline`, `rubberband-rt-smoothing`, `rubberband-rt-mixed`}, e.g. `drums_r1.08_wsola.wav`, `chord_r0.92_rubberband-rt-r3.wav`. 40 files plus 2 originals plus `results.md`.
 
-Listen for, on `drums_*`: kick/snare/click attacks softened, pre-echo before hits, flams/doubled hits; on `chord_*`: warble/tremolo, phasiness ("underwater"), pitch sounding flat/sharp vs original, repeated-grain buzz. Suggested A/B order: `drums_r1.08` and `chord_r1.08` for `wsola` vs `signalsmith` vs `rubberband-rt-r3` vs `timestretch-wide`. **Important:** these are synthetic sines and drum synths; the real decision needs one or two real tracks run through `stretch <in.wav> <ratio> <out.wav> <engine>` (mono 44.1 kHz WAV input; use your own music, none is in the repo).
+Listen for, on `drums_*`: kick/snare/click attacks softened, pre-echo before hits, flams/doubled hits; on `chord_*`: warble/tremolo, phasiness ("underwater"), pitch sounding flat/sharp vs original, repeated-grain buzz. Suggested A/B order: `drums_r1.08` and `chord_r1.08` for `wsola` vs `signalsmith` vs `rubberband-rt-r3` vs `timestretch-wide`. **Important:** these are synthetic sines and drum synths; the real decision needs one or two real tracks run through `stretch <in.wav> <ratio> <out.wav> <engine>` (44.1 kHz mono or stereo WAV input; use your own music, none is in the repo).
 
 ## Caveats (honest)
 
-- Synthetic mono material only; real polyphonic, vocal, and dense mixes are where WSOLA-class methods usually fall down and are untested. No stereo, no formant, no variable-tempo (live nudge/ramps) test; real-time retargeting behaviour of each library was not exercised.
+- Synthetic mono material only; real polyphonic, vocal, and dense mixes are where WSOLA-class methods usually fall down and are untested. No stereo pitch/transient metrics, no formant, no variable-tempo (live nudge/ramps) test; real-time retargeting behaviour of each library was not exercised.
 - The real-time claims are about throughput (compute per second of audio), not callback-deadline behaviour; no per-callback worst-case timing, no allocation check, no latency measurement beyond noting `wsola`'s ~11 ms offset.
 - The adapters pad/truncate every output to exactly `round(n / ratio)` samples, so the harness length tests (`cargo test --release`) are weak for the length of a given engine; they do prove no engine panics or emits NaN at ratio 1.0 and 1.08.
 - Engine configs were mostly defaults; only Rubber Band got an option sweep. Other engines may have untried settings (`wsola` hop/search, `timestretch` profiles with pre-analysis, Signalsmith presets).
