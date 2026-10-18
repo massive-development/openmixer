@@ -5,6 +5,7 @@
 
 use super::factory::FxFactory;
 use super::unit::{FxUnit, FxUnitControl};
+use crate::grid::BeatGrid;
 use crate::ProcessStage;
 use om_core::ParameterTarget;
 
@@ -39,6 +40,12 @@ impl FxRack {
     pub fn set_tempo_from_grid_bpm(&self, grid_bpm: f64, playback_rate: f64) {
         self.control
             .set_tempo_from_grid_bpm(grid_bpm, playback_rate);
+    }
+
+    /// Follow a beat grid: its tempo times `playback_rate`. Control thread.
+    pub fn set_tempo_from_grid(&self, grid: &dyn BeatGrid, playback_rate: f64) {
+        self.control
+            .set_tempo_from_grid_bpm(grid.bpm(), playback_rate);
     }
 
     pub fn num_units(&self) -> usize {
@@ -87,6 +94,11 @@ impl FxRackControl {
     /// See [`FxRack::set_tempo_from_grid_bpm`].
     pub fn set_tempo_from_grid_bpm(&self, grid_bpm: f64, playback_rate: f64) {
         self.set_tempo(grid_bpm * playback_rate);
+    }
+
+    /// See [`FxRack::set_tempo_from_grid`].
+    pub fn set_tempo_from_grid(&self, grid: &dyn BeatGrid, playback_rate: f64) {
+        self.set_tempo(grid.bpm() * playback_rate);
     }
 
     pub fn num_units(&self) -> usize {
@@ -149,6 +161,25 @@ impl ProcessStage for FxRack {
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         for unit in &mut self.units {
             unit.process(left, right);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grid::FixedTempoGrid;
+
+    /// Port of FxTest `FxRack.TempoFromIdAndBeatGrid`.
+    #[test]
+    fn tempo_from_id_and_beat_grid() {
+        let rack = FxRack::default();
+        assert!(rack.control().set_parameter("bpm", 128.0));
+        assert!((rack.unit(3).unwrap().tempo() - 128.0).abs() < 1e-9);
+        let grid = FixedTempoGrid::new(100.0, 48_000.0, 0);
+        rack.control().set_tempo_from_grid(&grid, 1.08);
+        for i in 0..rack.num_units() {
+            assert!((rack.unit(i).unwrap().tempo() - 108.0).abs() < 1e-9);
         }
     }
 }
