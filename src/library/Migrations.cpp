@@ -74,6 +74,21 @@ CREATE INDEX idx_entries_playlist ON playlist_entries (playlist_id, position);
 CREATE INDEX idx_entries_track ON playlist_entries (track_id);
 )sql";
 
+constexpr const char* kSchemaV2 = R"sql(
+CREATE TABLE track_files (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks (id) ON DELETE CASCADE,
+  mtime_ms INTEGER NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  missing INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_track_files_missing ON track_files (missing);
+
+CREATE TABLE watch_folders (
+  id INTEGER PRIMARY KEY,
+  path TEXT NOT NULL UNIQUE
+);
+)sql";
+
 bool isStrictlyIncreasing (const std::vector<Migration>& list)
 {
     int previous = 0;
@@ -102,7 +117,10 @@ juce::Result apply (Database& db, const Migration& m)
 
 const std::vector<Migration>& coreMigrations()
 {
-    static const std::vector<Migration> list { { 1, "tracks, cues, loops, playlists", kSchemaV1 } };
+    static const std::vector<Migration> list {
+        { 1, "tracks, cues, loops, playlists", kSchemaV1 },
+        { 2, "track file state, watch folders", kSchemaV2 },
+    };
     return list;
 }
 

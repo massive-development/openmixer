@@ -320,31 +320,44 @@ target_link_libraries(openmixer_analysis
 )
 
 # =============================================================================
-# Library (SQLite schema + DAOs: tracks, cues, loops, playlists). Depends on core only.
+# Library (SQLite schema + DAOs, metadata ingest, watch folders). Depends on core; analysis for the
+# shared content-hash helper.
 # =============================================================================
 
 set(OPENMIXER_LIBRARY_SOURCES
     src/library/CueDao.cpp
+    src/library/Ingestor.cpp
+    src/library/JuceMetadataReader.cpp
     src/library/Database.cpp
     src/library/Library.cpp
+    src/library/MetadataReader.cpp
     src/library/Migrations.cpp
     src/library/OrderedList.cpp
     src/library/PlaylistDao.cpp
     src/library/Statement.cpp
     src/library/TrackDao.cpp
+    src/library/TrackFileDao.cpp
+    src/library/WatchFolderDao.cpp
+    src/library/WatchFolders.cpp
 )
 
 add_library(openmixer_library STATIC
     ${OPENMIXER_LIBRARY_SOURCES}
     src/library/CueDao.h
     src/library/Database.h
+    src/library/Ingestor.h
+    src/library/JuceMetadataReader.h
     src/library/Library.h
+    src/library/MetadataReader.h
     src/library/Migrations.h
     src/library/OrderedList.h
     src/library/PlaylistDao.h
     src/library/Statement.h
     src/library/TrackDao.h
+    src/library/TrackFileDao.h
     src/library/TrackRecord.h
+    src/library/WatchFolderDao.h
+    src/library/WatchFolders.h
 )
 
 target_include_directories(openmixer_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -352,6 +365,8 @@ openmixer_enable_warnings(${OPENMIXER_LIBRARY_SOURCES})
 target_link_libraries(openmixer_library
     PUBLIC
         openmixer_core
+        openmixer_analysis
+        juce::juce_audio_formats
         juce::juce_core
         juce::juce_recommended_config_flags
     PRIVATE
@@ -536,6 +551,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/StemsTest.cpp
     tests/unit/LibraryDatabaseTest.cpp
     tests/unit/LibraryDaoTest.cpp
+    tests/unit/LibraryIngestTest.cpp
+    tests/unit/LibraryWatchFoldersTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)

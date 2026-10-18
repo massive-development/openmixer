@@ -4,7 +4,7 @@ namespace openmixer::library
 {
 
 Library::Library (OpenKey, std::unique_ptr<Database> database) noexcept
-    : db (std::move (database)), trackDao (*db), cueDao (*db), playlistDao (*db)
+    : db (std::move (database)), trackDao (*db), cueDao (*db), playlistDao (*db), fileDao (*db), folderDao (*db)
 {
 }
 
