@@ -65,7 +65,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Soak mix tool carried over from the frozen baseline (`cpp-final`)
   - Full 10-minute run remains the Wave 2 gate (Todo 13)
 
-- [ ] **Todo 9:** Key-lock time-stretch via Rubber Band
+- [x] **Todo 9:** Key-lock time-stretch via Rubber Band
   - Realtime mode
   - Golden audio tests
   - Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`). Enable `GPL-2.0-or-later` in `deny.toml` when this lands
@@ -205,4 +205,4 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ---
 
-**Next Work:** Wave 2 Todos 7, 8, 10, 32/33 (MIDI), 26a (debug panel), then Todo 9 (`om-stretch`), Linux first.
+**Next Work:** Wave 2 Todos 7, 8, 10, 32/33 (MIDI), 26a (debug panel), Linux first.
