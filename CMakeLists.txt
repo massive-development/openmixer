@@ -503,15 +503,43 @@ add_library(openmixer_ui STATIC
     src/ui/ThemeRegistry.h
     src/ui/ThemeTokens.h
     src/ui/ValueFormat.h
+    src/ui/DeckBinding.h
+    src/ui/DeckWidget.cpp
+    src/ui/DeckWidget.h
+    src/ui/HotcuePads.cpp
+    src/ui/HotcuePads.h
+    src/ui/LoopControls.cpp
+    src/ui/LoopControls.h
+    src/ui/MainLayout.cpp
+    src/ui/MainLayout.h
+    src/ui/MainView.cpp
+    src/ui/MainView.h
+    src/ui/OverviewWaveform.cpp
+    src/ui/OverviewWaveform.h
+    src/ui/PitchFader.cpp
+    src/ui/PitchFader.h
+    src/ui/TrackHeader.cpp
+    src/ui/TrackHeader.h
+    src/ui/TransportPanel.cpp
+    src/ui/TransportPanel.h
+    src/ui/WaveformGeometry.cpp
+    src/ui/WaveformGeometry.h
+    src/ui/WaveformPainter.cpp
+    src/ui/WaveformPainter.h
+    src/ui/ZoomWaveform.cpp
+    src/ui/ZoomWaveform.h
 )
 
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
-    src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp)
+    src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp
+    src/ui/DeckWidget.cpp src/ui/HotcuePads.cpp src/ui/LoopControls.cpp src/ui/MainLayout.cpp src/ui/MainView.cpp src/ui/OverviewWaveform.cpp src/ui/PitchFader.cpp src/ui/TrackHeader.cpp src/ui/TransportPanel.cpp
+    src/ui/WaveformGeometry.cpp src/ui/WaveformPainter.cpp src/ui/ZoomWaveform.cpp)
 
 target_link_libraries(openmixer_ui PUBLIC
     openmixer_engine
+    openmixer_analysis
     juce::juce_gui_basics
     juce::juce_events
     juce::juce_recommended_config_flags
@@ -610,6 +638,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/ThemeJsonTest.cpp
     tests/unit/ThemeRegistryTest.cpp
     tests/unit/GlassLookAndFeelTest.cpp
+    tests/unit/DeckWidgetTest.cpp
+    tests/unit/MainLayoutTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp

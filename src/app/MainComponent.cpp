@@ -2,7 +2,7 @@
 
 namespace
 {
-    constexpr int kWindowWidth = 900, kWindowHeight = 640;
+    constexpr int kWindowWidth = 1280, kWindowHeight = 800;
     constexpr int kMaxOutputs = 8;
     constexpr int kControlTickHz = 30;
 
@@ -15,12 +15,42 @@ namespace
 
 MainComponent::MainComponent()
 {
-    addAndMakeVisible (panel);
+    setUpMidi();   // the router must hold its targets before the view is built
+    buildContent();
     setSize (kWindowWidth, kWindowHeight);
-    setUpMidi();
     setAudioChannels (0, 2);
     lastTickMs = juce::Time::getMillisecondCounterHiRes();
     startTimerHz (kControlTickHz);
+}
+
+// OPENMIXER_LAYOUT=<file> replaces the default arrangement with a LayoutSpec JSON file.
+void MainComponent::buildContent()
+{
+    if (juce::SystemStats::getEnvironmentVariable ("OPENMIXER_DEBUG_PANEL", {}) == "1")
+    {
+        debugPanel = std::make_unique<openmixer::ui::DebugPanel> (engine);
+        addAndMakeVisible (*debugPanel);
+        return;
+    }
+    auto layout = openmixer::ui::LayoutSpec::standard (engine.getNumDecks());
+    const juce::File custom (juce::SystemStats::getEnvironmentVariable ("OPENMIXER_LAYOUT", {}));
+    if (custom.existsAsFile())
+    {
+        if (const auto parsed = openmixer::ui::LayoutSpec::fromJson (custom.loadFileAsString()))
+            layout = *parsed;
+        else
+            juce::Logger::writeToLog ("OPENMIXER_LAYOUT: invalid layout, using the default");
+    }
+    mainView = std::make_unique<openmixer::ui::MainView> (engine, router, layout);
+    addAndMakeVisible (*mainView);
+}
+
+void MainComponent::setBackdropOpacity (float opacity)
+{
+    if (mainView != nullptr)
+        mainView->setBackdropOpacity (opacity);
+    if (debugPanel != nullptr)
+        debugPanel->setBackdropOpacity (opacity);
 }
 
 void MainComponent::timerCallback()
@@ -71,5 +101,8 @@ void MainComponent::releaseResources() {}
 
 void MainComponent::resized()
 {
-    panel.setBounds (getLocalBounds());
+    if (mainView != nullptr)
+        mainView->setBounds (getLocalBounds());
+    if (debugPanel != nullptr)
+        debugPanel->setBounds (getLocalBounds());
 }

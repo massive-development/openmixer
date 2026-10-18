@@ -52,14 +52,19 @@ bool DeckControl::setParameter (const juce::String& id, double value)
         setSlip (value >= 0.5);
         return true;
     }
+    if (id == "quantize")
+    {
+        setQuantize (value >= 0.5);
+        return true;
+    }
     return deck.setParameter (id, value);
 }
 
 bool DeckControl::setQuantizedLoop (double lengthBeats)
 {
     const auto grid = sync.getGrid (index);
-    // Snap the start to the loop's own length, but never coarser than a beat.
-    const auto loop = makeQuantizedLoop (grid.get(), deck.getPositionFrames(), lengthBeats, std::min (lengthBeats, 1.0));
+    // Snap the start to the loop's own length, but never coarser than a beat; division 0 = no snapping.
+    const auto loop = makeQuantizedLoop (grid.get(), deck.getPositionFrames(), lengthBeats, isQuantize() ? std::min (lengthBeats, 1.0) : 0.0);
     return loop.valid() && deck.setLoop (loop);
 }
 

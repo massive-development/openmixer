@@ -215,3 +215,15 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** analysis workers must not touch the Library's sqlite connection, so their listener only copies the final job snapshot into a mutex-guarded inbox; the thread that owns the connection calls `pump()` to apply results, update rows, fire the observer and submit more. At most `maxInFlight` jobs sit in the service, so priority and order stay editable (the service itself is plain FIFO).
 - **Reuse when:** a persisted queue feeds `AnalysisService` or another worker pool and results must land in the database (stem precompute, export).
 - **Notes:** the inbox is a `shared_ptr` captured by listeners so late callbacks after destruction are safe; progress is read live from the job on `list()` rather than written to the DB; running rows are reset to queued on start. Library depends on analysis (same tier) for this.
+
+### Data-driven main layout + named slots (extension point)
+- **Where:** `src/ui/MainLayout.{h,cpp}` (pure geometry + JSON), `MainView.{h,cpp}`.
+- **Why:** the window is `LayoutSpec` rows of cells, each a deck index or a named slot; `computeLayout` turns it into rectangles with no Components, so more decks or a different arrangement is a data change (`OPENMIXER_LAYOUT=<file.json>`).
+- **Reuse when:** adding a panel (mixer, library, a plugin's view): name a slot in the spec and call `MainView::setSlotContent (name, component)`; empty slots show a `SlotPlaceholder`.
+- **Notes:** decks the engine lacks are skipped. Slot content is owned by the view.
+
+### Widgets write through router ids only (DeckBinding)
+- **Where:** `src/ui/DeckBinding.h` and the deck components (`TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`, `OverviewWaveform`).
+- **Why:** every control calls `binding.send ("<id>", value)` which becomes `deck.<N>.<id>` on the app's `ParameterRouter`, the same path MIDI maps use; reads (position, loop, hotcues, sync state) are the engine's existing atomic getters on the message thread. Toggles send the opposite of the engine state and mirror it back in `refresh()`.
+- **Reuse when:** any new control surface; tests pass a recording `ParameterTarget` that forwards to a real router to assert both id/value and engine effect.
+- **Notes:** the frame clock is a `juce::VBlankAttachment` in `DeckWidget`; each component's `refresh()` repaints only what changed (playhead strip, cue markers, or the zoom view when position/loop/cues moved).
