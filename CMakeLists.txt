@@ -326,6 +326,15 @@ target_link_libraries(openmixer_analysis
 
 set(OPENMIXER_LIBRARY_SOURCES
     src/library/CueDao.cpp
+    src/library/FileUrl.cpp
+    src/library/ImportCues.cpp
+    src/library/ImportMerge.cpp
+    src/library/ImportWriter.cpp
+    src/library/ItunesImporter.cpp
+    src/library/LibraryImport.cpp
+    src/library/LibraryImporter.cpp
+    src/library/PlistReader.cpp
+    src/library/RekordboxImporter.cpp
     src/library/Ingestor.cpp
     src/library/JuceMetadataReader.cpp
     src/library/Database.cpp
@@ -350,6 +359,16 @@ set(OPENMIXER_LIBRARY_SOURCES
 add_library(openmixer_library STATIC
     ${OPENMIXER_LIBRARY_SOURCES}
     src/library/CueDao.h
+    src/library/FileUrl.h
+    src/library/ImportCues.h
+    src/library/ImportMerge.h
+    src/library/ImportWriter.h
+    src/library/ItunesImporter.h
+    src/library/LibraryImport.h
+    src/library/LibraryImporter.h
+    src/library/PlistReader.h
+    src/library/RekordboxImporter.h
+    src/library/ImportModel.h
     src/library/Database.h
     src/library/Ingestor.h
     src/library/JuceMetadataReader.h
@@ -566,6 +585,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/LibraryIngestTest.cpp
     tests/unit/LibraryWatchFoldersTest.cpp
     tests/unit/LibrarySearchTest.cpp
+    tests/unit/LibraryImportTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)

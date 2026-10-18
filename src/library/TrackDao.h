@@ -38,6 +38,8 @@ public:
     juce::Result setAnalysis (std::int64_t id, double bpm, const juce::String& key, const juce::String& camelot);
     juce::Result setRating (std::int64_t id, int rating);
     juce::Result recordPlay (std::int64_t id, std::int64_t whenMs);
+    // Absolute play history (library import); recordPlay is the increment used during playback.
+    juce::Result setPlayStats (std::int64_t id, int playCount, std::optional<std::int64_t> lastPlayedMs);
 
 private:
     template <typename Arg>
