@@ -112,7 +112,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/ui/`: `ThemeTokens`, `Theme` (runtime accessors), `ThemeJson`, `ThemeRegistry`; `resources/themes/*.json` embedded via `juce_add_binary_data`
 - [x] **Todo 25:** Design tokens + LookAndFeel
   - `GlassLookAndFeel` covers knobs, faders, buttons, ComboBox, PopupMenu, TextEditor, ToggleButton, TabbedButtonBar, ScrollBar, TableHeader, tooltip (`GlassWidgets.cpp`)
-- [ ] **Todo 26:** Main window + deck widgets
+- [~] **Todo 26:** Main window + deck widgets (done: window, widgets and tests; missing: waveform/metadata feed from analysis/library (Task 4), a real main-cue point, mixer + library slots (Todos 27/28))
+  - `src/ui/`: `MainView` + `MainLayout` (data-driven rows/cells/slots), `DeckWidget` = `TrackHeader`, `OverviewWaveform`, `ZoomWaveform`, `TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`; `DeckBinding` routes ids; `DebugPanel` kept behind `OPENMIXER_DEBUG_PANEL=1`
 - [ ] **Todo 27:** Mixer widgets + metering
 - [ ] **Todo 28:** Library browser
 - [ ] **Todo 29:** Automix panel + settings
