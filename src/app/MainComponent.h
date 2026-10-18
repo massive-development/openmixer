@@ -21,6 +21,8 @@ public:
 
     void resized() override;
 
+    void setBackdropOpacity (float opacity) { panel.setBackdropOpacity (opacity); }
+
 private:
     void setUpMidi();
 
