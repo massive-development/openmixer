@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="hand-written fixture" Version="0" Company="none"/>
+  <COLLECTION Entries="3">
+    <TRACK TrackID="1" Name="Pulse One" Artist="Fixture Artist" Album="Fixture EP" Genre="Techno"
+           TotalTime="300" Year="2021" AverageBpm="128.00" Tonality="Am" Rating="153" PlayCount="4"
+           DateAdded="2022-05-06" SampleRate="48000" Comments="first"
+           Location="file://localhost/music/Techno/Pulse%20One.flac">
+      <TEMPO Inizio="0.050" Bpm="128.00" Metro="4/4" Battito="1"/>
+      <POSITION_MARK Name="Intro" Type="0" Start="1.000" Num="0" Red="40" Green="226" Blue="20"/>
+      <POSITION_MARK Name="Drop" Type="0" Start="32.500" Num="1"/>
+      <POSITION_MARK Name="" Type="0" Start="64.000" Num="-1"/>
+      <POSITION_MARK Name="Loop A" Type="4" Start="96.000" End="100.000" Num="2"/>
+      <POSITION_MARK Name="" Type="4" Start="120.000" End="124.000" Num="-1"/>
+      <POSITION_MARK Name="Fade" Type="1" Start="10.000" Num="-1"/>
+    </TRACK>
+    <TRACK TrackID="2" Name="Pulse Two" Artist="Fixture Artist" TotalTime="280" AverageBpm="0.00"
+           Rating="255" Location="file://localhost/C:/Users/dj/Music/Pulse%20Two.wav">
+      <TEMPO Inizio="0.000" Bpm="130.50" Metro="4/4" Battito="1"/>
+      <POSITION_MARK Name="Bad" Type="4" Start="10.000" End="5.000" Num="3"/>
+    </TRACK>
+    <TRACK TrackID="3" Name="Cloud Only" TotalTime="100"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="2">
+      <NODE Type="0" Name="Club" Count="1">
+        <NODE Type="1" Name="Peak Time" KeyType="0" Entries="3">
+          <TRACK Key="2"/>
+          <TRACK Key="1"/>
+          <TRACK Key="3"/>
+        </NODE>
+      </NODE>
+      <NODE Type="1" Name="By Location" KeyType="1" Entries="1">
+        <TRACK Key="file://localhost/music/Techno/Pulse%20One.flac"/>
+      </NODE>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>
