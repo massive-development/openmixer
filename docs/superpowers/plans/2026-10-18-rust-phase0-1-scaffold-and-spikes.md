@@ -17,6 +17,7 @@
 - Dependency licences must stay AGPLv3-compatible (`cargo deny`).
 - Commits authored as `heyitsmass` (repo-local git config already set); end commit messages with the Co-Authored-By trailer from the session.
 - Bulk doc rewrites go to `haiku` subagents; the main session reviews diffs.
+- Never emit audible sound from tests, CI or agent runs: render to in-memory buffers; any real device stream writes digital silence; audible checks are opt-in (`OPENMIXER_AUDIBLE=1`, gain <= 0.05) and run by the user only.
 - Spikes are labelled throwaway; keeping spike code is a new decision.
 - Clean-room doctrine (ADR 0001) still applies to all docs and UI expression.
 
