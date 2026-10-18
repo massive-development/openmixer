@@ -139,6 +139,8 @@ add_library(openmixer_engine STATIC
     src/engine/MockAudioDevice.h
     src/engine/Mixer.cpp
     src/engine/Mixer.h
+    src/engine/OutputRouter.cpp
+    src/engine/OutputRouter.h
     src/engine/MixerParameters.cpp
     src/engine/PeakMeter.h
     src/engine/ProcessStage.h
@@ -155,7 +157,7 @@ target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp src/engine/DeckControl.cpp src/engine/FxRouting.cpp
     src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DeckKeylock.cpp src/engine/TimeStretch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
-    src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
+    src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp src/engine/OutputRouter.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
@@ -483,6 +485,29 @@ juce_add_binary_data(openmixer_theme_data
 set_target_properties(openmixer_theme_data PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(openmixer_ui STATIC
+    src/ui/AppearanceSettingsPage.cpp
+    src/ui/AppearanceSettingsPage.h
+    src/ui/AudioSettingsPage.cpp
+    src/ui/AudioSettingsPage.h
+    src/ui/JuceAudioSettingsModel.cpp
+    src/ui/JuceAudioSettingsModel.h
+    src/ui/LibrarySettingsPage.cpp
+    src/ui/LibrarySettingsPage.h
+    src/ui/MidiSettingsPage.cpp
+    src/ui/MidiSettingsPage.h
+    src/ui/PathRow.cpp
+    src/ui/PathRow.h
+    src/ui/PluginsSettingsPage.cpp
+    src/ui/PluginsSettingsPage.h
+    src/ui/Preferences.cpp
+    src/ui/Preferences.h
+    src/ui/PreferencesApplier.cpp
+    src/ui/PreferencesApplier.h
+    src/ui/SettingsPage.cpp
+    src/ui/SettingsPage.h
+    src/ui/SettingsPanel.cpp
+    src/ui/SettingsPanel.h
+    src/ui/AudioSettingsModel.h
     src/ui/ChannelStripWidget.cpp
     src/ui/ChannelStripWidget.h
     src/ui/CrossfaderSection.cpp
@@ -558,6 +583,7 @@ add_library(openmixer_ui STATIC
 
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
+    src/ui/AppearanceSettingsPage.cpp src/ui/AudioSettingsPage.cpp src/ui/JuceAudioSettingsModel.cpp src/ui/LibrarySettingsPage.cpp src/ui/MidiSettingsPage.cpp src/ui/PathRow.cpp src/ui/PluginsSettingsPage.cpp src/ui/Preferences.cpp src/ui/PreferencesApplier.cpp src/ui/SettingsPage.cpp src/ui/SettingsPanel.cpp
     src/ui/ChannelStripWidget.cpp src/ui/CrossfaderSection.cpp src/ui/CueSection.cpp src/ui/FxPanel.cpp
     src/ui/LabeledKnob.cpp src/ui/MasterSection.cpp src/ui/MeterBallistics.cpp src/ui/MixerPanel.cpp src/ui/GlassLookAndFeel.cpp
     src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp
@@ -570,6 +596,7 @@ target_link_libraries(openmixer_ui PUBLIC
     openmixer_analysis
     openmixer_library
     juce::juce_gui_basics
+    juce::juce_audio_devices
     juce::juce_events
     juce::juce_recommended_config_flags
 )
@@ -590,12 +617,15 @@ target_sources(openmixer PRIVATE
     src/app/Main.cpp
     src/app/MainComponent.cpp
     src/app/MainComponent.h
+    src/app/AppPreferencesTargets.cpp
+    src/app/AppPreferencesTargets.h
 )
 
 juce_generate_juce_header(openmixer)
 
 target_link_libraries(openmixer PRIVATE
     openmixer_ui
+    openmixer_plugins
     openmixer_controllers
     openmixer_engine
     juce::juce_audio_basics
@@ -672,6 +702,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MeterBallisticsTest.cpp
     tests/unit/FxPanelTest.cpp
     tests/unit/LibraryBrowserTest.cpp
+    tests/unit/PreferencesTest.cpp
+    tests/unit/OutputRouterTest.cpp
+    tests/unit/SettingsPanelTest.cpp
     tests/unit/TrackLoaderTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp

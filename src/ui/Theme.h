@@ -133,6 +133,15 @@ inline float libraryCompatAlpha() { return current().libraryCompatAlpha; }
 inline float libraryStripeAlpha() { return current().libraryStripeAlpha; }
 inline float libraryDropAlpha() { return current().libraryDropAlpha; }
 
+// Settings panel metrics.
+inline int settingsPanelWidth() { return juce::roundToInt (current().settingsPanelWidth); }
+inline int settingsPanelHeight() { return juce::roundToInt (current().settingsPanelHeight); }
+inline int settingsTabHeight() { return juce::roundToInt (current().settingsTabHeight); }
+inline int settingsRowHeight() { return juce::roundToInt (current().settingsRowHeight); }
+inline int settingsLabelWidth() { return juce::roundToInt (current().settingsLabelWidth); }
+inline int settingsButtonWidth() { return juce::roundToInt (current().settingsButtonWidth); }
+inline float settingsDimAlpha() { return current().settingsDimAlpha; }
+
 juce::Font font (float height, bool bold = false);
 juce::Font monoFont (float height);
 

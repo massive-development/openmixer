@@ -54,6 +54,7 @@ const ThemeTokens& current() { return state().tokens; }
 
 void setCurrent (const ThemeTokens& tokens)
 {
+    JUCE_ASSERT_MESSAGE_THREAD   // theme state is a plain global
     auto& s = state();
     s.tokens = tokens;
     if (s.tokens.accents.empty())
