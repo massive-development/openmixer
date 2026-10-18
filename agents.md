@@ -2,39 +2,48 @@
 
 ## Overview
 
-OpenMixer is a clean-room, legally original implementation of professional DJ software using JUCE 8. This document provides instructions for any AI agent to understand the codebase and continue development.
+OpenMixer is a clean-room, legally original implementation of professional DJ software, written in Rust with GPUI for the UI. This document provides instructions for any AI agent to understand the codebase and continue development.
+
+The project is being rewritten from the C++ tree. The frozen baseline is the git tag `cpp-final` (commit c6d2747). It is the behavioural reference until Phase 5 of the rewrite passes; it is deleted from `main` only after that. The design is `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`, and the toolkit decision is `docs/adr/0004-stack-rust-gpui.md`.
 
 ## Project Structure
 
 ```
 /home/brandon/projects/openmixer/
-├── .github/workflows/        # CI/CD workflows
-├── cmake/                    # CMake configuration
+├── .github/workflows/        # CI/CD workflows (rust.yml, pr-tests.yml, ci.yml)
+├── crates/                   # Cargo workspace members
+│   ├── om-core/              # parameter/target traits, state snapshots, command enum (no I/O)
+│   ├── om-dsp/               # filters, EQ, FX primitives, resampling helpers
+│   ├── om-engine/            # decks, channel strips, crossfader, FX routing, sync, loops
+│   ├── om-audio/             # cpal device layer, latency monitor
+│   └── openmixer/            # binary: composition root, preferences, --smoke
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
-│   └── legal/                # Legal documentation
-├── src/
-│   └── app/                  # Main application
-├── tests/
-│   ├── unit/                 # Unit tests
-│   └── data/                 # Test fixtures
-├── tools/                    # Development tools
-└── CMakeLists.txt            # Build system
+│   ├── legal/                # Legal documentation
+│   └── superpowers/specs/    # Design specs (rust-rewrite-design.md)
+├── tools/                    # Development tools (Python scripts, soak and UI gate harnesses)
+├── tests/                    # Integration tests and fixtures
+├── Cargo.toml                # Workspace manifest
+├── Cargo.lock
+├── rust-toolchain.toml       # Pinned toolchain
+├── rustfmt.toml
+├── clippy.toml
+└── deny.toml                 # Licence and ban policy (cargo deny)
 ```
 
-## Current State (Wave 1 Complete)
+Planned crates, added in their phases: `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`, `om-ui`.
+
+## Current State (Rust rewrite, Phase 0)
 
 **Implemented:**
-- Repository initialization
-- Build system (CMake + JUCE 8)
-- CI/CD pipeline (GitHub Actions)
-- Governance documents (LICENSE, ADRs, CONTRIBUTING)
-- Application skeleton (Main.cpp, MainComponent.cpp)
-- License checker tool
-- Test harness
+- Repository initialization and governance documents (LICENSE, ADRs, CONTRIBUTING)
+- Cargo workspace scaffold with the `om-core`, `om-dsp`, `om-engine`, `om-audio` crates and the `openmixer` binary (`--smoke`)
+- Rust CI matrix (`rust.yml`): fmt, clippy, test on Linux, macOS and Windows; `cargo deny` on Linux
+- Frozen C++ baseline at tag `cpp-final`, the behavioural reference for parity
 
-**Blocked By:**
-- Missing system dependencies (see Build section)
+**In progress / planned:**
+- Phase 0 scaffolding: lint and deny policy, ADR 0004, docs rewrite, `docs/parity.md` (generated from `cpp-final`)
+- Phase 1 spikes: GPUI window with a custom waveform view on all three OSes, cpal output callback, time-stretch quality. The GPUI go/no-go gate is hard (see ADR 0004).
 
 ## Architecture Decisions
 
@@ -44,15 +53,22 @@ OpenMixer is a clean-room, legally original implementation of professional DJ so
 - No Mixxx code reuse (clean-room)
 - All assets must be original
 
-### ADR-0002: Technology Stack
-- **Framework:** JUCE 8.0.x
-- **License:** AGPLv3
-- **Dependencies:** RubberBand, FFmpeg, libsndfile, TagLib, SQLite, ONNX Runtime
+### ADR-0002: Technology Stack (superseded)
+- Superseded by ADR-0004. The C++ application framework and its dependencies are recorded there for history only.
 
 ### ADR-0003: Licensing
 - **Pure AGPLv3** (no Contributor CLA)
 - Simple contribution process
 - DCO sign-off required
+
+### ADR-0004: Technology Stack - Rust with GPUI
+- **Language / UI:** Rust, with GPUI for the UI (conditional on the Phase 1 gate)
+- **Audio I/O:** `cpal` for the engine output callback; `rodio` only for non-critical audio such as library preview
+- **Decode / tags:** `symphonia`; `lofty`
+- **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
+- **Time-stretch:** pure Rust preferred; Rubber Band via thin FFI as fallback, kept in one `unsafe` crate
+- **MIDI:** `midir`; **Library:** `rusqlite` (bundled SQLite)
+- **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
 
 ## Pull Request Workflow (required)
 
@@ -61,46 +77,51 @@ All changes — including those by AI agents and maintainers — land through a 
 1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
 2. Open a PR into `stage` with `gh pr create --base stage`. Only the fast Linux test gate (`pr-tests.yml`) runs there. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
-   - **Changes:** key files/modules added or modified.
-   - **Testing:** commands run and results (`ctest`, manual checks).
+   - **Changes:** key crates/modules added or modified.
+   - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, license, progress, sign) runs only there. Pushes alone never trigger CI.
+5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, licence, progress, sign) runs only there. Pushes alone never trigger CI.
 6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
 7. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
 8. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
 9. Release PR description: list the included PRs (number + Todo), the testing they already had, and the revert command. Merge with `--merge` so a batch can be undone with `git revert -m 1 <merge commit>`.
 
-## C++ Standards & Memory Safety (required)
+## Rust Standards & Memory Safety (required)
 
-All code must follow modern C++ best practices (C++17 as configured; the C++ Core Guidelines are the reference). Outdated, unsafe or leaking code is not acceptable.
+All code must follow Rust best practices (edition 2021, toolchain pinned in `rust-toolchain.toml`). Outdated, unsafe or leaking code is not acceptable.
 
-- **Ownership:** RAII everywhere. Use `std::unique_ptr` / `std::make_unique` (or JUCE `OwnedArray`/`Component` ownership); no raw `new`/`delete`, `malloc`/`free`, or owning raw pointers. Use `std::shared_ptr` only when ownership is genuinely shared.
-- **Modern idioms:** `auto`, range-for, structured bindings, `std::optional`/`std::variant`/`std::string_view`/`std::span`-style views (or `juce::Span`), `enum class`, `constexpr`, `nullptr`, `override`/`final`, `[[nodiscard]]` where a result must not be ignored. No C-style casts (`static_cast` etc.), no `NULL`, no C arrays where `std::array`/`std::vector` fit.
-- **Const-correctness and rule of zero/five:** mark things `const`/`noexcept` where true; follow the rule of zero, otherwise define or delete all special members.
-- **Concurrency:** `std::atomic` with explicit memory orders, no data races, no allocation/locks/IO in audio callbacks. Document thread ownership in headers.
-- **Bounds & lifetime safety:** no unchecked indexing of untrusted data, no dangling references/iterators, no use of uninitialised memory.
-- **Warnings:** code must compile warning-free; do not suppress warnings to pass.
-- **Verification before opening a PR:** the test binary must run clean under Valgrind (`valgrind --leak-check=full --error-exitcode=1 <test binary>`) — no leaks, invalid reads/writes or uninitialised-value use — and, where practical, under AddressSanitizer/UBSan/ThreadSanitizer for concurrent code. Report the results in the PR's Testing section.
-- **Check current guidance:** when unsure about an API or idiom, consult the C++ Core Guidelines / cppreference / JUCE docs rather than reusing older patterns from memory.
+- **Ownership:** owned values and borrows by default. Use `Arc` only when ownership is genuinely shared across threads, and `Rc` never on the audio path. Pass data by value or by reference; avoid `'static` leaks and `Box::leak`.
+- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate (planned, only if the Rubber Band fallback is chosen). Every `unsafe` block there has a `// SAFETY:` line stating the invariant.
+- **Idioms:** `enum`s and `match` for state and commands, newtypes for ids and units, `Option`/`Result` instead of sentinel values, `?` for propagation, `#[must_use]` where a result must not be ignored, iterators over index loops where clearer. Prefer `&str`/`&[T]` parameters.
+- **Errors:** `thiserror` for typed errors in library crates, `anyhow` only in the `openmixer` binary. Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
+- **Logging:** `tracing` macros with structured fields. Never log from the audio thread.
+- **Concurrency:** no shared mutable state between the audio thread and other threads except through the designated channels: `rtrb` SPSC rings, `arc-swap` snapshots and atomics. Document the thread that owns each type in its module doc.
+- **Real-time safety (audio thread):** no allocation, locks (`Mutex`, `RwLock`), blocking channel calls, file or network I/O, or syscalls in the render path. Create buffers and graphs off the audio thread. Enforce this in tests with `assert_no_alloc` around the render function; a failing check is a bug, not a flaky test.
+- **Lints:** `cargo clippy --all-targets -- -D warnings` must pass. Do not add `#[allow(...)]` to get past a lint without a comment stating why.
+- **Licences and bans:** `cargo deny check` must pass (`deny.toml`). New dependencies must be AGPL-compatible.
+- **Check current guidance:** when unsure about an API, check docs.rs for the crate version in `Cargo.lock` rather than reusing older patterns from memory.
+- **Skills:** the Rust skills in `.agents/skills/` (`rust-best-practices`, `rust-patterns`, `rust-async-patterns`) are the reference for idioms and async code. The directory is planned for this rewrite; check it exists before relying on it. Async is not the default: prefer threads and channels for the audio and analysis paths.
 
 ## Comments & Function Size (required)
 
 - **Comments are short.** One line, stating *why* (not what). No paragraph or block comments describing what code does.
 - **Long explanation = refactor.** If a function needs a long comment to be understood, split it into smaller, well-named functions instead.
 - **Rule of 10 (goal, not a requirement):** aim for functions of about 10 lines or fewer. Exceed it only when splitting would hurt clarity.
+- **Doc comments (`///`)** are for public items only, one or two lines each.
 - Prefer self-describing names over comments. Delete comments that restate the code.
 
 ## Modularity (required)
 
-- **No monolithic files.** One focused responsibility per file/class; split anything that grows large or mixes concerns.
-- **Build shared libraries.** Put reusable code in small CMake library targets (e.g. `openmixer_engine`) under `src/<area>/` and link them where needed, instead of duplicating code or piling it into the app target.
-- **Keep dependencies one-way** (app → ui → engine/library → core); libraries must not depend on app code and should be testable on their own.
+- **No monolithic files.** One focused responsibility per module; split anything that grows large or mixes concerns.
+- **Crates per area.** Put reusable code in a Cargo library crate under `crates/om-<area>` and depend on it where needed, instead of duplicating code or piling it into the `openmixer` binary.
+- **Keep dependencies one-way.** Arrows point toward `om-core`: `openmixer` -> `om-ui` -> `om-engine` / `om-library` / `om-analysis` / `om-midi` -> `om-dsp` / `om-audio` -> `om-core`. Library crates must not depend on the binary or on `om-ui`, and must be testable on their own.
+- **Headless first.** Engine, analysis, library and MIDI crates must be fully testable without a window.
 
 ## Architecture & Design Patterns (required)
 
-Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new `src/<area>/`):
+Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new `crates/om-<area>`):
 
 1. Read `docs/DESIGN_PATTERNS.md` and review how similar code is already structured.
 2. Reuse an existing pattern wherever it fits rather than inventing a new one.
@@ -114,18 +135,19 @@ Consult existing knowledge before computing or exploring. As the codebase grows,
 1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base (e.g. the `lumen-kb` MCP `search_kb`), then `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md` and `TODO.md`.
 2. **Read narrowly:** read only the needed line ranges or symbols, not whole files; prefer grep/glob to locate code. Do not re-read files already in context.
 3. **Delegate broad searches** to a search subagent so only conclusions return to the main context.
-4. **Keep the graph fresh:** after structural changes (new modules, moved files) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
+4. **Keep the graph fresh:** after structural changes (new crates, moved files) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
 5. **Don't recompute:** reuse existing results (test output, benchmarks, analysis) instead of re-running or re-deriving them.
-6. **Keep outputs lean:** trim command output (`| tail`, `--quiet`), and keep PR descriptions and reports concise.
+6. **Keep outputs lean:** trim command output (`| tail`, `-q`), and keep PR descriptions and reports concise.
 
 ## Extensibility & User Freedom (required)
 
 Users must always be able to modify OpenMixer with external plugins. Nothing may be locked down.
 
-- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, LookAndFeel, skins).
-- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, interfaces and data-driven configuration (JSON/files) over fixed code paths.
-- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
+- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, skins).
+- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (serde-loaded files) over fixed code paths.
+- **Stable plugin API:** keep extension traits small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
+- **Plugins are deferred.** The design defers the plugin host (CLAP-first if and when it is needed). Until its wave, keep new extension points as traits and registries in the owning crate, so they can be exposed later without restructuring.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
 ## Progress Files (required)
@@ -133,6 +155,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 Every PR that completes or advances a task must update, in the same PR:
 - `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
 - the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
+- `docs/parity.md` is generated from the `cpp-final` tag by `python3 -I tools/parity_inventory.py`. Do not edit it by hand; fill in the Rust test columns through the PR that adds the test.
 
 ## CI Workflow Changes (required)
 
@@ -146,46 +169,57 @@ Any change to `.github/workflows/` must be tested locally with [`act`](https://g
 
 ### Dependencies
 
+- **Rust toolchain:** install with `rustup`. The version is pinned in `rust-toolchain.toml` and selected automatically.
+- **Linux audio:** `cpal` needs ALSA development headers and `pkg-config`:
+
 ```bash
-sudo apt-get install cmake g++ libasound2-dev libx11-dev libxrender-dev \
-    libxrandr-dev libxcursor-dev libxi-dev libfreetype-dev \
-    libfontconfig1-dev libcurl4-openssl-dev libgtk-3-dev
+sudo apt-get install libasound2-dev pkg-config
 ```
+
+- **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
+- GPUI platform dependencies are planned to be documented with the Phase 1 spike.
 
 ### Build Commands
 
 ```bash
-# Configure
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+# Build the whole workspace
+cargo build --workspace
 
-# Build
-cmake --build build
+# Release build
+cargo build --release --workspace
 
 # Run tests
-ctest --test-dir build
+cargo test --workspace
 
-# Debug with AddressSanitizer
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+# Format, lint and licence gates (run all before opening a PR)
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo deny check
+
+# Startup smoke check
+cargo run -p openmixer -- --smoke
 ```
+
+Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
 
 ## Implementation Waves
 
-### Wave 1: Foundation ✅ COMPLETE
+The design maps these waves onto Phases 0–6 (see `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`). Wave 1 is the C++ baseline; the others are rebuilt in Rust.
+
+### Wave 1: Foundation ✅ COMPLETE (C++ baseline, `cpp-final`)
 - Repository setup
 - Legal framework
-- Build system
-- CI/CD
+- Build system and CI (replaced by the Cargo workspace and `rust.yml`)
 - Test harness
 
-### Wave 2: Audio Engine
-- Audio device layer (with CI mock device)
-- Deck streaming decoder
-- Rubber Band time-stretch
+### Wave 2: Audio Engine (Rust, Phases 1–2)
+- Audio device layer over `cpal` (with a mock device for CI)
+- Deck streaming decoder (`symphonia`)
+- Time-stretch / keylock (spike: pure Rust vs Rubber Band)
 - Mixer (EQ/filter/crossfader)
 - FX rack (8 effects)
 - Beat sync + quantized cue/loop/slip
-- **Gate:** 10-minute headless soak test
+- **Gate:** 10-minute headless engine soak (zero xruns, no audio-thread allocation)
 
 ### Wave 3: Analysis Pipeline
 - Analysis service skeleton
@@ -193,30 +227,30 @@ cmake --build build
 - Musical key detection
 - Waveform data model
 - Onset/energy/structure features
-- **Stems precompute** (Demucs ONNX)
+- **Stems precompute** (Demucs ONNX via `ort`)
 
 ### Wave 4: Library & Data
-- Library schema + DAO layer
+- Library schema + DAO layer (`rusqlite`)
 - Metadata ingest + watch folders
 - Import (iTunes/Rekordbox XML)
 - Search + filter engine
 - Track prep queue
 
-### Wave 5: Application UI
-- Design tokens + LookAndFeel
+### Wave 5: Application UI (GPUI)
+- Design tokens and theme
 - Main window layout
 - Deck widgets
 - Mixer widgets
 - Library browser
 - Automix panel
 - Settings screens
-- **Gate:** UI screenshot suite + keyboard-only testing
+- **Gate:** scripted UI-driven 10-minute mix (`tools/ui_gate`) plus `openmixer --smoke`; UI screenshot suite and keyboard-only testing (planned)
 
 ### Wave 6: Hardware I/O
-- MIDI mapping engine
+- MIDI mapping engine (`midir`)
 - Controller trace harness
 - Plug-and-play maps (4 controllers)
-- HID layer
+- HID layer (later)
 - Mapping editor UI
 
 ### Wave 7: Intelligence
@@ -239,90 +273,85 @@ cmake --build build
 
 ### Memory Safety
 
-- Use `std::unique_ptr` exclusively
-- Never use `new`/`delete` directly
-- `JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR` for all classes
-- AddressSanitizer in debug builds
+- Values are owned by default; use `Box`, `Vec` and `Arc` deliberately
+- No `unsafe` outside the designated FFI crate
+- Types are not `Clone` or `Copy` unless copying is meaningful; this replaces the non-copyable declarations of the C++ tree
+- Allocation happens off the audio thread; `assert_no_alloc` guards the render path in tests
 
-### File Structure
+### Crate and Module Layout
 
-```cpp
-// Header
-#pragma once
+```rust
+// crates/om-engine/src/lib.rs
+#![forbid(unsafe_code)]
 
-#include <JuceHeader.h>
+mod deck;
+mod mixer;
 
-class ClassName : public juce::SomeBase
-{
-public:
-    ClassName();
-    ~ClassName() override;
-
-    // Public methods
-
-private:
-    // Private members
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ClassName)
-};
+pub use deck::{Deck, DeckId};
+pub use mixer::Mixer;
 ```
 
 ### Error Handling
 
-- Use `juce::Result` for fallible operations
-- Never throw exceptions
-- Log errors with `juce::Logger::writeToLog()`
+- Library crates: `thiserror` enums per module, returned as `Result<T, Error>`
+- Binary: `anyhow::Result` at the top level with context on each step
+- Log errors with `tracing::error!` (or `warn!`) and include the failing id or path as a field
+- Never panic on bad input; do not use `unwrap()` on file, network or MIDI data
 
 ### Testing
 
-- TDD for engine/analysis logic
-- Golden-file tests for DSP
-- Metric tests for accuracy
-- Screenshot tests for UI
+- TDD for engine and analysis logic
+- Golden-vector fixtures carried over from the C++ tests (kept under `tests/`)
+- Property tests (`proptest`) for parsers and search
+- Metric tests for DSP accuracy; `criterion` benchmarks for DSP
+- Real-time tests: render the engine inside `assert_no_alloc`
+- Screenshot tests for UI (planned)
 
-## Next Steps (Wave 2)
+## Next Steps (Phase 0–1)
+
+Work follows the design phasing. The parity inventory in `docs/parity.md` lists which C++ test each Todo replaces.
 
 ### Todo 7: Audio Device Layer
 
-**File:** `src/engine/AudioDevice.{h,cpp}`
+**Crate:** `crates/om-audio`
 
 **Implementation:**
-1. JUCE AudioDeviceManager wrapper
-2. Platform-specific backends (CoreAudio, WASAPI, ALSA)
+1. `cpal` output stream behind a device trait
+2. Platform backends via cpal (ALSA, WASAPI, CoreAudio)
 3. Mock device for CI testing
 4. Latency probing
 
 **Tests:**
-```cpp
-TEST_CASE("Device opens and closes")
-{
-    AudioDeviceMock mock;
-    mock.open();
-    CHECK(mock.isOpen());
-    mock.close();
-    CHECK(!mock.isOpen());
+```rust
+#[test]
+fn device_opens_and_closes() {
+    let mut dev = MockDevice::default();
+    dev.open().unwrap();
+    assert!(dev.is_open());
+    dev.close();
+    assert!(!dev.is_open());
 }
 ```
 
 ### Todo 8: Deck Streaming
 
-**File:** `src/engine/Deck.{h,cpp}`
+**Crate:** `crates/om-engine`
 
 **Implementation:**
-1. Lock-free ring buffer
-2. FFmpeg decode backend
+1. Lock-free SPSC ring buffer (`rtrb`)
+2. `symphonia` decode backend
 3. Transport state machine
 
 **Tests:**
 - Golden audio tests
 - Transport state transitions
 
-### Todo 9: Time-Stretch
+### Todo 9: Time-Stretch (spike)
 
-**File:** `src/engine/TimeStretch.{h,cpp}`
+**Crate:** `crates/om-dsp` (pure Rust) or the FFI crate (fallback)
 
 **Implementation:**
-1. Rubber Band integration
+1. Spike: A/B listening test and offline pitch/transient comparison against Rubber Band
 2. Key-lock toggle
 3. RT-safety verification
 
@@ -332,26 +361,31 @@ TEST_CASE("Device opens and closes")
 
 ## Common Issues
 
-### Issue: JUCE Font Headers Missing
-**Solution:** Install `libfreetype-dev libfontconfig1-dev`
+### Issue: cpal fails to build on Linux (missing `alsa.pc`)
+**Solution:** Install `libasound2-dev pkg-config`
 
-### Issue: X11 Headers Missing
-**Solution:** Install `libx11-dev libxrandr-dev libxcursor-dev`
+### Issue: `cargo deny check` fails on a licence
+**Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
 
-### Issue: JUCE Module Errors
-**Solution:** Use pre-fetched JUCE at `build/_tmp/juce-src`
+### Issue: GPUI fails to start on WSL
+**Solution:** WSL-only trouble is a dev-loop issue, not a gate failure (ADR 0004). Check the GPU/Vulkan setup with `vulkaninfo --summary` and record the result in the Phase 1 notes
 
 ## Verification
 
 After each wave:
-1. All tests pass
-2. Lint/clang-tidy clean
-3. Memory leaks checked (AddressSanitizer)
+1. All tests pass (`cargo test --workspace`)
+2. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo deny check` are clean
+3. Real-time allocation checks pass (`assert_no_alloc` in tests); sanitizer runs planned for concurrent code
 4. Evidence file updated: `.omo/evidence/task-<N>-openmixer-dj-app.*`
 
 ## References
 
-- JUCE 8 API: https://juce.com/learn/api-reference
+- Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
+- ADR 0004 (Rust with GPUI): `docs/adr/0004-stack-rust-gpui.md`
+- Frozen C++ baseline: git tag `cpp-final`
+- cpal: https://docs.rs/cpal
+- rtrb: https://docs.rs/rtrb
+- arc-swap: https://docs.rs/arc-swap
+- rusqlite: https://docs.rs/rusqlite
 - Rubber Band: https://breakfastquay.com/rubberband/
 - Clean-Room Doctrine: docs/adr/0001-clean-room-doctrine.md
-- Full Work Plan: `.omo/plans/openmixer-dj-app.md`
