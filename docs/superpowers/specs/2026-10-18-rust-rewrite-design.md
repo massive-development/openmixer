@@ -68,5 +68,12 @@ Each phase lands as small PRs into `stage`; the C++ tree is deleted once phase 5
 ## Documentation rewrite
 Every doc that mentions C++/JUCE/CMake must be rewritten for Rust: `README.md`, `agents.md`, `CONTRIBUTING.md`, `TODO.md`, `ROADMAP.md`, `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md`, ADR index plus new ADR 0004, CI workflow docs, `CLAUDE`/agent skills references. Bulk rewrites are delegated to the cheapest capable model (haiku) and reviewed against this design; `docs/progress.json` and the heatmap tool are kept, with task statuses reset to the Rust state.
 
+## Answers from the builder check (all **(call)**)
+- **Parity inventory:** `docs/PROGRESS.md` and `TODO.md` at `cpp-final` are authoritative; the README status text is stale and is fixed in the docs rewrite. Phase 0 produces `docs/parity.md`: one row per TODO item with its C++ test(s) and the Rust test that replaces it.
+- **Gates:** carry over the C++ definitions: Wave 2 gate = 10-minute headless engine soak (`tools/soak_mix.cpp`: zero xruns, no audio-thread allocation); Wave 5 gate = scripted UI-driven 10-minute mix (`tools/ui_gate`) plus a `--smoke` startup check. Latency/xrun targets are measured and reported by the latency monitor; the default is a 256-frame buffer at 48 kHz on ALSA/WASAPI/CoreAudio, zero xruns in the soak.
+- **Time-stretch bar:** pure Rust is accepted only if an A/B listening test and an offline pitch/transient comparison against Rubber Band are acceptable and one deck fits in a small share of one core. Rubber Band is GPL-2.0-or-later, which is AGPLv3-compatible and already used in the C++ build, so the FFI fallback is licence-acceptable.
+- **Migration:** the project is pre-release (no `v*` tags), so the Rust version starts fresh: no SQLite/preferences/cache migration.
+- **Input capture:** out of scope until the pro-surface wave (DVS/recording). The Phase 1 audio spike is output-only; the "duplex" wording above means separate input and output streams, deferred.
+
 ## Left to the builder
 Crate granularity within the above, exact command/snapshot types, preferences format, theme file format (carry over the C++ one if practical), CI details, module-level API shapes.
