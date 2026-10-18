@@ -5,6 +5,7 @@
 #pragma once
 
 #include "Effect.h"
+#include "Wipe.h"
 #include "core/ParameterTarget.h"
 #include "engine/ProcessStage.h"
 
@@ -19,6 +20,7 @@ class FxUnit final : public ProcessStage, public ParameterTarget
 {
 public:
     static constexpr int kChunk = 64;
+    static constexpr int kClearSlice = Wipe::kSlice;   // frames wiped per chunk (idle or engaged) after a tail ends
 
     explicit FxUnit (std::unique_ptr<Effect> effect);
 
@@ -44,6 +46,7 @@ private:
     void computeGains (int n, bool on) noexcept;
     void mixInto (float* left, float* right, int n) const noexcept;
     void updateIdle (int n, bool on) noexcept;
+    void sliceClear (int frames) noexcept;
     float wetPeak (int n) const noexcept;
 
     std::unique_ptr<Effect> effect;
@@ -55,7 +58,7 @@ private:
     Smoother enableRamp, mixRamp, beatSamples;
     std::array<float, kChunk> wetL {}, wetR {}, onGain {}, mixGain {};
     int quietSamples = 0;
-    bool idle = true;
+    bool idle = true, clearing = false;   // clearing: stale buffer is still being wiped in slices
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxUnit)
 };

@@ -58,6 +58,7 @@ void FxUnit::prepare (double sampleRate, int)
     beatSamples.snap (static_cast<float> (ctx.samplesPerBeat));
     effect->prepare (sampleRate, kChunk);
     idle = ! on;
+    clearing = false;
     quietSamples = 0;
     active.store (on, kRelaxed);
 }
@@ -73,13 +74,14 @@ void FxUnit::processChunk (float* left, float* right, int n) noexcept
 {
     const bool on = isEnabled();
     if (idle && ! on)
-        return;
+        return sliceClear (kClearSlice);
     if (idle)
     {
         idle = false;
         quietSamples = 0;
         active.store (true, kRelaxed);
     }
+    sliceClear (kClearSlice);   // an early re-engage keeps wiping in slices; stale slots read as zero
     ctx.samplesPerBeat = beatSamples.step (static_cast<float> (samplesPerBeat (ctx.sampleRate, getTempo())));
     computeGains (n, on);
     // Tail effects stop receiving input when disabled but keep ringing out.
@@ -125,6 +127,12 @@ float FxUnit::wetPeak (int n) const noexcept
     return peak;
 }
 
+void FxUnit::sliceClear (int frames) noexcept
+{
+    if (clearing)
+        clearing = ! effect->clearSome (frames);
+}
+
 void FxUnit::updateIdle (int n, bool on) noexcept
 {
     if (on || enableRamp.current() > 0.0F)
@@ -138,7 +146,8 @@ void FxUnit::updateIdle (int n, bool on) noexcept
         if (quietSamples < effect->tailSilenceWindow (ctx))
             return;
     }
-    effect->reset();
+    effect->beginReset();
+    clearing = true;
     idle = true;
     active.store (false, kRelaxed);
 }

@@ -4,6 +4,7 @@ namespace
 {
     constexpr int kWindowWidth = 900, kWindowHeight = 640;
     constexpr int kMaxOutputs = 8;
+    constexpr int kControlTickHz = 30;
 
     juce::File userMapFile()
     {
@@ -18,10 +19,20 @@ MainComponent::MainComponent()
     setSize (kWindowWidth, kWindowHeight);
     setUpMidi();
     setAudioChannels (0, 2);
+    lastTickMs = juce::Time::getMillisecondCounterHiRes();
+    startTimerHz (kControlTickHz);
+}
+
+void MainComponent::timerCallback()
+{
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+    engine.updateControl ((now - lastTickMs) / 1000.0);
+    lastTickMs = now;
 }
 
 MainComponent::~MainComponent()
 {
+    stopTimer();
     midiInput.disableAll();
     shutdownAudio();
 }
@@ -29,8 +40,10 @@ MainComponent::~MainComponent()
 void MainComponent::setUpMidi()
 {
     router.registerTarget ("mixer", &engine.getMixer());
+    router.registerTarget ("fx", &engine.getFx());
+    router.registerTarget ("sync", &engine.getSync());
     for (int i = 0; i < engine.getNumDecks(); ++i)
-        router.registerTarget ("deck." + juce::String (i), &engine.getDeck (i));
+        router.registerTarget ("deck." + juce::String (i), &engine.getDeckControl (i));   // decorates the Deck
 
     mapper.setTarget (&router);
     if (const auto map = userMapFile(); map.existsAsFile())

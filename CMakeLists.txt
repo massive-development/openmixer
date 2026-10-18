@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Include our custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+# Platform-specific settings (before any dependency target: targets copy these when created)
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
+    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
+elseif(WIN32)
+    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 # FetchContent for JUCE and dependencies
 include(FetchContent)
 include(Dependencies)
@@ -15,14 +23,6 @@ include(RubberBand)
 # Configure build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Platform-specific settings
-if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
-    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
-elseif(WIN32)
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
 # Enable position independent code
@@ -107,6 +107,10 @@ add_library(openmixer_engine STATIC
     src/engine/Crossfader.h
     src/engine/Deck.cpp
     src/engine/Deck.h
+    src/engine/DeckControl.cpp
+    src/engine/DeckControl.h
+    src/engine/FxRouting.cpp
+    src/engine/FxRouting.h
     src/engine/DeckDecoder.cpp
     src/engine/DeckPlayback.cpp
     src/engine/DeckKeylock.cpp
@@ -149,13 +153,14 @@ add_library(openmixer_engine STATIC
 
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
-    src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
+    src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp src/engine/DeckControl.cpp src/engine/FxRouting.cpp
     src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DeckKeylock.cpp src/engine/TimeStretch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
     openmixer_core
+    openmixer_fx
     openmixer_dsp
     openmixer_rubberband
     juce::juce_audio_basics
@@ -494,6 +499,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp
+    tests/unit/EngineWiringTest.cpp
     tests/unit/AnalysisCacheTest.cpp
     tests/unit/AnalysisServiceTest.cpp
     tests/unit/BpmEstimatorTest.cpp

@@ -131,14 +131,16 @@ private:
         underruns.noteDisturbance (nowMs);
     }
 
-    // Flips one master FX unit and sets a random wet mix; tails ring out on disable.
+    // Flips one FX unit on master or a channel rack (routed ids) and sets a random wet mix; tails ring out on disable.
     void maybeChangeFx()
     {
         if (rng.nextInt (30) != 0 || rack.getNumUnits() == 0)
             return;
-        const auto unit = "fx" + juce::String (rng.nextInt (rack.getNumUnits()));
-        rack.setParameter (unit + ".enable", rng.nextBool() ? 1.0 : 0.0);
-        rack.setParameter (unit + ".mix", 0.2 + 0.6 * rng.nextDouble());
+        const int pick = rng.nextInt (engine.getNumDecks() + 1);   // last = master
+        const auto rackId = pick == engine.getNumDecks() ? juce::String ("master") : "ch" + juce::String (pick);
+        const auto unit = rackId + ".fx" + juce::String (rng.nextInt (rack.getNumUnits()));
+        engine.getFx().setParameter (unit + ".enable", rng.nextBool() ? 1.0 : 0.0);
+        engine.getFx().setParameter (unit + ".mix", 0.2 + 0.6 * rng.nextDouble());
         ++counts.fxChanges;
     }
 
