@@ -478,3 +478,68 @@ TEST (PrepQueue, DestroyingWithJobsInFlightIsSafe)
     f.service->cancelAll();   // late listener callbacks must not touch the dead queue
     SUCCEED();
 }
+
+namespace
+{
+void waitStarted (const GateAnalyzer& gate)
+{
+    while (! gate.started.load())
+        std::this_thread::sleep_for (std::chrono::milliseconds (1));
+}
+} // namespace
+
+TEST (PrepQueue, DatabaseReadFailuresAreReportedNotTreatedAsIdle)
+{
+    Fixture f (1);
+    const auto a = f.addTrack();
+    PrepQueue q (*f.lib, *f.service, f.options (1));
+    f.lib->database().exec ("DROP TABLE prep_queue;");
+
+    q.cancel (a);
+    EXPECT_FALSE (f.errors.empty());   // cancel's lookup failed and said so
+    f.errors.clear();
+
+    EXPECT_TRUE (q.pump());            // unreadable queue is not "idle"
+    EXPECT_FALSE (f.errors.empty());
+    EXPECT_FALSE (q.pumpUntilIdle (50));
+}
+
+TEST (PrepQueue, RemoveThenReenqueueWhileRunningRunsAFreshJob)
+{
+    Fixture f (2);
+    auto gate = std::make_shared<GateAnalyzer>();
+    f.replace (gate);
+    const auto a = f.addTrack();
+    PrepQueue q (*f.lib, *f.service, f.options (2));
+    q.enqueue (a);
+    q.pump();
+    waitStarted (*gate);
+
+    ASSERT_TRUE (q.remove (a).wasOk());
+    ASSERT_TRUE (q.enqueue (a).wasOk());
+    f.replace (std::make_shared<FakeAnalyzer> ("waveform", "{}"));   // later jobs finish normally
+    q.pump();
+    ASSERT_TRUE (q.pumpUntilIdle (kWaitMs));   // old job's completion must not clobber the new row
+    EXPECT_EQ (statusOf (f, a), PrepStatus::Done);
+    EXPECT_DOUBLE_EQ (f.lib->tracks().findById (a)->bpm.value_or (0), 128.0);
+}
+
+TEST (PrepQueue, CancelThenReenqueueWhileRunningTakesEffect)
+{
+    Fixture f (2);
+    auto gate = std::make_shared<GateAnalyzer>();
+    f.replace (gate);
+    const auto a = f.addTrack();
+    PrepQueue q (*f.lib, *f.service, f.options (2));
+    q.enqueue (a);
+    q.pump();
+    waitStarted (*gate);
+
+    q.cancel (a);
+    EXPECT_EQ (statusOf (f, a), PrepStatus::Cancelled);
+    ASSERT_TRUE (q.enqueue (a).wasOk());
+    EXPECT_EQ (statusOf (f, a), PrepStatus::Queued);
+    f.replace (std::make_shared<FakeAnalyzer> ("waveform", "{}"));
+    ASSERT_TRUE (q.pumpUntilIdle (kWaitMs));
+    EXPECT_EQ (statusOf (f, a), PrepStatus::Done);
+}

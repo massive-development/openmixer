@@ -18,7 +18,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 1 | Foundation | ✅ |
 | 2 | Audio engine | 🟡 device, deck (loops, hotcues, key-lock), mixer, FX rack, MIDI mapper + trace harness, debug panel done; sync/FX wiring remain |
 | 3 | Analysis | 🟡 service + SQLite cache, BPM/beat grid, key, waveform, structure done; stems partial (no inference backend yet) |
-| 4 | Library | 🟡 schema + DAOs (Todo 20), metadata ingest + watch folders (Todo 21), import (Todo 22), search (Todo 23), prep queue (Todo 24) done |
+| 4 | Library | ✅ schema + DAOs (Todo 20), metadata ingest + watch folders (Todo 21), import (Todo 22), search (Todo 23), prep queue (Todo 24) done |
 | 5 | UI | ⬜ (window shell only) |
 | 6 | Hardware | ⬜ (basic MIDI pulled into Wave 2) |
 | 7 | Intelligence | ⬜ |
@@ -76,7 +76,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 18 Structure features ✅ | Onset/energy/section detection (feeds Automix) | Done: `OnsetPicker` (adaptive-threshold peak picking on the shared onset envelope), `Segmenter` (0.5 s loudness curve over a 40 dB range; boundaries where the 8 s mean before/after differs most, min 8 s apart; labels intro/main/breakdown/outro relative to the loudest section), `StructureAnalyzer` (id `structure`, onsets + energy + sections + mix-in/out). Missing: bar-aligned boundaries (snap to the beat grid), timbre/repetition features (chorus vs verse), real-music evaluation |
 | 19 Stem precompute 🟡 | Demucs ONNX, weights downloaded on first use with license shown | Done: `openmixer_stems` with versioned `StemSeparator` extension point + `StemSet`, `ModelManifest` (JSON: id, url, sha256, size, licence name/text), `WeightManager` (licence prompt before any download, acceptance remembered per licence text, `.part` download, size + SHA-256 check, verified marker; injectable `Downloader`, `UrlDownloader`). Missing: ONNX Runtime dependency (prebuilt per platform, MIT) behind a CMake option; Demucs (MIT) model export to ONNX and a hosted manifest; chunked overlap-add inference backend; stem storage (rendered stems keyed by content hash + separator version) and an `Analyzer`/prep-queue hook; UI licence dialog |
 
-## Wave 4 — Library 🟡
+## Wave 4 — Library ✅
 
 | Todo | Entails | Missing |
 |------|---------|---------|

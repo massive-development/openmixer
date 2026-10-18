@@ -1,5 +1,6 @@
 #include "PrepQueue.h"
 
+#include <algorithm>
 #include <chrono>
 
 namespace openmixer::library
@@ -19,6 +20,8 @@ PrepQueue::~PrepQueue()
 {
     for (auto& entry : inFlight)
         entry.second.job->cancel();
+    for (auto& entry : draining)
+        entry.job->cancel();
 }
 
 juce::Result PrepQueue::enqueue (std::int64_t trackId, bool urgent)
@@ -53,17 +56,29 @@ juce::Result PrepQueue::remove (std::int64_t trackId)
 void PrepQueue::cancel (std::int64_t trackId)
 {
     if (const auto it = inFlight.find (trackId); it != inFlight.end())
-    {
-        it->second.job->cancel();   // the final status arrives through the inbox
-        return;
-    }
-    const auto entry = lib.prepQueue().find (trackId);
+        return cancelRunning (it);
+
+    juce::Result status = juce::Result::ok();
+    const auto entry = lib.prepQueue().find (trackId, &status);
+    if (status.failed())
+        return error (status.getErrorMessage());
     if (entry && entry->status == PrepStatus::Queued)
     {
         if (auto r = lib.prepQueue().setStatus (trackId, PrepStatus::Cancelled); r.failed())
             error (r.getErrorMessage());
         notify (trackId);
     }
+}
+
+void PrepQueue::cancelRunning (std::map<std::int64_t, InFlight>::iterator it)
+{
+    const auto trackId = it->first;
+    it->second.job->cancel();
+    draining.push_back (std::move (it->second));   // so a re-enqueue can start a fresh job at once
+    inFlight.erase (it);
+    if (auto r = lib.prepQueue().setStatus (trackId, PrepStatus::Cancelled); r.failed())
+        error (r.getErrorMessage());
+    notify (trackId);
 }
 
 void PrepQueue::cancelAll()
@@ -86,7 +101,13 @@ bool PrepQueue::pump()
     drain();
     fill();
     reportProgress();
-    return ! inFlight.empty() || lib.prepQueue().nextQueued().has_value();
+    if (! inFlight.empty() || ! draining.empty())
+        return true;
+    juce::Result status = juce::Result::ok();
+    const auto next = lib.prepQueue().nextQueued (&status);
+    if (status.failed())
+        error (status.getErrorMessage());
+    return status.failed() || next.has_value();   // an unreadable queue is not known to be idle
 }
 
 bool PrepQueue::pumpUntilIdle (int timeoutMs)
@@ -117,9 +138,10 @@ std::vector<PrepEntry> PrepQueue::list (juce::Result* status)
     return entries;
 }
 
-void PrepQueue::post (const std::shared_ptr<Inbox>& box, std::int64_t trackId, const analysis::AnalysisJob& job)
+void PrepQueue::post (const std::shared_ptr<Inbox>& box, std::int64_t trackId, std::int64_t generation,
+                     const analysis::AnalysisJob& job)
 {
-    Finished f { trackId, job.getStatus(), job.getResults(), job.getError() };
+    Finished f { trackId, generation, job.getStatus(), job.getResults(), job.getError() };
     {
         std::lock_guard<std::mutex> lock (box->mutex);
         box->done.push_back (std::move (f));
@@ -140,7 +162,17 @@ void PrepQueue::drain()
 
 void PrepQueue::complete (const Finished& finished)
 {
-    inFlight.erase (finished.trackId);
+    if (const auto d = std::find_if (draining.begin(), draining.end(),
+                                     [&] (const InFlight& f) { return f.generation == finished.generation; });
+        d != draining.end())
+    {
+        draining.erase (d);   // cancelled earlier: the row was already settled
+        return;
+    }
+    const auto it = inFlight.find (finished.trackId);
+    if (it == inFlight.end() || it->second.generation != finished.generation)
+        return;
+    inFlight.erase (it);
     switch (finished.status)
     {
         case analysis::JobStatus::Done:
@@ -150,7 +182,8 @@ void PrepQueue::complete (const Finished& finished)
                 error (r.getErrorMessage());
             break;
         case analysis::JobStatus::Cancelled:
-            lib.prepQueue().setStatus (finished.trackId, PrepStatus::Cancelled);
+            if (auto r = lib.prepQueue().setStatus (finished.trackId, PrepStatus::Cancelled); r.failed())
+                error (r.getErrorMessage());
             break;
         default:
             return fail (finished.trackId, finished.error);
@@ -167,7 +200,7 @@ void PrepQueue::fail (std::int64_t trackId, const juce::String& message)
 
 void PrepQueue::fill()
 {
-    while (static_cast<int> (inFlight.size()) < opts.maxInFlight && submitNext())
+    while (static_cast<int> (inFlight.size() + draining.size()) < opts.maxInFlight && submitNext())
     {
     }
 }
@@ -177,7 +210,10 @@ bool PrepQueue::submitNext()
     juce::Result status = juce::Result::ok();
     const auto next = lib.prepQueue().nextQueued (&status);
     if (status.failed())
-        return error (status.getErrorMessage()), false;   // retry on the next pump
+    {
+        error (status.getErrorMessage());   // retry on the next pump
+        return false;
+    }
     if (! next)
         return false;
 
@@ -186,12 +222,20 @@ bool PrepQueue::submitNext()
     if (status.failed() || ! track)
         fail (id, status.failed() ? status.getErrorMessage() : juce::String ("track no longer exists"));
     else if (auto r = lib.prepQueue().setStatus (id, PrepStatus::Running); r.failed())
-        return error (r.getErrorMessage()), false;
+    {
+        error (r.getErrorMessage());
+        return false;
+    }
     else
     {
         const auto box = inbox;
-        inFlight[id].job = service.submit (opts.sourceFactory (*track), opts.analyzerIds,
-                                           [box, id] (const analysis::AnalysisJob& job) { post (box, id, job); });
+        const auto generation = nextGeneration++;
+        auto& slot = inFlight[id];
+        slot.generation = generation;
+        slot.job = service.submit (opts.sourceFactory (*track), opts.analyzerIds, [box, id, generation] (const analysis::AnalysisJob& job)
+        {
+            post (box, id, generation, job);
+        });
     }
     return true;
 }
@@ -213,7 +257,11 @@ void PrepQueue::notify (std::int64_t trackId)
 {
     if (! opts.observer)
         return;
-    if (auto entry = lib.prepQueue().find (trackId))
+    juce::Result status = juce::Result::ok();
+    auto entry = lib.prepQueue().find (trackId, &status);
+    if (status.failed())
+        error (status.getErrorMessage());
+    if (entry)
     {
         if (const auto it = inFlight.find (trackId); it != inFlight.end())
             entry->progress = it->second.job->getProgress();
