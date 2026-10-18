@@ -475,13 +475,18 @@ add_library(openmixer_ui STATIC
     src/ui/DebugPanel.h
     src/ui/DeckStrip.cpp
     src/ui/DeckStrip.h
+    src/ui/GlassLookAndFeel.cpp
+    src/ui/GlassLookAndFeel.h
     src/ui/MeterBar.cpp
     src/ui/MeterBar.h
+    src/ui/Theme.h
+    src/ui/ValueFormat.h
 )
 
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
-    src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/MeterBar.cpp)
+    src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
+    src/ui/MeterBar.cpp)
 
 target_link_libraries(openmixer_ui PUBLIC
     openmixer_engine
@@ -577,6 +582,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp
     tests/unit/DebugPanelTest.cpp
+    tests/unit/ValueFormatTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp
