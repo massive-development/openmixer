@@ -5,6 +5,11 @@
 //! Threads: [`Stretcher::prepare`] allocates and belongs to the control thread. Every other method
 //! is audio-thread safe: no allocation, locks or I/O in the implementation.
 
+mod ffi;
+mod rubberband;
+
+pub use rubberband::RubberBandStretcher;
+
 use thiserror::Error;
 
 /// Largest channel count accepted by [`Stretcher::prepare`].
