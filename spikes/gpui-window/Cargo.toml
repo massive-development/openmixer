@@ -1,0 +1,11 @@
+# THROWAWAY SPIKE (Task 6). Own workspace: not built by the root workspace or Rust CI.
+[workspace]
+
+[package]
+name = "gpui-window-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+gpui = "=0.2.2"
