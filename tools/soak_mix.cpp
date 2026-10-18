@@ -1,8 +1,10 @@
-// Headless soak: two looping decks through the mixer on a paced mock device while controls move.
+// Headless soak: two decks through the mixer on a paced mock device while a scripted DJ moves controls,
+// loops, hotcues and key-lock (see soak/Scenario.h).
 // Usage: openmixer_soak [--seconds N] [--max-xruns N] [--max-underruns N]; exit 0 = pass.
 #include "engine/DjEngine.h"
 #include "engine/MockAudioDevice.h"
 #include "soak/OutputChecker.h"
+#include "soak/Scenario.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -17,7 +19,6 @@ namespace
 constexpr double kRate = 48000.0;
 constexpr int kBlock = 256;
 constexpr int kToneSeconds = 6;
-constexpr int kControlPeriodMs = 50;
 
 struct Options
 {
@@ -64,67 +65,13 @@ juce::File writeTone (const juce::File& file, double hz)
     return file;
 }
 
-void wiggleControls (openmixer::DjEngine& engine, juce::Random& rng, double t)
-{
-    auto& mixer = engine.getMixer();
-    mixer.setParameter ("crossfader", 0.5 + 0.5 * std::sin (t * 0.7));
-    for (int ch = 0; ch < 2; ++ch)
-    {
-        const auto prefix = "ch" + juce::String (ch);
-        mixer.setParameter (prefix + ".eq.low", -12.0 + 18.0 * rng.nextDouble());
-        mixer.setParameter (prefix + ".eq.high", -12.0 + 18.0 * rng.nextDouble());
-        mixer.setParameter (prefix + ".filter", 0.5 + 0.5 * std::sin (t * (0.3 + 0.2 * ch)));
-        mixer.setParameter (prefix + ".fader", 0.6 + 0.4 * rng.nextDouble());
-        engine.getDeck (ch).setParameter ("rate", 0.94 + 0.12 * rng.nextDouble());
-    }
-}
-
-// Underruns right after a seek or restart are expected while the decoder refills; only steady-state ones count.
-class UnderrunTracker
-{
-public:
-    void noteDisturbance (juce::uint32 nowMs) noexcept { quietAt = nowMs + kSettleMs; }
-
-    void tick (openmixer::DjEngine& engine, juce::uint32 nowMs) noexcept
-    {
-        unsigned total = 0;
-        for (int d = 0; d < engine.getNumDecks(); ++d)
-            total += engine.getDeck (d).getUnderrunCount();
-        if (nowMs >= quietAt)
-            steady += total - last;
-        last = total;
-    }
-
-    unsigned getSteady() const noexcept { return steady; }
-
-private:
-    static constexpr juce::uint32 kSettleMs = 500;
-    unsigned last = 0, steady = 0;
-    juce::uint32 quietAt = 0;
-};
-
-void restartFinishedDecks (openmixer::DjEngine& engine, UnderrunTracker& tracker, juce::uint32 nowMs)
-{
-    for (int d = 0; d < engine.getNumDecks(); ++d)
-        if (auto& deck = engine.getDeck (d); deck.hasFinished())
-        {
-            deck.seek (0);
-            deck.play();
-            tracker.noteDisturbance (nowMs);
-        }
-}
-
-void occasionalSeek (openmixer::DjEngine& engine, juce::Random& rng, UnderrunTracker& tracker, juce::uint32 nowMs)
-{
-    if (rng.nextInt (40) != 0)
-        return;
-    engine.getDeck (rng.nextInt (engine.getNumDecks())).setParameter ("seek", rng.nextDouble());
-    tracker.noteDisturbance (nowMs);
-}
-
-bool report (const Options& o, const openmixer::LatencyStats& stats, unsigned underruns,
+bool report (const Options& o, const openmixer::LatencyStats& stats, const openmixer::soak::Scenario& scenario,
              const openmixer::OutputReport& out)
 {
+    const auto underruns = scenario.getSteadyUnderruns();
+    const auto& c = scenario.getCounts();
+    std::printf ("soak: actions loops=%u loop-exits=%u hotcue-jumps=%u keylock-toggles=%u fx-changes=%u seeks=%u\n",
+                 c.loops, c.loopExits, c.hotcueJumps, c.keylockToggles, c.fxChanges, c.seeks);
     std::printf ("soak: %llu callbacks, xruns=%llu, max callback %.0f us (budget %.0f us), avg cpu %.1f%%\n",
                  static_cast<unsigned long long> (stats.callbackCount), static_cast<unsigned long long> (stats.xrunCount),
                  stats.maxCallbackUs, 1.0e6 * kBlock / kRate, 100.0 * stats.cpuLoad);
@@ -146,6 +93,8 @@ int main (int argc, char** argv)
     dir.createDirectory();
 
     openmixer::DjEngine engine;
+    openmixer::fx::FxRack masterFx;   // declared before the device so it outlives the audio thread
+    engine.getMixer().setMasterInsert (0, &masterFx);
     openmixer::OutputChecker checker (engine);
     openmixer::MockAudioDevice device (kRate, kBlock, 0, 4);
 
@@ -164,22 +113,18 @@ int main (int argc, char** argv)
     device.start (checker);
     device.startRealtime();
 
-    juce::Random rng (1234);
-    UnderrunTracker underruns;
+    openmixer::soak::Scenario scenario (engine, masterFx);
     const auto start = juce::Time::getMillisecondCounter();
-    underruns.noteDisturbance (start);
+    scenario.begin (start);
     for (auto now = start; now - start < static_cast<juce::uint32> (options.seconds) * 1000U;
          now = juce::Time::getMillisecondCounter())
     {
-        wiggleControls (engine, rng, (now - start) / 1000.0);
-        occasionalSeek (engine, rng, underruns, now);
-        restartFinishedDecks (engine, underruns, now);
-        underruns.tick (engine, now);
-        juce::Thread::sleep (kControlPeriodMs);
+        scenario.step (now, (now - start) / 1000.0);
+        juce::Thread::sleep (openmixer::soak::Scenario::kControlPeriodMs);
     }
 
     device.stopRealtime();
     device.stop();
     dir.deleteRecursively();
-    return report (options, device.getLatencyStats(), underruns.getSteady(), checker.getReport()) ? 0 : 1;
+    return report (options, device.getLatencyStats(), scenario, checker.getReport()) ? 0 : 1;
 }

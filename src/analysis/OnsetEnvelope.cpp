@@ -9,6 +9,7 @@ namespace openmixer::analysis
 namespace
 {
 constexpr float kLogGain = 1000.0f;
+constexpr double kPeakLeadSeconds = 0.002;   // flux peaks ~2 ms before the onset (calibrated on clicks)
 
 struct BinRange { size_t first, last; };
 
@@ -41,7 +42,7 @@ OnsetEnvelope emptyEnvelope (const MagnitudeStft& stft, double sampleRate, int f
 {
     OnsetEnvelope env;
     env.frameRate = sampleRate / stft.getHop();
-    env.startSeconds = 0.5 * stft.getFrameSize() / sampleRate;   // frame centre
+    env.startSeconds = 0.5 * stft.getFrameSize() / sampleRate + kPeakLeadSeconds;   // frame centre
     env.values.reserve (static_cast<size_t> (frames));
     return env;
 }

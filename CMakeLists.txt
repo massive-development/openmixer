@@ -18,6 +18,7 @@ endif()
 # FetchContent for JUCE and dependencies
 include(FetchContent)
 include(Dependencies)
+include(RubberBand)
 
 # Configure build type
 if(NOT CMAKE_BUILD_TYPE)
@@ -108,6 +109,10 @@ add_library(openmixer_engine STATIC
     src/engine/Deck.h
     src/engine/DeckDecoder.cpp
     src/engine/DeckPlayback.cpp
+    src/engine/DeckKeylock.cpp
+    src/engine/TimeStretch.cpp
+    src/engine/TimeStretch.h
+    src/engine/FrameRing.h
     src/engine/HotcueBank.h
     src/engine/LoopPrefetch.cpp
     src/engine/LoopPrefetch.h
@@ -145,13 +150,14 @@ add_library(openmixer_engine STATIC
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
-    src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DeckKeylock.cpp src/engine/TimeStretch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
 target_link_libraries(openmixer_engine PUBLIC
     openmixer_core
     openmixer_dsp
+    openmixer_rubberband
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -259,8 +265,11 @@ set(OPENMIXER_ANALYSIS_SOURCES
     src/analysis/KeyEstimator.cpp
     src/analysis/MusicalKey.cpp
     src/analysis/OnsetEnvelope.cpp
+    src/analysis/OnsetPicker.cpp
+    src/analysis/Segmenter.cpp
     src/analysis/SqliteResultCache.cpp
     src/analysis/Stft.cpp
+    src/analysis/StructureAnalyzer.cpp
     src/analysis/TempoSearch.cpp
     src/analysis/WaveformBuilder.cpp
     src/analysis/WaveformData.cpp
@@ -282,9 +291,12 @@ add_library(openmixer_analysis STATIC
     src/analysis/KeyEstimator.h
     src/analysis/MusicalKey.h
     src/analysis/OnsetEnvelope.h
+    src/analysis/OnsetPicker.h
     src/analysis/ResultCache.h
+    src/analysis/Segmenter.h
     src/analysis/SqliteResultCache.h
     src/analysis/Stft.h
+    src/analysis/StructureAnalyzer.h
     src/analysis/TempoSearch.h
     src/analysis/WaveformBuilder.h
     src/analysis/WaveformData.h
@@ -306,6 +318,27 @@ target_link_libraries(openmixer_analysis
     PRIVATE
         openmixer_sqlite3
 )
+
+# =============================================================================
+# Stems library (separator interface, licence-gated model download). Depends on analysis.
+# =============================================================================
+
+set(OPENMIXER_STEMS_SOURCES
+    src/stems/ModelManifest.cpp
+    src/stems/StemSeparator.cpp
+    src/stems/WeightManager.cpp
+)
+
+add_library(openmixer_stems STATIC
+    ${OPENMIXER_STEMS_SOURCES}
+    src/stems/ModelManifest.h
+    src/stems/StemSeparator.h
+    src/stems/WeightManager.h
+)
+
+target_include_directories(openmixer_stems PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+openmixer_enable_warnings(${OPENMIXER_STEMS_SOURCES})
+target_link_libraries(openmixer_stems PUBLIC openmixer_analysis juce::juce_core juce::juce_recommended_config_flags)
 
 # =============================================================================
 # Plugin API + registry (extension point; links engine and controllers one-way)
@@ -446,6 +479,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
     tests/unit/DeckLoopTest.cpp
+    tests/unit/DeckKeylockTest.cpp
     tests/unit/DeckTestUtil.h
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
@@ -459,6 +493,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/BpmEstimatorTest.cpp
     tests/unit/KeyEstimatorTest.cpp
     tests/unit/WaveformBuilderTest.cpp
+    tests/unit/StructureAnalyzerTest.cpp
+    tests/unit/StemsTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
@@ -471,6 +507,7 @@ target_compile_definitions(openmixer_tests PRIVATE
 add_dependencies(openmixer_tests openmixer_example_gain)
 
 target_link_libraries(openmixer_tests PRIVATE
+    openmixer_stems
     openmixer_analysis
     openmixer_plugins
     openmixer_fx
@@ -501,11 +538,12 @@ gtest_discover_tests(openmixer_tests
     DISCOVERY_TIMEOUT 60
 )
 
-# Short headless soak (label "soak"); the 10-minute gate is Todo 13: openmixer_soak --seconds 600
-add_executable(openmixer_soak tools/soak_mix.cpp tools/soak/OutputChecker.h)
+# Short headless soak (label "soak"); the 10-minute Wave 2 gate (Todo 13) is soak_10min below
+add_executable(openmixer_soak tools/soak_mix.cpp tools/soak/OutputChecker.h tools/soak/Scenario.h)
 target_include_directories(openmixer_soak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 openmixer_enable_warnings(tools/soak_mix.cpp)
 target_link_libraries(openmixer_soak PRIVATE
+    openmixer_fx
     openmixer_engine
     ${OPENMIXER_CURL_LIBS}
     juce::juce_audio_formats
@@ -518,6 +556,12 @@ target_link_libraries(openmixer_soak PRIVATE
 # Shared CI runners hiccup (one 15 ms callback seen on Windows); allow a few xruns, systemic ones still fail
 add_test(NAME soak_short COMMAND openmixer_soak --seconds 30 --max-xruns 5)
 set_tests_properties(soak_short PROPERTIES LABELS soak TIMEOUT 120)
+# Wave 2 gate (Todo 13): 10 minutes, so opt-in: cmake -DOPENMIXER_LONG_SOAK=ON, then ctest -L soak_long
+option(OPENMIXER_LONG_SOAK "Register the 10-minute soak test" OFF)
+if(OPENMIXER_LONG_SOAK)
+    add_test(NAME soak_10min COMMAND openmixer_soak --seconds 600 --max-xruns 5)
+    set_tests_properties(soak_10min PROPERTIES LABELS soak_long TIMEOUT 720)
+endif()
 
 # =============================================================================
 # Tools
