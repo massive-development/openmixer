@@ -108,7 +108,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 5: UI
 
-- [~] **Todo 25a:** Theme/skin loader (done: JSON themes, `ThemeRegistry` with built-in/user/plugin sources and live switching, `PluginHost::registerTheme`; missing: layouts, theme picker UI + persisted choice)
+- [~] **Todo 25a:** Theme/skin loader (done: JSON themes, `ThemeRegistry` with built-in/user/plugin sources and live switching, `PluginHost::registerTheme`; plugin theme forwarding, theme picker UI + persisted choice; missing: layouts, user-theme-dir file watching)
   - `src/ui/`: `ThemeTokens`, `Theme` (runtime accessors), `ThemeJson`, `ThemeRegistry`; `resources/themes/*.json` embedded via `juce_add_binary_data`
 - [x] **Todo 25:** Design tokens + LookAndFeel
   - `GlassLookAndFeel` covers knobs, faders, buttons, ComboBox, PopupMenu, TextEditor, ToggleButton, TabbedButtonBar, ScrollBar, TableHeader, tooltip (`GlassWidgets.cpp`)

@@ -38,13 +38,13 @@ private:
     openmixer::LatencyStats latencyStats() const { return latency.getStats(); }
 
     openmixer::ui::ThemeRegistry& themes;
+    openmixer::ui::JuceAudioSettingsModel audioModel { deviceManager };   // before composition: its settings panel uses it and runs a timer, so it dies first
     openmixer::AppComposition composition;   // engine, router, mapper, plugins, preferences, view, library, settings
     openmixer::MidiInputRouter midiInput { deviceManager, composition.mapper };
     openmixer::OutputRouter outputs;
     openmixer::LatencyMonitor latency;   // written on the audio thread, read by the settings page
     openmixer::AppPreferencesTargets targets { audioControl(), midiInput, composition.mapper, composition.plugins, themes, outputs };
     openmixer::ui::PreferencesApplier applier { targets };
-    openmixer::ui::JuceAudioSettingsModel audioModel { deviceManager };
     double lastTickMs = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)

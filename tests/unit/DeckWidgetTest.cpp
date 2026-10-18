@@ -2,9 +2,11 @@
 #include <JuceHeader.h>
 #include "DeckTestUtil.h"
 #include "controllers/ParameterRouter.h"
+#include "ui/ClockFormat.h"
 #include "ui/DeckWidget.h"
 #include "ui/GlassLookAndFeel.h"
 #include "ui/MainView.h"
+#include "ui/TrackTableModel.h"
 
 #include <gtest/gtest.h>
 
@@ -356,6 +358,9 @@ TEST (DeckWidgetTest, HeaderShowsTrackInfoClockAndEffectiveBpm)
     EXPECT_EQ (TrackHeader::formatTime (65.34, false), "1:05.3");
     EXPECT_EQ (TrackHeader::formatTime (12.0, true), "-0:12.0");
     EXPECT_EQ (TrackHeader::formatTime (-3.0, false), "0:00.0");
+    EXPECT_EQ (formatClock (245.4, false), "4:05");
+    EXPECT_EQ (formatClock (245.6, false), "4:06");
+    EXPECT_EQ (TrackTableModel::formatDuration (245.4), formatClock (245.4, false));
     EXPECT_EQ (TrackHeader::formatBpm (0.0), "--");
     EXPECT_EQ (TrackHeader::formatBpm (127.96), "128.0");
     EXPECT_EQ (TrackHeader::formatKey ({ "", "", "Am", "8A", 0.0 }), "Am  8A");

@@ -1,5 +1,6 @@
 #include "TrackTableModel.h"
 
+#include "ClockFormat.h"
 #include "Theme.h"
 #include "TrackDrag.h"
 #include "analysis/MusicalKey.h"
@@ -67,11 +68,7 @@ const library::TrackRecord* TrackTableModel::rowAt (int row)
     return index < it->second.size() ? &it->second[index] : nullptr;
 }
 
-juce::String TrackTableModel::formatDuration (double seconds)
-{
-    const int s = juce::roundToInt (seconds);
-    return juce::String (s / 60) + ":" + juce::String (s % 60).paddedLeft ('0', 2);
-}
+juce::String TrackTableModel::formatDuration (double seconds) { return formatClock (seconds, false); }
 
 juce::String TrackTableModel::formatBpm (const std::optional<double>& bpm)
 {
