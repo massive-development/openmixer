@@ -48,6 +48,7 @@ SearchFieldRegistry SearchFieldRegistry::withDefaults()
     r.add (custom ("key", { "CAST(tracks.camelot AS INTEGER)", "tracks.camelot" },
                    [] (const FilterTerm& t, SqlFragment& out) { return compileKeyTerm (t, out); }));
     r.add (custom ("playlist", {}, [] (const FilterTerm& t, SqlFragment& out) { return compilePlaylistTerm (t, out); }));
+    r.add (custom ("folder", {}, [] (const FilterTerm& t, SqlFragment& out) { return compileFolderTerm (t, out); }));
     return r;
 }
 

@@ -5,16 +5,19 @@ namespace openmixer
 
 void ParameterRouter::registerTarget (const juce::String& prefix, ParameterTarget* target)
 {
+    const std::lock_guard<std::recursive_mutex> guard (lock);
     targets[prefix] = target;
 }
 
 void ParameterRouter::unregisterTarget (const juce::String& prefix)
 {
+    const std::lock_guard<std::recursive_mutex> guard (lock);
     targets.erase (prefix);
 }
 
 bool ParameterRouter::setParameter (const juce::String& id, double value)
 {
+    const std::lock_guard<std::recursive_mutex> guard (lock);   // held across the target call, see header
     // Longest registered prefix wins ("deck.0" beats "deck").
     const juce::String* bestPrefix = nullptr;
     ParameterTarget* best = nullptr;

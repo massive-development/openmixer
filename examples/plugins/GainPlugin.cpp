@@ -1,4 +1,4 @@
-// Tiny example plugin: a gain stage, a parameter target ("example.gain") and a MIDI map.
+// Tiny example plugin: a gain stage, a parameter target ("example.gain"), a MIDI map and a theme.
 // Build as a shared library (see CMakeLists.txt) and drop it into a plugin folder.
 #include "plugins/PluginApi.h"
 
@@ -36,6 +36,7 @@ public:
         host.registerStage ("example.gain", openmixer::StageKind::PostProcess,
                             [this] { return std::make_unique<GainStage> (gain); });
         host.registerParameterTarget ("example", this);
+        host.registerTheme (R"({ "id": "org.openmixer.example.theme", "name": "Example Plugin Theme" })");
         host.registerMidiMap ("example.gain-knob", R"({ "name": "Example gain", "mappings": [
             { "type": "cc", "number": 1, "target": "example.gain", "min": 0, "max": 1 } ] })");
     }

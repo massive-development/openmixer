@@ -133,27 +133,27 @@
    "items": [
     [
      "25 Tokens",
-     "partial"
+     "done"
     ],
     [
      "25a Theme loader",
-     "todo"
+     "partial"
     ],
     [
      "26 Decks",
-     "todo"
+     "partial"
     ],
     [
      "27 Mixer UI",
-     "todo"
+     "partial"
     ],
     [
      "28 Browser",
-     "todo"
+     "partial"
     ],
     [
      "29 Automix/settings",
-     "todo"
+     "partial"
     ],
     [
      "30 Stem pads",
@@ -161,7 +161,7 @@
     ],
     [
      "31 UI gate",
-     "todo"
+     "done"
     ]
    ]
   },

@@ -17,7 +17,8 @@ void ChannelStrip::prepare (double sr, int maxBlockSize)
     inserts.prepare (sr, maxBlockSize);
     trimGain = trim.load (kRelaxed);
     faderGain = -1.0F;
-    meter.reset();
+    meterL.reset();
+    meterR.reset();
 }
 
 void ChannelStrip::setTrim (float linear) noexcept { trim.store (std::clamp (linear, 0.0F, 4.0F), kRelaxed); }
@@ -36,16 +37,18 @@ void ChannelStrip::applyTrim (const float* srcL, const float* srcR, int n) noexc
     trimGain = target;
 }
 
-float ChannelStrip::mixIntoMaster (float* const* buf, float target, const MixBus& bus, int n) noexcept
+ChannelStrip::StereoPeak ChannelStrip::mixIntoMaster (float* const* buf, float target, const MixBus& bus, int n) noexcept
 {
     const float step = (target - faderGain) / static_cast<float> (n);
-    float g = faderGain, peak = 0.0F;
+    float g = faderGain;
+    StereoPeak peak;
     for (int i = 0; i < n; ++i, g += step)
     {
         const float l = buf[0][i] * g, r = buf[1][i] * g;
         bus.masterL[i] += l;
         bus.masterR[i] += r;
-        peak = std::max (peak, std::max (std::abs (l), std::abs (r)));
+        peak.left = std::max (peak.left, std::abs (l));
+        peak.right = std::max (peak.right, std::abs (r));
     }
     faderGain = target;
     return peak;
@@ -62,7 +65,8 @@ void ChannelStrip::render (const float* srcL, const float* srcR, const Crossfade
     {
         faderGain = target;
         trimGain = trim.load (kRelaxed);
-        meter.push (0.0F, meterDecay);
+        meterL.push (0.0F, meterDecay);
+        meterR.push (0.0F, meterDecay);
         return;
     }
     if (srcL == nullptr) srcL = srcR;
@@ -80,7 +84,9 @@ void ChannelStrip::render (const float* srcL, const float* srcR, const Crossfade
             bus.cueL[i] += buf[0][i];
             bus.cueR[i] += buf[1][i];
         }
-    meter.push (mixIntoMaster (buf, target, bus, n), meterDecay);
+    const auto peak = mixIntoMaster (buf, target, bus, n);
+    meterL.push (peak.left, meterDecay);
+    meterR.push (peak.right, meterDecay);
 }
 
 } // namespace openmixer

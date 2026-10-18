@@ -2,31 +2,50 @@
 
 namespace
 {
-    constexpr int kWindowWidth = 900, kWindowHeight = 640;
-    constexpr int kMaxOutputs = 8;
+    constexpr int kWindowWidth = 1280, kWindowHeight = 800;
+    constexpr int kMaxOutputs = openmixer::ui::JuceAudioSettingsModel::kMaxOutputs;
     constexpr int kControlTickHz = 30;
+    constexpr double kMicrosPerSecond = 1.0e6;
 
-    juce::File userMapFile()
+    bool wantsSettingsOpen()
     {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("OpenMixer").getChildFile ("controller_map.json");
+        return juce::JUCEApplicationBase::getCommandLineParameters().contains ("--settings")
+            || juce::SystemStats::getEnvironmentVariable ("OPENMIXER_SETTINGS", {}) == "1";
     }
 }
 
-MainComponent::MainComponent()
+// The composition loads the preferences first: they feed the library options, the saved audio state and
+// (through the applier) plugins, theme, MIDI inputs and map. OPENMIXER_THEME=<id> still wins for the session.
+MainComponent::MainComponent (openmixer::ui::ThemeRegistry& themeRegistry)
+    : themes (themeRegistry), composition (*this, themeRegistry, openmixer::ui::Preferences::defaultFile())
 {
-    addAndMakeVisible (panel);
     setSize (kWindowWidth, kWindowHeight);
-    setUpMidi();
-    setAudioChannels (0, 2);
+    auto& prefs = composition.prefs;
+    targets.noteAudioRequested (prefs.audio.deviceState);   // setAudioChannels below opens the device: not twice
+    applier.apply (prefs);
+    if (const auto wanted = juce::SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", {}); wanted.isNotEmpty())
+        targets.applyTheme (wanted);   // also the wanted theme, so a plugin reload keeps it
+    const auto savedAudio = juce::parseXML (prefs.audio.deviceState);   // null: the system default device
+    setAudioChannels (0, kMaxOutputs, savedAudio.get());
+    composition.setUpSettings ({ &audioModel, [this] { return latencyStats(); },
+                                 [] { return juce::MidiInput::getAvailableDevices(); },
+                                 [this] { targets.reloadPlugins(); }, [this] { preferencesChanged(); } });
+    composition.layout();
     lastTickMs = juce::Time::getMillisecondCounterHiRes();
     startTimerHz (kControlTickHz);
+    if (wantsSettingsOpen())
+        openSettings();
+}
+
+void MainComponent::setBackdropOpacity (float opacity)
+{
+    composition.getView().setBackdropOpacity (opacity);
 }
 
 void MainComponent::timerCallback()
 {
     const auto now = juce::Time::getMillisecondCounterHiRes();
-    engine.updateControl ((now - lastTickMs) / 1000.0);
+    composition.engine.updateControl ((now - lastTickMs) / 1000.0);
     lastTickMs = now;
 }
 
@@ -37,39 +56,44 @@ MainComponent::~MainComponent()
     shutdownAudio();
 }
 
-void MainComponent::setUpMidi()
+// audioModel/deviceManager are base-class/earlier members: valid when `targets` is constructed.
+openmixer::AudioDeviceControl MainComponent::audioControl()
 {
-    router.registerTarget ("mixer", &engine.getMixer());
-    router.registerTarget ("fx", &engine.getFx());
-    router.registerTarget ("sync", &engine.getSync());
-    for (int i = 0; i < engine.getNumDecks(); ++i)
-        router.registerTarget ("deck." + juce::String (i), &engine.getDeckControl (i));   // decorates the Deck
+    return { [this] { return audioModel.getStateXml(); },
+             [this] (const juce::XmlElement& xml) { return deviceManager.initialise (0, kMaxOutputs, &xml, true); } };
+}
 
-    mapper.setTarget (&router);
-    if (const auto map = userMapFile(); map.existsAsFile())
-        if (const auto r = mapper.loadFromFile (map); r.failed())
-            juce::Logger::writeToLog ("controller_map.json: " + r.getErrorMessage());
-    midiInput.enableAll();
+void MainComponent::preferencesChanged()
+{
+    applier.apply (composition.prefs);
 }
 
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
-    engine.prepare (sampleRate, samplesPerBlockExpected);
+    composition.engine.prepare (sampleRate, samplesPerBlockExpected);
+    outputs.prepare (samplesPerBlockExpected);
+    latency.reset();
+    latency.configure (sampleRate, samplesPerBlockExpected);
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        latency.setDeviceLatency (device->getInputLatencyInSamples(), device->getOutputLatencyInSamples());
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
 {
     auto* buffer = info.buffer;
-    float* outputs[kMaxOutputs] {};
+    float* outputPtrs[kMaxOutputs] {};
     const int numOutputs = std::min (buffer->getNumChannels(), kMaxOutputs);
     for (int c = 0; c < numOutputs; ++c)
-        outputs[c] = buffer->getWritePointer (c, info.startSample);
-    engine.process (nullptr, 0, outputs, numOutputs, info.numSamples);
+        outputPtrs[c] = buffer->getWritePointer (c, info.startSample);
+    const auto start = juce::Time::getHighResolutionTicks();
+    outputs.process (composition.engine, outputPtrs, numOutputs, info.numSamples);
+    latency.recordCallback (juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start) * kMicrosPerSecond,
+                            info.numSamples);
 }
 
 void MainComponent::releaseResources() {}
 
 void MainComponent::resized()
 {
-    panel.setBounds (getLocalBounds());
+    composition.layout();
 }
