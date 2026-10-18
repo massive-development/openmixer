@@ -94,7 +94,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 4: Library & Data
 
-- [ ] **Todo 20:** Library schema + DAO layer
+- [x] **Todo 20:** Library schema + DAO layer
+  - `src/library/`: `Database`/`Statement`/`Transaction`, `Migrations`, `TrackDao`, `CueDao`, `PlaylistDao`, `Library`
 - [ ] **Todo 21:** Metadata ingest + watch folders
 - [ ] **Todo 22:** Import (iTunes/Rekordbox XML)
 - [ ] **Todo 23:** Search + filter engine
