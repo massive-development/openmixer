@@ -35,7 +35,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Output via `cpal` (ALSA backend first; WASAPI and CoreAudio in the porting phase)
   - Mock device for CI testing
 
-- [ ] **Todo 8:** Deck engine (streaming decode + transport)
+- [x] **Todo 8:** Deck engine (streaming decode + transport)
   - Streaming decode via `symphonia`
   - Lock-free ring buffer
   - FFmpeg backend deferred (see Todo 8b)
@@ -71,11 +71,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`). Enable `GPL-2.0-or-later` in `deny.toml` when this lands
 
 - [ ] **Todo 12:** Beat-sync + quantized cue/loop/slip
+  - Engine side done (grid, sync, quantize, slip, gapless loops, hotcues); open until analysis (Todo 15) supplies beat grids
   - Beat phase alignment
   - Control ids: `deck.N.sync`, `sync.master`, `loop.quantized.<beats>`, `slip`
   - Gapless deck loop playback and hotcues
 
-- [ ] **Todo 11:** FX rack (8 essential effects)
+- [x] **Todo 11:** FX rack (8 essential effects)
   - Effects: echo, reverb, flanger, phaser, crush, gate, roll, tape stop
   - Per-unit enable, wet/dry mix and effect parameters; `fxN.*` parameter ids
   - Beat-synced to the tempo grid
