@@ -6,7 +6,7 @@ namespace openmixer::library
 std::unique_ptr<WatchFolders> WatchFolders::create (const juce::String& libraryPath, MetadataReaderRegistry readers,
                                                     Options options, juce::String* error)
 {
-    auto control = Library::open (libraryPath, Database::OpenMode::ReadWrite, coreMigrations(), error);
+    auto control = Library::open (libraryPath, Database::OpenMode::ReadWrite, options.migrations, error);
     if (control == nullptr)
         return nullptr;
     return std::make_unique<WatchFolders> (Key {}, std::move (control), libraryPath, std::move (readers), std::move (options));
@@ -103,10 +103,19 @@ IngestSummary WatchFolders::scanAll (Library& scanLibrary)
     return total;
 }
 
+std::unique_ptr<Library> WatchFolders::openScanLibrary()
+{
+    juce::String error;
+    auto lib = Library::open (libraryPath, Database::OpenMode::ReadWrite, options.migrations, &error);
+    if (lib == nullptr && options.onError)
+        options.onError ("watch folders: cannot open library: " + error);
+    return lib;
+}
+
 void WatchFolders::run()
 {
-    // why: opened here so the connection is only ever used by this thread
-    auto scanLibrary = Library::open (libraryPath);
+    // why: opened lazily on this thread so the connection is only ever used here; retried each pass if it failed
+    std::unique_ptr<Library> scanLibrary;
     std::int64_t lastScan = now();
 
     std::unique_lock<std::mutex> lock (wakeMutex);
@@ -118,7 +127,13 @@ void WatchFolders::run()
             continue;
         }
         lock.unlock();
-        const auto summary = scanLibrary != nullptr ? scanAll (*scanLibrary) : IngestSummary {};
+        if (scanLibrary == nullptr)
+            scanLibrary = openScanLibrary();
+        IngestSummary summary;
+        if (scanLibrary != nullptr)
+            summary = scanAll (*scanLibrary);
+        else
+            summary.failed = 1;   // surfaced to onScanDone so callers can tell the pass did nothing
         if (options.onScanDone)
             options.onScanDone (summary);
         lock.lock();

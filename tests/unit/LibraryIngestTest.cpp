@@ -263,15 +263,62 @@ TEST (IngestTest, StopCheckAbortsWithoutFlaggingMissing)
     EXPECT_EQ (f.lib->trackFiles().missingCount(), 0);
 }
 
-TEST (IngestTest, FailedLookupIsNotTreatedAsNewFile)
+TEST (IngestTest, FailedFileStateLookupIsNotTreatedAsNewFile)
 {
     Fixture f;
     writeWav (f.tmp.dir.getChildFile ("a.wav"), 1.0);
-    f.lib->database().exec ("DROP TABLE track_files;");   // lookups of file state now fail
-    f.scan (f.tmp.dir);
+    f.scan (f.tmp.dir);   // row exists, so the next scan reaches the track_files lookup
+    f.lib->database().exec ("DROP TABLE track_files;");
     const auto s = f.scan (f.tmp.dir);
     EXPECT_EQ (s.failed, 1);
     EXPECT_EQ (s.added + s.updated, 0);
+    EXPECT_EQ (f.lib->tracks().count(), 1);
+}
+
+TEST (IngestTest, FailedPathLookupDoesNotInsertDuplicate)
+{
+    Fixture f;
+    writeWav (f.tmp.dir.getChildFile ("a.wav"), 1.0);
+    f.scan (f.tmp.dir);
+    ASSERT_TRUE (f.lib->database().exec ("ALTER TABLE tracks RENAME TO tracks_hidden;").wasOk());   // findByPath now fails
+    const auto s = f.scan (f.tmp.dir);
+    EXPECT_EQ (s.failed, 1);
+    EXPECT_EQ (s.added + s.updated, 0);
+    ASSERT_TRUE (f.lib->database().exec ("ALTER TABLE tracks_hidden RENAME TO tracks;").wasOk());
+    EXPECT_EQ (f.lib->tracks().count(), 1);
+}
+
+TEST (IngestTest, TouchedButIdenticalFileKeepsAnalysis)
+{
+    Fixture f;
+    const auto file = writeWav (f.tmp.dir.getChildFile ("a.wav"), 1.0);
+    touch (file, 1'600'000'000'000);
+    f.scan (f.tmp.dir);
+    const auto id = f.lib->tracks().findByPath (file.getFullPathName())->id;
+    f.lib->tracks().setAnalysis (id, 128.0, "Am", "8A");
+
+    touch (file, 1'700'000'000'000);   // same bytes, new mtime
+    EXPECT_EQ (f.scan (f.tmp.dir).updated, 1);
+    const auto t = f.lib->tracks().findById (id);
+    ASSERT_TRUE (t->bpm.has_value());
+    EXPECT_DOUBLE_EQ (*t->bpm, 128.0);
+    EXPECT_EQ (t->key, "Am");
+    EXPECT_EQ (t->camelot, "8A");
+}
+
+TEST (IngestTest, ChangedContentDropsStaleAnalysis)
+{
+    Fixture f;
+    const auto file = writeWav (f.tmp.dir.getChildFile ("a.wav"), 1.0);
+    touch (file, 1'600'000'000'000);
+    f.scan (f.tmp.dir);
+    const auto id = f.lib->tracks().findByPath (file.getFullPathName())->id;
+    f.lib->tracks().setAnalysis (id, 128.0, "Am", "8A");
+
+    writeWav (file, 1.0, {}, 990.0f);
+    touch (file, 1'700'000'000'000);
+    f.scan (f.tmp.dir);
+    EXPECT_FALSE (f.lib->tracks().findById (id)->bpm.has_value());
 }
 
 TEST (IngestTest, ContentHashIsStableAcrossRenames)

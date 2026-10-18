@@ -28,6 +28,13 @@ TrackRecord toRecord (const juce::File& file, const TrackMetadata& m, const juce
     t.durationSec = m.durationSec;
     return t;
 }
+
+void carryAnalysis (const TrackRecord& from, TrackRecord& to)
+{
+    to.bpm = from.bpm;
+    to.key = from.key;
+    to.camelot = from.camelot;
+}
 } // namespace
 
 IngestSummary& IngestSummary::operator+= (const IngestSummary& o)
@@ -37,7 +44,8 @@ IngestSummary& IngestSummary::operator+= (const IngestSummary& o)
     return *this;
 }
 
-Ingestor::Outcome Ingestor::refresh (const juce::File& file, const std::optional<TrackRecord>& existing)
+Ingestor::Outcome Ingestor::refresh (const juce::File& file, const std::optional<TrackRecord>& existing,
+                                     const FileStamp& stamp)
 {
     TrackMetadata meta;
     const auto hash = analysis::hashFileContent (file);
@@ -45,9 +53,13 @@ Ingestor::Outcome Ingestor::refresh (const juce::File& file, const std::optional
     if (reader == nullptr || hash.isEmpty() || reader->read (file, meta).failed())
         return Outcome::Failed;
 
+    auto record = toRecord (file, meta, hash);
+    if (existing && existing->contentHash == hash)
+        carryAnalysis (*existing, record);   // identical bytes: BPM/key are still valid
+
     Transaction tx (library.database());
-    const auto id = library.tracks().upsertByPath (toRecord (file, meta, hash));
-    if (! id || library.trackFiles().set (*id, mtimeMs (file), file.getSize()).failed() || tx.commit().failed())
+    const auto id = library.tracks().upsertByPath (record);
+    if (! id || library.trackFiles().set (*id, stamp.mtimeMs, stamp.sizeBytes).failed() || tx.commit().failed())
         return Outcome::Failed;
     return existing ? Outcome::Updated : Outcome::Added;
 }
@@ -65,9 +77,11 @@ Ingestor::Outcome Ingestor::ingestFile (const juce::File& file)
     if (read.failed())
         return Outcome::Failed;
 
-    const bool unchanged = state && state->mtimeMs == mtimeMs (file) && state->sizeBytes == file.getSize();
+    // why: stamped before hashing, so an edit during the read is caught by the next scan
+    const FileStamp stamp { mtimeMs (file), file.getSize() };
+    const bool unchanged = state && state->mtimeMs == stamp.mtimeMs && state->sizeBytes == stamp.sizeBytes;
     if (! unchanged)
-        return refresh (file, existing);
+        return refresh (file, existing, stamp);
     if (! state->missing)
         return Outcome::Unchanged;
     return library.trackFiles().setMissing (existing->id, false).wasOk() ? Outcome::Restored : Outcome::Failed;
