@@ -49,6 +49,9 @@ std::int64_t addedOrNow (const TrackRecord& t)
 }
 } // namespace
 
+const char* TrackDao::selectColumns() noexcept { return kColumns; }
+TrackRecord TrackDao::readRow (const Statement& row) { return ::openmixer::library::readRow (row); }
+
 juce::Result TrackDao::runChecked (Statement& s)
 {
     if (auto r = s.run(); r.failed())

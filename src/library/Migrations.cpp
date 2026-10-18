@@ -89,6 +89,14 @@ CREATE TABLE watch_folders (
 );
 )sql";
 
+constexpr const char* kSchemaV3 = R"sql(
+CREATE INDEX idx_tracks_bpm ON tracks (bpm);
+CREATE INDEX idx_tracks_rating ON tracks (rating);
+CREATE INDEX idx_tracks_added ON tracks (date_added_ms);
+CREATE INDEX idx_tracks_genre ON tracks (genre);
+CREATE INDEX idx_tracks_camelot ON tracks (camelot);
+)sql";
+
 bool isStrictlyIncreasing (const std::vector<Migration>& list)
 {
     int previous = 0;
@@ -120,6 +128,7 @@ const std::vector<Migration>& coreMigrations()
     static const std::vector<Migration> list {
         { 1, "tracks, cues, loops, playlists", kSchemaV1 },
         { 2, "track file state, watch folders", kSchemaV2 },
+        { 3, "search indexes", kSchemaV3 },
     };
     return list;
 }

@@ -344,7 +344,7 @@ TEST (LibraryMigrationV2Test, UpgradesAV1DatabaseWithoutTouchingTracks)
     TrackDao (*db).insert ([] { TrackRecord t; t.path = "/x.wav"; return t; }());
 
     ASSERT_TRUE (migrate (*db, coreMigrations()).wasOk());
-    EXPECT_EQ (currentSchemaVersion (*db), 2);
+    EXPECT_EQ (currentSchemaVersion (*db), coreMigrations().back().version);
     EXPECT_EQ (TrackDao (*db).count(), 1);
     EXPECT_TRUE (WatchFolderDao (*db).add ("/music").wasOk());
 }

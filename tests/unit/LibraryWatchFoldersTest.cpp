@@ -176,7 +176,7 @@ TEST (WatchFoldersTest, ScanThreadUsesTheSuppliedMigrationList)
 {
     Fixture f;
     auto migrations = coreMigrations();
-    migrations.push_back ({ 3, "extra", "CREATE TABLE extra_table (id INTEGER PRIMARY KEY);" });   // a later subsystem's table
+    migrations.push_back ({ migrations.back().version + 1, "extra", "CREATE TABLE extra_table (id INTEGER PRIMARY KEY);" });   // a later subsystem's table
     writeWav (f.music.getChildFile ("a.wav"), 0.5);
 
     WatchFolders::Options o;

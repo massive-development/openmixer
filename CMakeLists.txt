@@ -334,6 +334,12 @@ set(OPENMIXER_LIBRARY_SOURCES
     src/library/Migrations.cpp
     src/library/OrderedList.cpp
     src/library/PlaylistDao.cpp
+    src/library/SearchCompiler.cpp
+    src/library/SearchEngine.cpp
+    src/library/SearchFields.cpp
+    src/library/SearchKeys.cpp
+    src/library/SearchParser.cpp
+    src/library/SearchTerms.cpp
     src/library/Statement.cpp
     src/library/TrackDao.cpp
     src/library/TrackFileDao.cpp
@@ -352,6 +358,12 @@ add_library(openmixer_library STATIC
     src/library/Migrations.h
     src/library/OrderedList.h
     src/library/PlaylistDao.h
+    src/library/SearchCompiler.h
+    src/library/SearchEngine.h
+    src/library/SearchFields.h
+    src/library/SearchKeys.h
+    src/library/SearchParser.h
+    src/library/SearchQuery.h
     src/library/Statement.h
     src/library/TrackDao.h
     src/library/TrackFileDao.h
@@ -553,6 +565,7 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/LibraryDaoTest.cpp
     tests/unit/LibraryIngestTest.cpp
     tests/unit/LibraryWatchFoldersTest.cpp
+    tests/unit/LibrarySearchTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)
