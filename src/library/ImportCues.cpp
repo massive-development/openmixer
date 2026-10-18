@@ -1,5 +1,6 @@
 #include "ImportCues.h"
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <set>
@@ -70,7 +71,10 @@ juce::Result importCues (CueDao& dao, std::int64_t trackId, const ImportedTrack&
     if (auto loaded = loadPlans (dao, trackId, cuePlan, loopPlan); loaded.failed())
         return loaded;
     const double rate = track.sampleRate > 0.0 ? track.sampleRate : kAssumedSampleRate;
-    for (const auto& c : track.cues)
+    // Hotcues first: a memory cue at the same position must not shadow the hotcue.
+    std::vector<ImportedCue> ordered = track.cues;
+    std::stable_partition (ordered.begin(), ordered.end(), [] (const ImportedCue& c) { return c.num >= 0; });
+    for (const auto& c : ordered)
     {
         const auto start = toFrames (c.startSec, rate), end = toFrames (c.endSec, rate);
         if (! isValid (c, start, end))

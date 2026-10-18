@@ -368,3 +368,36 @@ TEST (ImportRegistry, LaterRegistrationWinsAndNamesListed)
     EXPECT_TRUE (lib->tracks().findByPath ("/fake").has_value());
     EXPECT_EQ (lib->tracks().count(), 1);
 }
+
+TEST (ImportCuesOrder, HotcueWinsOverEarlierMemoryCueAtSamePosition)
+{
+    auto lib = memoryLibrary();
+    ImportedTrack t;
+    t.record.path = "/x";
+    t.cues.push_back ({ ImportedCue::Kind::Cue, -1, 5.0, 0.0, "memory", 0 });
+    t.cues.push_back ({ ImportedCue::Kind::Cue, 3, 5.0, 0.0, "hot", 0 });
+    const auto id = lib->tracks().insert (t.record);
+    ImportReport r;
+    ASSERT_TRUE (importCues (lib->cues(), *id, t, r).wasOk());
+    const auto cues = lib->cues().cues (*id);
+    ASSERT_EQ (cues.size(), 1u);
+    EXPECT_EQ (cues[0].slot, 3);
+    EXPECT_EQ (cues[0].label, "hot");
+}
+
+TEST (ImportMergePolicy, PlaylistsMergeIntoSameNamedSibling)
+{
+    auto lib = memoryLibrary();
+    TrackRecord mine;
+    mine.path = "/mine.wav";
+    mine.title = "Mine";
+    const auto mineId = lib->tracks().insert (mine);
+    const auto fav = lib->playlists().create ("Favourites");
+    ASSERT_TRUE (fav.has_value());
+    ASSERT_TRUE (lib->playlists().addTrack (*fav, *mineId).has_value());
+    ImportReport report;
+    ASSERT_TRUE (runImport (*lib, "itunes_small.xml", report).wasOk());
+    EXPECT_EQ (report.playlistsCreated, 2);                    // Sets + Warm Up; Favourites reused
+    EXPECT_EQ (lib->playlists().children (std::nullopt).size(), 2u);
+    EXPECT_EQ (entryTitles (*lib, *fav), (std::vector<juce::String> { "Mine", "Night Drive & Dawn" }));
+}
