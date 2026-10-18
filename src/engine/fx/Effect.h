@@ -51,7 +51,8 @@ public:
     // Audio thread, when a unit goes idle: reset small state now and leave big buffers to
     // clearSome() so no callback pays for a large memset. Defaults to a full reset().
     virtual void beginReset() noexcept { reset(); }
-    // Clears up to maxFrames of pending buffer; true when nothing is left (stale audio gone).
+    // Wipes up to maxFrames of stale buffer (bounded, shared across all buffers); true when clean.
+    // Until clean, stale slots must read as zero so the effect may run (see Wipe.h).
     virtual bool clearSome (int /*maxFrames*/) noexcept { return true; }
     // In place: left/right hold the effect input and receive the fully wet output.
     void process (float* left, float* right, int numSamples, const FxContext& ctx) noexcept;

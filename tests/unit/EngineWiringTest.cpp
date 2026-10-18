@@ -36,7 +36,7 @@ juce::File writeSine (const juce::File& f)
 
 bool waitFor (const std::function<bool()>& cond)
 {
-    const auto end = juce::Time::getMillisecondCounter() + 3000;
+    const auto end = juce::Time::getMillisecondCounter() + 20000;   // generous: valgrind runs ~30x slower
     while (! cond())
     {
         if (juce::Time::getMillisecondCounter() > end) return false;
@@ -157,7 +157,9 @@ TEST_F (EngineWiringTest, DeckIdsStillReachTheDeckAndUnknownIdsFail)
     EXPECT_TRUE (router.setParameter ("deck.0.rate", 1.05));
     EXPECT_DOUBLE_EQ (engine.getDeck (0).getRate(), 1.05);
     EXPECT_FALSE (router.setParameter ("deck.0.bogus", 1.0));
-    EXPECT_FALSE (router.setParameter ("deck.0.loop.quantized.abc", 1.0));
+    for (const char* id : { "deck.0.loop.quantized.abc", "deck.0.loop.quantized.", "deck.0.loop.quantized.0", "deck.0.loop.quantized.1.2.3", "deck.0.loop.quantized..5" })
+        EXPECT_FALSE (router.setParameter (id, 1.0)) << id;
+    EXPECT_FALSE (router.setParameter ("deck.0.loop.quantized.2", 1.0)) << "no grid: press reports failure";
 }
 
 TEST_F (EngineWiringSlow, SyncAlignsTwoDecksOnFixedGrids)
@@ -178,6 +180,7 @@ TEST_F (EngineWiringSlow, SyncAlignsTwoDecksOnFixedGrids)
 
     for (int block = 0; block < 1200; ++block)
     {
+        waitFor ([&] { return engine.getDeck (0).getBufferedFrames() >= 2048 && engine.getDeck (1).getBufferedFrames() >= 2048; });   // keep the unpaced pump from underrunning (slow under valgrind)
         dev.renderBlock();
         if (block % 8 == 0)
             engine.updateControl (0.046);

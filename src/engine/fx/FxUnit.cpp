@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace openmixer::fx
 {
@@ -78,11 +77,11 @@ void FxUnit::processChunk (float* left, float* right, int n) noexcept
         return sliceClear (kClearSlice);
     if (idle)
     {
-        sliceClear (std::numeric_limits<int>::max());   // rare: engaged before the wipe finished
         idle = false;
         quietSamples = 0;
         active.store (true, kRelaxed);
     }
+    sliceClear (kClearSlice);   // an early re-engage keeps wiping in slices; stale slots read as zero
     ctx.samplesPerBeat = beatSamples.step (static_cast<float> (samplesPerBeat (ctx.sampleRate, getTempo())));
     computeGains (n, on);
     // Tail effects stop receiving input when disabled but keep ringing out.

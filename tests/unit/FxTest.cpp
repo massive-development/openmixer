@@ -4,6 +4,7 @@
 #include "engine/fx/FxPresets.h"
 #include "engine/fx/DelayLine.h"
 #include "engine/fx/FxRack.h"
+#include "engine/fx/Wipe.h"
 
 #include <gtest/gtest.h>
 
@@ -268,23 +269,68 @@ TEST (DelayLine, ClearsInSlicesNotAllAtOnce)
     EXPECT_TRUE (line.clearSome (512)) << "nothing left once cleared";
 }
 
-TEST (FxUnit, IdleClearIsAmortisedAndEngagingEarlyStillStartsClean)
+// Feeds loud audio, starts a sliced reset, then renders silence with no wipe at all: stale slots must read as zero.
+TEST (Effect, StaleBufferReadsAsZeroWhileWipePending)
 {
-    for (const std::string name : { "flanger", "echo" })
+    for (const std::string name : { "echo", "flanger", "reverb" })
+    {
+        auto fx = FxFactory::withBuiltIns().create (name);
+        fx->prepare (sr, 512);
+        FxContext ctx;
+        ctx.sampleRate = sr;
+        ctx.samplesPerBeat = sr * 0.5;
+        auto loud = noise (static_cast<size_t> (sr), 0.8f);
+        for (size_t off = 0; off < loud.size(); off += 64)
+            fx->process (loud.l.data() + off, loud.r.data() + off, 64, ctx);
+        fx->beginReset();
+        Signal silence (static_cast<size_t> (sr));
+        for (size_t off = 0; off < silence.size(); off += 64)
+            fx->process (silence.l.data() + off, silence.r.data() + off, 64, ctx);
+        EXPECT_EQ (peak (silence), 0.0f) << name << ": stale audio read after beginReset";
+    }
+}
+
+TEST (Effect, WipeIsBoundedPerCallAndFinishes)
+{
+    for (const std::string name : { "echo", "flanger", "reverb" })
+    {
+        auto fx = FxFactory::withBuiltIns().create (name);
+        fx->prepare (sr, 512);
+        fx->beginReset();
+        int calls = 0;
+        while (! fx->clearSome (Wipe::kSlice) && calls < 100000)
+            ++calls;
+        if (name != "flanger")   // the flanger line is shorter than one slice
+            EXPECT_GT (calls, 1) << name << ": one slice must not wipe everything";
+        EXPECT_LT (calls, 100000) << name;
+    }
+    Wipe wipe;
+    wipe.begin();
+    int from = 0;
+    EXPECT_EQ (wipe.claim (10000, 512, from), 512);
+    EXPECT_EQ (wipe.claim (10000, 1 << 30, from), 10000 - 512) << "claims are capped by what is left";
+}
+
+// Re-engage on the very chunk after isActive() drops, i.e. while the wipe is still pending.
+TEST (FxUnit, ReEngagingDuringWipeLeaksNothingStale)
+{
+    for (const std::string name : { "flanger", "echo", "reverb" })
     {
         auto unit = makeUnit (name, true, 1.0f);
-        unit->setParameter ("feedback", 0.3);
+        if (name == "flanger") unit->setParameter ("feedback", 0.9);
         unit->prepare (sr, 512);
-        auto loud = sine (static_cast<size_t> (sr), 330.0, 0.8f);
-        run (*unit, loud);
+        auto loud = noise (static_cast<size_t> (sr), 0.8f);
+        run (*unit, loud, 0, 0, FxUnit::kChunk);
         unit->setEnabled (false);
-        auto quiet = Signal (static_cast<size_t> (sr * 10));
-        run (*unit, quiet);
+        Signal quiet (static_cast<size_t> (sr * 30));
+        size_t off = 0;
+        for (; off < quiet.size() && unit->isActive(); off += FxUnit::kChunk)
+            unit->process (quiet.l.data() + off, quiet.r.data() + off, FxUnit::kChunk);
         ASSERT_FALSE (unit->isActive()) << name;
-        unit->setEnabled (true);   // re-engage right after idle; wipe may still be pending
+        unit->setEnabled (true);   // wipe has had at most one slice
         Signal silence (4096);
-        run (*unit, silence);
-        EXPECT_LT (peak (silence), 1.0e-5f) << name << ": stale audio leaked after re-engage";
+        run (*unit, silence, 0, 0, FxUnit::kChunk);
+        EXPECT_LT (peak (silence), 1.0e-5f) << name << ": stale audio leaked after early re-engage";
     }
 }
 

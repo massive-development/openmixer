@@ -1,6 +1,7 @@
 #include "DeckControl.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace openmixer
 {
@@ -31,12 +32,13 @@ void DeckControl::setLeader (bool on)
 
 bool DeckControl::setLoopParameter (const juce::String& id, double value)
 {
-    const auto beats = id.fromFirstOccurrenceOf (kLoopPrefix, false, false);
-    if (beats.isEmpty() || ! beats.containsOnly ("0123456789."))
+    const auto text = id.fromFirstOccurrenceOf (kLoopPrefix, false, false);
+    const double beats = text.getDoubleValue();
+    const bool wellFormed = text.isNotEmpty() && text.containsOnly ("0123456789.") && text.indexOfChar ('.') == text.lastIndexOfChar ('.')
+                            && ! text.startsWithChar ('.') && ! text.endsWithChar ('.') && std::isfinite (beats) && beats > 0.0;
+    if (! wellFormed)
         return false;
-    if (value >= 0.5)
-        setQuantizedLoop (beats.getDoubleValue());
-    return true;
+    return value < 0.5 || setQuantizedLoop (beats);   // release is a no-op; press reports whether a loop was set
 }
 
 bool DeckControl::setParameter (const juce::String& id, double value)

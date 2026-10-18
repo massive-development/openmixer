@@ -1,6 +1,8 @@
 // Stereo circular buffer with fractional (linear) reads; sized on the control thread.
 #pragma once
 
+#include "Wipe.h"
+
 #include <array>
 #include <vector>
 
@@ -13,7 +15,7 @@ public:
     // Control thread (prepare): allocates; never called from process().
     void allocate (int maxDelaySamples);
     void reset() noexcept;
-    // Audio thread: restart at the write head and clear the buffers in slices (no big memset).
+    // Audio thread: restart at the write head; stale slots read as zero and are wiped in slices.
     void beginClear() noexcept;
     // Clears up to maxFrames of what beginClear() left; true once nothing is pending.
     bool clearSome (int maxFrames) noexcept;
@@ -27,7 +29,7 @@ private:
     std::array<std::vector<float>, 2> buffers;
     int writePos = 0;
     int size = 0;
-    int clearPos = 0;   // frames already cleared by the current beginClear()
+    Wipe wipe;   // stale slots read as zero until wiped
 };
 
 } // namespace openmixer::fx
