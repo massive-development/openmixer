@@ -15,3 +15,4 @@ graphify-out/
 .claude/
 /target
 __pycache__/
+spikes/**/target/
