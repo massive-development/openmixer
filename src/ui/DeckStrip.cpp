@@ -14,8 +14,6 @@ namespace
 DeckStrip::DeckStrip (Deck& d, const juce::String& title, juce::Colour accentColour) : deck (d), accent (accentColour)
 {
     titleLabel.setText (title, juce::dontSendNotification);
-    titleLabel.setFont (theme::font (16.0F, true));
-    titleLabel.setColour (juce::Label::textColourId, theme::textPrimary);
     titleLabel.setBorderSize ({ 0, 0, 0, 0 });
 
     rateSlider.textFromValueFunction = format::rate;   // before setValue, which renders the text
@@ -23,17 +21,11 @@ DeckStrip::DeckStrip (Deck& d, const juce::String& title, juce::Colour accentCol
     rateSlider.setRange (0.5, 1.5, 0.001);
     rateSlider.setValue (1.0, juce::dontSendNotification);
     rateSlider.setDoubleClickReturnValue (true, 1.0);
-    rateSlider.setColour (juce::Slider::trackColourId, accent);
     rateSlider.onValueChange = [this] { deck.setRate (rateSlider.getValue()); };
 
     loadButton.onClick = [this] { chooseFile(); };
     playButton.onClick = [this] { deck.setPlaying (! deck.isPlaying()); };
-    playButton.setColour (juce::TextButton::buttonOnColourId, accent);
 
-    styleCaption (rateCaption, "Rate");
-    rateCaption.setJustificationType (juce::Justification::centredLeft);
-    positionLabel.setFont (theme::monoFont (15.0F));
-    positionLabel.setColour (juce::Label::textColourId, theme::textPrimary);
     positionLabel.setMinimumHorizontalScale (0.6F);
     positionLabel.setJustificationType (juce::Justification::centredRight);
     positionLabel.setBorderSize ({ 0, 0, 0, 0 });
@@ -44,7 +36,30 @@ DeckStrip::DeckStrip (Deck& d, const juce::String& title, juce::Colour accentCol
     addAndMakeVisible (loadButton);
     addAndMakeVisible (playButton);
     addAndMakeVisible (rateSlider);
+    applyTheme();
 }
+
+// Theme-dependent bits live here so a theme switch can re-apply them.
+void DeckStrip::applyTheme()
+{
+    titleLabel.setFont (theme::font (theme::typeTitle(), true));
+    titleLabel.setColour (juce::Label::textColourId, theme::textPrimary());
+    positionLabel.setFont (theme::monoFont (theme::typeMono()));
+    positionLabel.setColour (juce::Label::textColourId, theme::textPrimary());
+    rateSlider.setColour (juce::Slider::trackColourId, accent);
+    playButton.setColour (juce::TextButton::buttonOnColourId, accent);
+    styleCaption (rateCaption, "Rate");
+    rateCaption.setJustificationType (juce::Justification::centredLeft);
+}
+
+void DeckStrip::setAccent (juce::Colour newAccent)
+{
+    accent = newAccent;
+    applyTheme();
+    repaint();
+}
+
+void DeckStrip::lookAndFeelChanged() { applyTheme(); }
 
 // Fixed-width fields so the readout never changes width between ticks.
 juce::String DeckStrip::formatPosition (double seconds, double total)
@@ -87,15 +102,15 @@ void DeckStrip::refresh()
 
 juce::Rectangle<float> DeckStrip::progressTrack() const
 {
-    const auto r = getLocalBounds().toFloat().reduced (static_cast<float> (theme::kPad), 0.0F);
-    return r.withTop (r.getBottom() - static_cast<float> (theme::kPad) * 0.5F - kProgressHeight).withHeight (kProgressHeight);
+    const auto r = getLocalBounds().toFloat().reduced (static_cast<float> (theme::pad()), 0.0F);
+    return r.withTop (r.getBottom() - static_cast<float> (theme::pad()) * 0.5F - kProgressHeight).withHeight (kProgressHeight);
 }
 
 void DeckStrip::paint (juce::Graphics& g)
 {
     theme::paintGlassCard (g, getLocalBounds().toFloat().reduced (0.5F), accent);
     const auto track = progressTrack();
-    g.setColour (theme::well);
+    g.setColour (theme::well());
     g.fillRoundedRectangle (track, 1.5F);
     if (progress > 0.0F)
     {
@@ -106,17 +121,17 @@ void DeckStrip::paint (juce::Graphics& g)
 
 void DeckStrip::resized()
 {
-    auto area = getLocalBounds().reduced (theme::kPad, theme::kPad - 2);
+    auto area = getLocalBounds().reduced (theme::pad(), theme::pad() - 2);
     auto top = area.removeFromTop (kRowHeight);
     titleLabel.setBounds (top.removeFromLeft (top.getWidth() / 3));
-    positionLabel.setBounds (top.withTrimmedLeft (theme::kInnerGap));
+    positionLabel.setBounds (top.withTrimmedLeft (theme::innerGap()));
 
-    area.removeFromTop (theme::kInnerGap - 2);
+    area.removeFromTop (theme::innerGap() - 2);
     auto row = area.removeFromTop (kRowHeight);
     loadButton.setBounds (row.removeFromLeft (kLoadWidth));
-    row.removeFromLeft (theme::kInnerGap);
+    row.removeFromLeft (theme::innerGap());
     playButton.setBounds (row.removeFromLeft (kPlayWidth));
-    row.removeFromLeft (theme::kGap);
+    row.removeFromLeft (theme::gap());
     rateCaption.setBounds (row.removeFromLeft (kRateCaptionWidth));
     rateSlider.setBounds (row);
 }

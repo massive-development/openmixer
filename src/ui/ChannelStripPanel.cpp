@@ -26,9 +26,7 @@ ChannelStripPanel::ChannelStripPanel (Mixer& m, int ch) : mixer (m), channel (ch
     addKnob (filter, filterCaption, "Filter", prefix + "filter", -1.0, 1.0, 0.0, format::filter);
 
     styleCaption (titleLabel, "Channel " + juce::String (channel + 1));
-    titleLabel.setFont (theme::font (14.0F, true));
     titleLabel.setJustificationType (juce::Justification::centredLeft);
-    titleLabel.setColour (juce::Label::textColourId, theme::textPrimary);
     styleCaption (faderCaption, "Fader");
     styleCaption (sideCaption, "X-fader");
     styleCaption (meterCaption, "Lvl");
@@ -39,20 +37,40 @@ ChannelStripPanel::ChannelStripPanel (Mixer& m, int ch) : mixer (m), channel (ch
     fader.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     fader.setRange (0.0, 1.0, 0.001);
     fader.setValue (1.0, juce::dontSendNotification);
-    fader.setColour (juce::Slider::trackColourId, accent);
     fader.onValueChange = [this, prefix] { mixer.setParameter (prefix + "fader", fader.getValue()); };
     addAndMakeVisible (fader);
     addKnob (trim, trimCaption, "Trim", prefix + "trim", 0.0, 4.0, 1.0, format::gainAsDecibels);   // after fader: keeps child order stable
 
     pfl.setClickingTogglesState (true);
-    pfl.setColour (juce::TextButton::buttonOnColourId, accent);
     pfl.setTooltip ("Pre-fader listen: send this channel to the headphone cue");
     pfl.onClick = [this] { mixer.setPfl (channel, pfl.getToggleState()); };
     addAndMakeVisible (pfl);
 
     addAssignButtons();
     addAndMakeVisible (meter);
+    applyTheme();
 }
+
+// Theme-dependent bits live here so a theme switch can re-apply them.
+void ChannelStripPanel::applyTheme()
+{
+    accent = theme::accentFor (channel);
+    titleLabel.setFont (theme::font (theme::typeLabel(), true));
+    titleLabel.setColour (juce::Label::textColourId, theme::textPrimary());
+    fader.setColour (juce::Slider::trackColourId, accent);
+    pfl.setColour (juce::TextButton::buttonOnColourId, accent);
+    for (auto& b : assign)
+        b.setColour (juce::TextButton::buttonOnColourId, accent);
+    for (auto* k : { &trim, &filter, &eq[0], &eq[1], &eq[2] })
+        k->setColour (juce::Slider::rotarySliderFillColourId, accent);
+    for (auto* l : { &faderCaption, &sideCaption, &meterCaption, &trimCaption, &filterCaption, &eqCaptions[0], &eqCaptions[1], &eqCaptions[2] })
+    {
+        l->setFont (theme::font (theme::typeCaption()));
+        l->setColour (juce::Label::textColourId, theme::textSecondary());
+    }
+}
+
+void ChannelStripPanel::lookAndFeelChanged() { applyTheme(); }
 
 void ChannelStripPanel::addKnob (juce::Slider& s, juce::Label& caption, const juce::String& text, const juce::String& id,
                                  double lo, double hi, double initial, std::function<juce::String (double)> format)
@@ -63,7 +81,6 @@ void ChannelStripPanel::addKnob (juce::Slider& s, juce::Label& caption, const ju
     s.setRange (lo, hi, 0.01);
     s.setValue (initial, juce::dontSendNotification);
     s.setDoubleClickReturnValue (true, initial);
-    s.setColour (juce::Slider::rotarySliderFillColourId, accent);
     s.onValueChange = [this, &s, id] { mixer.setParameter (id, s.getValue()); };
     styleCaption (caption, text);
     addAndMakeVisible (s);
@@ -79,7 +96,6 @@ void ChannelStripPanel::addAssignButtons()
         b.setButtonText (text[i]);
         b.setClickingTogglesState (true);
         b.setRadioGroupId (kAssignGroup, juce::dontSendNotification);
-        b.setColour (juce::TextButton::buttonOnColourId, accent);
         b.onClick = [this, i]
         {
             if (assign[i].getToggleState())
@@ -107,8 +123,8 @@ void ChannelStripPanel::paint (juce::Graphics& g)
     const auto title = titleLabel.getBounds().toFloat();
     g.setColour (accent);
     g.fillEllipse (juce::Rectangle<float> (8.0F, 8.0F).withCentre ({ title.getX() - 10.0F, title.getCentreY() }));
-    g.setColour (theme::border);
-    g.fillRect (juce::Rectangle<float> (bounds.getX() + theme::kPad, title.getBottom() + 3.0F, bounds.getWidth() - 2.0F * theme::kPad, 1.0F));
+    g.setColour (theme::border());
+    g.fillRect (juce::Rectangle<float> (bounds.getX() + theme::pad(), title.getBottom() + 3.0F, bounds.getWidth() - 2.0F * theme::pad(), 1.0F));
 }
 
 // Every knob gets the same cell size, so knobs line up in one row (or a regular grid when narrow).
@@ -130,9 +146,9 @@ void ChannelStripPanel::layoutKnobs (juce::Rectangle<int> area)
 void ChannelStripPanel::layoutFaderZone (juce::Rectangle<int> area)
 {
     auto controls = area.removeFromLeft (juce::jlimit (72, 132, area.getWidth() * 2 / 5));
-    area.removeFromLeft (theme::kInnerGap);
+    area.removeFromLeft (theme::innerGap());
     pfl.setBounds (controls.removeFromTop (kButtonHeight));
-    controls.removeFromTop (theme::kInnerGap);
+    controls.removeFromTop (theme::innerGap());
     sideCaption.setBounds (controls.removeFromTop (kCaptionHeight));
     auto segments = controls.removeFromTop (kButtonHeight);
     const int third = segments.getWidth() / 3;
@@ -150,15 +166,15 @@ void ChannelStripPanel::layoutFaderZone (juce::Rectangle<int> area)
 
 void ChannelStripPanel::resized()
 {
-    auto area = getLocalBounds().reduced (theme::kPad);
+    auto area = getLocalBounds().reduced (theme::pad());
     titleLabel.setBounds (area.removeFromTop (kTitleHeight).withTrimmedLeft (18));
-    area.removeFromTop (theme::kInnerGap);
+    area.removeFromTop (theme::innerGap());
     area = area.withSizeKeepingCentre (std::min (area.getWidth(), kMaxContentWidth), area.getHeight());
 
     const int columns = knobColumns (area.getWidth());
     const int rows = (kKnobCount + columns - 1) / columns;
     layoutKnobs (area.removeFromTop (rows * kKnobCellHeight));
-    area.removeFromTop (theme::kInnerGap);
+    area.removeFromTop (theme::innerGap());
     layoutFaderZone (area);
 }
 

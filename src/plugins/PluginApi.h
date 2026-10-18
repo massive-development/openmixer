@@ -37,6 +37,9 @@ public:
     virtual bool registerMidiMap (const juce::String& mapName, const juce::String& json) = 0;
     // The target must outlive the plugin's onUnload(); ids arrive without the prefix.
     virtual bool registerParameterTarget (const juce::String& prefix, ParameterTarget* target) = 0;
+    // A UI theme as JSON (schema: src/ui/ThemeJson.h). Added last so older plugins stay ABI compatible;
+    // the host validates it when the app registers it with the theme registry.
+    virtual bool registerTheme (const juce::String& themeJson) { juce::ignoreUnused (themeJson); return false; }
 };
 
 class Plugin

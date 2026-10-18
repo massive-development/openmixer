@@ -27,8 +27,10 @@ public:
 
     void paint (juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
 private:
+    void applyTheme();
     void timerCallback() override;
     void addMasterControls();
     void layoutMixerRow (juce::Rectangle<int> row);

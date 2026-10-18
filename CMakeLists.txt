@@ -472,6 +472,16 @@ target_link_libraries(openmixer_example_gain PRIVATE juce::juce_core juce::juce_
 # UI library (debug panel; real UI arrives in Wave 5)
 # =============================================================================
 
+# Built-in theme JSON, embedded so the binary needs no data files next to it.
+juce_add_binary_data(openmixer_theme_data
+    HEADER_NAME ThemeBinaryData.h
+    NAMESPACE openmixer_themes
+    SOURCES
+        resources/themes/openmixer-dark.json
+        resources/themes/openmixer-daylight.json
+)
+set_target_properties(openmixer_theme_data PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_library(openmixer_ui STATIC
     src/ui/ChannelStripPanel.cpp
     src/ui/ChannelStripPanel.h
@@ -482,22 +492,31 @@ add_library(openmixer_ui STATIC
     src/ui/DeckStrip.h
     src/ui/GlassLookAndFeel.cpp
     src/ui/GlassLookAndFeel.h
+    src/ui/GlassWidgets.cpp
     src/ui/MeterBar.cpp
     src/ui/MeterBar.h
+    src/ui/Theme.cpp
     src/ui/Theme.h
+    src/ui/ThemeJson.cpp
+    src/ui/ThemeJson.h
+    src/ui/ThemeRegistry.cpp
+    src/ui/ThemeRegistry.h
+    src/ui/ThemeTokens.h
     src/ui/ValueFormat.h
 )
 
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
-    src/ui/MeterBar.cpp)
+    src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp)
 
 target_link_libraries(openmixer_ui PUBLIC
     openmixer_engine
     juce::juce_gui_basics
+    juce::juce_events
     juce::juce_recommended_config_flags
 )
+target_link_libraries(openmixer_ui PRIVATE openmixer_theme_data)
 
 # =============================================================================
 # Main Application
@@ -588,6 +607,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/DjEngineTest.cpp
     tests/unit/DebugPanelTest.cpp
     tests/unit/ValueFormatTest.cpp
+    tests/unit/ThemeJsonTest.cpp
+    tests/unit/ThemeRegistryTest.cpp
+    tests/unit/GlassLookAndFeelTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp

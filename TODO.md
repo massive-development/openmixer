@@ -108,8 +108,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 5: UI
 
-- [ ] **Todo 25a:** Theme/skin loader (user-supplied themes, colours, layouts via plugin API)
-- [~] **Todo 25:** Design tokens + LookAndFeel (partial: `ui/Theme.h` tokens, `GlassLookAndFeel`, glass restyle of the debug console + optional `--translucent` window; missing: token loading for Todo 25a, widgets beyond knobs/faders/buttons)
+- [~] **Todo 25a:** Theme/skin loader (done: JSON themes, `ThemeRegistry` with built-in/user/plugin sources and live switching, `PluginHost::registerTheme`; missing: layouts, theme picker UI + persisted choice)
+  - `src/ui/`: `ThemeTokens`, `Theme` (runtime accessors), `ThemeJson`, `ThemeRegistry`; `resources/themes/*.json` embedded via `juce_add_binary_data`
+- [x] **Todo 25:** Design tokens + LookAndFeel
+  - `GlassLookAndFeel` covers knobs, faders, buttons, ComboBox, PopupMenu, TextEditor, ToggleButton, TabbedButtonBar, ScrollBar, TableHeader, tooltip (`GlassWidgets.cpp`)
 - [ ] **Todo 26:** Main window + deck widgets
 - [ ] **Todo 27:** Mixer widgets + metering
 - [ ] **Todo 28:** Library browser

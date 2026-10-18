@@ -23,8 +23,11 @@ public:
     void refresh();
     void paint (juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
+    void setAccent (juce::Colour newAccent);   // DebugPanel re-resolves per-deck accents on theme switch
 
 private:
+    void applyTheme();
     void chooseFile();
     juce::Rectangle<float> progressTrack() const;
 

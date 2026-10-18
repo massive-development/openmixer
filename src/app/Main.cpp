@@ -7,6 +7,7 @@
 #include "MainComponent.h"
 #include "ui/GlassLookAndFeel.h"
 #include "ui/Theme.h"
+#include "ui/ThemeRegistry.h"
 
 namespace
 {
@@ -33,6 +34,7 @@ public:
     void initialise (const String& commandLine) override
     {
         LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
+        selectTheme();
 
         // Check for smoke test mode
         bool smokeTest = JUCEApplication::getCommandLineParameters().contains ("--smoke");
@@ -69,6 +71,16 @@ public:
     }
 
 private:
+    // Built-in + user themes; OPENMIXER_THEME=<id> picks one until a settings screen exists.
+    void selectTheme()
+    {
+        themes.loadBuiltIns();
+        themes.loadUserDirectory (openmixer::ui::ThemeRegistry::defaultUserDirectory());
+        const auto wanted = SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", openmixer::ui::ThemeRegistry::defaultId());
+        if (! themes.select (wanted))
+            themes.select (openmixer::ui::ThemeRegistry::defaultId());
+    }
+
     class MainWindow : public DocumentWindow,
                         private Button::Listener
     {
@@ -78,7 +90,7 @@ private:
         MainWindow (String title, bool translucent)
             : DocumentWindow (title,
                               translucent && Desktop::canUseSemiTransparentWindows() ? Colours::transparentBlack
-                                                                                       : openmixer::ui::theme::backdropTop,
+                                                                                       : openmixer::ui::theme::backdropTop(),
                               DocumentWindow::allButtons)
         {
             const bool seeThrough = ! isOpaque();
@@ -111,6 +123,7 @@ private:
         JUCE_DECLARE_NON_COPYABLE (MainWindow)
     };
 
+    openmixer::ui::ThemeRegistry themes;
     openmixer::ui::GlassLookAndFeel lookAndFeel;   // outlives mainWindow (declared first)
     std::unique_ptr<MainWindow> mainWindow;
 

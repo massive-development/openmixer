@@ -92,6 +92,8 @@ void PluginRegistry::removeRegistrations (const juce::String& owner)
     stages.removeOwner (owner);
     for (auto it = maps.begin(); it != maps.end();)
         it = it->second.owner == owner ? maps.erase (it) : std::next (it);
+    themes.erase (std::remove_if (themes.begin(), themes.end(), [&owner] (const ProvidedTheme& t) { return t.owner == owner; }),
+                  themes.end());
     for (auto it = targets.begin(); it != targets.end();)
     {
         if (it->second.owner != owner) { ++it; continue; }
@@ -147,6 +149,25 @@ bool PluginRegistry::registerMidiMap (const juce::String& mapName, const juce::S
     if (loading == nullptr || mapName.isEmpty() || maps.count (mapName) != 0 || MidiMap::parse (json, parsed).failed())
         return false;
     maps[mapName] = { json, loading->id };
+    return true;
+}
+
+std::vector<PluginRegistry::ProvidedTheme> PluginRegistry::getThemes() const
+{
+    return themes;
+}
+
+// Only checks the envelope (JSON object with a string id); the UI registry validates the tokens.
+bool PluginRegistry::registerTheme (const juce::String& themeJson)
+{
+    juce::var parsed;
+    if (loading == nullptr || juce::JSON::parse (themeJson, parsed).failed() || parsed.getDynamicObject() == nullptr)
+        return false;
+    const auto id = parsed.getProperty ("id", {}).toString();
+    const bool taken = std::any_of (themes.begin(), themes.end(), [&id] (const ProvidedTheme& t) { return t.id == id; });
+    if (id.isEmpty() || taken)
+        return false;
+    themes.push_back ({ id, themeJson, loading->id });
     return true;
 }
 
