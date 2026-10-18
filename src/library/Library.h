@@ -6,6 +6,8 @@
 #include "Migrations.h"
 #include "PlaylistDao.h"
 #include "TrackDao.h"
+#include "TrackFileDao.h"
+#include "WatchFolderDao.h"
 
 namespace openmixer::library
 {
@@ -22,6 +24,8 @@ public:
     TrackDao& tracks() noexcept { return trackDao; }
     CueDao& cues() noexcept { return cueDao; }
     PlaylistDao& playlists() noexcept { return playlistDao; }
+    TrackFileDao& trackFiles() noexcept { return fileDao; }
+    WatchFolderDao& watchFolders() noexcept { return folderDao; }
 
 private:
     struct OpenKey { explicit OpenKey() = default; };
@@ -34,6 +38,8 @@ private:
     TrackDao trackDao;
     CueDao cueDao;
     PlaylistDao playlistDao;
+    TrackFileDao fileDao;
+    WatchFolderDao folderDao;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Library)
 };

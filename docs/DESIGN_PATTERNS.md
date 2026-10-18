@@ -176,3 +176,15 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** keeps SQL out of callers; `Transaction` nests via savepoints so DAO calls compose and roll back together.
 - **Reuse when:** adding a table; add a `*Dao` that borrows `Database&` and returns plain value records.
 - **Notes:** one writer thread; the UI reads through its own `OpenMode::ReadOnly` connection (WAL). `OrderedList` keeps dense `position` columns for any ordered child set.
+
+### Metadata reader registry (extension point)
+- **Where:** `src/library/MetadataReader.{h,cpp}`, `JuceMetadataReader`, `Ingestor`.
+- **Why:** tag formats vary; `Ingestor` asks the registry for the reader owning a file's extension, so new readers (TagLib, plugin-supplied) need no ingestor change.
+- **Reuse when:** adding a tag source or a new supported file type; implement `MetadataReader` and `registry.add()` it. Later registrations win per extension.
+- **Notes:** the registry decides which files are scanned at all. Ingest state (mtime, size, missing) lives in its own `track_files` table so `TrackRecord` stays a pure metadata value.
+
+### Background rescan with injectable clock (WatchFolders)
+- **Where:** `src/library/WatchFolders.{h,cpp}`.
+- **Why:** a worker thread owns its own DB connection and re-evaluates `clock()` on a short poll; tests drive time with a fake clock plus `poke()`/`triggerScan()`/`waitForScans()` instead of sleeping.
+- **Reuse when:** any periodic background task over the library (import refresh, analysis queue feeding).
+- **Notes:** one connection per thread (WAL + busy timeout) rather than locking a shared one; the destructor aborts a scan between files.
