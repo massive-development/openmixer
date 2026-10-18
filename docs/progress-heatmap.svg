@@ -37,7 +37,7 @@
 <g><title>24 Prep queue: Not started</title><rect x="632" y="194" width="118" height="44" rx="5" fill="#d0d7de"/><text x="691.0" y="220.0" font-size="11" text-anchor="middle" fill="#57606a">24 Prep queue</text></g>
 <text x="1624" y="220.0" font-size="12" fill="#57606a">20%</text>
 <text x="16" y="270.0" font-size="12" font-weight="600" fill="#1f2328">5 UI</text>
-<g><title>25 Tokens: Not started</title><rect x="136" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">25 Tokens</text></g>
+<g><title>25 Tokens: Partial</title><rect x="136" y="244" width="118" height="44" rx="5" fill="#bf8700"/><text x="195.0" y="270.0" font-size="11" text-anchor="middle" fill="#ffffff">25 Tokens</text></g>
 <g><title>25a Theme loader: Not started</title><rect x="260" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">25a Theme loader</text></g>
 <g><title>26 Decks: Not started</title><rect x="384" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">26 Decks</text></g>
 <g><title>27 Mixer UI: Not started</title><rect x="508" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">27 Mixer UI</text></g>
@@ -45,7 +45,7 @@
 <g><title>29 Automix/settings: Not started</title><rect x="756" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="815.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">29 Automix/settings</text></g>
 <g><title>30 Stem pads: Not started</title><rect x="880" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="939.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">30 Stem pads</text></g>
 <g><title>31 UI gate: Not started</title><rect x="1004" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="1063.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">31 UI gate</text></g>
-<text x="1624" y="270.0" font-size="12" fill="#57606a">0%</text>
+<text x="1624" y="270.0" font-size="12" fill="#57606a">6%</text>
 <text x="16" y="320.0" font-size="12" font-weight="600" fill="#1f2328">6 Hardware</text>
 <g><title>34 Controller maps: Not started</title><rect x="136" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">34 Controller maps</text></g>
 <g><title>35 HID: Not started</title><rect x="260" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">35 HID</text></g>
@@ -74,5 +74,5 @@
 <rect x="256" y="506" width="14" height="14" rx="3" fill="#bf8700"/><text x="276" y="518" font-size="12" fill="#1f2328">Partial</text>
 <rect x="376" y="506" width="14" height="14" rx="3" fill="#fb8500"/><text x="396" y="518" font-size="12" fill="#1f2328">In progress</text>
 <rect x="496" y="506" width="14" height="14" rx="3" fill="#d0d7de"/><text x="516" y="518" font-size="12" fill="#1f2328">Not started</text>
-<text x="1680" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 42% (weighted)</text>
+<text x="1680" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 43% (weighted)</text>
 </svg>
