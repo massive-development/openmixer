@@ -38,7 +38,7 @@ private:
 
     DeckBinding deckRef;
     std::array<juce::TextButton, kNumSizes> sizes;
-    juce::TextButton halveButton { "1/2" }, doubleButton { "x2" }, exitLoop { "Exit" }, reloop { "Reloop" };
+    juce::TextButton halveButton { "Halve" }, doubleButton { "Double" }, exitLoop { "Exit" }, reloop { "Reloop" };
 };
 
 } // namespace openmixer::ui

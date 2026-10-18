@@ -7,8 +7,6 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kHeaderHeight = 52, kOverviewHeight = 40, kTransportHeight = 32, kControlRowHeight = 72;
-    constexpr int kPitchWidth = 84, kMinZoomHeight = 60;
 }
 
 DeckWidget::DeckWidget (DeckBinding binding)
@@ -51,19 +49,20 @@ void DeckWidget::resized()
 {
     auto area = getLocalBounds().reduced (theme::pad());
     const int gap = theme::innerGap();
-    header.setBounds (area.removeFromTop (kHeaderHeight));
-    overview.setBounds (area.removeFromTop (kOverviewHeight));
+    header.setBounds (area.removeFromTop (theme::deckHeaderHeight()));
+    overview.setBounds (area.removeFromTop (theme::deckOverviewHeight()));
     area.removeFromTop (gap);
-    pitch.setBounds (area.removeFromRight (kPitchWidth));
+    pitch.setBounds (area.removeFromRight (theme::deckPitchWidth()));
     area.removeFromRight (gap);
-    auto controls = area.removeFromBottom (kControlRowHeight);
+    const int row = theme::deckRowHeight();
+    loops.setBounds (area.removeFromBottom (row * 2 + gap));   // size row + action row
     area.removeFromBottom (gap);
-    transport.setBounds (area.removeFromBottom (kTransportHeight));
+    hotcues.setBounds (area.removeFromBottom (row));
     area.removeFromBottom (gap);
-    zoom.setBounds (area.withHeight (std::max (area.getHeight(), kMinZoomHeight)));
-    hotcues.setBounds (controls.removeFromLeft (controls.getWidth() / 2 - gap / 2));
-    controls.removeFromLeft (gap);
-    loops.setBounds (controls);
+    transport.setBounds (area.removeFromBottom (theme::deckTransportHeight()));
+    area.removeFromBottom (gap);
+    zoom.setVisible (area.getHeight() >= theme::deckMinZoomHeight());   // a short deck hides the zoom instead of overlapping
+    zoom.setBounds (area.getHeight() > 0 ? area : juce::Rectangle<int>());
 }
 
 } // namespace openmixer::ui

@@ -8,7 +8,6 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr float kPlayheadWidth = 2.0F, kMarkerWidth = 2.0F;
     constexpr juce::int64 kNoCue = -1;
 }
 
@@ -81,7 +80,7 @@ void OverviewWaveform::paintMarkers (juce::Graphics& g) const
             continue;
         g.setColour (theme::accentFor (i));
         const auto x = static_cast<float> (wave::frameToX (cue, length, getWidth()));
-        g.fillRect (x - kMarkerWidth * 0.5F, 0.0F, kMarkerWidth, static_cast<float> (getHeight()));
+        g.fillRect (x - theme::cueMarkerWidth() * 0.5F, 0.0F, theme::cueMarkerWidth(), static_cast<float> (getHeight()));
     }
 }
 
@@ -100,7 +99,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
     g.drawImageAt (cache, 0, 0);
     paintMarkers (g);
     g.setColour (theme::accentFor (deckRef.index));
-    g.fillRect (juce::Rectangle<float> (kPlayheadWidth, bounds.getHeight()).withCentre ({ playheadX(), bounds.getCentreY() }));
+    g.fillRect (juce::Rectangle<float> (theme::playheadWidth(), bounds.getHeight()).withCentre ({ playheadX(), bounds.getCentreY() }));
 }
 
 } // namespace openmixer::ui

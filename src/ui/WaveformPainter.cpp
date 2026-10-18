@@ -38,9 +38,9 @@ juce::Colour bandColour (const analysis::WaveformPoint& p)
 {
     const float sum = p.low + p.mid + p.high;
     if (sum < kMinEnergy)
-        return theme::meterLow();
-    const auto lowMid = theme::meterLow().interpolatedWith (theme::meterMid(), p.mid / (p.low + p.mid + kMinEnergy));
-    return lowMid.interpolatedWith (theme::meterHigh(), p.high / sum);
+        return theme::waveLow();
+    const auto lowMid = theme::waveLow().interpolatedWith (theme::waveMid(), p.mid / (p.low + p.mid + kMinEnergy));
+    return lowMid.interpolatedWith (theme::waveHigh(), p.high / sum);
 }
 
 void paintColumns (juce::Graphics& g, const analysis::WaveformData& data, juce::Rectangle<float> area,

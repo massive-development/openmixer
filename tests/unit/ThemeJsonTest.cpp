@@ -52,6 +52,24 @@ TEST (ThemeJsonTest, ParsesEverySection)
     EXPECT_FLOAT_EQ (p.tokens.typeBody, ThemeTokens::builtinDark().typeBody);   // untouched keys keep the default
 }
 
+TEST (ThemeJsonTest, ParsesWaveformColoursAndDeckMetrics)
+{
+    const auto p = parse (R"({ "id": "t.deck", "colours": { "waveLow": "#010203", "waveHigh": "#A0040506" },
+                              "deck": { "rowHeight": 22, "pitchWidth": 70, "gridBarAlpha": 0.9, "playheadWidth": 3 } })");
+    ASSERT_TRUE (p.status.wasOk()) << p.status.getErrorMessage();
+    EXPECT_EQ (p.tokens.waveLow, juce::Colour (0xFF010203));
+    EXPECT_EQ (p.tokens.waveHigh, juce::Colour (0xA0040506));
+    EXPECT_EQ (p.tokens.waveMid, ThemeTokens::builtinDark().waveMid);
+    EXPECT_FLOAT_EQ (p.tokens.deckRowHeight, 22.0F);
+    EXPECT_FLOAT_EQ (p.tokens.deckPitchWidth, 70.0F);
+    EXPECT_FLOAT_EQ (p.tokens.gridBarAlpha, 0.9F);
+    EXPECT_FLOAT_EQ (p.tokens.playheadWidth, 3.0F);
+    EXPECT_FLOAT_EQ (p.tokens.deckHeaderHeight, ThemeTokens::builtinDark().deckHeaderHeight);
+
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "deck": { "gridBarAlpha": 2 } })").status.failed());
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "deck": { "rowHeight": -1 } })").status.failed());
+}
+
 TEST (ThemeJsonTest, RejectsBadInputAndFallsBackToDefaultTokens)
 {
     const char* bad[] = {

@@ -8,10 +8,11 @@
 namespace openmixer::ui::wave
 {
 
-// Colour for one point: the three theme meter colours blended by band energy.
+// Colour for one point: the three theme waveform colours blended by band energy.
 juce::Colour bandColour (const analysis::WaveformPoint& p);
 
 // Paints [firstSample, lastSample) of the waveform across `area`, one column per pixel, using the
+// coarsest level with a point per pixel.
 void paintColumns (juce::Graphics& g, const analysis::WaveformData& data, juce::Rectangle<float> area,
                    double firstSample, double lastSample);
 

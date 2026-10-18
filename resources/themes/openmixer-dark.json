@@ -24,11 +24,17 @@
     "master": "#FFE2E8F0",
     "popup": "#F0141926",
     "capTop": "#FF2C3446",
-    "capBottom": "#FF161B26"
+    "capBottom": "#FF161B26",
+    "waveLow": "#FFF97316",
+    "waveMid": "#FF34D399",
+    "waveHigh": "#FF38BDF8"
   },
   "accents": ["#FF38BDF8", "#FFF472B6", "#FFA3E635", "#FFFBBF24"],
   "spacing": { "gap": 12, "pad": 12, "innerGap": 8 },
   "radii": { "card": 14, "control": 8 },
   "type": { "small": 11, "caption": 12, "body": 13, "label": 14, "title": 16, "heading": 17, "mono": 15 },
+  "deck": { "headerHeight": 52, "overviewHeight": 40, "transportHeight": 32, "rowHeight": 30, "pitchWidth": 84, "minZoomHeight": 60,
+            "readoutWidth": 78, "rangeBoxHeight": 24, "playheadWidth": 2, "cueMarkerWidth": 2,
+            "gridBarAlpha": 0.55, "gridBeatAlpha": 0.4, "loopActiveAlpha": 0.25, "loopIdleAlpha": 0.08 },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }

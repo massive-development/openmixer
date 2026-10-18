@@ -7,11 +7,12 @@ namespace openmixer::ui
 
 namespace
 {
-    struct Spec { const char* text; const char* id; bool toggle; };
+    struct Spec { const char* text; const char* id; bool toggle; const char* tip; };
     constexpr Spec kSpecs[TransportPanel::NumButtons] = {
-        { "Play", "play", true },       { "Cue", "cue", false },        { "Sync", "sync", true },
-        { "Master", "sync.master", true }, { "Key lock", "keylock", true }, { "Quantize", "quantize", true },
-        { "Slip", "slip", true },
+        { "Play", "play", true, "Play / pause" },          { "Cue", "cue", false, "Stop and return to start" },
+        { "Sync", "sync", true, "Follow the sync leader" }, { "Mstr", "sync.master", true, "Make this deck the sync master" },
+        { "Key", "keylock", true, "Key lock: tempo changes keep the pitch" }, { "Quant", "quantize", true, "Quantize loop starts to the beat grid" },
+        { "Slip", "slip", true, "Slip mode: the track keeps running under loops and scratches" },
     };
 }
 
@@ -21,6 +22,7 @@ TransportPanel::TransportPanel (DeckBinding binding) : deckRef (binding)
     {
         auto& b = buttons[static_cast<size_t> (i)];
         b.setButtonText (kSpecs[i].text);
+        b.setTooltip (kSpecs[i].tip);
         b.setClickingTogglesState (false);   // state mirrors the engine, not the click
         b.onClick = [this, i] { press (static_cast<Button> (i)); };
         addAndMakeVisible (b);

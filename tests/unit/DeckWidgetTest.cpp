@@ -3,6 +3,7 @@
 #include "DeckTestUtil.h"
 #include "controllers/ParameterRouter.h"
 #include "ui/DeckWidget.h"
+#include "ui/GlassLookAndFeel.h"
 #include "ui/MainView.h"
 
 #include <gtest/gtest.h>
@@ -459,4 +460,136 @@ TEST (DeckWidgetTest, MainViewIgnoresLayoutDecksTheEngineLacks)
     view.setSize (1600, 1000);
     EXPECT_EQ (view.getNumDecks(), 2);
     EXPECT_EQ (view.getDeck (3), nullptr);
+}
+
+TEST (DeckWidgetTest, ZoomRefreshRepaintsOnlyWhenSomethingChanged)
+{
+    Rig rig;
+    ZoomWaveform zoom (rig.binding());
+    zoom.setSize (400, 120);
+    zoom.refresh();
+    const auto base = zoom.getRepaintRequests();
+    for (int i = 0; i < 5; ++i)
+        zoom.refresh();
+    EXPECT_EQ (zoom.getRepaintRequests(), base) << "an idle deck costs no repaints";
+
+    rig.engine.getDeck (0).setHotcue (1, 5000);
+    zoom.refresh();
+    EXPECT_EQ (zoom.getRepaintRequests(), base + 1) << "a new cue repaints";
+    zoom.refresh();
+    EXPECT_EQ (zoom.getRepaintRequests(), base + 1);
+}
+
+TEST_F (DeckWidgetSlow, ZoomRefreshFollowsPositionAndLoopChanges)
+{
+    Rig rig;
+    auto& deck = rig.engine.getDeck (0);
+    ASSERT_TRUE (deck.load (wavFile));
+    ASSERT_TRUE (deck_test::waitFor ([&] { return deck.getLengthFrames() > 0; }));
+    rig.engine.setGrid (0, std::make_shared<FixedTempoGrid> (600.0, deck_test::kRate));
+    ZoomWaveform zoom (rig.binding());
+    zoom.setSize (400, 120);
+    zoom.refresh();
+    const auto base = zoom.getRepaintRequests();
+    deck.seek (3000);
+    ASSERT_TRUE (deck_test::pumpUntilBuffered (deck, 64, 3000));
+    zoom.refresh();
+    EXPECT_EQ (zoom.getRepaintRequests(), base + 1) << "position moved";
+    rig.router.setParameter ("deck.0.loop.quantized.1", 1.0);
+    zoom.refresh();
+    EXPECT_EQ (zoom.getRepaintRequests(), base + 2) << "loop set";
+    rig.router.setParameter ("deck.0.loop.exit", 1.0);
+    zoom.refresh();
+    EXPECT_EQ (zoom.getRepaintRequests(), base + 3) << "loop exit toggles the active flag";
+}
+
+TEST (DeckWidgetTest, ZoomScrollingBlitsTheCachedStripAndRerendersOnlyWhenNeeded)
+{
+    Rig rig;
+    ZoomWaveform zoom (rig.binding());
+    zoom.setWaveform (syntheticWaveform (4096));
+    zoom.setSize (400, 120);
+    render (zoom, 400, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 1);
+
+    render (zoom, 400, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 1) << "same view reuses the strip";
+
+    rig.engine.getDeck (0).seek (0);   // position stays 0 without an audio thread; scroll via zoom instead
+    zoom.setFramesPerPixel (512.0);
+    render (zoom, 400, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 2) << "zoom change re-renders";
+
+    zoom.setSize (300, 120);
+    render (zoom, 300, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 3) << "resize re-renders";
+    zoom.setWaveform (syntheticWaveform (1024));
+    render (zoom, 300, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 4) << "new waveform re-renders";
+}
+
+TEST_F (DeckWidgetSlow, ZoomScrollWithinMarginDoesNotRerender)
+{
+    Rig rig;
+    auto& deck = rig.engine.getDeck (0);
+    ASSERT_TRUE (deck.load (wavFile));
+    ASSERT_TRUE (deck_test::waitFor ([&] { return deck.getLengthFrames() > 0; }));
+    ZoomWaveform zoom (rig.binding());
+    zoom.setWaveform (syntheticWaveform (4096));
+    zoom.setFramesPerPixel (32.0);
+    zoom.setSize (400, 120);
+    render (zoom, 400, 120);
+    ASSERT_EQ (zoom.getCacheRenders(), 1);
+    deck.seek (32 * 100);   // 100 px of scroll, inside the 200 px margin
+    ASSERT_TRUE (deck_test::pumpUntilBuffered (deck, 64, 3200));
+    render (zoom, 400, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 1);
+    deck.seek (32 * 500);   // beyond the margin
+    ASSERT_TRUE (deck_test::pumpUntilBuffered (deck, 64, 16000));
+    render (zoom, 400, 120);
+    EXPECT_EQ (zoom.getCacheRenders(), 2);
+}
+
+TEST (DeckWidgetTest, EveryDeckButtonLabelFitsAtTheDefaultWindowSize)
+{
+    Rig rig;
+    GlassLookAndFeel lnf;
+    MainView view (rig.engine, rig.recorder);
+    view.setLookAndFeel (&lnf);
+    view.setSize (1280, 800);
+    constexpr int kTextMargin = 10;   // the pill's side padding
+    for (int d = 0; d < 2; ++d)
+    {
+        auto* deck = view.getDeck (d);
+        std::vector<juce::TextButton*> buttons;
+        for (int i = 0; i < TransportPanel::NumButtons; ++i)
+            buttons.push_back (&deck->getTransport().button (static_cast<TransportPanel::Button> (i)));
+        for (int i = 0; i < HotcueBank::kNumCues; ++i)
+            buttons.push_back (&deck->getHotcues().pad (i));
+        for (int i = 0; i < LoopControls::kNumSizes; ++i)
+            buttons.push_back (&deck->getLoops().sizeButton (i));
+        for (auto* b : { &deck->getLoops().halve(), &deck->getLoops().twice(), &deck->getLoops().exitButton(), &deck->getLoops().reloopButton() })
+            buttons.push_back (b);
+        for (auto* b : buttons)
+        {
+            const auto font = lnf.getTextButtonFont (*b, b->getHeight());
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText (font, b->getButtonText(), 0.0F, 0.0F);
+            EXPECT_LE (static_cast<int> (std::ceil (glyphs.getBoundingBox (0, -1, true).getWidth())) + kTextMargin, b->getWidth()) << b->getButtonText() << " would be truncated";
+        }
+    }
+    view.setLookAndFeel (nullptr);
+}
+
+TEST (DeckWidgetTest, ShortDeckHidesTheZoomInsteadOfOverlappingTheControls)
+{
+    Rig rig;
+    DeckWidget widget (rig.binding());
+    widget.setSize (560, 330);
+    EXPECT_FALSE (widget.getZoom().isVisible());
+    EXPECT_FALSE (widget.getZoom().getBounds().intersects (widget.getTransport().getBounds()));
+    EXPECT_FALSE (widget.getHotcues().getBounds().intersects (widget.getLoops().getBounds()));
+    widget.setSize (560, 520);
+    EXPECT_TRUE (widget.getZoom().isVisible());
+    EXPECT_FALSE (widget.getZoom().getBounds().intersects (widget.getTransport().getBounds()));
 }
