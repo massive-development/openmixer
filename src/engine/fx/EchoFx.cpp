@@ -31,6 +31,13 @@ void EchoFx::reset() noexcept
     lowCut.reset();
 }
 
+void EchoFx::beginReset() noexcept
+{
+    line.beginClear();
+    toneFilter.reset();
+    lowCut.reset();
+}
+
 int EchoFx::tailSilenceWindow (const FxContext& ctx) const noexcept
 {
     return static_cast<int> (getParamTarget (kTime) * ctx.samplesPerBeat) + 64;

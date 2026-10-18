@@ -69,11 +69,13 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Where:** `src/controllers/ParameterRouter.{h,cpp}`
 - **Why:** MIDI maps address `mixer.*`, `deck.N.*` or any user-registered prefix; plugins add targets without touching core. Longest prefix wins.
 - **Reuse when:** exposing a new controllable unit; register it, do not extend a switch.
+- **Notes:** the app registers `mixer`, `fx` (`FxRouting`), `sync` and `deck.<N>` (`DeckControl`, a decorator that handles sync/loop.quantized/slip and forwards the rest to `Deck`). Engine units cannot link `controllers`, so `DjEngine` exposes targets and the app does the registering.
 
 ### Composition root for the signal path (DjEngine)
 - **Where:** `src/engine/DjEngine.{h,cpp}`
 - **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
 - **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
+- **Notes:** FX racks, `Sync` and `DeckControl` live here; keep `DjEngine` thin by giving each its own file (`FxRouting`, `DeckControl`). `updateControl(dt)` is the one control-timer entry.
 
 ### Grid interface with mock implementations (BeatGrid)
 - **Where:** `src/engine/BeatGrid.h`, consumed by `Sync` and `Quantizer`; `FixedTempoGrid` is the built-in implementation, tests use a mock.
@@ -92,7 +94,15 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** users add audio stages (pre/post-processing, FX), MIDI maps and parameter targets without touching core and without any signing or allow-list.
 - **Reuse when:** a new feature should be replaceable: add a `register...` method to `PluginHost` (bump `kPluginApiVersion` only on breaking changes), never a hardcoded path.
 - **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
+- **Version note:** a plugin that calls a newly appended `PluginHost` hook (e.g. `registerTheme`) needs a host at least as new; hooks are appended with a safe default, so `kPluginApiVersion` stays 1 and older plugins keep loading.
 - **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
+
+### Runtime theme tokens + theme registry (extension point)
+- **Where:** `src/ui/ThemeTokens.h` (data), `Theme.{h,cpp}` (current theme + accessors), `ThemeJson`, `ThemeRegistry`, `GlassLookAndFeel`; built-in themes in `resources/themes/*.json` (embedded with `juce_add_binary_data`).
+- **Why:** widgets never hard-code colours/sizes; they read `theme::textPrimary()`, `theme::accentFor (i)`, `theme::gap()`, `theme::typeBody()` etc., so a theme (built-in, user JSON or plugin) can restyle everything live.
+- **Reuse when:** adding any widget. Paint with token accessors (read at paint time, so switches are free). Anything cached (fonts, per-deck accents, label colours) goes in an `applyTheme()` called from the constructor and `lookAndFeelChanged()`; `GlassLookAndFeel` calls `sendLookAndFeelChange()` on every top-level window after a switch, which re-runs both. Non-Component holders can implement `theme::ThemeListener`.
+- **How to extend:** drop a `*.json` in `<userApplicationData>/OpenMixer/themes` (schema in `ThemeJson.h`; missing keys inherit the dark theme; an invalid value rejects that file only), call `ThemeRegistry::add/addJson` from code, or ship JSON from a plugin with `PluginHost::registerTheme` and forward `PluginRegistry::getThemes()` to `ThemeRegistry::addJson (json, Source::Plugin, owner)` (`removeOwner (pluginId)` on unload). Precedence per id: User > Plugin > BuiltIn, latest add wins within a source. New token = field in `ThemeTokens`, a row in the key tables in `ThemeJson.cpp`, an accessor in `Theme.h`, and a value in both built-in JSON files.
+- **Notes:** message thread only (the current theme is a plain global, not atomic). `ThemeTokens::builtinDark()` is the compiled-in fallback and must stay equal to `openmixer-dark.json` (tested). Use one `ThemeRegistry` per app; the active theme falls back to `openmixer.dark` if it is removed. Dependency direction: plugins do not depend on ui, so the app forwards plugin themes.
 
 ### Prefetched jump slot (hazard-slot double buffer)
 - **Where:** `src/engine/LoopPrefetch.{h,cpp}`, used by `Deck` (`DeckPlayback.cpp`) and `DeckDecoder`.
@@ -164,3 +174,86 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** wrapping any external DSP/codec library (FFmpeg, ONNX Runtime).
 - **Notes:** `prepare()` allocates (control thread); all other calls are audio-thread, allocation-free. Vendored code builds as its own target with its warnings off and -O2 in Debug.
 
+
+### Forward-only migration list (extension point)
+- **Where:** `src/library/Migrations.{h,cpp}`, `Library::open`.
+- **Why:** the schema evolves by appending numbered `Migration`s; each runs in its own transaction and is recorded in `schema_version`.
+- **Reuse when:** any later subsystem (search index, history, plugin tables) needs library tables; append a `Migration` with the next version and pass the list to `Library::open`. Never edit a shipped migration.
+- **Notes:** a database newer than the list is refused (no downgrades). Versions must be strictly increasing.
+
+### DAO per entity over an RAII database wrapper
+- **Where:** `src/library/Database.{h,cpp}`, `Statement`, `TrackDao`, `CueDao`, `PlaylistDao`, `OrderedList`.
+- **Why:** keeps SQL out of callers; `Transaction` nests via savepoints so DAO calls compose and roll back together.
+- **Reuse when:** adding a table; add a `*Dao` that borrows `Database&` and returns plain value records.
+- **Notes:** one writer thread; the UI reads through its own `OpenMode::ReadOnly` connection (WAL). `OrderedList` keeps dense `position` columns for any ordered child set.
+
+### Metadata reader registry (extension point)
+- **Where:** `src/library/MetadataReader.{h,cpp}`, `JuceMetadataReader`, `Ingestor`.
+- **Why:** tag formats vary; `Ingestor` asks the registry for the reader owning a file's extension, so new readers (TagLib, plugin-supplied) need no ingestor change.
+- **Reuse when:** adding a tag source or a new supported file type; implement `MetadataReader` and `registry.add()` it. Later registrations win per extension.
+- **Notes:** the registry decides which files are scanned at all. Ingest state (mtime, size, missing) lives in its own `track_files` table so `TrackRecord` stays a pure metadata value.
+
+### Background rescan with injectable clock (WatchFolders)
+- **Where:** `src/library/WatchFolders.{h,cpp}`.
+- **Why:** a worker thread owns its own DB connection and re-evaluates `clock()` on a short poll; tests drive time with a fake clock plus `poke()`/`triggerScan()`/`waitForScans()` instead of sleeping.
+- **Reuse when:** any periodic background task over the library (import refresh, analysis queue feeding).
+- **Notes:** one connection per thread (WAL + busy timeout) rather than locking a shared one; the destructor aborts a scan between files.
+
+### Search field registry + compile-to-SQL (extension point)
+- **Where:** `src/library/Search{Fields,Parser,Compiler,Terms,Engine}.{h,cpp}`.
+- **Why:** a query string parses to generic `FilterTerm`s; each registered `SearchField` (column + kind, or a Custom compile hook) turns its term into SQL text made of code-constant names and `?` placeholders, with user values only in the bound args.
+- **Reuse when:** adding a filterable/sortable attribute (e.g. a plugin tag); `engine.registry().add(field)`. Custom hooks must never splice user text into `SqlFragment::sql`.
+- **Notes:** reads report failure via the trailing `juce::Result*` (a bad field/value fails rather than returning "no results"). Text match is LIKE-contains with escaped wildcards (`=value` for exact); the SQLite build has no FTS5, so a future FTS index would be a new migration plus a Text-field compile swap.
+
+### Library importer registry + parse/merge split (extension point)
+- **Where:** `src/library/LibraryImporter.{h,cpp}`, `ItunesImporter`, `RekordboxImporter`, `ImportModel.h`, `ImportWriter`, `ImportMerge`, `ImportCues`, `LibraryImport`.
+- **Why:** importers only turn a foreign XML document into the neutral `ImportedLibrary` (no database code, recognised by XML root since both formats are `.xml`); one `ImportWriter` merges any importer's output in a single `Transaction`, so every format gets the same dedupe-by-path and rollback behaviour.
+- **Reuse when:** adding another library format (`registry.add(...)`, later registration wins) or another bulk write that must be all-or-nothing and re-runnable.
+- **Notes:** merge policy (local data wins, imports fill gaps and default rating/play count) is documented in `ImportMerge.h`; re-import is idempotent; a failed lookup aborts the import rather than counting as "new".
+
+### Owner-thread pump over a background service (PrepQueue)
+- **Where:** `src/library/PrepQueue.{h,cpp}`, `PrepQueueDao`, `PrepResults`.
+- **Why:** analysis workers must not touch the Library's sqlite connection, so their listener only copies the final job snapshot into a mutex-guarded inbox; the thread that owns the connection calls `pump()` to apply results, update rows, fire the observer and submit more. At most `maxInFlight` jobs sit in the service, so priority and order stay editable (the service itself is plain FIFO).
+- **Reuse when:** a persisted queue feeds `AnalysisService` or another worker pool and results must land in the database (stem precompute, export).
+- **Notes:** the inbox is a `shared_ptr` captured by listeners so late callbacks after destruction are safe; progress is read live from the job on `list()` rather than written to the DB; running rows are reset to queued on start. Library depends on analysis (same tier) for this.
+
+### Data-driven main layout + named slots (extension point)
+- **Where:** `src/ui/MainLayout.{h,cpp}` (pure geometry + JSON), `MainView.{h,cpp}`.
+- **Why:** the window is `LayoutSpec` rows of cells, each a deck index or a named slot; `computeLayout` turns it into rectangles with no Components, so more decks or a different arrangement is a data change (`OPENMIXER_LAYOUT=<file.json>`).
+- **Reuse when:** adding a panel (mixer, library, a plugin's view): name a slot in the spec and call `MainView::setSlotContent (name, component)`; empty slots show a `SlotPlaceholder`.
+- **Notes:** decks the engine lacks are skipped. Slot content is owned by the view.
+
+### Mixer widgets: binding + descriptor-built FX controls (MixerBinding, FxPanel)
+- **Where:** `src/ui/MixerBinding.h`, `MixerPanel`, `ChannelStripWidget`, `FxPanel`, `MeterBallistics`.
+- **Why:** same router-id rule as decks (`mixer.<id>`, `fx.<scope>.fx<U>.<param>`); widgets mirror engine getters in `refresh (dt)` without echoing. `FxPanel` builds one `LabeledKnob` per `FxParamSpec`, so a plugin-registered effect in a rack gets controls with no UI code. `MeterBallistics` is drawing-free (peak, release, hold, clip latch, dt-based) so it is tested with synthetic levels; all metrics and thresholds are theme tokens (`mixer` JSON section).
+- **Reuse when:** adding a control surface for another engine object, or another meter.
+
+### Library composition: services unit, row sources, load callbacks (LibraryServices, TrackSource, TrackLoader)
+- **Where:** `src/ui/LibraryServices.{h,cpp}`, `TrackSource`, `TrackTableModel`, `SidebarModel`, `LibraryBrowser`, `TrackLoader`, `TrackDrag.h`.
+- **Why:** one place owns start-up/shutdown order (Library writer -> result cache -> analysis service -> prep queue -> watch folders; destroyed in reverse) and the thread rules: the message thread owns the Library connection and the PrepQueue (a Timer calls `pump()`), `WatchFolders` has its own thread + connections and only bumps an atomic counter that `pump()` turns into `libraryChanged()`. Widgets never open databases; they read `LibraryServices` and react to its `Listener`.
+- **Reuse when:** a view needs track rows (implement `TrackSource`: `count()` + `fetch (offset, limit)`; the table pages and caches them), a new sidebar node (add a `SidebarNode::Kind` and its `scopeQuery()`), or another "load" gesture (call `TrackLoader::load`; the browser only emits `onLoadRequested (deck, track)`, drops arrive as `trackdrag::describe/parse` strings on `DeckWidget::onTrackDropped`).
+- **Notes:** `LibraryServices::Options::analyzers` swaps the analyser registry (tests, plugins); `":memory:"` runs without watch folders. Preferences: add/remove folders with `getWatchFolders()->add/remove` then `notifyLibraryChanged()`. Library depends on analysis, ui depends on both; never the reverse. `OPENMIXER_LIBRARY_DB` overrides the path (screenshots/tests).
+
+### Widgets write through router ids only (DeckBinding)
+- **Where:** `src/ui/DeckBinding.h` and the deck components (`TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`, `OverviewWaveform`).
+- **Why:** every control calls `binding.send ("<id>", value)` which becomes `deck.<N>.<id>` on the app's `ParameterRouter`, the same path MIDI maps use; reads (position, loop, hotcues, sync state) are the engine's existing atomic getters on the message thread. Toggles send the opposite of the engine state and mirror it back in `refresh()`.
+- **Reuse when:** any new control surface; tests pass a recording `ParameterTarget` that forwards to a real router to assert both id/value and engine effect.
+- **Notes:** the frame clock is a `juce::VBlankAttachment` in `DeckWidget`; each component's `refresh()` repaints only what changed (playhead strip, cue markers, or the zoom view when position/loop/cues moved).
+
+### Preferences model + applier + settings pages (Preferences, PreferencesApplier, SettingsPanel)
+- **Where:** `src/ui/Preferences.{h,cpp}`, `PreferencesApplier`, `SettingsPanel` + `SettingsPage` and the `*SettingsPage` tabs, `AudioSettingsModel`; glue in `src/app/AppPreferencesTargets`; `src/engine/OutputRouter`.
+- **Why:** one plain, versioned JSON model (JSON over `juce::PropertiesFile` because the data is nested/versioned and hand-editable, like theme and layout files); subsystems sit behind `PreferencesTargets` so the applier is tested with mocks and pushes only the sections that changed (plugins -> theme -> audio -> MIDI); pages edit the model and call `changed`, the app saves and applies.
+- **Reuse when:** adding a setting (field in `Preferences` with a default, read/write in `Preferences.cpp`, a `PreferencesTargets` method if a subsystem must react) or a settings tab (derive `SettingsPage`, `SettingsPanel::addPage (title, page)`; a plugin can add one the same way). Targets must be idempotent.
+- **Notes:** the audio page talks to an `AudioSettingsModel` (real: `JuceAudioSettingsModel` over the `AudioDeviceManager`; tests: a fake, no device opened). All device outputs (up to 8) are opened and `OutputRouter` sends master/cue to chosen stereo pairs (audio-thread safe, atomics). Library scan interval/scan-on-start are read when `LibraryServices` is created (restart to change); watch folders live in the library DB, not in the preferences.
+
+### Device-free window composition (AppComposition)
+- **Where:** `src/app/AppComposition.{h,cpp}`; used by `MainComponent` (real devices) and `tools/ui_gate/UiRig.h` (mock device).
+- **Why:** engine, router, MIDI mapper, plugins, preferences, main view, library, track loader and settings overlay are wired once, so the UI gate tests the same wiring the app ships.
+- **Reuse when:** adding any window-level wiring (a panel, a callback, a drop target): put it in `AppComposition`; `MainComponent` only adds the audio/MIDI devices around it and `UiRig` only swaps in a mock device. Never wire a window part in just one caller.
+- **Notes:** message thread only; declare things the composition's widgets reference (e.g. the audio settings model) before it so they outlive its timers.
+
+### UI gate: rig + scripted operator over widgets (UiRig, UiScenario)
+- **Where:** `tools/ui_gate.cpp`, `tools/ui_gate/UiRig.h` (main-window composition without the audio device), `tools/ui_gate/UiScenario.h` (scripted DJ), `tools/soak/ToneWriter.h` (shared track generator).
+- **Why:** the soak drives the engine directly; the gate proves the wiring by pressing the widgets' own paths (`Button::onClick`, `Slider::setValue (…, sendNotificationSync)`, browser search box and Load buttons, theme registry) and then asserting the widget and the engine agree (play text, toggle lights, hotcue pads, loop state, mixer/FX values). `OutputChecker` and `soak::UnderrunTracker` supply the audio budgets.
+- **Reuse when:** a new panel needs end-to-end coverage: add its actions to `UiScenario` (act, then `expect` the engine state) and count them in `GateCounts` so `coversEveryArea()` fails if the area is never exercised.
+- **Notes:** Both `MainComponent` and `UiRig` use `AppComposition`, so the gate exercises the real window wiring; add window wiring there, never in either caller. Leaks: the JUCE leak detector prints at exit without failing the process, so CTest uses `FAIL_REGULAR_EXPRESSION` on its report. Labels: `ui_gate` (short, default), `uigate_long` (10 min, `OPENMIXER_LONG_SOAK`), `smoke` (`openmixer --smoke`, exit 77 = no display = skipped).

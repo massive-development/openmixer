@@ -17,7 +17,8 @@ public:
 
     RollFx() noexcept;
     std::string_view getName() const noexcept override { return "roll"; }
-    // Engaging restarts the capture (the unit resets an idle effect before reuse).
+    // Engaging restarts the capture. reset() only rewinds counters (reads never pass `recorded`),
+    // so it is O(1) on the audio thread and needs no sliced clear.
     void reset() noexcept override;
 
 protected:

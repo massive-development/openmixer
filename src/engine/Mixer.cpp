@@ -11,7 +11,7 @@ namespace
     constexpr auto kRelaxed = std::memory_order_relaxed;
     constexpr float kMeterDecaySeconds = 0.3F;
 
-    float clampGain (float g) noexcept { return std::clamp (g, 0.0F, 2.0F); }
+    float clampGain (float g) noexcept { return std::clamp (g, 0.0F, Mixer::kMaxGain); }
 }
 
 Mixer::Mixer (int n) : numChannels (std::clamp (n, 1, kMaxChannels)) {}

@@ -5,6 +5,7 @@
 #include "MidiMap.h"
 
 #include <map>
+#include <mutex>
 #include <unordered_map>
 
 namespace openmixer
@@ -13,13 +14,15 @@ namespace openmixer
 class MidiMapper
 {
 public:
-    void setTarget (ParameterTarget* t) noexcept { target = t; }
+    // Thread-safe between control threads: a map reload (install) is atomic with respect to handleMessage on the
+    // MIDI thread. The lock is held across the target call; never call from the audio thread.
+    void setTarget (ParameterTarget* t) noexcept { const std::lock_guard<std::recursive_mutex> guard (lock); target = t; }
 
     juce::Result loadFromJson (const juce::String& json);
     juce::Result loadFromFile (const juce::File& file);
 
-    const juce::String& getName() const noexcept { return map.name; }
-    size_t getNumMappings() const noexcept { return map.mappings.size(); }
+    juce::String getName() const { const std::lock_guard<std::recursive_mutex> guard (lock); return map.name; }
+    size_t getNumMappings() const { const std::lock_guard<std::recursive_mutex> guard (lock); return map.mappings.size(); }
 
     // Returns the number of parameter updates produced.
     int handleMessage (const juce::MidiMessage& m);
@@ -38,6 +41,7 @@ private:
     double compute (const Mapping& m, const MidiEvent& e, double current, bool& changed) const noexcept;
     bool apply (const Mapping& m, const MidiEvent& e);
 
+    mutable std::recursive_mutex lock;
     ParameterTarget* target = nullptr;
     MidiMap map;
     std::unordered_map<int, std::vector<int>> index;

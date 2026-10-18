@@ -54,14 +54,15 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Realtime mode
   - Golden audio tests
 
-- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip, gapless Deck loop playback + hotcues done; real grids Wave 3, app/UI wiring open)
+- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip, gapless Deck loop playback + hotcues done; ids wired through `DeckControl`: `deck.N.sync`, `sync.master`, `loop.quantized.<beats>`, `slip`; real grids Wave 3, UI open)
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
 
 - [x] **Todo 11:** FX rack (8 essential effects)
   - `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop
   - `FxUnit`/`FxRack` as `ProcessStage` inserts; `fxN.*` parameter ids; beat-synced via `setTempo`/`BeatGrid`
-  - Follow-up: wire a rack into `DjEngine` + `ParameterRouter` (`fx` prefix), beat-phase lock, FX UI
+  - Wired into `DjEngine` via `FxRouting` (`fx.master.*`, `fx.ch<N>.*`); idle delay-line clear amortised off the audio thread
+  - Follow-up: beat-phase lock, FX UI
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
@@ -94,22 +95,34 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 4: Library & Data
 
-- [ ] **Todo 20:** Library schema + DAO layer
-- [ ] **Todo 21:** Metadata ingest + watch folders
-- [ ] **Todo 22:** Import (iTunes/Rekordbox XML)
-- [ ] **Todo 23:** Search + filter engine
-- [ ] **Todo 24:** Track prep queue
+- [x] **Todo 20:** Library schema + DAO layer
+  - `src/library/`: `Database`/`Statement`/`Transaction`, `Migrations`, `TrackDao`, `CueDao`, `PlaylistDao`, `Library`
+- [~] **Todo 21:** Metadata ingest + watch folders (partial: RIFF INFO tags, duration, watch folders done; TagLib tags for MP3/FLAC/M4A and artwork open)
+  - `src/library/`: `MetadataReader` registry + `JuceMetadataReader`, `Ingestor`, `TrackFileDao`, `WatchFolderDao`, `WatchFolders`
+- [x] **Todo 22:** Import (iTunes/Rekordbox XML)
+  - `src/library/`: `LibraryImporter` registry (extension point), `ItunesImporter`, `RekordboxImporter`, `ImportWriter` (one transaction, merge by path), `fileUrlToPath`
+- [x] **Todo 23:** Search + filter engine
+  - `src/library/`: `SearchFieldRegistry` (extension point), `parseQuery`, `compileSearch` (parameterised SQL), `SearchEngine`; migration v3 indexes. LIKE-based (SQLite build has no FTS5)
+- [x] **Todo 24:** Track prep queue
+  - `src/library/`: `PrepQueueDao` (persisted order/priority/status), `PrepQueue` (bounded in-flight submits to `AnalysisService`, `pump()` on the owner thread writes bpm/key back via `applyPrepResults`), migration v4
 
 ## Wave 5: UI
 
-- [ ] **Todo 25a:** Theme/skin loader (user-supplied themes, colours, layouts via plugin API)
-- [ ] **Todo 25:** Design tokens + LookAndFeel
-- [ ] **Todo 26:** Main window + deck widgets
-- [ ] **Todo 27:** Mixer widgets + metering
-- [ ] **Todo 28:** Library browser
-- [ ] **Todo 29:** Automix panel + settings
-- [ ] **Todo 30:** Stem pads UI
-- [ ] **Todo 31:** UI verification gate
+- [~] **Todo 25a:** Theme/skin loader (done: JSON themes, `ThemeRegistry` with built-in/user/plugin sources and live switching, `PluginHost::registerTheme`; plugin theme forwarding, theme picker UI + persisted choice; missing: layouts, user-theme-dir file watching)
+  - `src/ui/`: `ThemeTokens`, `Theme` (runtime accessors), `ThemeJson`, `ThemeRegistry`; `resources/themes/*.json` embedded via `juce_add_binary_data`
+- [x] **Todo 25:** Design tokens + LookAndFeel
+  - `GlassLookAndFeel` covers knobs, faders, buttons, ComboBox, PopupMenu, TextEditor, ToggleButton, TabbedButtonBar, ScrollBar, TableHeader, tooltip (`GlassWidgets.cpp`)
+- [~] **Todo 26:** Main window + deck widgets (done: window, widgets and tests; missing: a real main-cue point; the library feed landed with Todo 28)
+  - `src/ui/`: `MainView` + `MainLayout` (data-driven rows/cells/slots), `DeckWidget` = `TrackHeader`, `OverviewWaveform`, `ZoomWaveform`, `TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`; `DeckBinding` routes ids
+- [~] **Todo 27:** Mixer widgets + metering (done: strips, EQ + kill, crossfader + curve, master, cue, FX panel, stereo peak meters with hold + clip; missing: RMS meters, FX assign beyond the per-channel rack shortcut)
+  - `src/ui/`: `MixerPanel` (mixer slot; Mixer/FX pages), `ChannelStripWidget`, `MasterSection`, `CrossfaderSection`, `CueSection`, `FxPanel`, `LabeledKnob`, `MeterBar`/`StereoMeter` over `MeterBallistics`; `MixerBinding` routes `mixer.*` / `fx.*` ids; engine: `crossfader.curve` id, stereo channel peaks, state getters
+- [~] **Todo 28:** Library browser + app wiring (done: sidebar tree, paged sortable table with Camelot compatibility tint, search box on the query syntax, load buttons/double-click/drag to decks, prep queue view + enqueue, iTunes/Rekordbox import, `LibraryServices` composition (library, analysis cache, prep queue pumped on a timer, watch folders), `TrackLoader` feeds waveform + beat grid + metadata to decks; missing: playlist editing, prep queue reorder/remove UI, auto-enqueue after scans)
+  - `src/ui/`: `LibraryServices`, `TrackLoader`, `LibraryBrowser`, `TrackTableModel` over `TrackSource` (`SearchTrackSource`, `PrepQueueSource`), `SidebarModel` + `SidebarTree`, `TrackDrag.h` (`DeckWidget` is a drop target); theme `library` section; `DebugPanel`/`DeckStrip` and `OPENMIXER_DEBUG_PANEL` removed (the browser loads tracks); `OPENMIXER_LIBRARY_DB=<file>` selects another library
+- [~] **Todo 29:** Automix panel + settings (done: settings overlay with audio device/rate/buffer/master+headphone output pairs + latency/xrun/CPU, MIDI inputs + map file, library watch folders + rescan, theme picker, plugin folder; versioned `preferences.json` applied at start and on change; plugins loaded at start with their themes forwarded; missing: Automix panel (Wave 7, needs Todo 38), live scan-interval change)
+  - `src/ui/`: `Preferences`, `PreferencesApplier` (+ `PreferencesTargets`), `SettingsPanel` over `SettingsPage` tabs (`AudioSettingsPage` + `AudioSettingsModel`/`JuceAudioSettingsModel`, `MidiSettingsPage`, `LibrarySettingsPage`, `AppearanceSettingsPage`, `PluginsSettingsPage`, `PathRow`); `src/engine/OutputRouter`; `src/app/AppPreferencesTargets`; theme `settings` section; `--settings` / `OPENMIXER_SETTINGS=1` opens the panel, `OPENMIXER_PREFS=<file>` selects another preferences file
+- [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
+- [x] **Todo 31:** UI verification gate
+  - `tools/ui_gate.cpp` + `tools/ui_gate/{UiRig,UiScenario}.h` (`openmixer_ui_gate`): full main window over a paced mock device, scripted DJ operating the widgets; CTest `ui_gate_short` (label `ui_gate`), `ui_gate_10min` (opt-in with `-DOPENMIXER_LONG_SOAK=ON`, label `uigate_long`); `app_smoke` (`openmixer --smoke`, label `smoke`, skipped without a display)
 
 ## Wave 6: Hardware I/O
 

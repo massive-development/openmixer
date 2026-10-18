@@ -6,6 +6,7 @@
 #include "ChannelStrip.h"
 #include "Crossfader.h"
 
+#include <algorithm>
 #include <array>
 
 namespace openmixer
@@ -15,6 +16,7 @@ class Mixer : public ParameterTarget
 {
 public:
     static constexpr int kMaxChannels = 4;
+    static constexpr float kMaxGain = 2.0F;   // master and cue level ceiling
     static constexpr float kMinEqDb = ThreeBandEq::kMinDb;
     static constexpr float kMaxEqDb = ThreeBandEq::kMaxDb;
 
@@ -26,7 +28,7 @@ public:
     void prepare (double sampleRate, int maxBlockSize);
 
     // Ids: ch<N>.trim|fader|filter|pfl|xfader, ch<N>.eq.low|mid|high,
-    //      crossfader, master, cue.level, cue.mix
+    //      crossfader, crossfader.curve (0 linear, 1 constant power), master, cue.level, cue.mix
     bool setParameter (const juce::String& id, double value) override;
 
     void setTrim (int ch, float linearGain) noexcept   { strip (ch).setTrim (linearGain); }
@@ -46,11 +48,22 @@ public:
     float getFilter (int ch) const noexcept  { return strip (ch).getFilter().getPosition(); }
     float getEq (int ch, int band) const noexcept { return strip (ch).getEq().getGainDb (band); }
     bool getPfl (int ch) const noexcept      { return strip (ch).getPfl(); }
-    float getChannelPeak (int ch) const noexcept { return strip (ch).getMeter().get(); }
+    float getTrim (int ch) const noexcept    { return strip (ch).getTrim(); }
+    CrossfaderAssign getCrossfaderAssign (int ch) const noexcept { return strip (ch).getAssign(); }
+    float getCrossfader() const noexcept     { return crossfader.getPosition(); }
+    CrossfaderCurve getCrossfaderCurve() const noexcept { return crossfader.getCurve(); }
+    float getMasterGain() const noexcept     { return masterGain.load (std::memory_order_relaxed); }
+    float getCueLevel() const noexcept       { return cueLevel.load (std::memory_order_relaxed); }
+    float getCueMix() const noexcept         { return cueMix.load (std::memory_order_relaxed); }
+    // Decaying channel peaks written by the audio thread; lock-free reads for the meters.
+    float getChannelPeakLeft (int ch) const noexcept  { return strip (ch).getMeterLeft(); }
+    float getChannelPeakRight (int ch) const noexcept { return strip (ch).getMeterRight(); }
+    float getChannelPeak (int ch) const noexcept { return std::max (getChannelPeakLeft (ch), getChannelPeakRight (ch)); }
     float getMasterPeakLeft() const noexcept  { return masterPeakL.get(); }
     float getMasterPeakRight() const noexcept { return masterPeakR.get(); }
 
     // Extension points: insert a stage into a channel or master chain at runtime.
+    // Insert slot 0 is owned by the FX racks (FxRouting); use other slots.
     bool setChannelInsert (int ch, int slot, ProcessStage* stage) { return strip (ch).getInserts().set (slot, stage); }
     bool setMasterInsert (int slot, ProcessStage* stage) { return masterInserts.set (slot, stage); }
 
