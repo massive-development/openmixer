@@ -230,7 +230,7 @@ pub trait AudioProcessor: Send {
 
 ### Library services composition (planned)
 - **Where:** `om-ui` (planned; the C++ version was `LibraryServices`, `TrackSource` and `TrackLoader` at `cpp-final`)
-- **Why:** one place owns start-up and shutdown order (library writer, result cache, analysis service, prep queue, watch folders). Rust drops struct fields in declaration order, so declare them in reverse start-up order to tear down in reverse.
+- **Why:** one place owns start-up and shutdown order (library writer, result cache, analysis service, prep queue, watch folders). Rust drops struct fields in declaration order (first declared, first dropped), so declare the fields in reverse start-up order to tear down in reverse. Local variables are the opposite (see the composition root entry).
 - **Reuse when:** a view needs track rows (implement a row-source trait with `count()` and `fetch(offset, limit)`), a new sidebar node, or another load gesture (send a load command).
 - **Notes:** the UI thread owns the library connection and the prep queue (a timer calls `pump()`). Watch folders have their own thread and connection and only bump an atomic counter. Widgets never open databases.
 
@@ -250,7 +250,7 @@ pub trait AudioProcessor: Send {
 - **Where:** `crates/openmixer` (the composition root; the C++ version was `AppComposition` at `cpp-final`)
 - **Why:** engine, command routing, MIDI mapper, preferences, library and views are wired once, so the UI gate tests the same wiring the app ships.
 - **Reuse when:** adding any window-level wiring: put it in the composition function; the real binary and the test rig only swap in the audio device.
-- **Notes:** the composition root is the only place that holds concrete types and `Box<dyn ...>` objects. Declare objects that others reference before them so they outlive those references.
+- **Notes:** the composition root is the only place that holds concrete types and `Box<dyn ...>` objects. Local variables in the composition function drop in reverse declaration order, so declare objects that others reference before them; they then drop after those references (struct fields work the other way, see Library services composition).
 
 ### UI gate: rig + scripted operator (planned)
 - **Where:** `tools/ui_gate` (planned; the C++ version was the `ui_gate` source and `UiRig.h` at `cpp-final`)
