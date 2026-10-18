@@ -7,13 +7,13 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 ### For AI Agents
 
 1. **Read `agents.md` first** - Contains complete setup instructions
-2. **Check the work plan** - `.omo/plans/openmixer-dj-app.md`
+2. **Check the plan** - the Rust rewrite design (`docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`), the phase plans in `docs/superpowers/plans/`, and `TODO.md`
 3. **Create/update tasks** - Use `todowrite` tool to track progress
-4. **Verify each change** - Run `lsp_diagnostics` and tests
+4. **Verify each change** - Run `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`
 
 ### For Humans
 
-1. Set up development environment (see `agents.md`)
+1. Set up development environment (see `agents.md` and the Building section of `README.md`)
 2. Fork the repository
 3. Create a feature branch
 4. Follow the clean-room doctrine
@@ -24,19 +24,20 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 
 **Before implementing:**
 - [ ] Read `agents.md` for context
-- [ ] Identify the wave/todo number
+- [ ] Identify the phase, wave and todo number
 - [ ] Check ADRs for design decisions
+- [ ] Check `docs/parity.md` for the baseline test a Rust test must replace
 - [ ] Verify no existing implementation exists
 
 **While implementing:**
 - [ ] Follow existing code patterns
 - [ ] Add/expand tests
-- [ ] Run AddressSanitizer in debug builds
+- [ ] Keep audio-thread code allocation-, lock- and syscall-free, and check it in tests where the harness allows (`assert_no_alloc`, planned for Phase 2)
 - [ ] Create evidence file: `.omo/evidence/task-<N>-openmixer-dj-app.*`
 
 **After completing:**
 - [ ] All tests pass
-- [ ] `lsp_diagnostics` clean
+- [ ] `cargo clippy` clean with `-D warnings`
 - [ ] Update ADR if design changes
 - [ ] Document in evidence file
 
@@ -66,29 +67,30 @@ git commit -s -m "fix: description"
 All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
 
 1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
-2. Open a PR into `stage` with `gh pr create --base stage`. Only the fast Linux test gate (`pr-tests.yml`) runs there. The description must include:
+2. Open a PR into `stage` with `gh pr create --base stage`. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
-   - **Changes:** key files/modules added or modified.
-   - **Testing:** commands run and results (`ctest`, manual checks).
+   - **Changes:** key files/crates modules added or modified.
+   - **Testing:** commands run and results (`cargo test --workspace`, `cargo clippy`, `cargo fmt --check`, `cargo deny check`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
-3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
+3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`), `docs/PROGRESS.md` and `docs/parity.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
 5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, license, progress, sign) runs only there. Pushes alone never trigger CI.
 6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
 7. Promote early: open a `stage` -> `main` PR at every major milestone (a finished Todo or feature group), not only at the end of a wave, so release PRs stay small and reviewable.
 
-## C++ Standards & Memory Safety (required)
+## Rust Standards & Memory Safety (required)
 
-All code must follow modern C++ best practices (C++17 as configured; the C++ Core Guidelines are the reference). Outdated, unsafe or leaking code is not acceptable.
+All code must follow idiomatic Rust (edition 2021, MSRV per `rust-version` in the workspace `Cargo.toml`). The Rust API Guidelines and the Rust reference are the reference. Unsafe or leaking code is not acceptable.
 
-- **Ownership:** RAII everywhere. Use `std::unique_ptr` / `std::make_unique` (or JUCE `OwnedArray`/`Component` ownership); no raw `new`/`delete`, `malloc`/`free`, or owning raw pointers. Use `std::shared_ptr` only when ownership is genuinely shared.
-- **Modern idioms:** `auto`, range-for, structured bindings, `std::optional`/`std::variant`/`std::string_view`/`std::span`-style views (or `juce::Span`), `enum class`, `constexpr`, `nullptr`, `override`/`final`, `[[nodiscard]]` where a result must not be ignored. No C-style casts (`static_cast` etc.), no `NULL`, no C arrays where `std::array`/`std::vector` fit.
-- **Const-correctness and rule of zero/five:** mark things `const`/`noexcept` where true; follow the rule of zero, otherwise define or delete all special members.
-- **Concurrency:** `std::atomic` with explicit memory orders, no data races, no allocation/locks/IO in audio callbacks. Document thread ownership in headers.
-- **Bounds & lifetime safety:** no unchecked indexing of untrusted data, no dangling references/iterators, no use of uninitialised memory.
-- **Warnings:** code must compile warning-free; do not suppress warnings to pass.
-- **Verification before opening a PR:** the test binary must run clean under Valgrind (`valgrind --leak-check=full --error-exitcode=1 <test binary>`) — no leaks, invalid reads/writes or uninitialised-value use — and, where practical, under AddressSanitizer/UBSan/ThreadSanitizer for concurrent code. Report the results in the PR's Testing section.
-- **Check current guidance:** when unsure about an API or idiom, consult the C++ Core Guidelines / cppreference / JUCE docs rather than reusing older patterns from memory.
+- **Unsafe policy:** every crate starts with `#![forbid(unsafe_code)]`, enforced by the workspace lint. The only exception is a dedicated FFI crate (for example a Rubber Band binding, if the Phase 1 spike selects it), where each `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on. Do not add `unsafe` to any other crate.
+- **Ownership:** let ownership and borrowing express lifetimes. Use `Box`, `Arc` or `Rc` only where ownership is genuinely needed; no `Box::leak` or `mem::forget` to silence the borrow checker.
+- **Idioms:** iterators over index loops where clearer, `?` for error propagation, enums with exhaustive `match`, `#[must_use]` where a result must not be ignored, `Option`/`Result` instead of sentinel values.
+- **Errors:** `thiserror` in library crates, `anyhow` in the `openmixer` binary. Avoid `unwrap()` and `expect()` outside tests and documented invariants.
+- **Concurrency:** the audio thread communicates through `rtrb` SPSC queues and `arc-swap` snapshots. No allocation, locks, channels that may block, or I/O on the audio thread. Document thread ownership in module docs.
+- **Bounds & lifetime safety:** no unchecked indexing of untrusted data (use `get`); no `get_unchecked` outside the FFI crate.
+- **Warnings:** code must compile warning-free; `cargo clippy --workspace --all-targets -- -D warnings` must pass. Do not add `#[allow(...)]` to pass the check unless the reason is written next to it.
+- **Verification before opening a PR:** `cargo fmt --all --check`, `cargo clippy`, `cargo test --workspace` and `cargo deny check` must pass. Report the results in the PR's Testing section. Sanitizer and Miri runs for the FFI crate and concurrent code are planned.
+- **Check current guidance:** when unsure about an API or idiom, consult the std docs, the crate's docs.rs page or the GPUI sources rather than reusing older patterns from memory.
 
 ## Comments & Function Size (required)
 
@@ -99,13 +101,13 @@ All code must follow modern C++ best practices (C++17 as configured; the C++ Cor
 
 ## Modularity (required)
 
-- **No monolithic files.** One focused responsibility per file/class; split anything that grows large or mixes concerns.
-- **Build shared libraries.** Put reusable code in small CMake library targets (e.g. `openmixer_engine`) under `src/<area>/` and link them where needed, instead of duplicating code or piling it into the app target.
-- **Keep dependencies one-way** (app → ui → engine/library → core); libraries must not depend on app code and should be testable on their own.
+- **No monolithic files.** One focused responsibility per module; split anything that grows large or mixes concerns.
+- **Use crates for boundaries.** Put reusable code in a workspace crate under `crates/om-<area>/` and depend on it where needed, instead of duplicating code or piling it into the `openmixer` binary.
+- **Keep dependencies one-way.** Dependencies point toward `om-core`; the binary is the only composition root. Libraries must not depend on the binary or the UI crate and must be testable without a window.
 
 ## Architecture & Design Patterns (required)
 
-Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new `src/<area>/`):
+Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new crate):
 
 1. Read `docs/DESIGN_PATTERNS.md` and review how similar code is already structured.
 2. Reuse an existing pattern wherever it fits rather than inventing a new one.
@@ -116,28 +118,28 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 
 Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
 
-1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base (e.g. the `lumen-kb` MCP `search_kb`), then `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md` and `TODO.md`.
+1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base, then `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md` and `TODO.md`.
 2. **Read narrowly:** read only the needed line ranges or symbols, not whole files; prefer grep/glob to locate code. Do not re-read files already in context.
 3. **Delegate broad searches** to a search subagent so only conclusions return to the main context.
-4. **Keep the graph fresh:** after structural changes (new modules, moved files) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
+4. **Keep the graph fresh:** after structural changes (new crates, moved modules) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
 5. **Don't recompute:** reuse existing results (test output, benchmarks, analysis) instead of re-running or re-deriving them.
-6. **Keep outputs lean:** trim command output (`| tail`, `--quiet`), and keep PR descriptions and reports concise.
+6. **Keep outputs lean:** trim command output (`| tail`, `-q`), and keep PR descriptions and reports concise.
 
 ## Extensibility & User Freedom (required)
 
 Users must always be able to modify OpenMixer with external plugins. Nothing may be locked down.
 
-- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, LookAndFeel, skins).
-- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, interfaces and data-driven configuration (JSON/files) over fixed code paths.
-- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
+- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, design tokens, skins).
+- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (JSON/files) over fixed code paths.
+- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source. The plugin API is planned (CLAP-first if and when needed).
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
 ## Progress Files (required)
 
 Every PR that completes or advances a task must update, in the same PR:
-- `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
-- the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
+- `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail) and `docs/parity.md` when a Rust test replaces a baseline test (its rows are generated by `tools/parity_inventory.py`; do not hand-edit them)
+- the heatmap: `python3 tools/progress_heatmap.py` (CI's progress check fails if `docs/progress-heatmap.svg` is stale)
 
 ## CI Workflow Changes (required)
 
@@ -151,27 +153,37 @@ Any change to `.github/workflows/` must be tested locally with [`act`](https://g
 
 ### Naming Conventions
 
-- **Classes:** `PascalCase`
-- **Methods:** `camelCase`
-- **Constants:** `SCREAMING_SNAKE_CASE`
-- **Files:** `snake_case`
+Standard Rust naming, enforced in review and by clippy:
+
+- **Types, traits, enum variants:** `PascalCase`
+- **Functions, methods, modules, fields:** `snake_case`
+- **Constants and statics:** `SCREAMING_SNAKE_CASE`
+- **Files:** `snake_case.rs`
+- **Crates:** `om-<area>` (hyphenated in `Cargo.toml`, underscored in code)
+
+### Formatting
+
+Run `cargo fmt --all` before committing; CI runs `cargo fmt --all --check`. Formatting settings live in `rustfmt.toml`.
 
 ### File Organization
 
 ```
-src/
-├── app/              # Application entry points
-├── engine/           # Core audio engine
-├── analysis/         # Analysis pipeline
-├── library/          # Library management
-├── ui/               # User interface
-├── controllers/      # Hardware I/O
-└── stems/            # Stem separation
+crates/
+├── om-core/          # Parameters, state snapshots, commands (no I/O)
+├── om-dsp/           # Filters, EQ, FX primitives
+├── om-engine/        # Core audio engine (decks, mixer, FX routing)
+├── om-audio/         # Device layer and latency monitor
+├── om-analysis/      # Analysis pipeline (planned)
+├── om-library/       # Library management (planned)
+├── om-midi/          # MIDI input, mapping and feedback (planned)
+├── om-ui/            # User interface, GPUI views (planned)
+├── om-stems/         # Stem separation (planned)
+└── openmixer/        # Binary: composition root, preferences
 ```
 
 ### Comment Requirements
 
-See "Comments & Function Size" above. Files get a one-line header (`// OpenMixer <filename> - purpose`); public classes and functions get at most a one-line `///` summary, and only when the name does not already say it.
+See "Comments & Function Size" above. Each crate's `lib.rs` (or `main.rs`) starts with `#![forbid(unsafe_code)]` and a `//!` module doc of one line. Public items get at most a one-line `///` summary, and only when the name does not already say it.
 
 ## Testing
 
@@ -179,61 +191,67 @@ See "Comments & Function Size" above. Files get a one-line header (`// OpenMixer
 
 | Type | File Location | Description |
 |------|--------------|-------------|
-| Unit | `tests/unit/` | Logic verification |
-| Golden | `tests/golden/` | DSP correctness |
-| Metric | `tests/metrics/` | Accuracy thresholds |
-| Screenshot | `tests/screenshots/` | UI verification |
+| Unit | `crates/<crate>/src/` (`#[cfg(test)]` modules) or `crates/<crate>/tests/` | Logic verification |
+| Golden | `tests/golden/` (planned) | DSP correctness; vectors carried over from the baseline |
+| Metric | `tests/metrics/` (planned) | Accuracy thresholds |
+| Screenshot | `tests/screenshots/` (planned, Phase 5) | UI verification |
 
 ### Adding Tests
 
-Tests use GoogleTest/GoogleMock (fetched by CMake, v1.17.0) in `tests/unit/*Test.cpp`; `TestMain.cpp` initialises JUCE and runs gtest. Add new files to `target_sources(openmixer_tests ...)` in `CMakeLists.txt`.
+Tests use the built-in `cargo test` harness. Put unit tests in a `#[cfg(test)] mod tests` block next to the code, or integration tests in the crate's `tests/` directory.
 
-```cpp
-#include <JuceHeader.h>
-#include <gtest/gtest.h>
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-TEST (DeckTest, LoadReportsLength) { /* ASSERT_* for preconditions, EXPECT_* otherwise, EXPECT_NEAR for floats */ }
+    #[test]
+    fn descriptive_behaviour_name() {
+        // assert! for preconditions and plain checks; compare floats with a tolerance
+        assert!((0.1_f32 + 0.2 - 0.3).abs() < 1e-6);
+    }
+}
 ```
 
-- Use `TEST_F` fixtures for shared setup (unique temp dirs per test so `ctest -j` is safe).
-- Suites whose name ends in `Slow` (real threads/timing) get the CTest label `slow`; all others get `unit`. Do not sleep to synchronise: use condition variables or bounded waits.
-- Every test is registered with CTest individually (`gtest_discover_tests`).
+- Use a unique temporary directory per test so `cargo test` can run tests in parallel.
+- Do not sleep to synchronise: use channels, condition variables or bounded waits.
+- Tests that use real threads or timing are planned to be split out (e.g. `#[ignore]` with a dedicated CI job) so the fast run stays fast.
+- Name tests for the behaviour they check; use `cargo test -- --list` to see what exists.
 
 ### Verification Commands
 
 ```bash
-cmake --preset linux-debug && cmake --build build-linux-debug --target openmixer_tests
-ctest --test-dir build-linux-debug --output-on-failure -j4   # everything
-ctest --test-dir build-linux-debug -L unit                   # fast subset (-L slow for threaded)
-ctest --test-dir build-linux-debug -R Mixer                  # by name regex
-ctest --test-dir build-linux-debug -N                        # list tests
-build-linux-debug/openmixer_tests_artefacts/Debug/openmixer_tests --gtest_filter='MixerTest.*'
+cargo build --workspace
+cargo test --workspace                      # everything
+cargo test -p om-engine                     # one crate
+cargo test --workspace mixer                # by name filter
+cargo test --workspace -- --list            # list tests
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo deny check
+cargo run -p openmixer -- --smoke           # startup check
 
-# Sanitizers (ENABLE_ASAN / ENABLE_UBSAN / ENABLE_TSAN; TSan excludes ASan)
-cmake --preset linux-asan && cmake --build build-linux-asan --target openmixer_tests && ctest --test-dir build-linux-asan
-cmake --preset linux-tsan && cmake --build build-linux-tsan --target openmixer_tests
-setarch "$(uname -m)" -R ctest --test-dir build-linux-tsan   # needed on WSL2 kernels (ASLR vs TSan)
-
-# Leaks
-valgrind --leak-check=full --error-exitcode=1 build-linux-debug/openmixer_tests_artefacts/Debug/openmixer_tests
+# Leaks (Linux, requires valgrind)
+valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 ```
 
 ## Build Requirements
 
 ### Minimum System
 
-- **CMake** 3.22+
-- **GCC/Clang** with C++17 support
-- **Audio Libraries** (see agents.md)
+- **Rust** toolchain pinned in `rust-toolchain.toml` (installed with rustup; `rustfmt` and `clippy` included)
+- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`)
+- **cargo-deny** for `cargo deny check`
+- **Audio libraries:** see `agents.md`
 
 ### Debug Build
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+cargo build
+cargo run -p openmixer -- --smoke
 
-# Memory leak detection
-valgrind --leak-check=full ./build/openmixer
+# Memory leak detection (Linux)
+valgrind --leak-check=full ./target/debug/openmixer --smoke
 ```
 
 ## Documentation
@@ -242,9 +260,9 @@ valgrind --leak-check=full ./build/openmixer
 
 When making architectural decisions:
 
-1. Create `docs/adr/NNNNN-title.md`
+1. Create `docs/adr/NNNN-title.md`
 2. Follow ADR template:
-   - Status (Proposed/Accepted/Rejected)
+   - Status (Proposed/Accepted/Rejected/Superseded)
    - Context
    - Decision
    - Consequences
@@ -262,7 +280,7 @@ After each major task:
 **Status:** Complete
 
 **Files changed:**
-- src/engine/...
+- crates/om-engine/...
 
 **Tests:**
 - All pass
@@ -285,7 +303,7 @@ After each major task:
 - Use generic names ("Deck", not "Deck 1")
 - Implement features independently
 - Download weights on first run
-- Document asset provenance
+- Document asset provenance (see `docs/legal/asset-provenance.csv`)
 
 ## PR Requirements
 
@@ -302,12 +320,13 @@ All pull requests must:
 **Documentation:**
 - `agents.md` - Full setup and implementation guide
 - `README.md` - Project overview
+- `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md` - Rust rewrite design
 - `docs/adr/` - Architecture decisions
 - `docs/legal/` - Legal documentation
 
-**Work Plan:**
-- `.omo/plans/openmixer-dj-app.md` - Complete implementation roadmap
-- `.omo/drafts/` - Draft specifications
+**Plans:**
+- `docs/superpowers/plans/` - Phase implementation plans
+- `TODO.md` - Task list
 
 ---
 
