@@ -9,6 +9,7 @@ mod alloc_guard;
 
 pub mod callback;
 pub mod deck;
+pub mod deck_control;
 pub mod fx;
 pub mod fx_routing;
 pub mod grid;
@@ -16,11 +17,15 @@ pub mod latency;
 pub mod mixer;
 pub mod output;
 pub mod quantizer;
+pub mod slip;
 mod stage;
+pub mod sync;
 
 pub use callback::AudioCallback;
+pub use deck_control::DeckControl;
 pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
 pub use mixer::{ChannelInput, Mixer, MixerControl};
 pub use output::{OutputPairs, OutputRouter, NO_PAIR};
 pub use stage::{ProcessStage, StageChain, StageInsert, INTERFACE_VERSION, MAX_STAGES};
+pub use sync::{Sync, SyncMode};
