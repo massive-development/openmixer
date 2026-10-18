@@ -171,3 +171,53 @@ TEST (WatchFoldersTest, DestructorStopsPromptlyWithPendingWork)
     }
     EXPECT_LT (juce::Time::getMillisecondCounter() - start, 5000u);
 }
+
+TEST (WatchFoldersTest, ScanThreadUsesTheSuppliedMigrationList)
+{
+    Fixture f;
+    auto migrations = coreMigrations();
+    migrations.push_back ({ 3, "extra", "CREATE TABLE extra_table (id INTEGER PRIMARY KEY);" });   // a later subsystem's table
+    writeWav (f.music.getChildFile ("a.wav"), 0.5);
+
+    WatchFolders::Options o;
+    o.intervalMs = 1'000'000;
+    o.pollMs = 20;
+    o.scanOnStart = false;
+    o.clock = [&f] { return f.fakeNow.load(); };
+    o.migrations = migrations;
+    std::atomic<int> failed { 0 };
+    o.onScanDone = [&failed] (const IngestSummary& s) { failed += s.failed; };
+    auto w = WatchFolders::create (f.dbFile.getFullPathName(), MetadataReaderRegistry::withDefaults(), o);
+    ASSERT_NE (w, nullptr);
+    w->add (f.music);
+    ASSERT_TRUE (w->waitForScans (1, kWaitMs));
+    EXPECT_EQ (failed.load(), 0);
+    EXPECT_EQ (f.trackCount(), 1);
+}
+
+TEST (WatchFoldersTest, ScanThreadOpenFailureIsReported)
+{
+    Fixture f;
+    juce::String reported;
+    std::mutex m;
+    std::atomic<int> failed { 0 };
+    WatchFolders::Options o;
+    o.intervalMs = 1'000'000;
+    o.pollMs = 20;
+    o.scanOnStart = false;
+    o.clock = [&f] { return f.fakeNow.load(); };
+    o.onError = [&] (const juce::String& e) { std::lock_guard<std::mutex> l (m); reported = e; };
+    o.onScanDone = [&failed] (const IngestSummary& s) { failed += s.failed; };
+    auto w = WatchFolders::create (f.dbFile.getFullPathName(), MetadataReaderRegistry::withDefaults(), o);
+    ASSERT_NE (w, nullptr);
+
+    {   // a newer app migrated the file: the scan thread's open is now refused
+        auto db = Database::open (f.dbFile.getFullPathName());
+        ASSERT_TRUE (db->exec ("INSERT INTO schema_version (version, name, applied_at) VALUES (99, 'future', 0);").wasOk());
+    }
+    w->triggerScan();
+    ASSERT_TRUE (w->waitForScans (1, kWaitMs));
+    EXPECT_EQ (failed.load(), 1);
+    std::lock_guard<std::mutex> l (m);
+    EXPECT_TRUE (reported.contains ("newer"));
+}

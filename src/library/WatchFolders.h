@@ -25,6 +25,8 @@ public:
         std::function<std::int64_t()> clock;                     // ms; defaults to the system clock (inject in tests)
         std::function<void (const IngestSummary&)> onScanDone;   // called on the scan thread after each pass
         bool scanOnStart = true;
+        std::vector<Migration> migrations = coreMigrations();    // must include later subsystems' migrations
+        std::function<void (const juce::String&)> onError;       // scan-thread failures (e.g. database cannot be opened)
     };
 
     // nullptr (reason in `error`) when the database cannot be opened.
@@ -48,6 +50,7 @@ public:
 
 private:
     void run();
+    std::unique_ptr<Library> openScanLibrary();
     bool due (std::int64_t& lastScan);
     IngestSummary scanAll (Library& scanLibrary);
     std::int64_t now() const;

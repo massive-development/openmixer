@@ -33,10 +33,11 @@ public:
     juce::Result ingestFolder (const juce::File& folder, IngestSummary& summary, const StopCheck& shouldStop = {});
 
 private:
+    struct FileStamp { std::int64_t mtimeMs; std::int64_t sizeBytes; };
     enum class Outcome { Added, Updated, Unchanged, Restored, Failed };
 
     Outcome ingestFile (const juce::File& file);
-    Outcome refresh (const juce::File& file, const std::optional<TrackRecord>& existing);
+    Outcome refresh (const juce::File& file, const std::optional<TrackRecord>& existing, const FileStamp& stamp);
     int markMissing (const juce::File& folder, const std::set<juce::String>& seen, const StopCheck& shouldStop);
 
     Library& library;
