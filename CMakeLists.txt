@@ -606,6 +606,19 @@ target_link_libraries(openmixer_ui PRIVATE openmixer_theme_data)
 # Main Application
 # =============================================================================
 
+# Device-free app composition (engine + router + view + library + settings), shared by the app and the UI gate
+add_library(openmixer_app_core STATIC src/app/AppComposition.cpp src/app/AppComposition.h)
+target_include_directories(openmixer_app_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
+target_link_libraries(openmixer_app_core PUBLIC
+    openmixer_ui
+    openmixer_plugins
+    openmixer_controllers
+    openmixer_engine
+    juce::juce_gui_basics
+    juce::juce_events
+    juce::juce_recommended_config_flags
+)
+
 juce_add_gui_app(openmixer
     PRODUCT_NAME "OpenMixer"
     COMPANY_NAME "OpenMixer"
@@ -624,6 +637,7 @@ target_sources(openmixer PRIVATE
 juce_generate_juce_header(openmixer)
 
 target_link_libraries(openmixer PRIVATE
+    openmixer_app_core
     openmixer_ui
     openmixer_plugins
     openmixer_controllers
@@ -811,6 +825,7 @@ openmixer_enable_warnings(tools/ui_gate.cpp)
 # the gate pumps the message loop in slices between control ticks
 target_compile_definitions(openmixer_ui_gate PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
 target_link_libraries(openmixer_ui_gate PRIVATE
+    openmixer_app_core
     openmixer_ui
     openmixer_library
     openmixer_analysis

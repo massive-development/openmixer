@@ -3,8 +3,6 @@
 // ui_gate/UiScenario.h). Checks UI/engine agreement, xrun, underrun and output budgets like the soak.
 // Usage: openmixer_ui_gate [--seconds N] [--max-xruns N] [--max-underruns N] [--analysis-timeout-ms N]
 //                          [--tone-seconds N] [--workers N]; exit 0 = pass.
-#include "engine/MockAudioDevice.h"
-#include "soak/OutputChecker.h"
 #include "soak/ToneWriter.h"
 #include "ui_gate/UiRig.h"
 #include "ui_gate/UiScenario.h"
@@ -20,8 +18,8 @@ namespace
 
 using namespace openmixer;
 
-constexpr double kRate = 48000.0;
-constexpr int kBlock = 256;
+constexpr double kRate = gate::UiRig::kRate;
+constexpr int kBlock = gate::UiRig::kBlock;
 constexpr double kClickBpm = 120.0;
 
 struct Options
@@ -70,9 +68,9 @@ bool report (const Options& o, const LatencyStats& stats, const gate::UiScenario
     const auto underruns = scenario.getSteadyUnderruns();
     const auto& c = scenario.getCounts();
     std::printf ("ui_gate: actions plays=%u syncs=%u crossfades=%u eq=%u hotcues=%u (clears %u) loops=%u (exits %u) fx=%u "
-                 "searches=%u library-loads=%u themes=%u snapshots=%u keylocks=%u restarts=%u\n",
+                 "searches=%u library-loads=%u themes=%u snapshots=%u keylocks=%u restarts=%u drops=%u settings=%u\n",
                  c.plays, c.syncs, c.crossfades, c.eqMoves, c.hotcues, c.hotcueClears, c.loops, c.loopExits, c.fxChanges,
-                 c.searches, c.libraryLoads, c.themeSwitches, c.snapshots, c.keylocks, c.restarts);
+                 c.searches, c.libraryLoads, c.themeSwitches, c.snapshots, c.keylocks, c.restarts, c.drops, c.settingsOpens);
     std::printf ("ui_gate: %llu callbacks, xruns=%llu, max callback %.0f us (budget %.0f us), avg cpu %.1f%%\n",
                  static_cast<unsigned long long> (stats.callbackCount), static_cast<unsigned long long> (stats.xrunCount),
                  stats.maxCallbackUs, 1.0e6 * kBlock / kRate, 100.0 * stats.cpuLoad);
@@ -113,10 +111,7 @@ int runGate (const Options& options)
             dir.deleteRecursively();
             return 2;
         }
-        OutputChecker checker (rig.engine);
-        MockAudioDevice device (kRate, kBlock, 0, 4);
-        device.start (checker);
-        device.startRealtime();
+        rig.start();
 
         gate::UiScenario scenario (rig, options.seconds);
         const auto start = juce::Time::getMillisecondCounter();
@@ -129,9 +124,8 @@ int runGate (const Options& options)
             juce::MessageManager::getInstance()->runDispatchLoopUntil (gate::UiScenario::kControlPeriodMs);
         }
 
-        device.stopRealtime();
-        device.stop();
-        result = ready && report (options, device.getLatencyStats(), scenario, checker.getReport(), rig) ? 0 : 1;
+        rig.stop();
+        result = ready && report (options, rig.latencyStats(), scenario, rig.outputReport(), rig) ? 0 : 1;
     }
     dir.deleteRecursively();
     return result;

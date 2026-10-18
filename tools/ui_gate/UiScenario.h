@@ -5,6 +5,7 @@
 
 #include "UiRig.h"
 #include "soak/Scenario.h"
+#include "ui/TrackDrag.h"
 
 #include <cmath>
 #include <cstdio>
@@ -15,7 +16,7 @@ namespace openmixer::gate
 struct GateCounts
 {
     unsigned plays = 0, syncs = 0, crossfades = 0, eqMoves = 0, hotcues = 0, hotcueClears = 0, loops = 0, loopExits = 0,
-             fxChanges = 0, searches = 0, libraryLoads = 0, themeSwitches = 0, snapshots = 0, keylocks = 0, restarts = 0;
+             fxChanges = 0, searches = 0, libraryLoads = 0, themeSwitches = 0, snapshots = 0, keylocks = 0, restarts = 0, drops = 0, settingsOpens = 0;
     unsigned mismatches = 0;
 };
 
@@ -71,7 +72,7 @@ public:
     {
         return counts.plays > 0 && counts.syncs > 0 && counts.crossfades > 0 && counts.eqMoves > 0 && counts.hotcues > 0
             && counts.loops > 0 && counts.fxChanges > 0 && counts.searches > 0 && counts.libraryLoads > 2
-            && counts.themeSwitches > 1 && counts.snapshots > 0;
+            && counts.themeSwitches > 1 && counts.snapshots > 0 && counts.drops > 0 && counts.settingsOpens > 0;
     }
 
 private:
@@ -92,7 +93,30 @@ private:
             std::fprintf (stderr, "ui_gate: MISMATCH %s\n", what);
     }
 
-    static void press (juce::Button& b, const char*) { b.onClick(); }
+    // A headless host has no peer, so isShowing() is always false; check the same thing by hand: the widget and
+    // every ancestor visible with non-empty bounds. Hidden or zero-size widgets count as mismatches.
+    static bool shows (const juce::Component& c)
+    {
+        for (const auto* p = &c; p != nullptr; p = p->getParentComponent())
+            if (! p->isVisible() || p->getWidth() <= 0 || p->getHeight() <= 0)
+                return false;
+        return true;
+    }
+
+    void need (const juce::Component& c, const char* what)
+    {
+        if (! shows (c))
+        {
+            std::fprintf (stderr, "ui_gate: widget not showing: %s\n", what);
+            expect (false, "widget is showing with non-empty bounds before it is used");
+        }
+    }
+
+    void press (juce::Button& b, const char* what)
+    {
+        need (b, what);
+        b.onClick();
+    }
 
     static void pumpMessages (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); }
 
@@ -108,6 +132,7 @@ private:
     bool loadFromBrowser (const char* title, int d)
     {
         auto& b = rig.getBrowser();
+        need (b.getSearchBox(), "search box");
         b.setSearchText (title);
         ++counts.searches;
         if (b.getModel().getNumRows() < 1)
@@ -115,8 +140,9 @@ private:
             std::fprintf (stderr, "ui_gate: search '%s' found no track\n", title);
             return false;
         }
+        need (b.getTable(), "track table");
         b.getTable().selectRow (0);
-        b.getLoadButton (d).onClick();
+        press (b.getLoadButton (d), "load button");
         ++counts.libraryLoads;
         underruns.noteDisturbance (now());
         const auto loaded = rig.getLoader().loadedTrack (d);
@@ -150,7 +176,7 @@ private:
 
     void startDeck (int d)
     {
-        press (transport (d).button (ui::TransportPanel::Play), "play");
+        press (transport (d).button (ui::TransportPanel::Play), "play button");
         ++counts.plays;
         expect (deck (d).isPlaying(), "play button starts the deck");
     }
@@ -158,6 +184,7 @@ private:
     template <typename Read>
     void setAndCheck (juce::Slider& s, double v, Read engineValue, const char* what)
     {
+        need (s, what);
         s.setValue (v, juce::sendNotificationSync);
         expect (std::abs (static_cast<double> (engineValue()) - s.getValue()) < kTolerance, what);
     }
@@ -175,12 +202,56 @@ private:
                 press (transport (1).button (ui::TransportPanel::Sync), "sync");
             ++counts.syncs;
         }
+        if (! dropped && fraction > 0.6)
+            dropOnDeck (0, 1);
+        if (! settingsDone && fraction > 0.9)
+            exerciseSettings();
         if (switches == 0 && fraction > 0.5)
             switchTheme ("openmixer.daylight");
         if (switches == 1 && fraction > 0.75)
             switchTheme (ui::ThemeRegistry::defaultId());
         if (nowMs - lastSnapshotMs > kSnapshotEveryMs)
             snapshot (nowMs);
+    }
+
+    // Drag-and-drop path: the deck widget receives a library track description and loads it through the browser.
+    void dropOnDeck (int d, size_t trackIndex)
+    {
+        dropped = true;
+        need (deckWidget (d), "deck widget");
+        const auto id = rig.trackIds[trackIndex];
+        const juce::DragAndDropTarget::SourceDetails details (ui::trackdrag::describe (id), nullptr, {});
+        expect (deckWidget (d).isInterestedInDragSource (details), "deck accepts a library track drag");
+        deckWidget (d).itemDropped (details);
+        ++counts.drops;
+        underruns.noteDisturbance (now());
+        const auto loaded = rig.getLoader().loadedTrack (d);
+        expect (loaded.has_value() && loaded->id == id && deck (d).isLoaded(), "dropped track is loaded on the deck");
+        ensureGrids (2000);
+        startDeck (d);
+    }
+
+    // Gear button opens the overlay, every tab button selects its page, Close dismisses it.
+    void exerciseSettings()
+    {
+        settingsDone = true;
+        auto& composition = rig.composition;
+        press (composition.getSettingsButton(), "settings button");
+        auto* panel = composition.getSettingsPanel();
+        expect (panel != nullptr && composition.isSettingsOpen(), "settings button opens the overlay");
+        if (panel == nullptr)
+            return;
+        need (*panel, "settings panel");
+        expect (panel->getBounds() == rig.getHost().getLocalBounds(), "settings overlay covers the window");
+        for (int i = 0; i < panel->getNumPages(); ++i)
+        {
+            press (panel->getTabButton (i), "settings tab");
+            expect (panel->getCurrentPage() == i, "tab button selects its page");
+        }
+        snapshot (now());
+        press (panel->getCloseButton(), "settings close button");
+        expect (! composition.isSettingsOpen(), "close button dismisses the overlay");
+        ++counts.settingsOpens;
     }
 
     void switchTheme (const char* id)
@@ -194,7 +265,7 @@ private:
     void snapshot (juce::uint32 nowMs)
     {
         lastSnapshotMs = nowMs;
-        const auto image = rig.getView().createComponentSnapshot (rig.getView().getLocalBounds(), true, 0.5F);
+        const auto image = rig.getHost().createComponentSnapshot (rig.getHost().getLocalBounds(), true, 0.5F);
         ++counts.snapshots;
         expect (image.isValid() && image.getWidth() > 0, "main view paints a non-empty snapshot");
     }
@@ -231,12 +302,12 @@ private:
         auto& loops = deckWidget (d).getLoops();
         if (deck (d).isLooping())
         {
-            loops.exitButton().onClick();
+            press (loops.exitButton(), "loop exit button");
             ++counts.loopExits;
             expect (! deck (d).isLooping(), "exit button leaves the loop");
             return;
         }
-        loops.sizeButton (rng.nextInt (5)).onClick();
+        press (loops.sizeButton (rng.nextInt (5)), "loop size button");
         ++counts.loops;
         underruns.noteDisturbance (now());
         expect (deck (d).isLooping(), "loop size button starts a loop");
@@ -251,13 +322,14 @@ private:
         auto& pads = deckWidget (d).getHotcues();
         if (rng.nextInt (4) == 0 && deck (d).getHotcue (cue).has_value())
         {
+            need (pads.pad (cue), "hotcue pad");
             pads.pressPad (cue, true);
             ++counts.hotcueClears;
             expect (! pads.pad (cue).getToggleState() && ! deck (d).getHotcue (cue).has_value(), "cleared hotcue pad goes dark");
             return;
         }
         const bool jump = deck (d).getHotcue (cue).has_value();
-        pads.pad (cue).onClick();
+        press (pads.pad (cue), "hotcue pad");
         ++counts.hotcues;
         if (jump)
             underruns.noteDisturbance (nowMs);   // a jump is a seek: the ring refills
@@ -269,36 +341,40 @@ private:
         if (rng.nextInt (200) != 0)
             return;
         auto& button = transport (1).button (ui::TransportPanel::KeyLock);
-        button.onClick();
+        press (button, "key-lock button");
         ++counts.keylocks;
         underruns.noteDisturbance (nowMs);
         expect (button.getToggleState() == deck (1).isKeylock(), "key-lock button matches deck");
     }
 
-    // FX tab: scope, unit, enable and mix, then the engine's rack must show the same.
+    // FX tab (opened and closed through the page buttons): scope, unit, enable and mix, checked against the rack.
     void maybeFx()
     {
         if (rng.nextInt (30) != 0)
             return;
         auto& panel = rig.getMixer();
-        panel.setPage (ui::MixerPanel::Page::Fx);
-        auto& fxPanel = panel.getFx();
+        press (panel.getPageButton (ui::MixerPanel::Page::Fx), "FX page button");
+        editFx (panel.getFx());
+        press (panel.getPageButton (ui::MixerPanel::Page::Mixer), "Mixer page button");   // strips are hidden on the FX page
+    }
+
+    void editFx (ui::FxPanel& fxPanel)
+    {
         const int scope = rng.nextInt (fxPanel.getNumScopes());
-        fxPanel.getScopeButton (scope).onClick();
+        press (fxPanel.getScopeButton (scope), "FX scope button");
         auto& rack = scope == 0 ? rig.engine.getFx().getMasterRack() : rig.engine.getFx().getChannelRack (scope - 1);
         if (rack.getNumUnits() == 0)
             return;
+        need (fxPanel.getUnitBox(), "FX unit box");
         fxPanel.getUnitBox().setSelectedItemIndex (rng.nextInt (rack.getNumUnits()), juce::sendNotificationSync);
         auto* unit = rack.getUnit (fxPanel.getUnit());
         if (unit == nullptr)
             return;
         const bool before = unit->isEnabled();
-        fxPanel.getEnable().onClick();
+        press (fxPanel.getEnable(), "FX enable button");
         expect (unit->isEnabled() == ! before, "FX enable button toggles the unit");
         setAndCheck (fxPanel.getMix().getSlider(), 0.2 + 0.6 * rng.nextDouble(), [unit] { return unit->getMix(); }, "FX mix knob matches unit");
         ++counts.fxChanges;
-        if (rng.nextInt (3) == 0)
-            panel.setPage (ui::MixerPanel::Page::Mixer);
     }
 
     // Query syntax in the search box; the table must show the rows the library holds.
@@ -308,6 +384,7 @@ private:
             return;
         static const std::pair<const char*, int> queries[] = { { "", 3 }, { "gate", 3 }, { "artist:openmixer", 3 }, { "borealis", 1 }, { "nomatchxyz", 0 } };
         const auto& q = queries[rng.nextInt (5)];
+        need (rig.getBrowser().getSearchBox(), "search box");
         rig.getBrowser().setSearchText (q.first);
         ++counts.searches;
         expect (rig.getBrowser().getModel().getNumRows() == q.second, "search box row count matches the library");
@@ -319,7 +396,7 @@ private:
         if (rng.nextInt (250) != 0)
             return;
         const int d = rng.nextInt (2);
-        transport (d).button (ui::TransportPanel::Cue).onClick();
+        press (transport (d).button (ui::TransportPanel::Cue), "cue button");
         expect (! deck (d).isPlaying(), "cue button stops the deck");
         startDeck (d);
         ++counts.restarts;
@@ -331,7 +408,7 @@ private:
         for (int d = 0; d < 2; ++d)
             if (deck (d).hasFinished())
             {
-                transport (d).button (ui::TransportPanel::Cue).onClick();
+                press (transport (d).button (ui::TransportPanel::Cue), "cue button");
                 startDeck (d);
                 underruns.noteDisturbance (nowMs);
             }
@@ -360,7 +437,7 @@ private:
     juce::Random rng { 4321 };
     soak::UnderrunTracker underruns;
     GateCounts counts;
-    bool loadedC = false;
+    bool loadedC = false, dropped = false, settingsDone = false;
     int switches = 0;
     juce::uint32 lastSnapshotMs = 0;
 };

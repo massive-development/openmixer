@@ -1,18 +1,12 @@
-// The app's main-window composition without the audio device: engine + router + MainView with the mixer
-// and library slots, services over a file library, and the track loader. Mirrors MainComponent's
-// buildContent()/buildLibrary()/setUpMidi() so the gate drives the same wiring the app has.
-// Message thread only.
+// The UI gate's harness: the app's own AppComposition (the same wiring MainComponent uses) in a plain host
+// component, driven by a paced mock audio device and the gate's own control clock. Nothing else is composed
+// here, so the gate cannot drift from the app. Message thread only.
 #pragma once
 
-#include "controllers/ParameterRouter.h"
-#include "engine/DjEngine.h"
+#include "AppComposition.h"
+#include "engine/MockAudioDevice.h"
+#include "soak/OutputChecker.h"
 #include "ui/GlassLookAndFeel.h"
-#include "ui/LibraryBrowser.h"
-#include "ui/LibraryServices.h"
-#include "ui/MainView.h"
-#include "ui/MixerPanel.h"
-#include "ui/ThemeRegistry.h"
-#include "ui/TrackLoader.h"
 
 #include <memory>
 #include <vector>
@@ -30,57 +24,70 @@ class UiRig
 {
 public:
     static constexpr int kWidth = 1280, kHeight = 800;   // the app's default window
+    static constexpr double kRate = 48000.0;
+    static constexpr int kBlock = 256;
 
     // Library errors reported by the services land here (must stay empty for the gate to pass).
     std::vector<juce::String> libraryErrors;
+    std::vector<std::int64_t> trackIds;   // library ids of the generated tracks, in TrackSpec order
 
     UiRig (const juce::File& dir, const std::vector<TrackSpec>& tracks, int analysisWorkers)
+        : composition (host, themes, dir.getChildFile ("preferences.json"), libraryOptions (dir, analysisWorkers))
     {
-        themes.loadBuiltIns();
-        themes.select (ui::ThemeRegistry::defaultId());
-        registerTargets();
-        buildView();
-        buildLibrary (dir, tracks, analysisWorkers);
-        view->setBounds (0, 0, kWidth, kHeight);
+        host.setVisible (true);
+        host.setSize (kWidth, kHeight);
+        composition.setUpSettings ({ nullptr, [this] { return latencyStats(); },
+                                     [] { return juce::Array<juce::MidiDeviceInfo>(); }, {}, {} });
+        composition.layout();
+        if (composition.hasLibrary())
+            for (const auto& t : tracks)
+                insert (t);
+        if (auto* b = composition.getBrowser())
+            b->refresh();
     }
 
-    bool isValid() const noexcept { return services != nullptr && browser != nullptr; }
+    ~UiRig() { stop(); }
 
-    DjEngine engine;
-    ParameterRouter router;
-    ui::ThemeRegistry themes;
-    ui::MainView& getView() noexcept { return *view; }
-    ui::MixerPanel& getMixer() noexcept { return *mixer; }
-    ui::LibraryBrowser& getBrowser() noexcept { return *browser; }
-    ui::TrackLoader& getLoader() noexcept { return *loader; }
-    ui::LibraryServices& getServices() noexcept { return *services; }
+    bool isValid() const noexcept { return composition.hasLibrary(); }
+
+    void start()
+    {
+        device.start (checker);
+        device.startRealtime();
+    }
+
+    void stop()
+    {
+        device.stopRealtime();
+        device.stop();
+    }
+
+    ui::MainView& getView() noexcept { return composition.getView(); }
+    ui::MixerPanel& getMixer() noexcept { return composition.getMixer(); }
+    ui::LibraryBrowser& getBrowser() noexcept { return *composition.getBrowser(); }
+    ui::TrackLoader& getLoader() noexcept { return *composition.getLoader(); }
+    juce::Component& getHost() noexcept { return host; }
+    LatencyStats latencyStats() const { return device.getLatencyStats(); }
+    OutputReport outputReport() const { return checker.getReport(); }
 
 private:
-    // Resets the default look-and-feel after every component below is gone.
+    struct DefaultThemes : ui::ThemeRegistry
+    {
+        DefaultThemes()
+        {
+            loadBuiltIns();
+            select (ui::ThemeRegistry::defaultId());
+        }
+    };
+
+    // Resets the default look-and-feel after every component is gone.
     struct LookAndFeelScope
     {
         explicit LookAndFeelScope (ui::GlassLookAndFeel& l) { juce::LookAndFeel::setDefaultLookAndFeel (&l); }
         ~LookAndFeelScope() { juce::LookAndFeel::setDefaultLookAndFeel (nullptr); }
     };
 
-    void registerTargets()
-    {
-        router.registerTarget ("mixer", &engine.getMixer());
-        router.registerTarget ("fx", &engine.getFx());
-        router.registerTarget ("sync", &engine.getSync());
-        for (int i = 0; i < engine.getNumDecks(); ++i)
-            router.registerTarget ("deck." + juce::String (i), &engine.getDeckControl (i));
-    }
-
-    void buildView()
-    {
-        view = std::make_unique<ui::MainView> (engine, router, ui::LayoutSpec::standard (engine.getNumDecks()));
-        auto panel = std::make_unique<ui::MixerPanel> (ui::MixerBinding { engine, router });
-        mixer = panel.get();
-        view->setSlotContent (ui::LayoutSpec::kMixerSlot, std::move (panel));
-    }
-
-    void buildLibrary (const juce::File& dir, const std::vector<TrackSpec>& tracks, int analysisWorkers)
+    ui::LibraryServices::Options libraryOptions (const juce::File& dir, int analysisWorkers)
     {
         ui::LibraryServices::Options options;
         options.dbPath = dir.getChildFile ("gate.db").getFullPathName();
@@ -88,23 +95,7 @@ private:
         options.scanOnStart = false;
         options.analysisWorkers = analysisWorkers;
         options.onError = [this] (const juce::String& m) { libraryErrors.push_back (m); };
-        juce::String error;
-        services = ui::LibraryServices::create (std::move (options), &error);
-        if (services == nullptr)
-        {
-            libraryErrors.push_back (error);
-            return;
-        }
-        for (const auto& t : tracks)
-            insert (t);
-        loader = std::make_unique<ui::TrackLoader> (engine, *view, *services);
-        auto b = std::make_unique<ui::LibraryBrowser> (*services, engine.getNumDecks());
-        browser = b.get();
-        b->onLoadRequested = [this] (int deck, const library::TrackRecord& t) { return loader->load (deck, t); };
-        b->defaultDeck = [this] { return loader->suggestedDeck(); };
-        b->referenceKey = [this] { return loader->referenceCamelot(); };
-        view->setSlotContent (ui::LayoutSpec::kLibrarySlot, std::move (b));
-        browser->refresh();
+        return options;
     }
 
     void insert (const TrackSpec& t)
@@ -114,17 +105,25 @@ private:
         record.title = t.title;
         record.artist = "OpenMixer Gate";
         record.durationSec = 40.0;
-        if (! services->getLibrary().tracks().insert (record).has_value())
+        if (const auto id = composition.getServices()->getLibrary().tracks().insert (record))
+            trackIds.push_back (*id);
+        else
             libraryErrors.push_back ("cannot insert " + t.title);
     }
 
+    // Declaration order is start-up order; the composition goes before the device that renders its engine.
+public:
+    DefaultThemes themes;
+private:
     ui::GlassLookAndFeel laf;
     LookAndFeelScope lafScope { laf };
-    std::unique_ptr<ui::LibraryServices> services;
-    std::unique_ptr<ui::MainView> view;
-    std::unique_ptr<ui::TrackLoader> loader;   // destroyed before the view and services it points at
-    ui::MixerPanel* mixer = nullptr;
-    ui::LibraryBrowser* browser = nullptr;
+    juce::Component host;
+public:
+    AppComposition composition;
+    DjEngine& engine = composition.engine;
+private:
+    OutputChecker checker { composition.engine };
+    MockAudioDevice device { kRate, kBlock, 0, 4 };
 };
 
 } // namespace openmixer::gate
