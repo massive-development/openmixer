@@ -76,8 +76,14 @@ mod tests {
         let grid = FixedTempoGrid::new(120.0, RATE, 1000);
         let g: Option<&dyn BeatGrid> = Some(&grid);
         assert_eq!(snap_to_nearest(g, 1000 + 22_050 + 3000, 1.0), 1000 + 22_050);
-        assert_eq!(snap_to_nearest(g, 1000 + 22_050 + 12_000, 1.0), 1000 + 44_100);
-        assert_eq!(snap_to_previous(g, 1000 + 22_050 + 12_000, 1.0), 1000 + 22_050);
+        assert_eq!(
+            snap_to_nearest(g, 1000 + 22_050 + 12_000, 1.0),
+            1000 + 44_100
+        );
+        assert_eq!(
+            snap_to_previous(g, 1000 + 22_050 + 12_000, 1.0),
+            1000 + 22_050
+        );
         assert_eq!(snap_to_nearest(g, 1000 + 6000, 0.25), 1000 + 5512 + 1); // 1/4 beat = 5512.5
         assert_eq!(snap_to_previous(g, 1000 + 80_000, 4.0), 1000);
         assert_eq!(snap_to_nearest(None, 12_345, 1.0), 12_345);

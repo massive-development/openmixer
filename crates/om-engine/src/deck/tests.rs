@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-const FRAMES: i64 = 20_000;
-const RATE: f64 = 44_100.0;
+pub(crate) const FRAMES: i64 = 20_000;
+pub(crate) const RATE: f64 = 44_100.0;
 
 /// Unique temporary directory per test, removed on drop.
 pub(crate) struct Fixture {
@@ -38,7 +38,7 @@ impl Drop for Fixture {
 
 /// Writes a 32-bit float WAV of `FRAMES` frames: left = n / FRAMES, right = -left. Mono files
 /// carry only the left ramp.
-fn write_ramp(path: &Path, channels: u16) {
+pub(crate) fn write_ramp(path: &Path, channels: u16) {
     let mut samples = Vec::with_capacity(FRAMES as usize * channels as usize);
     for n in 0..FRAMES {
         let v = n as f32 / FRAMES as f32;

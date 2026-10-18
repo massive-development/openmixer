@@ -3,16 +3,21 @@
 //!
 //! Threads: control methods (`load`, `seek`, `set_parameter`, ...) take `&self` and may be called
 //! from any non-audio thread. `prepare` and the [`AudioCallback`] methods belong to the audio side.
-//! Loops, slip, sync and key-lock are added on top of this core in later tasks.
+//! Loops wrap on the audio thread into a decoder-prefetched slot, so loop jumps are gapless.
+//! Key-lock is added on top of this core in a later task.
 
 mod decoder;
 mod hotcues;
+mod loop_state;
 mod playback;
+mod prefetch;
 mod shared;
 mod source;
 
 use crate::callback::AudioCallback;
+use crate::quantizer::Loop;
 use decoder::DecoderWorker;
+use loop_state::LoopSnapshot;
 use om_core::{spsc, ParameterTarget};
 use playback::Playback;
 use shared::Shared;
@@ -22,7 +27,11 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub use hotcues::NUM_CUES;
+pub use prefetch::LoopPrefetch;
 pub use source::{SourceError, SourceReader, TrackInfo};
+
+/// Default loop prefetch size in source frames (C++ `Deck` default).
+pub const DEFAULT_PREFETCH_FRAMES: i64 = 1 << 16;
 
 /// Default ring size in source frames (C++ `Deck` default).
 pub const DEFAULT_RING_FRAMES: usize = 1 << 16;
@@ -47,11 +56,16 @@ pub struct DeckAudio {
 }
 
 impl Deck {
-    /// Creates an empty deck and starts its decoder thread. `ring_frames` is rounded up to a power
-    /// of two by the ring. Control thread.
+    /// Creates an empty deck with the default loop prefetch size. See [`Deck::with_prefetch`].
     pub fn new(ring_frames: usize) -> (Self, DeckAudio) {
+        Self::with_prefetch(ring_frames, DEFAULT_PREFETCH_FRAMES)
+    }
+
+    /// Creates an empty deck and starts its decoder thread. `ring_frames` is rounded up to a power
+    /// of two by the ring; `prefetch_frames` bounds the loop prefetch slot. Control thread.
+    pub fn with_prefetch(ring_frames: usize, prefetch_frames: i64) -> (Self, DeckAudio) {
         let (producer, consumer) = spsc::<f32>(ring_frames.max(1) * 2);
-        let shared = Arc::new(Shared::new());
+        let shared = Arc::new(Shared::new(prefetch_frames));
         let worker = DecoderWorker::new(Arc::clone(&shared), producer);
         let decoder = std::thread::Builder::new()
             .name("openmixer-deck-decoder".into())
@@ -81,6 +95,7 @@ impl Deck {
         sh.finished.store(false, Relaxed);
         sh.file_sample_rate.store(info.sample_rate);
         sh.length_frames.store(info.length_frames, Relaxed);
+        sh.loop_state.store(LoopSnapshot::default());
         sh.hotcues.clear_all();
         self.hand_over(Some(reader));
         sh.loaded.store(true, Relaxed);
@@ -94,6 +109,7 @@ impl Deck {
         sh.playing.store(false, Relaxed);
         sh.loaded.store(false, Relaxed);
         sh.length_frames.store(0, Relaxed);
+        sh.loop_state.store(LoopSnapshot::default());
         sh.hotcues.clear_all();
         self.hand_over(None);
         self.request_reposition(0);
@@ -124,8 +140,13 @@ impl Deck {
         self.shared.playing.store(playing, Relaxed);
     }
 
-    /// Jumps to `source_frame` (clamped to zero from below) and clears the finished flag.
+    /// Jumps to `source_frame` (clamped to zero from below) and clears the finished flag. Jumping
+    /// outside an active loop exits it.
     pub fn seek(&self, source_frame: i64) {
+        let loop_ = self.get_loop();
+        if self.is_looping() && (source_frame < loop_.start || source_frame >= loop_.end) {
+            self.exit_loop();
+        }
         self.shared.finished.store(false, Relaxed);
         self.request_reposition(source_frame.max(0));
     }
@@ -133,6 +154,66 @@ impl Deck {
     fn request_reposition(&self, target: i64) {
         self.shared.seek_target.store(target, Relaxed);
         self.shared.request_epoch.fetch_add(1, Release);
+    }
+
+    /// Sets loop bounds in source frames, clamped to the track. Returns false when fewer than two
+    /// frames remain. The loop becomes active immediately. Quantize the bounds first with
+    /// [`crate::quantizer`].
+    pub fn set_loop(&self, loop_: Loop) -> bool {
+        let len = self.length_frames();
+        let start = loop_.start.clamp(0, len);
+        let end = loop_.end.clamp(0, len);
+        if end - start < 2 {
+            return false;
+        }
+        self.shared.loop_state.store(LoopSnapshot {
+            start,
+            end,
+            enabled: true,
+        });
+        true
+    }
+
+    /// Stops looping but keeps the bounds for [`Deck::reloop`].
+    pub fn exit_loop(&self) {
+        self.set_loop_enabled(false);
+    }
+
+    /// Resumes looping on the last bounds, if any.
+    pub fn reloop(&self) {
+        self.set_loop_enabled(true);
+    }
+
+    fn set_loop_enabled(&self, enabled: bool) {
+        let mut snap = LoopSnapshot::default();
+        if self.shared.loop_state.load(&mut snap) && snap.valid() {
+            self.shared
+                .loop_state
+                .store(LoopSnapshot { enabled, ..snap });
+        }
+    }
+
+    pub fn is_looping(&self) -> bool {
+        let mut snap = LoopSnapshot::default();
+        self.shared.loop_state.load(&mut snap) && snap.active()
+    }
+
+    /// Current loop bounds; the default (`0..0`) when none is set.
+    pub fn get_loop(&self) -> Loop {
+        let mut snap = LoopSnapshot::default();
+        if self.shared.loop_state.load(&mut snap) {
+            Loop {
+                start: snap.start,
+                end: snap.end,
+            }
+        } else {
+            Loop::default()
+        }
+    }
+
+    /// True when the loop start is prefetched, so a loop jump is gapless.
+    pub fn is_loop_prefetched(&self) -> bool {
+        self.shared.prefetch.is_published()
     }
 
     pub fn set_rate(&self, rate: f64) {
@@ -261,12 +342,22 @@ impl AudioCallback for DeckAudio {
 }
 
 impl ParameterTarget for Deck {
-    /// Ids: `play` (>= 0.5 plays), `rate`, `seek` (0..1 of length), `hotcueN` (>= 0.5 triggers),
-    /// `hotcueN.clear`. Unknown ids return false.
+    /// Ids: `play` (>= 0.5 plays), `rate`, `seek` (0..1 of length), `loop.exit` and `loop.reloop`
+    /// (>= 0.5 acts), `hotcueN` (>= 0.5 triggers), `hotcueN.clear`. Unknown ids return false.
     fn set_parameter(&self, id: &str, value: f64) -> bool {
         match id {
             "play" => self.set_playing(value >= 0.5),
             "rate" => self.set_rate(value),
+            "loop.exit" => {
+                if value >= 0.5 {
+                    self.exit_loop();
+                }
+            }
+            "loop.reloop" => {
+                if value >= 0.5 {
+                    self.reloop();
+                }
+            }
             "seek" => {
                 let len = self.length_frames() as f64;
                 self.seek((value.clamp(0.0, 1.0) * len) as i64);
@@ -305,5 +396,7 @@ fn parse_hotcue_id(id: &str) -> Option<(usize, bool)> {
         _ => None,
     }
 }
+#[cfg(test)]
+mod loop_tests;
 #[cfg(test)]
 pub(crate) mod tests;

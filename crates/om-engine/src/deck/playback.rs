@@ -2,6 +2,8 @@
 //! renders them with linear interpolation at `rate * file_rate / device_rate`. Allocation-free
 //! and lock-free. Loop slots and key-lock join this path in later tasks.
 
+use super::loop_state::LoopSnapshot;
+use super::prefetch::PrefetchSlot;
 use super::shared::Shared;
 use om_core::SpscConsumer;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -23,6 +25,12 @@ pub(super) struct Playback {
     last_control_ack: u32,
     /// Floats consumed from the ring so far (mirrors `Shared::read_samples`).
     read_samples: u64,
+    /// Loop bounds as of the current block.
+    loop_snap: LoopSnapshot,
+    /// Prefetch slot the playhead reads from while inside a loop, held until released.
+    slot: Option<usize>,
+    /// Load id of the track being played; prefetch slots from other tracks are unusable.
+    playing_load_id: u32,
 }
 
 impl Playback {
@@ -41,6 +49,9 @@ impl Playback {
             ring_wanted: 0,
             last_control_ack: 0,
             read_samples: 0,
+            loop_snap: LoopSnapshot::default(),
+            slot: None,
+            playing_load_id: 0,
         }
     }
 
@@ -52,6 +63,7 @@ impl Playback {
             clear_tail(left, right, 0);
             return;
         }
+        sh.loop_state.load(&mut self.loop_snap);
         self.render_interpolated(sh, left, right);
     }
 
@@ -79,6 +91,7 @@ impl Playback {
 
     fn reset_playhead(&mut self, sh: &Shared, ack: u32) {
         self.last_control_ack = ack;
+        self.playing_load_id = sh.ack_load_id.load(Relaxed);
         self.read_idx = self.ring_idx;
         self.ring_wanted = self.ring_idx;
         self.prev_idx = self.ring_idx;
@@ -86,6 +99,7 @@ impl Playback {
         self.primed = false;
         self.have_first = false;
         self.phase = 0.0;
+        self.release_slot(sh);
         sh.position_frames.store(self.ring_idx, Relaxed);
     }
 
@@ -96,7 +110,8 @@ impl Playback {
 
     fn reached_end(&self, sh: &Shared) -> bool {
         // Re-check readability after seeing end-of-stream: the decoder's last write may race.
-        if self.ring_idx == self.read_idx
+        if self.slot.is_none()
+            && self.ring_idx == self.read_idx
             && sh.end_of_stream.load(Acquire)
             && self.ring.readable_count() < 2
         {
@@ -125,6 +140,59 @@ impl Playback {
         sh.ring_req_epoch.fetch_add(1, Release);
     }
 
+    fn release_slot(&mut self, sh: &Shared) {
+        if self.slot.is_some() {
+            sh.prefetch.release();
+        }
+        self.slot = None;
+    }
+
+    fn current_slot<'a>(&self, sh: &'a Shared) -> Option<&'a PrefetchSlot> {
+        self.slot.map(|index| sh.prefetch.slot(index))
+    }
+
+    /// True when the held slot holds the playing track's loop start.
+    fn slot_usable(&self, sh: &Shared) -> bool {
+        self.current_slot(sh).is_some_and(|s| {
+            s.load_id() == self.playing_load_id && s.start() == self.loop_snap.start
+        })
+    }
+
+    /// Switches to the prefetched loop start when the playhead wraps. Falls back to a ring
+    /// reposition (not gapless) when no usable slot is published.
+    fn enter_loop_slot(&mut self, sh: &Shared) {
+        if !self.slot_usable(sh) {
+            self.slot = sh.prefetch.acquire();
+            if !self.slot_usable(sh) {
+                self.release_slot(sh);
+                self.request_ring(sh, self.read_idx);
+                return;
+            }
+        }
+        let Some(slot) = self.current_slot(sh) else {
+            return;
+        };
+        if !slot.contains(self.read_idx) {
+            self.release_slot(sh);
+            self.request_ring(sh, self.read_idx);
+            return;
+        }
+        let next_ring_target = slot.start() + slot.length();
+        self.request_ring(sh, next_ring_target);
+    }
+
+    fn read_slot_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> bool {
+        let Some(slot) = self.current_slot(sh) else {
+            return false;
+        };
+        if !slot.contains(self.read_idx) {
+            self.release_slot(sh);
+            return false;
+        }
+        *out = slot.frame(self.read_idx - slot.start());
+        true
+    }
+
     fn read_ring_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> bool {
         if self.ring_idx != self.read_idx {
             self.request_ring(sh, self.read_idx);
@@ -142,7 +210,14 @@ impl Playback {
 
     /// Pulls the next source frame and its index. Returns false when the ring is empty.
     fn pull_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> Option<i64> {
-        if !self.read_ring_frame(sh, out) {
+        let loop_snap = self.loop_snap;
+        if loop_snap.active() && self.read_idx >= loop_snap.end && self.read_idx > loop_snap.start {
+            // Modulo keeps beat phase when a loop shrinks under the playhead.
+            let len = loop_snap.end - loop_snap.start;
+            self.read_idx = loop_snap.start + (self.read_idx - loop_snap.start) % len;
+            self.enter_loop_slot(sh);
+        }
+        if !self.read_slot_frame(sh, out) && !self.read_ring_frame(sh, out) {
             return None;
         }
         let index = self.read_idx;
