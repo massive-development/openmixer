@@ -24,11 +24,11 @@ MainComponent::MainComponent (openmixer::ui::ThemeRegistry& themeRegistry)
     setUpMidi();   // the router must hold its targets before the view is built
     buildContent();
     setSize (kWindowWidth, kWindowHeight);
+    targets.noteAudioRequested (prefs.audio.deviceState);   // setAudioChannels below opens the device: not twice
     applier.apply (prefs);
     if (const auto wanted = juce::SystemStats::getEnvironmentVariable ("OPENMIXER_THEME", {}); wanted.isNotEmpty())
         themes.select (wanted);
     const auto savedAudio = juce::parseXML (prefs.audio.deviceState);   // null: the system default device
-    targets.noteAudioRequested (prefs.audio.deviceState);
     setAudioChannels (0, kMaxOutputs, savedAudio.get());
     buildSettings();
     lastTickMs = juce::Time::getMillisecondCounterHiRes();
@@ -116,6 +116,13 @@ void MainComponent::setUpMidi()
 
     mapper.setTarget (&router);
     plugins.bindRouter (&router);   // plugin parameter targets appear under the router
+}
+
+// audioModel/deviceManager are base-class/earlier members: valid when `targets` is constructed.
+openmixer::AudioDeviceControl MainComponent::audioControl()
+{
+    return { [this] { return audioModel.getStateXml(); },
+             [this] (const juce::XmlElement& xml) { return deviceManager.initialise (0, kMaxOutputs, &xml, true); } };
 }
 
 void MainComponent::buildSettings()

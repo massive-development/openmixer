@@ -23,6 +23,7 @@ juce::Result MidiMapper::loadFromFile (const juce::File& file)
 
 void MidiMapper::install (MidiMap&& newMap)
 {
+    const std::lock_guard<std::recursive_mutex> guard (lock);
     map = std::move (newMap);
     index.clear();
     values.clear();
@@ -36,6 +37,7 @@ void MidiMapper::install (MidiMap&& newMap)
 
 double MidiMapper::getValue (const juce::String& id) const
 {
+    const std::lock_guard<std::recursive_mutex> guard (lock);
     const auto it = values.find (id);
     return it != values.end() ? it->second : 0.0;
 }
@@ -48,6 +50,7 @@ int MidiMapper::handleMessage (const juce::MidiMessage& m)
 
 int MidiMapper::handleEvent (const MidiEvent& e)
 {
+    const std::lock_guard<std::recursive_mutex> guard (lock);
     int fired = 0;
     for (const int channel : { e.channel, 0 })
     {

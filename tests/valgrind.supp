@@ -7,3 +7,22 @@
    fun:BidiChainIsSingle
    ...
 }
+
+# libasound keeps its global config cache for the process lifetime; any MIDI/audio device enumeration
+# (juce::MidiInput::getAvailableDevices) allocates it. Third-party, reported as "possibly lost".
+{
+   libasound_config_cache
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   fun:malloc
+   ...
+   obj:*/libasound.so*
+}
+{
+   libasound_config_cache_calloc
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   fun:calloc
+   ...
+   obj:*/libasound.so*
+}

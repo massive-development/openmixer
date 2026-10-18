@@ -705,6 +705,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/PreferencesTest.cpp
     tests/unit/OutputRouterTest.cpp
     tests/unit/SettingsPanelTest.cpp
+    tests/unit/ControlThreadSafetyTest.cpp
+    tests/unit/AppPreferencesTargetsTest.cpp
+    src/app/AppPreferencesTargets.cpp
     tests/unit/TrackLoaderTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp

@@ -27,7 +27,7 @@ public:
     void process (AudioCallback& source, float* const* deviceOut, int numDeviceOut, int numSamples);
 
 private:
-    void route (float* const* deviceOut, int numDeviceOut, int offset, int n) noexcept;
+    void route (float* const* deviceOut, int numDeviceOut, int offset, int n, int master, int cue) noexcept;
 
     juce::AudioBuffer<float> scratch { 4, 0 };
     std::atomic<int> masterPair { 0 }, cuePair { 1 };
