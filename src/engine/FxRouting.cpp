@@ -20,10 +20,10 @@ fx::FxRack* FxRouting::findRack (const juce::String& name) noexcept
     if (name == "master")
         return masterRack.get();
     const auto digits = name.substring (2);
-    if (! name.startsWith ("ch") || digits.isEmpty() || ! digits.containsOnly ("0123456789"))
-        return nullptr;
+    if (! name.startsWith ("ch") || digits.isEmpty() || digits.length() > 3 || ! digits.containsOnly ("0123456789"))
+        return nullptr;   // <= 3 digits: a longer id would overflow getIntValue
     const int ch = digits.getIntValue();
-    return ch < static_cast<int> (channelRacks.size()) ? channelRacks[static_cast<size_t> (ch)].get() : nullptr;
+    return ch >= 0 && ch < static_cast<int> (channelRacks.size()) ? channelRacks[static_cast<size_t> (ch)].get() : nullptr;
 }
 
 bool FxRouting::setParameter (const juce::String& id, double value)

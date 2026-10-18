@@ -99,11 +99,35 @@ TEST_F (EngineWiringTest, RouterReachesMasterAndChannelFxParameters)
 
 TEST_F (EngineWiringTest, RouterRejectsUnknownFxIds)
 {
-    for (const char* id : { "fx.ch9.fx0.mix", "fx.master.fx99.mix", "fx.bus.fx0.mix", "fx.master", "fx.ch.fx0.mix", "fx.master.nope" })
+    for (const char* id : { "fx.ch9.fx0.mix", "fx.master.fx99.mix", "fx.bus.fx0.mix", "fx.master", "fx.ch.fx0.mix", "fx.master.nope", "fx.ch2147483648.fx0.mix", "fx.ch4294967296.fx0.mix", "fx.master.fx2147483648.mix", "fx.master.fx4294967296.mix", "fx.ch0000.fx0.mix" })
         EXPECT_FALSE (router.setParameter (id, 0.5)) << id;
 }
 
 TEST_F (EngineWiringTest, RacksSitInTheSignalPath)
+{
+    ASSERT_TRUE (engine.getDeck (0).load (file));
+    MockAudioDevice dev (kRate, 256, 0, 2);
+    dev.start (engine);
+    ASSERT_TRUE (waitFor ([&] { return buffered (engine.getDeck (0)); }));
+    engine.getDeck (0).play();
+    const auto settledRms = [&] {
+        for (int b = 0; b < 400; ++b)
+        {
+            waitFor ([&] { return engine.getDeck (0).getBufferedFrames() >= 2048; });   // keep the pump ahead
+            dev.renderBlock();
+        }
+        return dev.getLastOutput().getRMSLevel (0, 0, 256);
+    };
+    float dry = 0.0F, wet = 0.0F;
+    dry = settledRms();
+    router.setParameter ("fx.master.fx0.mix", 1.0);
+    router.setParameter ("fx.master.fx0.enable", 1.0);
+    wet = settledRms();
+    EXPECT_GT (dry, 0.01F) << "deck reaches the master";
+    EXPECT_GT (std::abs (wet - dry), 1e-3F) << "master output changes with fx0 enabled";
+}
+
+TEST_F (EngineWiringTest, RackUnitsReportActive)
 {
     router.setParameter ("fx.master.fx0.enable", 1.0);
     router.setParameter ("fx.ch1.fx3.enable", 1.0);
@@ -180,7 +204,7 @@ TEST_F (EngineWiringSlow, SyncAlignsTwoDecksOnFixedGrids)
 
     for (int block = 0; block < 1200; ++block)
     {
-        waitFor ([&] { return engine.getDeck (0).getBufferedFrames() >= 2048 && engine.getDeck (1).getBufferedFrames() >= 2048; });   // keep the unpaced pump from underrunning (slow under valgrind)
+        EXPECT_TRUE (waitFor ([&] { return engine.getDeck (0).getBufferedFrames() >= 2048 && engine.getDeck (1).getBufferedFrames() >= 2048; }));   // keep the unpaced pump from underrunning (slow under valgrind)
         dev.renderBlock();
         if (block % 8 == 0)
             engine.updateControl (0.046);

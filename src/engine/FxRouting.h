@@ -31,6 +31,7 @@ public:
 
     // Feeds each rack the tempo of its deck (grid bpm x rate); master follows the sync leader,
     // else the first deck that has a grid. Racks without a grid keep their last tempo.
+    // A deck with a grid overwrites a manually set fx.ch<N>.bpm on every call (~33 ms).
     void followDecks (const std::vector<Deck*>& decks, const Sync& sync);
 
 private:

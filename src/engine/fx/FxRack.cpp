@@ -19,9 +19,9 @@ bool FxRack::setParameter (const juce::String& id, double value)
     }
     const auto dot = id.indexOfChar ('.');
     const auto digits = id.substring (2, dot);
-    if (! id.startsWith ("fx") || dot < 0 || digits.isEmpty() || ! digits.containsOnly ("0123456789"))
+    if (! id.startsWith ("fx") || dot < 0 || digits.isEmpty() || digits.length() > 3 || ! digits.containsOnly ("0123456789"))
         return false;
-    auto* unit = getUnit (digits.getIntValue());
+    auto* unit = getUnit (digits.getIntValue());   // <= 3 digits: no int overflow
     return unit != nullptr && unit->setParameter (id.substring (dot + 1), value);
 }
 
