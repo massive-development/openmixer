@@ -62,6 +62,7 @@ private:
     struct Finished   // snapshot taken on the worker thread; the owner thread applies it
     {
         std::int64_t trackId = 0;
+        std::int64_t generation = 0;   // which submit this result belongs to
         analysis::JobStatus status = analysis::JobStatus::Done;
         std::map<juce::String, juce::String> results;
         juce::String error;
@@ -72,11 +73,13 @@ private:
         std::condition_variable wake;
         std::vector<Finished> done;
     };
-    struct InFlight { std::shared_ptr<analysis::AnalysisJob> job; float reported = 0.0f; };
-    static void post (const std::shared_ptr<Inbox>& box, std::int64_t trackId, const analysis::AnalysisJob& job);
+    struct InFlight { std::shared_ptr<analysis::AnalysisJob> job; std::int64_t generation = 0; float reported = 0.0f; };
+    static void post (const std::shared_ptr<Inbox>& box, std::int64_t trackId, std::int64_t generation,
+                      const analysis::AnalysisJob& job);
 
     void drain();
     void complete (const Finished& finished);
+    void cancelRunning (std::map<std::int64_t, InFlight>::iterator it);
     void fill();
     bool submitNext();
     void reportProgress();
@@ -90,6 +93,8 @@ private:
     Options opts;
     std::shared_ptr<Inbox> inbox = std::make_shared<Inbox>();   // shared with listeners that may outlive us
     std::map<std::int64_t, InFlight> inFlight;                  // owner thread only
+    std::vector<InFlight> draining;   // cancelled jobs still unwinding; their results are ignored
+    std::int64_t nextGeneration = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PrepQueue)
 };
