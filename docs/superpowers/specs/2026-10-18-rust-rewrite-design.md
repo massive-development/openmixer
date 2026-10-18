@@ -24,11 +24,11 @@ The tag `cpp-final` (main @ c6d2747) is the frozen C++ implementation. It is the
 ## Stack (all **(call)** unless stated)
 | Area | Choice |
 |---|---|
-| Language / UI | Rust, GPUI (decided by user) |
-| Audio I/O | `cpal` for the engine's output callback (rodio is built on cpal; its pull-based `Source` chain and managed output thread don't give the sample-accurate, allocation-free, buffer-size-controlled render loop, or the second headphone-cue stream, that decks and a mixer need). `rodio` is acceptable for non-critical audio such as library preview/audition. |
+| Language / UI | Rust, GPUI `=0.2.2` from crates.io (decided by user; no Zed git pin needed). Phase 1 gate is OPEN: provisional on WSL2 X11 only, Windows and macOS runs pending the user; fallback iced then Slint |
+| Audio I/O | `cpal` for the engine's output callback. The case for cpal is owning the render callback (allocation-free, SPSC-driven) and opening multiple streams (headphone cue), not buffer control: rodio 0.23 does have `with_buffer_size`. The cue second stream failed on WSLg ("Invalid argument", cause not isolated) so it is unproven on every backend; real-device latency/xrun numbers on Windows/macOS/native Linux are pending the user. `rodio` is acceptable for non-critical audio such as library preview/audition. |
 | Decode | `symphonia`; tags via `lofty` |
 | FFT / DSP | `realfft`/`rustfft`; own biquad/EQ/FX in `om-dsp` |
-| Time-stretch / keylock | Spike required: Rubber Band via thin FFI vs a pure-Rust stretcher. Prefer pure Rust if quality holds; FFI is the fallback (kept in one `unsafe` crate). |
+| Time-stretch / keylock | Pure Rust did not pass the design bar in stereo in the Phase 1 spike. Decision pending the user (A/B listening plus Windows/macOS build check); options in `docs/spikes/DECISIONS.md`: (A) Signalsmith via thin FFI, (B) Rubber Band R3 via FFI, (C) keep looking for or tune a pure-Rust stretcher. Any FFI is kept in one `unsafe` crate. |
 | MIDI | `midir`; HID later |
 | Library | `rusqlite` (bundled SQLite) |
 | RT plumbing | `rtrb` (SPSC), `arc-swap` for param/snapshot publishing, `assert_no_alloc` in tests |

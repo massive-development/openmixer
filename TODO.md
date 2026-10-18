@@ -4,17 +4,19 @@ OpenMixer is being rewritten in Rust with GPUI. The statuses below are the Rust 
 
 ## Rust rewrite Phase 0-1
 
+**Status:** Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test.
+
 Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`. Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
 
 - [x] Plan task 1: Workspace scaffold and `--smoke`
 - [x] Plan task 2: Rust CI and licence policy
 - [x] Plan task 3: ADR 0004 supersedes ADR 0002
 - [x] Plan task 4: Parity inventory
-- [ ] Plan task 5: Documentation rewrite (in review)
-- [ ] Plan task 6: Spike A, GPUI window (go/no-go)
-- [ ] Plan task 7: Spike B, cpal output callback
-- [ ] Plan task 8: Spike C, time-stretch quality
-- [ ] Plan task 9: Phase 1 decision record
+- [x] Plan task 5: Documentation rewrite
+- [x] Plan task 6: Spike A, GPUI window (go/no-go)
+- [x] Plan task 7: Spike B, cpal output callback
+- [x] Plan task 8: Spike C, time-stretch quality
+- [x] Plan task 9: Phase 1 decision record
 
 ## Wave 1: Foundation (COMPLETE)
 

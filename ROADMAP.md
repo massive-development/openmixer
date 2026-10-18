@@ -52,4 +52,4 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 
 ## Current Status
 
-**Phase**: Phase 0 in progress (plan tasks 1-4 done, task 5 docs rewrite in review, 6-9 pending); Phase 1 (spikes) next. Wave 1 is complete for the Rust scaffold; the other waves are not started in Rust.
+**Phase**: Phase 0 complete; Phase 1 spikes run — GPUI/audio/time-stretch gates await the user's Windows/macOS runs and listening test. Wave 1 is complete for the Rust scaffold; the other waves are not started in Rust.

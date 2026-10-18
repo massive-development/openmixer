@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (supersedes ADR 0002; GPUI conditional on Phase 1 gate)
+Accepted (supersedes ADR 0002; GPUI conditional on the Phase 1 gate, which is still open; time-stretch choice pending the user)
 
 ## Context
 
@@ -24,11 +24,11 @@ Key choices:
 
 | Area | Choice |
 |---|---|
-| Language / UI | Rust, GPUI |
+| Language / UI | Rust, GPUI `=0.2.2` from crates.io |
 | Audio I/O | `cpal` for the engine output callback. `rodio` is acceptable only for non-critical audio such as library preview. |
 | Decode / tags | `symphonia`; `lofty` |
 | FFT / DSP | `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp` |
-| Time-stretch / keylock | Spike first: pure Rust stretcher preferred; Rubber Band via thin FFI as fallback, kept in one `unsafe` crate |
+| Time-stretch / keylock | Pending the user. No pure-Rust candidate passed the design bar in stereo in the Phase 1 spike; options (Signalsmith FFI, Rubber Band R3 FFI, tune pure Rust) in `docs/spikes/DECISIONS.md`. Any FFI is kept in one `unsafe` crate |
 | MIDI | `midir`; HID later |
 | Library | `rusqlite` (bundled SQLite) |
 | RT plumbing | `rtrb` (SPSC), `arc-swap`, `assert_no_alloc` in tests |
@@ -40,9 +40,13 @@ Key choices:
 
 ### Why cpal rather than rodio
 
-rodio is built on cpal, but its pull-based `Source` chain and managed output
-thread do not give the sample-accurate, allocation-free, buffer-size-controlled
-render loop, or the second headphone-cue stream, that decks and a mixer need.
+rodio is built on cpal. The case for cpal is not buffer control (rodio 0.23 has
+`with_buffer_size`) but owning the render callback (allocation-free, driven by
+an SPSC queue) and opening multiple streams for the headphone cue. The cue's
+second stream failed on WSLg ("Invalid argument", cause not isolated), so it
+is unproven on every backend; real-device latency and xrun numbers on
+Windows, macOS and native Linux are pending the user. rodio remains acceptable
+for non-critical audio such as library preview.
 
 ### GPUI go/no-go gate (conditional)
 
@@ -50,7 +54,9 @@ GPUI is accepted provisionally. The first Phase 1 spike is a hard gate:
 
 - `vulkaninfo --summary` on the dev WSL machine;
 - a GPUI window with a custom-painted waveform on Linux and Windows;
-- a note on whether GPUI must be pinned to a git commit of Zed (no authoritative crates.io status was found).
+- a note on whether GPUI must be pinned to a git commit of Zed (resolved: `gpui =0.2.2` is on crates.io, so no git pin is needed).
+
+Status: the gate is OPEN. WSL2 X11 is provisional (window not visually seen, probably software-rendered; the Wayland backend panics on WSLg). Windows and macOS runs are pending the user (see `docs/spikes/DECISIONS.md`).
 
 If the gate fails on a platform, the fallback is to switch toolkit (iced first,
 then Slint). We do not drop the platform or stop the project. WSL-only trouble
@@ -65,11 +71,11 @@ Positive:
 
 Negative / risks:
 - GPUI's release stability, licence (expected Apache-2.0, AGPL-compatible) and Linux/WSL/Windows support are unverified until the gate passes.
-- Pure-Rust time-stretch quality is unproven; FFI fallback is needed if it fails.
+- No pure-Rust time-stretcher passed the design bar in the Phase 1 spike; an FFI stretcher (or further pure-Rust work) is needed. Decision pending the user.
 - Windows latency via cpal (WASAPI) must be measured.
 - A full rewrite: the C++ tree stays on `main` until the Rust engine reaches parity. It is deleted only after Phase 5 passes.
 
-Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`. Rubber Band (GPLv2+) remains AGPL-compatible if the FFI fallback is used.
+Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`. Rubber Band (GPLv2+) remains AGPL-compatible if it is chosen; its `deny.toml` entry stays commented out until then.
 
 ## References
 
