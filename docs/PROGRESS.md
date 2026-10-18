@@ -17,7 +17,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|------|--------|
 | 1 | Foundation | ✅ |
 | 2 | Audio engine | 🟡 device, deck, mixer, MIDI mapper + trace harness, debug panel done; time-stretch, sync, soak remain |
-| 3 | Analysis | 🟡 service + SQLite cache done |
+| 3 | Analysis | 🟡 service + SQLite cache, BPM/beat grid, key, waveform done |
 | 4 | Library | ⬜ |
 | 5 | UI | ⬜ (window shell only) |
 | 6 | Hardware | ⬜ (basic MIDI pulled into Wave 2) |
@@ -49,7 +49,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | Todo | Entails | Done | Missing |
 |------|---------|------|---------|
 | 7 Audio device layer | Device abstraction, latency/xrun instrumentation, headless mock for CI | ✅ `AudioDevice`, `LatencyMonitor`, `JuceAudioDevice`, `MockAudioDevice` | Real-hardware test of `JuceAudioDevice`; device selection/settings UI |
-| 8 Deck engine | Streaming decode, lock-free buffer, play/pause/seek/rate | ✅ `Deck`, `RingBuffer`; JUCE decoders (WAV/AIFF/FLAC/OGG, MP3 where JUCE supports it) | FFmpeg backend (8b) for wide codec support; cue points, loops, scratching |
+| 8 Deck engine | Streaming decode, lock-free buffer, play/pause/seek/rate | ✅ `Deck`, `RingBuffer`; JUCE decoders (WAV/AIFF/FLAC/OGG, MP3 where JUCE supports it) | FFmpeg backend (8b) for wide codec support; scratching |
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | ✅ | Headphone routing to a second physical device; EQ/filter smoothing |
 | 10a Plugin API | Versioned plugin interfaces, runtime loader, registry; hooks for audio pre/post-processing, FX, MIDI maps | ✅ `src/plugins/` (`openmixer_plugins`): `PluginApi`, `PluginLoader`, `PluginRegistry`, `StageCatalog`; example plugin | Per-deck insert hook (decks use channel inserts); app/UI wiring and plugin-folder settings; plugin-provided analysis/importers/themes (later waves) |
 | 32 MIDI input + mapping | `MidiInput` → JSON map → engine parameters | ✅ | Learn mode; feedback/LED output (Wave 6) |
@@ -57,7 +57,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 26a Debug panel | Two decks, faders, EQ, meters on plain JUCE widgets | ✅ (not visually verified: no display in CI box) | Replaced by real UI in Wave 5 |
 | 13a Short soak test | 30–60 s headless mix in CI | ✅ `tools/soak_mix.cpp` (`openmixer_soak`, CTest `soak_short`, label `soak`): 2 looping decks, moving controls, asserts 0 xruns, 0 steady-state underruns, no NaN/Inf/overflow | Runs on a paced mock device, not real hardware; not yet in CI (workflow owned elsewhere) |
 | 9 Key-lock time-stretch | Rubber Band realtime, tempo change without pitch change | ⬜ | Dependency integration (GPL-compatible), golden audio tests |
-| 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode | 🟡 `BeatGrid` interface + `FixedTempoGrid`, `Sync` (tempo match + beat/bar phase nudge, `ParameterTarget`), `Quantizer` (snap, quantized loop bounds), `SlipTracker`; tested with mock grids | Real grids (Wave 3); audio-thread loop playback and hotcue storage in `Deck` (loops are planned bounds only); wiring `Sync::apply` into the app timer/UI |
+| 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode | 🟡 `BeatGrid` interface + `FixedTempoGrid`, `Sync` (tempo match + beat/bar phase nudge, `ParameterTarget`), `Quantizer` (snap, quantized loop bounds), `SlipTracker`; tested with mock grids; `Deck` gapless loops (sample-accurate wrap into a decoder-prefetched `LoopPrefetch` slot, phase-kept resize, exit/reloop) and 8 hotcues (`HotcueBank`, ids `hotcueN`, `hotcueN.clear`, `loop.exit`, `loop.reloop`) | Real grids (Wave 3); wiring `Sync::apply`, `Quantizer` loops and `SlipTracker` into the app/UI and MIDI maps; hotcue persistence (Wave 4 library) |
 | 11 FX rack | 8 effects (delay, reverb, flanger, …) with wet/dry and beat-sync | ✅ `src/engine/fx/` (`openmixer_fx`): echo, reverb, flanger, phaser, crush, gate, roll, tape stop; `FxUnit` (enable, smoothed mix, tails, idle) and `FxRack` as `ProcessStage` inserts; `FxFactory` registry; 8 original presets; ids `bpm`, `fxN.enable/mix/<param>`; `FxTest` | Not yet wired into `DjEngine`/`ParameterRouter` or the UI; LFO/gate phase free-runs from engage (no beat-phase lock to the grid yet); MIDI value scaling for natural-unit params |
 | 13 Full soak test | 10-minute headless mix, glitch/xrun budget | ⬜ | The Wave 2 gate |
 
@@ -70,9 +70,9 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | Todo | Entails | Missing |
 |------|---------|---------|
 | 14 Analysis service + cache ✅ | Background job runner, SQLite result cache keyed by file hash | Done: `openmixer_analysis` with `AnalysisService` (worker pool, FIFO, per-job progress/cancel/wait, listener), `AnalyzerRegistry` (versioned `Analyzer` extension point), `SqliteResultCache` (SQLite 3.46 amalgamation via FetchContent; key = SHA-256 of file bytes + analyser id + version), `FileClipSource`/`MemoryClipSource`. Missing: app wiring (cache path in user data dir), priority queue / prep-queue integration (Todo 24) |
-| 15 BPM + beat grid | Tempo estimation, grid with downbeat, manual correction data model | All |
-| 16 Key detection | Chroma-based key, Camelot mapping | All |
-| 17 Waveform model | Multi-resolution overview/zoom data, colour/band data | All |
+| 15 BPM + beat grid ✅ | Tempo estimation, grid with downbeat, manual correction data model | Done: `BpmEstimator` (log spectral-flux onsets -> autocorrelation tempo -> tempo/phase grid search -> least-squares onset fit; downbeat from 30-200 Hz band; octave folding into 70-180 BPM), `BeatGridModel` (tempo markers, shift/setBpm/setDownbeatNear/insertTempoChange, JSON, manual flag), `AnalysedBeatGrid` adapter to engine `BeatGrid`, `BpmAnalyzer` (id `bpm`). Click tracks: BPM within 0.05, beats within 3 ms. Missing: automatic variable-tempo detection (manual markers only), time signatures other than the configured beats-per-bar, accuracy benchmark on real music, wiring grids into decks/UI |
+| 16 Key detection ✅ | Chroma-based key, Camelot mapping | Done: `Chromagram` (8192-pt STFT, 100-5000 Hz bins folded to 12 pitch classes, per-frame normalised), `KeyEstimator` (Pearson correlation with 24 rotations of project-designed major/minor templates, confidence = margin), `MusicalKey` (names, Camelot code both ways, relative key, harmonic compatibility), `KeyAnalyzer` (id `key`). Synthetic cadences in 8 keys (incl. with drums + noise) detected. Missing: tuning-offset estimation (assumes A440), key changes within a track, real-music benchmark |
+| 17 Waveform model ✅ | Multi-resolution overview/zoom data, colour/band data | Done: `WaveformBuilder` (24 dB/oct biquad crossovers at 250 Hz / 4 kHz via `openmixer_dsp`; 128-sample base points with min/max + low/mid/high RMS), `WaveformData` (x4 levels down to ~2048-point overview, `levelFor(samplesPerPixel)`, 5 bytes/point base64 JSON, coarser levels rebuilt on load), `WaveformAnalyzer` (id `waveform`). Missing: stereo/per-stem waveforms, rendering (Wave 5), progressive (partial) results while analysing |
 | 18 Structure features | Onset/energy/section detection (feeds Automix) | All |
 | 19 Stem precompute | Demucs ONNX, weights downloaded on first use with license shown | All |
 

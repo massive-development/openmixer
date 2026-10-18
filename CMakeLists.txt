@@ -107,6 +107,11 @@ add_library(openmixer_engine STATIC
     src/engine/Deck.cpp
     src/engine/Deck.h
     src/engine/DeckDecoder.cpp
+    src/engine/DeckPlayback.cpp
+    src/engine/HotcueBank.h
+    src/engine/LoopPrefetch.cpp
+    src/engine/LoopPrefetch.h
+    src/engine/LoopState.h
     src/engine/DeckDecoder.h
     src/engine/DjEngine.cpp
     src/engine/DjEngine.h
@@ -140,7 +145,7 @@ add_library(openmixer_engine STATIC
 target_include_directories(openmixer_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
     src/engine/ChannelStrip.cpp src/engine/Crossfader.cpp src/engine/Deck.cpp
-    src/engine/DeckDecoder.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
+    src/engine/DeckDecoder.cpp src/engine/DeckPlayback.cpp src/engine/LoopPrefetch.cpp src/engine/DjEngine.cpp src/engine/JuceAudioDevice.cpp src/engine/LatencyMonitor.cpp
     src/engine/MockAudioDevice.cpp src/engine/Mixer.cpp src/engine/MixerParameters.cpp
     src/engine/Quantizer.cpp src/engine/StageChain.cpp src/engine/SweepFilter.cpp src/engine/Sync.cpp src/engine/ThreeBandEq.cpp)
 
@@ -238,7 +243,7 @@ target_link_libraries(openmixer_controllers PUBLIC
 )
 
 # =============================================================================
-# Analysis library (background jobs, result cache, analysers). Depends on core only;
+# Analysis library (background jobs, result cache, analysers). Depends on core + dsp;
 # engine adapters include engine headers that are header-only interfaces.
 # =============================================================================
 
@@ -246,22 +251,43 @@ set(OPENMIXER_ANALYSIS_SOURCES
     src/analysis/AnalysisJob.cpp
     src/analysis/AnalysisService.cpp
     src/analysis/AnalyzerRegistry.cpp
+    src/analysis/BeatGridModel.cpp
+    src/analysis/BpmEstimator.cpp
+    src/analysis/Chromagram.cpp
     src/analysis/ClipSource.cpp
     src/analysis/JobRunner.cpp
+    src/analysis/KeyEstimator.cpp
+    src/analysis/MusicalKey.cpp
+    src/analysis/OnsetEnvelope.cpp
     src/analysis/SqliteResultCache.cpp
+    src/analysis/Stft.cpp
+    src/analysis/TempoSearch.cpp
+    src/analysis/WaveformBuilder.cpp
+    src/analysis/WaveformData.cpp
 )
 
 add_library(openmixer_analysis STATIC
     ${OPENMIXER_ANALYSIS_SOURCES}
+    src/analysis/AnalysedBeatGrid.h
     src/analysis/AnalysisJob.h
     src/analysis/AnalysisService.h
     src/analysis/Analyzer.h
     src/analysis/AnalyzerRegistry.h
     src/analysis/AudioClip.h
+    src/analysis/BeatGridModel.h
+    src/analysis/BpmEstimator.h
+    src/analysis/Chromagram.h
     src/analysis/ClipSource.h
     src/analysis/JobRunner.h
+    src/analysis/KeyEstimator.h
+    src/analysis/MusicalKey.h
+    src/analysis/OnsetEnvelope.h
     src/analysis/ResultCache.h
     src/analysis/SqliteResultCache.h
+    src/analysis/Stft.h
+    src/analysis/TempoSearch.h
+    src/analysis/WaveformBuilder.h
+    src/analysis/WaveformData.h
 )
 
 target_include_directories(openmixer_analysis PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -270,10 +296,12 @@ openmixer_enable_warnings(${OPENMIXER_ANALYSIS_SOURCES})
 target_link_libraries(openmixer_analysis
     PUBLIC
         openmixer_core
+        openmixer_dsp
         juce::juce_audio_basics
         juce::juce_audio_formats
         juce::juce_core
         juce::juce_cryptography
+        juce::juce_dsp
         juce::juce_recommended_config_flags
     PRIVATE
         openmixer_sqlite3
@@ -417,6 +445,8 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/RingBufferTest.cpp
     tests/unit/AudioDeviceTest.cpp
     tests/unit/DeckTest.cpp
+    tests/unit/DeckLoopTest.cpp
+    tests/unit/DeckTestUtil.h
     tests/unit/MixerTest.cpp
     tests/unit/MidiMapperTest.cpp
     tests/unit/DjEngineTest.cpp
@@ -426,6 +456,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/FxTest.cpp
     tests/unit/AnalysisCacheTest.cpp
     tests/unit/AnalysisServiceTest.cpp
+    tests/unit/BpmEstimatorTest.cpp
+    tests/unit/KeyEstimatorTest.cpp
+    tests/unit/WaveformBuilderTest.cpp
 )
 
 juce_generate_juce_header(openmixer_tests)

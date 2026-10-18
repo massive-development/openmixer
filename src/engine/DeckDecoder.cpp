@@ -27,6 +27,9 @@ void DeckDecoder::run()
         takePendingReader();
         if (epoch != localAck)
             syncTo (epoch);
+        else
+            serviceRingRequest();
+        servicePrefetch();
 
         if (canProduce())
             produceChunk();
@@ -41,24 +44,68 @@ void DeckDecoder::takePendingReader()
     if (deck.hasPendingReader)
     {
         reader = std::move (deck.pendingReader);
+        readerLoadId = deck.pendingLoadId;
         deck.hasPendingReader = false;
+        deck.prefetch.withdraw();
+        prefetchedStart = -1;
     }
+}
+
+void DeckDecoder::publishAck (juce::int64 target)
+{
+    const juce::int64 len = reader != nullptr ? reader->lengthInSamples : 0;
+    readPos = std::clamp<juce::int64> (target, 0, len);
+    deck.ackTarget.store (readPos, kRelaxed);
+    deck.endOfStream.store (reader == nullptr || readPos >= len, kRelaxed);
+    deck.ackSeq.store (++localSeq, kRelease);
 }
 
 void DeckDecoder::syncTo (juce::uint32 epoch)
 {
-    const juce::int64 len = reader != nullptr ? reader->lengthInSamples : 0;
-    readPos = std::clamp<juce::int64> (deck.seekTarget.load (kRelaxed), 0, len);
-    deck.ackTarget.store (readPos, kRelaxed);
-    deck.endOfStream.store (reader == nullptr || readPos >= len, kRelaxed);
+    publishAck (deck.seekTarget.load (kRelaxed));
+    deck.ackLoadId.store (readerLoadId, kRelaxed);
     localAck = epoch;
-    deck.ackEpoch.store (epoch, kRelease);
+    deck.ackEpoch.store (epoch, kRelease);   // after ackSeq: the audio thread reads the epoch first
+}
+
+void DeckDecoder::serviceRingRequest()
+{
+    const auto req = deck.ringReqEpoch.load (kAcquire);
+    if (req == localRingReq || deck.drainedSeq.load (kAcquire) != localSeq)
+        return;
+    localRingReq = req;
+    if (deck.ringReqBase.load (kRelaxed) == localAck)   // else it predates the latest control seek
+        publishAck (deck.ringReqTarget.load (kRelaxed));
+}
+
+void DeckDecoder::servicePrefetch()
+{
+    LoopSnapshot loop;
+    if (reader == nullptr || ! deck.loopState.load (loop) || ! loop.valid() || loop.start == prefetchedStart)
+        return;
+    fillPrefetch (loop.start);
+}
+
+void DeckDecoder::fillPrefetch (juce::int64 start)
+{
+    auto& slot = deck.prefetch.beginFill();
+    const auto length = std::clamp<juce::int64> (reader->lengthInSamples - start, 0, deck.prefetch.getCapacityFrames());
+    for (juce::int64 done = 0; done < length; done += kChunkFrames)
+    {
+        const auto n = static_cast<int> (std::min<juce::int64> (kChunkFrames, length - done));
+        decodeAt (start + done, n, slot.frames.data() + done * 2);
+    }
+    slot.start = start;
+    slot.length = length;
+    slot.loadId = readerLoadId;
+    deck.prefetch.publish (slot);
+    prefetchedStart = start;
 }
 
 bool DeckDecoder::canProduce() const
 {
     return reader != nullptr
-        && deck.drainedEpoch.load (kAcquire) == localAck
+        && deck.drainedSeq.load (kAcquire) == localSeq
         && readPos < reader->lengthInSamples
         && deck.ring.getWritableCount() >= static_cast<size_t> (kChunkFrames) * 2;
 }
@@ -66,18 +113,18 @@ bool DeckDecoder::canProduce() const
 void DeckDecoder::produceChunk()
 {
     const auto n = static_cast<int> (std::min<juce::int64> (kChunkFrames, reader->lengthInSamples - readPos));
-    decodeInto (n);
+    decodeAt (readPos, n, interleaved.data());
     deck.ring.write (interleaved.data(), static_cast<size_t> (n) * 2);
     readPos += n;
     if (readPos >= reader->lengthInSamples)
         deck.endOfStream.store (true, kRelease);
 }
 
-void DeckDecoder::decodeInto (int n)
+void DeckDecoder::decodeAt (juce::int64 from, int n, float* out)
 {
     const auto fileChans = static_cast<int> (std::min<unsigned int> (reader->numChannels, 2U));
     tmp.clear();
-    reader->read (tmp.getArrayOfWritePointers(), fileChans, readPos, n);
+    reader->read (tmp.getArrayOfWritePointers(), fileChans, from, n);
     if (fileChans == 1)
         tmp.copyFrom (1, 0, tmp, 0, 0, n);
 
@@ -85,8 +132,8 @@ void DeckDecoder::decodeInto (int n)
     const float* r = tmp.getReadPointer (1);
     for (int i = 0; i < n; ++i)
     {
-        interleaved[static_cast<size_t> (i) * 2] = l[i];
-        interleaved[static_cast<size_t> (i) * 2 + 1] = r[i];
+        out[static_cast<size_t> (i) * 2] = l[i];
+        out[static_cast<size_t> (i) * 2 + 1] = r[i];
     }
 }
 

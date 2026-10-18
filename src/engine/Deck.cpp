@@ -10,12 +10,12 @@ namespace openmixer
 namespace
 {
     constexpr auto kRelaxed = std::memory_order_relaxed;
-    constexpr auto kAcquire = std::memory_order_acquire;
     constexpr auto kRelease = std::memory_order_release;
 }
 
 //==============================================================================
-Deck::Deck (size_t ringFrames) : ring (ringFrames * 2)
+Deck::Deck (size_t ringFrames, juce::int64 loopPrefetchFrames)
+    : ring (ringFrames * 2), prefetch (loopPrefetchFrames)
 {
     formatManager.registerBasicFormats();
     monoSink.assign (4096, 0.0F);
@@ -38,9 +38,12 @@ bool Deck::load (const juce::File& file)
     finished.store (false, kRelaxed);
     fileSampleRate.store (reader->sampleRate, kRelaxed);
     lengthFrames.store (reader->lengthInSamples, kRelaxed);
+    loopState.store ({});
+    hotcues.clearAll();
     {
         const std::lock_guard<std::mutex> lock (pendingMutex);
         pendingReader = std::move (reader);
+        pendingLoadId = ++loadCounter;
         hasPendingReader = true;
     }
     loaded.store (true, kRelaxed);
@@ -53,6 +56,8 @@ void Deck::unload()
     playing.store (false, kRelaxed);
     loaded.store (false, kRelaxed);
     lengthFrames.store (0, kRelaxed);
+    loopState.store ({});
+    hotcues.clearAll();
     {
         const std::lock_guard<std::mutex> lock (pendingMutex);
         pendingReader.reset();
@@ -63,6 +68,10 @@ void Deck::unload()
 
 void Deck::seek (juce::int64 sourceFrame)
 {
+    const auto loop = getLoop();
+    if (isLooping() && (sourceFrame < loop.start || sourceFrame >= loop.end))
+        exitLoop();   // jumping out of a loop leaves it
+
     finished.store (false, kRelaxed);
     requestReposition (std::max<juce::int64> (0, sourceFrame));
 }
@@ -79,12 +88,67 @@ void Deck::setRate (double newRate) noexcept
     rate.store (std::clamp (newRate, 0.0, 8.0), kRelaxed);
 }
 
+bool Deck::setLoop (const Loop& loop) noexcept
+{
+    const auto len = getLengthFrames();
+    const Loop clamped { std::clamp<juce::int64> (loop.start, 0, len), std::clamp<juce::int64> (loop.end, 0, len) };
+    if (clamped.end - clamped.start < 2)
+        return false;
+    loopState.store ({ clamped.start, clamped.end, true });
+    return true;
+}
+
+void Deck::setLoopEnabled (bool enabled) noexcept
+{
+    LoopSnapshot s;
+    if (loopState.load (s) && s.valid())
+        loopState.store ({ s.start, s.end, enabled });
+}
+
+bool Deck::isLooping() const noexcept
+{
+    LoopSnapshot s;
+    return loopState.load (s) && s.active();
+}
+
+Loop Deck::getLoop() const noexcept
+{
+    LoopSnapshot s;
+    return loopState.load (s) ? Loop { s.start, s.end } : Loop {};
+}
+
+void Deck::triggerHotcue (int index)
+{
+    if (const auto cue = hotcues.get (index))
+        seek (*cue);
+    else
+        hotcues.set (index, getPositionFrames());
+}
+
 bool Deck::setParameter (const juce::String& id, double value)
 {
-    if (id == "play")      setPlaying (value >= 0.5);
-    else if (id == "rate") setRate (value);
-    else if (id == "seek") seek (static_cast<juce::int64> (std::clamp (value, 0.0, 1.0) * static_cast<double> (getLengthFrames())));
-    else return false;
+    if (id == "play")             setPlaying (value >= 0.5);
+    else if (id == "rate")        setRate (value);
+    else if (id == "seek")        seek (static_cast<juce::int64> (std::clamp (value, 0.0, 1.0) * static_cast<double> (getLengthFrames())));
+    else if (id == "loop.exit")   { if (value >= 0.5) exitLoop(); }
+    else if (id == "loop.reloop") { if (value >= 0.5) reloop(); }
+    else return setHotcueParameter (id, value);
+    return true;
+}
+
+bool Deck::setHotcueParameter (const juce::String& id, double value)
+{
+    if (! id.startsWith ("hotcue"))
+        return false;
+    const auto rest = id.substring (6);
+    const auto digits = rest.upToFirstOccurrenceOf (".", false, false);
+    const auto action = rest.fromFirstOccurrenceOf (".", false, false);
+    const int index = digits.getIntValue();
+    if (digits.isEmpty() || ! digits.containsOnly ("0123456789") || ! HotcueBank::inRange (index)
+        || ! (action.isEmpty() || action == "clear"))
+        return false;
+    if (value >= 0.5)
+        action.isEmpty() ? triggerHotcue (index) : clearHotcue (index);
     return true;
 }
 
@@ -110,115 +174,6 @@ void Deck::process (const float* const*, int, float* const* outputs, int numOutp
     renderStereo (outputs[0], outputs[1], numSamples);
     for (int c = 2; c < numOutputs; ++c)
         juce::FloatVectorOperations::clear (outputs[c], numSamples);
-}
-
-//==============================================================================
-void Deck::clearTail (float* left, float* right, int from, int numSamples) const noexcept
-{
-    if (from >= numSamples)
-        return;
-    juce::FloatVectorOperations::clear (left + from, numSamples - from);
-    juce::FloatVectorOperations::clear (right + from, numSamples - from);
-}
-
-bool Deck::serviceHandshake() noexcept
-{
-    const auto req = requestEpoch.load (kAcquire);
-    const auto ack = ackEpoch.load (kAcquire);
-    if (ack != req)
-        return false;
-
-    if (drainedEpoch.load (kRelaxed) != ack)
-    {
-        ring.skip (ring.getReadableCount());   // everything before the ack is stale
-        pos = ackTarget.load (kRelaxed);
-        primed = false;
-        phase = 0.0;
-        positionFrames.store (pos, kRelaxed);
-        drainedEpoch.store (ack, kRelease);
-    }
-    return true;
-}
-
-bool Deck::reachedEnd() noexcept
-{
-    // Re-check readability after seeing end-of-stream: the producer's last write may race.
-    if (endOfStream.load (kAcquire) && ring.getReadableCount() < 2)
-    {
-        playing.store (false, kRelaxed);
-        finished.store (true, kRelaxed);
-        return true;
-    }
-    return false;
-}
-
-void Deck::noteStarved() noexcept
-{
-    if (! reachedEnd())
-        underruns.fetch_add (1, kRelaxed);
-}
-
-bool Deck::popFrame() noexcept
-{
-    float f[2];
-    if (ring.read (f, 2) < 2)
-        return false;
-    prev[0] = next[0]; prev[1] = next[1];
-    next[0] = f[0];    next[1] = f[1];
-    return true;
-}
-
-bool Deck::primeInterpolator() noexcept
-{
-    float two[4];
-    if (ring.read (two, 4) < 4)
-        return false;
-    prev[0] = two[0]; prev[1] = two[1];
-    next[0] = two[2]; next[1] = two[3];
-    primed = true;
-    phase = 0.0;
-    return true;
-}
-
-void Deck::renderStereo (float* left, float* right, int numSamples) noexcept
-{
-    const bool running = serviceHandshake() && playing.load (kRelaxed) && loaded.load (kRelaxed);
-    if (! running)
-    {
-        clearTail (left, right, 0, numSamples);
-        return;
-    }
-
-    if (! primed && ring.getReadableCount() < 4)
-    {
-        noteStarved();
-        clearTail (left, right, 0, numSamples);
-        return;
-    }
-    if (! primed)
-        primeInterpolator();
-
-    const double ratio = rate.load (kRelaxed) * (fileSampleRate.load (kRelaxed) / deviceSampleRate.load (kRelaxed));
-    for (int i = 0; i < numSamples; ++i)
-    {
-        while (phase >= 1.0)
-        {
-            if (! popFrame())
-            {
-                noteStarved();
-                clearTail (left, right, i, numSamples);
-                positionFrames.store (pos, kRelaxed);
-                return;
-            }
-            phase -= 1.0;
-            ++pos;
-        }
-        const auto t = static_cast<float> (phase);
-        left[i]  = prev[0] + (next[0] - prev[0]) * t;
-        right[i] = prev[1] + (next[1] - prev[1]) * t;
-        phase += ratio;
-    }
-    positionFrames.store (pos, kRelaxed);
 }
 
 } // namespace openmixer
