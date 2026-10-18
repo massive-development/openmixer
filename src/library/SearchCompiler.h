@@ -34,5 +34,6 @@ juce::Result compileTextTerm (const SearchField& field, const FilterTerm& term, 
 juce::Result compileRangeTerm (const SearchField& field, const FilterTerm& term, std::int64_t nowMs, SqlFragment& out);
 juce::Result compileKeyTerm (const FilterTerm& term, SqlFragment& out);
 juce::Result compilePlaylistTerm (const FilterTerm& term, SqlFragment& out);
+juce::Result compileFolderTerm (const FilterTerm& term, SqlFragment& out);   // anchored path prefix + separator
 
 } // namespace openmixer::library

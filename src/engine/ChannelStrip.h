@@ -40,7 +40,9 @@ public:
     SweepFilter& getFilter() noexcept { return filter; }
     const SweepFilter& getFilter() const noexcept { return filter; }
     StageChain& getInserts() noexcept { return inserts; }
-    const PeakMeter& getMeter() const noexcept { return meter; }
+    float getTrim() const noexcept { return trim.load (std::memory_order_relaxed); }
+    float getMeterLeft() const noexcept { return meterL.get(); }
+    float getMeterRight() const noexcept { return meterR.get(); }
 
     // Null srcL means silence; srcR defaults to srcL. Adds into the bus.
     void render (const float* srcL, const float* srcR, const CrossfaderGains& xf,
@@ -48,7 +50,8 @@ public:
 
 private:
     void applyTrim (const float* srcL, const float* srcR, int n) noexcept;
-    float mixIntoMaster (float* const* buf, float targetGain, const MixBus& bus, int n) noexcept;
+    struct StereoPeak { float left = 0.0F, right = 0.0F; };
+    StereoPeak mixIntoMaster (float* const* buf, float targetGain, const MixBus& bus, int n) noexcept;
 
     std::atomic<float> trim { 1.0F }, fader { 1.0F };
     std::atomic<bool> pfl { false };
@@ -57,7 +60,7 @@ private:
     ThreeBandEq eq;
     SweepFilter filter;
     StageChain inserts;
-    PeakMeter meter;
+    PeakMeter meterL, meterR;
 
     float trimGain = 1.0F, faderGain = -1.0F;   // faderGain < 0: snap to target on first block
     std::vector<float> scratchL, scratchR;

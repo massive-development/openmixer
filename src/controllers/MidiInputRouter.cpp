@@ -3,11 +3,15 @@
 namespace openmixer
 {
 
-int MidiInputRouter::enableAll()
+int MidiInputRouter::enableAll() { return enable ({}, true); }
+
+int MidiInputRouter::enable (const juce::StringArray& identifiers, bool all)
 {
     int n = 0;
     for (auto& d : juce::MidiInput::getAvailableDevices())
     {
+        if (! all && ! identifiers.contains (d.identifier))
+            continue;
         manager.setMidiInputDeviceEnabled (d.identifier, true);
         manager.addMidiInputDeviceCallback (d.identifier, this);
         enabled.add (d.identifier);
