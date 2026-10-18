@@ -11,7 +11,7 @@ class TempDir
 public:
     TempDir()
         : dir (juce::File::getSpecialLocation (juce::File::tempDirectory)
-                   .getNonexistentChildFile ("om_ingest", "", false))
+                   .getChildFile ("om_ingest_" + juce::Uuid().toString()))   // unique across parallel ctest processes
     {
         dir.createDirectory();
     }

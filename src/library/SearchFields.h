@@ -25,7 +25,7 @@ struct SearchField
 class SearchFieldRegistry
 {
 public:
-    // Built-ins: title artist album genre comment path year bpm rating plays duration added played key playlist.
+    // Built-ins: title artist album genre comment path year bpm rating plays duration added played key playlist folder.
     static SearchFieldRegistry withDefaults();
 
     // Replaces a field of the same name.
