@@ -2,9 +2,7 @@
 
 ## Status
 
-Accepted (the GPUI choice is conditional on the Phase 1 GPUI go/no-go gate; see Decision)
-
-Supersedes ADR 0002.
+Accepted (supersedes ADR 0002; GPUI conditional on Phase 1 gate)
 
 ## Context
 
@@ -36,7 +34,9 @@ Key choices:
 | RT plumbing | `rtrb` (SPSC), `arc-swap`, `assert_no_alloc` in tests |
 | Stems | ONNX Runtime (`ort`), deferred to its wave |
 | Errors / logging | `thiserror` in libs, `anyhow` in the binary, `tracing` |
-| Lints | `clippy -D warnings`, `cargo deny`, `cargo audit` |
+| Plugins | Deferred; CLAP-first if/when needed |
+| Tests | built-in `cargo test`, `proptest` for parsers/search, golden-vector fixtures carried over from C++ tests, `criterion` for DSP |
+| Lints | `clippy -D warnings`, `cargo deny` (licences must stay AGPL-compatible), `cargo audit` |
 
 ### Why cpal rather than rodio
 
@@ -76,5 +76,3 @@ Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`
 - Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
 - Reference implementation: git tag `cpp-final` (main @ c6d2747)
 - ADR 0001 (Clean-Room Doctrine), ADR 0002 (superseded), ADR 0003 (AGPLv3, no CLA)
-- GPUI: https://www.gpui.rs
-- cpal: https://github.com/RustAudio/cpal
