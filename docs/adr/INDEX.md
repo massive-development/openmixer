@@ -8,8 +8,8 @@ This index contains all Architecture Decision Records (ADRs) for the OpenMixer p
 |----|-------|--------|
 | 0001 | Clean-Room Doctrine | Accepted |
 | 0002 | Technology Stack - JUCE with AGPLv3 | Superseded by ADR 0004 |
-| 0004 | Technology Stack - Rust with GPUI | Accepted |
 | 0003 | Pure AGPLv3 with No Contributor CLA | Accepted |
+| 0004 | Technology Stack - Rust with GPUI | Accepted |
 
 ## ADR Templates
 
