@@ -305,3 +305,5 @@ fn parse_hotcue_id(id: &str) -> Option<(usize, bool)> {
         _ => None,
     }
 }
+#[cfg(test)]
+pub(crate) mod tests;
