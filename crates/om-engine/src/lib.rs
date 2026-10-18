@@ -5,6 +5,7 @@
 //! in `prepare`.
 
 pub mod callback;
+pub mod deck;
 pub mod fx;
 pub mod fx_routing;
 pub mod latency;
