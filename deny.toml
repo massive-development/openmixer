@@ -3,9 +3,27 @@ version = 2
 
 [licenses]
 version = 2
-allow = ["AGPL-3.0-only", "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0"]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "AGPL-3.0-only",
+    # GPL-2.0-or-later: Rubber Band (time-stretch). Enable only if the FFI
+    # fallback is chosen in Task 9; otherwise leave commented out.
+    # "GPL-2.0-or-later",
+]
 confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Path dependencies between workspace members (e.g. openmixer -> om-core)
+# have no version and must not be flagged as wildcards.
+allow-wildcard-paths = true
