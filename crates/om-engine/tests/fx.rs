@@ -572,3 +572,43 @@ fn fx_presets_original_presets_apply_to_matching_effects() {
     ));
     assert!(find_preset("does not exist").is_none());
 }
+
+#[test]
+fn fx_rack_inserts_into_mixer_master_without_colouring_when_off() {
+    use om_engine::{ChannelInput, Mixer};
+    const N: usize = 4096;
+    const BLOCK: usize = 512;
+    let (mut plain, _plain_ctl) = Mixer::new(1);
+    let (mut with_fx, fx_ctl) = Mixer::new(1);
+    plain.prepare(SR, BLOCK);
+    with_fx.prepare(SR, BLOCK);
+    assert!(fx_ctl.set_master_insert(0, Some(Box::new(FxRack::default()))));
+    let input = sine(N, 440.0, 0.5);
+    let (mut a_l, mut a_r) = (vec![0.0_f32; N], vec![0.0_f32; N]);
+    let (mut b_l, mut b_r) = (vec![0.0_f32; N], vec![0.0_f32; N]);
+    // Cue is not compared; each mixer gets its own buffer (C++ aliased one buffer for both).
+    let (mut cue_a, mut cue_b) = (vec![0.0_f32; N], vec![0.0_f32; N]);
+    for off in (0..N).step_by(BLOCK) {
+        let end = off + BLOCK;
+        let ch = [ChannelInput {
+            left: Some(&input.l[off..end]),
+            right: Some(&input.r[off..end]),
+        }];
+        plain.process(
+            &ch,
+            &mut a_l[off..end],
+            &mut a_r[off..end],
+            &mut cue_a[off..end],
+            &mut cue_b[off..end],
+        );
+        with_fx.process(
+            &ch,
+            &mut b_l[off..end],
+            &mut b_r[off..end],
+            &mut cue_a[off..end],
+            &mut cue_b[off..end],
+        );
+    }
+    assert_eq!(a_l, b_l);
+    assert_eq!(a_r, b_r);
+}

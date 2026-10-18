@@ -14,7 +14,7 @@
    "items": [
     ["7 Device layer", "todo"],
     ["8 Deck", "todo"],
-    ["10 Mixer", "todo"],
+    ["10 Mixer", "done"],
     ["10a Plugin API", "todo"],
     ["32 MIDI map", "todo"],
     ["33 Trace harness", "todo"],
