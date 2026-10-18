@@ -54,7 +54,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Realtime mode
   - Golden audio tests
 
-- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip done; real grids Wave 3, Deck loop playback open)
+- [~] **Todo 12:** Beat-sync + quantized cue/loop/slip (partial: grid interface, sync, quantizer, slip, gapless Deck loop playback + hotcues done; real grids Wave 3, app/UI wiring open)
   - `src/engine/Sync.{h,cpp}`
   - Beat phase alignment
 
@@ -76,14 +76,14 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 14:** Analysis service skeleton + SQLite cache
   - `src/analysis/AnalysisService.{h,cpp}`, `JobRunner`, `AnalyzerRegistry`, `SqliteResultCache`, `ClipSource`
 
-- [ ] **Todo 15:** BPM + beat-grid detection
-  - `src/analysis/BpmEstimator.{h,cpp}`
+- [x] **Todo 15:** BPM + beat-grid detection
+  - `src/analysis/BpmEstimator.{h,cpp}`, `TempoSearch`, `OnsetEnvelope`, `Stft`, `BeatGridModel`, `AnalysedBeatGrid` (engine adapter)
 
-- [ ] **Todo 16:** Musical key detection + Camelot mapping
-  - `src/analysis/KeyEstimator.{h,cpp}`
+- [x] **Todo 16:** Musical key detection + Camelot mapping
+  - `src/analysis/KeyEstimator.{h,cpp}`, `Chromagram`, `MusicalKey` (Camelot)
 
-- [ ] **Todo 17:** Waveform data model
-  - `src/analysis/WaveformBuilder.{h,cpp}`
+- [x] **Todo 17:** Waveform data model
+  - `src/analysis/WaveformBuilder.{h,cpp}`, `WaveformData`
 
 - [ ] **Todo 18:** Onset/energy/structure features
   - `src/analysis/StructureAnalyzer.{h,cpp}`

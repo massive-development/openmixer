@@ -94,6 +94,18 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
 - **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
 
+### Prefetched jump slot (hazard-slot double buffer)
+- **Where:** `src/engine/LoopPrefetch.{h,cpp}`, used by `Deck` (`DeckPlayback.cpp`) and `DeckDecoder`.
+- **Why:** the audio thread jumps (loop wrap) without waiting for the decoder to refill the ring.
+- **Reuse when:** any realtime jump target that can be predicted (hotcues, saved loops, sampler pads).
+- **Notes:** two slots; decoder unpublishes, then fills the slot the audio thread is not holding; audio publishes `inUse` then re-checks `published` (seq_cst). The audio thread also asks the decoder to move the ring to the slot end (`ringReq*`, tagged with the control epoch so stale requests are dropped).
+
+### Seqlock snapshot for small multi-field state
+- **Where:** `src/engine/LoopState.h`.
+- **Why:** audio and decoder threads need a consistent {start, end, enabled} without locks.
+- **Reuse when:** a few fields change rarely from control threads and must be read together in realtime.
+- **Notes:** writers serialise on a mutex (control side only); readers retry a bounded number of times and keep their previous snapshot on contention.
+
 ### Effect template method + wrapping unit (FX rack)
 - **Where:** `src/engine/fx/` (`openmixer_fx`): `Effect` (non-virtual `prepare`/`process` call `prepareEffect`/`render`), `FxUnit`, `FxRack`.
 - **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in `FxUnit`, so new effects stay small.
@@ -121,6 +133,18 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Why:** analysis is expensive; results key on SHA-256 of the audio bytes + producer id + producer version, so renames/moves keep results and bumping a version invalidates old rows.
 - **Reuse when:** caching anything derived from file content (waveforms, stems, artwork thumbnails).
 - **Notes:** SQLite opened `FULLMUTEX` and statements serialised by a mutex; tests use `":memory:"`. Payloads are JSON strings owned by each analyser.
+
+### Estimator + analyser wrapper + engine adapter
+- **Where:** `src/analysis/BpmEstimator.{h,cpp}` (`BpmEstimator` pure, `BpmAnalyzer` JSON wrapper), `BeatGridModel` (editable value type), `AnalysedBeatGrid.h` (implements engine `BeatGrid`).
+- **Why:** algorithms stay testable without the service; the cached payload is plain JSON; the engine sees an immutable snapshot through its own interface, so analysis never links the engine.
+- **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator -> `Analyzer` wrapper with `toJson`/`fromJson` -> adapter for the consumer's interface.
+- **Notes:** `analysis` includes only header-only `engine/BeatGrid.h`; if more engine interfaces are needed, move them to `src/core` instead of linking `openmixer_engine`.
+
+### Pyramid of levels (multi-resolution data)
+- **Where:** `src/analysis/WaveformData.{h,cpp}`
+- **Why:** zoomed and overview views read pre-reduced data instead of scanning samples per paint.
+- **Reuse when:** any per-time data drawn at many zooms (energy, stems, spectrogram).
+- **Notes:** only the finest level is persisted; coarser levels are derived on load. Merge rules must be associative (min/max, RMS via mean of squares).
 
 ### Analyzer registry (extension point)
 - **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
