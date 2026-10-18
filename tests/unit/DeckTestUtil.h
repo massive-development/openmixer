@@ -53,7 +53,7 @@ inline bool pumpUntilBuffered (openmixer::Deck& deck, size_t frames, juce::int64
     {
         deck.renderStereo (l, r, 64);   // services the seek handshake while paused
         return deck.getPositionFrames() == expectedPos && deck.getBufferedFrames() >= frames;
-    });
+    }, 10000);   // generous: CI runners under ctest -j can starve the decoder thread
 }
 
 class DeckFixture : public ::testing::Test
