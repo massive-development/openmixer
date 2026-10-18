@@ -49,6 +49,10 @@ inline juce::Colour meterMid() { return current().meterMid; }
 inline juce::Colour meterHigh() { return current().meterHigh; }
 inline juce::Colour master() { return current().master; }
 
+inline juce::Colour waveLow() { return current().waveLow; }
+inline juce::Colour waveMid() { return current().waveMid; }
+inline juce::Colour waveHigh() { return current().waveHigh; }
+
 inline juce::Colour popup() { return current().popup; }
 inline juce::Colour capTop() { return current().capTop; }
 inline juce::Colour capBottom() { return current().capBottom; }
@@ -71,6 +75,22 @@ inline float typeLabel() { return current().typeLabel; }
 inline float typeTitle() { return current().typeTitle; }
 inline float typeHeading() { return current().typeHeading; }
 inline float typeMono() { return current().typeMono; }
+
+// Deck widget metrics and overlay strengths.
+inline int deckHeaderHeight() { return juce::roundToInt (current().deckHeaderHeight); }
+inline int deckOverviewHeight() { return juce::roundToInt (current().deckOverviewHeight); }
+inline int deckTransportHeight() { return juce::roundToInt (current().deckTransportHeight); }
+inline int deckRowHeight() { return juce::roundToInt (current().deckRowHeight); }
+inline int deckPitchWidth() { return juce::roundToInt (current().deckPitchWidth); }
+inline int deckMinZoomHeight() { return juce::roundToInt (current().deckMinZoomHeight); }
+inline int deckReadoutWidth() { return juce::roundToInt (current().deckReadoutWidth); }
+inline int deckRangeBoxHeight() { return juce::roundToInt (current().deckRangeBoxHeight); }
+inline float playheadWidth() { return current().playheadWidth; }
+inline float cueMarkerWidth() { return current().cueMarkerWidth; }
+inline float gridBarAlpha() { return current().gridBarAlpha; }
+inline float gridBeatAlpha() { return current().gridBeatAlpha; }
+inline float loopActiveAlpha() { return current().loopActiveAlpha; }
+inline float loopIdleAlpha() { return current().loopIdleAlpha; }
 
 juce::Font font (float height, bool bold = false);
 juce::Font monoFont (float height);

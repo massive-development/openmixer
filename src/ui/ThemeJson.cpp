@@ -14,7 +14,7 @@ namespace
     struct IntKey { const char* key; int ThemeTokens::*field; };
     struct FloatKey { const char* key; float ThemeTokens::*field; float lo, hi; };
 
-    const std::array<ColourKey, 22> kColours { {
+    const std::array<ColourKey, 25> kColours { {
         { "backdropTop", &ThemeTokens::backdropTop },     { "backdropBottom", &ThemeTokens::backdropBottom },
         { "glowCool", &ThemeTokens::glowCool },           { "glowWarm", &ThemeTokens::glowWarm },
         { "surface", &ThemeTokens::surface },             { "surfaceRaised", &ThemeTokens::surfaceRaised },
@@ -25,7 +25,9 @@ namespace
         { "onAccent", &ThemeTokens::onAccent },           { "meterLow", &ThemeTokens::meterLow },
         { "meterMid", &ThemeTokens::meterMid },           { "meterHigh", &ThemeTokens::meterHigh },
         { "master", &ThemeTokens::master },               { "popup", &ThemeTokens::popup },
-        { "capTop", &ThemeTokens::capTop },               { "capBottom", &ThemeTokens::capBottom } } };
+        { "capTop", &ThemeTokens::capTop },               { "capBottom", &ThemeTokens::capBottom },
+        { "waveLow", &ThemeTokens::waveLow },             { "waveMid", &ThemeTokens::waveMid },
+        { "waveHigh", &ThemeTokens::waveHigh } } };
 
     const std::array<IntKey, 3> kSpacing { { { "gap", &ThemeTokens::gap }, { "pad", &ThemeTokens::pad },
                                              { "innerGap", &ThemeTokens::innerGap } } };
@@ -38,6 +40,21 @@ namespace
                                             { "title", &ThemeTokens::typeTitle, kMinType, kMaxType },
                                             { "heading", &ThemeTokens::typeHeading, kMinType, kMaxType },
                                             { "mono", &ThemeTokens::typeMono, kMinType, kMaxType } } };
+    constexpr float kMaxPx = 400.0F;
+    const std::array<FloatKey, 14> kDeck { { { "headerHeight", &ThemeTokens::deckHeaderHeight, 0.0F, kMaxPx },
+                                             { "overviewHeight", &ThemeTokens::deckOverviewHeight, 0.0F, kMaxPx },
+                                             { "transportHeight", &ThemeTokens::deckTransportHeight, 0.0F, kMaxPx },
+                                             { "rowHeight", &ThemeTokens::deckRowHeight, 0.0F, kMaxPx },
+                                             { "pitchWidth", &ThemeTokens::deckPitchWidth, 0.0F, kMaxPx },
+                                             { "minZoomHeight", &ThemeTokens::deckMinZoomHeight, 0.0F, kMaxPx },
+                                             { "readoutWidth", &ThemeTokens::deckReadoutWidth, 0.0F, kMaxPx },
+                                             { "rangeBoxHeight", &ThemeTokens::deckRangeBoxHeight, 0.0F, kMaxPx },
+                                             { "playheadWidth", &ThemeTokens::playheadWidth, 0.0F, kMaxRadius },
+                                             { "cueMarkerWidth", &ThemeTokens::cueMarkerWidth, 0.0F, kMaxRadius },
+                                             { "gridBarAlpha", &ThemeTokens::gridBarAlpha, 0.0F, 1.0F },
+                                             { "gridBeatAlpha", &ThemeTokens::gridBeatAlpha, 0.0F, 1.0F },
+                                             { "loopActiveAlpha", &ThemeTokens::loopActiveAlpha, 0.0F, 1.0F },
+                                             { "loopIdleAlpha", &ThemeTokens::loopIdleAlpha, 0.0F, 1.0F } } };
     const std::array<FloatKey, 2> kTranslucency { { { "surface", &ThemeTokens::surfaceOpacity, 0.0F, 1.0F },
                                                     { "backdrop", &ThemeTokens::backdropOpacity, 0.0F, 1.0F } } };
 
@@ -166,9 +183,10 @@ namespace
         withSection (root, "radii", status, [&] (const auto& s) { return readFloats (s, kRadii, "radii", t, w); });
         withSection (root, "type", status, [&] (const auto& s) { return readFloats (s, kType, "type", t, w); });
         withSection (root, "translucency", status, [&] (const auto& s) { return readFloats (s, kTranslucency, "translucency", t, w); });
+        withSection (root, "deck", status, [&] (const auto& s) { return readFloats (s, kDeck, "deck", t, w); });
         if (status.wasOk() && root.hasProperty ("accents"))
             status = readAccents (root.getProperty ("accents"), t);
-        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency" }, "", w);
+        warnUnknown (root, { "id", "name", "author", "colours", "accents", "spacing", "radii", "type", "translucency", "deck" }, "", w);
         return status;
     }
 }

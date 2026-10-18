@@ -9,7 +9,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kReadoutWidth = 78, kRowSplitPercent = 55;
+    constexpr int kRowSplitPercent = 55;
 }
 
 TrackHeader::TrackHeader (DeckBinding binding) : deckRef (binding)
@@ -95,11 +95,11 @@ void TrackHeader::resized()
 {
     auto area = getLocalBounds();
     auto top = area.removeFromTop (area.getHeight() * kRowSplitPercent / 100);
-    bpmLabel.setBounds (top.removeFromRight (kReadoutWidth));
+    bpmLabel.setBounds (top.removeFromRight (theme::deckReadoutWidth()));
     title.setBounds (top);
-    remaining.setBounds (area.removeFromRight (kReadoutWidth));
-    elapsed.setBounds (area.removeFromRight (kReadoutWidth));
-    keyLabel.setBounds (area.removeFromRight (kReadoutWidth));
+    remaining.setBounds (area.removeFromRight (theme::deckReadoutWidth()));
+    elapsed.setBounds (area.removeFromRight (theme::deckReadoutWidth()));
+    keyLabel.setBounds (area.removeFromRight (theme::deckReadoutWidth()));
     artist.setBounds (area);
 }
 

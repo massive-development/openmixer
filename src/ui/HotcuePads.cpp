@@ -7,7 +7,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kColumns = 4;
+    constexpr int kColumns = HotcueBank::kNumCues;
 }
 
 HotcuePads::HotcuePads (DeckBinding binding) : deckRef (binding)

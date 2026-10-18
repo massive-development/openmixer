@@ -72,6 +72,14 @@ TEST (ThemeRegistryTest, BuiltInDarkJsonMatchesTheCompiledDefault)
     EXPECT_EQ (json.accents, compiled.accents);
     EXPECT_EQ (json.gap, compiled.gap);
     EXPECT_FLOAT_EQ (json.typeMono, compiled.typeMono);
+    EXPECT_EQ (json.waveLow, compiled.waveLow);
+    EXPECT_EQ (json.waveMid, compiled.waveMid);
+    EXPECT_EQ (json.waveHigh, compiled.waveHigh);
+    EXPECT_FLOAT_EQ (json.deckHeaderHeight, compiled.deckHeaderHeight);
+    EXPECT_FLOAT_EQ (json.deckRowHeight, compiled.deckRowHeight);
+    EXPECT_FLOAT_EQ (json.deckPitchWidth, compiled.deckPitchWidth);
+    EXPECT_FLOAT_EQ (json.gridBarAlpha, compiled.gridBarAlpha);
+    EXPECT_FLOAT_EQ (json.loopIdleAlpha, compiled.loopIdleAlpha);
 }
 
 TEST (ThemeRegistryTest, PrecedenceIsUserOverPluginOverBuiltIn)

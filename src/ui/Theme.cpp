@@ -20,6 +20,8 @@ const ThemeTokens& ThemeTokens::builtinDark()
         t.textMuted = juce::Colour (0x6BC9D1E3);     t.onAccent = juce::Colour (0xFF07090F);
         t.meterLow = juce::Colour (0xFF34D399);      t.meterMid = juce::Colour (0xFFFBBF24);
         t.meterHigh = juce::Colour (0xFFF43F5E);     t.master = juce::Colour (0xFFE2E8F0);
+        t.waveLow = juce::Colour (0xFFF97316);       t.waveMid = juce::Colour (0xFF34D399);
+        t.waveHigh = juce::Colour (0xFF38BDF8);
         t.popup = juce::Colour (0xF0141926);         t.capTop = juce::Colour (0xFF2C3446);
         t.capBottom = juce::Colour (0xFF161B26);
         t.accents = { juce::Colour (0xFF38BDF8), juce::Colour (0xFFF472B6), juce::Colour (0xFFA3E635), juce::Colour (0xFFFBBF24) };

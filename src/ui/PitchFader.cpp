@@ -10,7 +10,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kRangeBoxHeight = 24, kTextWidth = 64, kTextHeight = 20;
+    constexpr int kTextWidth = 64, kTextHeight = 20;
     constexpr double kStep = 0.0005;
 }
 
@@ -54,7 +54,7 @@ void PitchFader::refresh()
 void PitchFader::resized()
 {
     auto area = getLocalBounds();
-    rangeBox.setBounds (area.removeFromTop (kRangeBoxHeight));
+    rangeBox.setBounds (area.removeFromTop (theme::deckRangeBoxHeight()));
     area.removeFromTop (theme::innerGap());
     fader.setBounds (area);
 }
