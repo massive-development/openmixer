@@ -22,8 +22,10 @@ public:
     void refresh();
     void paint (juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
 private:
+    void applyTheme();
     void addKnob (juce::Slider& s, juce::Label& caption, const juce::String& text, const juce::String& id,
                   double lo, double hi, double initial, std::function<juce::String (double)> format);
     void addAssignButtons();

@@ -44,6 +44,10 @@ public:
     }
     void detachStage (Mixer& mixer, int channel, int slot) { stages.detach (mixer, channel, slot); }
 
+    // Theme JSON registered by plugins; the app forwards these to the UI ThemeRegistry (owner = plugin id).
+    struct ProvidedTheme { juce::String id, json, owner; };
+    std::vector<ProvidedTheme> getThemes() const;
+
     juce::Result applyMidiMap (const juce::String& mapName, MidiMapper& mapper) const;
 
 private:
@@ -54,6 +58,7 @@ private:
     bool registerStage (const juce::String& stageId, StageKind kind, StageFactory factory) override;
     bool registerMidiMap (const juce::String& mapName, const juce::String& json) override;
     bool registerParameterTarget (const juce::String& prefix, ParameterTarget* target) override;
+    bool registerTheme (const juce::String& themeJson) override;
 
     juce::Result adopt (LoadedPlugin&& loaded);
     void removeRegistrations (const juce::String& owner);
@@ -63,6 +68,7 @@ private:
     StageCatalog stages;
     std::map<juce::String, MapEntry> maps;
     std::map<juce::String, TargetEntry> targets;
+    std::vector<ProvidedTheme> themes;
     ParameterRouter* router = nullptr;
 };
 

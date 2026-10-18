@@ -15,8 +15,8 @@ inline void styleCaption (juce::Label& label, const juce::String& text)
 {
     label.setText (text, juce::dontSendNotification);
     label.setJustificationType (juce::Justification::centred);
-    label.setFont (theme::font (11.5F));
-    label.setColour (juce::Label::textColourId, theme::textSecondary);
+    label.setFont (theme::font (theme::typeCaption()));
+    label.setColour (juce::Label::textColourId, theme::textSecondary());
     label.setBorderSize ({ 0, 0, 0, 0 });
     label.setMinimumHorizontalScale (0.6F);
     label.setInterceptsMouseClicks (false, false);

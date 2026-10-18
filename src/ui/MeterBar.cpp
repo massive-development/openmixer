@@ -53,13 +53,13 @@ void MeterBar::paint (juce::Graphics& g)
 {
     using namespace theme;
     const auto bounds = getLocalBounds().toFloat();
-    g.setColour (well);
+    g.setColour (well());
     g.fillRoundedRectangle (bounds, 3.0F);
 
     const auto inner = bounds.reduced (2.0F);
     const auto yFor = [&inner] (float p) { return inner.getBottom() - inner.getHeight() * p; };
     const float midY = yFor ((kMidDb - kFloorDb) / -kFloorDb), highY = yFor ((kHighDb - kFloorDb) / -kFloorDb);
-    const auto colourAt = [midY, highY] (float y) { return y <= highY ? meterHigh : y <= midY ? meterMid : meterLow; };
+    const auto colourAt = [midY, highY] (float y) { return y <= highY ? meterHigh() : y <= midY ? meterMid() : meterLow(); };
 
     // Lit segments up to the level, faint ghosts above so the scale stays readable when silent.
     const float top = yFor (level);
