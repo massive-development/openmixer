@@ -5,6 +5,20 @@
 
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#include "ui/GlassLookAndFeel.h"
+#include "ui/Theme.h"
+
+namespace
+{
+    // --translucent (or OPENMIXER_TRANSLUCENT=1) lets the desktop show through the glass.
+    constexpr float kTranslucentBackdrop = 0.82F;
+
+    bool wantsTranslucentWindow()
+    {
+        return JUCEApplication::getCommandLineParameters().contains ("--translucent")
+            || SystemStats::getEnvironmentVariable ("OPENMIXER_TRANSLUCENT", {}) == "1";
+    }
+}
 
 //==============================================================================
 class OpenMixerApplication : public JUCEApplication
@@ -18,6 +32,8 @@ public:
 
     void initialise (const String& commandLine) override
     {
+        LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
+
         // Check for smoke test mode
         bool smokeTest = JUCEApplication::getCommandLineParameters().contains ("--smoke");
         #if OPENMIXER_SMOKE
@@ -43,12 +59,13 @@ public:
         }
 
         // Normal mode - create main window
-        mainWindow = std::make_unique<MainWindow> (getApplicationName());
+        mainWindow = std::make_unique<MainWindow> (getApplicationName(), wantsTranslucentWindow());
     }
 
     void shutdown() override
     {
         mainWindow.reset();
+        LookAndFeel::setDefaultLookAndFeel (nullptr);
     }
 
 private:
@@ -56,13 +73,20 @@ private:
                         private Button::Listener
     {
     public:
-        MainWindow (String title)
+        // A semi-transparent window needs a transparent background from construction (the peer
+        // is created then) and JUCE's own title bar, since native frames can't be see-through.
+        MainWindow (String title, bool translucent)
             : DocumentWindow (title,
-                              Colours::black,
+                              translucent && Desktop::canUseSemiTransparentWindows() ? Colours::transparentBlack
+                                                                                       : openmixer::ui::theme::backdropTop,
                               DocumentWindow::allButtons)
         {
-            setUsingNativeTitleBar (true);
-            setContentOwned (new MainComponent(), true);
+            const bool seeThrough = ! isOpaque();
+            setUsingNativeTitleBar (! seeThrough);
+            auto content = std::make_unique<MainComponent>();
+            if (seeThrough)
+                content->setBackdropOpacity (kTranslucentBackdrop);
+            setContentOwned (content.release(), true);
             setResizable (true, true);
 
            #if JUCE_IOS || JUCE_ANDROID
@@ -87,6 +111,7 @@ private:
         JUCE_DECLARE_NON_COPYABLE (MainWindow)
     };
 
+    openmixer::ui::GlassLookAndFeel lookAndFeel;   // outlives mainWindow (declared first)
     std::unique_ptr<MainWindow> mainWindow;
 
     JUCE_DECLARE_NON_COPYABLE (OpenMixerApplication)
