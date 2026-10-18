@@ -12,6 +12,7 @@ void DelayLine::allocate (int maxDelaySamples)
     for (auto& b : buffers)
         b.assign (static_cast<size_t> (size), 0.0F);
     writePos = 0;
+    clearPos = size;
 }
 
 void DelayLine::reset() noexcept
@@ -19,6 +20,22 @@ void DelayLine::reset() noexcept
     for (auto& b : buffers)
         std::fill (b.begin(), b.end(), 0.0F);
     writePos = 0;
+    clearPos = size;
+}
+
+void DelayLine::beginClear() noexcept
+{
+    writePos = 0;
+    clearPos = 0;
+}
+
+bool DelayLine::clearSome (int maxFrames) noexcept
+{
+    const int upTo = clearPos + std::min (std::max (0, maxFrames), size - clearPos);   // no overflow for INT_MAX
+    for (auto& b : buffers)
+        std::fill (b.begin() + clearPos, b.begin() + upTo, 0.0F);
+    clearPos = upTo;
+    return clearPos >= size;
 }
 
 void DelayLine::push (float left, float right) noexcept

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace openmixer::fx
 {
@@ -58,6 +59,7 @@ void FxUnit::prepare (double sampleRate, int)
     beatSamples.snap (static_cast<float> (ctx.samplesPerBeat));
     effect->prepare (sampleRate, kChunk);
     idle = ! on;
+    clearing = false;
     quietSamples = 0;
     active.store (on, kRelaxed);
 }
@@ -73,9 +75,10 @@ void FxUnit::processChunk (float* left, float* right, int n) noexcept
 {
     const bool on = isEnabled();
     if (idle && ! on)
-        return;
+        return sliceClear (kClearSlice);
     if (idle)
     {
+        sliceClear (std::numeric_limits<int>::max());   // rare: engaged before the wipe finished
         idle = false;
         quietSamples = 0;
         active.store (true, kRelaxed);
@@ -125,6 +128,12 @@ float FxUnit::wetPeak (int n) const noexcept
     return peak;
 }
 
+void FxUnit::sliceClear (int frames) noexcept
+{
+    if (clearing)
+        clearing = ! effect->clearSome (frames);
+}
+
 void FxUnit::updateIdle (int n, bool on) noexcept
 {
     if (on || enableRamp.current() > 0.0F)
@@ -138,7 +147,8 @@ void FxUnit::updateIdle (int n, bool on) noexcept
         if (quietSamples < effect->tailSilenceWindow (ctx))
             return;
     }
-    effect->reset();
+    effect->beginReset();
+    clearing = true;
     idle = true;
     active.store (false, kRelaxed);
 }

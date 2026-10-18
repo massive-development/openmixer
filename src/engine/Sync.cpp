@@ -42,6 +42,12 @@ void Sync::setMode (SyncMode m)
     mode = m;
 }
 
+std::shared_ptr<const BeatGrid> Sync::getGrid (int deck) const
+{
+    const std::scoped_lock lock (mutex);
+    return validDeck (deck) ? slots[static_cast<size_t> (deck)].grid : nullptr;
+}
+
 bool Sync::isEnabled (int deck) const
 {
     const std::scoped_lock lock (mutex);

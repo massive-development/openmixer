@@ -9,7 +9,7 @@
 #include "engine/DjEngine.h"
 #include "ui/DebugPanel.h"
 
-class MainComponent : public juce::AudioAppComponent
+class MainComponent : public juce::AudioAppComponent, private juce::Timer
 {
 public:
     MainComponent();
@@ -23,12 +23,14 @@ public:
 
 private:
     void setUpMidi();
+    void timerCallback() override;   // control tick: sync, FX tempo, slip
 
     openmixer::DjEngine engine;
     openmixer::ParameterRouter router;
     openmixer::MidiMapper mapper;
     openmixer::MidiInputRouter midiInput { deviceManager, mapper };
     openmixer::ui::DebugPanel panel { engine };
+    double lastTickMs = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

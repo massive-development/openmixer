@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "engine/Mixer.h"
 #include "engine/fx/FxPresets.h"
+#include "engine/fx/DelayLine.h"
 #include "engine/fx/FxRack.h"
 
 #include <gtest/gtest.h>
@@ -249,6 +250,42 @@ TEST (FxUnit, NonTailEffectFadesOutAndStopsWhenDisabled)
     run (*unit, s, 9600);
     EXPECT_FALSE (unit->isActive());
     EXPECT_TRUE (std::equal (s.l.begin() + 24000, s.l.end(), ref.l.begin() + 24000));
+}
+
+TEST (DelayLine, ClearsInSlicesNotAllAtOnce)
+{
+    DelayLine line;
+    line.allocate (5000);
+    for (int i = 0; i < 5000; ++i)
+        line.push (1.0f, 1.0f);
+    line.beginClear();
+    int slices = 0;
+    while (! line.clearSome (512))
+        ++slices;
+    EXPECT_GE (slices, 9) << "a 512-frame slice must not wipe the whole line";
+    for (int d = 1; d < 5000; d += 97)
+        EXPECT_EQ (line.read (0, static_cast<float> (d)), 0.0f);
+    EXPECT_TRUE (line.clearSome (512)) << "nothing left once cleared";
+}
+
+TEST (FxUnit, IdleClearIsAmortisedAndEngagingEarlyStillStartsClean)
+{
+    for (const std::string name : { "flanger", "echo" })
+    {
+        auto unit = makeUnit (name, true, 1.0f);
+        unit->setParameter ("feedback", 0.3);
+        unit->prepare (sr, 512);
+        auto loud = sine (static_cast<size_t> (sr), 330.0, 0.8f);
+        run (*unit, loud);
+        unit->setEnabled (false);
+        auto quiet = Signal (static_cast<size_t> (sr * 10));
+        run (*unit, quiet);
+        ASSERT_FALSE (unit->isActive()) << name;
+        unit->setEnabled (true);   // re-engage right after idle; wipe may still be pending
+        Signal silence (4096);
+        run (*unit, silence);
+        EXPECT_LT (peak (silence), 1.0e-5f) << name << ": stale audio leaked after re-engage";
+    }
 }
 
 TEST (FxUnit, MixChangesAreSmoothed)
