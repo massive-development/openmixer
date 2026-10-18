@@ -195,3 +195,8 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** adding a filterable/sortable attribute (e.g. a plugin tag); `engine.registry().add(field)`. Custom hooks must never splice user text into `SqlFragment::sql`.
 - **Notes:** reads report failure via the trailing `juce::Result*` (a bad field/value fails rather than returning "no results"). Text match is LIKE-contains with escaped wildcards (`=value` for exact); the SQLite build has no FTS5, so a future FTS index would be a new migration plus a Text-field compile swap.
 
+### Library importer registry + parse/merge split (extension point)
+- **Where:** `src/library/LibraryImporter.{h,cpp}`, `ItunesImporter`, `RekordboxImporter`, `ImportModel.h`, `ImportWriter`, `ImportMerge`, `ImportCues`, `LibraryImport`.
+- **Why:** importers only turn a foreign XML document into the neutral `ImportedLibrary` (no database code, recognised by XML root since both formats are `.xml`); one `ImportWriter` merges any importer's output in a single `Transaction`, so every format gets the same dedupe-by-path and rollback behaviour.
+- **Reuse when:** adding another library format (`registry.add(...)`, later registration wins) or another bulk write that must be all-or-nothing and re-runnable.
+- **Notes:** merge policy (local data wins, imports fill gaps and default rating/play count) is documented in `ImportMerge.h`; re-import is idempotent; a failed lookup aborts the import rather than counting as "new".

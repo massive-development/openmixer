@@ -177,4 +177,11 @@ juce::Result TrackDao::recordPlay (std::int64_t id, std::int64_t whenMs)
     return runChecked (s);
 }
 
+juce::Result TrackDao::setPlayStats (std::int64_t id, int playCount, std::optional<std::int64_t> lastPlayedMs)
+{
+    auto s = db.prepare ("UPDATE tracks SET play_count=?2, last_played_ms=?3 WHERE id=?1;");
+    s.bindAll (id, playCount, lastPlayedMs);
+    return runChecked (s);
+}
+
 } // namespace openmixer::library

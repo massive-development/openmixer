@@ -98,7 +98,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - `src/library/`: `Database`/`Statement`/`Transaction`, `Migrations`, `TrackDao`, `CueDao`, `PlaylistDao`, `Library`
 - [x] **Todo 21:** Metadata ingest + watch folders
   - `src/library/`: `MetadataReader` registry + `JuceMetadataReader`, `Ingestor`, `TrackFileDao`, `WatchFolderDao`, `WatchFolders`
-- [ ] **Todo 22:** Import (iTunes/Rekordbox XML)
+- [x] **Todo 22:** Import (iTunes/Rekordbox XML)
+  - `src/library/`: `LibraryImporter` registry (extension point), `ItunesImporter`, `RekordboxImporter`, `ImportWriter` (one transaction, merge by path), `fileUrlToPath`
 - [x] **Todo 23:** Search + filter engine
   - `src/library/`: `SearchFieldRegistry` (extension point), `parseQuery`, `compileSearch` (parameterised SQL), `SearchEngine`; migration v3 indexes. LIKE-based (SQLite build has no FTS5)
 - [ ] **Todo 24:** Track prep queue
