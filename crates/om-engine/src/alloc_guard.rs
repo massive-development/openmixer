@@ -5,7 +5,6 @@
 use crate::deck::Deck;
 use crate::mixer::{ChannelInput, Mixer};
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
@@ -44,27 +43,32 @@ fn mixer_and_deck_render_paths_do_not_allocate() {
     let mut mr = [0.0_f32; BLOCK];
     let mut cl = [0.0_f32; BLOCK];
     let mut cr = [0.0_f32; BLOCK];
-    let rendered = AtomicU32::new(0);
+    let mut audible_blocks = 0_usize;
 
-    // Deck render path, then mixer render path, each over the same number of blocks.
-    assert_no_alloc(|| {
-        for _ in 0..BLOCKS {
-            audio.render_stereo(&mut dl, &mut dr);
-            rendered.fetch_add(1, Ordering::Relaxed);
-        }
-    });
-    assert_no_alloc(|| {
-        for _ in 0..BLOCKS {
+    // Each block waits (unguarded) until the decoder has buffered a block, then the deck and the
+    // mixer render paths run inside assert_no_alloc. Every block carries real audio.
+    for _ in 0..BLOCKS {
+        assert!(
+            crate::deck::tests::wait_for(
+                || deck.buffered_frames() >= BLOCK,
+                std::time::Duration::from_secs(10)
+            ),
+            "decoder stalled"
+        );
+        assert_no_alloc(|| audio.render_stereo(&mut dl, &mut dr));
+        assert_no_alloc(|| {
             let inputs = [ChannelInput {
                 left: Some(&dl),
                 right: Some(&dr),
             }];
             mixer.process(&inputs, &mut ml, &mut mr, &mut cl, &mut cr);
+        });
+        if ml.iter().any(|&v| v != 0.0) {
+            audible_blocks += 1;
         }
-    });
-    assert_eq!(rendered.load(Ordering::Relaxed) as usize, BLOCKS);
-    assert!(
-        ml.iter().any(|&v| v != 0.0),
-        "mixer produced audio from the deck"
+    }
+    assert_eq!(
+        audible_blocks, BLOCKS,
+        "every block should carry deck audio"
     );
 }

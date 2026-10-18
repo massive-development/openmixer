@@ -107,8 +107,12 @@ impl DecoderWorker {
         }
     }
 
+    /// Produce only when the latest control seek or load is acknowledged. The epoch is re-read
+    /// here: a reader can be taken in the same pass that the epoch naming it is bumped, and
+    /// producing from that reader before its ack would hand the audio thread stale frames.
     fn can_produce(&self) -> bool {
         self.reader.is_some()
+            && self.local_ack == self.shared.request_epoch.load(Acquire)
             && self.shared.drained_seq.load(Acquire) == self.local_seq
             && self.read_pos < self.length()
             && self.ring.writable_count() >= CHUNK_FRAMES * 2
