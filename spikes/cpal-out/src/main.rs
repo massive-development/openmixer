@@ -201,7 +201,13 @@ fn main() {
         let id1 = dev.id().ok();
         let (other, label) = match devs.into_iter().find(|d| d.id().ok() != id1) {
             Some(d) => (d, "second device"),
-            None => (host.default_output_device().unwrap(), "same device"),
+            None => match host.default_output_device() {
+                Some(d) => (d, "same device"),
+                None => {
+                    println!("no default output device");
+                    return;
+                }
+            },
         };
         let (_p2, c2) = rtrb::RingBuffer::<Cmd>::new(8);
         let s2 = Arc::new(Stats::default());
@@ -281,16 +287,24 @@ mod tests {
         let mut state = State::new(SR);
         let channels = 2;
         let mut buf = vec![0.0f32; FRAMES * channels];
+        let mut peak_before = 0.0f32;
         let mut peak_after = 0.0f32;
         for i in 0..1000 {
             if i == 500 {
                 prod.push(Cmd::SetGain(0.25)).unwrap();
             }
             assert_no_alloc(|| render(&mut buf, channels, &mut state, &mut cons));
+            if i == 499 {
+                peak_before = buf.iter().fold(0.0, |m, s| s.abs().max(m));
+            }
             if i == 999 {
                 peak_after = buf.iter().fold(0.0, |m, s| s.abs().max(m));
             }
         }
+        assert!(
+            peak_before > 0.4,
+            "pre-gain peak {peak_before} (initial gain 0.5)"
+        );
         assert!(peak_after > 0.2 && peak_after <= 0.26, "peak {peak_after}");
     }
 }

@@ -6,7 +6,7 @@ THROWAWAY spike code in `spikes/gpui-window/` (own `[workspace]`; not built by t
 
 | Platform | Verdict | Basis |
 |---|---|---|
-| Linux / WSL2 (X11 via WSLg) | **PROVISIONAL GO** | Compiled and ran; window created, 60 fps counter in release. Rendered pixels not visually confirmed by the agent (headless session); Vulkan device in use not confirmed (likely CPU llvmpipe). |
+| Linux / WSL2 (X11 via WSLg) | **PROVISIONAL GO** | Compiled and ran; window created, 60 fps counter in release (software-rendered likely, window not visually seen). Vulkan device in use not confirmed (likely CPU llvmpipe). |
 | Linux / WSL2 (Wayland via WSLg) | Fails at startup (dev-loop issue) | Panic `UnsupportedVersion` in gpui `wayland/client.rs:151`. Workaround: `WAYLAND_DISPLAY= ` (forces X11). Per the design this does not fail the gate on its own. |
 | Windows | **pending user** | Not run. |
 | macOS | **pending user** | Not run. |
@@ -34,7 +34,7 @@ Toolchain: repo `rust-toolchain.toml` (1.91.1) applies inside `spikes/` and was 
 Problems hit, in order:
 
 1. **libc/xattr incompatibility (dependency resolution).** A fresh resolve picked `libc 0.2.191`, which breaks `xattr 0.2.3` (pulled by `zed-async-tar` via `gpui_http_client`): `error[E0425]: cannot find value ENOATTR in crate libc`. Fix: `cargo update -p libc --precise 0.2.188` (0.2.182 and 0.2.184 also fail; 0.2.186 and 0.2.188 work; `rustix` needs >= 0.2.182). The committed `spikes/gpui-window/Cargo.lock` carries this pin. A future gpui or xattr release may remove the need.
-2. **Link error: `unable to find library -lxkbcommon-x11`.** The runtime lib `libxkbcommon-x11.so.0` is installed but the dev symlink is not. **pending user: `sudo apt install libxkbcommon-x11-dev`** (also likely `libxkbcommon-dev`, `libwayland-dev`, `libfontconfig-dev`, `libfreetype-dev` for a clean machine; those linked fine here). Workaround used (no install, no sudo): `ln -s /lib/x86_64-linux-gnu/libxkbcommon-x11.so.0 /tmp/libshim/libxkbcommon-x11.so` and build with `RUSTFLAGS="-L /tmp/libshim"`.
+2. **Link error: `unable to find library -lxkbcommon-x11`.** The runtime lib `libxkbcommon-x11.so.0` is installed but the dev symlink is not. **pending user: `sudo apt install libxkbcommon-x11-dev`** (also likely `libxkbcommon-dev`, `libwayland-dev`, `libfontconfig-dev`, `libfreetype-dev` for a clean machine; those linked fine here). Workaround used (no install, no sudo): `mkdir -p /tmp/libshim && ln -s /lib/x86_64-linux-gnu/libxkbcommon-x11.so.0 /tmp/libshim/libxkbcommon-x11.so`, then `RUSTFLAGS="-L /tmp/libshim" cargo build --release`.
 3. **API friction:** `Pixels.0` is private in 0.2.2; use `f32::from(px_value)`.
 
 Build times (12 cores, WSL2, registry cache warm after first download):
@@ -55,6 +55,8 @@ Compile-only check for CI (no display needed) is not added: it needs the system 
 | `WAYLAND_DISPLAY= ./target/release/gpui-window-spike` (X11) | runs, **60.0 fps**, ~114% CPU, RSS 143 MB; `xwininfo` shows a 1000x400 top-level window |
 
 Caveats (honest): the session is non-interactive, so I did not see the window; fps is the in-app frame counter printed to stdout. 30/60 exact values look like a vsync or compositor cap, so this shows "keeps up with 60" but not the headroom. GPU vs llvmpipe unconfirmed (see Step 1).
+
+Unexplained: the 30 fps debug reading is not understood; it could be CPU-bound in the debug build or a vsync cap, and was not investigated.
 
 ## API friction (gpui 0.2.2)
 
@@ -89,6 +91,9 @@ Fill in:
 | fps (release, steady) | | | 60.0 |
 | fps (debug) | | | 30.0 |
 | CPU % while running | | | ~114% |
+| Frame time / stutter (ms, worst frame) | | | not measured (fps only) |
+| Multi-monitor drag test | | | not tested |
+| GPU backend actually used (D3D11 / Vulkan / Metal) | | | not confirmed (likely lvp, software) |
 | Resize / HiDPI / focus issues | | | not tested |
 | Verdict GO / NO-GO | | | PROVISIONAL GO |
 
