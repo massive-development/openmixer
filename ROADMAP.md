@@ -42,7 +42,7 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 
 ## Rust Rewrite Phases
 
-0. **Scaffolding** - workspace, CI matrix, lint and deny configuration, ADR 0004, docs rewrite, parity inventory. Scaffold, CI and ADR 0004 have landed; docs rewrite is in progress.
+0. **Scaffolding** - workspace, CI matrix, lint and deny configuration, ADR 0004, docs rewrite, parity inventory. Scaffold, CI, ADR 0004 and the docs rewrite (plan task 5) have landed.
 1. **Spikes** (throwaway, labelled) - GPUI window with a custom waveform view on Linux, Windows and macOS (the go/no-go gate); cpal output callback; time-stretch quality. Next.
 2. **Engine** - audio I/O, engine, headless mix test and soak gate. Planned.
 3. **Analysis and library** - analysis against golden vectors from the baseline, then the library. Planned.
