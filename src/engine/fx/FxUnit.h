@@ -19,6 +19,7 @@ class FxUnit final : public ProcessStage, public ParameterTarget
 {
 public:
     static constexpr int kChunk = 64;
+    static constexpr int kClearSlice = 512;   // frames wiped per idle chunk after a tail ends
 
     explicit FxUnit (std::unique_ptr<Effect> effect);
 
@@ -44,6 +45,7 @@ private:
     void computeGains (int n, bool on) noexcept;
     void mixInto (float* left, float* right, int n) const noexcept;
     void updateIdle (int n, bool on) noexcept;
+    void sliceClear (int frames) noexcept;
     float wetPeak (int n) const noexcept;
 
     std::unique_ptr<Effect> effect;
@@ -55,7 +57,7 @@ private:
     Smoother enableRamp, mixRamp, beatSamples;
     std::array<float, kChunk> wetL {}, wetR {}, onGain {}, mixGain {};
     int quietSamples = 0;
-    bool idle = true;
+    bool idle = true, clearing = false;   // clearing: stale buffer is still being wiped in slices
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxUnit)
 };
