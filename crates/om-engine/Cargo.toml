@@ -9,3 +9,7 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+om-core = { path = "../om-core" }
+om-dsp = { path = "../om-dsp" }

@@ -20,6 +20,10 @@ version = "0.1.0"
 [[package]]
 name = "om-engine"
 version = "0.1.0"
+dependencies = [
+ "om-core",
+ "om-dsp",
+]
 
 [[package]]
 name = "openmixer"
