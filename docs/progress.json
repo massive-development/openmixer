@@ -13,7 +13,7 @@
    "name": "2 Audio engine",
    "items": [
     ["7 Device layer", "todo"],
-    ["8 Deck", "todo"],
+    ["8 Deck", "done"],
     ["10 Mixer", "done"],
     ["10a Plugin API", "todo"],
     ["32 MIDI map", "todo"],
@@ -21,8 +21,8 @@
     ["26a Debug panel", "todo"],
     ["13a Soak (short)", "todo"],
     ["9 Key-lock", "todo"],
-    ["12 Sync", "todo"],
-    ["11 FX rack", "todo"],
+    ["12 Sync", "partial"],
+    ["11 FX rack", "done"],
     ["13 Soak (10m)", "todo"]
    ]
   },
