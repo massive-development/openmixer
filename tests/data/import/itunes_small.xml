@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Major Version</key><integer>1</integer>
+  <key>Tracks</key>
+  <dict>
+    <key>101</key>
+    <dict>
+      <key>Track ID</key><integer>101</integer>
+      <key>Name</key><string>Night Drive &amp; Dawn</string>
+      <key>Artist</key><string>Example Artist</string>
+      <key>Album</key><string>Sample Album</string>
+      <key>Genre</key><string>House</string>
+      <key>Year</key><integer>2019</integer>
+      <key>Total Time</key><integer>215500</integer>
+      <key>Rating</key><integer>80</integer>
+      <key>Play Count</key><integer>7</integer>
+      <key>BPM</key><integer>124</integer>
+      <key>Date Added</key><date>2020-03-04T05:06:07Z</date>
+      <key>Play Date UTC</key><date>2021-01-02T03:04:05Z</date>
+      <key>Track Type</key><string>File</string>
+      <key>Location</key><string>file:///music/House/Night%20Drive%20%26%20Dawn+Mix.mp3</string>
+    </dict>
+    <key>102</key>
+    <dict>
+      <key>Track ID</key><integer>102</integer>
+      <key>Name</key><string>Caf&#233; Loop</string>
+      <key>Artist</key><string>Other Artist</string>
+      <key>Rating</key><integer>100</integer>
+      <key>Rating Computed</key><true/>
+      <key>Track Type</key><string>File</string>
+      <key>Location</key><string>file://localhost/music/Caf%C3%A9%20Loop.wav</string>
+    </dict>
+    <key>103</key>
+    <dict>
+      <key>Track ID</key><integer>103</integer>
+      <key>Name</key><string>Radio Stream</string>
+      <key>Track Type</key><string>URL</string>
+      <key>Location</key><string>http://example.invalid/stream</string>
+    </dict>
+    <key>104</key>
+    <dict>
+      <key>Track ID</key><integer>104</integer>
+      <key>Name</key><string>No Location</string>
+    </dict>
+  </dict>
+  <key>Playlists</key>
+  <array>
+    <dict>
+      <key>Name</key><string>Library</string>
+      <key>Master</key><true/>
+      <key>Playlist Persistent ID</key><string>AAAA0000</string>
+      <key>Playlist Items</key>
+      <array><dict><key>Track ID</key><integer>101</integer></dict></array>
+    </dict>
+    <dict>
+      <key>Name</key><string>Sets</string>
+      <key>Folder</key><true/>
+      <key>Playlist Persistent ID</key><string>F0000001</string>
+    </dict>
+    <dict>
+      <key>Name</key><string>Warm Up</string>
+      <key>Playlist Persistent ID</key><string>P0000001</string>
+      <key>Parent Persistent ID</key><string>F0000001</string>
+      <key>Playlist Items</key>
+      <array>
+        <dict><key>Track ID</key><integer>102</integer></dict>
+        <dict><key>Track ID</key><integer>101</integer></dict>
+        <dict><key>Track ID</key><integer>103</integer></dict>
+      </array>
+    </dict>
+    <dict>
+      <key>Name</key><string>Favourites</string>
+      <key>Playlist Persistent ID</key><string>P0000002</string>
+      <key>Playlist Items</key>
+      <array><dict><key>Track ID</key><integer>101</integer></dict></array>
+    </dict>
+  </array>
+</dict>
+</plist>

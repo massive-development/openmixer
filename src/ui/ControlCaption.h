@@ -1,6 +1,8 @@
 // Shared helpers for captioned controls: fixed caption strip above each control.
 #pragma once
 
+#include "Theme.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace openmixer::ui
@@ -13,7 +15,8 @@ inline void styleCaption (juce::Label& label, const juce::String& text)
 {
     label.setText (text, juce::dontSendNotification);
     label.setJustificationType (juce::Justification::centred);
-    label.setFont (juce::Font (juce::FontOptions (12.0F)));
+    label.setFont (theme::font (theme::typeCaption()));
+    label.setColour (juce::Label::textColourId, theme::textSecondary());
     label.setBorderSize ({ 0, 0, 0, 0 });
     label.setMinimumHorizontalScale (0.6F);
     label.setInterceptsMouseClicks (false, false);

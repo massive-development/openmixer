@@ -41,6 +41,29 @@ void ReverbFx::reset() noexcept
             ap.reset();
 }
 
+void ReverbFx::beginReset() noexcept
+{
+    for (auto& side : combs)
+        for (auto& comb : side)
+            comb.beginClear();
+    for (auto& side : allpasses)
+        for (auto& ap : side)
+            ap.beginClear();
+}
+
+bool ReverbFx::clearSome (int maxFrames) noexcept
+{
+    // One budget shared by all 24 buffers keeps the per-call cost bounded.
+    bool clean = true;
+    for (auto& side : combs)
+        for (auto& comb : side)
+            maxFrames -= comb.clearSome (maxFrames), clean = clean && comb.clean();
+    for (auto& side : allpasses)
+        for (auto& ap : side)
+            maxFrames -= ap.clearSome (maxFrames), clean = clean && ap.clean();
+    return clean;
+}
+
 int ReverbFx::tailSilenceWindow (const FxContext& ctx) const noexcept
 {
     return static_cast<int> (ctx.sampleRate * 0.1);
