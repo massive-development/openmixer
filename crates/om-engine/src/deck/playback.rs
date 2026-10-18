@@ -1,12 +1,15 @@
 //! Audio-thread side of a deck: services the seek handshake, pulls frames from the ring and
-//! renders them with linear interpolation at `rate * file_rate / device_rate`. Allocation-free
-//! and lock-free. Loop slots and key-lock join this path in later tasks.
+//! renders them with linear interpolation at `rate * file_rate / device_rate`, or through
+//! the key-lock stretcher when that is on (`keylock.rs`). Allocation-free and lock-free.
 
 use super::loop_state::LoopSnapshot;
 use super::prefetch::PrefetchSlot;
 use super::shared::Shared;
+use keylock::KeylockState;
 use om_core::SpscConsumer;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+
+mod keylock;
 
 pub(super) struct Playback {
     ring: SpscConsumer<f32>,
@@ -31,6 +34,7 @@ pub(super) struct Playback {
     slot: Option<usize>,
     /// Load id of the track being played; prefetch slots from other tracks are unusable.
     playing_load_id: u32,
+    keylock: KeylockState,
 }
 
 impl Playback {
@@ -52,6 +56,7 @@ impl Playback {
             loop_snap: LoopSnapshot::default(),
             slot: None,
             playing_load_id: 0,
+            keylock: KeylockState::new(),
         }
     }
 
@@ -64,6 +69,13 @@ impl Playback {
             return;
         }
         sh.loop_state.load(&mut self.loop_snap);
+        if sh.keylock.load(Relaxed) && self.keylock.stretch.is_some() {
+            self.render_keylocked(sh, left, right);
+            return;
+        }
+        if self.keylock_engaged() {
+            self.leave_keylock();
+        }
         self.render_interpolated(sh, left, right);
     }
 
@@ -99,6 +111,7 @@ impl Playback {
         self.primed = false;
         self.have_first = false;
         self.phase = 0.0;
+        self.keylock.on_playhead_reset();
         self.release_slot(sh);
         sh.position_frames.store(self.ring_idx, Relaxed);
     }
@@ -227,9 +240,10 @@ impl Playback {
 
     fn pop_frame(&mut self, sh: &Shared) -> bool {
         let mut frame = [0.0_f32; 2];
-        let Some(index) = self.pull_frame(sh, &mut frame) else {
+        let Some(index) = self.next_source_frame(sh, &mut frame) else {
             return false;
         };
+        self.keylock.priming_pops += 1;
         self.prev = self.next;
         self.next = frame;
         self.prev_idx = self.next_idx;
@@ -240,7 +254,7 @@ impl Playback {
     fn prime_interpolator(&mut self, sh: &Shared) -> bool {
         if !self.have_first {
             let mut frame = [0.0_f32; 2];
-            let Some(index) = self.pull_frame(sh, &mut frame) else {
+            let Some(index) = self.next_source_frame(sh, &mut frame) else {
                 return false;
             };
             self.next = frame;
