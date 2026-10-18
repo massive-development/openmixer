@@ -4,6 +4,7 @@
 
 #include "Database.h"
 #include "TrackRecord.h"
+#include "analysis/MusicalKey.h"
 
 #include <vector>
 
@@ -36,6 +37,8 @@ public:
 
     // Narrow writers so analysis and playback do not rewrite whole rows.
     juce::Result setAnalysis (std::int64_t id, double bpm, const juce::String& key, const juce::String& camelot);
+    // Writes only the values that are set, leaving the rest of the row (and other columns) alone.
+    juce::Result updateAnalysis (std::int64_t id, std::optional<double> bpm, std::optional<analysis::MusicalKey> key);
     juce::Result setRating (std::int64_t id, int rating);
     juce::Result recordPlay (std::int64_t id, std::int64_t whenMs);
     // Absolute play history (library import); recordPlay is the increment used during playback.

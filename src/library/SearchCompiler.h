@@ -23,6 +23,9 @@ struct CompileContext
 juce::Result compileSearch (const SearchQuery& query, const SearchFieldRegistry& fields, const CompileContext& ctx,
                             CompiledSearch& out);
 
+// "%text%" with LIKE wildcards in text escaped (pair with ESCAPE '\').
+juce::String likePattern (const juce::String& text);
+
 // Appends "<column> LIKE ? ESCAPE ..." (contains) or "<column> = ?" (value starts with '=') to out.
 void appendTextPredicate (const std::string& column, const juce::String& value, SqlFragment& out);
 

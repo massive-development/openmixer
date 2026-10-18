@@ -1,7 +1,8 @@
 // Keeps watched folders in step with the library: the folder list lives in the DB, a background
 // thread rescans every folder on an interval or on demand. The scan thread owns its own Library
 // connection (WAL + busy timeout allow it next to the caller's); add/remove/list use a second one
-// under a mutex, so the UI thread never waits on a scan.
+// under a mutex. That control connection is read-write on the owner (UI) thread, so add/remove may wait up to
+// the 5 s busy timeout while a scan commits. Open the database with a writer (migrated) before any ReadOnly open.
 // Needs a file-backed database (":memory:" is private to one connection).
 #pragma once
 

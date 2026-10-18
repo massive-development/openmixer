@@ -40,15 +40,7 @@ juce::Result applyPrepResults (TrackDao& tracks, std::int64_t trackId, const std
     if (! bpm && ! key)
         return juce::Result::ok();
 
-    auto updated = *track;   // whole-row update keeps an unset bpm unset
-    if (bpm)
-        updated.bpm = bpm;
-    if (key)
-    {
-        updated.key = key->getName();
-        updated.camelot = key->getCamelot();
-    }
-    return tracks.update (updated);
+    return tracks.updateAnalysis (trackId, bpm, key);   // narrow write: a whole-row update races the scan connection
 }
 
 } // namespace openmixer::library

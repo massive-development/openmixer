@@ -237,7 +237,7 @@ TEST (LibrarySearch, LimitOffsetPageAndCountIgnoresPaging)
 TEST (LibrarySearch, BadQueriesFailInsteadOfReturningNoResults)
 {
     Fixture f;
-    for (const char* q : { "sort:nonsense", "bpm:fast", "key:H#", "added:yesterday", "playlist:#x", "limit:zzz" })
+    for (const char* q : { "sort:nonsense", "bpm:fast", "key:H#", "added:yesterday", "playlist:#x", "limit:zzz", "sort:", "sort:-" })
     {
         juce::Result r = juce::Result::ok();
         EXPECT_TRUE (f.engine->search (juce::String (q), &r).empty()) << q;

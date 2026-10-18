@@ -96,7 +96,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [x] **Todo 20:** Library schema + DAO layer
   - `src/library/`: `Database`/`Statement`/`Transaction`, `Migrations`, `TrackDao`, `CueDao`, `PlaylistDao`, `Library`
-- [x] **Todo 21:** Metadata ingest + watch folders
+- [~] **Todo 21:** Metadata ingest + watch folders (partial: RIFF INFO tags, duration, watch folders done; TagLib tags for MP3/FLAC/M4A and artwork open)
   - `src/library/`: `MetadataReader` registry + `JuceMetadataReader`, `Ingestor`, `TrackFileDao`, `WatchFolderDao`, `WatchFolders`
 - [x] **Todo 22:** Import (iTunes/Rekordbox XML)
   - `src/library/`: `LibraryImporter` registry (extension point), `ItunesImporter`, `RekordboxImporter`, `ImportWriter` (one transaction, merge by path), `fileUrlToPath`

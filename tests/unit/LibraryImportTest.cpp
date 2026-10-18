@@ -1,6 +1,10 @@
 // OpenMixer LibraryImportTest - iTunes / Rekordbox importers, merge policy, transactionality
 #include <JuceHeader.h>
+#include "LibraryIngestTestUtil.h"
 #include "library/FileUrl.h"
+#include "library/Ingestor.h"
+#include "library/SearchEngine.h"
+#include "library/TrackKey.h"
 #include "library/ImportCues.h"
 #include "library/ImportMerge.h"
 #include "library/ItunesImporter.h"
@@ -400,4 +404,80 @@ TEST (ImportMergePolicy, PlaylistsMergeIntoSameNamedSibling)
     EXPECT_EQ (report.playlistsCreated, 2);                    // Sets + Warm Up; Favourites reused
     EXPECT_EQ (lib->playlists().children (std::nullopt).size(), 2u);
     EXPECT_EQ (entryTitles (*lib, *fav), (std::vector<juce::String> { "Mine", "Night Drive & Dawn" }));
+}
+
+TEST (ImportThenIngest, AnalysisAndImportedTagsSurviveTheFirstScan)
+{
+    openmixer::library::test::TempDir tmp;
+    const auto wav = openmixer::library::test::writeWav (tmp.dir.getChildFile ("Pulse.wav"), 1.0);   // no tags
+    const auto xml = tmp.dir.getChildFile ("rb.xml");
+    xml.replaceWithText ("<?xml version=\"1.0\"?><DJ_PLAYLISTS Version=\"1.0.0\"><COLLECTION Entries=\"1\">"
+                         "<TRACK TrackID=\"1\" Name=\"Imported Title\" Artist=\"Imported Artist\" Album=\"Imported Album\""
+                         " Genre=\"Techno\" AverageBpm=\"128.00\" Tonality=\"Am\" Location=\"file://localhost"
+                         + wav.getFullPathName().replace (" ", "%20") + "\"/></COLLECTION></DJ_PLAYLISTS>");
+    auto lib = memoryLibrary();
+    ImportReport report;
+    ASSERT_TRUE (importLibraryFile (*lib, LibraryImporterRegistry::withDefaults(), xml, report).wasOk());
+
+    auto readers = MetadataReaderRegistry::withDefaults();
+    Ingestor ingestor (*lib, readers);
+    IngestSummary summary;
+    ASSERT_TRUE (ingestor.ingestFolder (tmp.dir, summary).wasOk());
+    EXPECT_EQ (summary.failed, 0);
+
+    const auto t = lib->tracks().findByPath (wav.getFullPathName());
+    ASSERT_TRUE (t.has_value());
+    EXPECT_EQ (t->contentHash.length(), 64);
+    ASSERT_TRUE (t->bpm.has_value());
+    EXPECT_DOUBLE_EQ (*t->bpm, 128.0);
+    EXPECT_EQ (t->key, "Am");
+    EXPECT_EQ (t->camelot, "8A");
+    EXPECT_EQ (t->title, "Imported Title");   // the filename fallback must not replace it
+    EXPECT_EQ (t->artist, "Imported Artist");
+    EXPECT_EQ (t->album, "Imported Album");
+    EXPECT_EQ (t->genre, "Techno");
+
+    SearchEngine search (lib->database());
+    EXPECT_EQ (search.search ("key:8A").size(), 1u);
+    EXPECT_EQ (search.search ("key:Am").size(), 1u);
+}
+
+TEST (ImportKey, MergeDerivesCamelotAndNormaliseHandlesBothForms)
+{
+    TrackRecord local, imported;
+    imported.key = "Dbm";
+    EXPECT_TRUE (mergeTrackRecord (local, imported));
+    EXPECT_EQ (local.camelot, "12A");
+
+    TrackRecord byCode;
+    byCode.camelot = "8B";
+    normaliseKey (byCode);
+    EXPECT_EQ (byCode.key, "C");
+    TrackRecord junk;
+    junk.key = "??";
+    normaliseKey (junk);
+    EXPECT_EQ (junk.key, "??");
+    EXPECT_TRUE (junk.camelot.isEmpty());
+}
+
+TEST (LibraryDaoAnalysis, UpdateAnalysisWritesOnlySetValues)
+{
+    auto lib = memoryLibrary();
+    TrackRecord t;
+    t.path = "/a.wav";
+    t.title = "A";
+    t.bpm = 100.0;
+    t.key = "Am";
+    t.camelot = "8A";
+    const auto id = *lib->tracks().insert (t);
+    ASSERT_TRUE (lib->tracks().updateAnalysis (id, 124.0, std::nullopt).wasOk());
+    auto r = *lib->tracks().findById (id);
+    EXPECT_DOUBLE_EQ (*r.bpm, 124.0);
+    EXPECT_EQ (r.camelot, "8A");
+    ASSERT_TRUE (lib->tracks().updateAnalysis (id, std::nullopt, openmixer::analysis::MusicalKey { 0, false }).wasOk());
+    r = *lib->tracks().findById (id);
+    EXPECT_DOUBLE_EQ (*r.bpm, 124.0);
+    EXPECT_EQ (r.key, "C");
+    EXPECT_EQ (r.camelot, "8B");
+    EXPECT_TRUE (lib->tracks().updateAnalysis (999, 1.0, std::nullopt).failed());
 }

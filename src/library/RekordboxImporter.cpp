@@ -1,5 +1,7 @@
 #include "RekordboxImporter.h"
 
+#include "TrackKey.h"
+
 #include "FileUrl.h"
 
 #include <map>
@@ -65,6 +67,7 @@ void fillRecord (const juce::XmlElement& e, TrackRecord& r)
     r.dateAddedMs = e.hasAttribute ("DateAdded") ? juce::Time::fromISO8601 (e.getStringAttribute ("DateAdded")).toMilliseconds() : 0;
     if (const double bpm = bpmOf (e); bpm > 0.0)
         r.bpm = bpm;
+    normaliseKey (r);   // why: key: search matches the camelot column
 }
 
 using PathToId = std::map<juce::String, juce::String>;

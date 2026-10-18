@@ -47,6 +47,8 @@ void applyReserved (const juce::String& name, const juce::String& value, SearchQ
     {
         q.descending = value.startsWithChar ('-');
         q.sortField = (q.descending ? value.substring (1) : value).toLowerCase();
+        if (q.sortField.isEmpty())
+            errors.add ("sort: expected a field name");
         return;
     }
     int n = 0;

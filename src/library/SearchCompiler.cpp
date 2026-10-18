@@ -11,7 +11,7 @@ juce::Result compileFreeText (const FilterTerm& term, SqlFragment& out)
     {
         if (! f.sql.empty())
             f.sql += " OR ";
-        f.args.emplace_back (juce::String ("%") + term.value.replace ("\\", "\\\\").replace ("%", "\\%").replace ("_", "\\_") + "%");
+        f.args.emplace_back (likePattern (term.value));
         f.sql += column + " LIKE ? ESCAPE '\\'";
     }
     out.sql += std::string (term.negated ? "NOT (" : "(") + f.sql + ")";

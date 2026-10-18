@@ -35,6 +35,34 @@ void carryAnalysis (const TrackRecord& from, TrackRecord& to)
     to.key = from.key;
     to.camelot = from.camelot;
 }
+
+void keepIfEmpty (juce::String& read, const juce::String& old)
+{
+    if (read.isEmpty())
+        read = old;
+}
+
+// why: file tags are often sparser than imported data (filename-only title, no artist), so never blank or downgrade it
+void mergeFillOnly (const TrackRecord& old, const juce::File& file, TrackRecord& rec)
+{
+    if (old.title.isNotEmpty() && rec.title == file.getFileNameWithoutExtension())
+        rec.title = old.title;
+    keepIfEmpty (rec.title, old.title);
+    keepIfEmpty (rec.artist, old.artist);
+    keepIfEmpty (rec.album, old.album);
+    keepIfEmpty (rec.genre, old.genre);
+    keepIfEmpty (rec.comment, old.comment);
+    if (rec.year == 0)
+        rec.year = old.year;
+    if (rec.durationSec <= 0.0)
+        rec.durationSec = old.durationSec;
+}
+
+// why: imported rows have no hash yet; their analysis is still the user's, identical bytes keep theirs too
+bool analysisStillValid (const TrackRecord& old, const juce::String& hash)
+{
+    return old.contentHash.isEmpty() || old.contentHash == hash;
+}
 } // namespace
 
 IngestSummary& IngestSummary::operator+= (const IngestSummary& o)
@@ -54,8 +82,10 @@ Ingestor::Outcome Ingestor::refresh (const juce::File& file, const std::optional
         return Outcome::Failed;
 
     auto record = toRecord (file, meta, hash);
-    if (existing && existing->contentHash == hash)
-        carryAnalysis (*existing, record);   // identical bytes: BPM/key are still valid
+    if (existing)
+        mergeFillOnly (*existing, file, record);
+    if (existing && analysisStillValid (*existing, hash))
+        carryAnalysis (*existing, record);
 
     Transaction tx (library.database());
     const auto id = library.tracks().upsertByPath (record);
