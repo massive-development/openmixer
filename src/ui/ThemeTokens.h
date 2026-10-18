@@ -33,6 +33,13 @@ struct ThemeTokens
     float playheadWidth = 2.0F, cueMarkerWidth = 2.0F;
     float gridBarAlpha = 0.55F, gridBeatAlpha = 0.4F, loopActiveAlpha = 0.25F, loopIdleAlpha = 0.08F;
 
+    // Mixer metrics (px) and meter ballistics (dB / seconds); meterClipLevel is a linear peak.
+    float mixerKnobHeight = 70.0F, mixerButtonHeight = 26.0F, mixerMeterWidth = 12.0F, mixerMasterWidth = 92.0F;
+    float mixerTabHeight = 28.0F, mixerCrossfaderHeight = 46.0F, mixerCueHeight = 46.0F;
+    float meterFloorDb = -48.0F, meterMidDb = -18.0F, meterHighDb = -6.0F, meterClipLevel = 0.99F;
+    float meterReleaseSeconds = 0.3F, meterHoldSeconds = 1.0F, meterClipSeconds = 2.0F;
+    float meterSegment = 4.0F, meterSegmentGap = 1.0F;
+
     float surfaceOpacity = 1.0F;   // scales the alpha of surface/raised/hover (glass strength)
     float backdropOpacity = 1.0F;  // default backdrop opacity before a window asks for less
 

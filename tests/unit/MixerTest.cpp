@@ -211,6 +211,39 @@ TEST (MixerTest, MetersTrackLevelAndDecay)
     EXPECT_LT (r.mixer.getChannelPeak (0), 0.01f) << "peak decays after silence";
 }
 
+TEST (MixerTest, ChannelMetersAreStereoAndReadBack)
+{
+    Rig r;
+    r.setSine (0, 1000.0, 0.5f);
+    std::fill (r.in[0][1].begin(), r.in[0][1].end(), 0.0f);   // right input silent
+    r.run();
+    EXPECT_GT (r.mixer.getChannelPeakLeft (0), 0.1f);
+    EXPECT_NEAR (r.mixer.getChannelPeakRight (0), 0.0f, 1e-6f);
+    EXPECT_EQ (r.mixer.getChannelPeak (0), r.mixer.getChannelPeakLeft (0));
+}
+
+TEST (MixerTest, CrossfaderCurveAndStateGettersFollowParameters)
+{
+    Mixer m (2);
+    EXPECT_EQ (m.getCrossfaderCurve(), CrossfaderCurve::ConstantPower);
+    EXPECT_TRUE (m.setParameter ("crossfader.curve", 0.0));
+    EXPECT_EQ (m.getCrossfaderCurve(), CrossfaderCurve::Linear);
+    EXPECT_TRUE (m.setParameter ("crossfader.curve", 1.0));
+    EXPECT_EQ (m.getCrossfaderCurve(), CrossfaderCurve::ConstantPower);
+    m.setParameter ("crossfader", 0.8);
+    m.setParameter ("master", 0.7);
+    m.setParameter ("cue.level", 0.6);
+    m.setParameter ("cue.mix", 0.4);
+    m.setParameter ("ch1.trim", 2.0);
+    m.setParameter ("ch1.xfader", 2.0);
+    EXPECT_NEAR (m.getCrossfader(), 0.8f, 1e-6f);
+    EXPECT_NEAR (m.getMasterGain(), 0.7f, 1e-6f);
+    EXPECT_NEAR (m.getCueLevel(), 0.6f, 1e-6f);
+    EXPECT_NEAR (m.getCueMix(), 0.4f, 1e-6f);
+    EXPECT_NEAR (m.getTrim (1), 2.0f, 1e-6f);
+    EXPECT_EQ (m.getCrossfaderAssign (1), CrossfaderAssign::Right);
+}
+
 TEST (MixerTest, SetParameterDrivesTheSameControlsByStringId)
 {
     Mixer m (2);

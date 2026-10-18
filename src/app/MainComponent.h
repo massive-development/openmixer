@@ -1,5 +1,5 @@
 // Main window content: audio device glue, engine, MIDI, and the main view (decks + mixer/library slots).
-// The old debug console stays available behind OPENMIXER_DEBUG_PANEL=1 until the mixer slot is filled.
+// The debug console (deck strips with file loading above the mixer) stays behind OPENMIXER_DEBUG_PANEL=1 until the library can load tracks.
 #pragma once
 
 #include <JuceHeader.h>
@@ -10,6 +10,7 @@
 #include "engine/DjEngine.h"
 #include "ui/DebugPanel.h"
 #include "ui/MainView.h"
+#include "ui/MixerPanel.h"
 
 class MainComponent : public juce::AudioAppComponent, private juce::Timer
 {

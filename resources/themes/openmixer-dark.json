@@ -36,5 +36,9 @@
   "deck": { "headerHeight": 52, "overviewHeight": 40, "transportHeight": 32, "rowHeight": 30, "pitchWidth": 84, "minZoomHeight": 60,
             "readoutWidth": 78, "rangeBoxHeight": 24, "playheadWidth": 2, "cueMarkerWidth": 2,
             "gridBarAlpha": 0.55, "gridBeatAlpha": 0.4, "loopActiveAlpha": 0.25, "loopIdleAlpha": 0.08 },
+  "mixer": { "knobHeight": 70, "buttonHeight": 26, "meterWidth": 12, "masterWidth": 92, "tabHeight": 28,
+             "crossfaderHeight": 46, "cueHeight": 46, "meterFloorDb": -48, "meterMidDb": -18, "meterHighDb": -6,
+             "meterClipLevel": 0.99, "meterReleaseSeconds": 0.3, "meterHoldSeconds": 1.0, "meterClipSeconds": 2.0,
+             "meterSegment": 4, "meterSegmentGap": 1 },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }

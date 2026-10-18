@@ -483,8 +483,23 @@ juce_add_binary_data(openmixer_theme_data
 set_target_properties(openmixer_theme_data PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(openmixer_ui STATIC
-    src/ui/ChannelStripPanel.cpp
-    src/ui/ChannelStripPanel.h
+    src/ui/ChannelStripWidget.cpp
+    src/ui/ChannelStripWidget.h
+    src/ui/CrossfaderSection.cpp
+    src/ui/CrossfaderSection.h
+    src/ui/CueSection.cpp
+    src/ui/CueSection.h
+    src/ui/FxPanel.cpp
+    src/ui/FxPanel.h
+    src/ui/LabeledKnob.cpp
+    src/ui/LabeledKnob.h
+    src/ui/MasterSection.cpp
+    src/ui/MasterSection.h
+    src/ui/MeterBallistics.cpp
+    src/ui/MeterBallistics.h
+    src/ui/MixerBinding.h
+    src/ui/MixerPanel.cpp
+    src/ui/MixerPanel.h
     src/ui/ControlCaption.h
     src/ui/DebugPanel.cpp
     src/ui/DebugPanel.h
@@ -532,7 +547,8 @@ add_library(openmixer_ui STATIC
 
 target_include_directories(openmixer_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 openmixer_enable_warnings(
-    src/ui/ChannelStripPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
+    src/ui/ChannelStripWidget.cpp src/ui/CrossfaderSection.cpp src/ui/CueSection.cpp src/ui/FxPanel.cpp
+    src/ui/LabeledKnob.cpp src/ui/MasterSection.cpp src/ui/MeterBallistics.cpp src/ui/MixerPanel.cpp src/ui/DebugPanel.cpp src/ui/DeckStrip.cpp src/ui/GlassLookAndFeel.cpp
     src/ui/GlassWidgets.cpp src/ui/MeterBar.cpp src/ui/Theme.cpp src/ui/ThemeJson.cpp src/ui/ThemeRegistry.cpp
     src/ui/DeckWidget.cpp src/ui/HotcuePads.cpp src/ui/LoopControls.cpp src/ui/MainLayout.cpp src/ui/MainView.cpp src/ui/OverviewWaveform.cpp src/ui/PitchFader.cpp src/ui/TrackHeader.cpp src/ui/TransportPanel.cpp
     src/ui/WaveformGeometry.cpp src/ui/WaveformPainter.cpp src/ui/ZoomWaveform.cpp)
@@ -640,6 +656,9 @@ target_sources(openmixer_tests PRIVATE
     tests/unit/GlassLookAndFeelTest.cpp
     tests/unit/DeckWidgetTest.cpp
     tests/unit/MainLayoutTest.cpp
+    tests/unit/MixerWidgetTest.cpp
+    tests/unit/MeterBallisticsTest.cpp
+    tests/unit/FxPanelTest.cpp
     tests/unit/SyncTest.cpp
     tests/unit/PluginRegistryTest.cpp
     tests/unit/FxTest.cpp

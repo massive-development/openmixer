@@ -52,6 +52,18 @@ TEST (ThemeJsonTest, ParsesEverySection)
     EXPECT_FLOAT_EQ (p.tokens.typeBody, ThemeTokens::builtinDark().typeBody);   // untouched keys keep the default
 }
 
+TEST (ThemeJsonTest, ParsesMixerMetricsAndMeterBallistics)
+{
+    const auto p = parse (R"({ "id": "t.mix", "mixer": { "knobHeight": 50, "meterHoldSeconds": 2.5, "meterFloorDb": -60 } })");
+    ASSERT_TRUE (p.status.wasOk()) << p.status.getErrorMessage();
+    EXPECT_FLOAT_EQ (p.tokens.mixerKnobHeight, 50.0F);
+    EXPECT_FLOAT_EQ (p.tokens.meterHoldSeconds, 2.5F);
+    EXPECT_FLOAT_EQ (p.tokens.meterFloorDb, -60.0F);
+    EXPECT_FLOAT_EQ (p.tokens.mixerCueHeight, ThemeTokens::builtinDark().mixerCueHeight);
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "mixer": { "meterClipLevel": 3 } })").status.failed());
+    EXPECT_TRUE (parse (R"({ "id": "t.bad", "mixer": { "meterReleaseSeconds": 0 } })").status.failed());
+}
+
 TEST (ThemeJsonTest, ParsesWaveformColoursAndDeckMetrics)
 {
     const auto p = parse (R"({ "id": "t.deck", "colours": { "waveLow": "#010203", "waveHigh": "#A0040506" },

@@ -80,6 +80,17 @@ TEST (ThemeRegistryTest, BuiltInDarkJsonMatchesTheCompiledDefault)
     EXPECT_FLOAT_EQ (json.deckPitchWidth, compiled.deckPitchWidth);
     EXPECT_FLOAT_EQ (json.gridBarAlpha, compiled.gridBarAlpha);
     EXPECT_FLOAT_EQ (json.loopIdleAlpha, compiled.loopIdleAlpha);
+    EXPECT_FLOAT_EQ (json.mixerKnobHeight, compiled.mixerKnobHeight);
+    EXPECT_FLOAT_EQ (json.mixerMasterWidth, compiled.mixerMasterWidth);
+    EXPECT_FLOAT_EQ (json.mixerCueHeight, compiled.mixerCueHeight);
+    EXPECT_FLOAT_EQ (json.meterFloorDb, compiled.meterFloorDb);
+    EXPECT_FLOAT_EQ (json.meterMidDb, compiled.meterMidDb);
+    EXPECT_FLOAT_EQ (json.meterHighDb, compiled.meterHighDb);
+    EXPECT_FLOAT_EQ (json.meterClipLevel, compiled.meterClipLevel);
+    EXPECT_FLOAT_EQ (json.meterReleaseSeconds, compiled.meterReleaseSeconds);
+    EXPECT_FLOAT_EQ (json.meterHoldSeconds, compiled.meterHoldSeconds);
+    EXPECT_FLOAT_EQ (json.meterClipSeconds, compiled.meterClipSeconds);
+    EXPECT_FLOAT_EQ (json.meterSegment, compiled.meterSegment);
 }
 
 TEST (ThemeRegistryTest, PrecedenceIsUserOverPluginOverBuiltIn)
