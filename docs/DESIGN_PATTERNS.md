@@ -164,3 +164,45 @@ Registry for agents and contributors. Check here before starting a large impleme
 - **Reuse when:** wrapping any external DSP/codec library (FFmpeg, ONNX Runtime).
 - **Notes:** `prepare()` allocates (control thread); all other calls are audio-thread, allocation-free. Vendored code builds as its own target with its warnings off and -O2 in Debug.
 
+
+### Forward-only migration list (extension point)
+- **Where:** `src/library/Migrations.{h,cpp}`, `Library::open`.
+- **Why:** the schema evolves by appending numbered `Migration`s; each runs in its own transaction and is recorded in `schema_version`.
+- **Reuse when:** any later subsystem (search index, history, plugin tables) needs library tables; append a `Migration` with the next version and pass the list to `Library::open`. Never edit a shipped migration.
+- **Notes:** a database newer than the list is refused (no downgrades). Versions must be strictly increasing.
+
+### DAO per entity over an RAII database wrapper
+- **Where:** `src/library/Database.{h,cpp}`, `Statement`, `TrackDao`, `CueDao`, `PlaylistDao`, `OrderedList`.
+- **Why:** keeps SQL out of callers; `Transaction` nests via savepoints so DAO calls compose and roll back together.
+- **Reuse when:** adding a table; add a `*Dao` that borrows `Database&` and returns plain value records.
+- **Notes:** one writer thread; the UI reads through its own `OpenMode::ReadOnly` connection (WAL). `OrderedList` keeps dense `position` columns for any ordered child set.
+
+### Metadata reader registry (extension point)
+- **Where:** `src/library/MetadataReader.{h,cpp}`, `JuceMetadataReader`, `Ingestor`.
+- **Why:** tag formats vary; `Ingestor` asks the registry for the reader owning a file's extension, so new readers (TagLib, plugin-supplied) need no ingestor change.
+- **Reuse when:** adding a tag source or a new supported file type; implement `MetadataReader` and `registry.add()` it. Later registrations win per extension.
+- **Notes:** the registry decides which files are scanned at all. Ingest state (mtime, size, missing) lives in its own `track_files` table so `TrackRecord` stays a pure metadata value.
+
+### Background rescan with injectable clock (WatchFolders)
+- **Where:** `src/library/WatchFolders.{h,cpp}`.
+- **Why:** a worker thread owns its own DB connection and re-evaluates `clock()` on a short poll; tests drive time with a fake clock plus `poke()`/`triggerScan()`/`waitForScans()` instead of sleeping.
+- **Reuse when:** any periodic background task over the library (import refresh, analysis queue feeding).
+- **Notes:** one connection per thread (WAL + busy timeout) rather than locking a shared one; the destructor aborts a scan between files.
+
+### Search field registry + compile-to-SQL (extension point)
+- **Where:** `src/library/Search{Fields,Parser,Compiler,Terms,Engine}.{h,cpp}`.
+- **Why:** a query string parses to generic `FilterTerm`s; each registered `SearchField` (column + kind, or a Custom compile hook) turns its term into SQL text made of code-constant names and `?` placeholders, with user values only in the bound args.
+- **Reuse when:** adding a filterable/sortable attribute (e.g. a plugin tag); `engine.registry().add(field)`. Custom hooks must never splice user text into `SqlFragment::sql`.
+- **Notes:** reads report failure via the trailing `juce::Result*` (a bad field/value fails rather than returning "no results"). Text match is LIKE-contains with escaped wildcards (`=value` for exact); the SQLite build has no FTS5, so a future FTS index would be a new migration plus a Text-field compile swap.
+
+### Library importer registry + parse/merge split (extension point)
+- **Where:** `src/library/LibraryImporter.{h,cpp}`, `ItunesImporter`, `RekordboxImporter`, `ImportModel.h`, `ImportWriter`, `ImportMerge`, `ImportCues`, `LibraryImport`.
+- **Why:** importers only turn a foreign XML document into the neutral `ImportedLibrary` (no database code, recognised by XML root since both formats are `.xml`); one `ImportWriter` merges any importer's output in a single `Transaction`, so every format gets the same dedupe-by-path and rollback behaviour.
+- **Reuse when:** adding another library format (`registry.add(...)`, later registration wins) or another bulk write that must be all-or-nothing and re-runnable.
+- **Notes:** merge policy (local data wins, imports fill gaps and default rating/play count) is documented in `ImportMerge.h`; re-import is idempotent; a failed lookup aborts the import rather than counting as "new".
+
+### Owner-thread pump over a background service (PrepQueue)
+- **Where:** `src/library/PrepQueue.{h,cpp}`, `PrepQueueDao`, `PrepResults`.
+- **Why:** analysis workers must not touch the Library's sqlite connection, so their listener only copies the final job snapshot into a mutex-guarded inbox; the thread that owns the connection calls `pump()` to apply results, update rows, fire the observer and submit more. At most `maxInFlight` jobs sit in the service, so priority and order stay editable (the service itself is plain FIFO).
+- **Reuse when:** a persisted queue feeds `AnalysisService` or another worker pool and results must land in the database (stem precompute, export).
+- **Notes:** the inbox is a `shared_ptr` captured by listeners so late callbacks after destruction are safe; progress is read live from the job on `list()` rather than written to the DB; running rows are reset to queued on start. Library depends on analysis (same tier) for this.

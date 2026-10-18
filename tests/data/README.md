@@ -15,3 +15,6 @@ Run `tools/fetch_test_data.py` to download required test fixtures:
 ```bash
 python3 tools/fetch_test_data.py
 ```
+
+## Import fixtures
+- `import/itunes_small.xml`, `import/rekordbox_small.xml` - small hand-written library exports (original content, not copies of any real export), used by `LibraryImportTest`
