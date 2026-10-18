@@ -38,7 +38,9 @@ struct ThemeTokens
     float mixerTabHeight = 28.0F, mixerCrossfaderHeight = 46.0F, mixerCueHeight = 46.0F;
     float meterFloorDb = -48.0F, meterMidDb = -18.0F, meterHighDb = -6.0F, meterClipLevel = 0.99F;
     float meterReleaseSeconds = 0.3F, meterHoldSeconds = 1.0F, meterClipSeconds = 2.0F;
-    float meterSegment = 4.0F, meterSegmentGap = 1.0F;
+    float mixerTitleHeight = 22.0F, mixerFaderWidth = 40.0F, mixerCurveWidth = 128.0F, mixerFxBoxWidth = 150.0F;
+    float mixerFxEnableWidth = 56.0F, mixerPageButtonWidth = 80.0F, mixerPadX = 6.0F, mixerPadY = 10.0F, mixerAccentDot = 8.0F;
+    float meterSegment = 4.0F, meterSegmentGap = 1.0F, meterHoldTickHeight = 2.0F;
 
     float surfaceOpacity = 1.0F;   // scales the alpha of surface/raised/hover (glass strength)
     float backdropOpacity = 1.0F;  // default backdrop opacity before a window asks for less

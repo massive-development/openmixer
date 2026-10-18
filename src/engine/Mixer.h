@@ -16,6 +16,7 @@ class Mixer : public ParameterTarget
 {
 public:
     static constexpr int kMaxChannels = 4;
+    static constexpr float kMaxGain = 2.0F;   // master and cue level ceiling
     static constexpr float kMinEqDb = ThreeBandEq::kMinDb;
     static constexpr float kMaxEqDb = ThreeBandEq::kMaxDb;
 

@@ -7,7 +7,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kPageGroup = 1004, kPageButtonWidth = 80;
+    constexpr int kPageGroup = 1004;
     constexpr float kMaxFrameSeconds = 0.25F;   // a stalled UI should not blank the meters in one step
 }
 
@@ -97,7 +97,7 @@ void MixerPanel::resized()
     auto area = getLocalBounds();
     auto tabs = area.removeFromTop (theme::mixerTabHeight());
     for (auto& p : pageButtons)
-        p.setBounds (tabs.removeFromLeft (kPageButtonWidth));
+        p.setBounds (tabs.removeFromLeft (theme::mixerPageButtonWidth()));
     area.removeFromTop (theme::innerGap());
 
     fxPanel.setBounds (area);

@@ -7,7 +7,7 @@ namespace openmixer::ui
 
 namespace
 {
-    constexpr int kScopeGroup = 1003, kBoxWidth = 150, kEnableWidth = 56;
+    constexpr int kScopeGroup = 1003;
     constexpr double kWideRange = 8.0;   // ranges at least this wide read as whole numbers
 
     juce::String capitalised (std::string_view name)
@@ -38,7 +38,12 @@ FxPanel::FxPanel (MixerBinding b) : binding (b)
     buildScopeButtons();
     enable.setClickingTogglesState (false);
     enable.setTooltip ("Switch this effect on or off");
-    enable.onClick = [this] { binding.sendFx (unitId ("enable"), unit()->isEnabled() ? 0.0 : 1.0); refresh(); };
+    enable.onClick = [this]
+    {
+        if (auto* u = unit())   // a custom rack may have no units
+            binding.sendFx (unitId ("enable"), u->isEnabled() ? 0.0 : 1.0);
+        refresh();
+    };
     unitBox.onChange = [this] { setUnit (unitBox.getSelectedId() - 1); };
     mix = std::make_unique<LabeledKnob> (LabeledKnob::Spec { "Mix", 0.0, 1.0, 1.0, percent });
     mix->onChange = [this] (double v) { binding.sendFx (unitId ("mix"), v); };
@@ -170,9 +175,9 @@ void FxPanel::resized()
     area.removeFromTop (gap);
 
     auto row = area.removeFromTop (h);
-    unitBox.setBounds (row.removeFromLeft (kBoxWidth));
+    unitBox.setBounds (row.removeFromLeft (theme::mixerFxBoxWidth()));
     row.removeFromLeft (gap);
-    enable.setBounds (row.removeFromLeft (kEnableWidth));
+    enable.setBounds (row.removeFromLeft (theme::mixerFxEnableWidth()));
     area.removeFromTop (gap);
 
     layoutKnobs (area.removeFromTop (theme::mixerKnobHeight() * 3 / 2));

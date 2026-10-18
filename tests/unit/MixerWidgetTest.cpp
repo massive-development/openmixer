@@ -207,6 +207,24 @@ TEST (MixerWidgetTest, RefreshFollowsChangesMadeElsewhere)
     EXPECT_TRUE (rig.recorder.calls.empty()) << "mirroring must not echo back into the router";
 }
 
+TEST (MixerWidgetTest, MasterAndCueSlidersReachTheEngineCeiling)
+{
+    Rig rig;
+    MixerPanel panel (rig.binding());
+    panel.setSize (420, 520);
+    auto& m = rig.engine.getMixer();
+    m.setParameter ("master", 2.0);
+    m.setParameter ("cue.level", 2.0);
+    panel.refresh (kFrame);
+    EXPECT_NEAR (panel.getMaster().getFader().getValue(), 2.0, 1e-6) << "MIDI-set values above 1.5 must display";
+    EXPECT_NEAR (panel.getCue().getLevel().getValue(), 2.0, 1e-6);
+    EXPECT_NEAR (panel.getMaster().getFader().getMaximum(), Mixer::kMaxGain, 1e-6);
+    EXPECT_NEAR (panel.getCue().getLevel().getMaximum(), Mixer::kMaxGain, 1e-6);
+
+    panel.getMaster().getFader().setValue (1.9, juce::sendNotificationSync);
+    EXPECT_NEAR (m.getMasterGain(), 1.9F, 1e-6F);
+}
+
 TEST (MixerWidgetTest, ChannelMetersReadEngineLevelsPerSide)
 {
     Rig rig;

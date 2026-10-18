@@ -81,6 +81,16 @@ TEST (ThemeRegistryTest, BuiltInDarkJsonMatchesTheCompiledDefault)
     EXPECT_FLOAT_EQ (json.gridBarAlpha, compiled.gridBarAlpha);
     EXPECT_FLOAT_EQ (json.loopIdleAlpha, compiled.loopIdleAlpha);
     EXPECT_FLOAT_EQ (json.mixerKnobHeight, compiled.mixerKnobHeight);
+    EXPECT_FLOAT_EQ (json.mixerTitleHeight, compiled.mixerTitleHeight);
+    EXPECT_FLOAT_EQ (json.mixerFaderWidth, compiled.mixerFaderWidth);
+    EXPECT_FLOAT_EQ (json.mixerCurveWidth, compiled.mixerCurveWidth);
+    EXPECT_FLOAT_EQ (json.mixerFxBoxWidth, compiled.mixerFxBoxWidth);
+    EXPECT_FLOAT_EQ (json.mixerFxEnableWidth, compiled.mixerFxEnableWidth);
+    EXPECT_FLOAT_EQ (json.mixerPageButtonWidth, compiled.mixerPageButtonWidth);
+    EXPECT_FLOAT_EQ (json.mixerPadX, compiled.mixerPadX);
+    EXPECT_FLOAT_EQ (json.mixerPadY, compiled.mixerPadY);
+    EXPECT_FLOAT_EQ (json.mixerAccentDot, compiled.mixerAccentDot);
+    EXPECT_FLOAT_EQ (json.meterHoldTickHeight, compiled.meterHoldTickHeight);
     EXPECT_FLOAT_EQ (json.mixerMasterWidth, compiled.mixerMasterWidth);
     EXPECT_FLOAT_EQ (json.mixerCueHeight, compiled.mixerCueHeight);
     EXPECT_FLOAT_EQ (json.meterFloorDb, compiled.meterFloorDb);

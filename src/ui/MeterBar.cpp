@@ -49,7 +49,7 @@ void MeterBar::paint (juce::Graphics& g)
     {
         const float py = std::max (inner.getY(), yFor (ballistics.peakHold()));
         g.setColour (colourAt (py));
-        g.fillRect (juce::Rectangle<float> (inner.getX(), py, inner.getWidth(), 2.0F));
+        g.fillRect (juce::Rectangle<float> (inner.getX(), py, inner.getWidth(), meterHoldTickHeight()));
     }
 }
 

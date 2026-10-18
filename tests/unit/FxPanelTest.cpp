@@ -200,6 +200,13 @@ TEST (FxPanelTest, ControlsStayInsideThePanelAndDoNotOverlap)
     }
 }
 
+TEST (FxPanelTest, AnEmptyRackHasNoUnitSoTheEnableButtonMustNotAssumeOne)
+{
+    fx::FxRack empty (std::vector<std::string> {});
+    EXPECT_EQ (empty.getNumUnits(), 0);
+    EXPECT_EQ (empty.getUnit (0), nullptr) << "FxPanel::unit() is null for such a rack and every user guards it";
+}
+
 TEST (FxPanelTest, BuildsControlsForAPluginRegisteredEffect)
 {
     // A rack built from an extended factory: the panel only needs descriptors, not effect knowledge.

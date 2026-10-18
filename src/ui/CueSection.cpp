@@ -5,7 +5,7 @@
 namespace openmixer::ui
 {
 
-namespace { constexpr double kMaxCueLevel = 1.5; }
+namespace { constexpr double kMaxCueLevel = Mixer::kMaxGain; }
 
 CueSection::CueSection (MixerBinding b) : binding (b)
 {

@@ -100,6 +100,16 @@ inline int mixerMasterWidth() { return juce::roundToInt (current().mixerMasterWi
 inline int mixerTabHeight() { return juce::roundToInt (current().mixerTabHeight); }
 inline int mixerCrossfaderHeight() { return juce::roundToInt (current().mixerCrossfaderHeight); }
 inline int mixerCueHeight() { return juce::roundToInt (current().mixerCueHeight); }
+inline int mixerTitleHeight() { return juce::roundToInt (current().mixerTitleHeight); }
+inline int mixerFaderWidth() { return juce::roundToInt (current().mixerFaderWidth); }
+inline int mixerCurveWidth() { return juce::roundToInt (current().mixerCurveWidth); }
+inline int mixerFxBoxWidth() { return juce::roundToInt (current().mixerFxBoxWidth); }
+inline int mixerFxEnableWidth() { return juce::roundToInt (current().mixerFxEnableWidth); }
+inline int mixerPageButtonWidth() { return juce::roundToInt (current().mixerPageButtonWidth); }
+inline int mixerPadX() { return juce::roundToInt (current().mixerPadX); }
+inline int mixerPadY() { return juce::roundToInt (current().mixerPadY); }
+inline float mixerAccentDot() { return current().mixerAccentDot; }
+inline float meterHoldTickHeight() { return current().meterHoldTickHeight; }
 inline float meterFloorDb() { return current().meterFloorDb; }
 inline float meterMidDb() { return current().meterMidDb; }
 inline float meterHighDb() { return current().meterHighDb; }
