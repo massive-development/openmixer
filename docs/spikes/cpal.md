@@ -6,7 +6,7 @@ THROWAWAY spike code in `spikes/cpal-out/` (own `[workspace]`; not built by the 
 
 | Platform | Verdict | Basis |
 |---|---|---|
-| Linux / WSL2 (ALSA backend) | **PROVISIONAL GO** | Compiles with `libasound2-dev` + `pkg-config` (both present). Render path proven allocation-free under test. No ALSA hardware (`/dev/snd` has only `timer`), so the ALSA host cannot open a device here. |
+| Linux / WSL2 (ALSA backend) | **BUILD-ONLY / PENDING** (no usable device here; render path is allocation-free) | Compiles with `libasound2-dev` + `pkg-config` (both present). Render path proven allocation-free under test. No ALSA hardware (`/dev/snd` has only `timer`), so the ALSA host cannot open a device here. |
 | Linux / WSL2 (cpal PulseAudio host -> WSLg `RDPSink`) | **PROVISIONAL GO** | Real stream ran 60 s at 256-frame request, zero xruns reported. Jitter is virtualised-audio jitter, not representative of hardware. Second stream failed to open (see below). |
 | Windows (WASAPI) | **pending user** | Not run. |
 | macOS (CoreAudio) | **pending user** | Not run. |
@@ -16,7 +16,7 @@ Not closed: latency/xrun targets for the Wave 2 soak need real hardware on each 
 
 ## Silent-by-default rule (hard rule for all spikes/tests)
 
-Tests render to in-memory buffers only. Any real device stream outputs **digital silence (all zeros)** by default: the callback still runs `render` and then zero-fills the buffer, so callback count / jitter / xrun measurement is unaffected. An audible tone is opt-in only, set by the USER: `OPENMIXER_AUDIBLE=1` (default off) enables a quiet tone with gain capped at 0.05 (-26 dBFS); the mid-run gain command is capped at half of that. Agents never set this variable. Correction (honest): my first 5 s and 60 s WSL runs, made before this rule existed, streamed a 440 Hz tone at gain 0.5 to the WSLg sink and were audible; the first 60 s table below is from that run. A later 4 s silent re-run gave comparable timing (660 callbacks, mean gap 6.067 ms, max 20.9 ms, 1 late, 0 xruns), so the metrics do not depend on audibility, but the 60 s numbers were not repeated silently.
+The render test is in-memory only. The device test (`device_opens_or_skips`) opens a real stream, which outputs **digital silence (all zeros)** by default: the callback still runs `render` and then zero-fills the buffer, so callback count / jitter / xrun measurement is unaffected. An audible tone is opt-in only, set by the USER: `OPENMIXER_AUDIBLE=1` (default off) enables a quiet tone with gain capped at 0.05 (-26 dBFS); the mid-run gain command is capped at half of that. Agents never set this variable. Correction (honest): my first 5 s and 60 s WSL runs, made before this rule existed, streamed a 440 Hz tone at gain 0.5 to the WSLg sink and were audible; the first 60 s table below is from that run. A later 4 s silent re-run gave comparable timing (660 callbacks, mean gap 6.067 ms, max 20.9 ms, 1 late, 0 xruns), so the metrics do not depend on audibility, but the 60 s numbers were not repeated silently.
 
 ## What was verified (and how)
 
@@ -27,7 +27,9 @@ Tests render to in-memory buffers only. Any real device stream outputs **digital
 
 ## Real-device run on WSL2 (cpal `pulseaudio` feature, WSLg PulseServer)
 
-`cargo run --release --features pulse -- 60 --cue --pulse` (host `pulseaudio`, device `pulseaudio:RDPSink`, f32, 2 ch, 44100 Hz, `BufferSize::Fixed(256)` accepted, nominal period 5.805 ms):
+`cargo run --release --features pulse -- 60 --cue --pulse` (host `pulseaudio`, device `pulseaudio:RDPSink`, f32, 2 ch, 44100 Hz, `BufferSize::Fixed(256)` accepted, nominal period 5.805 ms).
+
+**60 s metrics (audible run, before the silent-only directive; silent 4 s rerun matched):**
 
 | Metric | Result |
 |---|---|
