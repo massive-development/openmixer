@@ -4,6 +4,7 @@
 //! the UI and MIDI. No audio processing lives here.
 
 pub mod atomic;
+pub mod command;
 mod frame_ring;
 pub mod param_id;
 mod parameter;
@@ -11,9 +12,10 @@ mod router;
 mod state;
 pub mod sync;
 
+pub use command::{Command, CommandError, CommandSink};
 pub use frame_ring::FrameRing;
-pub use param_id::{ParamError, ParamId};
-pub use parameter::ParameterTarget;
+pub use param_id::{Namespace, ParamError, ParamId};
+pub use parameter::{ParamTarget, ParameterTarget};
 pub use router::ParameterRouter;
 pub use state::StateReader;
 

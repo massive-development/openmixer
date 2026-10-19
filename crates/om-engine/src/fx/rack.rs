@@ -7,6 +7,7 @@ use super::factory::FxFactory;
 use super::unit::{FxUnit, FxUnitControl};
 use crate::grid::BeatGrid;
 use crate::ProcessStage;
+use om_core::param_id::{FxParam, FxRackParam};
 use om_core::ParameterTarget;
 
 pub struct FxRack {
@@ -117,35 +118,35 @@ impl FxRackControl {
     }
 }
 
-/// Parses `fx<N>.<rest>` with 1 to 3 digits; returns `(N, rest)`.
-fn parse_unit_id(id: &str) -> Option<(usize, &str)> {
-    let rest = id.strip_prefix("fx")?;
-    let dot = rest.find('.')?;
-    let digits = &rest[..dot];
-    if digits.is_empty() || digits.len() > 3 || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
+impl FxRackControl {
+    /// Applies a rack parameter: the rack tempo (`unit` is `None`, `Bpm`) or a parameter of unit
+    /// `unit`. Returns `false` for a missing unit or a parameter the rack does not take.
+    pub fn set_fx(&self, unit: Option<u16>, p: &FxParam, value: f64) -> bool {
+        match (unit, p) {
+            (None, FxParam::Bpm) => {
+                self.set_tempo(value);
+                true
+            }
+            (None, _) => false,
+            (Some(index), p) => self
+                .unit(usize::from(index))
+                .is_some_and(|unit| unit.set_fx_param(p, value)),
+        }
     }
-    Some((digits.parse().ok()?, &rest[dot + 1..]))
 }
 
 impl ParameterTarget for FxRackControl {
-    /// Ids: "bpm", "fx<N>.enable", "fx<N>.mix", "fx<N>.<effect param>" (N = unit index).
+    /// The rack's id: "bpm", or "fx<N>.<param>" with N the unit index.
     fn set_parameter(&self, id: &str, value: f64) -> bool {
-        if id == "bpm" {
-            self.set_tempo(value);
-            return true;
-        }
-        match parse_unit_id(id) {
-            Some((index, unit_id)) => self
-                .unit(index)
-                .is_some_and(|unit| unit.set_parameter(unit_id, value)),
-            None => false,
+        match id.parse::<FxRackParam>() {
+            Ok(FxRackParam { unit, p }) => self.set_fx(unit, &p, value),
+            Err(_) => false,
         }
     }
 }
 
 impl ParameterTarget for FxRack {
-    /// Ids: "bpm", "fx<N>.enable", "fx<N>.mix", "fx<N>.<effect param>" (N = unit index).
+    /// Same ids as [`FxRackControl`].
     fn set_parameter(&self, id: &str, value: f64) -> bool {
         self.control.set_parameter(id, value)
     }

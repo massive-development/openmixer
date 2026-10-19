@@ -1,7 +1,7 @@
 use super::{
-    AutomixParam, ChannelParam, DeckParam, EqBand, FxParam, FxRack, MixerParam, ParamError,
-    ParamId, SamplerParam, StemParam, SyncParam, HOTCUES_PER_DECK, MAX_CHANNELS, MAX_DECKS,
-    MAX_FX_UNIT, SAMPLER_PADS, STEMS_PER_DECK,
+    AutomixParam, ChannelParam, DeckParam, EqBand, FxParam, FxRack, FxRackParam, MixerParam,
+    ParamError, ParamId, SamplerParam, StemParam, SyncParam, HOTCUES_PER_DECK, MAX_CHANNELS,
+    MAX_DECKS, MAX_FX_UNIT, SAMPLER_PADS, STEMS_PER_DECK,
 };
 use std::str::FromStr;
 
@@ -9,13 +9,7 @@ impl FromStr for ParamId {
     type Err = ParamError;
 
     fn from_str(id: &str) -> Result<Self, ParamError> {
-        if id.is_empty() {
-            return Err(ParamError::Empty);
-        }
-        let parts: Vec<&str> = id.split('.').collect();
-        if parts.iter().any(|part| part.is_empty()) {
-            return Err(malformed(id));
-        }
+        let parts = segments(id)?;
         let rest = &parts[1..];
         match parts[0] {
             "deck" => parse_deck(id, rest),
@@ -28,6 +22,61 @@ impl FromStr for ParamId {
             _ => parse_ext(id, &parts),
         }
     }
+}
+
+// Sub-namespace parsers: the part of an id after its engine root (`play` in `deck.0.play`). Engine
+// objects parse their own string ids through these, so the grammar lives in one place.
+
+impl FromStr for DeckParam {
+    type Err = ParamError;
+
+    fn from_str(id: &str) -> Result<Self, ParamError> {
+        parse_deck_param(id, &segments(id)?)
+    }
+}
+
+impl FromStr for MixerParam {
+    type Err = ParamError;
+
+    fn from_str(id: &str) -> Result<Self, ParamError> {
+        parse_mixer_param(id, &segments(id)?)
+    }
+}
+
+impl FromStr for SyncParam {
+    type Err = ParamError;
+
+    fn from_str(id: &str) -> Result<Self, ParamError> {
+        parse_sync_param(id, &segments(id)?)
+    }
+}
+
+impl FromStr for FxRackParam {
+    type Err = ParamError;
+
+    fn from_str(id: &str) -> Result<Self, ParamError> {
+        parse_fx_rack_param(id, &segments(id)?)
+    }
+}
+
+impl FromStr for FxParam {
+    type Err = ParamError;
+
+    fn from_str(id: &str) -> Result<Self, ParamError> {
+        parse_fx_param(id, &segments(id)?)
+    }
+}
+
+/// Splits `id` on dots. Empty ids and empty segments are errors.
+fn segments(id: &str) -> Result<Vec<&str>, ParamError> {
+    if id.is_empty() {
+        return Err(ParamError::Empty);
+    }
+    let parts: Vec<&str> = id.split('.').collect();
+    if parts.iter().any(|part| part.is_empty()) {
+        return Err(malformed(id));
+    }
+    Ok(parts)
 }
 
 fn malformed(id: &str) -> ParamError {
@@ -124,7 +173,11 @@ fn parse_beats(id: &str, text: &str) -> Result<f64, ParamError> {
 }
 
 fn parse_mixer(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
-    let p = match rest {
+    Ok(ParamId::Mixer(parse_mixer_param(id, rest)?))
+}
+
+fn parse_mixer_param(id: &str, rest: &[&str]) -> Result<MixerParam, ParamError> {
+    Ok(match rest {
         ["crossfader"] => MixerParam::Crossfader,
         ["crossfader", "curve"] => MixerParam::CrossfaderCurve,
         ["master"] => MixerParam::Master,
@@ -135,8 +188,7 @@ fn parse_mixer(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
             p: parse_channel_param(id, tail)?,
         },
         _ => return Err(unknown(id)),
-    };
-    Ok(ParamId::Mixer(p))
+    })
 }
 
 fn parse_channel_param(id: &str, tail: &[&str]) -> Result<ChannelParam, ParamError> {
@@ -158,14 +210,18 @@ fn parse_fx(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
         return Err(malformed(id));
     };
     let rack = parse_rack(id, rack_text)?;
+    let FxRackParam { unit, p } = parse_fx_rack_param(id, tail)?;
+    Ok(ParamId::Fx { rack, unit, p })
+}
+
+/// The part of an FX id after its rack: `bpm` (rack tempo) or `fx<N>.<param>`.
+fn parse_fx_rack_param(id: &str, tail: &[&str]) -> Result<FxRackParam, ParamError> {
     match tail {
-        ["bpm"] => Ok(ParamId::Fx {
-            rack,
+        ["bpm"] => Ok(FxRackParam {
             unit: None,
             p: FxParam::Bpm,
         }),
-        [unit_text, p @ ..] => Ok(ParamId::Fx {
-            rack,
+        [unit_text, p @ ..] => Ok(FxRackParam {
             unit: Some(parse_unit(id, unit_text)?),
             p: parse_fx_param(id, p)?,
         }),
@@ -204,13 +260,16 @@ fn parse_fx_param(id: &str, p: &[&str]) -> Result<FxParam, ParamError> {
 }
 
 fn parse_sync(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
-    let p = match rest {
+    Ok(ParamId::Sync(parse_sync_param(id, rest)?))
+}
+
+fn parse_sync_param(id: &str, rest: &[&str]) -> Result<SyncParam, ParamError> {
+    Ok(match rest {
         ["leader"] => SyncParam::Leader,
         ["mode"] => SyncParam::Mode,
         [deck, "sync"] => SyncParam::DeckEnabled(index_u8(id, deck, "deck", MAX_DECKS)?),
         _ => return Err(unknown(id)),
-    };
-    Ok(ParamId::Sync(p))
+    })
 }
 
 fn parse_stem(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {

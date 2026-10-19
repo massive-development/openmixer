@@ -5,7 +5,7 @@ use super::DjEngine;
 use crate::callback::AudioCallback;
 use crate::mixer::ChannelInput;
 use crate::ProcessStage;
-use om_core::ParameterTarget;
+use om_core::{ParamId, ParameterRouter, ParameterTarget};
 use std::sync::{Arc, Mutex};
 
 const RATE: f64 = 44_100.0;
@@ -146,5 +146,115 @@ fn echo_repeat_lands_on_the_beat_grid_at_48_khz() {
     assert!(
         (peak as i64 - 24_000).abs() <= 500,
         "echo repeat at frame {peak}, expected about 24000"
+    );
+}
+
+/// Ids the engine applies, with a value each. Driven once through the string façade and once
+/// through `ParameterRouter::dispatch` on a parsed `ParamId`; the engine state must match.
+const SAME_EFFECT: &[(&str, f64)] = &[
+    ("deck.0.rate", 1.05),
+    ("deck.0.play", 1.0),
+    ("deck.0.slip", 1.0),
+    ("deck.0.quantize", 0.0),
+    ("sync.leader", 1.0),
+    ("deck.0.sync.master", 1.0),
+    ("sync.1.sync", 1.0),
+    ("mixer.ch1.fader", 0.25),
+    ("mixer.crossfader", 0.9),
+    ("fx.ch1.fx2.enable", 1.0),
+    ("fx.ch1.fx2.mix", 0.4),
+];
+
+/// Ids the grammar rejects: both paths must report `false` and count them as unknown.
+const REJECTED: &[&str] = &[
+    "deck.0.nope",
+    "deck.9.play",
+    "deck.0.loop.quantized.0",
+    "mixer.ch9.fader",
+    "fx.ch0000.fx0.mix",
+    "sync.x.sync",
+];
+
+/// Ids that parse, but the two-deck engine does not have the target: `false` on both paths.
+const ENGINE_REJECTS: &[&str] = &[
+    "deck.3.play",
+    "mixer.ch3.fader",
+    "fx.ch3.fx0.mix",
+    "deck.0.loop.quantized.2",
+];
+
+#[derive(Debug, PartialEq)]
+struct Observed {
+    rate: f64,
+    playing: bool,
+    fader: f32,
+    crossfader: f32,
+    fx_mix: f32,
+    fx_enabled: bool,
+    leader: Option<usize>,
+    sync_on: bool,
+    slip: bool,
+    quantize: bool,
+}
+
+fn observe(engine: &DjEngine) -> Observed {
+    let unit = engine
+        .fx()
+        .channel_rack(1)
+        .and_then(|rack| rack.unit(2))
+        .expect("channel 1, unit 2");
+    Observed {
+        rate: engine.deck(0).rate(),
+        playing: engine.deck(0).is_playing(),
+        fader: engine.mixer().fader(1),
+        crossfader: engine.mixer().crossfader(),
+        fx_mix: unit.mix(),
+        fx_enabled: unit.is_enabled(),
+        leader: engine.sync().leader(),
+        sync_on: engine.sync().is_enabled(1),
+        slip: engine.deck_control(0).is_slipping(),
+        quantize: engine.deck_control(0).is_quantize(),
+    }
+}
+
+#[test]
+fn typed_dispatch_has_the_same_effect_as_the_string_path() {
+    let (by_string, _string_audio) = DjEngine::new(2);
+    let (by_typed, _typed_audio) = DjEngine::new(2);
+    let string_router = ParameterRouter::new();
+    let typed_router = ParameterRouter::new();
+    by_string.register(&string_router);
+    by_typed.register(&typed_router);
+
+    for &(id, value) in SAME_EFFECT {
+        let parsed: ParamId = id.parse().expect(id);
+        assert!(string_router.set_parameter(id, value), "{id} via string");
+        assert!(typed_router.dispatch(&parsed, value), "{id} via dispatch");
+    }
+    assert_eq!(observe(&by_string), observe(&by_typed));
+    assert!(observe(&by_typed).playing && observe(&by_typed).slip);
+    assert_eq!(observe(&by_typed).leader, Some(0));
+    assert_eq!(string_router.unknown_count(), 0);
+    assert_eq!(typed_router.unknown_count(), 0);
+}
+
+#[test]
+fn rejected_ids_are_refused_and_counted_on_both_paths() {
+    let (engine, _audio) = DjEngine::new(2);
+    let router = ParameterRouter::new();
+    engine.register(&router);
+
+    for id in REJECTED {
+        assert!(id.parse::<ParamId>().is_err(), "{id} should not parse");
+        assert!(!router.set_parameter(id, 1.0), "{id}");
+    }
+    for id in ENGINE_REJECTS {
+        let parsed: ParamId = id.parse().expect(id);
+        assert!(!router.dispatch(&parsed, 1.0), "{id} via dispatch");
+        assert!(!router.set_parameter(id, 1.0), "{id} via string");
+    }
+    assert_eq!(
+        router.unknown_count(),
+        REJECTED.len() + 2 * ENGINE_REJECTS.len()
     );
 }

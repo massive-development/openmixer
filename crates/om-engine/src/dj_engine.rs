@@ -10,11 +10,12 @@
 
 use crate::callback::AudioCallback;
 use crate::deck::{Deck, DeckAudio, DEFAULT_RING_FRAMES};
-use crate::deck_control::DeckControl;
+use crate::deck_control::{DeckBank, DeckControl};
 use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
 use crate::sync::Sync;
+use om_core::param_id::Namespace;
 use om_core::ParameterRouter;
 use std::sync::Arc;
 
@@ -133,14 +134,15 @@ impl DjEngine {
         self.controls[deck].set_grid(grid);
     }
 
-    /// Registers the control surface with `router`: `mixer`, `fx`, `sync` and `deck.<i>`.
+    /// Registers the control surface with `router`: the `deck`, `mixer`, `fx` and `sync` namespaces.
     pub fn register(&self, router: &ParameterRouter) {
-        router.register_target("mixer", self.mixer.clone());
-        router.register_target("fx", self.fx.clone());
-        router.register_target("sync", self.sync.clone());
-        for (index, control) in self.controls.iter().enumerate() {
-            router.register_target(&format!("deck.{index}"), control.clone());
-        }
+        router.register_typed(
+            Namespace::Deck,
+            Arc::new(DeckBank::new(self.controls.clone())),
+        );
+        router.register_typed(Namespace::Mixer, self.mixer.clone());
+        router.register_typed(Namespace::Fx, self.fx.clone());
+        router.register_typed(Namespace::Sync, self.sync.clone());
     }
 
     /// Control-timer step (about 20-50 Hz, control thread): sync rates and phase, FX tempo, slip

@@ -1,13 +1,14 @@
 //! Beat sync: matches a follower deck's tempo to a leader and nudges its phase onto the leader's
 //! beat (or bar). `step` and `apply` run on a control timer (~20-50 Hz); setters may come from any
 //! non-audio thread (MIDI). Rates reach the audio thread through `Deck::set_rate`.
-//! Ids (`ParameterTarget`): `leader` (deck index, <0 or out of range for none), `mode` (0 beat,
+//! Params (`ParamId::Sync`): `leader` (deck index, <0 or out of range for none), `mode` (0 beat,
 //! 1 bar), `<deck>.sync` (>= 0.5 on).
 
 use crate::deck::Deck;
 use crate::grid::BeatGrid;
+use om_core::param_id::SyncParam;
 use om_core::sync::LockExt;
-use om_core::ParameterTarget;
+use om_core::{ParamId, ParamTarget, ParameterTarget};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Fraction of rate used to close phase error.
@@ -233,36 +234,44 @@ fn follower_rate(
     base * (1.0 + nudge)
 }
 
-/// Parses the `<deck>.sync` and `leader` / `mode` ids. `<deck>` may be empty, which reads as deck 0 (an empty string parses to 0).
-impl ParameterTarget for Sync {
-    fn set_parameter(&self, id: &str, value: f64) -> bool {
-        if id == "leader" {
-            let deck = usize::try_from(value as i64).ok();
-            self.set_leader(deck);
-        } else if id == "mode" {
-            self.set_mode(if value >= 0.5 {
-                SyncMode::Bar
-            } else {
-                SyncMode::Beat
-            });
-        } else if let Some(prefix) = id.strip_suffix(".sync") {
-            let deck_text = prefix.split_once('.').map_or(prefix, |(first, _)| first);
-            if !deck_text.bytes().all(|b| b.is_ascii_digit()) {
-                return false;
+impl Sync {
+    /// Applies one sync parameter: `leader` (deck index; negative or out of range for none), `mode`
+    /// (>= 0.5 bar, else beat) and `<deck>.sync` (>= 0.5 on). Returns `false` for anything else.
+    pub fn set_sync_param(&self, p: &SyncParam, value: f64) -> bool {
+        match p {
+            SyncParam::Leader => {
+                let deck = usize::try_from(value as i64).ok();
+                self.set_leader(deck);
             }
-            let deck = if deck_text.is_empty() {
-                0
-            } else {
-                match deck_text.parse::<usize>() {
-                    Ok(d) => d,
-                    Err(_) => return true,
-                }
-            };
-            self.set_enabled(deck, value >= 0.5);
-        } else {
-            return false;
+            SyncParam::Mode => {
+                self.set_mode(if value >= 0.5 {
+                    SyncMode::Bar
+                } else {
+                    SyncMode::Beat
+                });
+            }
+            SyncParam::DeckEnabled(deck) => self.set_enabled(usize::from(*deck), value >= 0.5),
         }
         true
+    }
+}
+
+impl ParamTarget for Sync {
+    fn set_param(&self, id: &ParamId, value: f64) -> bool {
+        match id {
+            ParamId::Sync(p) => self.set_sync_param(p, value),
+            _ => false,
+        }
+    }
+}
+
+impl ParameterTarget for Sync {
+    /// The id after `sync.`: "leader", "mode", "<deck>.sync".
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
+        match id.parse::<SyncParam>() {
+            Ok(p) => self.set_sync_param(&p, value),
+            Err(_) => false,
+        }
     }
 }
 

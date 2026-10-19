@@ -7,7 +7,8 @@ use super::shared::{
 };
 use crate::stage::StageInsert;
 use crate::ProcessStage;
-use om_core::ParameterTarget;
+use om_core::param_id::{ChannelParam, EqBand, MixerParam};
+use om_core::{ParamId, ParamTarget, ParameterTarget};
 use om_dsp::{CrossfaderAssign, CrossfaderCurve};
 use std::sync::Arc;
 
@@ -188,63 +189,44 @@ impl MixerControl {
         self.master_insert.set(slot, stage)
     }
 
-    fn set_channel_parameter(&self, head: &str, rest: &[&str], value: f64) -> bool {
-        let digits = &head[2..];
-        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-            return false;
-        }
-        let Ok(ch) = digits.parse::<usize>() else {
-            return false;
-        };
+    /// Applies one channel parameter. Channels the engine does not have return `false`.
+    fn set_channel_param(&self, ch: usize, p: &ChannelParam, value: f64) -> bool {
         if ch >= self.num_channels() {
             return false;
         }
         let v = value as f32;
-        match rest {
-            [param] => {
-                match *param {
-                    "trim" => self.set_trim(ch, v),
-                    "fader" => self.set_fader(ch, v),
-                    "filter" => self.set_filter(ch, v),
-                    "pfl" => self.set_pfl(ch, v >= 0.5),
-                    "xfader" => {
-                        let index = value.round().clamp(0.0, 2.0) as u8;
-                        self.set_crossfader_assign(ch, assign_from_u8(index));
-                    }
-                    _ => return false,
-                }
-                true
+        match p {
+            ChannelParam::Trim => self.set_trim(ch, v),
+            ChannelParam::Fader => self.set_fader(ch, v),
+            ChannelParam::Filter => self.set_filter(ch, v),
+            ChannelParam::Pfl => self.set_pfl(ch, v >= 0.5),
+            ChannelParam::Xfader => {
+                let index = value.round().clamp(0.0, 2.0) as u8;
+                self.set_crossfader_assign(ch, assign_from_u8(index));
             }
-            ["eq", band] => {
-                let band = match *band {
-                    "low" => 0,
-                    "mid" => 1,
-                    "high" => 2,
-                    _ => return false,
+            ChannelParam::Eq(band) => {
+                let band = match band {
+                    EqBand::Low => 0,
+                    EqBand::Mid => 1,
+                    EqBand::High => 2,
                 };
                 self.set_eq(ch, band, v);
-                true
             }
-            _ => false,
         }
+        true
     }
-}
 
-impl ParameterTarget for MixerControl {
-    /// Ids: `ch<N>.trim|fader|filter|pfl|xfader`, `ch<N>.eq.low|mid|high`, `crossfader`,
-    /// `crossfader.curve` (0 linear, 1 constant power), `master`, `cue.level`, `cue.mix`.
-    fn set_parameter(&self, id: &str, value: f64) -> bool {
-        let parts: Vec<&str> = id.split('.').collect();
+    /// Applies one mixer parameter (`ch<N>.*`, `crossfader`, `crossfader.curve` (0 linear, 1 constant
+    /// power), `master`, `cue.level`, `cue.mix`).
+    pub fn set_mixer_param(&self, p: &MixerParam, value: f64) -> bool {
         let v = value as f32;
-        match parts.as_slice() {
-            [head, rest @ ..] if head.starts_with("ch") && !rest.is_empty() => {
-                self.set_channel_parameter(head, rest, value)
-            }
-            ["crossfader"] => {
+        match p {
+            MixerParam::Channel { ch, p } => self.set_channel_param(usize::from(*ch), p, value),
+            MixerParam::Crossfader => {
                 self.set_crossfader(v);
                 true
             }
-            ["crossfader", "curve"] => {
+            MixerParam::CrossfaderCurve => {
                 self.set_crossfader_curve(if v >= 0.5 {
                     CrossfaderCurve::ConstantPower
                 } else {
@@ -252,19 +234,37 @@ impl ParameterTarget for MixerControl {
                 });
                 true
             }
-            ["master"] => {
+            MixerParam::Master => {
                 self.set_master_gain(v);
                 true
             }
-            ["cue", "level"] => {
+            MixerParam::CueLevel => {
                 self.set_cue_level(v);
                 true
             }
-            ["cue", "mix"] => {
+            MixerParam::CueMix => {
                 self.set_cue_mix(v);
                 true
             }
+        }
+    }
+}
+
+impl ParamTarget for MixerControl {
+    fn set_param(&self, id: &ParamId, value: f64) -> bool {
+        match id {
+            ParamId::Mixer(p) => self.set_mixer_param(p, value),
             _ => false,
+        }
+    }
+}
+
+impl ParameterTarget for MixerControl {
+    /// The id after `mixer.`: "ch1.fader", "crossfader.curve", "cue.mix", and so on.
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
+        match id.parse::<MixerParam>() {
+            Ok(p) => self.set_mixer_param(&p, value),
+            Err(_) => false,
         }
     }
 }

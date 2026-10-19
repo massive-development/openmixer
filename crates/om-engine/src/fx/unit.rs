@@ -8,6 +8,7 @@ use super::effect::{Effect, FxContext, ParamControl, MAX_BPM, MIN_BPM};
 use super::wipe::SLICE;
 use crate::ProcessStage;
 use om_core::atomic::{AtomicF32, AtomicF64};
+use om_core::param_id::FxParam;
 use om_core::ParameterTarget;
 use om_dsp::Smoother;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -278,27 +279,37 @@ impl FxUnitControl {
     }
 }
 
-impl ParameterTarget for FxUnitControl {
-    /// Ids: "enable" (>= 0.5 on), "mix" (0..1), "bpm", plus the effect's own names (e.g. "time").
-    /// Returns `false` for unknown ids and non-finite values.
-    fn set_parameter(&self, id: &str, value: f64) -> bool {
-        match id {
-            "enable" => {
+impl FxUnitControl {
+    /// Applies one unit parameter: the unit's own (`enable`, `mix`, `bpm`) or an effect parameter by
+    /// name. Returns `false` for unknown names and non-finite values.
+    pub fn set_fx_param(&self, p: &FxParam, value: f64) -> bool {
+        match p {
+            FxParam::Enable => {
                 self.set_enabled(value >= 0.5);
                 true
             }
-            "mix" => {
+            FxParam::Mix => {
                 self.set_mix(value as f32);
                 true
             }
-            "bpm" => {
+            FxParam::Bpm => {
                 self.set_tempo(value);
                 true
             }
-            _ => match self.params.find(id) {
+            FxParam::Effect(name) => match self.params.find(name) {
                 Some(index) => self.params.set(index, value as f32),
                 None => false,
             },
+        }
+    }
+}
+
+impl ParameterTarget for FxUnitControl {
+    /// The unit's id: "enable", "mix", "bpm", or an effect parameter name such as "time".
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
+        match id.parse::<FxParam>() {
+            Ok(p) => self.set_fx_param(&p, value),
+            Err(_) => false,
         }
     }
 }
