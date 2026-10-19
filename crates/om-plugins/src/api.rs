@@ -1,5 +1,4 @@
-//! The plugin API a plugin implements and the services the host offers it. Port of
-//! `src/plugins/PluginApi.h`, redesigned for Rust: plugins are in-process trait objects (see
+//! The plugin API a plugin implements and the services the host offers it. Plugins are in-process trait objects (see
 //! `docs/spikes/DECISIONS.md`, "Plugins: in-process only").
 
 use om_core::ParameterTarget;

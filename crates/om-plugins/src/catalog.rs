@@ -1,5 +1,4 @@
-//! Plugin stage factories and the live stages attached to the engine. Port of
-//! `src/plugins/StageCatalog.cpp`. Control thread only.
+//! Plugin stage factories and the live stages attached to the engine. Control thread only.
 //!
 //! The engine owns the stage once it is inserted: [`om_engine::StageInsert::set`] takes the box, and
 //! the displaced stage is freed on the control thread. The catalog therefore keeps only the

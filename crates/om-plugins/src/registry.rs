@@ -1,8 +1,8 @@
 //! Loads plugins and keeps what they register: stages, MIDI maps, parameter targets and themes.
-//! Port of `src/plugins/PluginRegistry.cpp`. Control thread only.
+//! Control thread only.
 //!
 //! Plugins are in-process ([`PluginRegistry::add_plugin`]) until the dynamic-loading decision is
-//! made (see [`crate::loader`]). The rules match the C++ registry: ids are unique, a second
+//! made (see [`crate::loader`]). The rules: ids are unique, a second
 //! registration of a stage, map, prefix or theme id is refused, and unloading removes everything
 //! the plugin registered, then calls its `on_unload`.
 
