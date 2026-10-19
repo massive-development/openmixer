@@ -1,0 +1,15 @@
+[package]
+name = "om-testing"
+description = "Test-only helpers shared by the openmixer crates: WAV fixtures, signal generators, level measures and condition-based waits."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+tempfile.workspace = true
