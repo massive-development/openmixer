@@ -31,9 +31,10 @@ Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`
 
 Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
-- [ ] **Todo 7:** Audio device layer + latency instrumentation + mock device
+- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device
   - Output via `cpal` (ALSA backend first; WASAPI and CoreAudio in the porting phase)
   - Mock device for CI testing
+  - Open: the cpal device has not yet run on a real ALSA/PipeWire device (WSL has none; the device test skips there). See `docs/spikes/cpal.md`
 
 - [x] **Todo 8:** Deck engine (streaming decode + transport)
   - Streaming decode via `symphonia`
