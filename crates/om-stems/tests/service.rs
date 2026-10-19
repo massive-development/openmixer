@@ -483,3 +483,20 @@ fn a_row_whose_directory_is_gone_is_reconciled_away() {
     let lib = Library::open(&fx.library, OpenMode::ReadOnly, core_migrations()).unwrap();
     assert!(lib.track_stems().list_all_bytes().unwrap().is_empty());
 }
+
+#[test]
+fn clear_cache_removes_every_stem_set_and_index_row() {
+    let fx = fixture(2);
+    let svc = service(&fx, Arc::new(MockSeparator::new()), None, None);
+    assert_eq!(finish(&svc.submit(request(&fx, 0))), JobStatus::Done);
+    assert_eq!(finish(&svc.submit(request(&fx, 1))), JobStatus::Done);
+    assert!(svc.cache_bytes().expect("bytes") > 0);
+    assert_eq!(svc.clear_cache().expect("clear"), 2);
+    assert_eq!(svc.cache_bytes().expect("bytes"), 0);
+    let library = Library::open(&fx.library, OpenMode::ReadOnly, core_migrations()).expect("lib");
+    assert!(library
+        .track_stems()
+        .list_all_bytes()
+        .expect("rows")
+        .is_empty());
+}

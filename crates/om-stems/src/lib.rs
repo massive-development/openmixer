@@ -9,6 +9,7 @@
 mod cache;
 mod contract;
 mod manifest;
+mod model;
 #[cfg(feature = "onnx")]
 mod onnx;
 mod pipeline;
@@ -25,6 +26,7 @@ pub use cache::{
 };
 pub use contract::ModelContract;
 pub use manifest::{ManifestError, ModelManifest, HTDEMUCS_LICENSE_NAME, HTDEMUCS_LICENSE_TEXT};
+pub use model::{InstallState, ModelInstaller};
 #[cfg(feature = "onnx")]
 pub use onnx::{default_threads, OrtInference};
 pub use pipeline::{
