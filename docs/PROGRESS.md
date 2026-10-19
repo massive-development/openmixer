@@ -132,6 +132,17 @@ Tests from the C++ suite that are not ported yet, each with the Todo that owns i
 - `MeterBallisticsTest.DefaultsComeFromTheTheme` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). The meter defaults are read from the theme, which belongs to the widget layer. <!-- cpp-history -->
 - `MeterBallisticsTest.MeterBarFollowsUpdatesPaintsAndClearsClipOnClick` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It paints the bar and handles the clip click, so it needs the widget. <!-- cpp-history -->
 - `MeterBallisticsTest.StereoMeterFeedsEachSideSeparately` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It exercises the stereo meter widget. <!-- cpp-history -->
+- `LibraryBrowserTest.SearchBoxTextIsVerticallyCentred` (`tests/unit/LibraryBrowserTest.cpp`): deferred to Todo 28 (library browser window). GPUI paint and layout; covered at model level only (the query text and the status line in `om-ui`). <!-- cpp-history -->
+- `LibraryBrowserTest.BrowserAndTableRenderWithGlassTheme` (`tests/unit/LibraryBrowserTest.cpp`): deferred to Todo 28 (library browser window). GPUI paint in the glass theme; covered at model level only. <!-- cpp-history -->
+- `LibraryBrowserTest.EveryToolbarButtonLabelFitsAndNothingOverlaps` (`tests/unit/LibraryBrowserTest.cpp`): deferred to Todo 28 (library browser window). GPUI layout of the toolbar; covered at model level only. <!-- cpp-history -->
+- `ThemeRegistryTest.SwitchingUpdatesLookAndFeelColours` (`tests/unit/ThemeRegistryTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). Needs the look-and-feel that paints the colours; covered at model level only (the registry's selection and listeners). <!-- cpp-history -->
+- `ThemeRegistryTest.ThemeSwitchReachesLiveComponents` (`tests/unit/ThemeRegistryTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). Checks live GPUI components after a switch; covered at model level only. <!-- cpp-history -->
+- `SettingsPanelTest.ShowsOnePageAtATime` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI widget test of the page switcher; covered at model level only. <!-- cpp-history -->
+- `SettingsPanelTest.ReflectAllPicksUpPreferencesChangedElsewhere` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI widget test of reflecting a preferences change; covered at model level only. <!-- cpp-history -->
+- `SettingsPanelTest.CloseButtonEscapeAndClickOutsideDismiss` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI input handling of the overlay; covered at model level only. <!-- cpp-history -->
+- `SettingsPanelTest.CardFitsTheWindowAndShrinksInSmallWindows` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI layout at window sizes; covered at model level only. <!-- cpp-history -->
+- `SettingsPanelTest.EveryTabLaysOutInsideTheCardWithoutOverlap` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI layout of every tab; covered at model level only. <!-- cpp-history -->
+- `SettingsPanelTest.RendersEveryTabInBothThemes` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI paint of every tab in both themes; covered at model level only. <!-- cpp-history -->
 
 ---
 
