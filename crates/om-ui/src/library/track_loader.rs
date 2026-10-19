@@ -145,6 +145,62 @@ impl TrackLoader {
         Ok(())
     }
 
+    /// Loads the audio file at `path` into `deck`. A file the library already holds (matched by
+    /// its path) loads as that track, with its analysis, cues and play history. Any other file
+    /// loads plainly: the deck plays it, with no metadata, grid, waveform or cues, and the old
+    /// track's hotcue edits are still saved first. `force` and the failure cases are as in
+    /// [`Self::load_track`].
+    pub fn load_path(
+        &mut self,
+        engine: &DjEngine,
+        services: &mut LibraryServices,
+        deck: usize,
+        path: &Path,
+        force: bool,
+    ) -> Result<(), LoadError> {
+        if deck >= self.slots.len() {
+            return Err(LoadError::NoSuchDeck);
+        }
+        if !force && engine.deck(deck).is_playing() {
+            return Err(LoadError::DeckPlaying);
+        }
+        if !path.is_file() {
+            return Err(LoadError::FileMissing);
+        }
+        let known = services
+            .library()
+            .tracks()
+            .find_by_path(&path.to_string_lossy())?;
+        match known {
+            Some(track) => self.load_track(engine, services, deck, &track, force),
+            None => self.load_plain(engine, services, deck, path),
+        }
+    }
+
+    /// Loads a file that is not in the library: the deck gets the audio and nothing else.
+    fn load_plain(
+        &mut self,
+        engine: &DjEngine,
+        services: &LibraryServices,
+        deck: usize,
+        path: &Path,
+    ) -> Result<(), LoadError> {
+        self.save_cue_edits(engine, services.library(), deck);
+        let previous_grid = self.slots[deck].grid.take();
+        engine.set_grid(deck, None);
+        if engine.deck(deck).load(path).is_err() {
+            engine.set_grid(deck, previous_grid.clone());
+            self.slots[deck].grid = previous_grid;
+            return Err(LoadError::Decode {
+                file: file_name(path),
+            });
+        }
+        self.cues.unbind(deck);
+        self.plays[deck].reset(None);
+        self.slots[deck] = Slot::default();
+        Ok(())
+    }
+
     /// Applies analysis completions delivered since the last call, then does the control-side
     /// bookkeeping for playback: plays, and hotcue edits to write back.
     pub fn pump(&mut self, engine: &DjEngine, services: &LibraryServices) {

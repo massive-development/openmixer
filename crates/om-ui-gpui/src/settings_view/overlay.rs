@@ -7,6 +7,7 @@ use super::library::*;
 use super::midi::*;
 use super::plugins::*;
 use super::*;
+use crate::text_entry::{apply_key, EntryKey};
 
 impl Shell {
     /// Runs `f` on the settings when the window has them.
@@ -63,16 +64,11 @@ impl Shell {
         if !settings.open {
             return;
         }
-        if settings.entry.is_some() {
-            match key {
-                "enter" => settings.submit_entry(),
-                "escape" => settings.cancel_entry(),
-                "backspace" => settings.backspace(),
-                _ => {
-                    if let Some(text) = typed {
-                        settings.type_text(text);
-                    }
-                }
+        if let Some(entry) = settings.entry.as_mut() {
+            match apply_key(&mut entry.text, key, typed) {
+                EntryKey::Submit => settings.submit_entry(),
+                EntryKey::Cancel => settings.cancel_entry(),
+                EntryKey::Edited | EntryKey::Ignored => {}
             }
         } else if key == "escape" {
             self.close_settings();

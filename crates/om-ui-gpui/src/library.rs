@@ -275,6 +275,19 @@ impl LibraryPanel {
         self.browser.request_load(deck, &track)
     }
 
+    /// Loads the audio file at `path` into `deck` through the shared loader (see
+    /// `TrackLoader::load_path`). A playing deck refuses unless `force`.
+    pub fn load_path(
+        &mut self,
+        deck: usize,
+        path: &std::path::Path,
+        force: bool,
+    ) -> Result<(), LoadError> {
+        let mut h = self.hub.borrow_mut();
+        let LibraryHub { services, loader } = &mut *h;
+        loader.load_path(&self.engine, services, deck, path, force)
+    }
+
     /// A drop on deck `deck`: loads the library track the description names. `None` when the drag
     /// was not a library track.
     pub fn drop_on_deck(
