@@ -121,8 +121,9 @@ impl SourceReader {
 
     /// Fills `dst` with stereo frames starting at source frame `from`. Mono files are duplicated
     /// to both sides; files with more than two channels contribute their first two. Frames past
-    /// the end (or that fail to decode) are silence.
-    pub fn read_stereo(&mut self, from: i64, dst: &mut [[f32; 2]]) {
+    /// the end (or that fail to decode) are silence. Returns how many frames came from the decoder;
+    /// the rest of `dst` is silence and must not be mistaken for audio.
+    pub fn read_stereo(&mut self, from: i64, dst: &mut [[f32; 2]]) -> usize {
         let from = from.max(0);
         if from != self.pos {
             self.seek_to(from);
@@ -151,6 +152,7 @@ impl SourceReader {
         for out in &mut dst[written..] {
             *out = [0.0, 0.0];
         }
+        written
     }
 
     /// Repositions the decoder so the next frame produced is `frame`.
