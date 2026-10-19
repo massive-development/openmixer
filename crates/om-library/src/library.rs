@@ -11,6 +11,7 @@ use crate::playlist_dao::PlaylistDao;
 use crate::prep_queue_dao::PrepQueueDao;
 use crate::track_dao::TrackDao;
 use crate::track_file_dao::TrackFileDao;
+use crate::track_stems_dao::TrackStemsDao;
 use crate::watch_folder_dao::WatchFolderDao;
 use std::sync::Arc;
 
@@ -87,6 +88,10 @@ impl Library {
 
     pub fn prep_queue(&self) -> PrepQueueDao<'_> {
         PrepQueueDao::new(&self.db)
+    }
+
+    pub fn track_stems(&self) -> TrackStemsDao<'_> {
+        TrackStemsDao::new(&self.db)
     }
 }
 
