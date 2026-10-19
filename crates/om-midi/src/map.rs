@@ -13,11 +13,12 @@
 //! `mode`: absolute (default), relative (offset 64), relative2c, button (default for notes), toggle,
 //! absolute14 (CC pair: `number` is the MSB, `lsb` the LSB controller, default number + 32).
 //! The root `version` is 2 (current); a file without it is version 1 and loads unchanged. A version
-//! newer than [`MAP_VERSION`] is rejected. The `outputs` array (feedback rules) is kept as opaque
-//! JSON until the feedback unit validates it.
+//! newer than [`MAP_VERSION`] is rejected. The `outputs` array holds the feedback rules
+//! ([`OutputRule`]); each one is validated when the map is parsed.
 
 use crate::error::MidiError;
 use crate::event::MidiKind;
+use crate::output_rule::OutputRule;
 use serde_json::Value;
 
 /// Schema version written by [`MidiMap::to_json`].
@@ -112,8 +113,8 @@ pub struct MidiMap {
     pub version: u32,
     pub name: String,
     pub mappings: Vec<Mapping>,
-    /// Feedback rules, verbatim. Typed as `OutputRule` by the feedback unit.
-    pub outputs: Vec<Value>,
+    /// Feedback rules, validated on parse.
+    pub outputs: Vec<OutputRule>,
 }
 
 impl Default for MidiMap {
@@ -158,7 +159,8 @@ impl MidiMap {
         let outputs = root
             .get("outputs")
             .and_then(Value::as_array)
-            .cloned()
+            .map(|list| parse_outputs(list))
+            .transpose()?
             .unwrap_or_default();
 
         Ok(Self {
@@ -168,6 +170,14 @@ impl MidiMap {
             outputs,
         })
     }
+}
+
+/// Parses every feedback rule; the first failure names its index, as the C++ build does.
+fn parse_outputs(list: &[Value]) -> Result<Vec<OutputRule>, MidiError> {
+    list.iter()
+        .enumerate()
+        .map(|(i, v)| OutputRule::parse(v).map_err(|e| invalid(format!("output {i}: {e}"))))
+        .collect()
 }
 
 /// Rule failure while parsing one mapping. Kept apart from `MidiError` so the message stays the
@@ -297,7 +307,7 @@ fn parse_lsb(o: &Object, m: &mut Mapping) -> RuleResult {
 
 /// Numeric view of a JSON value, the way the C++ `var` conversions read it: numbers as they are,
 /// numeric strings parsed, anything else 0.
-fn number_of(v: Option<&Value>) -> f64 {
+pub(crate) fn number_of(v: Option<&Value>) -> f64 {
     match v {
         Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
         Some(Value::String(s)) => s.trim().parse().unwrap_or(0.0),
@@ -307,7 +317,7 @@ fn number_of(v: Option<&Value>) -> f64 {
 }
 
 /// Text view of a JSON value: strings as they are, missing or null as empty.
-fn text_of(v: Option<&Value>) -> String {
+pub(crate) fn text_of(v: Option<&Value>) -> String {
     match v {
         Some(Value::String(s)) => s.clone(),
         None | Some(Value::Null) => String::new(),
@@ -322,6 +332,6 @@ fn bool_of(v: Option<&Value>) -> bool {
     }
 }
 
-fn invalid(message: impl Into<String>) -> MidiError {
+pub(crate) fn invalid(message: impl Into<String>) -> MidiError {
     MidiError::Invalid(message.into())
 }

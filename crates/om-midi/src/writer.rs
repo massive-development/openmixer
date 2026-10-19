@@ -2,6 +2,7 @@
 
 use crate::event::MidiKind;
 use crate::map::{MapMode, Mapping, MidiMap, MAP_VERSION};
+use crate::output_rule::OutputRule;
 use serde_json::{json, Map, Value};
 
 impl MidiMap {
@@ -12,7 +13,7 @@ impl MidiMap {
             "version": MAP_VERSION,
             "name": self.name,
             "mappings": mappings,
-            "outputs": self.outputs,
+            "outputs": self.outputs.iter().map(OutputRule::to_value).collect::<Vec<Value>>(),
         });
         serde_json::to_string_pretty(&root).unwrap_or_default()
     }

@@ -8,6 +8,9 @@ pub enum MidiError {
     Invalid(String),
     #[error("file not found: {}", .0.display())]
     NotFound(PathBuf),
+    /// The MIDI system is unavailable, or a port cannot be opened.
+    #[error("MIDI device: {0}")]
+    Device(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
