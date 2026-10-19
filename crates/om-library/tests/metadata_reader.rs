@@ -191,5 +191,5 @@ fn untagged_formats_report_no_artwork() {
     assert!(lofty::read_from_path(&f)
         .unwrap()
         .primary_tag()
-        .map_or(true, |t| t.pictures().is_empty()));
+        .is_none_or(|t| t.pictures().is_empty()));
 }
