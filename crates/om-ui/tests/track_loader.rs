@@ -1,5 +1,5 @@
-//! Port of tests/unit/TrackLoaderTest.cpp: load-to-deck, metadata, cached or queued analysis. The
-//! header labels the C++ test reads are checked through the loader's track info, which the deck
+//! Load-to-deck, metadata, cached or queued analysis. The
+//! header labels are checked through the loader's track info, which the deck
 //! widget reads.
 
 mod library_common;

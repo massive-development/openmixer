@@ -1,7 +1,6 @@
 //! Meter view state: ballistics per side, the clip latch, and the theme-driven parameters. The
 //! ballistics maths lives in `om_dsp::MeterBallistics`; this is the stereo wrapper the mixer and
-//! master sections use. Port of `src/ui/MeterBallistics.cpp` (`MeterParams::fromTheme`) and
-//! the `MeterBar` / `StereoMeter` wrappers.
+//! master sections use. Also provides the `MeterBar` / `StereoMeter` wrappers.
 
 use crate::theme::ThemeTokens;
 pub use om_dsp::MeterParams;

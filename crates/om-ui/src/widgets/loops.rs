@@ -1,6 +1,5 @@
 //! Quantized loop controls: eight loop sizes, halve and double, exit and reloop. Sizes route
-//! `deck.<N>.loop.quantized.<beats>`; exit and reloop route `loop.exit` and `loop.reloop`. Port of
-//! `src/ui/LoopControls.cpp`.
+//! `deck.<N>.loop.quantized.<beats>`; exit and reloop route `loop.exit` and `loop.reloop`.
 
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
@@ -11,7 +10,7 @@ pub const SIZE_NAMES: [&str; 8] = ["1/4", "1/2", "1", "2", "4", "8", "16", "32"]
 /// Beats; a loop snapped to the grid is within rounding of its size.
 pub const MATCH_TOLERANCE: f64 = 0.01;
 
-/// The route id for a loop size. Keeps the decimal point, as `1.0` and `0.25` read in C++.
+/// The route id for a loop size. Keeps the decimal point, as in `1.0` and `0.25`.
 pub fn loop_id(beats: f64) -> String {
     format!("loop.quantized.{beats:?}")
 }

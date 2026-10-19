@@ -1,6 +1,6 @@
 //! Where the browser table gets its rows: a counted, pageable list of tracks. [`SearchTrackSource`]
 //! runs the query syntax against the library, scoped to a playlist or to everything;
-//! [`PrepQueueSource`] lists the prep queue in order. Port of `src/ui/TrackSource.{h,cpp}`.
+//! [`PrepQueueSource`] lists the prep queue in order.
 
 use std::sync::Arc;
 

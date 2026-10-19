@@ -1,7 +1,7 @@
 //! Composition of the library subsystem for the app: the read-write `Library`, the search engine,
 //! the analysis service with its result cache, the prep queue and the watch folders (their own scan
 //! thread and connection). Nothing here knows about widgets; the browser, the track loader and the
-//! settings page talk to it. Port of `src/ui/LibraryServices.{h,cpp}`.
+//! settings page talk to it.
 //!
 //! Start-up order: library (writer, migrates) -> result cache -> analysis service -> prep queue ->
 //! watch folders. Shutdown is the reverse, which the field order gives.
@@ -9,7 +9,7 @@
 //! Threading: the owner thread (the one that built the services) calls every method except the
 //! watch-folder scan, which runs on its own thread. Scan results and prep events reach the owner
 //! through an outbox that [`LibraryServices::pump`] drains, so listeners and error callbacks always
-//! run on the owner thread, as the C++ message-thread contract does. Listeners get a channel
+//! run on the owner thread. Listeners get a channel
 //! ([`LibraryServices::subscribe`]); dropping the receiver unsubscribes.
 
 use std::cell::RefCell;
@@ -91,7 +91,7 @@ impl Options {
 }
 
 /// The default library file: `OPENMIXER_LIBRARY_DB`, else `<user config>/OpenMixer/library.db`, the
-/// folder the preferences use (and the C++ build's `userApplicationDataDirectory`).
+/// folder the preferences use.
 pub fn default_options() -> Options {
     let path = library_file_from(
         std::env::var_os(LIBRARY_DB_ENV).as_deref(),

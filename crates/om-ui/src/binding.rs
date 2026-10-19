@@ -1,6 +1,6 @@
 //! What the widget models need: read access to the engine, and a write path that goes only through
 //! the string-id control surface (`deck.<N>.<id>`, `mixer.<id>`, `fx.<id>`), so UI and MIDI stay
-//! equivalent. Port of `src/ui/DeckBinding.h` and `src/ui/MixerBinding.h`.
+//! equivalent.
 
 use om_core::ParameterTarget;
 use om_dsp::{CrossfaderAssign, CrossfaderCurve};

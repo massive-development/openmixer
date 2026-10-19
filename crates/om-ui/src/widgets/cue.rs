@@ -1,5 +1,5 @@
 //! Headphone cue section: the cue/master blend and the phones level. Routes `mixer.cue.mix` and
-//! `mixer.cue.level`. Port of `src/ui/CueSection.cpp`.
+//! `mixer.cue.level`.
 
 use super::CAPTION_HEIGHT;
 use crate::binding::MixerBinding;
