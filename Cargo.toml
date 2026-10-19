@@ -4,6 +4,7 @@ members = [
     "crates/om-core",
     "crates/om-dsp",
     "crates/om-engine",
+    "crates/om-analysis",
     "crates/om-stretch",
     "crates/om-audio",
     "crates/om-ui",
@@ -42,4 +43,7 @@ opt-level = 3
 opt-level = 3
 
 [profile.test.package.om-audio]
+opt-level = 3
+
+[profile.test.package.om-analysis]
 opt-level = 3
