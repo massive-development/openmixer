@@ -16,8 +16,9 @@ permissions:
   contents: read
 
 # TODO (not added, Todo 29): a Linux job for `cargo check -p openmixer --features gui` (the window). The
-# link line on this box needs freetype, xcb, xkbcommon and xkbcommon-x11 development packages; wayland and
-# fontconfig are not verified on a clean runner, and the GPUI tree is large enough to need a cache. Until
+# link line on this box needs the freetype, xcb, xkbcommon and xkbcommon-x11 development packages (apt:
+# libfreetype-dev, libxcb1-dev, libxkbcommon-dev, libxkbcommon-x11-dev); wayland and fontconfig are not
+# verified on a clean runner (no Docker here to test one), and the GPUI tree is large enough to need a cache. Until
 # that is checked on a runner, see docs/spikes/DECISIONS.md "GPUI integration".
 
 jobs:
