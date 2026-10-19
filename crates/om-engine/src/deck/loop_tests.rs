@@ -71,16 +71,16 @@ fn set_loop_validates_and_reports_state() {
         start: 100,
         end: FRAMES + 500
     }));
-    assert_eq!(deck.get_loop().end, FRAMES, "clamped to the track");
+    assert_eq!(deck.loop_state().end, FRAMES, "clamped to the track");
     assert!(deck.is_looping());
     deck.exit_loop();
     assert!(!deck.is_looping());
-    assert!(deck.get_loop().valid());
+    assert!(deck.loop_state().valid());
     deck.reloop();
     assert!(deck.is_looping());
     deck.load(&wav).unwrap();
     assert!(
-        !deck.get_loop().valid(),
+        !deck.loop_state().valid(),
         "a new track starts without a loop"
     );
 }
@@ -316,7 +316,7 @@ fn toggling_the_loop_never_reverts_newer_bounds() {
         done.store(true, Release);
         toggler.join().expect("toggler");
         assert_eq!(
-            deck.get_loop().start,
+            deck.loop_state().start,
             start_of(SETS - 1),
             "a toggle reverted the bounds"
         );

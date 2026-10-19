@@ -77,7 +77,7 @@ fn absolute_cc_scales_inverts_and_respects_channel_filter() {
     assert_near(f.t.last("a"), 10.0);
     f.m.handle_message(&control_change(9, 8, 127));
     assert_near(f.t.last("b"), 0.0);
-    assert_near(f.m.get_value("b"), 0.0);
+    assert_near(f.m.value("b"), 0.0);
 }
 
 #[test]

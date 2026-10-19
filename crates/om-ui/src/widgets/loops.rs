@@ -40,7 +40,7 @@ impl LoopControls {
         let Some(grid) = self.binding.control().grid() else {
             return 0.0;
         };
-        let lp = self.binding.deck().get_loop();
+        let lp = self.binding.deck().loop_state();
         if !lp.valid() {
             return 0.0;
         }

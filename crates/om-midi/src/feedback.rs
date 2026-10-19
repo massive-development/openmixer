@@ -83,7 +83,7 @@ impl MidiFeedback {
     /// A map load or edit changes the rules: take the new set and light everything again.
     fn reload_rules(&mut self) {
         self.seen_generation = Some(self.mapper.generation());
-        self.rules = self.mapper.get_outputs();
+        self.rules = self.mapper.outputs();
         self.resend();
     }
 }

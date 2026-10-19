@@ -53,7 +53,7 @@ fn arm_cancel_and_edit_while_messages_stream() {
             if round % 4 == 0 {
                 mapper.remove_bindings_for(&target_id);
             }
-            mapper.get_bindings();
+            mapper.bindings();
             mapper.set_outputs(Vec::new());
             if round % 50 == 0 {
                 std::thread::sleep(std::time::Duration::from_millis(1));
@@ -64,5 +64,5 @@ fn arm_cancel_and_edit_while_messages_stream() {
 
     assert!(learned.load(Ordering::Relaxed) > 0);
     assert!(target.count("seed") + target.count("learned") + target.count("extra0") > 0);
-    assert!(!mapper.get_bindings().is_empty());
+    assert!(!mapper.bindings().is_empty());
 }
