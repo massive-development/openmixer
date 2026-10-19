@@ -1,6 +1,6 @@
 //! Key-lock time-stretch behind a small real-time interface. The engine is chosen by the
 //! [`Stretcher`] trait; [`RubberBandStretcher`] is the Rubber Band R3 implementation used by the
-//! decks. Port of the time-stretch contract in `src/engine/TimeStretch.h`.
+//! decks.
 //!
 //! Threads: [`Stretcher::prepare`] allocates and belongs to the control thread. Every other method
 //! is audio-thread safe: no allocation, locks or I/O in the implementation.

@@ -1,5 +1,5 @@
 //! [`Stretcher`] backed by Rubber Band 4.0.0, real-time mode with the R3 ("finer") engine.
-//! Port of `src/engine/TimeStretch.cpp`: `max_feed` is `max(4096, 8 * max_block)`, so one call
+//! `max_feed` is `max(4096, 8 * max_block)`, so one call
 //! covers `samples_required()` even at extreme ratios.
 
 use crate::ffi::Engine;
@@ -167,7 +167,7 @@ mod tests {
             .collect()
     }
 
-    /// Frequency from rising zero crossings over `x`: the same estimator as DeckKeylockTest.cpp.
+    /// Frequency from rising zero crossings over `x`.
     fn zero_crossing_hz(x: &[f32]) -> f64 {
         let mut crossings = Vec::new();
         for i in 1..x.len() {
