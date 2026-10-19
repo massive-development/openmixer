@@ -80,6 +80,9 @@ pub trait StemHost {
     fn clear_cache(&mut self) -> SettingsResult<usize>;
     /// The cap the next committed job enforces; 0 for none.
     fn set_max_cache_bytes(&mut self, bytes: u64);
+    /// The preference: prepare stems for tracks analysed after the library opened.
+    fn auto_prepare(&self) -> bool;
+    fn set_auto_prepare(&mut self, on: bool);
     /// Queues one separation. The handle reports progress, status and errors.
     fn submit(&mut self, job: StemJob) -> SettingsResult<JobHandle>;
 }
@@ -223,11 +226,10 @@ impl StemQueue {
         &mut self,
         host: &mut dyn StemHost,
         library: &Library,
-        enabled: bool,
         track_id: i64,
         status: PrepStatus,
     ) -> SettingsResult<bool> {
-        if !auto_prepare_wanted(enabled, self.watermark, track_id, status)
+        if !auto_prepare_wanted(host.auto_prepare(), self.watermark, track_id, status)
             || !host.model_state().ready()
         {
             return Ok(false);
@@ -286,6 +288,7 @@ mod tests {
     /// Host with a model state and a worker that finishes each job at once.
     struct FakeHost {
         state: ModelState,
+        auto: bool,
         submitted: Vec<StemJob>,
         pool: om_core::jobs::WorkerPool<()>,
     }
@@ -294,6 +297,7 @@ mod tests {
         fn new(state: ModelState) -> Self {
             Self {
                 state,
+                auto: true,
                 submitted: Vec::new(),
                 pool: om_core::jobs::WorkerPool::new(1, "fake-stems", |_, _| {}),
             }
@@ -321,6 +325,12 @@ mod tests {
             Ok(0)
         }
         fn set_max_cache_bytes(&mut self, _bytes: u64) {}
+        fn auto_prepare(&self) -> bool {
+            self.auto
+        }
+        fn set_auto_prepare(&mut self, on: bool) {
+            self.auto = on;
+        }
         fn submit(&mut self, job: StemJob) -> SettingsResult<JobHandle> {
             self.submitted.push(job);
             Ok(self.pool.submit(()))
@@ -358,20 +368,22 @@ mod tests {
 
         // Off: an analysed new track is not queued.
         let mut host = FakeHost::new(ModelState::Installed(1));
+        host.auto = false;
         assert!(!queue
-            .on_analysed(&mut host, &library, false, fresh, PrepStatus::Done)
+            .on_analysed(&mut host, &library, fresh, PrepStatus::Done)
             .expect("ok"));
         assert!(host.submitted.is_empty());
 
+        host.auto = true;
         // On, but the track was loaded from the library (not ingested): not queued.
         assert!(!queue
-            .on_analysed(&mut host, &library, true, old, PrepStatus::Done)
+            .on_analysed(&mut host, &library, old, PrepStatus::Done)
             .expect("ok"));
         assert!(host.submitted.is_empty());
 
         // On, new track, analysis done: queued once with its path and hash.
         assert!(queue
-            .on_analysed(&mut host, &library, true, fresh, PrepStatus::Done)
+            .on_analysed(&mut host, &library, fresh, PrepStatus::Done)
             .expect("ok"));
         assert_eq!(host.submitted.len(), 1);
         assert_eq!(host.submitted[0].path, PathBuf::from("/music/new.wav"));
@@ -385,7 +397,7 @@ mod tests {
         let mut queue = StemQueue::new(watermark);
         let mut host = FakeHost::new(ModelState::LicenceNotAccepted);
         assert!(!queue
-            .on_analysed(&mut host, &library, true, fresh, PrepStatus::Done)
+            .on_analysed(&mut host, &library, fresh, PrepStatus::Done)
             .expect("no error when the model is missing"));
         assert!(host.submitted.is_empty());
     }
