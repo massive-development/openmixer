@@ -194,6 +194,10 @@ cargo build --release --workspace
 # Run tests
 cargo test --workspace
 
+# Engine soak: 30 s paced mix (in cargo test --workspace); 10-minute gate: --ignored, 10 min wall time
+cargo test -p om-audio --test soak
+cargo test -p om-audio --test soak -- --ignored --nocapture
+
 # Format, lint and licence gates (run all before opening a PR)
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
