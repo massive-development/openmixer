@@ -5,7 +5,7 @@ use om_core::ParameterTarget;
 use om_engine::grid::{BeatGrid, FixedTempoGrid};
 use openmixer::composition::AppComposition;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[test]
 fn sync_follows_the_leader_without_a_ui_or_rendering() {
@@ -22,14 +22,11 @@ fn sync_follows_the_leader_without_a_ui_or_rendering() {
     c.engine.deck(1).play();
 
     // Nothing calls update_control here: the control thread must bring the follower to 120 bpm.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while (c.engine.deck(1).rate() - 1.2).abs() > 1e-9 {
-        assert!(
-            Instant::now() < deadline,
-            "the follower never synced; rate {}",
-            c.engine.deck(1).rate()
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    om_testing::assert_eventually!(
+        Duration::from_secs(5),
+        || (c.engine.deck(1).rate() - 1.2).abs() <= 1e-9,
+        "the follower never synced; rate {}",
+        c.engine.deck(1).rate()
+    );
     assert_eq!(c.engine.deck(0).rate(), 1.0);
 }

@@ -155,16 +155,14 @@ impl Stretcher for RubberBandStretcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f64::consts::TAU;
+    use om_testing::signals::sine_amp;
 
     const SR: u32 = 44_100;
     const TONE_HZ: f64 = 440.0;
     const BLOCK: usize = 256;
 
     fn sine(frames: usize) -> Vec<f32> {
-        (0..frames)
-            .map(|i| (0.5 * (TAU * TONE_HZ * i as f64 / SR as f64).sin()) as f32)
-            .collect()
+        sine_amp(TONE_HZ, 0.5, f64::from(SR), frames)
     }
 
     /// Frequency from rising zero crossings over `x`.

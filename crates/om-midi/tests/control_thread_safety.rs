@@ -4,8 +4,9 @@
 mod support;
 
 use om_midi::{control_change, MidiMapper};
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use support::RecordingTarget;
 
 const ROUNDS: usize = 300;
@@ -35,10 +36,9 @@ fn map_reload_while_messages_stream() {
         });
 
         // Let the stream start (generous bound for slow hosts).
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while fired.load(Ordering::Relaxed) == 0 && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+            fired.load(Ordering::Relaxed) > 0
+        });
         for i in 0..ROUNDS {
             let json = if i % 2 == 0 { map_b } else { map_a };
             mapper.load_from_json(json).expect("reload");

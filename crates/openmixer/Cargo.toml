@@ -29,4 +29,5 @@ gui = ["dep:om-ui-gpui"]
 workspace = true
 
 [dev-dependencies]
+om-testing.workspace = true
 tempfile.workspace = true

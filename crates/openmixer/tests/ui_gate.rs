@@ -123,11 +123,11 @@ fn run_gate(seconds: u64) -> Report {
     for (d, track) in tracks.iter().enumerate() {
         engine.deck(d).load(track).expect("load track");
     }
-    let loaded_by = Instant::now() + Duration::from_secs(5);
-    while !(engine.deck(0).is_loaded() && engine.deck(1).is_loaded()) {
-        assert!(Instant::now() < loaded_by, "decks did not load");
-        thread::sleep(TICK);
-    }
+    om_testing::assert_eventually!(
+        Duration::from_secs(5),
+        || engine.deck(0).is_loaded() && engine.deck(1).is_loaded(),
+        "decks did not load"
+    );
 
     // Faders up, then deck 0 plays (controls must reflect the press).
     mixer.send(&MixerBinding::channel_id(0, "fader"), 0.8);
