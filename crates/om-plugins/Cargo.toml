@@ -1,0 +1,21 @@
+[package]
+name = "om-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+om-core = { path = "../om-core" }
+om-engine = { path = "../om-engine" }
+om-midi = { path = "../om-midi" }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"

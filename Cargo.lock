@@ -2082,6 +2082,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gain-plugin"
+version = "0.1.0"
+dependencies = [
+ "om-core",
+ "om-engine",
+ "om-midi",
+ "om-plugins",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4000,6 +4010,28 @@ dependencies = [
  "alsa",
  "om-core",
  "om-engine",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "om-plugins"
+version = "0.1.0"
+dependencies = [
+ "om-core",
+ "om-engine",
+ "om-midi",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "om-stems"
+version = "0.1.0"
+dependencies = [
+ "om-analysis",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

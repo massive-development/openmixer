@@ -10,6 +10,9 @@ members = [
     "crates/om-stretch",
     "crates/om-audio",
     "crates/om-ui",
+    "crates/om-plugins",
+    "crates/om-stems",
+    "examples/plugins/gain-plugin",
     "crates/openmixer",
 ]
 # GPUI window layer: its own workspace (system libraries and a display are needed to build it). The

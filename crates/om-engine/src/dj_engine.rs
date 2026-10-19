@@ -110,6 +110,12 @@ impl DjEngine {
         &self.mixer
     }
 
+    /// Shared handle to the mixer's control side, for holders that outlive a borrow (plugin
+    /// stages that must be detached later).
+    pub fn mixer_handle(&self) -> Arc<MixerControl> {
+        Arc::clone(&self.mixer)
+    }
+
     pub fn fx(&self) -> &FxRouting {
         &self.fx
     }
