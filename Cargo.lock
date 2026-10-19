@@ -3973,6 +3973,7 @@ dependencies = [
 name = "om-core"
 version = "0.1.0"
 dependencies = [
+ "om-testing",
  "proptest",
  "thiserror 2.0.21",
 ]
