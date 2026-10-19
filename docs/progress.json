@@ -31,9 +31,9 @@
    "items": [
     ["14 Service+cache", "todo"],
     ["15 BPM/grid", "partial"],
-    ["16 Key", "todo"],
-    ["17 Waveform", "todo"],
-    ["18 Structure", "todo"],
+    ["16 Key", "done"],
+    ["17 Waveform", "done"],
+    ["18 Structure", "done"],
     ["19 Stems", "todo"]
    ]
   },
