@@ -45,11 +45,11 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - 3-band EQ
   - PFL cue bus
 
-- [ ] **Todo 10a:** Plugin API + registry (extension points)
-  - `om-plugins` crate: versioned interfaces, runtime loader, registry
-  - Audio pre/post-processing stages (per deck/channel/master), FX, MIDI map loading
+- [x] **Todo 10a:** Plugin API + registry (extension points)
+  - `om-plugins` crate: versioned `Plugin` and `PluginHost` traits, registry with the C++ id, prefix and collision rules, unload order
+  - Stage catalog over the engine insert chains (channel and master), MIDI maps, parameter targets and themes, all installed through the composition (`openmixer::plugins`)
+  - Example plugin: `examples/plugins/gain-plugin`. Plugins are in-process for now; shared-library loading is a documented stub, and the choice (C ABI, WASM or compiled in) is open in `docs/spikes/DECISIONS.md`
   - No signing/allow-list gatekeeping (see CONTRIBUTING "Extensibility")
-  - Plugins are deferred; CLAP-first if and when needed (design spec)
 
 - [x] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
   - MIDI input -> JSON map file -> mixer/deck parameters; controller feedback (LEDs) from engine state
@@ -118,10 +118,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Onset, energy and section detection (feeds Automix)
   - Mix-in and mix-out points
 
-- [ ] **Todo 19:** Stems precompute (Demucs ONNX)
-  - Separator interface and model manifest
-  - Licence-gated, verified weight download
-  - ONNX Runtime backend (`ort`) not yet built
+- [ ] **Todo 19:** Stems precompute (Demucs ONNX) (partial)
+  - Done in `om-stems`: `StemSeparator` trait, `MockSeparator`, JSON model manifest, licence-gated download with size and SHA-256 checks, licence digest remembered
+  - Downloads: `file://` and plain `http://` only. HTTPS is refused until a TLS backend is chosen (the root bundle is CDLA-Permissive-2.0, which `deny.toml` does not allow)
+  - ONNX Runtime backend (`ort`) not yet built (open): the mock stands in for it
 
 ## Wave 4: Library & Data
 

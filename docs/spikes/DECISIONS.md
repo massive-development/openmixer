@@ -114,3 +114,20 @@ Date: 2026-10-19. Crate: `crates/om-midi` (`backend.rs`, `alsa_backend.rs`, `moc
 - **Tests never open hardware.** `MockBackend` delivers injected bytes and records sent bytes. Every routing, selection, hot-plug and feedback test runs on it.
 - **Trait boundary.** `MidiBackend` is the only thing the device-facing code knows. Input callbacks run on the backend's thread and take only the mapper's locks; feedback is evaluated on a control thread at 30 Hz, and hot-plug is checked about once a second.
 
+
+## Plugins: in-process only (Todo 10a)
+
+Date: 2026-10-19. Crate: `crates/om-plugins`. Example: `examples/plugins/gain-plugin`.
+
+- **Decision: plugins are in-process for now.** A plugin is a Rust type that implements `Plugin`, registered with `PluginRegistry::add_plugin` (built-ins, tests, or a crate the application links). The registry enforces the C++ rules: unique ids, refused duplicate stage, map, prefix and theme names, and unload that removes everything a plugin registered before its `on_unload`.
+- **Dynamic loading is a later decision, not made here.** Rust has no stable ABI, so a shared library built from Rust cannot be loaded safely by an unrelated build. The options are: a C ABI (`extern "C"` entry points and a `#[repr(C)]` function table, versioned), a WASM component (sandboxed and language-neutral, with a runtime cost), or source-level plugins only. `PluginLoader` in `om-plugins` is the stub: it finds shared libraries in a folder and reports each as "not supported", so the Plugins page shows what it skipped. No allow-list or signature check is planned, as in C++ (CONTRIBUTING, "Extensibility").
+- **Deviation from the C++ shape.** `Plugin::info` and `Plugin::api_version` take `&self`. Associated functions with no receiver would make the trait unusable as `Box<dyn Plugin>`, which the registry needs.
+- **Stage insertion goes through `InsertPoint`.** `MixerControl` and `DjEngine` implement it, so the catalog can be tested over a stub and a plugin stage can always be cleared by the handle it was inserted through.
+
+## Stem separation: downloads and backend (Todo 19)
+
+Date: 2026-10-19. Crate: `crates/om-stems`.
+
+- **Downloads.** The C++ tree downloaded weights over HTTP, HTTPS and file URLs through `juce::URL`. The Rust port keeps the licence gate, the `.part` file, the size and SHA-256 checks and the marker files. Transport: `file://` and plain `http://` (`ureq` 2 without TLS). Tests use local files and a loopback server; no test reaches the network.
+- **HTTPS is refused until a TLS backend is chosen.** Every Rust TLS root bundle that `ureq` or `rustls` pulls in (`webpki-roots`) is CDLA-Permissive-2.0, which `deny.toml` does not allow. Allowing that licence, or using the platform trust store through a backend with its own licence, is a licence-policy call for the maintainers. Until then HTTPS model URLs fail with a clear message.
+- **The ONNX Runtime backend stays open.** `StemSeparator` is the interface; `MockSeparator` stands in and returns four quarters of the input, so the pipeline can run without a model. The `ort` backend, model export and the hosted manifest are Todo 19 work.
