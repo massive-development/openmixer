@@ -6,6 +6,7 @@
 //! the control thread, so the audio thread never allocates, locks or drops.
 
 use crate::fx::math::AtomicF64;
+use rtrb::PushError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -46,6 +47,9 @@ pub struct StageChain {
     slots: [Option<Box<dyn ProcessStage>>; MAX_STAGES],
     commands: rtrb::Consumer<Command>,
     retired: rtrb::Producer<Box<dyn ProcessStage>>,
+    /// A displaced stage the retired ring had no room for. Held here until the control side
+    /// reclaims, so the audio thread never drops a stage.
+    parked: Option<Box<dyn ProcessStage>>,
     env: Arc<StageEnv>,
 }
 
@@ -69,6 +73,7 @@ impl StageChain {
             slots: std::array::from_fn(|_| None),
             commands: command_rx,
             retired: retired_tx,
+            parked: None,
             env: Arc::clone(&env),
         };
         let insert = StageInsert {
@@ -99,11 +104,22 @@ impl StageChain {
     }
 
     fn apply_commands(&mut self) {
+        // A parked stage goes first. While one is parked nothing else is swapped, so at most one
+        // stage waits and the commands stay queued (and `set` reports a full queue if it backs up).
+        if let Some(stage) = self.parked.take() {
+            if let Err(PushError::Full(stage)) = self.retired.push(stage) {
+                self.parked = Some(stage);
+                return;
+            }
+        }
         while let Ok(Command { slot, stage }) = self.commands.pop() {
             if let Some(old) = std::mem::replace(&mut self.slots[slot], stage) {
                 // Hand the old stage back instead of dropping it here. The control side reclaims
-                // the ring on every `set`, so a full ring means it stopped reclaiming.
-                let _ = self.retired.push(old);
+                // the ring on every `set`; if it has stopped, park the stage and retry next block.
+                if let Err(PushError::Full(old)) = self.retired.push(old) {
+                    self.parked = Some(old);
+                    return;
+                }
             }
         }
     }
@@ -176,6 +192,53 @@ mod tests {
         chain.process(&mut l, &mut r);
         assert_eq!(l, [1.0; 4]);
         insert.reclaim();
+    }
+
+    /// Counts how many times it is dropped.
+    struct Tracked(Arc<AtomicUsize>);
+
+    impl Drop for Tracked {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl ProcessStage for Tracked {
+        fn process(&mut self, _: &mut [f32], _: &mut [f32]) {}
+    }
+
+    #[test]
+    fn a_full_retired_ring_parks_the_displaced_stage_instead_of_dropping_it() {
+        let (mut chain, insert) = StageChain::new();
+        let mut l = [1.0_f32; 4];
+        let mut r = [1.0_f32; 4];
+        let dropped = Arc::new(AtomicUsize::new(0));
+        assert!(insert.set(0, Some(Box::new(Tracked(Arc::clone(&dropped))))));
+        chain.process(&mut l, &mut r);
+
+        // The control side stops reclaiming while the audio side keeps displacing: fill the ring.
+        for _ in 0..RING_CAPACITY {
+            assert!(chain.retired.push(Box::new(Scale(1.0))).is_ok());
+        }
+        // Queue a replacement without going through `set`, which would reclaim first.
+        let replacement = Command {
+            slot: 0,
+            stage: Some(Box::new(Scale(2.0))),
+        };
+        assert!(lock(&insert.commands).push(replacement).is_ok());
+        chain.process(&mut l, &mut r);
+        assert_eq!(
+            dropped.load(Ordering::SeqCst),
+            0,
+            "the audio thread must not drop the displaced stage"
+        );
+        assert_eq!(l, [2.0; 4], "the replacement is in effect");
+
+        // Once the control side reclaims, the parked stage goes into the ring and is freed there.
+        insert.reclaim();
+        chain.process(&mut l, &mut r);
+        insert.reclaim();
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
     }
 
     #[test]
