@@ -25,6 +25,10 @@ pub(super) struct DecoderWorker {
     /// Loop start the prefetch slot currently holds, or -1.
     prefetched_start: i64,
     chunk: Vec<[f32; 2]>,
+    /// Test-only hook run on the decoder thread before each chunk. A panic in it takes the same
+    /// fault path as a decode failure, which is what the fault test exercises.
+    #[cfg(test)]
+    pub(super) before_chunk: Option<Box<dyn FnMut() + Send>>,
 }
 
 impl DecoderWorker {
@@ -41,6 +45,8 @@ impl DecoderWorker {
             reader_load_id: 0,
             prefetched_start: -1,
             chunk: vec![[0.0; 2]; CHUNK_FRAMES],
+            #[cfg(test)]
+            before_chunk: None,
         }
     }
 
@@ -164,8 +170,8 @@ impl DecoderWorker {
 
     fn produce_chunk(&mut self) {
         #[cfg(test)]
-        if self.shared.inject_decoder_panic.load(Relaxed) {
-            panic!("injected decoder fault");
+        if let Some(hook) = self.before_chunk.as_mut() {
+            hook();
         }
         let len = self.length();
         let n = (len - self.read_pos).min(CHUNK_FRAMES as i64) as usize;

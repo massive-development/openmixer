@@ -11,7 +11,8 @@ mod keylock;
 mod loops;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
@@ -368,12 +369,21 @@ fn hotcue_parameters_trigger_seek_and_clear() {
 #[test]
 fn a_decoder_fault_silences_the_deck_and_is_reported() {
     let fixture = Fixture::new();
-    let (deck, mut audio, _) = deck_with_ramp(&fixture);
+    // The hook is inert until armed; once armed, the decoder panics on its next chunk.
+    let armed = Arc::new(AtomicBool::new(false));
+    let trip = Arc::clone(&armed);
+    let wav = fixture.path("ramp.wav");
+    write_ramp(&wav, 2);
+    let (deck, mut audio) = Deck::with_decoder_hook(1 << 16, move || {
+        if trip.load(Ordering::SeqCst) {
+            panic!("injected decoder fault");
+        }
+    });
+    audio.prepare(RATE, 256);
+    deck.load(&wav).expect("ramp loads");
     assert!(pump_until_buffered(&deck, &mut audio, 512, 0));
     deck.play();
-    deck.shared
-        .inject_decoder_panic
-        .store(true, Ordering::SeqCst);
+    armed.store(true, Ordering::SeqCst);
 
     let mut l = [0.0_f32; 256];
     let mut r = [0.0_f32; 256];
