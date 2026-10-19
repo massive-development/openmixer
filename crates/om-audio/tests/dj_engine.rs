@@ -69,9 +69,10 @@ fn deck_audio_reaches_master_pfl_reaches_cue_fader_gates_master() {
     );
 
     engine.mixer().set_fader(0, 1.0);
-    dev.render_blocks(4);
-    let out = dev.last_output();
-    assert!(magnitude(&out[0][..256]) > 0.1);
+    // The decoder may still be refilling after the position check: pump until audio reaches master.
+    assert!(pump_until(&dev, || magnitude(
+        &dev.last_output()[0][..256]
+    ) > 0.1));
     assert!(engine.mixer().channel_peak(0) > 0.1);
 }
 
