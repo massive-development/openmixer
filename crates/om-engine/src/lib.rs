@@ -10,6 +10,7 @@ mod alloc_guard;
 pub mod callback;
 pub mod deck;
 pub mod deck_control;
+pub mod dj_engine;
 pub mod fx;
 pub mod fx_routing;
 pub mod grid;
@@ -23,6 +24,7 @@ pub mod sync;
 
 pub use callback::AudioCallback;
 pub use deck_control::DeckControl;
+pub use dj_engine::{DjEngine, DjEngineAudio};
 pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
 pub use mixer::{ChannelInput, Mixer, MixerControl};
