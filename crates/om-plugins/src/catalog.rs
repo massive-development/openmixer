@@ -84,7 +84,9 @@ impl StageCatalog {
             return Err(PluginError::Rejected("empty stage id".into()));
         }
         if self.contains(stage_id) {
-            return Err(PluginError::Rejected(format!("stage {stage_id} already registered")));
+            return Err(PluginError::Rejected(format!(
+                "stage {stage_id} already registered"
+            )));
         }
         self.factories.push(Factory {
             id: stage_id.to_owned(),

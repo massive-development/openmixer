@@ -6,8 +6,8 @@ use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::{ChannelInput, Mixer, MixerControl, ProcessStage};
 use om_midi::{control_change, MidiMapper};
 use om_plugins::{
-    InsertAt, InsertPoint, Plugin, PluginError, PluginHost, PluginInfo, PluginRegistry, StageFactory,
-    StageKind, API_VERSION,
+    InsertAt, InsertPoint, Plugin, PluginError, PluginHost, PluginInfo, PluginRegistry,
+    StageFactory, StageKind, API_VERSION,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -55,8 +55,13 @@ impl Rig {
         ];
         // Let smoothers and the peak decay settle.
         for _ in 0..400 {
-            self.mixer
-                .process(&inputs, &mut self.ml, &mut self.mr, &mut self.cl, &mut self.cr);
+            self.mixer.process(
+                &inputs,
+                &mut self.ml,
+                &mut self.mr,
+                &mut self.cl,
+                &mut self.cr,
+            );
         }
         self.control.master_peak_left()
     }
@@ -149,7 +154,10 @@ impl Plugin for TestPlugin {
             host.register_stage("test.mute", StageKind::Fx, mute_factory())
                 .is_ok(),
         );
-        map.insert("badMapOk", host.register_midi_map("bad", "{ not json").is_ok());
+        map.insert(
+            "badMapOk",
+            host.register_midi_map("bad", "{ not json").is_ok(),
+        );
         map.insert(
             "mapOk",
             host.register_midi_map(
@@ -234,7 +242,12 @@ fn bad_channel_or_slot_is_rejected() {
         .attach_stage("test.mute", &point, InsertAt::Channel(5), 0)
         .is_err());
     assert!(reg
-        .attach_stage("test.mute", &point, InsertAt::Channel(0), om_engine::MAX_STAGES)
+        .attach_stage(
+            "test.mute",
+            &point,
+            InsertAt::Channel(0),
+            om_engine::MAX_STAGES
+        )
         .is_err());
     assert!(reg
         .attach_stage("test.mute", &point, InsertAt::Channel(0), 1)

@@ -72,7 +72,9 @@ impl Downloader for UrlDownloader {
                 (Box::new(file), total)
             } else if url.starts_with("https://") {
                 // No TLS backend is built in (see Cargo.toml): a licence decision for the root store.
-                return Err(fail("https is not supported yet (no TLS backend built in)".into()));
+                return Err(fail(
+                    "https is not supported yet (no TLS backend built in)".into(),
+                ));
             } else if url.starts_with("http://") {
                 let response = ureq::get(url)
                     .timeout(TIMEOUT)
@@ -108,17 +110,20 @@ fn copy_with_progress(
     let mut buffer = vec![0_u8; CHUNK];
     let mut written: u64 = 0;
     loop {
-        let read = reader.read(&mut buffer).map_err(|e| WeightError::Download {
-            url: String::new(),
-            reason: e.to_string(),
-        })?;
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| WeightError::Download {
+                url: String::new(),
+                reason: e.to_string(),
+            })?;
         if read == 0 {
             return Ok(());
         }
-        out.write_all(&buffer[..read]).map_err(|e| WeightError::Io {
-            path: String::new(),
-            source: e,
-        })?;
+        out.write_all(&buffer[..read])
+            .map_err(|e| WeightError::Io {
+                path: String::new(),
+                source: e,
+            })?;
         written += read as u64;
         let fraction = match total {
             Some(t) if t > 0 => written as f32 / t as f32,
@@ -210,12 +215,12 @@ impl WeightManager {
         }
         match prompt {
             Some(ask) if ask(manifest) => {
-                fs::write(self.acceptance_file(manifest), licence_digest(manifest)).map_err(
-                    |e| WeightError::Io {
+                fs::write(self.acceptance_file(manifest), licence_digest(manifest)).map_err(|e| {
+                    WeightError::Io {
                         path: self.acceptance_file(manifest).display().to_string(),
                         source: e,
-                    },
-                )
+                    }
+                })
             }
             _ => Err(WeightError::LicenceNotAccepted(manifest.id.clone())),
         }

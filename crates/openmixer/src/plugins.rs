@@ -144,7 +144,11 @@ mod tests {
 
         let loaded = PluginSink::load_folder(&mut registry, dir.path());
         assert_eq!(loaded.loaded, 0);
-        assert_eq!(loaded.errors.len(), 1, "only the library, not the text file");
+        assert_eq!(
+            loaded.errors.len(),
+            1,
+            "only the library, not the text file"
+        );
         assert!(loaded.errors[0].contains("not supported"));
         assert!(loaded.themes.is_empty());
     }
@@ -154,7 +158,10 @@ mod tests {
         let mut app = composition();
         app.plugins.add_plugin(Box::new(DemoPlugin)).expect("loads");
         let load = PluginSink::load_folder(&mut app.plugins, Path::new("/nonexistent/plugins"));
-        assert_eq!(load.loaded, 0, "a folder that does not exist has no libraries");
+        assert_eq!(
+            load.loaded, 0,
+            "a folder that does not exist has no libraries"
+        );
         app.themes.remove_source(Source::Plugin);
         for theme in app.plugins.themes().to_vec() {
             app.themes

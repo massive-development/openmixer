@@ -46,7 +46,9 @@ fn is_safe_id(id: &str) -> bool {
 }
 
 fn is_hex_digest(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn text_field(object: &Value, key: &str) -> String {
