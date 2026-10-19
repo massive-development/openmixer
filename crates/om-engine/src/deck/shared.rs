@@ -6,7 +6,7 @@ use super::hotcues::HotcueBank;
 use super::loop_state::LoopState;
 use super::prefetch::LoopPrefetch;
 use super::source::SourceReader;
-use crate::fx::math::AtomicF64;
+use om_core::atomic::AtomicF64;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64};
 use std::sync::Mutex;
 

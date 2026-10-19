@@ -3,6 +3,7 @@
 //! Control surface, parameter routing and lock-free frame transport shared by the engine,
 //! the UI and MIDI. No audio processing lives here.
 
+pub mod atomic;
 mod frame_ring;
 mod parameter;
 mod ring;

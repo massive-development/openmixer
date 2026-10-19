@@ -2,7 +2,8 @@
 //! `set_param` family is called on the control thread; `prepare` before insertion; `reset`,
 //! `process` and `clear_some` on the audio thread (no allocation, locks or I/O).
 
-use super::math::{AtomicF32, Smoother};
+use om_core::atomic::AtomicF32;
+use om_dsp::Smoother;
 use std::sync::Arc;
 
 /// Tempo range the FX buffers are sized for; beat-synced times are clamped to it.

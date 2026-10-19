@@ -5,7 +5,7 @@
 //! start of the next `process` call. The displaced stage goes back on a second ring and is freed by
 //! the control thread, so the audio thread never allocates, locks or drops.
 
-use crate::fx::math::AtomicF64;
+use om_core::atomic::AtomicF64;
 use rtrb::PushError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

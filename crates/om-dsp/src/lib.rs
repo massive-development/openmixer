@@ -7,6 +7,7 @@ mod biquad;
 mod crossfader;
 mod eq;
 mod meter;
+mod smoother;
 mod sweep;
 
 pub use biquad::{
@@ -16,6 +17,7 @@ pub use biquad::{
 pub use crossfader::{Crossfader, CrossfaderAssign, CrossfaderCurve, CrossfaderGains};
 pub use eq::ThreeBandEq;
 pub use meter::{MeterBallistics, MeterParams, PeakMeter};
+pub use smoother::Smoother;
 pub use sweep::SweepFilter;
 
 #[cfg(test)]

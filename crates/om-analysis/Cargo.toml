@@ -11,6 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
+om-core.workspace = true
 om-dsp.workspace = true
 om-engine.workspace = true
 base64 = "0.22"

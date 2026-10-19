@@ -3944,6 +3944,7 @@ name = "om-analysis"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "om-core",
  "om-dsp",
  "om-engine",
  "realfft",
@@ -3976,6 +3977,9 @@ dependencies = [
 [[package]]
 name = "om-dsp"
 version = "0.1.0"
+dependencies = [
+ "om-core",
+]
 
 [[package]]
 name = "om-engine"
