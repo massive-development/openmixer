@@ -18,7 +18,7 @@ mod import_model;
 mod import_writer;
 mod ingest;
 mod itunes_importer;
-mod juce_text;
+mod lenient;
 mod library;
 mod library_import;
 mod library_importer;
@@ -57,7 +57,6 @@ pub use import_model::{
 pub use import_writer::ImportWriter;
 pub use ingest::{IngestSummary, Ingestor};
 pub use itunes_importer::ItunesImporter;
-pub use juce_text::{double_value, int_value, iso8601_ms};
 pub use library::Library;
 pub use library_import::import_library_file;
 pub use library_importer::{LibraryImporter, LibraryImporterRegistry};

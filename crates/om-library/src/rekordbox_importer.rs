@@ -7,7 +7,7 @@ use crate::file_url::file_url_to_path;
 use crate::import_model::{
     CueKind, ImportReport, ImportedCue, ImportedLibrary, ImportedPlaylist, ImportedTrack,
 };
-use crate::juce_text::iso8601_ms;
+use crate::lenient::iso8601_ms;
 use crate::library_importer::LibraryImporter;
 use crate::track_key::normalise_key;
 use crate::track_record::TrackRecord;

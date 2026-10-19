@@ -60,17 +60,17 @@ impl XmlElement {
         self.attribute(name).unwrap_or_default().to_owned()
     }
 
-    /// The attribute read as an integer (lenient parse, see [`crate::juce_text::int_value`]), or
+    /// The attribute read as an integer (lenient parse, see [`crate::lenient::int_value`]), or
     /// `default` when absent.
     pub fn int_attribute(&self, name: &str, default: i64) -> i64 {
         self.attribute(name)
-            .map_or(default, crate::juce_text::int_value)
+            .map_or(default, crate::lenient::int_value)
     }
 
     /// The attribute read as a number (lenient parse), or 0.0 when absent.
     pub fn double_attribute(&self, name: &str) -> f64 {
         self.attribute(name)
-            .map_or(0.0, crate::juce_text::double_value)
+            .map_or(0.0, crate::lenient::double_value)
     }
 
     /// All text in this element and its descendants, in document order.

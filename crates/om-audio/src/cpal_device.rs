@@ -1,4 +1,4 @@
-//! Real output device through cpal (the JuceAudioDevice analogue). Opens an output device, runs
+//! Real output device through cpal (the audio device backend). Opens an output device, runs
 //! the callback from the cpal data callback and records callback timing and xruns.
 //!
 //! Output routing: the callback is wrapped in an [`OutputRouter`], so master and cue land on the

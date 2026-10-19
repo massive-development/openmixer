@@ -1,6 +1,6 @@
 //! Typed access to an Apple property-list `<dict>` (alternating `<key>` and value elements).
 
-use crate::juce_text::iso8601_ms;
+use crate::lenient::iso8601_ms;
 use crate::xml::XmlElement;
 use std::collections::BTreeMap;
 
@@ -41,9 +41,7 @@ impl<'a> PlistDict<'a> {
     /// The `<integer>` value, or `fallback` when the key is absent or not an integer.
     pub fn integer(&self, key: &str, fallback: i64) -> i64 {
         match self.find(key) {
-            Some(e) if e.has_tag_name("integer") => {
-                crate::juce_text::int_value(e.all_text().trim())
-            }
+            Some(e) if e.has_tag_name("integer") => crate::lenient::int_value(e.all_text().trim()),
             _ => fallback,
         }
     }
