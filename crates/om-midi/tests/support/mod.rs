@@ -63,9 +63,9 @@ impl ParameterTarget for RecordingTarget {
     }
 }
 
-/// `tests/data/controllers` at the workspace root.
+/// `fixtures/controllers` at the workspace root.
 pub fn data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/controllers")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/controllers")
 }
 
 pub fn assert_near(actual: f64, expected: f64) {
