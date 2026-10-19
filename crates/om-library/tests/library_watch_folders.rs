@@ -217,6 +217,7 @@ fn scan_thread_uses_the_supplied_migration_list() {
         version: last + 1,
         name: "extra",
         sql: "CREATE TABLE extra_table (id INTEGER PRIMARY KEY);",
+        needs_fts5: false,
     });
     write_wav(&f.music.join("a.wav"), 0.5, &Tags::default(), 440.0);
 
