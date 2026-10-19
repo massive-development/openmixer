@@ -4,6 +4,8 @@
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
 use om_core::param_id::DeckParam;
+use om_core::DeckSnapshot;
+use om_engine::grid::BeatGrid;
 
 /// Loop sizes in beats, in button order.
 pub const SIZES: [f64; 8] = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
@@ -21,6 +23,18 @@ pub struct LoopControls {
     binding: DeckBinding,
 }
 
+/// What the loop row shows for one frame. Every field comes from the same deck snapshot, so the lit
+/// buttons and the length they match cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoopFrame {
+    /// Each size button: a loop is active and its length matches the size.
+    pub size_lit: [bool; 8],
+    /// Reloop is lit while a loop is active.
+    pub reloop_lit: bool,
+    /// Length of the current loop in beats; 0 when no loop is set or there is no grid.
+    pub length_beats: f64,
+}
+
 /// Button rectangles of the loop row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopLayout {
@@ -31,21 +45,35 @@ pub struct LoopLayout {
     pub reloop: Rect,
 }
 
+impl LoopFrame {
+    /// The frame for one deck snapshot, read against the deck's grid. Pure: no engine access.
+    pub fn from_state(state: &DeckSnapshot, grid: Option<&dyn BeatGrid>) -> Self {
+        let length_beats = match grid {
+            Some(grid) if state.loop_valid() => {
+                grid.beat_at_frame(state.loop_end) - grid.beat_at_frame(state.loop_start)
+            }
+            _ => 0.0,
+        };
+        Self {
+            size_lit: std::array::from_fn(|i| {
+                state.looping && (length_beats - SIZES[i]).abs() < MATCH_TOLERANCE
+            }),
+            reloop_lit: state.looping,
+            length_beats,
+        }
+    }
+}
+
 impl LoopControls {
     pub fn new(binding: DeckBinding) -> Self {
         Self { binding }
     }
 
-    /// Length of the current loop in beats; 0 when no loop is set or there is no grid.
-    pub fn current_length_beats(&self) -> f64 {
-        let Some(grid) = self.binding.control().grid() else {
-            return 0.0;
-        };
-        let lp = self.binding.state();
-        if !lp.loop_valid() {
-            return 0.0;
-        }
-        grid.beat_at_frame(lp.loop_end) - grid.beat_at_frame(lp.loop_start)
+    /// The row's display state for this frame: one deck snapshot, every value derived from it.
+    pub fn frame(&self) -> LoopFrame {
+        let state = self.binding.state();
+        let grid = self.binding.control().grid();
+        LoopFrame::from_state(&state, grid.as_deref())
     }
 
     /// Sets a loop of size `index` from the playhead (or the nearest grid step).
@@ -67,7 +95,7 @@ impl LoopControls {
     }
 
     fn resize(&self, factor: f64) -> Option<f64> {
-        let beats = self.current_length_beats();
+        let beats = self.frame().length_beats;
         if beats <= 0.0 {
             return None;
         }
@@ -82,19 +110,6 @@ impl LoopControls {
 
     pub fn reloop(&self) -> bool {
         self.binding.send(DeckParam::LoopReloop, 1.0)
-    }
-
-    /// Whether each size button is lit: a loop is active and its length matches the size.
-    pub fn size_lit(&self) -> [bool; 8] {
-        let state = self.binding.state();
-        let active = state.looping;
-        let beats = self.current_length_beats();
-        std::array::from_fn(|i| active && (beats - SIZES[i]).abs() < MATCH_TOLERANCE)
-    }
-
-    /// Whether reloop is lit (a loop is active).
-    pub fn reloop_lit(&self) -> bool {
-        self.binding.state().looping
     }
 
     /// Two rows: the size buttons on top, the actions below. `gap` between buttons and rows.

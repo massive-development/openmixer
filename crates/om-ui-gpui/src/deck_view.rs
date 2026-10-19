@@ -341,7 +341,8 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let lay = LoopControls::layout(l.loops, t.inner_gap);
-    let size_lit = deck.loops.size_lit();
+    // One frame: the lit buttons and the reloop state come from the same deck snapshot.
+    let frame = deck.loops.frame();
     let _ = card;
     let mut area = place(l.loops);
     for (i, rect) in lay.sizes.iter().enumerate() {
@@ -349,7 +350,7 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
             t,
             *rect,
             SIZE_NAMES[i],
-            size_lit[i],
+            frame.size_lit[i],
             t.accent_for(index as i32),
             cx,
             move |this| {
@@ -357,7 +358,6 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
             },
         ));
     }
-    let reloop_lit = deck.loops.reloop_lit();
     area = area
         .child(push_button(
             t,
@@ -396,7 +396,7 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
             t,
             lay.reloop,
             "Reloop",
-            reloop_lit,
+            frame.reloop_lit,
             t.accent_for(index as i32),
             cx,
             move |this| {
