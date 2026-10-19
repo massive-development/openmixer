@@ -39,7 +39,8 @@ impl PreferencesApplier {
         let first = self.applied.is_none();
         let old = self.applied.as_ref().unwrap_or(prefs);
 
-        let plugins_changed = first || old.effective_plugin_folder() != prefs.effective_plugin_folder();
+        let plugins_changed =
+            first || old.effective_plugin_folder() != prefs.effective_plugin_folder();
         if plugins_changed {
             targets.apply_plugin_folder(&prefs.effective_plugin_folder());
             pushed += 1;

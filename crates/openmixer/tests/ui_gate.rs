@@ -87,10 +87,7 @@ struct Report {
 /// setup failures; invariant checks are left to the caller so the failure message names them.
 fn run_gate(seconds: u64) -> Report {
     let scratch = Scratch::new(&format!("{seconds}s"));
-    let tracks = [
-        scratch.0.join("aurora.wav"),
-        scratch.0.join("borealis.wav"),
-    ];
+    let tracks = [scratch.0.join("aurora.wav"), scratch.0.join("borealis.wav")];
     write_tone(&tracks[0], 220.0, 12.0);
     write_tone(&tracks[1], 330.0, 12.0);
 
@@ -106,7 +103,13 @@ fn run_gate(seconds: u64) -> Report {
     let engine = Arc::clone(&composition.engine);
     let target: Arc<dyn ParameterTarget> = composition.router.clone();
     let transports: Vec<TransportPanel> = (0..DECKS)
-        .map(|d| TransportPanel::new(DeckBinding::new(Arc::clone(&engine), Arc::clone(&target), d)))
+        .map(|d| {
+            TransportPanel::new(DeckBinding::new(
+                Arc::clone(&engine),
+                Arc::clone(&target),
+                d,
+            ))
+        })
         .collect();
     let mixer = MixerBinding::new(Arc::clone(&engine), Arc::clone(&target));
 
@@ -167,8 +170,14 @@ fn run_gate(seconds: u64) -> Report {
     }
 
     // Controls still reflect the engine after the run.
-    expect(&mut report, transports[0].state(TransportButton::Play) == engine.deck(0).is_playing());
-    expect(&mut report, transports[1].state(TransportButton::Play) == engine.deck(1).is_playing());
+    expect(
+        &mut report,
+        transports[0].state(TransportButton::Play) == engine.deck(0).is_playing(),
+    );
+    expect(
+        &mut report,
+        transports[1].state(TransportButton::Play) == engine.deck(1).is_playing(),
+    );
     expect(&mut report, deck1_started && engine.deck(1).is_playing());
     expect(&mut report, (engine.mixer().fader(0) - 0.8).abs() < 1e-3);
 
@@ -185,8 +194,14 @@ fn check(report: &Report) {
     assert!(report.callbacks > 0, "the device never ran the callback");
     assert_eq!(report.xruns, 0, "xruns on the paced mock device");
     assert_eq!(report.non_finite, 0, "non-finite output samples");
-    assert!(report.peak_master > METER_FLOOR, "the master meter never moved");
-    assert!(report.peak_channel > METER_FLOOR, "the channel meter never moved");
+    assert!(
+        report.peak_master > METER_FLOOR,
+        "the master meter never moved"
+    );
+    assert!(
+        report.peak_channel > METER_FLOOR,
+        "the channel meter never moved"
+    );
     assert_eq!(report.mismatches, 0, "controls and engine state disagree");
 }
 

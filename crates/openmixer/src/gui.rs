@@ -3,13 +3,13 @@
 //! `--smoke` renders a fixed number of frames and exits 0. `--debug-panel` shows the device, latency
 //! and raw parameter panel.
 
-use openmixer::composition::AppComposition;
 use om_audio::{
     AudioCallback, AudioDevice, AudioError, CpalAudioDevice, LatencyMonitor, LatencyStats,
     MockAudioDevice, OutputPairs, OutputRequest, OutputRouter,
 };
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
+use openmixer::composition::AppComposition;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
