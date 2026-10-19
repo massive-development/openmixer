@@ -6,6 +6,7 @@ members = [
     "crates/om-engine",
     "crates/om-analysis",
     "crates/om-library",
+    "crates/om-midi",
     "crates/om-stretch",
     "crates/om-audio",
     "crates/om-ui",
