@@ -1,27 +1,58 @@
-//! What the widget models need: read access to the engine, and a write path that goes only through
-//! the string-id control surface. Ids are built from [`ParamId`], so the strings a widget sends are
-//! the canonical ids the router parses back to the same typed id. UI and MIDI stay equivalent.
+//! What the widget models need: read access to the engine, and a write path. Writes go to the
+//! router as typed [`Command::Param`]s when the binding has a [`CommandSink`] (the production
+//! window). Without one, a binding writes through the string façade, which is what the widget
+//! tests' recording rig uses. Both paths deliver the same [`ParamId`], so they stay equivalent.
 
 use om_core::param_id::{ChannelParam, DeckParam, FxParam, FxRack, MixerParam};
-use om_core::{DeckSnapshot, ParamId, ParameterTarget};
+use om_core::{
+    Command, CommandSink, DeckSnapshot, ParamError, ParamId, ParameterRouter, ParameterTarget,
+};
 use om_dsp::{CrossfaderAssign, CrossfaderCurve};
 use om_engine::deck::Deck;
 use om_engine::{DeckControl, DjEngine, FxRouting, MixerControl, Sync};
 use std::sync::Arc;
 
+/// Delivers one id: a typed command when a sink is present, else the string target.
+fn deliver(
+    sink: Option<&Arc<dyn CommandSink>>,
+    target: &Arc<dyn ParameterTarget>,
+    id: ParamId,
+    value: f64,
+) -> bool {
+    match sink {
+        Some(sink) => sink.send(Command::Param { id, value }).is_ok(),
+        None => target.set_parameter(&id.to_string(), value),
+    }
+}
+
 /// Routes one deck's parameters. Cheap to clone.
 #[derive(Clone)]
 pub struct DeckBinding {
     pub engine: Arc<DjEngine>,
+    /// Typed writes. `None` falls back to `target`.
+    pub sink: Option<Arc<dyn CommandSink>>,
+    /// String writes, used when there is no sink.
     pub target: Arc<dyn ParameterTarget>,
     pub index: usize,
 }
 
 impl DeckBinding {
+    /// A binding that writes through the string façade (test rigs).
     pub fn new(engine: Arc<DjEngine>, target: Arc<dyn ParameterTarget>, index: usize) -> Self {
         Self {
             engine,
+            sink: None,
             target,
+            index,
+        }
+    }
+
+    /// A binding that sends typed commands to `router` (the production window).
+    pub fn typed(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, index: usize) -> Self {
+        Self {
+            engine,
+            sink: Some(router.clone()),
+            target: router,
             index,
         }
     }
@@ -44,18 +75,23 @@ impl DeckBinding {
         self.engine.deck_snapshot(self.index)
     }
 
-    /// The typed id of one of this deck's parameters. The engine has at most `MAX_DECKS` decks, so
-    /// the index always fits.
-    pub fn id(&self, p: DeckParam) -> ParamId {
-        ParamId::Deck {
-            deck: self.index as u8,
-            p,
-        }
+    /// The typed id of one of this deck's parameters. Fails when the index does not fit a deck id.
+    pub fn id(&self, p: DeckParam) -> Result<ParamId, ParamError> {
+        let deck = u8::try_from(self.index).map_err(|_| ParamError::OutOfRange {
+            id: format!("deck.{}", self.index),
+            what: "deck",
+            max: u16::from(om_core::param_id::MAX_DECKS) - 1,
+        })?;
+        Ok(ParamId::Deck { deck, p })
     }
 
-    /// Sends one of this deck's parameters. `false` when the router does not know the id.
+    /// Sends one of this deck's parameters. `false` when the id is invalid or the router does not
+    /// handle it.
     pub fn send(&self, p: DeckParam, value: f64) -> bool {
-        self.target.set_parameter(&self.id(p).to_string(), value)
+        match self.id(p) {
+            Ok(id) => deliver(self.sink.as_ref(), &self.target, id, value),
+            Err(_) => false,
+        }
     }
 }
 
@@ -63,12 +99,29 @@ impl DeckBinding {
 #[derive(Clone)]
 pub struct MixerBinding {
     pub engine: Arc<DjEngine>,
+    /// Typed writes. `None` falls back to `target`.
+    pub sink: Option<Arc<dyn CommandSink>>,
+    /// String writes, used when there is no sink.
     pub target: Arc<dyn ParameterTarget>,
 }
 
 impl MixerBinding {
+    /// A binding that writes through the string façade (test rigs).
     pub fn new(engine: Arc<DjEngine>, target: Arc<dyn ParameterTarget>) -> Self {
-        Self { engine, target }
+        Self {
+            engine,
+            sink: None,
+            target,
+        }
+    }
+
+    /// A binding that sends typed commands to `router` (the production window).
+    pub fn typed(engine: Arc<DjEngine>, router: Arc<ParameterRouter>) -> Self {
+        Self {
+            engine,
+            sink: Some(router.clone()),
+            target: router,
+        }
     }
 
     pub fn mixer(&self) -> &MixerControl {
@@ -85,21 +138,30 @@ impl MixerBinding {
 
     /// Sends one mixer parameter (`mixer.*`).
     pub fn send(&self, p: MixerParam, value: f64) -> bool {
-        self.target
-            .set_parameter(&ParamId::Mixer(p).to_string(), value)
+        deliver(self.sink.as_ref(), &self.target, ParamId::Mixer(p), value)
     }
 
     /// Sends one parameter of an FX rack or unit (`fx.*`).
     pub fn send_fx(&self, rack: FxRack, unit: Option<u16>, p: FxParam, value: f64) -> bool {
-        self.target
-            .set_parameter(&ParamId::Fx { rack, unit, p }.to_string(), value)
+        deliver(
+            self.sink.as_ref(),
+            &self.target,
+            ParamId::Fx { rack, unit, p },
+            value,
+        )
     }
 
-    /// The typed id of one channel's parameter.
-    pub fn channel(channel: usize, p: ChannelParam) -> MixerParam {
-        MixerParam::Channel {
-            ch: channel as u8,
-            p,
+    /// Sends one channel parameter (`mixer.ch<c>.*`). `false` when `channel` does not fit a channel
+    /// id or the router does not handle it.
+    pub fn send_channel(&self, channel: usize, p: ChannelParam, value: f64) -> bool {
+        match u8::try_from(channel) {
+            Ok(ch) => deliver(
+                self.sink.as_ref(),
+                &self.target,
+                ParamId::Mixer(MixerParam::Channel { ch, p }),
+                value,
+            ),
+            Err(_) => false,
         }
     }
 }
@@ -281,8 +343,98 @@ mod tests {
         let router = Arc::new(om_core::ParameterRouter::new());
         engine.register(&router);
         let binding = DeckBinding::new(Arc::clone(&engine), router.clone(), 1);
-        assert_eq!(binding.id(DeckParam::Sync).to_string(), "deck.1.sync");
+        assert_eq!(
+            binding.id(DeckParam::Sync).unwrap().to_string(),
+            "deck.1.sync"
+        );
         assert!(binding.send(DeckParam::Sync, 1.0));
         assert!(engine.sync().is_enabled(1));
+    }
+
+    /// Forwards every typed command to the router and keeps a copy of it.
+    struct RecordingSink {
+        router: Arc<ParameterRouter>,
+        commands: std::sync::Mutex<Vec<Command>>,
+    }
+
+    impl CommandSink for RecordingSink {
+        fn send(&self, cmd: Command) -> Result<(), om_core::CommandError> {
+            self.commands.lock().unwrap().push(cmd.clone());
+            self.router.send(cmd)
+        }
+    }
+
+    /// Fails the test if a write reaches the string path.
+    struct NoText;
+
+    impl ParameterTarget for NoText {
+        fn set_parameter(&self, id: &str, _value: f64) -> bool {
+            panic!("a typed binding wrote text {id:?}");
+        }
+    }
+
+    /// A typed binding sends `Command::Param` with the parsed id and never formats a string.
+    #[test]
+    fn a_typed_binding_sends_param_commands_without_text() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        let router = Arc::new(om_core::ParameterRouter::new());
+        engine.register(&router);
+        let sink = Arc::new(RecordingSink {
+            router: Arc::clone(&router),
+            commands: std::sync::Mutex::new(Vec::new()),
+        });
+        let deck = DeckBinding {
+            engine: Arc::clone(&engine),
+            sink: Some(sink.clone()),
+            target: Arc::new(NoText),
+            index: 1,
+        };
+        assert!(deck.send(DeckParam::Sync, 1.0));
+        assert!(engine.sync().is_enabled(1));
+
+        let mixer = MixerBinding {
+            engine: Arc::clone(&engine),
+            sink: Some(sink.clone()),
+            target: Arc::new(NoText),
+        };
+        assert!(mixer.send_channel(0, ChannelParam::Fader, 0.5));
+        assert!(mixer.send(MixerParam::Master, 0.25));
+
+        let sent = sink.commands.lock().unwrap().clone();
+        assert_eq!(
+            sent,
+            vec![
+                Command::Param {
+                    id: ParamId::Deck {
+                        deck: 1,
+                        p: DeckParam::Sync
+                    },
+                    value: 1.0,
+                },
+                Command::Param {
+                    id: ParamId::Mixer(MixerParam::Channel {
+                        ch: 0,
+                        p: ChannelParam::Fader
+                    }),
+                    value: 0.5,
+                },
+                Command::Param {
+                    id: ParamId::Mixer(MixerParam::Master),
+                    value: 0.25,
+                },
+            ]
+        );
+    }
+
+    /// A typed write the router does not handle reports `false`, as the string path does.
+    #[test]
+    fn a_typed_write_nobody_handles_reports_false() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        // No engine targets registered: every typed id is rejected.
+        let router = Arc::new(om_core::ParameterRouter::new());
+        let deck = DeckBinding::typed(Arc::clone(&engine), router, 0);
+        assert!(!deck.send(DeckParam::Play, 1.0));
     }
 }

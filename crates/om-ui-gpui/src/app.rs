@@ -16,7 +16,7 @@ use gpui::{
     WindowBounds, WindowOptions,
 };
 use om_analysis::WaveformData;
-use om_core::{ParameterRouter, ParameterTarget};
+use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
@@ -115,16 +115,15 @@ impl Shell {
             .take()
             .map(|hub| LibraryPanel::new(hub, Arc::clone(&engine)));
         let deck_count = engine.num_decks();
-        let target: Arc<dyn ParameterTarget> = Arc::clone(&router) as Arc<dyn ParameterTarget>;
         let mixer = MixerPanel::new(
-            MixerBinding::new(Arc::clone(&engine), Arc::clone(&target)),
+            MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router)),
             meter_params(&theme),
         );
         let decks = (0..engine.num_decks())
             .map(|index| {
-                DeckWidget::new(DeckBinding::new(
+                DeckWidget::new(DeckBinding::typed(
                     Arc::clone(&engine),
-                    Arc::clone(&target),
+                    Arc::clone(&router),
                     index,
                 ))
             })

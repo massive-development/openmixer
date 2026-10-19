@@ -71,7 +71,7 @@ pub trait AudioCallback: Send {
 - **Notes:**
   - `ParamId` is the canonical form: `FromStr` parses and `Display` prints the canonical id (`hotcue01` prints `hotcue1`). The namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler` and `automix` are reserved: a malformed id in them is an error. Any other prefix parses to `ParamId::Ext`, which plugins own.
   - `ParameterRouter::dispatch(&ParamId, f64)` routes each typed id to the `ParamTarget` registered for its `Namespace` (`register_typed`). A target's `set_param` returns `false` for variants it does not own.
-  - `Command::Param { id, value }` is the one variant wired today. MIDI, the UI and tests send it through `CommandSink::send`, which returns `CommandError::Rejected` when no target takes the id. `LoadStems`, `SamplerAssign` and `Automix` are placeholders that return `Rejected` until their features land (Todos 19, 30, 38, 40).
+  - `Command::Param { id, value }` is the one variant the router wires today. The production UI sends it through `CommandSink::send` (`DeckBinding::typed`, `MixerBinding::typed`). MIDI mappings and plugins do not: they use the string façade below. Tests use either path. `CommandSink::send` returns `CommandError::Rejected` when no target takes the id. `LoadStems`, `SamplerAssign` and `Automix` are placeholders that return `Rejected` until their features land (Todos 19, 30, 38, 40); their engine-side sink is added with those features.
   - The string façade is `ParameterTarget::set_parameter(&str, f64) -> bool` on the router. It parses the id once and dispatches typed ids the same way. Ids the grammar rejects, and `Ext` ids, go to the prefix registry (`register_target`, longest prefix wins). Engine namespaces cannot be registered as string prefixes.
   - Dispatch is serialised by a reentrant gate, so a target may route a follow-up id on the same thread. Parsing and sending are control-thread operations; never call them from the audio thread.
 
@@ -253,10 +253,10 @@ pub trait AudioCallback: Send {
 - **Reuse when:** a view needs track rows (implement a row-source trait with `count()` and `fetch(offset, limit)`), a new sidebar node, or another load gesture (send a load command).
 - **Notes:** the UI thread owns the library connection and the prep queue (a timer calls `pump()`). Watch folders have their own thread and connection and only bump an atomic counter. Widgets never open databases.
 
-### Widgets send commands only (replaces DeckBinding)
+### Widgets send commands only (DeckBinding, MixerBinding)
 - **Where:** `om-ui` `widgets/` and `binding.rs`; drawn by `om-ui-gpui`
-- **Why:** every control sends a `Command::Param` (a parsed `ParamId`) through `CommandSink`, the same path MIDI mappings use; reads come from a pulled `EngineSnapshot`.
-- **Reuse when:** any new control surface. Tests send commands through a recording sink and assert both the command and the engine's resulting state.
+- **Why:** in the production window every control sends a `Command::Param` (a `ParamId` built from the typed enums, never a string) through the router's `CommandSink`. Reads come from a pulled `EngineSnapshot`. MIDI mappings use the string façade for the same ids.
+- **Reuse when:** any new control surface. Tests build the binding with `new` (the string recording rig) or with a recording `CommandSink` in `sink`, and assert both the write and the engine's resulting state.
 - **Notes:** toggles send the opposite of the engine state and mirror it back when the snapshot changes.
 
 ### Preferences model + applier

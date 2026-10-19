@@ -159,7 +159,7 @@ fixtures/                       # Small test inputs: controller maps and traces,
 resources/themes/               # Built-in theme JSON
 ```
 
-Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. UI and MIDI send typed `Command`s to the engine; readers pull an `EngineSnapshot` built from the engine's atomics. `agents.md` lists what each crate owns and how to add a control id.
+Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `agents.md` lists what each crate owns and how to add a control id.
 
 ## Implementation Waves
 
