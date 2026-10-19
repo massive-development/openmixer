@@ -71,19 +71,14 @@ pub fn slider(
     let thumb = if vertical {
         let travel = (rect.h - thumb_px).max(0) as f32;
         place(Rect::new(
-            rect.x,
-            rect.y + ((1.0 - frac) * travel) as i32,
+            0,
+            ((1.0 - frac) * travel) as i32,
             rect.w,
             thumb_px,
         ))
     } else {
         let travel = (rect.w - thumb_px).max(0) as f32;
-        place(Rect::new(
-            rect.x + (frac * travel) as i32,
-            rect.y,
-            thumb_px,
-            rect.h,
-        ))
+        place(Rect::new((frac * travel) as i32, 0, thumb_px, rect.h))
     };
     let track = skin(place(rect), &look.fader.track);
     let track = track.child(skin(thumb, &look.fader.thumb));
@@ -105,8 +100,11 @@ pub fn knob(
     let (inset_s, inset_l) = (look.inset_small, look.inset_large);
     let frac = fraction(value, min, max) as f32;
     let fill_h = ((rect.h as f32 - inset_l) * frac) as i32;
-    let body = skin(place(rect), &look.knob.body)
-        .text_color(paint(look.knob.label.text))
+    // The value fill is translucent and drawn first; label and readout are drawn above it in the
+    // primary text colour so they stay readable over both the body and the fill.
+    let mut body = skin(place(rect), &look.knob.body)
+        .overflow_hidden()
+        .text_color(paint(look.knob.readout.text))
         .child(
             place(Rect::new(
                 0,
@@ -114,9 +112,19 @@ pub fn knob(
                 rect.w,
                 fill_h,
             ))
-            .bg(paint(look.knob.fill))
+            .bg(paint(look.knob.fill.with_multiplied_alpha(0.45)))
             .rounded(px(look.bar_radius)),
-        )
+        );
+    if min < 0.0 && max > 0.0 {
+        // Centre mark of a bipolar knob (the zero of the range).
+        let zero = fraction(0.0, min, max) as f32;
+        let y = ((rect.h as f32 - inset_l) * (1.0 - zero)) as i32 + inset_s as i32;
+        body = body.child(
+            place(Rect::new(0, y, rect.w, 1))
+                .bg(paint(look.knob.readout.text.with_multiplied_alpha(0.5))),
+        );
+    }
+    let body = body
         .child(
             div()
                 .absolute()
@@ -129,7 +137,6 @@ pub fn knob(
                 .absolute()
                 .left(px(inset_l))
                 .bottom(px(inset_s))
-                .text_color(paint(look.knob.readout.text))
                 .child(readout.to_owned()),
         );
     draggable(body, target, abs, cx)
