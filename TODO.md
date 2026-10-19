@@ -2,6 +2,50 @@
 
 OpenMixer is written in Rust with GPUI. The statuses below are the Rust state. The C++ baseline is the parity reference: its TODO is in the `cpp-final` tag (`git show cpp-final:TODO.md`). Todo numbers and titles match `docs/parity.md`, which maps each one to its C++ tests and its Rust test.
 
+## Before Wave 7
+
+Checked against the code on 2026-10-19 (not against the older docs). Size: S = up to a day, M = a few days, L = a week or more.
+
+### (A) Blockers for Wave 7
+
+- **Todo 19:** ONNX stems backend (`ort`) not built; `om-stems` has only `MockSeparator`, and nothing in the app calls the separator. L
+- **Todo 37:** stem-aware mixing DSP not started (needs stems from 19). L
+- **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
+- **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
+- **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
+- **Todo 20:** play history: no table (only a `play_count` column). Automix and recently played need it. S
+- **Todo 12 / 20:** hotcue save-back: `DjEngine::set_hotcue` exists, but only the import path writes `cues`; no caller stores engine hotcues in the library. S
+- **Todo 21:** artwork persistence: read into `Artwork` in `metadata.rs`, no artwork table. S
+- **Todo 23:** FTS: search is LIKE-based; no FTS5 table in the migrations. S
+- **Todo 25:** LookAndFeel: `ThemeTokens` exist in `om-ui::theme`, but nothing styles knobs, faders, menus, tabs or tooltips from them (no LookAndFeel type in the tree). M
+- **Todo 26a:** debug panel load/play: `debug_panel.rs` only shows rows; no load or play control. S (or retire it when Wave 5 lands)
+
+### (B) Quality and verification debt
+
+- **Todos 26, 27, 28, 29, 31:** the GPUI window has never been viewed by eye (only launched and inspected with `xwininfo`). M, needs a native display run.
+- **Todo 7:** cpal has never opened a real ALSA or PipeWire device (the device test skips on WSL). S, needs hardware.
+- **Todo 7 / 13:** headphone-cue second stream failed on WSLg ("Invalid argument"), cause not isolated. M, verify on native Linux with two devices.
+- **Todo 32:** no real MIDI device has been used; the ALSA backend is only smoke-tested. S, needs hardware.
+- **Wave 1 CI:** macOS and Windows legs are `continue-on-error`. macOS `soak_short` exceeds its xrun budget on shared runners; the Windows `file_url` fix is not confirmed by a run. S-M
+- **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. Add a scheduled job. S
+- **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
+- **Wave 1 CI:** the `gui-check` job has not run on a clean runner (non-blocking). S
+
+### (C) Smaller gaps
+
+- **Todo 29:** `--settings` start flag: not in `crates/openmixer/src`. S
+- **Todo 29:** live scan-interval change: the interval is read when the library starts (`om-ui::settings`). S
+- **Todo 29:** MIDI hot-plug refresh: `midi.rs` reconciles ports about once a second, but the MIDI page list is read on open and on page change only. S
+- **Todo 10a:** plugin dynamic loading: open decision; `PluginLoader` reports every shared library as unsupported. S for the decision, L to implement
+- **Todo 35:** HID layer: not started. L
+- **Todo 36:** mapping editor: only learn start and cancel exist; no in-app editing of maps. M
+- **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
+- **Todo 8b:** FFmpeg decode backend: not started (optional). M
+- **Todo 24:** auto-enqueue after scan: the prep queue is fed only by a browser click and by track load (`browser.rs`, `track_loader.rs`); a scan does not enqueue. S
+- **Todo 28:** playlist editing UI: the playlist DAO has create, rename, move, add and remove, but the sidebar only selects. M
+
+Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
+
 ## Rust rewrite: phases 0-1 (done)
 
 **Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
