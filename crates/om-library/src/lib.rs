@@ -42,4 +42,6 @@ pub use track_file_dao::{TrackFileDao, TrackFileEntry, TrackFileState};
 pub use track_key::{normalise_key, set_key};
 pub use track_record::TrackRecord;
 pub use watch_folder_dao::WatchFolderDao;
-pub use watch_folders::{WatchFolderOptions, WatchFolders};
+pub use watch_folders::{
+    Clock, ErrorCallback, ScanDoneCallback, WatchFolderOptions, WatchFolders,
+};
