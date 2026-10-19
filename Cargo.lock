@@ -3970,9 +3970,6 @@ dependencies = [
 [[package]]
 name = "om-core"
 version = "0.1.0"
-dependencies = [
- "rtrb",
-]
 
 [[package]]
 name = "om-dsp"
