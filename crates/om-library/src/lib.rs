@@ -1,7 +1,7 @@
 //! Library database: SQLite schema and migrations, track/cue/playlist/watch-folder DAOs, and the
 //! track record and key helpers (Todo 20). Metadata readers, folder ingest and watch folders
-//! (Todo 21). Search, importers and the prep queue come later (Todos 22-24). Port of
-//! `src/library/`.
+//! (Todo 21). Search and filter (Todo 23). Importers and the prep queue come later (Todos 22, 24).
+//! Port of `src/library/`.
 //!
 //! Threading: one writer per database file. A `Database` is used by one thread at a time; the UI
 //! opens its own read-only connection to the same file (WAL lets it read while the writer commits).
@@ -18,6 +18,12 @@ mod metadata;
 mod migrations;
 mod ordered_list;
 mod playlist_dao;
+mod search_compiler;
+mod search_engine;
+mod search_fields;
+mod search_keys;
+mod search_parser;
+mod search_query;
 mod track_dao;
 mod track_file_dao;
 mod track_key;
@@ -37,6 +43,12 @@ pub use metadata::{
 pub use migrations::{core_migrations, current_schema_version, migrate, Migration};
 pub use ordered_list::OrderedList;
 pub use playlist_dao::{Playlist, PlaylistDao, PlaylistEntry};
+pub use search_compiler::{compile_search, like_pattern, CompileContext, CompiledSearch};
+pub use search_engine::SearchEngine;
+pub use search_fields::{free_text_columns, FieldKind, SearchField, SearchFieldRegistry};
+pub use search_keys::key_camelot_codes;
+pub use search_parser::{parse_query, ParsedQuery};
+pub use search_query::{FilterTerm, SearchQuery, SearchValue, SqlFragment};
 pub use track_dao::{read_row, TrackDao, SELECT_COLUMNS};
 pub use track_file_dao::{TrackFileDao, TrackFileEntry, TrackFileState};
 pub use track_key::{normalise_key, set_key};
