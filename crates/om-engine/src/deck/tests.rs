@@ -3,6 +3,13 @@
 
 use super::{Deck, DeckAudio};
 use crate::callback::AudioCallback;
+
+// Scenario suites: key-lock cases and loop cases. They share the fixtures above.
+#[cfg(test)]
+mod keylock;
+#[cfg(test)]
+mod loops;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
