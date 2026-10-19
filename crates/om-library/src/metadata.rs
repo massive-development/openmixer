@@ -92,8 +92,11 @@ impl MetadataReaderRegistry {
 /// whether the file is offered to it.
 pub struct LoftyMetadataReader;
 
+/// `opus` is left out: symphonia-core names the Opus codec type, but none of the decoders om-engine
+/// enables (aac, flac, mp3, pcm, vorbis) reads it, so such a file would be ingested but could never
+/// be loaded or analysed.
 const LOFTY_EXTENSIONS: &[&str] = &[
-    "wav", "aif", "aiff", "flac", "ogg", "oga", "opus", "mp3", "m4a", "m4b", "mp4", "aac",
+    "wav", "aif", "aiff", "flac", "ogg", "oga", "mp3", "m4a", "m4b", "mp4", "aac",
 ];
 
 impl MetadataReader for LoftyMetadataReader {
@@ -224,4 +227,16 @@ mod tests {
         let exts = registry.supported_extensions();
         assert_eq!(exts.iter().filter(|e| *e == "wav").count(), 1);
     }
+
+    #[test]
+    fn opus_is_not_ingested_because_no_decoder_plays_it() {
+        // Lofty could read Opus tags, but no decoder enabled for analysis and the decks (see the
+        // constant above) plays Opus. Ingesting such files would add tracks that never load or
+        // analyse, so they are left out until a decoder exists.
+        let registry = MetadataReaderRegistry::with_defaults();
+        assert!(!registry.supports(Path::new("/m/a.opus")));
+        assert!(!registry.supported_extensions().iter().any(|e| e == "opus"));
+        assert!(registry.supports(Path::new("/m/a.ogg")), "Ogg Vorbis still ingests");
+    }
 }
+

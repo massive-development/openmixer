@@ -72,6 +72,9 @@ pub struct AppComposition {
     pub router: Arc<ParameterRouter>,
     pub themes: ThemeRegistry,
     pub prefs: Preferences,
+    /// False when the preferences file exists but could not be read or is from a newer schema:
+    /// saving would replace data this build cannot read, so changes are not written.
+    pub prefs_replaceable: bool,
     pub hooks: ServiceHooks,
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
@@ -97,11 +100,11 @@ impl AppComposition {
         let mut plugins = PluginRegistry::new();
         plugins.bind_router(Some(Arc::clone(&router)));
 
-        let prefs = match Preferences::load(prefs_file) {
-            Ok(p) => p,
+        let (prefs, prefs_replaceable) = match Preferences::load(prefs_file) {
+            Ok(p) => (p, true),
             Err(error) => {
                 eprintln!("openmixer: {error}; using defaults");
-                Preferences::default()
+                (Preferences::default(), error.allows_replacing_file())
             }
         };
 
@@ -112,6 +115,7 @@ impl AppComposition {
             router,
             themes,
             prefs,
+            prefs_replaceable,
             hooks: ServiceHooks::default(),
             plugins,
             midi: None,

@@ -110,6 +110,15 @@ pub enum PreferencesError {
     Io(#[from] std::io::Error),
 }
 
+impl PreferencesError {
+    /// True when a save may replace the file that failed to load. A corrupt file has been copied to
+    /// `.bad`, so replacing it loses nothing. An unreadable file or one from a newer schema holds
+    /// data this build cannot read, so it must be left alone.
+    pub fn allows_replacing_file(&self) -> bool {
+        matches!(self, Self::Json(_))
+    }
+}
+
 /// `<user config>/OpenMixer`, the folder that holds preferences, plugins and the map by default.
 pub fn data_dir() -> PathBuf {
     dirs::config_dir()
@@ -431,6 +440,26 @@ mod tests {
         );
         Preferences::default().save(&file).unwrap();
         assert_eq!(Preferences::load(&file).unwrap(), Preferences::default());
+    }
+
+    #[test]
+    fn an_unreadable_file_is_never_replaced_but_a_corrupt_one_may_be() {
+        let dir = scratch("unreadable");
+        let file = dir.join("preferences.json");
+        let bytes = [0xff_u8, 0xfe, 0x00];
+        fs::write(&file, bytes).unwrap();
+        let error = Preferences::load(&file).unwrap_err();
+        assert!(matches!(error, PreferencesError::Io(_)), "{error}");
+        assert!(!error.allows_replacing_file(), "a save would destroy the file");
+        assert_eq!(fs::read(&file).unwrap(), bytes, "load leaves it alone");
+
+        fs::write(&file, "{ broken").unwrap();
+        let corrupt = Preferences::load(&file).unwrap_err();
+        assert!(corrupt.allows_replacing_file(), "kept as .bad, so replacing it loses nothing");
+
+        fs::write(&file, r#"{"version": 99}"#).unwrap();
+        let newer = Preferences::load(&file).unwrap_err();
+        assert!(!newer.allows_replacing_file(), "a newer schema is not ours to overwrite");
     }
 
     #[test]

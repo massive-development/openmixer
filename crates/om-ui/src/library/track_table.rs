@@ -98,6 +98,8 @@ pub struct TrackTableModel {
     pages: BTreeMap<usize, Vec<TrackRecord>>,
     total: usize,
     reference: Option<MusicalKey>,
+    /// The error from the last page that could not be read; empty when the last fetch worked.
+    fetch_error: String,
 }
 
 impl TrackTableModel {
@@ -114,11 +116,16 @@ impl TrackTableModel {
     /// Same source, fresh data.
     pub fn reload(&mut self) {
         self.pages.clear();
+        self.fetch_error.clear();
         self.total = self.source.as_mut().map_or(0, |s| s.count());
     }
 
-    /// Why the source last failed or rejected its query; empty when fine.
+    /// Why the source failed or rejected its query, or why the last page could not be read; empty
+    /// when fine.
     pub fn source_error(&self) -> String {
+        if !self.fetch_error.is_empty() {
+            return self.fetch_error.clone();
+        }
         self.source.as_ref().map_or_else(String::new, |s| s.error())
     }
 
@@ -158,12 +165,21 @@ impl TrackTableModel {
             if self.pages.len() >= MAX_CACHED_PAGES {
                 self.evict_farthest_from(page);
             }
-            let rows = self
+            let fetched = self
                 .source
                 .as_mut()
-                .map(|s| s.fetch(page * PAGE_SIZE, PAGE_SIZE))
-                .unwrap_or_default();
-            self.pages.insert(page, rows);
+                .map_or_else(|| Ok(Vec::new()), |s| s.fetch(page * PAGE_SIZE, PAGE_SIZE));
+            match fetched {
+                Ok(rows) => {
+                    self.fetch_error.clear();
+                    self.pages.insert(page, rows);
+                }
+                // Not cached: the next read of this page asks the source again.
+                Err(error) => {
+                    self.fetch_error = error;
+                    return None;
+                }
+            }
         }
         self.pages.get(&page)?.get(row % PAGE_SIZE)
     }
@@ -314,5 +330,42 @@ mod tests {
     fn every_sortable_column_names_a_field() {
         let sortable = columns().iter().filter(|c| c.sort_field.is_some()).count();
         assert_eq!(sortable, 8, "every column sorts");
+    }
+
+    /// Fails its first fetch, then serves three rows.
+    struct FlakySource {
+        failures_left: usize,
+    }
+
+    impl TrackSource for FlakySource {
+        fn count(&mut self) -> usize {
+            3
+        }
+
+        fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String> {
+            if self.failures_left > 0 {
+                self.failures_left -= 1;
+                return Err("database is locked".to_owned());
+            }
+            Ok((offset..3.min(offset + limit))
+                .map(|i| TrackRecord {
+                    id: i as i64 + 1,
+                    title: format!("T{i}"),
+                    ..TrackRecord::default()
+                })
+                .collect())
+        }
+    }
+
+    #[test]
+    fn a_failed_page_is_not_cached_and_its_error_is_reported() {
+        let mut model = TrackTableModel::new();
+        model.set_source(Box::new(FlakySource { failures_left: 1 }));
+        assert!(model.row_at(0).is_none(), "no rows from a failed page");
+        assert!(model.source_error().contains("database is locked"));
+
+        let row = model.row_at(0).expect("the next read fetches the page again");
+        assert_eq!(row.title, "T0");
+        assert!(model.source_error().is_empty(), "a good page clears the error");
     }
 }

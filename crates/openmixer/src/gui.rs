@@ -222,7 +222,12 @@ fn apply_changes(
 ) {
     let mut composition = composition.borrow_mut();
     composition.prefs = prefs.clone();
-    if let Err(error) = prefs.save(prefs_file) {
+    if !composition.prefs_replaceable {
+        eprintln!(
+            "openmixer: not saving preferences: {} could not be read, so it is left as it is",
+            prefs_file.display()
+        );
+    } else if let Err(error) = prefs.save(prefs_file) {
         eprintln!("openmixer: could not save preferences: {error}");
     }
     let mut settings = output.lock();
