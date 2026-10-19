@@ -2,7 +2,7 @@
 
 Date: 2026-10-18. Source documents: `docs/spikes/gpui.md`, `docs/spikes/cpal.md`, `docs/spikes/stretch.md` (read those for method, caveats and raw numbers). This record claims nothing they do not support. All spike code is throwaway and lives in `spikes/`. The GPUI and stretch spikes played no audio. Early cpal runs (5 s and 60 s on WSL) were audible: a 440 Hz tone at gain 0.5, before the silent-only rule. Everything since is silent by default; an audible tone is opt-in (`OPENMIXER_AUDIBLE=1`, gain at most 0.05) and user-run only.
 
-**Status: Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase.**
+**Status: Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.**
 
 ## Rescope: Linux-first
 
@@ -141,3 +141,16 @@ Date: 2026-10-19. Crate: `crates/om-stems`.
 - **Downloads.** The C++ tree downloaded weights over HTTP, HTTPS and file URLs through `juce::URL`. The Rust port keeps the licence gate, the `.part` file, the size and SHA-256 checks and the marker files. Transport: `file://`, `http://` and `https://` (`ureq` 2 with rustls). Tests use local files and a loopback server; no test reaches the network.
 - **HTTPS uses rustls with the webpki root bundle.** `webpki-roots` is CDLA-Permissive-2.0 (a permissive data licence, compatible with AGPL-3.0 distribution). `deny.toml` allows it with a comment. The https test reaches a loopback listener that hangs up and checks the TLS handshake fails, so no test leaves the host.
 - **The ONNX Runtime backend stays open.** `StemSeparator` is the interface; `MockSeparator` stands in and returns four quarters of the input, so the pipeline can run without a model. The `ort` backend, model export and the hosted manifest are Todo 19 work.
+
+## C++ removal and CI close-out
+
+Date: 2026-10-19. Decided at the port's close-out, Waves 1-6 at parity with `cpp-final`.
+
+- **Removed in this commit range:** `src/`, `tests/unit/`, `tests/valgrind.supp`, the C++ tools (`tools/soak`, `tools/soak_mix.cpp`, `tools/ui_gate`, `tools/ui_gate.cpp`, `tools/license_check.py`, `tools/fetch_test_data.py`), `cmake/`, `CMakeLists.txt`, `CMakePresets.json`, `examples/plugins/GainPlugin.cpp`, and the legacy `ci.yml` and `pr-tests.yml` workflows. The baseline stays at tag `cpp-final`; the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`.
+- **Kept:** `resources/themes/` (read by `om-ui`), `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, and the test data, moved from `tests/data/` to the repo-root `fixtures/`.
+- **Ported into `rust.yml`:** the progress heatmap check (`progress-check`, which `tools/progress_heatmap.py --check` backs) and the ASIO SDK guard (`legal-guards`, now a `git grep` over every tracked file outside `docs/` and `.github/`, so it is no longer limited to `*.h`).
+- **Replaced:** the C++ licence checker is replaced by `cargo deny` (the `deny` job), which covers the Rust dependency licences. The legacy sign job was a stub for todo 49 and is not carried over; signing is still a pre-release decision.
+- **Not in CI:** `tools/parity_inventory.py` needs the `cpp-final` tag, and the default checkout has no tags. Regenerate `docs/parity.md` locally and run `python3 -I -m unittest discover -s tests/tools` (the parity test checks that every Todo has a row).
+- **Gitignore:** the C++ build outputs (`build/`, `build-*/`, `_deps/`, `CMakeFiles/`, `CMakeCache.txt`, `compile_commands.json`, `*.o`, `*.a`) are no longer ignored. Local copies of those directories may still exist on disk and show as untracked until they are deleted.
+- **Left in place:** the tracked `.claude/skills/` entries for C++ (`cmake`, `cpp-pro`, `cpp-testing`, `static-analysis`) are not part of the build. Remove them separately if they should go.
+- **Not verified:** the `gui-check` job (see the GPUI integration section above) has not yet run on a clean runner.
