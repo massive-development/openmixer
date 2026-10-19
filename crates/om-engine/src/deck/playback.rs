@@ -70,7 +70,9 @@ impl Playback {
             clear_tail(left, right, 0);
             return;
         }
-        sh.loop_state.load(&mut self.loop_snap);
+        if let Some(snap) = sh.loop_state.load() {
+            self.loop_snap = snap;
+        }
         if sh.keylock.load(Relaxed) && self.keylock.stretch.is_some() {
             self.render_keylocked(sh, left, right);
             return;
@@ -196,35 +198,33 @@ impl Playback {
         self.request_ring(sh, next_ring_target);
     }
 
-    fn read_slot_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> bool {
-        let Some(slot) = self.current_slot(sh) else {
-            return false;
-        };
+    fn read_slot_frame(&mut self, sh: &Shared) -> Option<[f32; 2]> {
+        let slot = self.current_slot(sh)?;
         if !slot.contains(self.read_idx) {
             self.release_slot(sh);
-            return false;
+            return None;
         }
-        *out = slot.frame(self.read_idx - slot.start());
-        true
+        Some(slot.frame(self.read_idx - slot.start()))
     }
 
-    fn read_ring_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> bool {
+    fn read_ring_frame(&mut self, sh: &Shared) -> Option<[f32; 2]> {
         if self.ring_idx != self.read_idx {
             self.request_ring(sh, self.read_idx);
-            return false;
+            return None;
         }
-        if self.ring.read(out) < 2 {
-            return false;
+        let mut out = [0.0_f32; 2];
+        if self.ring.read(&mut out) < 2 {
+            return None;
         }
         self.consume(sh, 2);
         self.ring_idx += 1;
         // Reading moves the ring: a later request to an old target is new again.
         self.ring_wanted = self.ring_idx;
-        true
+        Some(out)
     }
 
-    /// Pulls the next source frame and its index. Returns false when the ring is empty.
-    fn pull_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> Option<i64> {
+    /// Pulls the next source frame and its index. None when neither the slot nor the ring has it.
+    fn pull_frame(&mut self, sh: &Shared) -> Option<(i64, [f32; 2])> {
         let loop_snap = self.loop_snap;
         if loop_snap.active() && self.read_idx >= loop_snap.end && self.read_idx > loop_snap.start {
             // Modulo keeps beat phase when a loop shrinks under the playhead.
@@ -232,17 +232,16 @@ impl Playback {
             self.read_idx = loop_snap.start + (self.read_idx - loop_snap.start) % len;
             self.enter_loop_slot(sh);
         }
-        if !self.read_slot_frame(sh, out) && !self.read_ring_frame(sh, out) {
-            return None;
-        }
+        let frame = self
+            .read_slot_frame(sh)
+            .or_else(|| self.read_ring_frame(sh))?;
         let index = self.read_idx;
         self.read_idx += 1;
-        Some(index)
+        Some((index, frame))
     }
 
     fn pop_frame(&mut self, sh: &Shared) -> bool {
-        let mut frame = [0.0_f32; 2];
-        let Some(index) = self.next_source_frame(sh, &mut frame) else {
+        let Some((index, frame)) = self.next_source_frame(sh) else {
             return false;
         };
         self.keylock.priming_pops += 1;
@@ -255,8 +254,7 @@ impl Playback {
 
     fn prime_interpolator(&mut self, sh: &Shared) -> bool {
         if !self.have_first {
-            let mut frame = [0.0_f32; 2];
-            let Some(index) = self.next_source_frame(sh, &mut frame) else {
+            let Some((index, frame)) = self.next_source_frame(sh) else {
                 return false;
             };
             self.next = frame;

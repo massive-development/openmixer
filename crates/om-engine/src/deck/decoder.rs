@@ -2,7 +2,6 @@
 //! seek and ring-reposition requests from the audio thread's handshake and keeps the ring topped
 //! up in chunks. Never runs on the audio thread.
 
-use super::loop_state::LoopSnapshot;
 use super::shared::Shared;
 use super::source::SourceReader;
 use om_core::SpscProducer;
@@ -108,12 +107,13 @@ impl DecoderWorker {
     /// Fills a prefetch slot when the loop start changes. Loops that are not set, or are invalid,
     /// leave the slot alone.
     fn service_prefetch(&mut self) {
-        let mut loop_snap = LoopSnapshot::default();
-        if self.reader.is_none()
-            || !self.shared.loop_state.load(&mut loop_snap)
-            || !loop_snap.valid()
-            || loop_snap.start == self.prefetched_start
-        {
+        if self.reader.is_none() {
+            return;
+        }
+        let Some(loop_snap) = self.shared.loop_state.load() else {
+            return;
+        };
+        if !loop_snap.valid() || loop_snap.start == self.prefetched_start {
             return;
         }
         self.fill_prefetch(loop_snap.start);

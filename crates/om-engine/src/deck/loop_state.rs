@@ -73,7 +73,7 @@ impl LoopState {
     }
 
     /// Returns false only while a writer is mid-update; callers keep their previous snapshot.
-    pub fn load(&self, out: &mut LoopSnapshot) -> bool {
+    pub fn load(&self) -> Option<LoopSnapshot> {
         for _ in 0..READ_ATTEMPTS {
             let v = self.seq.load(Ordering::Acquire);
             if v & 1 != 0 {
@@ -86,11 +86,10 @@ impl LoopState {
             };
             fence(Ordering::Acquire);
             if self.seq.load(Ordering::Relaxed) == v {
-                *out = snap;
-                return true;
+                return Some(snap);
             }
         }
-        false
+        None
     }
 }
 
@@ -101,15 +100,14 @@ mod tests {
     #[test]
     fn store_and_load_round_trip_and_validity() {
         let state = LoopState::default();
-        let mut snap = LoopSnapshot::default();
-        assert!(state.load(&mut snap));
+        let snap = state.load().expect("no writer is active");
         assert!(!snap.active());
         state.store(LoopSnapshot {
             start: 100,
             end: 200,
             enabled: true,
         });
-        assert!(state.load(&mut snap));
+        let snap = state.load().expect("no writer is active");
         assert_eq!((snap.start, snap.end, snap.enabled), (100, 200, true));
         assert!(snap.active());
         state.store(LoopSnapshot {
@@ -117,7 +115,7 @@ mod tests {
             end: 300,
             enabled: true,
         });
-        assert!(state.load(&mut snap));
+        let snap = state.load().expect("no writer is active");
         assert!(!snap.valid() && !snap.active());
     }
 }
