@@ -90,14 +90,38 @@ impl Options {
     }
 }
 
-/// The default library file: `OPENMIXER_LIBRARY_DB`, else `<user data>/OpenMixer/library.db`.
+/// The default library file: `OPENMIXER_LIBRARY_DB`, else `<user config>/OpenMixer/library.db`, the
+/// folder the preferences use (and the C++ build's `userApplicationDataDirectory`).
 pub fn default_options() -> Options {
-    let path = std::env::var_os(LIBRARY_DB_ENV)
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
-        .or_else(|| dirs::data_dir().map(|d| d.join("OpenMixer").join("library.db")))
-        .unwrap_or_else(|| PathBuf::from("library.db"));
+    let path = library_file_from(
+        std::env::var_os(LIBRARY_DB_ENV).as_deref(),
+        crate::preferences::data_dir(),
+        dirs::data_dir().map(|d| d.join("OpenMixer")),
+    );
     Options::for_path(path.to_string_lossy().into_owned())
+}
+
+/// Resolves the library file. `folder` is the current `<config>/OpenMixer`; `legacy_folder` is where
+/// the first Rust build put it (`<data>/OpenMixer`). The legacy file is used only while no file
+/// exists at `folder`, so an existing library is never left behind.
+pub fn library_file_from(
+    env: Option<&std::ffi::OsStr>,
+    folder: PathBuf,
+    legacy_folder: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(custom) = env.filter(|v| !v.is_empty()) {
+        return PathBuf::from(custom);
+    }
+    let current = folder.join("library.db");
+    if !current.exists() {
+        if let Some(legacy) = legacy_folder
+            .map(|f| f.join("library.db"))
+            .filter(|p| p.exists())
+        {
+            return legacy;
+        }
+    }
+    current
 }
 
 /// Events waiting for the owner thread. Filled by the prep queue's observer and error handler,
@@ -382,5 +406,53 @@ impl Drop for LibraryServices {
         // Errors still queued when the services die are dropped, not delivered.
         self.outbox.borrow_mut().errors.clear();
         self.on_error = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn library_env_override_wins_over_both_folders() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = library_file_from(
+            Some(OsStr::new("/custom/lib.db")),
+            dir.path().join("config").join("OpenMixer"),
+            Some(dir.path().join("data").join("OpenMixer")),
+        );
+        assert_eq!(path, PathBuf::from("/custom/lib.db"));
+        let empty = library_file_from(
+            Some(OsStr::new("")),
+            dir.path().join("config").join("OpenMixer"),
+            None,
+        );
+        assert!(empty.ends_with("OpenMixer/library.db") || empty.ends_with("OpenMixer\\library.db"));
+    }
+
+    #[test]
+    fn library_lives_beside_the_preferences_by_default() {
+        let config = tempfile::tempdir().expect("config");
+        let folder = config.path().join("OpenMixer");
+        let path = library_file_from(None, folder.clone(), None);
+        assert_eq!(path, folder.join("library.db"));
+    }
+
+    #[test]
+    fn an_existing_library_at_the_old_data_location_is_used_when_the_new_one_is_missing() {
+        let root = tempfile::tempdir().expect("root");
+        let folder = root.path().join("config").join("OpenMixer");
+        let legacy = root.path().join("data").join("OpenMixer");
+        std::fs::create_dir_all(&legacy).expect("legacy dir");
+        std::fs::write(legacy.join("library.db"), b"old").expect("old library");
+
+        let picked = library_file_from(None, folder.clone(), Some(legacy.clone()));
+        assert_eq!(picked, legacy.join("library.db"), "no data is left behind");
+
+        std::fs::create_dir_all(&folder).expect("new dir");
+        std::fs::write(folder.join("library.db"), b"new").expect("new library");
+        let picked = library_file_from(None, folder.clone(), Some(legacy));
+        assert_eq!(picked, folder.join("library.db"), "the new location wins once it exists");
     }
 }
