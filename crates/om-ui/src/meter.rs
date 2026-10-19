@@ -4,7 +4,9 @@
 //! the `MeterBar` / `StereoMeter` wrappers.
 
 use crate::theme::ThemeTokens;
-use om_dsp::{MeterBallistics, MeterParams};
+pub use om_dsp::MeterParams;
+
+use om_dsp::MeterBallistics;
 
 /// Ballistics parameters from the current theme tokens.
 pub fn meter_params(t: &ThemeTokens) -> MeterParams {
