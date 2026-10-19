@@ -721,3 +721,243 @@ mod stats_tests {
         assert!(!stats_text(&running(), "stale error").contains("stale error"));
     }
 }
+
+#[cfg(test)]
+mod parity_tests {
+    //! The logic cases of the C++ `SettingsPanelTest` that the other settings tests do not cover.
+    use super::*;
+    use crate::preferences::Preferences;
+    use crate::theme::ThemeRegistry;
+
+    struct Inputs(Vec<String>);
+
+    impl MidiInputs for Inputs {
+        fn input_names(&self) -> Vec<String> {
+            self.0.clone()
+        }
+    }
+
+    #[test]
+    fn midi_lists_the_inputs_the_host_sees() {
+        let mut prefs = Preferences::default();
+        prefs.midi.enabled_inputs = vec!["usb-1".into()];
+        let inputs = Inputs(vec!["usb-1".into(), "usb-2".into()]);
+        let page = MidiSettingsPage::new(&mut prefs, &inputs);
+        assert_eq!(page.input_names(), vec!["usb-1", "usb-2"]);
+    }
+
+    #[test]
+    fn midi_with_no_inputs_still_builds_and_the_all_switch_stores_once() {
+        let mut prefs = Preferences::default();
+        prefs.midi.enable_all = false;
+        let inputs = Inputs(Vec::new());
+        let mut page = MidiSettingsPage::new(&mut prefs, &inputs);
+        assert!(page.input_names().is_empty());
+        assert!(page.set_enable_all(true));
+        assert!(!page.set_enable_all(true));
+        assert!(prefs.midi.enable_all);
+    }
+
+    #[derive(Default)]
+    struct Library {
+        available: bool,
+        folders: Vec<PathBuf>,
+        rescans: usize,
+    }
+
+    impl LibraryControl for Library {
+        fn available(&self) -> bool {
+            self.available
+        }
+        fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
+            if !self.available {
+                return Err("the library is not available".into());
+            }
+            self.folders.push(folder);
+            Ok(())
+        }
+        fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
+            self.folders.retain(|f| *f != folder);
+            Ok(())
+        }
+        fn rescan(&mut self) -> SettingsResult<()> {
+            self.rescans += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn watch_folders_are_added_and_removed_through_the_library() {
+        let mut prefs = Preferences::default();
+        let mut library = Library {
+            available: true,
+            ..Library::default()
+        };
+        let mut page = LibrarySettingsPage::new(&mut prefs, &mut library);
+        page.add_watch_folder(PathBuf::from("/music")).unwrap();
+        page.add_watch_folder(PathBuf::from("/more")).unwrap();
+        page.remove_watch_folder(PathBuf::from("/music")).unwrap();
+        assert_eq!(library.folders, vec![PathBuf::from("/more")]);
+    }
+
+    #[test]
+    fn rescan_triggers_one_scan_pass_per_press() {
+        let mut prefs = Preferences::default();
+        let mut library = Library {
+            available: true,
+            ..Library::default()
+        };
+        let mut page = LibrarySettingsPage::new(&mut prefs, &mut library);
+        page.rescan().unwrap();
+        assert_eq!(library.rescans, 1);
+    }
+
+    #[test]
+    fn a_hand_edited_interval_is_clamped_when_the_page_next_sets_it() {
+        let mut prefs = Preferences::default();
+        prefs.library.scan_interval_minutes = 99_999;
+        let mut library = Library::default();
+        let mut page = LibrarySettingsPage::new(&mut prefs, &mut library);
+        assert!(page.set_scan_interval(LibrarySettingsPage::MAX_INTERVAL_MINUTES + 1));
+        assert_eq!(
+            prefs.library.scan_interval_minutes,
+            LibrarySettingsPage::MAX_INTERVAL_MINUTES
+        );
+    }
+
+    #[derive(Default)]
+    struct Host {
+        loaded: Vec<String>,
+        reloads: usize,
+    }
+
+    impl PluginHost for Host {
+        fn loaded_plugins(&self) -> Vec<String> {
+            self.loaded.clone()
+        }
+        fn reload(&mut self) -> SettingsResult<()> {
+            self.reloads += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn plugins_show_the_default_folder_and_what_is_loaded_and_reload_on_request() {
+        let prefs = Preferences::default();
+        let mut host = Host {
+            loaded: vec!["gain".into()],
+            reloads: 0,
+        };
+        let mut page = PluginsSettingsPage::new(&prefs, &mut host);
+        assert_eq!(page.folder(), crate::preferences::default_plugin_folder());
+        assert_eq!(page.loaded(), vec!["gain".to_owned()]);
+        page.reload().unwrap();
+        assert_eq!(host.reloads, 1);
+    }
+
+    #[test]
+    fn a_theme_added_later_appears_in_the_picker() {
+        let mut prefs = Preferences::default();
+        let mut themes = ThemeRegistry::new();
+        themes.load_builtins();
+        let before = AppearanceSettingsPage::new(&mut prefs, &themes)
+            .choices()
+            .len();
+        themes
+            .add_json(
+                r#"{"id":"user.later","name":"Later"}"#,
+                crate::theme::Source::User,
+                "later.json",
+            )
+            .expect("user theme");
+        let choices = AppearanceSettingsPage::new(&mut prefs, &themes).choices();
+        assert_eq!(choices.len(), before + 1);
+        assert!(choices
+            .iter()
+            .any(|(id, name)| id == "user.later" && name == "Later"));
+    }
+
+    #[test]
+    fn the_panel_adds_plugin_pages_after_the_standard_ones() {
+        let mut panel = SettingsPanel::new(true);
+        let index = panel.add_page("Example");
+        assert_eq!(index, 5);
+        assert_eq!(panel.tabs().last().map(String::as_str), Some("Example"));
+        assert_eq!(
+            panel.page_kind(index),
+            None,
+            "plugin tabs have no standard page"
+        );
+        panel.show(index);
+        assert_eq!(panel.current(), index);
+        panel.show(99);
+        assert_eq!(panel.current(), index, "out-of-range tabs are ignored");
+    }
+
+    #[test]
+    fn reflecting_the_audio_page_does_not_change_the_stored_pairs() {
+        struct Model;
+        impl AudioSettingsModel for Model {
+            fn device_types(&self) -> Vec<String> {
+                Vec::new()
+            }
+            fn device_type(&self) -> String {
+                String::new()
+            }
+            fn set_device_type(&mut self, _: &str) -> SettingsResult<()> {
+                Err("must not be called".into())
+            }
+            fn output_devices(&self) -> Vec<String> {
+                Vec::new()
+            }
+            fn output_device(&self) -> String {
+                String::new()
+            }
+            fn set_output_device(&mut self, _: &str) -> SettingsResult<()> {
+                Err("must not be called".into())
+            }
+            fn sample_rates(&self) -> Vec<u32> {
+                Vec::new()
+            }
+            fn sample_rate(&self) -> u32 {
+                0
+            }
+            fn set_sample_rate(&mut self, _: u32) -> SettingsResult<()> {
+                Err("must not be called".into())
+            }
+            fn buffer_sizes(&self) -> Vec<u32> {
+                Vec::new()
+            }
+            fn buffer_size(&self) -> u32 {
+                0
+            }
+            fn set_buffer_size(&mut self, _: u32) -> SettingsResult<()> {
+                Err("must not be called".into())
+            }
+            fn output_channels(&self) -> usize {
+                4
+            }
+            fn state_string(&self) -> String {
+                String::new()
+            }
+        }
+        let mut prefs = Preferences::default();
+        prefs.audio.master_pair = 1;
+        prefs.audio.cue_pair = 9;
+        let before = prefs.audio.clone();
+        let mut model = Model;
+        {
+            let page = AudioSettingsPage::new(&mut prefs, &mut model);
+            assert_eq!(page.pair_labels(), vec!["Out 1+2", "Out 3+4"]);
+            assert_eq!(
+                page.shown_cue_pair(),
+                None,
+                "a stored pair the device lacks shows None"
+            );
+        }
+        assert_eq!(
+            prefs.audio, before,
+            "viewing never rewrites the stored pairs"
+        );
+    }
+}

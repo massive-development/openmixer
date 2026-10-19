@@ -352,7 +352,6 @@ mod tests {
         let mut targets =
             AppPreferencesTargets::new(&mut state, &mut themes, &audio, None, None, None);
         assert!(!targets.apply_theme("no.such.theme"));
-        drop(targets);
         assert_eq!(themes.active_id(), Some("openmixer.dark"));
     }
 
@@ -375,7 +374,6 @@ mod tests {
             Some(&mut plugins),
         );
         targets.load_plugin_folder(&folder);
-        drop(targets);
         assert_eq!(
             plugins.unloads, 1,
             "the plugins are unloaded before the folder loads"

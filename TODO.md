@@ -169,7 +169,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 29:** Automix panel + settings
   - Audio/MIDI settings, preferences
-  - Partial: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`. Open: the settings overlay in om-ui-gpui (d), device-state restore on start-up, MIDI/library/plugin pages wait on Todos 10, 12, 14
+  - Partial: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; audio and appearance pages live, latency/xrun/CPU readout), audio device state restore on start-up (`openmixer::audio_settings`). Open: the MIDI, library and plugin pages show placeholders until Todos 10, 12, 14; no Escape key on the overlay yet (needs a focus handle); overlay not checked by eye
+  - Also open: `--settings` start flag; the Linux GPUI CI job (see the TODO in `.github/workflows/rust.yml`)
   - Automix panel (Wave 7, needs Todo 38)
 
 - [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
