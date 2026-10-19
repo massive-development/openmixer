@@ -6,8 +6,8 @@
 #[cfg(feature = "gui")]
 mod gui;
 
-use openmixer::composition::{self, AppComposition};
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
+use openmixer::composition::{self, AppComposition};
 use std::process::ExitCode;
 
 /// Headless smoke: sample rate, block size and number of blocks rendered into memory.
@@ -26,7 +26,10 @@ fn main() -> ExitCode {
         return gui::main(&args);
     }
     #[cfg(not(feature = "gui"))]
-    if args.iter().any(|a| a == "--mock-device" || a == "--debug-panel") {
+    if args
+        .iter()
+        .any(|a| a == "--mock-device" || a == "--debug-panel")
+    {
         eprintln!("openmixer: --mock-device and --debug-panel need the window (build with --features gui)");
         return ExitCode::FAILURE;
     }
@@ -77,11 +80,7 @@ fn headless_smoke() -> Result<(), String> {
     if stats.xrun_count != 0 {
         return Err(format!("{} xruns", stats.xrun_count));
     }
-    let finite = device
-        .last_output()
-        .iter()
-        .flatten()
-        .all(|s| s.is_finite());
+    let finite = device.last_output().iter().flatten().all(|s| s.is_finite());
     if !finite {
         return Err("non-finite output sample".to_owned());
     }

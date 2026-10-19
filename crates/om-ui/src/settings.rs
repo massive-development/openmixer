@@ -474,7 +474,11 @@ mod tests {
         let mut audio = FakeAudio::new();
         let mut page = AudioSettingsPage::new(&mut prefs, &mut audio);
         assert_eq!(page.set_sample_rate(96_000), Ok(true));
-        assert_eq!(page.set_sample_rate(96_000), Ok(false), "same state: no change reported");
+        assert_eq!(
+            page.set_sample_rate(96_000),
+            Ok(false),
+            "same state: no change reported"
+        );
         assert_eq!(audio.calls, vec!["rate:96000", "rate:96000"]);
         assert!(prefs.audio.device_state.contains("sampleRate=\"96000\""));
     }
@@ -500,7 +504,10 @@ mod tests {
         let page = AudioSettingsPage::new(&mut prefs, &mut audio);
         assert_eq!(page.pair_labels().len(), 1);
         assert_eq!(page.shown_cue_pair(), None);
-        assert_eq!(prefs.audio.cue_pair, 1, "viewing must not rewrite the stored choice");
+        assert_eq!(
+            prefs.audio.cue_pair, 1,
+            "viewing must not rewrite the stored choice"
+        );
     }
 
     #[test]
@@ -511,7 +518,10 @@ mod tests {
         page.set_output_device("USB DJ Interface").unwrap();
         page.set_device_type("JACK").unwrap();
         page.set_buffer_size(128).unwrap();
-        assert_eq!(audio.calls, vec!["device:USB DJ Interface", "type:JACK", "buffer:128"]);
+        assert_eq!(
+            audio.calls,
+            vec!["device:USB DJ Interface", "type:JACK", "buffer:128"]
+        );
         assert!(prefs.audio.device_state.contains("deviceType=\"JACK\""));
         assert!(prefs.audio.device_state.contains("bufferSize=\"128\""));
     }
@@ -576,7 +586,10 @@ mod tests {
     #[test]
     fn library_interval_is_clamped_and_scan_on_start_is_stored() {
         let mut prefs = Preferences::default();
-        let mut lib = FakeLibrary { available: true, ..Default::default() };
+        let mut lib = FakeLibrary {
+            available: true,
+            ..Default::default()
+        };
         {
             let mut page = LibrarySettingsPage::new(&mut prefs, &mut lib);
             assert!(page.set_scan_interval(0));
@@ -624,9 +637,15 @@ mod tests {
     #[test]
     fn panel_omits_the_audio_tab_without_a_model_and_shows_one_page() {
         let mut with = SettingsPanel::new(true);
-        assert_eq!(with.tabs(), &["Audio", "MIDI", "Library", "Appearance", "Plugins"]);
+        assert_eq!(
+            with.tabs(),
+            &["Audio", "MIDI", "Library", "Appearance", "Plugins"]
+        );
         let mut without = SettingsPanel::new(false);
-        assert_eq!(without.tabs(), &["MIDI", "Library", "Appearance", "Plugins"]);
+        assert_eq!(
+            without.tabs(),
+            &["MIDI", "Library", "Appearance", "Plugins"]
+        );
         assert_eq!(without.page_kind(0), Some(PageKind::Midi));
         without.show(2);
         assert_eq!(without.current(), 2);

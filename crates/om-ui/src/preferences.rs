@@ -214,10 +214,7 @@ impl Preferences {
         read_audio(section(root, "audio"), &mut p.audio);
         read_midi(section(root, "midi"), &mut p.midi);
         read_library(section(root, "library"), &mut p.library);
-        p.plugin_folder = string_or(
-            section(root, "plugins").get("folder"),
-            p.plugin_folder,
-        );
+        p.plugin_folder = string_or(section(root, "plugins").get("folder"), p.plugin_folder);
         Ok(p)
     }
 
@@ -262,7 +259,9 @@ fn section<'a>(root: &'a Map<String, Value>, name: &str) -> &'a Map<String, Valu
 }
 
 fn string_or(v: Option<&Value>, fallback: String) -> String {
-    v.and_then(Value::as_str).map(str::to_owned).unwrap_or(fallback)
+    v.and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or(fallback)
 }
 
 fn bool_or(v: Option<&Value>, fallback: bool) -> bool {
@@ -334,8 +333,7 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("om-ui-prefs-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("om-ui-prefs-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -441,7 +439,10 @@ mod tests {
             default_file_from(Some(OsStr::new("/tmp/om_prefs_env/p.json"))),
             PathBuf::from("/tmp/om_prefs_env/p.json")
         );
-        assert_eq!(default_file_from(Some(OsStr::new(""))), data_dir().join("preferences.json"));
+        assert_eq!(
+            default_file_from(Some(OsStr::new(""))),
+            data_dir().join("preferences.json")
+        );
         assert!(default_file_from(None).ends_with("OpenMixer/preferences.json"));
     }
 }
