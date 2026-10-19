@@ -119,6 +119,8 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 ## Waves 7–9 ⬜
 
+Before Wave 7, the Foundation (typed control surface, pulled engine snapshot, typed errors, job queue) is done. The Before-Wave-7 (A) list in `TODO.md` is what remains.
+
 | Wave | Contents | Status |
 |------|----------|--------|
 | 7 | Stem-aware mixing, Automix, stem transitions, 8-pad sampler | ⬜ |

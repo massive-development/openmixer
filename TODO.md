@@ -8,6 +8,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 ### (A) Blockers for Wave 7
 
+- **Foundation (Phase F): done.** Typed control surface (`ParamId`, `Command`, typed engine targets, string façade), pulled `EngineSnapshot`, `WorkerPool`, typed error enums with `AppError`, and `Services`/`MidiHost`. It clears no item below by itself; the items build on it.
 - **Todo 19:** ONNX stems backend (`ort`) not built; `om-stems` has only `MockSeparator`, and nothing in the app calls the separator. L
 - **Todo 37:** stem-aware mixing DSP not started (needs stems from 19). L
 - **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
@@ -29,7 +30,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Wave 1 CI:** macOS and Windows legs are `continue-on-error`. macOS `soak_short` exceeds its xrun budget on shared runners; the Windows `file_url` fix is not confirmed by a run. S-M
 - **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. Add a scheduled job. S
 - **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
-- **Wave 1 CI:** the `gui-check` job has not run on a clean runner (non-blocking). S
+- **Wave 1 CI:** the `gui-check` and `gpui-lint` jobs have not run on a clean runner (non-blocking). S
 
 ### (C) Smaller gaps
 

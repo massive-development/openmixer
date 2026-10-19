@@ -10,7 +10,7 @@ OpenMixer is a clean-room, legally original implementation of professional DJ so
 
 ```
 openmixer/
-├── .github/workflows/        # rust.yml: the Rust CI (every PR); gui-check is non-blocking
+├── .github/workflows/        # rust.yml: the Rust CI (every PR); gui-check and gpui-lint are non-blocking
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   └── om-ui-gpui/           # GPUI window: its own workspace, behind the openmixer `gui` feature
 ├── docs/
@@ -28,10 +28,34 @@ openmixer/
 ├── rust-toolchain.toml       # Pinned toolchain
 ├── rustfmt.toml
 ├── clippy.toml
-└── deny.toml                 # Licence and ban policy (cargo deny)
+├── deny.toml                 # Licence and ban policy (cargo deny)
+└── crates/om-ui-gpui/deny.toml  # GPUI policy: the root policy plus what the GPUI tree needs
 ```
 
-The crate list and their roles are in the README architecture section.
+## Architecture and Crate Responsibilities
+
+Dependencies point toward `om-core` (see "Modularity" above). The README architecture section has the directory tree; this is what each crate owns.
+
+- **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
+- **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops. Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
+- **`om-audio`, `om-dsp`, `om-stretch`**: device layer, DSP, and key-lock time-stretch (the only crate allowed `unsafe`, for FFI).
+- **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`.
+- **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
+- **`om-ui-gpui`** (own workspace, behind the `gui` feature): GPUI drawing and events over `om-ui` models.
+- **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
+
+Rules: widgets and MIDI send `Command`s and never write engine state; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
+
+### How to add a control id
+
+1. `om-core/src/param_id/mod.rs`: add the variant to the owning enum (`DeckParam`, `MixerParam`, ...) and its line in the grammar doc comment.
+2. `om-core/src/param_id/parse.rs`: parse it in the sub-namespace `FromStr`. `Display` in `mod.rs` must print it back exactly.
+3. `om-core/src/param_id/tests.rs`: add the id to `GOLDEN`. Every id must round-trip canonically.
+4. The owning target's `set_param` match arm (for example `om-engine/src/mixer/control.rs` or `deck_control.rs`): handle the variant and return `true`. Return `false` for variants it does not own.
+5. If the value is readable: add a `StateId` variant (`om-core/src/state_id.rs`), a field on `DeckSnapshot` or `MixerSnapshot` with its read arm (`om-core/src/snapshot.rs`), and fill the field in `DjEngine::snapshot()` (`om-engine/src/dj_engine.rs`).
+6. If a UI control or MIDI target uses it: build the id from `ParamId` in `om-ui/src/binding.rs`, and list it in `learnable_targets` (`om-ui/src/settings/midi.rs`) when MIDI learn should reach it.
+7. Test with `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-core -p om-engine`, and add a binding test in `om-ui` when step 6 applies.
+
 
 ## Current State (Linux first)
 
@@ -41,7 +65,7 @@ The crate list and their roles are in the README architecture section.
 - Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
 - The crates and features in the status above, plus the headless UI gate
 - The GPUI window behind the `gui` feature
-- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature on Linux (non-blocking)
+- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature and runs its tests on Linux, and `gpui-lint` runs fmt, clippy and `cargo deny` for `om-ui-gpui` (both non-blocking)
 
 **Known gaps:** see the list in `ROADMAP.md` (Known gaps) and the Before-Wave-7 list in `TODO.md`, which is the authoritative list.
 
@@ -302,7 +326,7 @@ pub use mixer::Mixer;
 ### Error Handling
 
 - Library crates: `thiserror` enums per module, returned as `Result<T, Error>`
-- Binary: `anyhow::Result` at the top level with context on each step
+- Binary: `AppError` (`crates/openmixer/src/error.rs`) with `#[from]` for each subsystem error; `anyhow` is not used
 - Log errors with `tracing::error!` (or `warn!`) and include the failing id or path as a field
 - Never panic on bad input; do not use `unwrap()` on file, network or MIDI data
 
