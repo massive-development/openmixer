@@ -1,8 +1,9 @@
 //! What the widget models need: read access to the engine, and a write path that goes only through
-//! the string-id control surface (`deck.<N>.<id>`, `mixer.<id>`, `fx.<id>`), so UI and MIDI stay
-//! equivalent.
+//! the string-id control surface. Ids are built from [`ParamId`], so the strings a widget sends are
+//! the canonical ids the router parses back to the same typed id. UI and MIDI stay equivalent.
 
-use om_core::ParameterTarget;
+use om_core::param_id::{ChannelParam, DeckParam, FxParam, FxRack, MixerParam};
+use om_core::{ParamId, ParameterTarget};
 use om_dsp::{CrossfaderAssign, CrossfaderCurve};
 use om_engine::deck::Deck;
 use om_engine::{DeckControl, DjEngine, FxRouting, MixerControl, Sync};
@@ -37,10 +38,18 @@ impl DeckBinding {
         self.engine.sync()
     }
 
-    /// Sends `deck.<index>.<id>`. `false` when the router does not know the id.
-    pub fn send(&self, id: &str, value: f64) -> bool {
-        self.target
-            .set_parameter(&format!("deck.{}.{id}", self.index), value)
+    /// The typed id of one of this deck's parameters. The engine has at most `MAX_DECKS` decks, so
+    /// the index always fits.
+    pub fn id(&self, p: DeckParam) -> ParamId {
+        ParamId::Deck {
+            deck: self.index as u8,
+            p,
+        }
+    }
+
+    /// Sends one of this deck's parameters. `false` when the router does not know the id.
+    pub fn send(&self, p: DeckParam, value: f64) -> bool {
+        self.target.set_parameter(&self.id(p).to_string(), value)
     }
 }
 
@@ -68,19 +77,24 @@ impl MixerBinding {
         self.mixer().num_channels()
     }
 
-    /// Sends `mixer.<id>`.
-    pub fn send(&self, id: &str, value: f64) -> bool {
-        self.target.set_parameter(&format!("mixer.{id}"), value)
+    /// Sends one mixer parameter (`mixer.*`).
+    pub fn send(&self, p: MixerParam, value: f64) -> bool {
+        self.target
+            .set_parameter(&ParamId::Mixer(p).to_string(), value)
     }
 
-    /// Sends `fx.<id>`.
-    pub fn send_fx(&self, id: &str, value: f64) -> bool {
-        self.target.set_parameter(&format!("fx.{id}"), value)
+    /// Sends one parameter of an FX rack or unit (`fx.*`).
+    pub fn send_fx(&self, rack: FxRack, unit: Option<u16>, p: FxParam, value: f64) -> bool {
+        self.target
+            .set_parameter(&ParamId::Fx { rack, unit, p }.to_string(), value)
     }
 
-    /// `ch<N>.<id>` for one channel.
-    pub fn channel_id(channel: usize, id: &str) -> String {
-        format!("ch{channel}.{id}")
+    /// The typed id of one channel's parameter.
+    pub fn channel(channel: usize, p: ChannelParam) -> MixerParam {
+        MixerParam::Channel {
+            ch: channel as u8,
+            p,
+        }
     }
 }
 
@@ -139,5 +153,109 @@ pub fn curve_from_index(index: usize) -> Option<CrossfaderCurve> {
         0 => Some(CrossfaderCurve::Linear),
         1 => Some(CrossfaderCurve::ConstantPower),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use om_core::param_id::{EqBand, HOTCUES_PER_DECK, MAX_CHANNELS, MAX_DECKS};
+    use om_engine::DjEngine;
+    use std::str::FromStr;
+
+    /// Every deck, mixer and FX id a binding can build parses back to the same typed id.
+    #[test]
+    fn every_id_built_by_the_bindings_parses_back_to_the_same_param_id() {
+        let mut ids = Vec::new();
+        for deck in 0..MAX_DECKS {
+            let p_list = [
+                DeckParam::Play,
+                DeckParam::Rate,
+                DeckParam::Keylock,
+                DeckParam::Seek,
+                DeckParam::LoopExit,
+                DeckParam::LoopReloop,
+                DeckParam::LoopQuantized(0.25),
+                DeckParam::LoopQuantized(4.0),
+                DeckParam::Sync,
+                DeckParam::SyncMaster,
+                DeckParam::Slip,
+                DeckParam::Quantize,
+            ];
+            for p in p_list {
+                ids.push(ParamId::Deck { deck, p });
+            }
+            for index in 0..HOTCUES_PER_DECK {
+                for clear in [false, true] {
+                    ids.push(ParamId::Deck {
+                        deck,
+                        p: DeckParam::Hotcue { index, clear },
+                    });
+                }
+            }
+        }
+        for ch in 0..MAX_CHANNELS {
+            for p in [
+                ChannelParam::Trim,
+                ChannelParam::Fader,
+                ChannelParam::Filter,
+                ChannelParam::Pfl,
+                ChannelParam::Xfader,
+                ChannelParam::Eq(EqBand::Low),
+                ChannelParam::Eq(EqBand::Mid),
+                ChannelParam::Eq(EqBand::High),
+            ] {
+                ids.push(ParamId::Mixer(MixerParam::Channel { ch, p }));
+            }
+        }
+        for p in [
+            MixerParam::Crossfader,
+            MixerParam::CrossfaderCurve,
+            MixerParam::Master,
+            MixerParam::CueLevel,
+            MixerParam::CueMix,
+        ] {
+            ids.push(ParamId::Mixer(p));
+        }
+        for rack in [FxRack::Master, FxRack::Channel(1)] {
+            ids.push(ParamId::Fx {
+                rack,
+                unit: None,
+                p: FxParam::Bpm,
+            });
+            ids.push(ParamId::Fx {
+                rack,
+                unit: Some(2),
+                p: FxParam::Enable,
+            });
+            ids.push(ParamId::Fx {
+                rack,
+                unit: Some(2),
+                p: FxParam::Mix,
+            });
+            ids.push(ParamId::Fx {
+                rack,
+                unit: Some(2),
+                p: FxParam::Effect("feedback".to_owned()),
+            });
+        }
+
+        for id in &ids {
+            let text = id.to_string();
+            assert_eq!(ParamId::from_str(&text).as_ref(), Ok(id), "{text}");
+        }
+    }
+
+    /// Ids a binding sends reach the engine through the router, not just the parser.
+    #[test]
+    fn a_binding_send_reaches_the_engine_under_its_deck_index() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        let router = Arc::new(om_core::ParameterRouter::new());
+        engine.register(&router);
+        let binding = DeckBinding::new(Arc::clone(&engine), router.clone(), 1);
+        assert_eq!(binding.id(DeckParam::Sync).to_string(), "deck.1.sync");
+        assert!(binding.send(DeckParam::Sync, 1.0));
+        assert!(engine.sync().is_enabled(1));
     }
 }

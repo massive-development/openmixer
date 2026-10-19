@@ -6,6 +6,7 @@
 //! `cargo test -p openmixer --test ui_gate -- --ignored`.
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
+use om_core::param_id::ChannelParam;
 use om_core::ParameterTarget;
 use om_testing::signals::sine_amp;
 use om_testing::wav::write_pcm16_wav;
@@ -117,8 +118,8 @@ fn run_gate(seconds: u64) -> Report {
     );
 
     // Faders up, then deck 0 plays (controls must reflect the press).
-    mixer.send(&MixerBinding::channel_id(0, "fader"), 0.8);
-    mixer.send(&MixerBinding::channel_id(1, "fader"), 0.8);
+    mixer.send(MixerBinding::channel(0, ChannelParam::Fader), 0.8);
+    mixer.send(MixerBinding::channel(1, ChannelParam::Fader), 0.8);
     expect(&mut report, (engine.mixer().fader(0) - 0.8).abs() < 1e-3);
     transports[0].press(TransportButton::Play);
     expect(&mut report, transports[0].state(TransportButton::Play));

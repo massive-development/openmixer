@@ -8,7 +8,7 @@ use om_ui::binding::DeckBinding;
 use om_ui::waveform::{StripPlan, View};
 use om_ui::widgets::deck::{grid_lines_for, DeckWidget, TrackHeader, TrackInfo, WaveformMeta};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
-use om_ui::widgets::loops::{loop_id, LoopControls, SIZES};
+use om_ui::widgets::loops::{loop_param, LoopControls, SIZES};
 use om_ui::widgets::pitch::PitchFader;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 
@@ -170,11 +170,11 @@ fn loop_buttons_route_exact_ids() {
         assert_eq!(rig.recorder.calls().len(), 1);
         assert_eq!(
             rig.recorder.calls()[0].0,
-            format!("deck.0.{}", loop_id(beats))
+            format!("deck.0.{}", loop_param(beats))
         );
         assert_eq!(rig.recorder.calls()[0].1, 1.0);
     }
-    assert_eq!(loop_id(0.25), "loop.quantized.0.25");
+    assert_eq!(loop_param(0.25).to_string(), "loop.quantized.0.25");
 
     rig.recorder.clear();
     loops.exit();

@@ -9,6 +9,7 @@ use crate::format;
 use crate::geometry::Rect;
 use crate::theme::ThemeTokens;
 use crate::waveform::{self, StripCache, StripPlan, View};
+use om_core::param_id::DeckParam;
 use om_engine::grid::BeatGrid;
 use std::sync::Arc;
 
@@ -130,7 +131,7 @@ impl OverviewWaveform {
     /// Seeks to the fraction under `x` (clamped) and returns it.
     pub fn seek_at(&self, x: f64, width: f64) -> f64 {
         let fraction = waveform::x_to_fraction(x, width);
-        self.binding.send("seek", fraction);
+        self.binding.send(DeckParam::Seek, fraction);
         fraction
     }
 
