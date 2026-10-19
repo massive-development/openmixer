@@ -124,7 +124,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 4: Library & Data
 
-- [ ] **Todo 20:** Library schema + DAO layer
+- [x] **Todo 20:** Library schema + DAO layer
   - SQLite schema with migrations and transactions (`rusqlite`)
   - DAOs for tracks, cues, playlists
 
