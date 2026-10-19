@@ -22,7 +22,7 @@ openmixer/
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports
 ├── resources/themes/         # Built-in theme JSON
 ├── tests/tools/              # Unit tests for the Python tools
-├── tools/                    # check_docs_rust.py, progress_heatmap.py
+├── tools/                    # check_docs_rust.py, progress_heatmap.py, screenshots.sh
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain
@@ -202,6 +202,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 Every PR that completes or advances a task must update, in the same PR:
 - `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
 - the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
+- screenshots: `tools/screenshots.sh` rebuilds the `gui` binary and regenerates `docs/screenshots/*.png` from the real window (X11, `--mock-device` only, temp library and preferences; every `import` passes `-silent`)
 
 ## CI Workflow Changes (required)
 
