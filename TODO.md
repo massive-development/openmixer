@@ -15,8 +15,8 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
 - **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
 - **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Showing artwork in the UI is not built.
-- **Todo 25:** LookAndFeel: `ThemeTokens` exist in `om-ui::theme`, but nothing styles knobs, faders, menus, tabs or tooltips from them (no LookAndFeel type in the tree). M
-- **Todo 26a:** debug panel load/play: `debug_panel.rs` only shows rows; no load or play control. S (or retire it when Wave 5 lands)
+- **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. Scroll bars, tables and toggles are not restyled, and the window is not checked by eye. M
+- **Todo 26a:** done: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding`. It is still removed once Wave 5 replaces it.
 
 ### (B) Quality and verification debt
 
@@ -90,10 +90,9 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
 
-- [ ] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
-  - 2 decks: load/play, faders, EQ knobs, level meters
-  - Partial: `--debug-panel` shows device, latency, xruns, CPU and the raw parameter list; load/play from the debug panel is not wired (the panel shows device figures and parameter values only)
-  - Plain widgets, no design tokens; replaced by Wave 5 UI
+- [x] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
+  - 2 decks: per-deck path load (refused on a playing deck unless forced) and play/pause, plus device figures and the raw parameter list
+  - Not yet: faders, EQ knobs and level meters on the panel; the panel is replaced by Wave 5 UI
 
 - [x] **Todo 13a:** Short soak test in CI (30-60s headless mix)
   - Soak mix scenario in `crates/om-audio/tests/soak.rs`
@@ -190,7 +189,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 25:** Design tokens + LookAndFeel
   - Original visual identity (no copied layouts or artwork)
-  - Widget styling for knobs, faders, buttons, menus, text fields, tabs, scroll bars, tables and tooltips
+  - Partial: `om_ui::style` derives control styles from the tokens (buttons, knobs, faders, tabs, tooltips, text fields, meters, panels, separators); the gpui controls use them, and a grep test blocks raw colour literals in views. Contrast is checked headlessly in both built-in themes
+  - Not yet: scroll bars, tables, toggles and menus are not restyled; the window has not been checked by eye
 
 - [ ] **Todo 26:** Main window + deck widgets
   - Waveforms, transport, hotcues, loops

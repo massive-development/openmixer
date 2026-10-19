@@ -18,7 +18,7 @@
     ["10a Plugin API", "done"],
     ["32 MIDI map", "done"],
     ["33 Trace harness", "done"],
-    ["26a Debug panel", "partial"],
+    ["26a Debug panel", "done"],
     ["13a Soak (short)", "done"],
     ["9 Key-lock", "done"],
     ["12 Sync", "done"],
@@ -54,7 +54,7 @@
   {
    "name": "5 UI",
    "items": [
-    ["25 Tokens", "todo"],
+    ["25 Tokens", "partial"],
     ["25a Theme loader", "done"],
     ["26 Decks", "partial"],
     ["27 Mixer UI", "partial"],
