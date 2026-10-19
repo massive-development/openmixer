@@ -18,8 +18,9 @@ use crate::callback::AudioCallback;
 use crate::quantizer::Loop;
 use decoder::DecoderWorker;
 use loop_state::LoopSnapshot;
+use om_core::param_id::DeckParam;
 use om_core::sync::LockExt;
-use om_core::ParameterTarget;
+use om_core::{ParamId, ParamTarget, ParameterTarget};
 use playback::Playback;
 use shared::Shared;
 use std::panic::AssertUnwindSafe;
@@ -395,61 +396,68 @@ impl AudioCallback for DeckAudio {
     }
 }
 
-impl ParameterTarget for Deck {
-    /// Ids: `play` (>= 0.5 plays), `rate`, `seek` (0..1 of length), `loop.exit` and `loop.reloop`
-    /// (>= 0.5 acts), `hotcueN` (>= 0.5 triggers), `hotcueN.clear`. Unknown ids return false.
-    fn set_parameter(&self, id: &str, value: f64) -> bool {
-        match id {
-            "play" => self.set_playing(value >= 0.5),
-            "rate" => self.set_rate(value),
-            "keylock" => self.set_keylock(value >= 0.5),
-            "loop.exit" => {
+impl Deck {
+    /// Applies the parameters the deck owns: `play`, `rate`, `keylock`, loop exit and reloop, `seek`
+    /// (0..1 of length) and hotcues (>= 0.5 triggers, `clear` clears). Returns `false` for the
+    /// parameters [`crate::DeckControl`] owns (sync, slip, quantize, quantized loops) and for any
+    /// id the deck does not know.
+    pub(crate) fn set_deck_param(&self, p: &DeckParam, value: f64) -> bool {
+        match p {
+            DeckParam::Play => self.set_playing(value >= 0.5),
+            DeckParam::Rate => self.set_rate(value),
+            DeckParam::Keylock => self.set_keylock(value >= 0.5),
+            DeckParam::LoopExit => {
                 if value >= 0.5 {
                     self.exit_loop();
                 }
             }
-            "loop.reloop" => {
+            DeckParam::LoopReloop => {
                 if value >= 0.5 {
                     self.reloop();
                 }
             }
-            "seek" => {
+            DeckParam::Seek => {
                 let len = self.length_frames() as f64;
                 self.seek((value.clamp(0.0, 1.0) * len) as i64);
             }
-            _ => {
-                let Some((index, clear)) = parse_hotcue_id(id) else {
-                    return false;
-                };
+            DeckParam::Hotcue { index, clear } => {
                 if value >= 0.5 {
-                    if clear {
-                        self.clear_hotcue(index);
+                    if *clear {
+                        self.clear_hotcue(usize::from(*index));
                     } else {
-                        self.trigger_hotcue(index);
+                        self.trigger_hotcue(usize::from(*index));
                     }
                 }
             }
+            DeckParam::LoopQuantized(_)
+            | DeckParam::Sync
+            | DeckParam::SyncMaster
+            | DeckParam::Slip
+            | DeckParam::Quantize => return false,
         }
         true
     }
 }
 
-/// Parses `hotcueN` or `hotcueN.clear`. Returns the index and whether it is a clear.
-fn parse_hotcue_id(id: &str) -> Option<(usize, bool)> {
-    let rest = id.strip_prefix("hotcue")?;
-    let (digits, action) = rest.split_once('.').unwrap_or((rest, ""));
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let index: usize = digits.parse().ok()?;
-    if !hotcues::HotcueBank::in_range(index) {
-        return None;
-    }
-    match action {
-        "" => Some((index, false)),
-        "clear" => Some((index, true)),
-        _ => None,
+impl ParamTarget for Deck {
+    /// Handles `deck.<d>.<param>` ids; the deck index is the owner's concern.
+    fn set_param(&self, id: &ParamId, value: f64) -> bool {
+        match id {
+            ParamId::Deck { p, .. } => self.set_deck_param(p, value),
+            _ => false,
+        }
     }
 }
+
+impl ParameterTarget for Deck {
+    /// The id after `deck.<d>.`: `play`, `hotcue2.clear`, and so on. Unknown ids return false.
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
+        match id.parse::<DeckParam>() {
+            Ok(p) => self.set_deck_param(&p, value),
+            Err(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests;

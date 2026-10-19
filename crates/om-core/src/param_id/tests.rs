@@ -348,3 +348,65 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn sub_namespace_parsers_read_the_tail_of_each_root() {
+    assert_eq!("play".parse::<DeckParam>(), Ok(DeckParam::Play));
+    assert_eq!(
+        "hotcue01.clear".parse::<DeckParam>(),
+        Ok(DeckParam::Hotcue {
+            index: 1,
+            clear: true
+        })
+    );
+    assert!("deck.0.play".parse::<DeckParam>().is_err());
+    assert!("hotcue8".parse::<DeckParam>().is_err(), "out of range");
+    assert!("".parse::<DeckParam>().is_err());
+    assert!(".play".parse::<DeckParam>().is_err());
+    assert_eq!(
+        "ch1.eq.low".parse::<MixerParam>(),
+        Ok(MixerParam::Channel {
+            ch: 1,
+            p: ChannelParam::Eq(EqBand::Low)
+        })
+    );
+    assert_eq!("1.sync".parse::<SyncParam>(), Ok(SyncParam::DeckEnabled(1)));
+    assert_eq!(
+        "fx1.mix".parse::<FxRackParam>(),
+        Ok(FxRackParam {
+            unit: Some(1),
+            p: FxParam::Mix
+        })
+    );
+    assert_eq!(
+        "bpm".parse::<FxRackParam>(),
+        Ok(FxRackParam {
+            unit: None,
+            p: FxParam::Bpm
+        })
+    );
+    assert_eq!(
+        "time".parse::<FxParam>(),
+        Ok(FxParam::Effect("time".into()))
+    );
+    assert!(
+        "a.b".parse::<FxParam>().is_err(),
+        "effect names are one segment"
+    );
+}
+
+#[test]
+fn namespaces_and_reserved_prefixes() {
+    for ns in Namespace::ALL {
+        assert_eq!(Namespace::from_root(ns.as_str()), Some(ns));
+        assert!(is_reserved_prefix(ns.as_str()));
+        assert!(is_reserved_prefix(&format!("{}.0", ns.as_str())));
+    }
+    assert!(!is_reserved_prefix("decks"));
+    assert!(!is_reserved_prefix("plugin.x"));
+    assert_eq!(
+        "fx.ch1.fx2.mix".parse::<ParamId>().unwrap().namespace(),
+        Some(Namespace::Fx)
+    );
+    assert_eq!("plugin.x".parse::<ParamId>().unwrap().namespace(), None);
+}

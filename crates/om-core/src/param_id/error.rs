@@ -9,6 +9,8 @@ pub enum ParamError {
     Malformed(String),
     #[error("unknown parameter id {0:?}")]
     Unknown(String),
+    #[error("parameter prefix {0:?} is reserved for the engine")]
+    Reserved(String),
     #[error("{what} index out of range in {id:?} (max {max})")]
     OutOfRange {
         id: String,

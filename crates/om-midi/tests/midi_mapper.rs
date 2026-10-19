@@ -212,17 +212,17 @@ fn user_targets_can_be_registered_replaced_and_removed() {
     let a = Arc::new(RecordingTarget::default());
     let b = Arc::new(RecordingTarget::default());
     let router = ParameterRouter::new();
-    router.register_target("fx", a.clone());
-    router.register_target("fx.delay", b.clone()); // longer prefix wins
-    assert!(router.set_parameter("fx.delay.time", 0.3));
+    router.register_target("plug", a.clone()).unwrap();
+    router.register_target("plug.delay", b.clone()).unwrap(); // longer prefix wins
+    assert!(router.set_parameter("plug.delay.time", 0.3));
     assert_eq!(b.last("time"), 0.3);
-    assert!(router.set_parameter("fx.reverb.size", 0.7));
+    assert!(router.set_parameter("plug.reverb.size", 0.7));
     assert_eq!(a.last("reverb.size"), 0.7);
-    router.unregister_target("fx.delay");
-    assert!(router.set_parameter("fx.delay.time", 0.9));
+    router.unregister_target("plug.delay");
+    assert!(router.set_parameter("plug.delay.time", 0.9));
     assert_eq!(a.last("delay.time"), 0.9);
     assert!(
-        !router.set_parameter("fxx.time", 1.0),
+        !router.set_parameter("plugx.time", 1.0),
         "prefix must match a whole segment"
     );
 }

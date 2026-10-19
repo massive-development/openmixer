@@ -8,7 +8,8 @@ use crate::deck::Deck;
 use crate::fx::{FxRack, FxRackControl};
 use crate::mixer::MixerControl;
 use crate::sync::Sync;
-use om_core::ParameterTarget;
+use om_core::param_id::FxRack as RackId;
+use om_core::{ParamId, ParamTarget, ParameterTarget};
 
 pub const INSERT_SLOT: usize = 0;
 
@@ -61,28 +62,34 @@ impl FxRouting {
         }
     }
 
-    fn find_rack(&self, name: &str) -> Option<&FxRackControl> {
-        if name == "master" {
-            return Some(&self.master_rack);
+    /// The rack a parsed id names: `master`, or channel `ch<N>` when the engine has that channel.
+    fn rack_for(&self, rack: RackId) -> Option<&FxRackControl> {
+        match rack {
+            RackId::Master => Some(&self.master_rack),
+            RackId::Channel(ch) => self.channel_rack(usize::from(ch)),
         }
-        let digits = name.strip_prefix("ch")?;
-        if digits.is_empty() || digits.len() > 3 || !digits.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
+    }
+}
+
+impl ParamTarget for FxRouting {
+    /// Handles `fx.<rack>.<rest>` ids.
+    fn set_param(&self, id: &ParamId, value: f64) -> bool {
+        match id {
+            ParamId::Fx { rack, unit, p } => self
+                .rack_for(*rack)
+                .is_some_and(|rack| rack.set_fx(*unit, p, value)),
+            _ => false,
         }
-        self.channel_racks.get(digits.parse::<usize>().ok()?)
     }
 }
 
 impl ParameterTarget for FxRouting {
+    /// The id after `fx.`: "master.fx1.mix", "ch0.bpm", and so on.
     fn set_parameter(&self, id: &str, value: f64) -> bool {
-        let Some((name, rest)) = id.split_once('.') else {
-            return false;
-        };
-        if name.is_empty() {
-            return false;
+        match format!("fx.{id}").parse::<ParamId>() {
+            Ok(parsed) => self.set_param(&parsed, value),
+            Err(_) => false,
         }
-        self.find_rack(name)
-            .is_some_and(|rack| rack.set_parameter(rest, value))
     }
 }
 

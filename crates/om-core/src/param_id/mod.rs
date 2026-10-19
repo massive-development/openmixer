@@ -72,6 +72,62 @@ pub enum ParamId {
     },
 }
 
+/// The engine namespaces: the first segment of an id that typed targets own. Ids under these roots
+/// never reach string-prefix targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Namespace {
+    Deck,
+    Mixer,
+    Fx,
+    Sync,
+    Stem,
+    Sampler,
+    Automix,
+}
+
+impl Namespace {
+    pub const ALL: [Namespace; 7] = [
+        Namespace::Deck,
+        Namespace::Mixer,
+        Namespace::Fx,
+        Namespace::Sync,
+        Namespace::Stem,
+        Namespace::Sampler,
+        Namespace::Automix,
+    ];
+
+    /// The root segment of this namespace's ids.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Deck => "deck",
+            Self::Mixer => "mixer",
+            Self::Fx => "fx",
+            Self::Sync => "sync",
+            Self::Stem => "stem",
+            Self::Sampler => "sampler",
+            Self::Automix => "automix",
+        }
+    }
+
+    /// The namespace named by `root`, if it is reserved.
+    pub fn from_root(root: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|ns| ns.as_str() == root)
+    }
+}
+
+/// True when the first segment of `prefix` is an engine namespace. Plugins may not register these.
+pub fn is_reserved_prefix(prefix: &str) -> bool {
+    let root = prefix.split('.').next().unwrap_or_default();
+    Namespace::from_root(root).is_some()
+}
+
+/// The part of an FX id after its rack: `bpm` (rack tempo) or `fx<N>.<param>` (unit `N`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FxRackParam {
+    pub unit: Option<u16>,
+    pub p: FxParam,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeckParam {
     Play,
@@ -163,6 +219,22 @@ pub enum AutomixParam {
     Start,
     Cancel,
     Style,
+}
+
+impl ParamId {
+    /// The engine namespace this id belongs to, or `None` for plugin (`Ext`) ids.
+    pub fn namespace(&self) -> Option<Namespace> {
+        match self {
+            Self::Deck { .. } => Some(Namespace::Deck),
+            Self::Mixer(_) => Some(Namespace::Mixer),
+            Self::Fx { .. } => Some(Namespace::Fx),
+            Self::Sync(_) => Some(Namespace::Sync),
+            Self::Stem { .. } => Some(Namespace::Stem),
+            Self::Sampler { .. } => Some(Namespace::Sampler),
+            Self::Automix(_) => Some(Namespace::Automix),
+            Self::Ext { .. } => None,
+        }
+    }
 }
 
 impl fmt::Display for ParamId {

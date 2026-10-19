@@ -19,10 +19,6 @@ impl Default for HotcueBank {
 }
 
 impl HotcueBank {
-    pub fn in_range(index: usize) -> bool {
-        index < NUM_CUES
-    }
-
     /// Stores `frame` (clamped to zero). Out-of-range indices are ignored.
     pub fn set(&self, index: usize, frame: i64) {
         if let Some(cue) = self.cues.get(index) {
