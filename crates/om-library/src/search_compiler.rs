@@ -519,8 +519,14 @@ mod tests {
         assert_eq!(fts_query("emile").as_deref(), Some("\"emile\"*"));
         assert_eq!(fts_query("deep house").as_deref(), Some("\"deep house\"*"));
         assert_eq!(fts_query("  Émile!! ").as_deref(), Some("\"Émile\"*"));
-        assert_eq!(fts_query("NEAR(a b) OR \"x*^").as_deref(), Some("\"NEAR a b OR x\"*"));
-        assert_eq!(fts_query("'; DROP TABLE tracks; --").as_deref(), Some("\"DROP TABLE tracks\"*"));
+        assert_eq!(
+            fts_query("NEAR(a b) OR \"x*^").as_deref(),
+            Some("\"NEAR a b OR x\"*")
+        );
+        assert_eq!(
+            fts_query("'; DROP TABLE tracks; --").as_deref(),
+            Some("\"DROP TABLE tracks\"*")
+        );
         assert_eq!(fts_query(")(*\"-"), None);
         assert_eq!(fts_query(""), None);
     }
