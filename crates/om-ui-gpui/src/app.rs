@@ -114,6 +114,10 @@ impl Shell {
         frames_out: Arc<AtomicU64>,
     ) -> Self {
         let settings = options.settings.take().map(SettingsState::new);
+        // The settings registry holds the session's theme (preference or OPENMIXER_THEME).
+        let theme = settings
+            .as_ref()
+            .map_or(theme, |s| s.themes.current().clone());
         let library = options
             .library
             .take()
