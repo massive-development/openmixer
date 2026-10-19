@@ -156,6 +156,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-analysis` (`service.rs` `AnalysisService`, `job.rs` `AnalysisJob`, `job_runner.rs` the job body)
 - **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
 - **Reuse when:** any long-running background task (library scan, stem precompute, export).
+- **Stem service:** `om-stems` `StemService` is a `WorkerPool<StemRequest>` with one worker. Each job opens its own library connection (WAL) and never shares the owner thread's `Library`. The model gate checks what is on disk and never downloads, so a refused job does no network I/O.
 - **Notes:** runs on the generic `WorkerPool` (see above); status, progress and cancellation come from its `JobHandle`, and `AnalysisJob` adds the results. `submit()` returns `Arc<AnalysisJob>`. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
 
 ### Content-addressed result cache
@@ -198,6 +199,12 @@ pub trait AudioCallback: Send {
 - **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
 - **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
 - **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe`, each block with a `// SAFETY:` line.
+
+### Stem cache (atomic directory entries, LRU by mtime)
+- **Where:** `om-stems` (`cache.rs` `StemCache`, `StemCacheSink`, `StemKey`; `wav.rs` streaming 16-bit WAV). The index is `om-library` `track_stems` (migration 8, `TrackStemsDao`).
+- **Why:** a separation is large and slow. An entry is one directory `<hash>-<sep>-v<n>/` with four WAVs and `meta.json`. It is streamed into `.tmp-*` and renamed into place only when complete, so a cancel, an error or a crash leaves nothing a lookup can see (`open` removes `.tmp-*`). `Drop` of an unfinished sink removes its directory, which also covers panics.
+- **Reuse when:** any derived per-file artefact that is large and keyed by content: waveforms on disk, artwork thumbnails, analysis caches.
+- **Notes:** the directory is the source of truth; the library row is an index that `StemService` keeps in step (`forget_track`, `reconcile`, and the cap's eviction delete rows with their directories). Deleting a track must call `StemService::forget_track` first: SQLite cascades the rows but cannot remove directories. A hit touches `meta.json`, and `evict_lru` removes the least recently touched entries first. Key changes (content hash, separator id or version) are misses. Single process per cache root.
 
 ### Forward-only migration list
 - **Where:** `om-library` migrations (`migrations.rs`)
