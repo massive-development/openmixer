@@ -7,6 +7,7 @@
 //! by the owner, or read back from the preferences (see [`crate::composition::AppComposition`]).
 //! Every call is idempotent.
 
+use crate::error::AppError;
 use om_audio::OutputPairs;
 use om_ui::preferences::{default_map_file, AudioPrefs, MidiPrefs};
 use om_ui::preferences_applier::PreferencesTargets;
@@ -34,12 +35,12 @@ pub trait AudioDeviceControl {
     /// The restorable state of the open device; empty when none is open.
     fn current_state(&self) -> String;
     /// Opens the device described by `state`. The error text is logged, not shown.
-    fn initialise(&mut self, state: &str) -> Result<(), String>;
+    fn initialise(&mut self, state: &str) -> Result<(), AppError>;
 }
 
 /// MIDI side, implemented by `MidiService` in `crate::midi` (which drives `om-midi`). The map is loaded before inputs are changed.
 pub trait MidiSink {
-    fn load_map(&mut self, file: &Path) -> Result<(), String>;
+    fn load_map(&mut self, file: &Path) -> Result<(), AppError>;
     fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]);
 }
 
@@ -247,7 +248,7 @@ mod tests {
         fn current_state(&self) -> String {
             self.state.clone()
         }
-        fn initialise(&mut self, _state: &str) -> Result<(), String> {
+        fn initialise(&mut self, _state: &str) -> Result<(), AppError> {
             self.inits += 1;
             Ok(())
         }
@@ -285,7 +286,7 @@ mod tests {
     }
 
     impl MidiSink for RecordingMidi {
-        fn load_map(&mut self, file: &Path) -> Result<(), String> {
+        fn load_map(&mut self, file: &Path) -> Result<(), AppError> {
             self.log.push(format!("load:{}", file.display()));
             Ok(())
         }

@@ -14,6 +14,7 @@ use crate::app_targets::{
 };
 use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
+use crate::error::AppError;
 use crate::midi::{FeedbackThread, MidiService};
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::{ParameterRouter, StateReader};
@@ -149,7 +150,7 @@ impl AppComposition {
     /// Opens the library at `db_path`, or at the default location (`OPENMIXER_LIBRARY_DB` or the user
     /// data folder) when `None`. The scan interval and scan-on-start come from the preferences and
     /// apply from this start on. A library that cannot open leaves the hook empty and returns why.
-    pub fn attach_library(&mut self, db_path: Option<PathBuf>) -> Result<(), String> {
+    pub fn attach_library(&mut self, db_path: Option<PathBuf>) -> Result<(), AppError> {
         let mut options = match db_path {
             Some(path) => Options::for_path(path.to_string_lossy().into_owned()),
             None => default_options(),
@@ -239,11 +240,9 @@ impl AppComposition {
 
     /// Applies a plugin's controller map to the MIDI mapper, replacing the live map. Fails when
     /// MIDI is not attached.
-    pub fn apply_plugin_midi_map(&self, map_name: &str) -> Result<(), String> {
-        let service = self.midi.as_ref().ok_or("MIDI is not attached")?;
-        self.plugins
-            .apply_midi_map(map_name, service.mapper())
-            .map_err(|e| e.to_string())
+    pub fn apply_plugin_midi_map(&self, map_name: &str) -> Result<(), AppError> {
+        let service = self.midi.as_ref().ok_or(AppError::MidiNotAttached)?;
+        Ok(self.plugins.apply_midi_map(map_name, service.mapper())?)
     }
 
     /// One line on MIDI for the smoke report: the open inputs, the mappings and the devices listed.

@@ -129,7 +129,10 @@ fn a_failed_change_keeps_the_previous_setup_running() {
     let error = model
         .set_sample_rate(22_050)
         .expect_err("22.05 kHz is not offered");
-    assert!(error.contains("22050"), "error names the rate: {error}");
+    assert!(
+        error.to_string().contains("22050"),
+        "error names the rate: {error}"
+    );
     assert_eq!(model.sample_rate(), 48_000, "the old rate is still open");
     assert!(model.lock().device().is_some_and(|d| d.is_running()));
     assert_eq!(probe.released.load(Ordering::SeqCst), 0);

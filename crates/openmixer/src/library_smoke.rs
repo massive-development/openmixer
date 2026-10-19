@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 use om_engine::DjEngine;
 use om_ui::library::{LibraryServices, TrackLoader};
 
+use crate::error::AppError;
+
 /// Tracks written and ingested by the smoke run.
 pub const TRACKS: usize = 3;
 
@@ -54,32 +56,31 @@ pub fn write_wav(path: &Path, freq: f32) -> io::Result<()> {
 
 /// Writes [`TRACKS`] generated tracks under `root/music`, watches that folder and waits until the
 /// library holds them. Returns the track count.
-pub fn ingest_generated(services: &mut LibraryServices, root: &Path) -> Result<usize, String> {
+pub fn ingest_generated(services: &mut LibraryServices, root: &Path) -> Result<usize, AppError> {
     let music = root.join("music");
-    fs::create_dir_all(&music).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&music)?;
     for i in 0..TRACKS {
         let freq = 220.0 * (i as f32 + 1.0);
-        write_wav(&music.join(format!("smoke_{i}.wav")), freq).map_err(|e| e.to_string())?;
+        write_wav(&music.join(format!("smoke_{i}.wav")), freq)?;
     }
     let folders = services
         .watch_folders()
-        .ok_or("the library has no watch folders")?;
-    folders.add(&music).map_err(|e| e.to_string())?;
+        .ok_or(AppError::Smoke("the library has no watch folders"))?;
+    folders.add(&music)?;
 
     let deadline = Instant::now() + INGEST_TIMEOUT;
     loop {
         services.pump();
-        let count = services
-            .library()
-            .tracks()
-            .count()
-            .map_err(|e| e.to_string())?;
+        let count = services.library().tracks().count()?;
         let count = usize::try_from(count).unwrap_or(0);
         if count >= TRACKS {
             return Ok(count);
         }
         if Instant::now() >= deadline {
-            return Err(format!("only {count} of {TRACKS} tracks were ingested"));
+            return Err(AppError::SmokeTracks {
+                count,
+                expected: TRACKS,
+            });
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -90,14 +91,13 @@ pub fn load_first_into_deck0(
     services: &mut LibraryServices,
     loader: &mut TrackLoader,
     engine: &DjEngine,
-) -> Result<i64, String> {
-    let mut tracks = services
-        .library()
-        .tracks()
-        .all()
-        .map_err(|e| e.to_string())?;
+) -> Result<i64, AppError> {
+    let mut tracks = services.library().tracks().all()?;
     tracks.sort_by(|a, b| a.path.cmp(&b.path));
-    let first = tracks.into_iter().next().ok_or("the library is empty")?;
+    let first = tracks
+        .into_iter()
+        .next()
+        .ok_or(AppError::Smoke("the library is empty"))?;
     loader.load_track(engine, services, 0, &first, false)?;
     Ok(first.id)
 }

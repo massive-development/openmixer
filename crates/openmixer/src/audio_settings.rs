@@ -9,13 +9,14 @@
 //! Tests use [`MockBackend`] only. [`CpalBackend`] is the real one, used by the binary.
 
 use crate::app_targets::AudioDeviceControl;
+use crate::error::AppError;
 use om_audio::{
     default_output_name, hosts, output_devices_on, AudioCallback, AudioDevice, AudioError,
     CpalAudioDevice, LatencyStats, MockAudioDevice, OutputDeviceInfo, OutputPairs, OutputRequest,
     OutputRouter,
 };
 use om_core::sync::LockExt;
-use om_ui::settings::{AudioSettingsModel, AudioStats, SettingsResult};
+use om_ui::settings::{AudioSettingsModel, AudioStats, SettingsError, SettingsResult};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -275,7 +276,7 @@ impl OutputSettings {
 
     /// Opens the stored setup when `saved` decodes and opens, else the default output. Returns
     /// the error of the default open when both fail.
-    pub fn start_up(&mut self, saved: &str) -> Result<(), String> {
+    pub fn start_up(&mut self, saved: &str) -> Result<(), AppError> {
         if let Some(stored) = Current::decode(saved) {
             if self.change(stored.request()).is_ok() {
                 return Ok(());
@@ -288,9 +289,9 @@ impl OutputSettings {
     }
 
     /// Starts the callback on the open device. Fails when no device is open.
-    pub fn start(&mut self, callback: Box<dyn AudioCallback>) -> Result<(), String> {
-        let device = self.device.as_mut().ok_or("no audio device is open")?;
-        device.start(callback).map_err(|e| e.to_string())
+    pub fn start(&mut self, callback: Box<dyn AudioCallback>) -> Result<(), AppError> {
+        let device = self.device.as_mut().ok_or(AppError::NoAudioDevice)?;
+        Ok(device.start(callback)?)
     }
 
     /// Stops the device and hands the callback back, for the owner to release or restart.
@@ -347,7 +348,7 @@ impl OutputSettings {
 
     /// Stops the open device, opens `request` and restarts the callback there. On failure the
     /// previous setup is reopened and the error is returned.
-    fn change(&mut self, request: OutputRequest) -> Result<(), String> {
+    fn change(&mut self, request: OutputRequest) -> Result<(), AppError> {
         let host = request.host.clone().unwrap_or_default();
         if self.current.as_ref().map(|c| c.host.as_str()) != Some(host.as_str()) {
             self.listing = self.backend.devices(&host).unwrap_or_default();
@@ -359,19 +360,19 @@ impl OutputSettings {
         match self.open(&request, callback) {
             Ok(()) => Ok(()),
             Err((error, callback)) => {
-                let restored = match previous {
-                    Some(previous) => self.open(&previous.request(), callback),
-                    None => Err((String::new(), callback)),
+                let Some(previous) = previous else {
+                    if let Some(mut callback) = callback {
+                        callback.release();
+                    }
+                    return Err(error.into());
                 };
-                match restored {
-                    Ok(()) => Err(error),
-                    Err((again, callback)) => {
+                match self.open(&previous.request(), callback) {
+                    Ok(()) => Err(error.into()),
+                    Err((restore, callback)) => {
                         if let Some(mut callback) = callback {
                             callback.release();
                         }
-                        Err(format!(
-                            "{error}; restoring the previous setup failed: {again}"
-                        ))
+                        Err(AppError::AudioRestore { error, restore })
                     }
                 }
             }
@@ -383,14 +384,14 @@ impl OutputSettings {
         &mut self,
         request: &OutputRequest,
         callback: Option<Box<dyn AudioCallback>>,
-    ) -> Result<(), (String, Option<Box<dyn AudioCallback>>)> {
+    ) -> Result<(), (AudioError, Option<Box<dyn AudioCallback>>)> {
         let mut device = match self.backend.open(request, &self.pairs) {
             Ok(device) => device,
-            Err(error) => return Err((error.to_string(), callback)),
+            Err(error) => return Err((error, callback)),
         };
         if let Some(callback) = callback {
             if let Err(error) = device.start(callback) {
-                return Err((error.to_string(), None));
+                return Err((error, None));
             }
         }
         self.current = Some(Current {
@@ -403,6 +404,11 @@ impl OutputSettings {
         self.device = Some(device);
         Ok(())
     }
+}
+
+/// The settings page sees an audio failure as the audio layer's error, shown as its text.
+fn audio_refused(error: AppError) -> SettingsError {
+    SettingsError::Audio(Box::new(error))
 }
 
 fn to_stats(s: &LatencyStats) -> AudioStats {
@@ -426,8 +432,8 @@ impl AudioDeviceControl for OutputSettings {
             .unwrap_or_default()
     }
 
-    fn initialise(&mut self, state: &str) -> Result<(), String> {
-        let stored = Current::decode(state).ok_or("unreadable audio device state")?;
+    fn initialise(&mut self, state: &str) -> Result<(), AppError> {
+        let stored = Current::decode(state).ok_or(AppError::UnreadableAudioState)?;
         self.change(stored.request())
     }
 }
@@ -459,10 +465,12 @@ impl AudioSettingsModel for SharedOutput {
     fn set_device_type(&mut self, device_type: &str) -> SettingsResult<()> {
         let mut settings = self.lock();
         if !settings.backend.hosts().iter().any(|h| h == device_type) {
-            return Err(format!("unknown device type '{device_type}'"));
+            return Err(audio_refused(AppError::UnknownDeviceType(
+                device_type.to_owned(),
+            )));
         }
         let request = settings.request_for(device_type, None, None, None);
-        settings.change(request)
+        settings.change(request).map_err(audio_refused)
     }
 
     fn output_devices(&self) -> Vec<String> {
@@ -481,7 +489,7 @@ impl AudioSettingsModel for SharedOutput {
         let mut settings = self.lock();
         let host = settings.selected_host();
         let request = settings.request_for(&host, Some(name.to_owned()), None, None);
-        settings.change(request)
+        settings.change(request).map_err(audio_refused)
     }
 
     fn sample_rates(&self) -> Vec<u32> {
@@ -497,14 +505,17 @@ impl AudioSettingsModel for SharedOutput {
 
     fn set_sample_rate(&mut self, rate: u32) -> SettingsResult<()> {
         let mut settings = self.lock();
-        let current = settings.current.clone().ok_or("no audio device is open")?;
+        let current = settings
+            .current
+            .clone()
+            .ok_or_else(|| audio_refused(AppError::NoAudioDevice))?;
         let request = settings.request_for(
             &current.host,
             Some(current.device),
             Some(rate),
             Some(current.buffer_size),
         );
-        settings.change(request)
+        settings.change(request).map_err(audio_refused)
     }
 
     fn buffer_sizes(&self) -> Vec<u32> {
@@ -520,14 +531,17 @@ impl AudioSettingsModel for SharedOutput {
 
     fn set_buffer_size(&mut self, samples: u32) -> SettingsResult<()> {
         let mut settings = self.lock();
-        let current = settings.current.clone().ok_or("no audio device is open")?;
+        let current = settings
+            .current
+            .clone()
+            .ok_or_else(|| audio_refused(AppError::NoAudioDevice))?;
         let request = settings.request_for(
             &current.host,
             Some(current.device),
             Some(current.sample_rate),
             Some(samples),
         );
-        settings.change(request)
+        settings.change(request).map_err(audio_refused)
     }
 
     fn output_channels(&self) -> usize {
