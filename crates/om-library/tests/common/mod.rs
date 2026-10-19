@@ -281,8 +281,8 @@ fn mp4_box(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Minimal M4A: `ftyp` plus a `moov` with a 1000-unit timescale and `seconds * 1000` duration.
-/// Carries no audio track; lofty reads its tags and duration from the movie header.
+/// Minimal M4A: `ftyp` plus a `moov` holding the movie header and one empty `mp4a` track. The
+/// duration comes from the movie header (1000 units per second).
 pub fn write_m4a(path: &Path, seconds: u32, tags: &Tags) -> PathBuf {
     create_parent(path);
     let mut ftyp = b"M4A ".to_vec();
@@ -302,8 +302,45 @@ pub fn write_m4a(path: &Path, seconds: u32, tags: &Tags) -> PathBuf {
     mvhd.extend_from_slice(&[0u8; 24]); // pre-defined
     mvhd.extend_from_slice(&2u32.to_be_bytes()); // next track id
 
+    // One silent-ish audio track (no samples): lofty needs an `mp4a` entry to report properties.
+    let mut mdhd = vec![0u8; 4];
+    mdhd.extend_from_slice(&[0u8; 8]);
+    mdhd.extend_from_slice(&RATE.to_be_bytes()); // timescale
+    mdhd.extend_from_slice(&(seconds * RATE).to_be_bytes()); // duration
+    mdhd.extend_from_slice(&[0x55, 0xC4, 0, 0]); // language 'und', pre-defined
+    let mut hdlr = vec![0u8; 8];
+    hdlr.extend_from_slice(b"soun");
+    hdlr.extend_from_slice(&[0u8; 13]); // reserved, empty name
+    let mut mp4a = vec![0u8; 6];
+    mp4a.extend_from_slice(&1u16.to_be_bytes()); // data reference index
+    mp4a.extend_from_slice(&[0u8; 8]);
+    mp4a.extend_from_slice(&2u16.to_be_bytes()); // channels
+    mp4a.extend_from_slice(&16u16.to_be_bytes()); // sample size
+    mp4a.extend_from_slice(&[0u8; 4]);
+    mp4a.extend_from_slice(&(RATE << 16).to_be_bytes()); // sample rate 16.16
+    let mut stsd = vec![0u8; 4];
+    stsd.extend_from_slice(&1u32.to_be_bytes());
+    stsd.extend_from_slice(&mp4_box(b"mp4a", &mp4a));
+    let empty_table = vec![0u8; 8]; // version/flags + zero entries
+    let mut stsz = vec![0u8; 12];
+    stsz[8..12].copy_from_slice(&0u32.to_be_bytes());
+    let mut stbl = mp4_box(b"stsd", &stsd);
+    stbl.extend_from_slice(&mp4_box(b"stts", &empty_table));
+    stbl.extend_from_slice(&mp4_box(b"stsc", &empty_table));
+    stbl.extend_from_slice(&mp4_box(b"stsz", &stsz));
+    stbl.extend_from_slice(&mp4_box(b"stco", &empty_table));
+    let mut minf = mp4_box(b"smhd", &[0u8; 8]);
+    minf.extend_from_slice(&mp4_box(b"stbl", &stbl));
+    let mut mdia = mp4_box(b"mdhd", &mdhd);
+    mdia.extend_from_slice(&mp4_box(b"hdlr", &hdlr));
+    mdia.extend_from_slice(&mp4_box(b"minf", &minf));
+    let trak = mp4_box(b"trak", &mp4_box(b"mdia", &mdia));
+
+    let mut moov = mp4_box(b"mvhd", &mvhd);
+    moov.extend_from_slice(&trak);
+
     let mut file = mp4_box(b"ftyp", &ftyp);
-    file.extend_from_slice(&mp4_box(b"moov", &mp4_box(b"mvhd", &mvhd)));
+    file.extend_from_slice(&mp4_box(b"moov", &moov));
     fs::write(path, file).expect("write m4a");
     save_tag(path, &tag_of(TagType::Mp4Ilst, tags));
     path.to_path_buf()

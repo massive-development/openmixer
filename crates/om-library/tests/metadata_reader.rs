@@ -4,7 +4,6 @@
 mod common;
 
 use common::{save_tag, tag_of, write_flac, write_m4a, write_mp3, write_ogg, write_wav, Tags, TempDir};
-use lofty::file::AudioFile;
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::*;
 use lofty::tag::TagType;
