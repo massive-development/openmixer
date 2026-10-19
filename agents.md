@@ -51,6 +51,10 @@ Control paths, and what is live today:
 
 Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
 
+### Plugin control targets
+
+- A plugin registers its target with the router (`register_target`, a string prefix). The router holds its reentrant gate across every target call, and registration and unregistration wait on the same gate. So a slow or blocking `set_parameter` stalls MIDI and UI dispatch for everything else. Do not block, wait on I/O or take a long lock in `set_parameter`; hand the work to a thread or queue and return `true` at once.
+
 ### How to add a control id
 
 1. `om-core/src/param_id/mod.rs`: add the variant to the owning enum (`DeckParam`, `MixerParam`, ...) and its line in the grammar doc comment.
