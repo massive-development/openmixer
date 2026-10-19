@@ -19,11 +19,13 @@ pub enum AudioError {
 
 pub trait AudioDevice: Send {
     /// Prepares `callback` for the device's rate and block size and starts driving it. Fails when
-    /// the device is already running. The callback is released by [`AudioDevice::stop`].
+    /// the device is already running.
     fn start(&mut self, callback: Box<dyn AudioCallback>) -> Result<(), AudioError>;
 
-    /// Returns once no callback is in flight. Safe to call when stopped.
-    fn stop(&mut self);
+    /// Returns once no callback is in flight, and hands the callback back to the caller so the
+    /// same engine state can be started again. `None` when the device was not running. The device
+    /// does not call `release` on the returned callback; the owner decides.
+    fn stop(&mut self) -> Option<Box<dyn AudioCallback>>;
 
     fn is_running(&self) -> bool;
 

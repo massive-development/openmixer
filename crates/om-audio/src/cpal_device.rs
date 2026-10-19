@@ -86,6 +86,8 @@ pub struct CpalAudioDevice {
     monitor: Arc<LatencyMonitor>,
     counters: Arc<Counters>,
     stream: Option<Stream>,
+    /// Receives the engine back from the stream's render state when the stream is dropped.
+    handback: Option<rtrb::Consumer<Box<dyn AudioCallback>>>,
 }
 
 impl CpalAudioDevice {
@@ -150,6 +152,7 @@ impl CpalAudioDevice {
             monitor: Arc::new(LatencyMonitor::default()),
             counters: Arc::new(Counters::default()),
             stream: None,
+            handback: None,
         })
     }
 
@@ -180,8 +183,8 @@ fn pick_device(host: &cpal::Host, name: Option<&str>) -> Result<cpal::Device, Au
     }
 }
 
-/// Everything the cpal data callback needs. Owned by the stream closure; dropping it (on stop)
-/// releases the engine callback.
+/// Everything the cpal data callback needs. Owned by the stream closure. Dropping it (on stop)
+/// hands the engine back through `handback` instead of releasing it, so `stop` can return it.
 struct Render {
     router: OutputRouter,
     engine: Box<dyn AudioCallback>,
@@ -189,6 +192,18 @@ struct Render {
     block: usize,
     channels: usize,
     monitor: Arc<LatencyMonitor>,
+    handback: rtrb::Producer<Box<dyn AudioCallback>>,
+}
+
+/// Stand-in left in a dropped `Render`. Zero-sized, so boxing it does not allocate.
+struct Idle;
+
+impl AudioCallback for Idle {
+    fn process(&mut self, _: &[&[f32]], outputs: &mut [&mut [f32]]) {
+        for out in outputs.iter_mut() {
+            out.fill(0.0);
+        }
+    }
 }
 
 impl Render {
@@ -228,7 +243,9 @@ impl Render {
 
 impl Drop for Render {
     fn drop(&mut self) {
-        self.engine.release();
+        // Hands the engine to the device; the push and the placeholder do not allocate.
+        let engine = std::mem::replace(&mut self.engine, Box::new(Idle));
+        let _ = self.handback.push(engine);
     }
 }
 
@@ -245,6 +262,7 @@ impl AudioDevice for CpalAudioDevice {
         self.monitor.reset();
         self.monitor.configure(sample_rate, self.block);
 
+        let (handback_tx, handback_rx) = rtrb::RingBuffer::new(1);
         let mut render = Render {
             router,
             engine: callback,
@@ -252,6 +270,7 @@ impl AudioDevice for CpalAudioDevice {
             block: self.block,
             channels,
             monitor: Arc::clone(&self.monitor),
+            handback: handback_tx,
         };
         let counters = Arc::clone(&self.counters);
         let stream = self
@@ -275,15 +294,17 @@ impl AudioDevice for CpalAudioDevice {
             .play()
             .map_err(|e| AudioError::Stream(e.to_string()))?;
         self.stream = Some(stream);
+        self.handback = Some(handback_rx);
         Ok(())
     }
 
-    fn stop(&mut self) {
-        // Dropping the stream stops the backend and drops the callback (which releases it).
-        if let Some(stream) = self.stream.take() {
-            let _ = stream.pause();
-            drop(stream);
-        }
+    fn stop(&mut self) -> Option<Box<dyn AudioCallback>> {
+        // Dropping the stream stops the backend and drops its render state, which hands the engine
+        // back. `None` only if the backend kept the closure alive.
+        let stream = self.stream.take()?;
+        let _ = stream.pause();
+        drop(stream);
+        self.handback.take()?.pop().ok()
     }
 
     fn is_running(&self) -> bool {
@@ -309,7 +330,10 @@ impl AudioDevice for CpalAudioDevice {
 
 impl Drop for CpalAudioDevice {
     fn drop(&mut self) {
-        self.stop();
+        // The device is going away, so nothing will start the callback again: release it.
+        if let Some(mut callback) = self.stop() {
+            callback.release();
+        }
     }
 }
 
@@ -338,6 +362,7 @@ mod tests {
             block,
             channels,
             monitor: Arc::new(LatencyMonitor::default()),
+            handback: rtrb::RingBuffer::new(1).0,
         };
         let mut data = vec![-9.0_f32; frames * channels];
         render.run(&mut data);
@@ -364,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_is_released_when_the_render_state_drops() {
+    fn engine_is_handed_back_when_the_render_state_drops() {
         struct Flag(Arc<std::sync::atomic::AtomicBool>);
         impl AudioCallback for Flag {
             fn process(&mut self, _: &[&[f32]], outputs: &mut [&mut [f32]]) {
@@ -380,6 +405,7 @@ mod tests {
         let (_, pairs) = OutputRouter::new();
         let mut router = OutputRouter::with_pairs(&pairs);
         router.prepare(16);
+        let (handback_tx, mut handback_rx) = rtrb::RingBuffer::new(1);
         let render = Render {
             router,
             engine: Box::new(Flag(Arc::clone(&released))),
@@ -387,8 +413,12 @@ mod tests {
             block: 16,
             channels: 2,
             monitor: Arc::new(LatencyMonitor::default()),
+            handback: handback_tx,
         };
         drop(render);
+        assert!(!released.load(Relaxed), "dropping the render state does not release");
+        let mut engine = handback_rx.pop().expect("the engine is handed back");
+        engine.release();
         assert!(released.load(Relaxed));
     }
 }

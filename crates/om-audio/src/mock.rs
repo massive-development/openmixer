@@ -200,14 +200,12 @@ impl AudioDevice for MockAudioDevice {
         Ok(())
     }
 
-    fn stop(&mut self) {
+    fn stop(&mut self) -> Option<Box<dyn AudioCallback>> {
         self.stop_realtime();
         if !std::mem::take(&mut self.running) {
-            return;
+            return None;
         }
-        if let Some(mut callback) = self.shared.lock().callback.take() {
-            callback.release();
-        }
+        self.shared.lock().callback.take()
     }
 
     fn is_running(&self) -> bool {
@@ -233,6 +231,9 @@ impl AudioDevice for MockAudioDevice {
 
 impl Drop for MockAudioDevice {
     fn drop(&mut self) {
-        self.stop();
+        // The device is going away, so nothing will start the callback again: release it.
+        if let Some(mut callback) = self.stop() {
+            callback.release();
+        }
     }
 }
