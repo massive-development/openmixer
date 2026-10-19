@@ -5,12 +5,14 @@
 
 pub mod atomic;
 mod frame_ring;
+pub mod param_id;
 mod parameter;
 mod router;
 mod state;
 pub mod sync;
 
 pub use frame_ring::FrameRing;
+pub use param_id::{ParamError, ParamId};
 pub use parameter::ParameterTarget;
 pub use router::ParameterRouter;
 pub use state::StateReader;
