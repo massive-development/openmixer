@@ -360,8 +360,27 @@ impl SettingsState {
                 format!("Learn for {target} ended: no control was received"),
                 true,
             );
-        } else {
-            self.set_notice(format!("Learned a control for {target}"), false);
+            return;
+        }
+        let saved = MidiSettingsPage::new(&mut self.prefs, &Listed(&self.lists.midi_inputs))
+            .save_learned_map(midi.as_ref());
+        match saved {
+            Ok((file, changed)) => {
+                self.set_notice(
+                    format!(
+                        "Learned a control for {target} and saved to {}",
+                        file.display()
+                    ),
+                    false,
+                );
+                if changed {
+                    self.changed();
+                }
+            }
+            Err(error) => self.set_notice(
+                format!("Learned a control for {target}, but the map was not saved: {error}"),
+                true,
+            ),
         }
     }
 
@@ -1430,6 +1449,8 @@ mod page_tests {
         learning: Mutex<Option<String>>,
         generation: AtomicU64,
         fail_load: bool,
+        fail_save: bool,
+        saved: Mutex<Vec<PathBuf>>,
     }
 
     impl MidiInputs for FakeMidi {
@@ -1454,6 +1475,13 @@ mod page_tests {
         }
         fn is_learning(&self) -> bool {
             self.learning.lock().unwrap().is_some()
+        }
+        fn save_map(&self, file: &Path) -> Result<(), String> {
+            if self.fail_save {
+                return Err("disk full".to_owned());
+            }
+            self.saved.lock().unwrap().push(file.to_path_buf());
+            Ok(())
         }
         fn map_generation(&self) -> u64 {
             self.generation.load(Ordering::SeqCst)
@@ -1573,13 +1601,73 @@ mod page_tests {
         fake.generation.fetch_add(1, Ordering::SeqCst);
         s.poll_learn();
         assert_eq!(s.learning_target(), None);
-        assert_eq!(s.notice.text, "Learned a control for deck.0.play");
+        assert!(s.notice.text.starts_with("Learned a control for deck.0.play and saved to "));
 
         s.midi_learn("deck.0.play");
         s.midi_cancel_learn();
         assert_eq!(s.learning_target(), None);
         assert_eq!(s.notice.text, "Learn cancelled");
         assert_eq!(changes.get(), 0, "learn edits no preference");
+    }
+
+    #[test]
+    fn a_learned_binding_is_saved_and_its_file_becomes_the_map_in_use() {
+        let fake = Arc::new(FakeMidi {
+            inputs: vec!["Controller".into()],
+            ..FakeMidi::default()
+        });
+        let midi: Arc<dyn MidiPage> = fake.clone();
+        let changes = Rc::new(Cell::new(0));
+        let mut s = SettingsState::new(options(
+            Some(midi),
+            None,
+            None,
+            Rc::new(Cell::new(0)),
+            Rc::clone(&changes),
+        ));
+        s.refresh_lists();
+        s.midi_learn("deck.0.play");
+        *fake.learning.lock().unwrap() = None;
+        fake.generation.fetch_add(1, Ordering::SeqCst);
+        s.poll_learn();
+
+        let saved = fake.saved.lock().unwrap().clone();
+        assert_eq!(saved, vec![om_ui::preferences::default_user_map_file()]);
+        assert_eq!(s.prefs.midi.map_file, saved[0].to_string_lossy());
+        assert!(!s.notice.error);
+        assert!(s.notice.text.contains("saved to"));
+        assert_eq!(changes.get(), 1);
+    }
+
+    #[test]
+    fn a_learned_binding_that_cannot_be_saved_says_so_and_keeps_the_preference() {
+        let fake = Arc::new(FakeMidi {
+            inputs: vec!["Controller".into()],
+            fail_save: true,
+            ..FakeMidi::default()
+        });
+        let midi: Arc<dyn MidiPage> = fake.clone();
+        let changes = Rc::new(Cell::new(0));
+        let mut s = SettingsState::new(options(
+            Some(midi),
+            None,
+            None,
+            Rc::new(Cell::new(0)),
+            Rc::clone(&changes),
+        ));
+        s.refresh_lists();
+        s.midi_learn("deck.0.play");
+        *fake.learning.lock().unwrap() = None;
+        fake.generation.fetch_add(1, Ordering::SeqCst);
+        s.poll_learn();
+
+        assert!(s.notice.error);
+        assert_eq!(
+            s.notice.text,
+            "Learned a control for deck.0.play, but the map was not saved: disk full"
+        );
+        assert!(s.prefs.midi.map_file.is_empty());
+        assert_eq!(changes.get(), 0);
     }
 
     #[test]

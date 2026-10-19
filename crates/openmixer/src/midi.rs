@@ -217,6 +217,10 @@ impl MidiControl for MidiService {
         self.mapper.is_learning()
     }
 
+    fn save_map(&self, file: &Path) -> Result<(), String> {
+        self.save_map_file(file)
+    }
+
     fn map_generation(&self) -> u64 {
         self.mapper.generation()
     }
