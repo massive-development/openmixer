@@ -1,0 +1,19 @@
+[package]
+name = "om-library"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+om-analysis = { path = "../om-analysis" }
+rusqlite = { version = "0.35", features = ["bundled"] }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
