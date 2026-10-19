@@ -4,8 +4,8 @@ mod common;
 
 use common::{write_wav, Tags, TempDir};
 use om_library::{
-    core_migrations, Database, IngestSummary, Library, Migration, MetadataReaderRegistry,
-    OpenMode, WatchFolderOptions, WatchFolders,
+    core_migrations, Database, IngestSummary, Library, MetadataReaderRegistry, Migration, OpenMode,
+    WatchFolderOptions, WatchFolders,
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
@@ -136,7 +136,8 @@ fn manual_trigger_scans_immediately_and_reports_summary() {
     options.on_scan_done = Some(Arc::new(move |s: &IngestSummary| {
         sink.fetch_add(s.added, Ordering::SeqCst);
     }));
-    let w = WatchFolders::create(&f.db(), MetadataReaderRegistry::with_defaults(), options).unwrap();
+    let w =
+        WatchFolders::create(&f.db(), MetadataReaderRegistry::with_defaults(), options).unwrap();
     w.add(&f.music).unwrap();
     assert!(w.wait_for_scans(1, WAIT));
 
@@ -226,7 +227,8 @@ fn scan_thread_uses_the_supplied_migration_list() {
     options.on_scan_done = Some(Arc::new(move |s: &IngestSummary| {
         sink.fetch_add(s.failed, Ordering::SeqCst);
     }));
-    let w = WatchFolders::create(&f.db(), MetadataReaderRegistry::with_defaults(), options).unwrap();
+    let w =
+        WatchFolders::create(&f.db(), MetadataReaderRegistry::with_defaults(), options).unwrap();
     w.add(&f.music).unwrap();
     assert!(w.wait_for_scans(1, WAIT));
     assert_eq!(failed.load(Ordering::SeqCst), 0);
@@ -247,7 +249,8 @@ fn scan_thread_open_failure_is_reported() {
     options.on_scan_done = Some(Arc::new(move |s: &IngestSummary| {
         count.fetch_add(s.failed, Ordering::SeqCst);
     }));
-    let w = WatchFolders::create(&f.db(), MetadataReaderRegistry::with_defaults(), options).unwrap();
+    let w =
+        WatchFolders::create(&f.db(), MetadataReaderRegistry::with_defaults(), options).unwrap();
 
     {
         // a newer app migrated the file: the scan thread's open is now refused

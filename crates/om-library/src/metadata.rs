@@ -171,9 +171,10 @@ fn cover_art(tags: &[Tag]) -> Option<Artwork> {
                 continue;
             }
             return Some(Artwork {
-                mime_type: picture
-                    .mime_type()
-                    .map_or_else(|| "application/octet-stream".to_owned(), |m| m.as_str().to_owned()),
+                mime_type: picture.mime_type().map_or_else(
+                    || "application/octet-stream".to_owned(),
+                    |m| m.as_str().to_owned(),
+                ),
                 data: picture.data().to_vec(),
             });
         }

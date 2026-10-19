@@ -176,7 +176,7 @@ pub fn write_flac(path: &Path, seconds: u32, tags: &Tags) -> PathBuf {
     info.extend_from_slice(&4096u16.to_be_bytes()); // min block size
     info.extend_from_slice(&4096u16.to_be_bytes()); // max block size
     info.extend_from_slice(&[0, 0, 0, 0, 0, 0]); // frame sizes unknown
-    // sample rate (20 bits), channels-1 (3), bits-1 (5), total samples (36)
+                                                 // sample rate (20 bits), channels-1 (3), bits-1 (5), total samples (36)
     let packed = (SAMPLE_RATE << 44) | (15u64 << 36) | total;
     info.extend_from_slice(&packed.to_be_bytes());
     info.extend_from_slice(&[0u8; 16]); // MD5 unknown

@@ -128,7 +128,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - SQLite schema with migrations and transactions (`rusqlite`)
   - DAOs for tracks, cues, playlists
 
-- [ ] **Todo 21:** Metadata ingest + watch folders
+- [x] **Todo 21:** Metadata ingest + watch folders
   - Metadata reader registry; RIFF INFO tags and duration
   - Tags for MP3/FLAC/M4A via `lofty`; artwork
   - Recursive ingest and watch folders

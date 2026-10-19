@@ -61,7 +61,12 @@ impl Fixture {
 fn adds_tracks_recursively_with_tags_and_hash() {
     let f = Fixture::new();
     let a = write_wav(&f.dir().join("a.wav"), 1.0, &Tags::night_drive(), 440.0);
-    write_wav(&f.dir().join("sub/deeper/b.wav"), 1.0, &Tags::default(), 880.0);
+    write_wav(
+        &f.dir().join("sub/deeper/b.wav"),
+        1.0,
+        &Tags::default(),
+        880.0,
+    );
     std::fs::write(f.dir().join("readme.txt"), "ignore me").unwrap();
 
     let s = f.scan(&f.dir());
@@ -76,7 +81,10 @@ fn adds_tracks_recursively_with_tags_and_hash() {
     assert!(t.date_added_ms > 0);
 
     let state = f.lib.track_files().find(t.id).unwrap().unwrap();
-    assert_eq!(state.size_bytes, std::fs::metadata(&a).unwrap().len() as i64);
+    assert_eq!(
+        state.size_bytes,
+        std::fs::metadata(&a).unwrap().len() as i64
+    );
     assert!(!state.missing);
 }
 
@@ -139,7 +147,14 @@ fn vanished_file_is_marked_missing_and_restored_when_it_returns() {
     let mut s = f.scan(&f.dir());
     assert_eq!(s.missing, 1);
     assert!(f.lib.track_files().find(id).unwrap().unwrap().missing);
-    assert!(!f.lib.track_files().find(f.id_of(&keep)).unwrap().unwrap().missing);
+    assert!(
+        !f.lib
+            .track_files()
+            .find(f.id_of(&keep))
+            .unwrap()
+            .unwrap()
+            .missing
+    );
     assert_eq!(f.lib.tracks().count().unwrap(), 2); // row kept, not deleted
 
     s = f.scan(&f.dir());
@@ -264,7 +279,14 @@ fn changed_content_drops_stale_analysis() {
     write_wav(&file, 1.0, &Tags::default(), 990.0);
     touch(&file, 1_700_000_000_000);
     f.scan(&f.dir());
-    assert!(f.lib.tracks().find_by_id(id).unwrap().unwrap().bpm.is_none());
+    assert!(f
+        .lib
+        .tracks()
+        .find_by_id(id)
+        .unwrap()
+        .unwrap()
+        .bpm
+        .is_none());
 }
 
 #[test]
@@ -283,7 +305,12 @@ fn content_hash_is_stable_across_renames() {
     std::fs::rename(&a, &b).unwrap();
     f.scan(&f.dir());
     assert_eq!(
-        f.lib.tracks().find_by_path(&stored(&b)).unwrap().unwrap().content_hash,
+        f.lib
+            .tracks()
+            .find_by_path(&stored(&b))
+            .unwrap()
+            .unwrap()
+            .content_hash,
         hash
     );
     assert_eq!(f.lib.tracks().find_by_content_hash(&hash).unwrap().len(), 2); // old row stays, flagged missing

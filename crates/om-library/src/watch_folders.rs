@@ -8,11 +8,11 @@
 //! database read-write (migrated) before any read-only open, and use a file-backed database:
 //! `:memory:` is private to one connection.
 
+use crate::database::OpenMode;
 use crate::error::{LibraryError, Result};
 use crate::ingest::{full_path, IngestSummary, Ingestor};
 use crate::library::Library;
 use crate::metadata::MetadataReaderRegistry;
-use crate::database::OpenMode;
 use crate::migrations::{core_migrations, Migration};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -198,8 +198,16 @@ fn system_clock() -> i64 {
     i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX)
 }
 
-fn run(shared: &Shared, library_path: &str, readers: &MetadataReaderRegistry, options: &WatchFolderOptions) {
-    let clock = options.clock.clone().unwrap_or_else(|| Arc::new(system_clock));
+fn run(
+    shared: &Shared,
+    library_path: &str,
+    readers: &MetadataReaderRegistry,
+    options: &WatchFolderOptions,
+) {
+    let clock = options
+        .clock
+        .clone()
+        .unwrap_or_else(|| Arc::new(system_clock));
     let poll = Duration::from_millis(u64::try_from(options.poll_ms).unwrap_or(0).max(1));
     // why: opened lazily on this thread so the connection is only ever used here; retried each
     // pass if it failed
@@ -225,7 +233,8 @@ fn run(shared: &Shared, library_path: &str, readers: &MetadataReaderRegistry, op
         drop(state);
 
         if scan_library.is_none() {
-            scan_library = open_scan_library(library_path, &options.migrations, options.on_error.as_ref());
+            scan_library =
+                open_scan_library(library_path, &options.migrations, options.on_error.as_ref());
         }
         let summary = match &scan_library {
             Some(library) => scan_all(library, readers, &shared.stop),
@@ -266,7 +275,11 @@ fn open_scan_library(
 
 /// One pass over every watched folder. A folder that is missing or unreadable is skipped; an
 /// unreadable folder list is not an empty list, so the pass is retried next time.
-fn scan_all(library: &Library, readers: &MetadataReaderRegistry, stop: &AtomicBool) -> IngestSummary {
+fn scan_all(
+    library: &Library,
+    readers: &MetadataReaderRegistry,
+    stop: &AtomicBool,
+) -> IngestSummary {
     let mut total = IngestSummary::default();
     let Ok(folders) = library.watch_folders().list() else {
         return total;

@@ -3,7 +3,9 @@
 
 mod common;
 
-use common::{save_tag, tag_of, write_flac, write_m4a, write_mp3, write_ogg, write_wav, Tags, TempDir};
+use common::{
+    save_tag, tag_of, write_flac, write_m4a, write_mp3, write_ogg, write_wav, Tags, TempDir,
+};
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::*;
 use lofty::tag::TagType;
@@ -32,13 +34,22 @@ fn lofty_reader_reads_riff_info_and_duration() {
     assert_eq!(m.genre, "House");
     assert_eq!(m.year, 2019);
     assert_eq!(m.comment, "nice");
-    assert!((m.duration_sec - 2.0).abs() < 0.01, "duration {}", m.duration_sec);
+    assert!(
+        (m.duration_sec - 2.0).abs() < 0.01,
+        "duration {}",
+        m.duration_sec
+    );
 }
 
 #[test]
 fn untagged_file_falls_back_to_file_name_title() {
     let tmp = TempDir::new().unwrap();
-    let f = write_wav(&tmp.path().join("Some Song.wav"), 0.5, &Tags::default(), 440.0);
+    let f = write_wav(
+        &tmp.path().join("Some Song.wav"),
+        0.5,
+        &Tags::default(),
+        440.0,
+    );
     let m = read(&f);
     assert_eq!(m.title, "Some Song");
     assert!(m.artist.is_empty());
@@ -97,7 +108,11 @@ fn lofty_reader_reads_id3_tags_and_duration_for_mp3() {
     assert_eq!(m.genre, "House");
     assert_eq!(m.year, 2019);
     assert_eq!(m.comment, "nice");
-    assert!((m.duration_sec - 2.612).abs() < 0.1, "duration {}", m.duration_sec);
+    assert!(
+        (m.duration_sec - 2.612).abs() < 0.1,
+        "duration {}",
+        m.duration_sec
+    );
 }
 
 #[test]
@@ -109,7 +124,11 @@ fn lofty_reader_reads_vorbis_comments_and_duration_for_flac() {
     assert_eq!(m.artist, "The Artist");
     assert_eq!(m.album, "The Album");
     assert_eq!(m.year, 2019);
-    assert!((m.duration_sec - 3.0).abs() < 0.01, "duration {}", m.duration_sec);
+    assert!(
+        (m.duration_sec - 3.0).abs() < 0.01,
+        "duration {}",
+        m.duration_sec
+    );
 }
 
 #[test]
@@ -120,7 +139,11 @@ fn lofty_reader_reads_vorbis_comments_and_duration_for_ogg() {
     assert_eq!(m.title, "Night Drive");
     assert_eq!(m.artist, "The Artist");
     assert_eq!(m.genre, "House");
-    assert!((m.duration_sec - 2.0).abs() < 0.01, "duration {}", m.duration_sec);
+    assert!(
+        (m.duration_sec - 2.0).abs() < 0.01,
+        "duration {}",
+        m.duration_sec
+    );
 }
 
 #[test]
@@ -132,7 +155,11 @@ fn lofty_reader_reads_itunes_atoms_and_duration_for_m4a() {
     assert_eq!(m.artist, "The Artist");
     assert_eq!(m.album, "The Album");
     assert_eq!(m.genre, "House");
-    assert!((m.duration_sec - 4.0).abs() < 0.01, "duration {}", m.duration_sec);
+    assert!(
+        (m.duration_sec - 4.0).abs() < 0.01,
+        "duration {}",
+        m.duration_sec
+    );
 }
 
 #[test]
@@ -161,5 +188,8 @@ fn untagged_formats_report_no_artwork() {
     let f = write_wav(&tmp.path().join("plain.wav"), 0.5, &Tags::default(), 440.0);
     assert!(read(&f).artwork.is_none());
     // lofty's own view agrees: the WAV has no pictures
-    assert!(lofty::read_from_path(&f).unwrap().primary_tag().map_or(true, |t| t.pictures().is_empty()));
+    assert!(lofty::read_from_path(&f)
+        .unwrap()
+        .primary_tag()
+        .map_or(true, |t| t.pictures().is_empty()));
 }
