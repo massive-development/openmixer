@@ -258,6 +258,11 @@ impl FxUnitControl {
         self.shared.enabled.load(RELAXED)
     }
 
+    /// See [`FxUnit::is_active`].
+    pub fn is_active(&self) -> bool {
+        self.shared.active.load(RELAXED)
+    }
+
     pub fn mix(&self) -> f32 {
         self.shared.mix_target.load()
     }
