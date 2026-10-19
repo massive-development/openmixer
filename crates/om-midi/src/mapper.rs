@@ -10,8 +10,8 @@ use crate::event::{MidiEvent, MidiKind};
 use crate::learn::{LearnRequest, MidiLearn};
 use crate::lock;
 use crate::map::{MapMode, Mapping, MidiMap};
+use crate::output_rule::OutputRule;
 use om_core::ParameterTarget;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -204,12 +204,12 @@ impl MidiMapper {
         removed
     }
 
-    /// Feedback rules as raw JSON (typed by the feedback unit).
-    pub fn get_outputs(&self) -> Vec<Value> {
+    /// Feedback rules, in map order.
+    pub fn get_outputs(&self) -> Vec<OutputRule> {
         lock(&self.state).map.outputs.clone()
     }
 
-    pub fn set_outputs(&self, rules: Vec<Value>) {
+    pub fn set_outputs(&self, rules: Vec<OutputRule>) {
         lock(&self.state).map.outputs = rules;
         self.bump();
     }

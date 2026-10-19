@@ -10,8 +10,8 @@
 mod support;
 
 use om_midi::{
-    control_change, parse_hex, replay_trace, LearnRequest, LearnType, MapMode, Mapping, MidiKind,
-    MidiMap, MidiMapper, MidiTrace,
+    control_change, parse_hex, replay_trace, Blink, LearnRequest, LearnType, MapMode, Mapping,
+    MidiKind, MidiMap, MidiMapper, MidiTrace, OutputKind, OutputMode, OutputRule,
 };
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -279,10 +279,22 @@ fn save_load_round_trip_keeps_everything_at_schema_v2() {
     };
     f.learn(r, "B1 15 41");
     f.learn(request("deck.0.play", LearnType::Toggle), "90 24 64");
-    // Feedback rules are opaque here (typed by the feedback unit); they must survive a save.
+    // Feedback rules must survive a save.
     let outputs = vec![
-        json!({ "source": "deck.0.play", "number": 24, "blink": "whenOff", "blinkMs": 100 }),
-        json!({ "source": "mixer.master.level", "type": "cc", "number": 9, "mode": "level" }),
+        OutputRule {
+            source: "deck.0.play".into(),
+            number: 24,
+            blink: Blink::WhenOff,
+            blink_ms: 100,
+            ..OutputRule::default()
+        },
+        OutputRule {
+            source: "mixer.master.level".into(),
+            kind: OutputKind::Cc,
+            number: 9,
+            mode: OutputMode::Level,
+            ..OutputRule::default()
+        },
     ];
     f.m.set_outputs(outputs.clone());
     f.m.set_name("Round trip");
@@ -293,6 +305,7 @@ fn save_load_round_trip_keeps_everything_at_schema_v2() {
     let saved: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(saved["version"], json!(2));
+    assert_eq!(saved["outputs"][0]["blink"], json!("off"));
 
     let loaded = MidiMapper::new();
     loaded.load_from_file(&file).unwrap();
@@ -315,6 +328,26 @@ fn version_one_files_without_a_version_field_still_load() {
         r#"{"mappings":[{"type":"note","number":1,"target":"a","mode":"absolute14"}]}"#
     )
     .is_err());
+}
+
+#[test]
+fn feedback_rules_are_validated_when_the_map_is_parsed() {
+    // The deferred half of MidiMapSchemaTest: a rule with an unknown type fails the whole map.
+    let err =
+        MidiMap::parse(r#"{"version":2,"mappings":[],"outputs":[{"source":"x","type":"zzz"}]}"#)
+            .unwrap_err();
+    assert_eq!(err.to_string(), "output 0: output type must be note or cc");
+    let err = MidiMap::parse(
+        r#"{"version":2,"mappings":[],"outputs":[{"source":"a","type":"note"},{"type":"cc"}]}"#,
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), "output 1: missing source");
+    let ok = MidiMap::parse(
+        r#"{"version":2,"mappings":[],"outputs":[{"source":"deck.0.play","type":"note","number":36}]}"#,
+    )
+    .unwrap();
+    assert_eq!(ok.outputs.len(), 1);
+    assert_eq!(ok.outputs[0].number, 36);
 }
 
 #[test]

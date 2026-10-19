@@ -74,3 +74,43 @@ pub fn assert_near(actual: f64, expected: f64) {
         "{actual} is not {expected}"
     );
 }
+
+/// Test double for the output side: keeps every message in order.
+#[derive(Default)]
+pub struct RecordingOutputSink {
+    sent: Mutex<Vec<Vec<u8>>>,
+}
+
+impl RecordingOutputSink {
+    pub fn sent(&self) -> Vec<Vec<u8>> {
+        self.sent.lock().unwrap().clone()
+    }
+
+    pub fn last(&self) -> Option<Vec<u8>> {
+        self.sent.lock().unwrap().last().cloned()
+    }
+}
+
+impl om_midi::MidiOutputSink for RecordingOutputSink {
+    fn send(&self, bytes: &[u8]) {
+        self.sent.lock().unwrap().push(bytes.to_vec());
+    }
+}
+
+/// A state source with settable values; an id that was never set is unknown.
+#[derive(Default)]
+pub struct FakeState {
+    values: Mutex<std::collections::HashMap<String, f64>>,
+}
+
+impl FakeState {
+    pub fn set(&self, id: &str, value: f64) {
+        self.values.lock().unwrap().insert(id.to_owned(), value);
+    }
+}
+
+impl om_core::StateReader for FakeState {
+    fn read_state(&self, id: &str) -> Option<f64> {
+        self.values.lock().unwrap().get(id).copied()
+    }
+}
