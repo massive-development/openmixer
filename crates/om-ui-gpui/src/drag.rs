@@ -232,6 +232,8 @@ mod tests {
             banner: None,
             debug: None,
             settings: None,
+            library: None,
+            library_rows_out: None,
         };
         let shell = Shell::new(
             Arc::clone(&engine),

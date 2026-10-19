@@ -1,8 +1,11 @@
 //! `--features gui`: opens the GPUI window over a DjEngine. The device is output only. Without a
 //! device (or with `--mock-device`) the engine runs on the silent mock device and a banner says so.
-//! `--smoke` renders a fixed number of frames and exits 0. `--debug-panel` shows the device, latency
-//! and raw parameter panel. The settings overlay (Settings button) edits the audio model, the
-//! themes and the preferences; every change is saved and applied here.
+//! `--smoke` renders a fixed number of frames and exits 0; with the library it also ingests generated
+//! tracks into a temporary library, loads one into deck A and checks the deck and the table after
+//! the frames. `--debug-panel` shows the device, latency and raw parameter panel. The settings
+//! overlay (Settings button) edits the audio model, the themes and the preferences; every change is
+//! saved and applied here. The library browser opens the library from the preferences' folder (or
+//! `OPENMIXER_LIBRARY_DB`); its analysis runs on background workers.
 
 use om_audio::LatencyStats;
 use om_ui::preferences::Preferences;
@@ -10,15 +13,18 @@ use om_ui::settings::AudioSettingsModel;
 use om_ui::theme::default_user_directory;
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
+use om_ui_gpui::library::LibraryHub;
 use om_ui_gpui::settings_view::SettingsOptions;
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::{
     CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
 };
 use openmixer::composition::{load_themes, AppComposition};
+use openmixer::library_smoke::{self, TRACKS};
 use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Frames rendered by `--smoke` before it exits.
@@ -29,8 +35,11 @@ pub fn main(args: &[String]) -> ExitCode {
     let smoke = args.iter().any(|a| a == "--smoke");
     let debug = args.iter().any(|a| a == "--debug-panel");
 
+    // The smoke run gets its own library in a temporary folder, never the user's.
+    let smoke_root = smoke.then(library_smoke::scratch_dir);
     let mut composition = AppComposition::with_defaults();
-    if let Err(error) = composition.attach_library(None) {
+    let library_path = smoke_root.as_ref().map(|root| root.join("library.db"));
+    if let Err(error) = composition.attach_library(library_path) {
         eprintln!("openmixer: library unavailable: {error}");
     }
     let engine = Arc::clone(&composition.engine);
@@ -79,6 +88,28 @@ pub fn main(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // The library: ingest the smoke tracks and load the first one into deck A, or share the
+    // services the composition opened. The window and the smoke check use the same hub.
+    let mut smoke_error: Option<String> = None;
+    let library = composition.hooks.library.take().map(|mut services| {
+        if let Some(root) = &smoke_root {
+            if let Err(error) = library_smoke::ingest_generated(&mut services, root) {
+                smoke_error = Some(error);
+            }
+        }
+        LibraryHub::shared(services, engine.num_decks())
+    });
+    if let (Some(hub), true, None) = (&library, smoke, &smoke_error) {
+        let mut hub = hub.borrow_mut();
+        let hub = &mut *hub;
+        if let Err(error) =
+            library_smoke::load_first_into_deck0(&mut hub.services, &mut hub.loader, &engine)
+        {
+            smoke_error = Some(error);
+        }
+    }
+    let rows_out = Arc::new(AtomicUsize::new(0));
+
     let composition = Rc::new(RefCell::new(composition));
     let status_output = output.clone();
     let status: DeviceStatusFn = Arc::new(move || device_status(&status_output.lock()));
@@ -104,16 +135,45 @@ pub fn main(args: &[String]) -> ExitCode {
         banner,
         debug: debug.then_some(status),
         settings: Some(settings),
+        library: library.clone(),
+        library_rows_out: smoke.then(|| Arc::clone(&rows_out)),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();
 
+    let mut failed = false;
     if smoke {
-        println!("openmixer gui smoke ok: {frames} frames");
+        let rows = rows_out.load(Ordering::Relaxed);
+        let loaded = library
+            .as_ref()
+            .is_some_and(|hub| hub.borrow().loader.loaded_track(0).is_some())
+            && engine.deck(0).is_loaded();
+        if smoke_error.is_none() {
+            if !loaded {
+                smoke_error = Some("deck A is not loaded".to_owned());
+            } else if rows != TRACKS {
+                smoke_error = Some(format!("the table shows {rows} rows, not {TRACKS}"));
+            }
+        }
+        match &smoke_error {
+            None => println!(
+                "openmixer gui smoke ok: {frames} frames, {rows} library rows, deck A loaded"
+            ),
+            Some(error) => eprintln!("openmixer: gui smoke failed: {error}"),
+        }
         if frames < SMOKE_FRAMES {
             eprintln!("openmixer: window closed after {frames} of {SMOKE_FRAMES} smoke frames");
-            return ExitCode::FAILURE;
+            failed = true;
         }
+        failed |= smoke_error.is_some();
+    }
+    // Let the library close its files before the scratch folder goes.
+    drop(library);
+    if let Some(root) = smoke_root {
+        let _ = std::fs::remove_dir_all(root);
+    }
+    if failed {
+        return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
 }

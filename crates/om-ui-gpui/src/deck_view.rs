@@ -1,32 +1,30 @@
 //! One deck card: header, overview and zoomed waveforms, pitch fader, hotcue pads, loop controls
 //! and transport. Each part is drawn from its om-ui model; clicks call the model, which writes
-//! through the string-id control surface. Waveforms are synthetic until the analysis crate exists.
+//! through the string-id control surface. The waveforms are the analysed peaks the library loader
+//! holds for the deck (none until the track has been analysed). A library track dropped on the card
+//! loads into this deck.
 
 use crate::app::Shell;
 use crate::controls::button as push_button;
 use crate::drag::Target;
+use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place};
 use gpui::{
     canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton,
     MouseDownEvent, Pixels, Window,
 };
+use om_analysis::{WaveformData, WaveformPoint};
 use om_ui::geometry::Rect;
 use om_ui::waveform::View;
 use om_ui::widgets::deck::{deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
-use std::f64::consts::TAU;
+use std::sync::Arc;
 
-/// Sample rate assumed for the synthetic waveform when a deck reports none.
-const FALLBACK_RATE: f64 = 44_100.0;
-
-/// Deterministic stand-in for analysed peaks: a 0..1 amplitude at `seconds` into the track.
-pub fn synthetic_peak(seconds: f64) -> f32 {
-    let a = 0.55 * (seconds * TAU * 0.5).sin().abs()
-        + 0.30 * (seconds * TAU * 3.1).sin().abs()
-        + 0.15 * (seconds * TAU * 11.0).sin().abs();
-    (a as f32).min(1.0)
+/// The loudest sample of a waveform point, 0..1 (full-band peak).
+pub fn peak(p: &WaveformPoint) -> f32 {
+    p.min.abs().max(p.max.abs()).min(1.0)
 }
 
 /// Card for deck `index`, drawn at `card` (window coordinates).
@@ -41,7 +39,15 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
         .border_1()
         .border_color(paint(t.accent_for(index as i32)))
         .rounded(px(t.control_radius))
-        .text_color(paint(t.text_primary));
+        .text_color(paint(t.text_primary))
+        // A library track dropped on the card loads into this deck.
+        .drag_over::<TrackDragPayload>(|style, _, _, _| style.bg(gpui::rgba(0x2a_6f_9e_40)))
+        .on_drop(cx.listener(move |this, payload: &TrackDragPayload, _, cx| {
+            if let Some(panel) = this.library.as_mut() {
+                let _ = panel.drop_on_deck(index, &payload.description);
+            }
+            cx.notify();
+        }));
 
     // Header: title, artist, key and BPM, elapsed and remaining time.
     root = root.child(
@@ -90,39 +96,40 @@ fn overview(
     let area = l.overview;
     let width = f64::from(area.w);
     let playhead = deck.overview.playhead_x(width);
-    let rate = file_rate(shell, index);
-    let length = shell.engine.deck(index).length_frames();
-    let loaded = length > 0;
+    let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
     let origin_x = card.x + area.x;
     let bar_count = (area.w / 3).max(1);
     let (wave_colour, head_colour, head_w) =
         (paint(t.wave_mid), paint(t.highlight), t.playhead_width);
 
-    let wave = canvas(
+    let canvas_el = canvas(
         |_, _, _| (),
         move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
             let w = f32::from(bounds.size.width);
             let h = f32::from(bounds.size.height);
             let mid = h / 2.0;
-            if loaded {
-                for i in 0..bar_count {
-                    let frac = f64::from(i) / f64::from(bar_count);
-                    let seconds = frac * length as f64 / rate;
-                    let amp = synthetic_peak(seconds) * mid * 0.9;
-                    let x = i as f32 * 3.0;
-                    if x >= w {
-                        break;
-                    }
-                    window.paint_quad(fill(
-                        Bounds::new(
-                            point(
-                                bounds.origin.x + px(x),
-                                bounds.origin.y + px(mid - amp.max(1.0)),
+            if let Some(data) = &wave {
+                let points = &data.overview().points;
+                if !points.is_empty() {
+                    for i in 0..bar_count {
+                        let frac = f64::from(i) / f64::from(bar_count);
+                        let idx = ((frac * points.len() as f64) as usize).min(points.len() - 1);
+                        let amp = peak(&points[idx]) * mid * 0.9;
+                        let x = i as f32 * 3.0;
+                        if x >= w {
+                            break;
+                        }
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(
+                                    bounds.origin.x + px(x),
+                                    bounds.origin.y + px(mid - amp.max(1.0)),
+                                ),
+                                size(px(2.0), px((amp * 2.0).max(2.0))),
                             ),
-                            size(px(2.0), px((amp * 2.0).max(2.0))),
-                        ),
-                        wave_colour,
-                    ));
+                            wave_colour,
+                        ));
+                    }
                 }
             }
             window.paint_quad(fill(
@@ -139,7 +146,7 @@ fn overview(
     place(area)
         .bg(paint(t.well))
         .rounded(px(t.control_radius))
-        .child(wave)
+        .child(canvas_el)
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
@@ -199,9 +206,9 @@ fn zoom(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Contex
     let view: View = deck.zoom.view(width);
     let cues = deck.zoom.cue_xs(&view);
     let loop_span = deck.zoom.loop_span(&view);
-    let rate = file_rate(shell, index);
+    let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
+    let fpp = deck.zoom.frames_per_pixel();
     let length = shell.engine.deck(index).length_frames();
-    let loaded = length > 0;
     let playhead = view.x_of_frame(shell.engine.deck(index).position_frames());
     let _ = card;
     let accent = paint(t.accent_for(index as i32));
@@ -227,22 +234,26 @@ fn zoom(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Contex
                     accent_with_alpha(accent, colour),
                 ));
             }
-            if loaded {
+            if let Some(data) = &wave {
+                let level = data.level_for(fpp);
+                let per_point = level.samples_per_point.max(1) as f64;
                 let mut x = 0.0_f32;
                 while x < w {
                     let frame = view.frame_at_x(f64::from(x));
                     if frame >= 0.0 && frame < length as f64 {
-                        let amp = synthetic_peak(frame / rate) * mid * 0.9;
-                        window.paint_quad(fill(
-                            Bounds::new(
-                                point(
-                                    bounds.origin.x + px(x),
-                                    bounds.origin.y + px(mid - amp.max(1.0)),
+                        if let Some(p) = level.points.get((frame / per_point) as usize) {
+                            let amp = peak(p) * mid * 0.9;
+                            window.paint_quad(fill(
+                                Bounds::new(
+                                    point(
+                                        bounds.origin.x + px(x),
+                                        bounds.origin.y + px(mid - amp.max(1.0)),
+                                    ),
+                                    size(px(1.0), px((amp * 2.0).max(1.0))),
                                 ),
-                                size(px(1.0), px((amp * 2.0).max(1.0))),
-                            ),
-                            wave_colour,
-                        ));
+                                wave_colour,
+                            ));
+                        }
                     }
                     x += 2.0;
                 }
@@ -431,13 +442,4 @@ fn transport(
 /// A colour with its alpha replaced by `alpha` (GPUI keeps the RGB of the source colour).
 fn accent_with_alpha(colour: gpui::Rgba, alpha: f32) -> gpui::Rgba {
     gpui::Rgba { a: alpha, ..colour }
-}
-
-fn file_rate(shell: &Shell, index: usize) -> f64 {
-    let rate = shell.engine.deck(index).file_sample_rate();
-    if rate > 0.0 {
-        rate
-    } else {
-        FALLBACK_RATE
-    }
 }

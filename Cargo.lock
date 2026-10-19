@@ -4021,8 +4021,10 @@ name = "om-ui-gpui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "om-analysis",
  "om-core",
  "om-engine",
+ "om-library",
  "om-ui",
 ]
 

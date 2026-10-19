@@ -158,15 +158,15 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 26:** Main window + deck widgets
   - Waveforms, transport, hotcues, loops
-  - Partial (Todo 8b): deck cards drawn and wired; waveforms are synthetic until the analysis crate (Todo 17) lands
+  - Partial: deck cards drawn and wired; the waveforms are the analysed peaks the library loader holds (blank until the track is analysed); the header BPM and key come from the loaded track and its grid. Not checked by eye; the main cue point is missing
 
 - [ ] **Todo 27:** Mixer widgets + metering
   - Knobs, faders, meters
   - Partial (Todo 8b): channel strips, master, crossfader, cue and FX page drawn with drag; not verified by eye
 
-- [ ] **Todo 28:** Library browser + app wiring
+- [x] **Todo 28:** Library browser + app wiring
   - Tree, track list, search
-  - Partial (Todo 13a): the library logic is ported and tested (`om-ui::library`: services over the library, analysis, prep queue and watch folders; the track table and its paged source with the search syntax and the key tint; the browser state, status line, load requests, prep queueing and XML import; the track loader that applies cached waveform and grid and queues analysis; the track drag payload), and the composition attaches it on demand. Open (Todo 13b): the gpui browser view, the deck drop target and load buttons, and the waveform drawing from the loader
+  - Done (Todo 13a and 13b): the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page is still the placeholder (Todo 29)
 
 - [ ] **Todo 29:** Automix panel + settings
   - Audio/MIDI settings, preferences
