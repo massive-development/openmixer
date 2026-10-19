@@ -1,7 +1,8 @@
-//! Device tests for the cpal backend. Opening a real device is opt-in: set
-//! `OPENMIXER_DEVICE_TESTS=1` to open the default output, which then runs a callback that writes
-//! zeros, so nothing is audible. Without it, or on hosts with no usable device (WSL, CI), the test
-//! prints SKIP and passes. Listing devices opens nothing and always runs.
+//! Device tests for the cpal backend. Both tests are `#[ignore]`d, so a plain `cargo test` never
+//! touches audio hardware. Run them with `cargo test -p om-audio --test cpal_device -- --ignored`.
+//! Opening the default output also needs `OPENMIXER_DEVICE_TESTS=1`; it then runs a callback that
+//! writes zeros, so nothing is audible. Without the variable, or on hosts with no usable device
+//! (WSL, CI), the open test prints SKIP and passes. Listing devices opens nothing.
 
 use om_audio::{output_devices, AudioCallback, AudioDevice, CpalAudioDevice, OutputRequest};
 use std::time::Duration;
@@ -18,14 +19,24 @@ impl AudioCallback for Silence {
 }
 
 #[test]
+#[ignore = "needs OPENMIXER_DEVICE_TESTS=1 and a real audio device"]
 fn device_list_is_available_or_empty() {
     match output_devices() {
-        Ok(devices) => println!("{} output device(s)", devices.len()),
+        Ok(devices) => {
+            for device in &devices {
+                assert!(
+                    !device.name.trim().is_empty(),
+                    "every output device has a non-empty name"
+                );
+            }
+            println!("{} output device(s)", devices.len());
+        }
         Err(e) => println!("SKIP: cannot enumerate output devices: {e}"),
     }
 }
 
 #[test]
+#[ignore = "needs OPENMIXER_DEVICE_TESTS=1 and a real audio device"]
 fn device_opens_or_skips() {
     if std::env::var_os("OPENMIXER_DEVICE_TESTS").is_none() {
         println!("SKIP: set OPENMIXER_DEVICE_TESTS=1 to open the default output");
