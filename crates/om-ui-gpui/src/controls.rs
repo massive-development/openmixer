@@ -3,12 +3,13 @@
 
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
-use crate::paint::{paint, place};
+use crate::paint::{paint, place, skin};
 use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent, MouseUpEvent};
 use om_ui::geometry::Rect;
+use om_ui::style::LookAndFeel;
 use om_ui::theme::{Colour, ThemeTokens};
 
-/// A labelled push button. `accent` is its colour when lit.
+/// A labelled push button. `accent` is its colour when lit. Idle buttons take the hover fill.
 pub fn button(
     t: &ThemeTokens,
     rect: Rect,
@@ -18,24 +19,28 @@ pub fn button(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell) + 'static,
 ) -> Div {
-    place(rect)
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(t.control_radius))
-        .border_1()
-        .border_color(paint(t.border))
-        .bg(paint(if lit { accent } else { t.surface_raised }))
-        .text_color(paint(if lit { t.on_accent } else { t.text_primary }))
-        .text_size(px(t.type_small))
-        .child(label.to_owned())
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-                on_press(this);
-                cx.notify();
-            }),
-        )
+    let look = LookAndFeel::from_tokens(t);
+    let hover = look.button.hover.fill;
+    let el = skin(
+        place(rect).flex().items_center().justify_center(),
+        &if lit {
+            look.lit_button(accent)
+        } else {
+            look.button.idle
+        },
+    );
+    let el = if lit {
+        el
+    } else {
+        el.hover(move |style| style.bg(paint(hover)))
+    };
+    el.child(label.to_owned()).on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+            on_press(this);
+            cx.notify();
+        }),
+    )
 }
 
 /// Makes `el` start a drag on `target` when pressed. `abs` is the control's window rectangle.
@@ -59,37 +64,29 @@ pub fn slider(
     abs: Rect,
     cx: &mut Context<Shell>,
 ) -> Div {
+    let look = LookAndFeel::from_tokens(t);
     let frac = fraction(value, min, max) as f32;
     let vertical = rect.h >= rect.w;
+    let thumb_px = look.fader.thumb_size.round() as i32;
     let thumb = if vertical {
-        let travel = (rect.h - 12).max(0) as f32;
+        let travel = (rect.h - thumb_px).max(0) as f32;
         place(Rect::new(
             rect.x,
             rect.y + ((1.0 - frac) * travel) as i32,
             rect.w,
-            12,
+            thumb_px,
         ))
     } else {
-        let travel = (rect.w - 12).max(0) as f32;
+        let travel = (rect.w - thumb_px).max(0) as f32;
         place(Rect::new(
             rect.x + (frac * travel) as i32,
             rect.y,
-            12,
+            thumb_px,
             rect.h,
         ))
     };
-    let track = place(rect)
-        .bg(paint(t.well))
-        .border_1()
-        .border_color(paint(t.border))
-        .rounded(px(t.control_radius));
-    let track = track.child(
-        thumb
-            .bg(paint(t.surface_raised))
-            .border_1()
-            .border_color(paint(t.highlight))
-            .rounded(px(t.control_radius)),
-    );
+    let track = skin(place(rect), &look.fader.track);
+    let track = track.child(skin(thumb, &look.fader.thumb));
     draggable(track, target, abs, cx)
 }
 
@@ -104,33 +101,35 @@ pub fn knob(
     abs: Rect,
     cx: &mut Context<Shell>,
 ) -> Div {
+    let look = LookAndFeel::from_tokens(t);
+    let (inset_s, inset_l) = (look.inset_small, look.inset_large);
     let frac = fraction(value, min, max) as f32;
-    let fill_h = ((rect.h - 4) as f32 * frac) as i32;
-    let body = place(rect)
-        .bg(paint(t.surface_raised))
-        .border_1()
-        .border_color(paint(t.border))
-        .rounded(px(t.control_radius))
-        .text_size(px(t.type_caption))
-        .text_color(paint(t.text_secondary))
+    let fill_h = ((rect.h as f32 - inset_l) * frac) as i32;
+    let body = skin(place(rect), &look.knob.body)
+        .text_color(paint(look.knob.label.text))
         .child(
-            place(Rect::new(0, rect.h - fill_h - 2, rect.w, fill_h))
-                .bg(paint(t.accent_for(0)))
-                .rounded(px(2.)),
+            place(Rect::new(
+                0,
+                rect.h - fill_h - inset_s as i32,
+                rect.w,
+                fill_h,
+            ))
+            .bg(paint(look.knob.fill))
+            .rounded(px(look.bar_radius)),
         )
         .child(
             div()
                 .absolute()
-                .left(px(4.))
-                .top(px(2.))
+                .left(px(inset_l))
+                .top(px(inset_s))
                 .child(label.to_owned()),
         )
         .child(
             div()
                 .absolute()
-                .left(px(4.))
-                .bottom(px(2.))
-                .text_color(paint(t.text_primary))
+                .left(px(inset_l))
+                .bottom(px(inset_s))
+                .text_color(paint(look.knob.readout.text))
                 .child(readout.to_owned()),
         );
     draggable(body, target, abs, cx)
@@ -138,28 +137,42 @@ pub fn knob(
 
 /// One stereo meter column (two bars). `levels` are 0..=1 proportions; a lit clip lamp sits on top.
 pub fn stereo_meter(t: &ThemeTokens, rect: Rect, levels: [f32; 2], clipping: [bool; 2]) -> Div {
+    let look = LookAndFeel::from_tokens(t);
+    let m = look.meter;
+    let headroom = m.headroom as i32;
     let half = rect.w / 2;
     let mut col = place(rect);
     for (i, (level, clip)) in levels.iter().zip(clipping).enumerate() {
         let x = i as i32 * half;
-        let bar_h = ((rect.h - 14) as f32 * level.clamp(0.0, 1.0)) as i32;
-        let bar = Rect::new(x + 1, rect.h - bar_h, (half - 2).max(1), bar_h);
+        let bar_h = ((rect.h - headroom) as f32 * level.clamp(0.0, 1.0)) as i32;
+        let side = m.bar_inset as i32;
+        let bar = Rect::new(x + side, rect.h - bar_h, (half - 2 * side).max(1), bar_h);
         col = col.child(
-            place(Rect::new(x, 14, half.max(1), (rect.h - 14).max(1)))
-                .bg(paint(t.well))
-                .rounded(px(2.)),
+            place(Rect::new(
+                x,
+                headroom,
+                half.max(1),
+                (rect.h - headroom).max(1),
+            ))
+            .bg(paint(m.well))
+            .rounded(px(m.radius)),
         );
         col = col.child(place(bar).bg(paint(if *level > 0.9 {
-            t.meter_high
+            m.high
         } else if *level > 0.6 {
-            t.meter_mid
+            m.mid
         } else {
-            t.meter_low
+            m.low
         })));
         col = col.child(
-            place(Rect::new(x + 1, 2, (half - 2).max(1), 8))
-                .bg(paint(if clip { t.meter_high } else { t.surface_raised }))
-                .rounded(px(2.)),
+            place(Rect::new(
+                x + side,
+                m.inset as i32,
+                (half - 2 * side).max(1),
+                m.lamp_height as i32,
+            ))
+            .bg(paint(if clip { m.lamp_on } else { m.lamp_off }))
+            .rounded(px(m.radius)),
         );
     }
     col
@@ -167,9 +180,10 @@ pub fn stereo_meter(t: &ThemeTokens, rect: Rect, levels: [f32; 2], clipping: [bo
 
 /// A text caption at `rect` (parent coordinates).
 pub fn caption(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
+    let style = LookAndFeel::from_tokens(t).panel_caption;
     place(rect)
-        .text_size(px(t.type_caption))
-        .text_color(paint(t.text_secondary))
+        .text_size(px(style.font_size))
+        .text_color(paint(style.text))
         .child(text.to_owned())
 }
 

@@ -30,6 +30,7 @@ pub fn peak(p: &WaveformPoint) -> f32 {
 /// Card for deck `index`, drawn at `card` (window coordinates).
 pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
+    let drop_target = t.drop_target;
     let deck = &shell.decks[index];
     let l = deck_layout(Rect::sized(card.w, card.h), t);
     let text = deck.header.text();
@@ -41,7 +42,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary))
         // A library track dropped on the card loads into this deck.
-        .drag_over::<TrackDragPayload>(|style, _, _, _| style.bg(gpui::rgba(0x2a_6f_9e_40)))
+        .drag_over::<TrackDragPayload>(move |style, _, _, _| style.bg(paint(drop_target)))
         .on_drop(cx.listener(move |this, payload: &TrackDragPayload, _, cx| {
             if let Some(panel) = this.library.as_mut() {
                 let _ = panel.drop_on_deck(index, &payload.description);
