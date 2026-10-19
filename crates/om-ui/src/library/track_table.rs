@@ -364,8 +364,13 @@ mod tests {
         assert!(model.row_at(0).is_none(), "no rows from a failed page");
         assert!(model.source_error().contains("database is locked"));
 
-        let row = model.row_at(0).expect("the next read fetches the page again");
+        let row = model
+            .row_at(0)
+            .expect("the next read fetches the page again");
         assert_eq!(row.title, "T0");
-        assert!(model.source_error().is_empty(), "a good page clears the error");
+        assert!(
+            model.source_error().is_empty(),
+            "a good page clears the error"
+        );
     }
 }

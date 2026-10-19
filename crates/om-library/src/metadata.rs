@@ -236,7 +236,9 @@ mod tests {
         let registry = MetadataReaderRegistry::with_defaults();
         assert!(!registry.supports(Path::new("/m/a.opus")));
         assert!(!registry.supported_extensions().iter().any(|e| e == "opus"));
-        assert!(registry.supports(Path::new("/m/a.ogg")), "Ogg Vorbis still ingests");
+        assert!(
+            registry.supports(Path::new("/m/a.ogg")),
+            "Ogg Vorbis still ingests"
+        );
     }
 }
-

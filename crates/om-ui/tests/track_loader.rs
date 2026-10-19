@@ -249,4 +249,3 @@ fn a_failed_load_leaves_the_loaded_track_and_its_grid_alone() {
     assert!((after.bpm() - before.bpm()).abs() < 1e-9);
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(keep));
 }
-

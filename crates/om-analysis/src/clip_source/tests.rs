@@ -75,9 +75,9 @@ fn a_small_shortfall_keeps_only_the_frames_the_decoder_produced() {
     let temp = TempFile::new("wav");
     write_lying_wav(temp.path(), 100_000 * 4, &vec![0.5_f32; 99_000]);
     let mut source = FileClipSource::new(temp.path());
-    let clip = source.load(&NullAnalysisContext).expect("a small shortfall still loads");
+    let clip = source
+        .load(&NullAnalysisContext)
+        .expect("a small shortfall still loads");
     assert_eq!(clip.samples.len(), 99_000);
     assert!(clip.samples.iter().all(|s| (*s - 0.5).abs() < 1.0e-6));
 }
-
-

@@ -428,7 +428,9 @@ mod tests {
             dir.path().join("config").join("OpenMixer"),
             None,
         );
-        assert!(empty.ends_with("OpenMixer/library.db") || empty.ends_with("OpenMixer\\library.db"));
+        assert!(
+            empty.ends_with("OpenMixer/library.db") || empty.ends_with("OpenMixer\\library.db")
+        );
     }
 
     #[test]
@@ -453,6 +455,10 @@ mod tests {
         std::fs::create_dir_all(&folder).expect("new dir");
         std::fs::write(folder.join("library.db"), b"new").expect("new library");
         let picked = library_file_from(None, folder.clone(), Some(legacy));
-        assert_eq!(picked, folder.join("library.db"), "the new location wins once it exists");
+        assert_eq!(
+            picked,
+            folder.join("library.db"),
+            "the new location wins once it exists"
+        );
     }
 }

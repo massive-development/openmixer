@@ -14,8 +14,8 @@ use crate::ingest::{full_path, IngestSummary, Ingestor};
 use crate::library::Library;
 use crate::metadata::MetadataReaderRegistry;
 use crate::migrations::{core_migrations, Migration};
-use std::path::Path;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread::JoinHandle;
@@ -254,7 +254,10 @@ fn run(
                 scan_library = None;
                 report_error(
                     options.on_error.as_ref(),
-                    &format!("watch folders: scan panicked: {}", panic_message(payload.as_ref())),
+                    &format!(
+                        "watch folders: scan panicked: {}",
+                        panic_message(payload.as_ref())
+                    ),
                 );
                 IngestSummary {
                     failed: 1,
@@ -267,7 +270,10 @@ fn run(
             if let Err(payload) = outcome {
                 report_error(
                     options.on_error.as_ref(),
-                    &format!("watch folders: callback panicked: {}", panic_message(payload.as_ref())),
+                    &format!(
+                        "watch folders: callback panicked: {}",
+                        panic_message(payload.as_ref())
+                    ),
                 );
             }
         }
