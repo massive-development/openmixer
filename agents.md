@@ -162,6 +162,19 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
 4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
 
+## Styling a control (LookAndFeel)
+
+Colours, radii, border widths, insets and font sizes come from the theme, never from literals in view code.
+
+1. Read the theme's tokens (`om_ui::theme::ThemeTokens`, built from `resources/themes/*.json`).
+2. Get the control's recipe from `om_ui::style::LookAndFeel::from_tokens(t)`: `button` (idle, hover, active, disabled), `lit_button(accent)`, `knob`, `fader`, `tabs`, `tooltip`, `text_field` (idle, focus), `meter`, `panel`, `panel_caption`, `separator`, `drop_target`.
+3. In `om-ui-gpui`, draw with `paint::skin(el, &style)` for a box, `paint::border(el, width)` for a bare border, and `paint(colour)` for a colour. Radii and insets come from the style fields, not literals.
+4. A value no token covers: add a token field in `theme/tokens.rs` (default in `builtin_dark`), a reader in `theme/json.rs` (range-checked, with a key in the matching section), and a value in both built-in theme JSON files. Old theme files stay valid because a missing key inherits the default.
+5. Add the new style to `LookAndFeel::entries()` so the contrast and live-switch tests cover it. Text on a control needs contrast 3.0 (control) or 4.5 (body) against its fill over both backdrop ends; disabled controls are exempt.
+6. `crates/om-ui-gpui/tests/style_lint.rs` fails on raw colour calls (`rgb(`, `rgba(`, `hsla(`, `from_argb(`, bare 6 or 8 digit hex) in `src/`. Only `paint.rs` may name them.
+
+gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
+
 ## Token Efficiency & Knowledge Reuse (required)
 
 Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.

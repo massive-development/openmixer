@@ -207,7 +207,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: later. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
-- Design tokens and LookAndFeel (25): the tokens exist, the LookAndFeel does not; the debug panel's load/play (26a) is not wired
+- LookAndFeel (25): `om_ui::style` derives every control style from the tokens and the gpui controls draw from it; scroll bars, tables and toggles are not restyled yet, and the window has not been checked by eye. See "Styling a control" in `agents.md`. The debug panel's per-deck load and play (26a) is wired
 - FFmpeg decode backend (Todo 8b, optional, open)
 - Library: artwork is not stored (no artwork table); FTS is not used (LIKE only); there is no play-history table (only a `play_count` column)
 - Saving engine hotcues back to the library is not confirmed
