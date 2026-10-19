@@ -3972,6 +3972,11 @@ dependencies = [
 [[package]]
 name = "om-core"
 version = "0.1.0"
+dependencies = [
+ "om-testing",
+ "proptest",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "om-dsp"
@@ -4010,6 +4015,7 @@ dependencies = [
  "rusqlite",
  "tempfile",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -4153,6 +4159,7 @@ dependencies = [
  "om-audio",
  "om-core",
  "om-engine",
+ "om-library",
  "om-midi",
  "om-plugins",
  "om-testing",
@@ -4160,6 +4167,7 @@ dependencies = [
  "om-ui-gpui",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

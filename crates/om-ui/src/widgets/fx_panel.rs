@@ -7,6 +7,7 @@ use crate::binding::MixerBinding;
 use crate::control::{Knob, Readout};
 use crate::geometry::Rect;
 use crate::theme::ThemeTokens;
+use om_core::param_id::{FxParam, FxRack};
 use om_engine::fx::{FxRackControl, FxUnitControl, ParamSpec};
 
 /// Ranges at least this wide read as whole numbers; narrower ones read with two decimals.
@@ -119,12 +120,19 @@ impl FxPanel {
         self.scope_units[self.scope]
     }
 
-    fn scope_name(&self) -> String {
+    /// The rack behind the selected scope: master, or channel `scope - 1`.
+    fn rack_id(&self) -> FxRack {
         if self.scope == 0 {
-            "master".to_owned()
+            FxRack::Master
         } else {
-            format!("ch{}", self.scope - 1)
+            FxRack::Channel((self.scope - 1) as u8)
         }
+    }
+
+    /// Sends a parameter of the selected unit.
+    fn send_unit(&self, p: FxParam, value: f64) -> bool {
+        self.binding
+            .send_fx(self.rack_id(), Some(self.unit_index() as u16), p, value)
     }
 
     fn rack(&self) -> Option<&FxRackControl> {
@@ -155,22 +163,18 @@ impl FxPanel {
             .collect()
     }
 
-    fn unit_id(&self, param: &str) -> String {
-        format!("{}.fx{}.{param}", self.scope_name(), self.unit_index())
-    }
-
     /// Switches the selected unit on or off. Returns the value sent, or `None` for an empty rack.
     pub fn enable_pressed(&mut self) -> Option<f64> {
         let on = self.unit()?.is_enabled();
         let value = if on { 0.0 } else { 1.0 };
-        self.binding.send_fx(&self.unit_id("enable"), value);
+        self.send_unit(FxParam::Enable, value);
         self.refresh();
         Some(value)
     }
 
     pub fn mix_changed(&mut self, value: f64) -> f64 {
         let v = self.mix.range.set(value);
-        self.binding.send_fx(&self.unit_id("mix"), v);
+        self.send_unit(FxParam::Mix, v);
         v
     }
 
@@ -178,7 +182,7 @@ impl FxPanel {
     pub fn param_changed(&mut self, index: usize, value: f64) -> Option<f64> {
         let name = self.unit()?.params().spec(index)?.name;
         let stored = self.params.get_mut(index)?.range.set(value);
-        self.binding.send_fx(&self.unit_id(name), stored);
+        self.send_unit(FxParam::Effect(name.to_owned()), stored);
         Some(stored)
     }
 

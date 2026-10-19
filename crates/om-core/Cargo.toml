@@ -7,5 +7,12 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+om-testing.workspace = true
+proptest = "1"
+
 [lints]
 workspace = true

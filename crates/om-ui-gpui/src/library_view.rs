@@ -7,13 +7,14 @@
 
 use crate::app::Shell;
 use crate::library::{KeyOutcome, LibraryPanel, RowView};
-use crate::paint::{paint, place};
+use crate::paint::{paint, place, skin};
 use gpui::{
     div, prelude::*, px, AnyElement, App, Context, Div, FocusHandle, KeyDownEvent, MouseButton,
     MouseDownEvent, Render, ScrollWheelEvent, Window,
 };
 use om_ui::geometry::Rect;
 use om_ui::library::{columns, SEARCH_PLACEHOLDER};
+use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::ThemeTokens;
 
 /// Height of one table row and one sidebar line.
@@ -33,22 +34,19 @@ const PAD: f32 = 6.0;
 pub struct TrackDragPayload {
     pub description: String,
     pub label: String,
+    /// The style the drag preview is drawn in (the theme's tooltip style).
+    pub preview: ControlStyle,
 }
 
 /// The floating label shown under the pointer while a track is dragged.
 pub struct DragPreview {
     label: String,
+    style: ControlStyle,
 }
 
 impl Render for DragPreview {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px(px(8.))
-            .py(px(2.))
-            .rounded(px(3.))
-            .bg(gpui::rgba(0x1b_22_2e_ee))
-            .text_color(gpui::rgba(0xf2_f4_f8_ff))
-            .child(self.label.clone())
+        skin(div().px(px(8.)).py(px(2.)), &self.style).child(self.label.clone())
     }
 }
 
@@ -179,10 +177,12 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .border_color(paint(if search_active { t.highlight } else { t.border }))
         .bg(paint(t.surface_raised))
         .text_color(paint(if search_text.is_empty() && !search_active {
-            t.text_secondary
+            t.text_muted.with_multiplied_alpha(0.8)
         } else {
             t.text_primary
         }))
+        // The hint is dim and italic so it never reads as a typed query.
+        .when(search_text.is_empty() && !search_active, |el| el.italic())
         .child(search_label)
         .on_mouse_down(
             MouseButton::Left,
@@ -337,6 +337,7 @@ fn track_row(t: &ThemeTokens, row: RowView, cx: &mut Context<Shell>) -> AnyEleme
     let payload = TrackDragPayload {
         description: row.drag.clone(),
         label,
+        preview: LookAndFeel::from_tokens(t).tooltip,
     };
     line.id(("library-row", row_index))
         .on_mouse_down(
@@ -359,6 +360,7 @@ fn track_row(t: &ThemeTokens, row: RowView, cx: &mut Context<Shell>) -> AnyEleme
         .on_drag(payload, |payload: &TrackDragPayload, _, _, cx: &mut App| {
             cx.new(|_| DragPreview {
                 label: payload.label.clone(),
+                style: payload.preview,
             })
         })
         .into_any_element()

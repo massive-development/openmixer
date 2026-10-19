@@ -187,6 +187,21 @@ mod library_keys {
     }
 }
 
+mod style_keys {
+    use super::*;
+    float_keys! {
+        "borderWidth" => border_width: 0.0, 8.0;
+        "focusBorderWidth" => focus_border_width: 0.0, 8.0;
+        "thumbSize" => thumb_size: 2.0, MAX_PX;
+        "insetSmall" => inset_small: 0.0, 16.0;
+        "insetLarge" => inset_large: 0.0, 32.0;
+        "barRadius" => bar_radius: 0.0, 16.0;
+        "lampHeight" => lamp_height: 0.0, 32.0;
+        "meterHeadroom" => meter_headroom: 0.0, 64.0;
+        "disabledAlpha" => disabled_alpha: 0.0, 1.0;
+    }
+}
+
 mod settings_keys {
     use super::*;
     float_keys! {
@@ -237,13 +252,14 @@ colour_keys! {
     "popup" => popup;
     "capTop" => cap_top;
     "capBottom" => cap_bottom;
+    "dropTarget" => drop_target;
     "waveLow" => wave_low;
     "waveMid" => wave_mid;
     "waveHigh" => wave_high;
 }
 
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
-const ROOT_KEYS: [&str; 13] = [
+const ROOT_KEYS: [&str; 14] = [
     "id",
     "name",
     "author",
@@ -257,6 +273,7 @@ const ROOT_KEYS: [&str; 13] = [
     "mixer",
     "library",
     "settings",
+    "style",
 ];
 
 /// Parses a theme document. On error no tokens are returned, so a caller can never use a half-filled
@@ -341,6 +358,15 @@ pub fn parse_theme(json: &str) -> Result<ParsedTheme, ThemeError> {
         settings_keys::KEYS,
         settings_keys::set,
         settings_keys::range,
+    )?;
+    read_floats(
+        section(&root, "style")?,
+        "style",
+        w,
+        t,
+        style_keys::KEYS,
+        style_keys::set,
+        style_keys::range,
     )?;
     if let Some(accents) = root.get("accents") {
         t.accents = read_accents(accents)?;

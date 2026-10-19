@@ -15,6 +15,9 @@ pub enum LibraryError {
     /// The migration list is invalid, a migration failed, or the database is newer than the app.
     #[error("{0}")]
     Migration(String),
+    /// A file or folder the library needs could not be created or read.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     /// Connection setup failed (for example, WAL is unavailable).
     #[error("{0}")]
     Setup(String),
@@ -24,12 +27,43 @@ pub enum LibraryError {
     /// A folder scan was refused (not a folder) or stopped before it finished.
     #[error("{0}")]
     Ingest(String),
-    /// An import file could not be read, was not recognised, or its XML did not parse.
-    #[error("{0}")]
-    Import(String),
+    /// An import file could not be read, was not recognised, or did not parse.
+    #[error(transparent)]
+    Import(#[from] ImportError),
     /// A search query was rejected (unknown field, unreadable value, unsortable field).
     #[error("{0}")]
     Query(String),
+    /// The database has the FTS5 search triggers (migration 7) but this SQLite build has no FTS5, so
+    /// every write to `tracks` would fail. Opened on a build that has FTS5 instead.
+    #[error(
+        "This library database has the FTS5 search index, but this build of SQLite has no FTS5 \
+         module, so writes to it would fail. Open the library with a build that includes FTS5."
+    )]
+    Fts5Required,
+}
+
+/// Why an import file was rejected. Its display text is the message shown in the UI status line.
+#[derive(Debug, thiserror::Error)]
+pub enum ImportError {
+    /// The file could not be read from disk.
+    #[error("Cannot read {}: {source}", path.display())]
+    Io {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The XML is not well formed (a reader or attribute error from quick-xml).
+    #[error(transparent)]
+    Xml(#[from] quick_xml::Error),
+    /// The XML is well formed but its structure is wrong (unbalanced tags, no root, a bad reference).
+    #[error("{what}")]
+    Format { what: &'static str },
+    /// The document parsed but is not an iTunes property list.
+    #[error("Not an iTunes property list")]
+    Plist,
+    /// No registered importer recognises the document root.
+    #[error("Unrecognised library format: {file}")]
+    Unrecognised { file: String },
 }
 
 /// Result alias for library operations.

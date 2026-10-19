@@ -16,6 +16,7 @@ om-analysis.workspace = true
 rusqlite.workspace = true
 lofty = "0.25"
 thiserror.workspace = true
+tracing.workspace = true
 quick-xml = "0.41"
 
 [dev-dependencies]

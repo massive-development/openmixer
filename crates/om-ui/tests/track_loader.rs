@@ -11,7 +11,7 @@ use om_analysis::hash_file_content;
 use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
 use om_testing::wait::{wait_until, DEFAULT_POLL};
-use om_ui::library::{LibraryServices, TrackLoader};
+use om_ui::library::{LibraryServices, LoadError, TrackLoader};
 use om_ui::widgets::deck::format_key;
 
 struct LoaderRig {
@@ -63,7 +63,7 @@ impl LoaderRig {
     }
 
     /// A normal load: refused while the deck is playing.
-    fn load(&mut self, deck: usize, track_id: i64) -> Result<(), String> {
+    fn load(&mut self, deck: usize, track_id: i64) -> Result<(), LoadError> {
         self.loader
             .load(&self.engine, &mut self.services, deck, track_id, false)
     }
@@ -165,7 +165,7 @@ fn missing_files_and_bad_decks_fail_without_touching_the_deck() {
     let mut rig = LoaderRig::new();
     let missing = rig.add_file("gone.wav", "8A", false);
     let error = rig.load(0, missing).expect_err("missing file fails");
-    assert!(error.contains("missing"), "{error}");
+    assert!(error.to_string().contains("missing"), "{error}");
     assert!(!rig.engine.deck(0).is_loaded());
 
     let ok = rig.add_file("ok.wav", "8A", true);
@@ -219,7 +219,7 @@ fn a_playing_deck_refuses_a_load_unless_forced() {
     assert!(rig.engine.deck(0).is_playing());
 
     let refused = rig.load(0, second).expect_err("a playing deck refuses");
-    assert_eq!(refused, "deck is playing");
+    assert_eq!(refused.to_string(), "deck is playing");
     assert!(rig.engine.deck(0).is_playing(), "the deck keeps playing");
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(first));
 
@@ -244,4 +244,246 @@ fn a_failed_load_leaves_the_loaded_track_and_its_grid_alone() {
     let after = rig.engine.deck_control(0).grid().expect("grid restored");
     assert!((after.bpm() - before.bpm()).abs() < 1e-9);
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(keep));
+}
+
+fn saved_cues(rig: &LoaderRig, track_id: i64) -> Vec<(i32, i64)> {
+    rig.services
+        .library()
+        .cues()
+        .cues(track_id)
+        .expect("cues")
+        .into_iter()
+        .map(|c| (c.slot, c.position_frames))
+        .collect()
+}
+
+#[test]
+fn a_hotcue_set_on_the_deck_is_saved_and_a_clear_deletes_it() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("cue.wav", "8A", true);
+    assert!(rig.load(0, id).is_ok());
+
+    rig.engine.deck(0).set_hotcue(3, 44_100);
+    rig.loader.pump(&rig.engine, &rig.services);
+    assert_eq!(saved_cues(&rig, id), vec![(3, 44_100)]);
+
+    rig.engine.deck(0).clear_hotcue(3);
+    rig.loader.pump(&rig.engine, &rig.services);
+    assert!(saved_cues(&rig, id).is_empty());
+}
+
+#[test]
+fn saved_cues_are_applied_on_load_and_the_outgoing_track_keeps_its_edits() {
+    let mut rig = LoaderRig::new();
+    let a = rig.add_file("a.wav", "8A", true);
+    let b = rig.add_file("b.wav", "8A", true);
+    rig.services
+        .library()
+        .cues()
+        .set_cue(&om_library::CuePoint {
+            track_id: b,
+            slot: 5,
+            position_frames: 9_000,
+            ..Default::default()
+        })
+        .unwrap();
+
+    assert!(rig.load(0, a).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(5), None, "a has no cue 5");
+    rig.engine.deck(0).set_hotcue(1, 500);
+    // Loading b before any pump: a's edit is written first, then b's cues go in.
+    assert!(rig.load(0, b).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(5), Some(9_000));
+    assert_eq!(
+        rig.engine.deck(0).hotcue(1),
+        None,
+        "the bank was cleared by the load"
+    );
+    assert_eq!(saved_cues(&rig, a), vec![(1, 500)]);
+
+    // And a's cue comes back when a is loaded again.
+    assert!(rig.load(0, a).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(1), Some(500));
+    rig.loader.pump(&rig.engine, &rig.services);
+    assert_eq!(
+        saved_cues(&rig, a),
+        vec![(1, 500)],
+        "restored, not rewritten"
+    );
+    assert_eq!(saved_cues(&rig, b), vec![(5, 9_000)], "b untouched");
+}
+
+#[test]
+fn a_loaded_track_is_played_once_after_thirty_seconds_of_playing() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("played.wav", "8A", true);
+    assert!(rig.load(0, id).is_ok());
+    rig.engine.deck(0).set_playing(true);
+
+    for _ in 0..29 {
+        rig.loader
+            .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
+    }
+    assert!(rig
+        .services
+        .library()
+        .tracks()
+        .plays_for(id)
+        .unwrap()
+        .is_empty());
+
+    rig.loader
+        .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
+    rig.loader
+        .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(5));
+    let plays = rig.services.library().tracks().plays_for(id).unwrap();
+    assert_eq!(plays.len(), 1, "one play per load");
+    assert_eq!(plays[0].deck, Some(0));
+    let track = rig
+        .services
+        .library()
+        .tracks()
+        .find_by_id(id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(track.play_count, 1);
+    assert!(track.last_played_ms.is_some());
+}
+
+#[test]
+fn paused_decks_record_no_play() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("paused.wav", "8A", true);
+    assert!(rig.load(1, id).is_ok());
+    for _ in 0..60 {
+        rig.loader
+            .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
+    }
+    assert!(rig
+        .services
+        .library()
+        .tracks()
+        .plays_for(id)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn rekordbox_imported_hotcues_appear_on_load() {
+    let mut rig = LoaderRig::new();
+    let wav = rig.dir.path().join("imported.wav");
+    write_wav(&wav, 2.0, 220.0);
+    let xml = rig.dir.path().join("collection.xml");
+    let collection = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="test" Version="0" Company="none"/>
+  <COLLECTION Entries="1">
+    <TRACK TrackID="1" Name="Imported" Artist="Artist" TotalTime="2" SampleRate="44100"
+           Location="file://localhost{}">
+      <POSITION_MARK Name="Intro" Type="0" Start="1.000" Num="0"/>
+      <POSITION_MARK Name="Drop" Type="0" Start="1.500" Num="3"/>
+    </TRACK>
+  </COLLECTION>
+  <PLAYLISTS/>
+</DJ_PLAYLISTS>"#,
+        wav.display()
+    );
+    std::fs::write(&xml, collection).unwrap();
+    rig.services.import_file(&xml).expect("import");
+    let id = rig
+        .services
+        .library()
+        .tracks()
+        .find_by_path(&wav.to_string_lossy())
+        .unwrap()
+        .expect("imported row")
+        .id;
+
+    assert!(rig.load(0, id).is_ok());
+    assert_eq!(
+        rig.engine.deck(0).hotcue(0),
+        Some(44_100),
+        "1.0 s at 44.1 kHz"
+    );
+    assert_eq!(
+        rig.engine.deck(0).hotcue(3),
+        Some(66_150),
+        "1.5 s at 44.1 kHz"
+    );
+    assert_eq!(rig.engine.deck(0).hotcue(1), None);
+}
+
+#[test]
+fn a_library_file_loaded_by_path_loads_as_its_track() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("known.wav", "8A", true);
+    let path = rig.dir.path().join("known.wav");
+    rig.loader
+        .load_path(&rig.engine, &mut rig.services, 0, &path, false)
+        .expect("a library file loads by path");
+    assert!(rig.engine.deck(0).is_loaded());
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(id));
+    assert_eq!(rig.loader.track_info(0).artist, "Artist");
+}
+
+#[test]
+fn a_file_outside_the_library_plays_without_metadata_and_clears_the_old_track() {
+    let mut rig = LoaderRig::new();
+    let first = rig.add_file("first.wav", "8A", true);
+    rig.load(0, first).expect("loads");
+    assert!(rig.loader.loaded_track(0).is_some());
+
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    rig.loader
+        .load_path(&rig.engine, &mut rig.services, 0, &loose, false)
+        .expect("a loose file loads");
+    assert!(rig.engine.deck(0).is_loaded());
+    assert!(rig.loader.loaded_track(0).is_none(), "no library metadata");
+    assert!(rig.loader.waveform(0).is_none());
+    assert!(rig.engine.deck_control(0).grid().is_none());
+}
+
+#[test]
+fn load_by_path_refuses_a_playing_deck_unless_forced() {
+    let mut rig = LoaderRig::new();
+    let first = rig.add_file("first.wav", "8A", true);
+    rig.load(0, first).expect("loads");
+    rig.engine.deck(0).play();
+
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    let refused = rig
+        .loader
+        .load_path(&rig.engine, &mut rig.services, 0, &loose, false)
+        .expect_err("a playing deck refuses");
+    assert_eq!(refused.to_string(), "deck is playing");
+    assert!(rig.engine.deck(0).is_playing());
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(first));
+
+    rig.loader
+        .load_path(&rig.engine, &mut rig.services, 0, &loose, true)
+        .expect("a forced load by path goes through");
+    assert!(rig.loader.loaded_track(0).is_none());
+}
+
+#[test]
+fn load_by_path_reports_missing_files_and_bad_decks() {
+    let mut rig = LoaderRig::new();
+    let missing = rig.dir.path().join("nope.wav");
+    let err = rig
+        .loader
+        .load_path(&rig.engine, &mut rig.services, 0, &missing, false)
+        .expect_err("missing file");
+    assert_eq!(err.to_string(), "file is missing");
+
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    let err = rig
+        .loader
+        .load_path(&rig.engine, &mut rig.services, 9, &loose, false)
+        .expect_err("no such deck");
+    assert_eq!(err.to_string(), "no such deck");
+    assert!(!rig.engine.deck(0).is_loaded());
 }

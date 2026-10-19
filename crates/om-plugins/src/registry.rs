@@ -104,8 +104,15 @@ impl PluginHost for LoadContext<'_> {
                 "parameter prefix {prefix:?} is taken or empty"
             )));
         }
+        if om_core::param_id::is_reserved_prefix(prefix) {
+            return Err(PluginError::Rejected(format!(
+                "parameter prefix {prefix:?} is reserved for the engine"
+            )));
+        }
         if let Some(router) = &self.regs.router {
-            router.register_target(prefix, Arc::clone(&target));
+            router
+                .register_target(prefix, Arc::clone(&target))
+                .map_err(|e| PluginError::Rejected(e.to_string()))?;
         }
         self.regs.targets.push(TargetEntry {
             prefix: prefix.to_owned(),
@@ -261,7 +268,9 @@ impl PluginRegistry {
         }
         if let Some(new) = &router {
             for target in &self.regs.targets {
-                new.register_target(&target.prefix, Arc::clone(&target.target));
+                // Prefixes were checked when the plugin registered them.
+                new.register_target(&target.prefix, Arc::clone(&target.target))
+                    .expect("plugin prefixes are validated at registration");
             }
         }
         self.regs.router = router;

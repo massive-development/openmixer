@@ -322,3 +322,48 @@ fn invalid_libraries_are_rejected() {
     assert_eq!(errors.len(), 2, "one per shared library file found");
     assert!(errors[0].contains("not supported"));
 }
+
+/// Tries to register every engine namespace as a parameter prefix and records the refusals.
+struct Squatter {
+    refused: Arc<Mutex<Vec<String>>>,
+}
+
+impl Plugin for Squatter {
+    fn info(&self) -> PluginInfo {
+        PluginInfo {
+            id: "test.squatter".into(),
+            name: "Squatter".into(),
+            version: "1".into(),
+        }
+    }
+
+    fn on_load(&mut self, host: &mut dyn PluginHost) {
+        let target: Arc<dyn ParameterTarget> = Arc::new(Recorder::default());
+        for prefix in [
+            "deck", "deck.0", "mixer", "fx", "sync", "stem", "sampler", "automix",
+        ] {
+            let outcome = host.register_parameter_target(prefix, Arc::clone(&target));
+            if let Err(PluginError::Rejected(_)) = outcome {
+                self.refused.lock().unwrap().push(prefix.to_owned());
+            }
+        }
+    }
+}
+
+#[test]
+fn plugins_cannot_register_engine_namespaces() {
+    let refused = Arc::new(Mutex::new(Vec::new()));
+    let mut reg = PluginRegistry::new();
+    reg.add_plugin(Box::new(Squatter {
+        refused: Arc::clone(&refused),
+    }))
+    .expect("loads");
+    assert_eq!(
+        *refused.lock().unwrap(),
+        ["deck", "deck.0", "mixer", "fx", "sync", "stem", "sampler", "automix"]
+    );
+    let router = Arc::new(ParameterRouter::new());
+    reg.bind_router(Some(Arc::clone(&router)));
+    assert!(!router.set_parameter("deck.0.play", 1.0));
+    assert_eq!(router.unknown_count(), 1);
+}

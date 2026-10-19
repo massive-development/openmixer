@@ -7,10 +7,11 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use om_library::{ImportReport, PrepStatus, TrackRecord};
+use om_library::{ImportReport, LibraryError, PrepStatus, TrackRecord};
 
 use super::control::import_summary;
 use super::services::{LibraryEvent, LibraryServices};
+use super::track_loader::LoadError;
 use super::track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
 use super::track_table::TrackTableModel;
 use crate::sidebar::{build_sidebar, SidebarKind, SidebarNode};
@@ -21,7 +22,7 @@ pub const SEARCH_PLACEHOLDER: &str =
 
 /// Called with the deck (0-based) and the track when the user asks to load it. An error is shown in
 /// the status line.
-pub type LoadHandler = Box<dyn FnMut(usize, &TrackRecord) -> Result<(), String>>;
+pub type LoadHandler = Box<dyn FnMut(usize, &TrackRecord) -> Result<(), LoadError>>;
 
 pub struct LibraryBrowser {
     pub model: TrackTableModel,
@@ -41,6 +42,8 @@ pub struct LibraryBrowser {
     sort_descending: bool,
     status: String,
     status_is_error: bool,
+    /// Why part of the sidebar could not be read; shown until the library reads cleanly again.
+    sidebar_error: Option<String>,
     shown_reference: String,
     /// The page error last shown in the status line; empty when none.
     shown_page_error: String,
@@ -52,7 +55,9 @@ impl LibraryBrowser {
     /// Builds the sidebar from the library and shows all tracks.
     pub fn new(services: &mut LibraryServices, num_decks: usize) -> Self {
         let events = services.subscribe();
-        let nodes = build_sidebar(services.library());
+        let sidebar = build_sidebar(services.library());
+        let sidebar_error = sidebar.error.as_ref().map(ToString::to_string);
+        let nodes = sidebar.nodes;
         let selected = nodes.first().cloned().unwrap_or_else(|| SidebarNode {
             kind: SidebarKind::AllTracks,
             label: "All tracks".to_owned(),
@@ -76,6 +81,7 @@ impl LibraryBrowser {
             sort_descending: false,
             status: String::new(),
             status_is_error: false,
+            sidebar_error,
             shown_reference: String::new(),
             shown_page_error: String::new(),
             selected_rows: BTreeSet::new(),
@@ -202,17 +208,17 @@ impl LibraryBrowser {
     }
 
     /// Activation (double-click or Enter) loads the row into the default deck.
-    pub fn activate_row(&mut self, row: usize) -> Option<Result<(), String>> {
+    pub fn activate_row(&mut self, row: usize) -> Option<Result<(), LoadError>> {
         let track = self.model.activate(row as isize)?;
         let deck = self.default_deck.as_ref().map_or(0, |f| f());
         Some(self.request_load(deck, &track))
     }
 
     /// Asks the handler to load `track` into `deck` and shows the outcome.
-    pub fn request_load(&mut self, deck: usize, track: &TrackRecord) -> Result<(), String> {
+    pub fn request_load(&mut self, deck: usize, track: &TrackRecord) -> Result<(), LoadError> {
         let result = match self.on_load_requested.as_mut() {
             Some(handler) => handler(deck, track),
-            None => return Err("loading is not available".to_owned()),
+            None => return Err(LoadError::Unavailable),
         };
         self.show_load_result(&result, track);
         result
@@ -242,7 +248,7 @@ impl LibraryBrowser {
         &mut self,
         services: &mut LibraryServices,
         xml: &Path,
-    ) -> Result<ImportReport, String> {
+    ) -> Result<ImportReport, LibraryError> {
         match services.import_file(xml) {
             Ok(report) => {
                 self.set_status(import_summary(&report), report.errors > 0);
@@ -298,7 +304,9 @@ impl LibraryBrowser {
     /// Rebuilds the sidebar from the library, keeps the selected node when it still exists, and
     /// reruns the query.
     pub fn refresh(&mut self, services: &LibraryServices) {
-        self.nodes = build_sidebar(services.library());
+        let sidebar = build_sidebar(services.library());
+        self.sidebar_error = sidebar.error.as_ref().map(ToString::to_string);
+        self.nodes = sidebar.nodes;
         self.rebuild_sidebar = false;
         let wanted = self.selected.clone();
         let still_there = find_node(&self.nodes, &|n| {
@@ -334,15 +342,17 @@ impl LibraryBrowser {
         let count = self.model.num_rows();
         self.selected_rows.retain(|&row| row < count);
         let error = self.model.source_error();
-        if error.is_empty() {
+        if !error.is_empty() {
+            self.set_status(error, true);
+        } else if let Some(sidebar_error) = self.sidebar_error.clone() {
+            self.set_status(format!("Sidebar unavailable: {sidebar_error}"), true);
+        } else {
             let text = if self.on_queue() {
                 format!("{count} in the prep queue")
             } else {
                 format!("{count} tracks")
             };
             self.set_status(text, false);
-        } else {
-            self.set_status(error, true);
         }
     }
 
@@ -351,7 +361,7 @@ impl LibraryBrowser {
         self.status_is_error = is_error;
     }
 
-    fn show_load_result(&mut self, result: &Result<(), String>, track: &TrackRecord) {
+    fn show_load_result(&mut self, result: &Result<(), LoadError>, track: &TrackRecord) {
         let name = Path::new(&track.path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())

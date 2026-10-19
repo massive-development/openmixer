@@ -2,12 +2,21 @@
 
 use gpui::{div, prelude::*, px, rgba, Div, Rgba};
 use om_ui::geometry::Rect;
+use om_ui::style::ControlStyle;
 use om_ui::theme::Colour;
 
 /// om-ui stores ARGB; GPUI's `rgba` takes RRGGBBAA.
 pub fn paint(colour: Colour) -> Rgba {
     let argb = colour.argb();
     rgba(((argb & 0x00FF_FFFF) << 8) | (argb >> 24))
+}
+
+/// Black at `alpha`: the scrim behind an overlay, so the window shows through.
+pub fn scrim(alpha: f32) -> Rgba {
+    Rgba {
+        a: alpha.clamp(0.0, 1.0),
+        ..rgba(0x0000_00ff)
+    }
 }
 
 /// An empty box placed at `rect` inside its positioned parent.
@@ -18,6 +27,36 @@ pub fn place(rect: Rect) -> Div {
         .top(px(rect.y as f32))
         .w(px(rect.w as f32))
         .h(px(rect.h as f32))
+}
+
+/// Gives `el` a border `width` px wide. gpui only has fixed widths (0 to 12 px), so a token's width
+/// is rounded to the nearest whole pixel and clamped to that range.
+pub fn border(el: Div, width: f32) -> Div {
+    match width.round().clamp(0.0, 12.0) as u32 {
+        0 => el.border_0(),
+        1 => el.border_1(),
+        2 => el.border_2(),
+        3 => el.border_3(),
+        4 => el.border_4(),
+        5 => el.border_5(),
+        6 => el.border_6(),
+        7 => el.border_7(),
+        8 => el.border_8(),
+        9 => el.border_9(),
+        10 => el.border_10(),
+        11 => el.border_11(),
+        _ => el.border_12(),
+    }
+}
+
+/// Draws `el` in a control style: fill, text colour, border, radius and font size.
+pub fn skin(el: Div, style: &ControlStyle) -> Div {
+    border(el, style.border_width)
+        .border_color(paint(style.border))
+        .bg(paint(style.fill))
+        .text_color(paint(style.text))
+        .text_size(px(style.font_size))
+        .rounded(px(style.radius))
 }
 
 #[cfg(test)]

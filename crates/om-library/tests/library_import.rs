@@ -373,7 +373,7 @@ fn later_registration_wins_and_names_are_listed() {
             _root: &om_library::XmlElement,
             out: &mut ImportedLibrary,
             _report: &mut ImportReport,
-        ) -> Result<(), String> {
+        ) -> Result<(), om_library::ImportError> {
             let mut track = ImportedTrack::default();
             track.record.path = "/fake".into();
             out.tracks.push(track);

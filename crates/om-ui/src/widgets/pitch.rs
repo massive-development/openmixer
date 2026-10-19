@@ -3,6 +3,7 @@
 use crate::binding::DeckBinding;
 use crate::control::Ranged;
 use crate::format;
+use om_core::param_id::DeckParam;
 
 /// Selectable ranges as fractions of the original tempo.
 pub const RANGES: [f64; 3] = [0.08, 0.16, 0.5];
@@ -52,27 +53,27 @@ impl PitchFader {
         self.range_index = index.min(RANGES.len() - 1);
         let r = self.range();
         self.fader.set_range(1.0 - r, 1.0 + r, STEP);
-        let engine_rate = self.binding.deck().rate();
+        let engine_rate = self.binding.state().rate;
         let fitted = engine_rate.clamp(1.0 - r, 1.0 + r);
         self.fader.set(fitted);
         if fitted == engine_rate {
             return None;
         }
-        self.binding.send("rate", fitted);
+        self.binding.send(DeckParam::Rate, fitted);
         Some(fitted)
     }
 
     /// The user moved the fader: stores the snapped value and sends it. Returns the value sent.
     pub fn user_set(&mut self, value: f64) -> f64 {
         let stored = self.fader.set(value);
-        self.binding.send("rate", stored);
+        self.binding.send(DeckParam::Rate, stored);
         stored
     }
 
     /// Follows rate changes made elsewhere (sync nudges, MIDI) without echoing them back. The
     /// fader is left alone while the user drags it.
     pub fn refresh(&mut self, dragging: bool) {
-        let rate = self.binding.deck().rate();
+        let rate = self.binding.state().rate;
         if !dragging && (self.fader.value() - rate).abs() > STEP {
             self.fader.set(rate);
         }

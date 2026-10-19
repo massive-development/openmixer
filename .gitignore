@@ -8,6 +8,7 @@ graphify-out/
 /target
 __pycache__/
 spikes/**/target/
+crates/om-ui-gpui/target/
 spikes/stretch/out/
 
 # Local C++ build output from the removed CMake tree (kept on disk, not tracked)

@@ -20,10 +20,13 @@ pub struct CompiledSearch {
     pub count_args: Vec<SearchValue>,
 }
 
-/// Per-compile inputs. `now_ms` anchors relative dates such as `added:7d`.
+/// Per-compile inputs. `now_ms` anchors relative dates such as `added:7d`. `fts5` selects the FTS5
+/// index for free text; `false` compiles free text to LIKE (the default, so plain compiles need no
+/// database).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CompileContext {
     pub now_ms: i64,
+    pub fts5: bool,
 }
 
 /// Compiles `query` against `fields`. Fails on an unknown field, an unreadable value or an
@@ -82,7 +85,7 @@ fn compile_term(
     out: &mut SqlFragment,
 ) -> Result<()> {
     if term.field.is_empty() {
-        return compile_free_text(term, out);
+        return compile_free_text(term, ctx.fts5, out);
     }
     let field = fields
         .find(&term.field)
@@ -139,20 +142,57 @@ fn compile_order(query: &SearchQuery, fields: &SearchFieldRegistry) -> Result<St
     Ok(sql)
 }
 
-fn compile_free_text(term: &FilterTerm, out: &mut SqlFragment) -> Result<()> {
+/// Free text matches a track when any text column contains the text as a substring (LIKE, so
+/// "ove" finds "Love"), or, with FTS5, when the `tracks_fts` index matches it as token prefixes
+/// (diacritics folded, so "emile" finds "Émile", which a substring match cannot: LIKE is ASCII
+/// case-insensitive only). The two are OR-ed. Negated free text negates the whole disjunction.
+///
+/// The LIKE branch is not indexable, so the planner scans `tracks` either way; the index branch is
+/// a set lookup inside that scan. Without FTS5, or when the text has no letters or digits (so no
+/// FTS query exists), only the LIKE branch is compiled.
+fn compile_free_text(term: &FilterTerm, fts5: bool, out: &mut SqlFragment) -> Result<()> {
     let mut f = SqlFragment::default();
-    for column in free_text_columns() {
-        if !f.sql.is_empty() {
-            f.sql.push_str(" OR ");
+    if fts5 {
+        if let Some(query) = fts_query(&term.value) {
+            f.sql
+                .push_str("tracks.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)");
+            f.args.push(SearchValue::Text(query));
         }
-        f.sql.push_str(&format!("{column} LIKE ? ESCAPE '\\'"));
-        f.args.push(SearchValue::Text(like_pattern(&term.value)));
     }
+    let mut like = SqlFragment::default();
+    for column in free_text_columns() {
+        if !like.sql.is_empty() {
+            like.sql.push_str(" OR ");
+        }
+        like.sql.push_str(&format!("{column} LIKE ? ESCAPE '\\'"));
+        like.args.push(SearchValue::Text(like_pattern(&term.value)));
+    }
+    if !f.sql.is_empty() {
+        f.sql.push_str(" OR ");
+    }
+    f.sql.push_str(&format!("({})", like.sql));
+    f.args.extend(like.args);
+
     out.sql.push_str(if term.negated { "NOT (" } else { "(" });
     out.sql.push_str(&f.sql);
     out.sql.push(')');
     out.args.extend(f.args);
     Ok(())
+}
+
+/// Converts free text into an FTS5 `MATCH` argument that cannot be read as query syntax. Only
+/// letters and digits survive, each run becomes a token in double quotes, so quotes, `*`, `NEAR`,
+/// `OR`, parentheses and column names are plain text. One run of text is one phrase, and its last
+/// token is a prefix (`"deep house"*`). `None` when there are no letters or digits.
+pub fn fts_query(text: &str) -> Option<String> {
+    let tokens: Vec<&str> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    Some(format!("\"{}\"*", tokens.join(" ")))
 }
 
 fn compile_text_term(field: &SearchField, term: &FilterTerm, out: &mut SqlFragment) -> Result<()> {
@@ -480,6 +520,51 @@ mod tests {
     #[test]
     fn like_pattern_escapes_wildcards_and_backslash() {
         assert_eq!(like_pattern("a%_\\b"), "%a\\%\\_\\\\b%");
+    }
+
+    #[test]
+    fn fts_query_quotes_every_token_and_prefixes_the_phrase() {
+        assert_eq!(fts_query("emile").as_deref(), Some("\"emile\"*"));
+        assert_eq!(fts_query("deep house").as_deref(), Some("\"deep house\"*"));
+        assert_eq!(fts_query("  Émile!! ").as_deref(), Some("\"Émile\"*"));
+        assert_eq!(
+            fts_query("NEAR(a b) OR \"x*^").as_deref(),
+            Some("\"NEAR a b OR x\"*")
+        );
+        assert_eq!(
+            fts_query("'; DROP TABLE tracks; --").as_deref(),
+            Some("\"DROP TABLE tracks\"*")
+        );
+        assert_eq!(fts_query(")(*\"-"), None);
+        assert_eq!(fts_query(""), None);
+    }
+
+    #[test]
+    fn free_text_is_index_or_like_and_negation_covers_both() {
+        let fields = SearchFieldRegistry::with_defaults();
+        let query = crate::search_parser::parse_query("-ove", &fields).query;
+
+        let with_index = CompileContext {
+            now_ms: 0,
+            fts5: true,
+        };
+        let c = compile_search(&query, &fields, &with_index).expect("compile");
+        assert!(c.select_sql.contains(
+            "NOT (tracks.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?) OR (tracks.title LIKE ?"
+        ));
+        assert_eq!(c.select_sql.matches('?').count(), c.select_args.len());
+        assert_eq!(c.count_args.len(), 1 + free_text_columns().len());
+
+        let like_only = CompileContext {
+            now_ms: 0,
+            fts5: false,
+        };
+        let c = compile_search(&query, &fields, &like_only).expect("compile");
+        assert!(!c.count_sql.contains("tracks_fts"));
+        assert!(c
+            .count_sql
+            .starts_with("SELECT COUNT(*) FROM tracks WHERE (NOT ("));
+        assert_eq!(c.count_args.len(), free_text_columns().len());
     }
 
     #[test]

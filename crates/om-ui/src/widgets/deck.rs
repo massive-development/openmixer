@@ -9,6 +9,7 @@ use crate::format;
 use crate::geometry::Rect;
 use crate::theme::ThemeTokens;
 use crate::waveform::{self, StripCache, StripPlan, View};
+use om_core::param_id::DeckParam;
 use om_engine::grid::BeatGrid;
 use std::sync::Arc;
 
@@ -86,17 +87,17 @@ impl TrackHeader {
             Some(grid) => grid.bpm(),
             None => self.info.bpm,
         };
-        base * self.binding.deck().rate()
+        base * self.binding.state().rate
     }
 
     /// Labels for the current state. Elapsed and remaining come from the file's sample rate.
     pub fn text(&self) -> HeaderText {
-        let deck = self.binding.deck();
-        let file_rate = deck.file_sample_rate();
+        let deck = self.binding.state();
+        let file_rate = deck.file_sample_rate;
         let (length, position) = if file_rate > 0.0 {
             (
-                deck.length_frames() as f64 / file_rate,
-                deck.position_frames() as f64 / file_rate,
+                deck.length_frames as f64 / file_rate,
+                deck.position_frames as f64 / file_rate,
             )
         } else {
             (0.0, 0.0)
@@ -130,14 +131,14 @@ impl OverviewWaveform {
     /// Seeks to the fraction under `x` (clamped) and returns it.
     pub fn seek_at(&self, x: f64, width: f64) -> f64 {
         let fraction = waveform::x_to_fraction(x, width);
-        self.binding.send("seek", fraction);
+        self.binding.send(DeckParam::Seek, fraction);
         fraction
     }
 
     /// Playhead position in pixels.
     pub fn playhead_x(&self, width: f64) -> f64 {
-        let deck = self.binding.deck();
-        waveform::frame_to_x(deck.position_frames(), deck.length_frames(), width)
+        let deck = self.binding.state();
+        waveform::frame_to_x(deck.position_frames, deck.length_frames, width)
     }
 }
 
@@ -227,28 +228,28 @@ impl ZoomWaveform {
     /// The view for a widget `width` px wide, centred on the playhead.
     pub fn view(&self, width: f64) -> View {
         View {
-            centre_frame: self.binding.deck().position_frames(),
+            centre_frame: self.binding.state().position_frames,
             frames_per_pixel: self.frames_per_pixel,
             width,
         }
     }
 
-    fn snapshot(&self) -> ZoomShown {
-        let deck = self.binding.deck();
-        let lp = deck.loop_state();
+    /// What the zoomed view shows now, from one deck state.
+    fn shown_now(&self) -> ZoomShown {
+        let deck = self.binding.state();
         ZoomShown {
-            position: deck.position_frames(),
-            loop_start: lp.start,
-            loop_end: lp.end,
-            looping: deck.is_looping(),
-            cues: std::array::from_fn(|i| deck.hotcue(i).unwrap_or(-1)),
+            position: deck.position_frames,
+            loop_start: deck.loop_start,
+            loop_end: deck.loop_end,
+            looping: deck.looping,
+            cues: std::array::from_fn(|i| deck.hotcues[i].unwrap_or(-1)),
         }
     }
 
     /// One frame tick: counts a repaint when the position, loop or cues changed since the last one.
     /// Returns whether it did.
     pub fn refresh(&mut self) -> bool {
-        let now = self.snapshot();
+        let now = self.shown_now();
         if self.shown.as_ref() == Some(&now) {
             return false;
         }
@@ -272,7 +273,7 @@ impl ZoomWaveform {
 
     /// Converts a deck-file frame to a waveform sample, as the strip is indexed by samples.
     pub fn frame_to_sample(&self, frame: f64) -> f64 {
-        let file_rate = self.binding.deck().file_sample_rate();
+        let file_rate = self.binding.state().file_sample_rate;
         match self.waveform {
             Some(w) if file_rate > 0.0 => frame * w.sample_rate / file_rate,
             _ => frame,
@@ -290,20 +291,20 @@ impl ZoomWaveform {
 
     /// Loop span in pixels, when a loop is set.
     pub fn loop_span(&self, view: &View) -> Option<(f64, f64, bool)> {
-        let lp = self.binding.deck().loop_state();
-        lp.valid().then(|| {
+        let deck = self.binding.state();
+        deck.loop_valid().then(|| {
             (
-                view.x_of_frame(lp.start),
-                view.x_of_frame(lp.end),
-                self.binding.deck().is_looping(),
+                view.x_of_frame(deck.loop_start),
+                view.x_of_frame(deck.loop_end),
+                deck.looping,
             )
         })
     }
 
     /// Cue marker x positions, `None` for unset cues.
     pub fn cue_xs(&self, view: &View) -> [Option<f64>; HotcuePads::COUNT] {
-        let deck = self.binding.deck();
-        std::array::from_fn(|i| deck.hotcue(i).map(|f| view.x_of_frame(f)))
+        let cues = self.binding.state().hotcues;
+        std::array::from_fn(|i| cues[i].map(|f| view.x_of_frame(f)))
     }
 }
 

@@ -2,6 +2,7 @@
 //! Covers the part of XML the importers use. Comments, processing
 //! instructions and the DOCTYPE are dropped; entity and character references are decoded.
 
+use crate::error::ImportError;
 use quick_xml::events::{BytesRef, BytesStart, Event};
 use quick_xml::Reader;
 use std::path::Path;
@@ -84,25 +85,27 @@ impl XmlElement {
 }
 
 /// Parses a whole document and returns its root element.
-pub fn parse_xml(text: &str) -> Result<XmlElement, String> {
+pub fn parse_xml(text: &str) -> Result<XmlElement, ImportError> {
     let mut reader = Reader::from_str(text);
     let mut stack: Vec<XmlElement> = Vec::new();
     let mut root: Option<XmlElement> = None;
     loop {
-        let event = reader.read_event().map_err(|e| e.to_string())?;
+        let event = reader.read_event()?;
         match event {
             Event::Start(e) => stack.push(element_from(&e)?),
             Event::Empty(e) => attach(&mut stack, &mut root, element_from(&e)?),
             Event::End(_) => {
-                let done = stack.pop().ok_or_else(|| "unexpected end tag".to_owned())?;
+                let done = stack.pop().ok_or(ImportError::Format {
+                    what: "unexpected end tag",
+                })?;
                 attach(&mut stack, &mut root, done);
             }
             Event::Text(t) => {
-                let decoded = t.decode().map_err(|e| e.to_string())?;
+                let decoded = t.decode().map_err(quick_xml::Error::from)?;
                 push_text(&mut stack, &decoded);
             }
             Event::CData(c) => {
-                let decoded = c.decode().map_err(|e| e.to_string())?;
+                let decoded = c.decode().map_err(quick_xml::Error::from)?;
                 push_text(&mut stack, &decoded);
             }
             Event::GeneralRef(r) => {
@@ -114,26 +117,31 @@ pub fn parse_xml(text: &str) -> Result<XmlElement, String> {
         }
     }
     if !stack.is_empty() {
-        return Err("unexpected end of document: unclosed element".to_owned());
+        return Err(ImportError::Format {
+            what: "unexpected end of document: unclosed element",
+        });
     }
-    root.ok_or_else(|| "no root element".to_owned())
+    root.ok_or(ImportError::Format {
+        what: "no root element",
+    })
 }
 
 /// Reads and parses a file. Fails when the file cannot be read or does not parse.
-pub fn read_xml_file(path: &Path) -> Result<XmlElement, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+pub fn read_xml_file(path: &Path) -> Result<XmlElement, ImportError> {
+    let text = std::fs::read_to_string(path).map_err(|source| ImportError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
     parse_xml(&text)
 }
 
-fn element_from(start: &BytesStart<'_>) -> Result<XmlElement, String> {
+fn element_from(start: &BytesStart<'_>) -> Result<XmlElement, ImportError> {
     let name = String::from_utf8_lossy(start.name().as_ref()).into_owned();
     let mut attributes = Vec::new();
     for attribute in start.attributes() {
-        let attribute = attribute.map_err(|e| e.to_string())?;
+        let attribute = attribute.map_err(quick_xml::Error::from)?;
         let key = String::from_utf8_lossy(attribute.key.as_ref()).into_owned();
-        let value = attribute
-            .normalized_value(quick_xml::XmlVersion::Explicit1_0)
-            .map_err(|e| e.to_string())?;
+        let value = attribute.normalized_value(quick_xml::XmlVersion::Explicit1_0)?;
         attributes.push((key, value.into_owned()));
     }
     Ok(XmlElement {
@@ -160,14 +168,16 @@ fn push_text(stack: &mut [XmlElement], text: &str) {
     }
 }
 
-fn resolve_reference(reference: &BytesRef<'_>) -> Result<String, String> {
+fn resolve_reference(reference: &BytesRef<'_>) -> Result<String, ImportError> {
     if reference.is_char_ref() {
         return match reference.resolve_char_ref() {
             Ok(Some(c)) => Ok(c.to_string()),
-            _ => Err("invalid character reference".to_owned()),
+            _ => Err(ImportError::Format {
+                what: "invalid character reference",
+            }),
         };
     }
-    let name = reference.decode().map_err(|e| e.to_string())?;
+    let name = reference.decode().map_err(quick_xml::Error::from)?;
     Ok(match name.as_ref() {
         "amp" => "&".to_owned(),
         "lt" => "<".to_owned(),

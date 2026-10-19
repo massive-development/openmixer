@@ -9,6 +9,7 @@ mod gui;
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
 use om_midi::MockBackend;
 use openmixer::composition::{self, AppComposition};
+use openmixer::AppError;
 use std::process::ExitCode;
 
 /// Headless smoke: sample rate, block size and number of blocks rendered into memory.
@@ -54,17 +55,17 @@ fn main() -> ExitCode {
 
 /// Builds the composition, starts the engine on the paced-free mock device, applies the saved
 /// preferences and renders a fixed number of blocks into memory. Nothing reaches a sound card.
-fn headless_smoke() -> Result<(), String> {
+fn headless_smoke() -> Result<(), AppError> {
     let mut composition = AppComposition::with_defaults();
     let audio = composition
         .take_audio()
-        .ok_or("the audio side was already taken")?;
+        .ok_or(AppError::Smoke("the audio side was already taken"))?;
     // MIDI over a mock device: the check exercises the wiring and never opens hardware.
     let midi = MockBackend::new();
     midi.add_device("Smoke Controller");
     composition.attach_midi(Box::new(midi));
     let mut device = MockAudioDevice::new(SMOKE_RATE, SMOKE_BLOCK, 0, 4);
-    device.start(Box::new(audio)).map_err(|e| e.to_string())?;
+    device.start(Box::new(audio))?;
 
     // The mock has no output router, so the pair selection goes to a detached one.
     let (_router, pairs) = OutputRouter::new();
@@ -73,24 +74,27 @@ fn headless_smoke() -> Result<(), String> {
     let rendered = device.render_blocks(SMOKE_BLOCKS);
     device.stop();
     if rendered != SMOKE_BLOCKS {
-        return Err(format!("rendered {rendered} of {SMOKE_BLOCKS} blocks"));
+        return Err(AppError::SmokeRendered {
+            rendered,
+            expected: SMOKE_BLOCKS,
+        });
     }
     if composition.engine.num_decks() != composition::DECKS {
-        return Err("the engine has the wrong number of decks".to_owned());
+        return Err(AppError::Smoke("the engine has the wrong number of decks"));
     }
     if composition.router.unknown_count() != 0 {
-        return Err("parameter registrations failed".to_owned());
+        return Err(AppError::Smoke("parameter registrations failed"));
     }
-    if composition.midi.is_none() {
-        return Err("MIDI did not attach".to_owned());
+    if composition.services.midi.is_none() {
+        return Err(AppError::Smoke("MIDI did not attach"));
     }
     let stats = device.latency_stats();
     if stats.xrun_count != 0 {
-        return Err(format!("{} xruns", stats.xrun_count));
+        return Err(AppError::SmokeXruns(stats.xrun_count));
     }
     let finite = device.last_output().iter().flatten().all(|s| s.is_finite());
     if !finite {
-        return Err("non-finite output sample".to_owned());
+        return Err(AppError::Smoke("non-finite output sample"));
     }
     Ok(())
 }

@@ -30,18 +30,20 @@ pub fn peak(p: &WaveformPoint) -> f32 {
 /// Card for deck `index`, drawn at `card` (window coordinates).
 pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
+    let drop_target = t.drop_target;
     let deck = &shell.decks[index];
     let l = deck_layout(Rect::sized(card.w, card.h), t);
     let text = deck.header.text();
 
     let mut root = place(card)
+        .overflow_hidden()
         .bg(paint(t.surface))
         .border_1()
         .border_color(paint(t.accent_for(index as i32)))
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary))
         // A library track dropped on the card loads into this deck.
-        .drag_over::<TrackDragPayload>(|style, _, _, _| style.bg(gpui::rgba(0x2a_6f_9e_40)))
+        .drag_over::<TrackDragPayload>(move |style, _, _, _| style.bg(paint(drop_target)))
         .on_drop(cx.listener(move |this, payload: &TrackDragPayload, _, cx| {
             if let Some(panel) = this.library.as_mut() {
                 let _ = panel.drop_on_deck(index, &payload.description);
@@ -49,27 +51,46 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
             cx.notify();
         }));
 
-    // Header: title, artist, key and BPM, elapsed and remaining time.
+    // Header: title and elapsed/remaining time on the first line, artist and key/BPM on the second.
+    // Clipped to the header so it never runs into the overview strip.
     root = root.child(
         place(l.header)
+            .overflow_hidden()
             .flex()
             .flex_col()
-            .child(div().text_size(px(t.type_title)).child(text.title.clone()))
             .child(
                 div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .overflow_hidden()
+                            .text_size(px(t.type_title))
+                            .child(text.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .pl(px(8.))
+                            .text_size(px(t.type_mono))
+                            .child(format!("{}  {}", text.elapsed, text.remaining)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
                     .text_size(px(t.type_small))
                     .text_color(paint(t.text_secondary))
-                    .child(text.artist.clone()),
-            )
-            .child(
-                div()
-                    .text_size(px(t.type_body))
-                    .child(format!("{}   {} BPM", text.key, text.bpm)),
-            )
-            .child(
-                div()
-                    .text_size(px(t.type_mono))
-                    .child(format!("{}   {}", text.elapsed, text.remaining)),
+                    .child(div().overflow_hidden().child(text.artist.clone()))
+                    .child(
+                        div()
+                            .flex_none()
+                            .pl(px(8.))
+                            .child(format!("{}   {} BPM", text.key, text.bpm)),
+                    ),
             ),
     );
 
@@ -198,19 +219,21 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
         )
 }
 
-fn zoom(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
+fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let area = l.zoom;
     let width = f64::from(area.w);
     let view: View = deck.zoom.view(width);
     let cues = deck.zoom.cue_xs(&view);
+    let grid = deck.zoom.grid_lines(&view);
+    let grid_colour = paint(t.text_secondary);
+    let (bar_alpha, beat_alpha) = (t.grid_bar_alpha, t.grid_beat_alpha);
     let loop_span = deck.zoom.loop_span(&view);
     let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
     let fpp = deck.zoom.frames_per_pixel();
     let length = shell.engine.deck(index).length_frames();
     let playhead = view.x_of_frame(shell.engine.deck(index).position_frames());
-    let _ = card;
     let accent = paint(t.accent_for(index as i32));
     let wave_colour = paint(t.wave_high);
     let cue_colour = paint(t.master);
@@ -258,6 +281,20 @@ fn zoom(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Contex
                     x += 2.0;
                 }
             }
+            for line in &grid {
+                let (alpha, width) = if line.bar {
+                    (bar_alpha, 2.0)
+                } else {
+                    (beat_alpha, 1.0)
+                };
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(bounds.origin.x + px(line.x as f32), bounds.origin.y),
+                        size(px(width), px(h)),
+                    ),
+                    accent_with_alpha(grid_colour, alpha),
+                ));
+            }
             for x in cues.iter().flatten() {
                 window.paint_quad(fill(
                     Bounds::new(
@@ -302,8 +339,7 @@ fn hotcues(
     let deck = &shell.decks[index];
     let pads = HotcuePads::layout(l.hotcues, t.inner_gap);
     let lit = deck.hotcues.lit();
-    let _ = card;
-    let mut row = place(l.hotcues);
+    let mut row = place(Rect::sized(card.w, card.h));
     for (i, rect) in pads.iter().enumerate() {
         let pad = place(*rect)
             .flex()
@@ -341,15 +377,15 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let lay = LoopControls::layout(l.loops, t.inner_gap);
-    let size_lit = deck.loops.size_lit();
-    let _ = card;
-    let mut area = place(l.loops);
+    // One frame: the lit buttons and the reloop state come from the same deck snapshot.
+    let frame = deck.loops.frame();
+    let mut area = place(Rect::sized(card.w, card.h));
     for (i, rect) in lay.sizes.iter().enumerate() {
         area = area.child(push_button(
             t,
             *rect,
             SIZE_NAMES[i],
-            size_lit[i],
+            frame.size_lit[i],
             t.accent_for(index as i32),
             cx,
             move |this| {
@@ -357,7 +393,6 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
             },
         ));
     }
-    let reloop_lit = deck.loops.reloop_lit();
     area = area
         .child(push_button(
             t,
@@ -396,7 +431,7 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
             t,
             lay.reloop,
             "Reloop",
-            reloop_lit,
+            frame.reloop_lit,
             t.accent_for(index as i32),
             cx,
             move |this| {
@@ -417,8 +452,7 @@ fn transport(
     let deck = &shell.decks[index];
     let rects = TransportPanel::layout(l.transport, t.inner_gap);
     let lit = deck.transport.toggle_states();
-    let _ = card;
-    let mut row = place(l.transport);
+    let mut row = place(Rect::sized(card.w, card.h));
     for (i, button) in TransportButton::ALL.into_iter().enumerate() {
         let label = match button {
             TransportButton::Play => deck.transport.play_label(),

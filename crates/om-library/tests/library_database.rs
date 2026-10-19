@@ -11,11 +11,13 @@ const TABLE_A: Migration = Migration {
     version: 1,
     name: "a",
     sql: "CREATE TABLE a (x INTEGER);",
+    needs_fts5: false,
 };
 const TABLE_B: Migration = Migration {
     version: 2,
     name: "b",
     sql: "CREATE TABLE b (x INTEGER);",
+    needs_fts5: false,
 };
 
 fn memory_db() -> Database {
@@ -83,6 +85,7 @@ mod library_migrations {
             version: 2,
             name: "bad",
             sql: "CREATE TABLE b (x INTEGER); CREATE TABLE a (y INTEGER);",
+            needs_fts5: false,
         };
         assert!(migrate(&db, &[TABLE_A, bad]).is_err());
         assert_eq!(current_schema_version(&db).unwrap(), 1);
@@ -240,4 +243,64 @@ fn an_outermost_transaction_waits_for_the_write_lock_instead_of_failing_on_a_sta
         .expect("the reader waits for the lock and then writes");
     assert_eq!(seen, 1, "the reader sees the writer's committed row");
     assert_eq!(row_count(&writer, "SELECT count(*) FROM t;"), 2);
+}
+
+#[test]
+fn bundled_sqlite_has_fts5_with_unicode61_and_prefix_indexes() {
+    let db = memory_db();
+    db.exec(
+        "CREATE VIRTUAL TABLE probe USING fts5(x, tokenize = 'unicode61 remove_diacritics 2', \
+         prefix = '2 3');",
+    )
+    .expect("FTS5 is compiled into the bundled SQLite");
+    db.exec("INSERT INTO probe (x) VALUES ('Émile');")
+        .expect("insert");
+    assert_eq!(
+        row_count(
+            &db,
+            "SELECT COUNT(*) FROM probe WHERE probe MATCH '\"emile\"*';"
+        ),
+        1,
+        "diacritics are folded and the prefix matches"
+    );
+}
+
+#[test]
+fn v7_indexes_existing_rows_of_a_populated_v6_database() {
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let path = path_str(&dir, "v6.db");
+    {
+        let db = Database::open(&path, OpenMode::ReadWrite).expect("open");
+        migrate(&db, &core_migrations()[..6]).expect("v6");
+        assert_eq!(current_schema_version(&db).unwrap(), 6);
+        db.exec(
+            "INSERT INTO tracks (path, title, artist, album, genre, comment) VALUES \
+             ('/a.wav', 'Émile Hymne', 'Daft', '', 'House', 'late night'), \
+             ('/b.wav', 'Love Song', 'Moby', '', 'Techno', '');",
+        )
+        .expect("populate v6");
+    }
+
+    let lib = Library::open(&path, OpenMode::ReadWrite, core_migrations()).expect("upgrade");
+    let db = lib.database();
+    assert_eq!(current_schema_version(db).unwrap(), 7);
+    let matches = |q: &str| {
+        row_count(
+            db,
+            &format!("SELECT COUNT(*) FROM tracks_fts WHERE tracks_fts MATCH '{q}';"),
+        )
+    };
+    // The rebuild indexed the rows that existed before the migration, diacritics folded.
+    assert_eq!(matches("\"emile\"*"), 1);
+    assert_eq!(matches("\"late\"*"), 1);
+    assert_eq!(matches("\"moby\"*"), 1);
+    // Triggers keep rows written after the upgrade in step.
+    lib.tracks()
+        .insert(&TrackRecord {
+            path: "/c.wav".into(),
+            title: "Charlie".into(),
+            ..Default::default()
+        })
+        .expect("insert");
+    assert_eq!(matches("\"charlie\"*"), 1);
 }

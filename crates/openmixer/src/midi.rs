@@ -5,14 +5,13 @@
 //! Lock order, to keep the control threads deadlock-free: backend, then feedback, then the output
 //! ports. Input callbacks run on the device threads and take only the mapper's locks.
 
-use crate::app_targets::MidiSink;
 use om_core::sync::LockExt;
 use om_core::{ParameterTarget, StateReader};
 use om_midi::{
-    system_clock, EchoGuard, LearnRequest, MidiBackend, MidiFeedback, MidiInputRouter, MidiMapper,
-    MidiOutputRouter, MidiOutputSink,
+    system_clock, EchoGuard, LearnRequest, MidiBackend, MidiError, MidiFeedback, MidiInputRouter,
+    MidiMapper, MidiOutputRouter, MidiOutputSink,
 };
-use om_ui::settings::{MidiControl, MidiInputs};
+use om_ui::settings::{MidiHost, MidiInputs, SettingsError};
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -83,13 +82,13 @@ impl MidiService {
     }
 
     /// Replaces the live map with the file's. A bad file changes nothing.
-    pub fn load_map_file(&self, file: &Path) -> Result<(), String> {
-        self.mapper.load_from_file(file).map_err(|e| e.to_string())
+    pub fn load_map_file(&self, file: &Path) -> Result<(), MidiError> {
+        self.mapper.load_from_file(file)
     }
 
     /// Writes the live map to `file`.
-    pub fn save_map_file(&self, file: &Path) -> Result<(), String> {
-        self.mapper.save_to_file(file).map_err(|e| e.to_string())
+    pub fn save_map_file(&self, file: &Path) -> Result<(), MidiError> {
+        self.mapper.save_to_file(file)
     }
 
     /// Selects the inputs (every one when `all`), opens them, and opens the outputs paired with
@@ -192,21 +191,16 @@ impl Drop for FeedbackThread {
     }
 }
 
-/// The preferences drive the service through the same trait as the other subsystems.
-impl MidiSink for Arc<MidiService> {
-    fn load_map(&mut self, file: &Path) -> Result<(), String> {
+/// The preferences, the settings page's learn and map controls, and the input selection all drive
+/// the service through this one trait.
+impl MidiHost for MidiService {
+    fn load_map(&self, file: &Path) -> Result<(), SettingsError> {
         self.load_map_file(file)
+            .map_err(|e| SettingsError::Midi(Box::new(e)))
     }
 
-    fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]) {
+    fn enable_inputs(&self, enable_all: bool, inputs: &[String]) {
         self.select_inputs(enable_all, inputs);
-    }
-}
-
-/// The MIDI settings page's learn and map controls.
-impl MidiControl for MidiService {
-    fn load_map(&self, file: &Path) -> Result<(), String> {
-        self.load_map_file(file)
     }
 
     fn arm_learn(&self, target: &str) {
@@ -221,8 +215,9 @@ impl MidiControl for MidiService {
         self.mapper.is_learning()
     }
 
-    fn save_map(&self, file: &Path) -> Result<(), String> {
+    fn save_map(&self, file: &Path) -> Result<(), SettingsError> {
         self.save_map_file(file)
+            .map_err(|e| SettingsError::Midi(Box::new(e)))
     }
 
     fn map_generation(&self) -> u64 {

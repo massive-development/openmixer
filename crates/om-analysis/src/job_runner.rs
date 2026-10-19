@@ -1,50 +1,77 @@
 //! Runs one job to completion on the calling thread: hash, cache lookup, decode on a miss, analyse,
 //! store. Progress: 0-5% hash, 5-20% decode, 20-100% split across the analysers that must run.
+//! The pool owns the job's final status: a failure is reported through `JobCtx::fail`, and the
+//! pool marks the job done (progress 1.0) or cancelled when the runner returns.
 
-use crate::{
-    AnalysisContext, AnalysisJob, Analyzer, AnalyzerRegistry, AudioClip, ClipSource, JobStatus,
-    ResultCache,
-};
+use crate::job::JobOutput;
+use crate::{AnalysisContext, Analyzer, AnalyzerRegistry, AudioClip, ClipSource, ResultCache};
+use om_core::jobs::JobCtx;
 use std::sync::Arc;
 
 const HASH_END: f32 = 0.05;
 const LOAD_END: f32 = 0.2;
 
+/// Where a run reports (the pool's context) and what it writes (the job's output).
+struct Run<'a> {
+    ctx: &'a JobCtx,
+    out: &'a JobOutput,
+}
+
+impl Run<'_> {
+    fn is_cancelled(&self) -> bool {
+        self.ctx.is_cancelled()
+    }
+
+    fn set_progress(&self, fraction: f32) {
+        self.ctx.set_progress(fraction);
+    }
+
+    fn fail(&self, message: String) {
+        self.ctx.fail(message);
+    }
+
+    fn set_content_hash(&self, hash: String) {
+        self.out.set_content_hash(hash);
+    }
+
+    fn add_result(&self, analyzer_id: &str, payload: String, from_cache: bool) {
+        self.out.add_result(analyzer_id, payload, from_cache);
+    }
+}
+
 /// Maps a step's 0..1 progress into its slice of the job's progress.
 struct StepContext<'a> {
-    job: &'a AnalysisJob,
+    ctx: &'a JobCtx,
     base: f32,
     span: f32,
 }
 
 impl AnalysisContext for StepContext<'_> {
     fn is_cancelled(&self) -> bool {
-        self.job.is_cancelled()
+        self.ctx.is_cancelled()
     }
 
     fn set_progress(&self, fraction: f32) {
-        self.job
+        self.ctx
             .set_progress(self.base + self.span * fraction.clamp(0.0, 1.0));
     }
 }
 
-/// Runs `analyzer_ids` against `source` and leaves the job in its final status. Results already
-/// in `cache` are reused; new results are stored there. Listeners are the caller's business.
+/// Runs `analyzer_ids` against `source`, writing into `out`. Results already in `cache` are reused;
+/// new results are stored there. Listeners are the caller's business.
 pub fn run_analysis_job(
-    job: &AnalysisJob,
+    ctx: &JobCtx,
+    out: &JobOutput,
     source: &mut dyn ClipSource,
     analyzer_ids: &[String],
     registry: &AnalyzerRegistry,
     cache: Option<&dyn ResultCache>,
 ) {
-    if !job.is_cancelled() {
-        job.set_status(JobStatus::Running);
-        match resolve(analyzer_ids, registry) {
-            Ok(analyzers) => process(job, source, &analyzers, cache),
-            Err(missing) => job.fail(format!("unknown analyzer: {missing}")),
-        }
+    let run = Run { ctx, out };
+    match resolve(analyzer_ids, registry) {
+        Ok(analyzers) => process(&run, source, &analyzers, cache),
+        Err(missing) => run.fail(format!("unknown analyzer: {missing}")),
     }
-    finish(job);
 }
 
 fn resolve(ids: &[String], registry: &AnalyzerRegistry) -> Result<Vec<Arc<dyn Analyzer>>, String> {
@@ -54,27 +81,27 @@ fn resolve(ids: &[String], registry: &AnalyzerRegistry) -> Result<Vec<Arc<dyn An
 }
 
 fn process(
-    job: &AnalysisJob,
+    run: &Run,
     source: &mut dyn ClipSource,
     analyzers: &[Arc<dyn Analyzer>],
     cache: Option<&dyn ResultCache>,
 ) {
     let Some(hash) = source.content_hash() else {
-        job.fail(format!("cannot read {}", source.describe()));
+        run.fail(format!("cannot read {}", source.describe()));
         return;
     };
-    job.set_content_hash(hash.clone());
-    job.set_progress(HASH_END);
+    run.set_content_hash(hash.clone());
+    run.set_progress(HASH_END);
 
-    let missing = take_cached(job, analyzers, cache, &hash);
+    let missing = take_cached(run, analyzers, cache, &hash);
     if !missing.is_empty() {
-        analyse_missing(job, source, &missing, cache, &hash);
+        analyse_missing(run, source, &missing, cache, &hash);
     }
 }
 
 /// Serves what the cache has and returns the analysers that still have to run.
 fn take_cached(
-    job: &AnalysisJob,
+    run: &Run,
     analyzers: &[Arc<dyn Analyzer>],
     cache: Option<&dyn ResultCache>,
     hash: &str,
@@ -86,7 +113,7 @@ fn take_cached(
         .iter()
         .filter(|a| match cache.find(hash, a.id(), a.version()) {
             Some(hit) => {
-                job.add_result(a.id(), hit, true);
+                run.add_result(a.id(), hit, true);
                 false
             }
             None => true,
@@ -96,31 +123,31 @@ fn take_cached(
 }
 
 fn analyse_missing(
-    job: &AnalysisJob,
+    run: &Run,
     source: &mut dyn ClipSource,
     missing: &[Arc<dyn Analyzer>],
     cache: Option<&dyn ResultCache>,
     hash: &str,
 ) {
     let load_step = StepContext {
-        job,
+        ctx: run.ctx,
         base: HASH_END,
         span: LOAD_END - HASH_END,
     };
     let clip = source.load(&load_step);
-    if job.is_cancelled() {
+    if run.is_cancelled() {
         return;
     }
     let Some(clip) = clip else {
-        job.fail(format!("cannot decode {}", source.describe()));
+        run.fail(format!("cannot decode {}", source.describe()));
         return;
     };
-    run_analyzers(job, &clip, missing, cache, hash);
+    run_analyzers(run, &clip, missing, cache, hash);
 }
 
 /// Stops early when cancelled or when an analyser fails (the job is then marked accordingly).
 fn run_analyzers(
-    job: &AnalysisJob,
+    run: &Run,
     clip: &AudioClip,
     analyzers: &[Arc<dyn Analyzer>],
     cache: Option<&dyn ResultCache>,
@@ -129,33 +156,21 @@ fn run_analyzers(
     let span = (1.0 - LOAD_END) / analyzers.len() as f32;
     for (index, analyzer) in analyzers.iter().enumerate() {
         let step = StepContext {
-            job,
+            ctx: run.ctx,
             base: LOAD_END + span * index as f32,
             span,
         };
         let payload = analyzer.analyze(clip, &step);
-        if job.is_cancelled() {
+        if run.is_cancelled() {
             return;
         }
         let Some(payload) = payload else {
-            job.fail(format!("analyzer failed: {}", analyzer.id()));
+            run.fail(format!("analyzer failed: {}", analyzer.id()));
             return;
         };
         if let Some(cache) = cache {
             cache.store(hash, analyzer.id(), analyzer.version(), &payload);
         }
-        job.add_result(analyzer.id(), payload, false);
+        run.add_result(analyzer.id(), payload, false);
     }
-}
-
-fn finish(job: &AnalysisJob) {
-    if job.status() == JobStatus::Failed {
-        return;
-    }
-    if job.is_cancelled() {
-        job.set_status(JobStatus::Cancelled);
-        return;
-    }
-    job.set_progress(1.0);
-    job.set_status(JobStatus::Done);
 }

@@ -5,7 +5,7 @@
 use crate::mapper::MidiMapper;
 use crate::output_router::MidiOutputSink;
 use crate::output_rule::OutputRule;
-use om_core::StateReader;
+use om_core::{StateKey, StateReader};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -19,6 +19,10 @@ pub struct MidiFeedback {
     sink: Option<Arc<dyn MidiOutputSink>>,
     seen_generation: Option<u64>,
     rules: Vec<OutputRule>,
+    /// Per rule: its source id, parsed once when the rules load.
+    keys: Vec<StateKey>,
+    /// Scratch for one pass: per rule, the state read this pass.
+    values: Vec<Option<f64>>,
     /// Per rule: the value last sent, or `None` after a reset.
     last_sent: Vec<Option<i32>>,
 }
@@ -39,6 +43,8 @@ impl MidiFeedback {
             sink: None,
             seen_generation: None,
             rules: Vec::new(),
+            keys: Vec::new(),
+            values: Vec::new(),
             last_sent: Vec::new(),
         }
     }
@@ -63,10 +69,12 @@ impl MidiFeedback {
             self.reload_rules();
         }
         let now = (self.clock)();
+        // One read for the whole pass, so every rule sees the same state.
+        self.state.read_states(&self.keys, &mut self.values);
         let mut sent = 0;
         for (i, rule) in self.rules.iter().enumerate() {
             // An unknown id (a plugin that is not loaded) leaves its LED alone.
-            let Some(state) = self.state.read_state(&rule.source) else {
+            let Some(state) = self.values[i] else {
                 continue;
             };
             let value = rule.evaluate(state, now);
@@ -84,6 +92,12 @@ impl MidiFeedback {
     fn reload_rules(&mut self) {
         self.seen_generation = Some(self.mapper.generation());
         self.rules = self.mapper.outputs();
+        self.keys = self
+            .rules
+            .iter()
+            .map(|r| StateKey::new(&r.source))
+            .collect();
+        self.values = vec![None; self.rules.len()];
         self.resend();
     }
 }

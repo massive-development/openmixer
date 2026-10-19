@@ -6,6 +6,7 @@ use crate::binding::MixerBinding;
 use crate::control::Ranged;
 use crate::geometry::{place_captioned, Rect};
 use crate::theme::ThemeTokens;
+use om_core::param_id::MixerParam;
 use om_engine::mixer::MAX_GAIN;
 
 /// Rectangles of the cue section.
@@ -47,13 +48,13 @@ impl CueSection {
 
     pub fn mix_changed(&mut self, value: f64) -> f64 {
         let v = self.mix.set(value);
-        self.binding.send("cue.mix", v);
+        self.binding.send(MixerParam::CueMix, v);
         v
     }
 
     pub fn level_changed(&mut self, value: f64) -> f64 {
         let v = self.level.set(value);
-        self.binding.send("cue.level", v);
+        self.binding.send(MixerParam::CueLevel, v);
         v
     }
 

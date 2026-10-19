@@ -7,6 +7,7 @@ use crate::control::Ranged;
 use crate::geometry::Rect;
 use crate::meter::{MeterParams, StereoMeter};
 use crate::theme::ThemeTokens;
+use om_core::param_id::MixerParam;
 use om_engine::mixer::MAX_GAIN;
 
 /// Rectangles of the master section.
@@ -53,7 +54,7 @@ impl MasterSection {
     /// The user moved the fader: stores and sends the gain.
     pub fn fader_changed(&mut self, value: f64) -> f64 {
         let v = self.fader.set(value);
-        self.binding.send("master", v);
+        self.binding.send(MixerParam::Master, v);
         v
     }
 

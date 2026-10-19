@@ -3,7 +3,7 @@
 //! control side once per frame.
 
 use crate::controls::release_on;
-use crate::debug_panel::{device_rows, parameter_rows, DeviceStatus};
+use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControls, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::library::{LibraryPanel, SharedHub};
@@ -12,11 +12,11 @@ use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, Window,
-    WindowBounds, WindowOptions,
+    div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, KeyDownEvent,
+    Window, WindowBounds, WindowOptions,
 };
 use om_analysis::WaveformData;
-use om_core::{ParameterRouter, ParameterTarget};
+use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
@@ -33,13 +33,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 /// Height of the banner strip shown above the layout (no audio device, and so on).
-const BANNER_HEIGHT: i32 = 24;
+const BANNER_HEIGHT: i32 = 28;
 
 /// Reads the device's figures for the debug panel. Called on the UI thread once per frame.
 pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
 
 /// Width of the `--debug-panel` column on the right.
-const DEBUG_WIDTH: i32 = 340;
+const DEBUG_WIDTH: i32 = 300;
 
 /// What the caller decides before the window opens.
 pub struct RunOptions {
@@ -56,12 +56,14 @@ pub struct RunOptions {
     pub library: Option<SharedHub>,
     /// Receives the number of rows in the library table after each frame (the `--smoke` check).
     pub library_rows_out: Option<Arc<AtomicUsize>>,
+    /// Demo only: a fixed-tempo beat grid (BPM) put on deck A each time its analysis lands.
+    pub demo_grid_bpm: Option<f64>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
 pub struct Shell {
     pub(crate) engine: Arc<DjEngine>,
-    router: Arc<ParameterRouter>,
+    pub(crate) router: Arc<ParameterRouter>,
     pub(crate) theme: ThemeTokens,
     /// One card per engine deck, in deck order.
     pub(crate) decks: Vec<DeckWidget>,
@@ -77,6 +79,10 @@ pub struct Shell {
     pub(crate) library_focus: Option<FocusHandle>,
     /// Focus for the settings card: its keys (text fields, Escape) go here while it is open.
     pub(crate) settings_focus: Option<FocusHandle>,
+    /// Focus for the debug column: its path fields take the keys while one is open.
+    pub(crate) debug_focus: Option<FocusHandle>,
+    /// The debug column's per-deck path fields and its status line.
+    pub(crate) deck_controls: DeckControls,
     /// What each deck card last showed, so the widgets only change on a real change.
     shown_info: Vec<TrackInfo>,
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
@@ -110,21 +116,24 @@ impl Shell {
         frames_out: Arc<AtomicU64>,
     ) -> Self {
         let settings = options.settings.take().map(SettingsState::new);
+        // The settings registry holds the session's theme (preference or OPENMIXER_THEME).
+        let theme = settings
+            .as_ref()
+            .map_or(theme, |s| s.themes.current().clone());
         let library = options
             .library
             .take()
             .map(|hub| LibraryPanel::new(hub, Arc::clone(&engine)));
         let deck_count = engine.num_decks();
-        let target: Arc<dyn ParameterTarget> = Arc::clone(&router) as Arc<dyn ParameterTarget>;
         let mixer = MixerPanel::new(
-            MixerBinding::new(Arc::clone(&engine), Arc::clone(&target)),
+            MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router)),
             meter_params(&theme),
         );
         let decks = (0..engine.num_decks())
             .map(|index| {
-                DeckWidget::new(DeckBinding::new(
+                DeckWidget::new(DeckBinding::typed(
                     Arc::clone(&engine),
-                    Arc::clone(&target),
+                    Arc::clone(&router),
                     index,
                 ))
             })
@@ -140,6 +149,8 @@ impl Shell {
             library,
             library_focus: None,
             settings_focus: None,
+            debug_focus: None,
+            deck_controls: DeckControls::new(deck_count),
             shown_info: vec![TrackInfo::default(); deck_count],
             shown_waveform: vec![None; deck_count],
             options,
@@ -187,6 +198,10 @@ impl Shell {
                 deck.zoom.set_waveform(wave.as_ref().map(|w| WaveformMeta {
                     sample_rate: w.sample_rate(),
                 }));
+                if let (Some(bpm), 0, Some(w)) = (self.options.demo_grid_bpm, index, &wave) {
+                    let grid = om_engine::grid::FixedTempoGrid::new(bpm, w.sample_rate(), 0);
+                    deck.set_grid(Some(Arc::new(grid)));
+                }
                 self.shown_waveform[index] = wave;
             }
         }
@@ -201,19 +216,33 @@ impl Shell {
         }
     }
 
-    /// The `--debug-panel` column: device figures, then the raw control-surface values.
-    fn debug_column(&self, status: &DeviceStatus, bounds: Rect) -> gpui::Div {
+    /// The `--debug-panel` column: the per-deck load and play controls, device figures, then the raw
+    /// control-surface values. Keys go to the column (`focus`), which passes them to an open path field.
+    fn debug_column(
+        &self,
+        status: &DeviceStatus,
+        bounds: Rect,
+        focus: FocusHandle,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
         let t = &self.theme;
+        let playing: Vec<bool> = (0..self.engine.num_decks())
+            .map(|deck| self.engine.deck(deck).is_playing())
+            .collect();
         let mut lines = vec![("Device".to_owned(), String::new())];
         lines.extend(device_rows(status));
         lines.push((String::new(), String::new()));
         lines.push(("Parameters".to_owned(), String::new()));
         lines.extend(parameter_rows(&self.engine, self.router.unknown_count()));
         let mut body = div()
+            .id("debug-scroll")
+            .h(px((bounds.h - 12 - 14).max(0) as f32))
+            .overflow_y_scroll()
             .flex()
             .flex_col()
             .gap(px(2.))
-            .text_size(px(t.type_caption));
+            .text_size(px(t.type_caption))
+            .child(decks_section(t, &self.deck_controls, &playing, cx));
         for (label, value) in lines {
             let row = div()
                 .flex()
@@ -228,7 +257,28 @@ impl Shell {
             .border_color(paint(t.border))
             .p(px(6.))
             .overflow_hidden()
+            .track_focus(&focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                let keys = &ev.keystroke;
+                if !(keys.modifiers.control || keys.modifiers.platform) {
+                    this.debug_key(&keys.key, keys.key_char.as_deref());
+                    cx.notify();
+                }
+            }))
             .child(body)
+            .child(
+                div()
+                    .absolute()
+                    .bottom(px(0.))
+                    .left(px(0.))
+                    .w_full()
+                    .h(px(14.))
+                    .px(px(6.))
+                    .bg(paint(t.popup))
+                    .text_size(px(t.type_small))
+                    .text_color(paint(t.text_muted))
+                    .child("scroll the list for more  v"),
+            )
     }
 
     fn cell_view(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
@@ -308,8 +358,13 @@ impl Render for Shell {
             root = root.child(
                 place(Rect::new(0, 0, width, BANNER_HEIGHT))
                     .bg(paint(self.theme.popup))
-                    .text_color(paint(self.theme.text_secondary))
-                    .px(px(8.))
+                    .border_b_1()
+                    .border_color(paint(self.theme.border))
+                    .text_color(paint(self.theme.text_primary))
+                    .text_size(px(self.theme.type_caption))
+                    .flex()
+                    .items_center()
+                    .px(px(14.))
                     .child(text),
             );
         }
@@ -317,9 +372,15 @@ impl Render for Shell {
             root = root.child(self.cell_view(&cell, cx));
         }
         if let Some(status) = self.options.debug.clone() {
+            let focus = self
+                .debug_focus
+                .get_or_insert_with(|| cx.focus_handle())
+                .clone();
             root = root.child(self.debug_column(
                 &status(),
                 Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
+                focus,
+                cx,
             ));
         }
         if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), window, cx) {
