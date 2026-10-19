@@ -7,13 +7,13 @@ use openmixer::composition::AppComposition;
 fn attaching_a_file_library_fills_the_library_hook() {
     let dir = tempfile::tempdir().unwrap();
     let mut composition = AppComposition::new(&dir.path().join("preferences.json"), None);
-    assert!(composition.hooks.library.is_none());
+    assert!(composition.services.library.is_none());
     composition
         .attach_library(Some(dir.path().join("db").join("library.db")))
         .expect("library opens");
-    assert!(composition.hooks.library.is_some());
+    assert!(composition.services.library.is_some());
     assert!(composition
-        .hooks
+        .services
         .library
         .as_ref()
         .unwrap()
@@ -27,5 +27,5 @@ fn an_unopenable_library_leaves_the_hook_empty_and_reports_why() {
     let mut composition = AppComposition::new(&dir.path().join("preferences.json"), None);
     let error = composition.attach_library(Some("/proc/does/not/exist/library.db".into()));
     assert!(error.is_err());
-    assert!(composition.hooks.library.is_none());
+    assert!(composition.services.library.is_none());
 }

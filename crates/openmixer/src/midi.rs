@@ -5,15 +5,13 @@
 //! Lock order, to keep the control threads deadlock-free: backend, then feedback, then the output
 //! ports. Input callbacks run on the device threads and take only the mapper's locks.
 
-use crate::app_targets::MidiSink;
-use crate::error::AppError;
 use om_core::sync::LockExt;
 use om_core::{ParameterTarget, StateReader};
 use om_midi::{
     system_clock, EchoGuard, LearnRequest, MidiBackend, MidiError, MidiFeedback, MidiInputRouter,
     MidiMapper, MidiOutputRouter, MidiOutputSink,
 };
-use om_ui::settings::{MidiControl, MidiInputs, SettingsError};
+use om_ui::settings::{MidiHost, MidiInputs, SettingsError};
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -193,22 +191,16 @@ impl Drop for FeedbackThread {
     }
 }
 
-/// The preferences drive the service through the same trait as the other subsystems.
-impl MidiSink for Arc<MidiService> {
-    fn load_map(&mut self, file: &Path) -> Result<(), AppError> {
-        Ok(self.load_map_file(file)?)
-    }
-
-    fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]) {
-        self.select_inputs(enable_all, inputs);
-    }
-}
-
-/// The MIDI settings page's learn and map controls.
-impl MidiControl for MidiService {
+/// The preferences, the settings page's learn and map controls, and the input selection all drive
+/// the service through this one trait.
+impl MidiHost for MidiService {
     fn load_map(&self, file: &Path) -> Result<(), SettingsError> {
         self.load_map_file(file)
             .map_err(|e| SettingsError::Midi(Box::new(e)))
+    }
+
+    fn enable_inputs(&self, enable_all: bool, inputs: &[String]) {
+        self.select_inputs(enable_all, inputs);
     }
 
     fn arm_learn(&self, target: &str) {

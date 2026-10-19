@@ -10,7 +10,7 @@
 //! The library is attached on demand with [`AppComposition::attach_library`].
 
 use crate::app_targets::{
-    AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
+    AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, PluginSink,
 };
 use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
@@ -23,7 +23,7 @@ use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
-use om_ui::settings::PluginHost;
+use om_ui::settings::{MidiHost, PluginHost};
 use om_ui::theme::{default_user_directory, session_theme_override, Source, ThemeRegistry};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,15 +34,23 @@ pub const DECKS: usize = 2;
 /// Environment variable that selects a theme for the session (wins over the saved preference).
 pub const THEME_ENV: &str = "OPENMIXER_THEME";
 
-/// Optional hooks for subsystems that are attached on demand. Each is called from the matching
-/// preference section; `None` means nothing is attached and the section is only stored.
+/// The subsystems attached on demand. Each preference section drives the matching service; `None`
+/// means nothing is attached and the section is only stored.
 #[derive(Default)]
-pub struct ServiceHooks {
-    /// The MIDI preference section, once [`AppComposition::attach_midi`] has run.
-    pub midi: Option<Box<dyn MidiSink>>,
+pub struct Services {
     /// The library: browser services, analysis and watch folders. Opened by
     /// [`AppComposition::attach_library`]; `None` until then.
     pub library: Option<LibraryServices>,
+    /// The MIDI service, once [`AppComposition::attach_midi`] has run: the preferences, the
+    /// settings page and the input list all reach it.
+    pub midi: Option<Arc<MidiService>>,
+}
+
+impl Services {
+    /// The MIDI service as the preferences and the settings page drive it.
+    pub fn midi_host(&self) -> Option<&dyn MidiHost> {
+        self.midi.as_deref().map(|midi| midi as &dyn MidiHost)
+    }
 }
 
 /// A theme registry with the built-in themes and, when given, the user theme folder. The window
@@ -77,12 +85,10 @@ pub struct AppComposition {
     /// False when the preferences file exists but could not be read or is from a newer schema:
     /// saving would replace data this build cannot read, so changes are not written.
     pub prefs_replaceable: bool,
-    pub hooks: ServiceHooks,
+    pub services: Services,
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
     pub plugins: PluginRegistry,
-    /// The MIDI service, once attached: the settings page's controls and the input list.
-    pub midi: Option<Arc<MidiService>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
     midi_feedback: Option<FeedbackThread>,
     /// Drives the engine's control clock (sync, slip, FX tempo) from its own thread.
@@ -128,9 +134,8 @@ impl AppComposition {
             themes,
             prefs,
             prefs_replaceable,
-            hooks: ServiceHooks::default(),
+            services: Services::default(),
             plugins,
-            midi: None,
             midi_feedback: None,
             applier: PreferencesApplier::new(),
             targets: AppTargetsState::default(),
@@ -161,7 +166,7 @@ impl AppComposition {
         options.on_error = Some(Box::new(|message| {
             eprintln!("openmixer: library: {message}")
         }));
-        self.hooks.library = Some(LibraryServices::create(options)?);
+        self.services.library = Some(LibraryServices::create(options)?);
         Ok(())
     }
 
@@ -182,8 +187,7 @@ impl AppComposition {
             Ok(thread) => self.midi_feedback = Some(thread),
             Err(error) => eprintln!("openmixer: MIDI feedback thread: {error}"),
         }
-        self.hooks.midi = Some(Box::new(Arc::clone(&service)));
-        self.midi = Some(service);
+        self.services.midi = Some(service);
     }
 
     /// Pushes every changed preference section to its subsystem (first call pushes everything).
@@ -203,7 +207,7 @@ impl AppComposition {
             &mut self.themes,
             audio,
             device,
-            self.hooks.midi.as_deref_mut(),
+            self.services.midi_host(),
             Some(plugins),
         );
         if let Some(state) = started_with {
@@ -241,13 +245,17 @@ impl AppComposition {
     /// Applies a plugin's controller map to the MIDI mapper, replacing the live map. Fails when
     /// MIDI is not attached.
     pub fn apply_plugin_midi_map(&self, map_name: &str) -> Result<(), AppError> {
-        let service = self.midi.as_ref().ok_or(AppError::MidiNotAttached)?;
+        let service = self
+            .services
+            .midi
+            .as_ref()
+            .ok_or(AppError::MidiNotAttached)?;
         Ok(self.plugins.apply_midi_map(map_name, service.mapper())?)
     }
 
     /// One line on MIDI for the smoke report: the open inputs, the mappings and the devices listed.
     pub fn midi_status(&self) -> String {
-        match &self.midi {
+        match &self.services.midi {
             Some(midi) => format!(
                 "{} input(s) open, {} mapping(s), {} device(s) listed",
                 midi.open_inputs().len(),
@@ -288,7 +296,7 @@ impl AppComposition {
             &mut self.themes,
             &NO_AUDIO,
             None,
-            self.hooks.midi.as_deref_mut(),
+            self.services.midi_host(),
             Some(&mut self.plugins),
         );
         targets.reload_plugins();

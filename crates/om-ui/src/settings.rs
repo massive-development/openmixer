@@ -248,11 +248,15 @@ impl<'a> MidiSettingsPage<'a> {
     }
 }
 
-/// What the MIDI page drives on the running MIDI service: the controller map and MIDI learn.
-/// Methods take `&self`: the service is shared with the MIDI threads and locks internally.
-pub trait MidiControl {
-    /// Replaces the live map with the file's; a bad file changes nothing.
+/// The running MIDI service as the settings, the preferences and the MIDI page see it: the
+/// controller map, MIDI learn and the input selection. Methods take `&self`: the service is shared
+/// with the MIDI threads and locks internally.
+pub trait MidiHost {
+    /// Replaces the live map with the file's; a bad file changes nothing. Called before the
+    /// inputs are enabled, so no message meets a stale map.
     fn load_map(&self, file: &Path) -> Result<(), SettingsError>;
+    /// Selects the inputs named in `inputs` (every one when `enable_all`) and opens them.
+    fn enable_inputs(&self, enable_all: bool, inputs: &[String]);
     /// The next control that moves binds to `target`.
     fn arm_learn(&self, target: &str);
     fn cancel_learn(&self);
@@ -268,9 +272,9 @@ pub trait MidiControl {
 
 /// The running MIDI service as the MIDI page sees it: the device list and the map and learn
 /// controls. Blanket-implemented, so any type with both traits is a page host.
-pub trait MidiPage: MidiInputs + MidiControl {}
+pub trait MidiPage: MidiInputs + MidiHost {}
 
-impl<T: MidiInputs + MidiControl + ?Sized> MidiPage for T {}
+impl<T: MidiInputs + MidiHost + ?Sized> MidiPage for T {}
 
 /// The parameter ids the MIDI page offers for MIDI learn: the decks' transport and rate, the
 /// channel faders and trims, the crossfader and the master. Ids are the router's full ids.
@@ -305,16 +309,16 @@ pub fn learnable_targets(decks: usize) -> Vec<String> {
 
 impl MidiSettingsPage<'_> {
     /// Loads the effective map file (the preference, or the default one) into the running service.
-    pub fn load_map_now(&self, control: &dyn MidiControl) -> Result<(), SettingsError> {
+    pub fn load_map_now(&self, control: &dyn MidiHost) -> Result<(), SettingsError> {
         control.load_map(&self.prefs.effective_map_file())
     }
 
-    /// Starts MIDI learn for `target`; the page shows the learning state from [`MidiControl::is_learning`].
-    pub fn learn(&self, control: &dyn MidiControl, target: &str) {
+    /// Starts MIDI learn for `target`; the page shows the learning state from [`MidiHost::is_learning`].
+    pub fn learn(&self, control: &dyn MidiHost, target: &str) {
         control.arm_learn(target);
     }
 
-    pub fn cancel_learn(&self, control: &dyn MidiControl) {
+    pub fn cancel_learn(&self, control: &dyn MidiHost) {
         control.cancel_learn();
     }
 
@@ -323,7 +327,7 @@ impl MidiSettingsPage<'_> {
     /// changed (the caller saves preferences then).
     pub fn save_learned_map(
         &mut self,
-        control: &dyn MidiControl,
+        control: &dyn MidiHost,
     ) -> Result<(PathBuf, bool), SettingsError> {
         let file = if self.prefs.midi.map_file.is_empty() {
             default_user_map_file()
@@ -925,7 +929,7 @@ mod parity_tests {
         learning: std::cell::RefCell<Option<String>>,
         saved: std::cell::RefCell<Vec<PathBuf>>,
     }
-    impl MidiControl for FakeControl {
+    impl MidiHost for FakeControl {
         fn load_map(&self, file: &Path) -> Result<(), SettingsError> {
             if file.extension().and_then(|e| e.to_str()) != Some("json") {
                 return Err(SettingsError::Midi("not a map".into()));
@@ -946,6 +950,7 @@ mod parity_tests {
         fn is_learning(&self) -> bool {
             self.learning.borrow().is_some()
         }
+        fn enable_inputs(&self, _enable_all: bool, _inputs: &[String]) {}
     }
 
     #[test]
