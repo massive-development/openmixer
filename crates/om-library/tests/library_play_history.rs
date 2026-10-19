@@ -90,7 +90,7 @@ fn deleting_a_track_removes_its_history() {
 }
 
 #[test]
-fn schema_four_copy_upgrades_to_five_and_keeps_its_data() {
+fn schema_four_copy_upgrades_to_latest_and_keeps_its_data() {
     let dir = tempfile::tempdir().expect("tempdir");
     let v4 = dir.path().join("v4.db");
     let v4_path = v4.to_str().expect("utf-8").to_owned();
@@ -118,7 +118,8 @@ fn schema_four_copy_upgrades_to_five_and_keeps_its_data() {
     let copy_path = copy.to_str().expect("utf-8").to_owned();
     let lib = Library::open(&copy_path, OpenMode::ReadWrite, core_migrations()).expect("upgrade");
 
-    assert_eq!(current_schema_version(lib.database()).unwrap(), 5);
+    let latest = i64::from(core_migrations().last().unwrap().version);
+    assert_eq!(current_schema_version(lib.database()).unwrap(), latest);
     let kept = lib.tracks().all().unwrap();
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].path, "/m/kept.wav");
