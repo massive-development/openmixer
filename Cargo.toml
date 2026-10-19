@@ -6,6 +6,7 @@ members = [
     "crates/om-engine",
     "crates/om-stretch",
     "crates/om-audio",
+    "crates/om-ui",
     "crates/openmixer",
 ]
 
