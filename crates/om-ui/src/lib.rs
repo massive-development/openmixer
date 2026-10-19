@@ -5,4 +5,8 @@
 //! engine and writes through the string-id control surface, so it can be driven and tested headless.
 //! The gpui front end (Todo 8b) renders these models.
 
+pub mod format;
+pub mod geometry;
+pub mod meter;
 pub mod theme;
+pub mod waveform;
