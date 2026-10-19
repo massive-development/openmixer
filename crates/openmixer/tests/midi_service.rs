@@ -4,7 +4,7 @@
 
 use om_midi::MockBackend;
 use openmixer::composition::AppComposition;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const MAP: &str = r#"{"version":2,
   "mappings":[{"type":"cc","channel":1,"number":7,"target":"mixer.ch0.fader"}],
@@ -50,18 +50,12 @@ fn deck_state_lights_the_controller_led() {
 
     // The feedback thread sends the LED state; wait for the play state to arrive.
     c.engine.deck(0).play();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if mock.sent("Pad").last() == Some(&vec![0x90, 36, 127]) {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "LED never lit: {:?}",
-            mock.sent("Pad")
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    om_testing::assert_eventually!(
+        Duration::from_secs(5),
+        || mock.sent("Pad").last() == Some(&vec![0x90, 36, 127]),
+        "LED never lit: {:?}",
+        mock.sent("Pad")
+    );
 }
 
 #[test]

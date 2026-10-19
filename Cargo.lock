@@ -4019,6 +4019,7 @@ dependencies = [
  "alsa",
  "om-core",
  "om-engine",
+ "om-testing",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
@@ -4052,6 +4053,7 @@ dependencies = [
 name = "om-stretch"
 version = "0.1.0"
 dependencies = [
+ "om-testing",
  "rubberband-sys",
  "thiserror 2.0.21",
 ]
@@ -4152,6 +4154,7 @@ dependencies = [
  "om-engine",
  "om-midi",
  "om-plugins",
+ "om-testing",
  "om-ui",
  "om-ui-gpui",
  "serde_json",
