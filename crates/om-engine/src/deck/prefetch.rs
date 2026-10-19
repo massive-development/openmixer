@@ -1,6 +1,6 @@
 //! Pre-decoded audio from a loop start, so the audio thread can jump there without waiting on the
 //! decoder. The decoder thread fills and publishes; the audio thread acquires and releases through
-//! a hazard-slot protocol (sequentially consistent). Port of `src/engine/LoopPrefetch.*`.
+//! a hazard-slot protocol (sequentially consistent).
 //!
 //! Frames are stored as `AtomicU32` bit patterns so the protocol needs no `unsafe`; every access
 //! is a plain load or store on the audio thread.

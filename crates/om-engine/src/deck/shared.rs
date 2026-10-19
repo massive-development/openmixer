@@ -69,7 +69,7 @@ pub(super) struct Shared {
 }
 
 impl Shared {
-    /// Initial state of an unloaded deck. Device and file rates match the C++ defaults (44.1 kHz).
+    /// Initial state of an unloaded deck. Device and file rates default to 44.1 kHz.
     pub fn new(prefetch_frames: i64) -> Self {
         Self {
             playing: AtomicBool::new(false),

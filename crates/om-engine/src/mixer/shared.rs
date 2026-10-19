@@ -6,9 +6,9 @@ use om_dsp::{CrossfaderAssign, PeakMeter, ThreeBandEq};
 use std::sync::atomic::{AtomicBool, AtomicU8};
 
 pub const MAX_CHANNELS: usize = 4;
-/// Master and cue level ceiling (C++ `Mixer::kMaxGain`).
+/// Master and cue level ceiling.
 pub const MAX_GAIN: f32 = 2.0;
-/// Trim ceiling (C++ `ChannelStrip::setTrim` clamp).
+/// Trim ceiling.
 pub const MAX_TRIM: f32 = 4.0;
 
 pub struct ChannelShared {

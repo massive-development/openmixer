@@ -5,7 +5,7 @@ use super::math::flush_denormal;
 
 const LOW_HZ: f64 = 250.0;
 const HIGH_HZ: f64 = 4000.0;
-// C++ literal, kept verbatim so the sweep stays bit-identical.
+// Literal kept verbatim so the sweep stays bit-identical.
 #[allow(clippy::approx_constant)]
 const PI: f64 = 3.141_592_653_589_793;
 

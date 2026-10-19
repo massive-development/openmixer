@@ -1,4 +1,4 @@
-//! Port of tests/unit/FxTest.cpp: FX rack, beat-synced timing, wet/dry, tails, bounds, ids, presets.
+//! FX rack, beat-synced timing, wet/dry, tails, bounds, ids, presets.
 //! Signals are rendered to buffers only; nothing is played.
 
 use om_core::ParameterTarget;
@@ -33,7 +33,7 @@ impl Signal {
     }
 }
 
-/// 48-bit LCG seeded like `juce::Random`, so the noise is deterministic per seed.
+/// 48-bit LCG, so the noise is deterministic per seed.
 struct Rng(u64);
 
 impl Rng {
@@ -528,8 +528,8 @@ fn fx_rack_parameter_ids_route_to_units() {
     }
 }
 
-// The C++ test drives the grid overload with a FixedTempoGrid; that type lands with the deck
-// (BeatGrid) port, so this case passes the grid's BPM directly.
+// The grid overload would normally take a FixedTempoGrid; that type lands with the deck
+// (BeatGrid) work, so this case passes the grid's BPM directly.
 #[test]
 fn fx_rack_tempo_from_id_and_grid_bpm() {
     let rack = FxRack::default();
@@ -586,7 +586,7 @@ fn fx_rack_inserts_into_mixer_master_without_colouring_when_off() {
     let input = sine(N, 440.0, 0.5);
     let (mut a_l, mut a_r) = (vec![0.0_f32; N], vec![0.0_f32; N]);
     let (mut b_l, mut b_r) = (vec![0.0_f32; N], vec![0.0_f32; N]);
-    // Cue is not compared; each mixer gets its own buffer (C++ aliased one buffer for both).
+    // Cue is not compared; each mixer gets its own buffer.
     let (mut cue_a, mut cue_b) = (vec![0.0_f32; N], vec![0.0_f32; N]);
     for off in (0..N).step_by(BLOCK) {
         let end = off + BLOCK;

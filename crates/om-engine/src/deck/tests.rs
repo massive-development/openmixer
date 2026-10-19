@@ -1,5 +1,5 @@
-//! Ports of tests/unit/DeckTest.cpp and the engine-level part of TrackLoaderTest.cpp. Fixtures are
-//! generated in-test: 32-bit float WAVs whose samples are exact, so the C++ tolerances apply.
+//! Deck tests, and the engine-level track loading cases. Fixtures are
+//! generated in-test: 32-bit float WAVs whose samples are exact, so the tight tolerances apply.
 
 use super::{Deck, DeckAudio};
 use crate::callback::AudioCallback;

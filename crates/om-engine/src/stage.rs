@@ -10,7 +10,7 @@ use rtrb::PushError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-/// Interface version a stage must report to be inserted (C++ `ProcessStage::kInterfaceVersion`).
+/// Interface version a stage must report to be inserted.
 pub const INTERFACE_VERSION: u32 = 1;
 /// Insert slots per chain.
 pub const MAX_STAGES: usize = 4;

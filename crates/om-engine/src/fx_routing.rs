@@ -3,7 +3,6 @@
 //!
 //! Ids: `master.<rack id>` and `ch<N>.<rack id>`, where `<rack id>` is an `FxRack` id ("bpm",
 //! "fx<N>.enable", "fx<N>.mix", "fx<N>.<effect param>"), e.g. "master.fx1.mix", "ch0.fx2.enable".
-//! Port of `src/engine/FxRouting.*`.
 
 use crate::deck::Deck;
 use crate::fx::{FxRack, FxRackControl};

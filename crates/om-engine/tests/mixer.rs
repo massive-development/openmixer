@@ -1,4 +1,4 @@
-//! Port of tests/unit/MixerTest.cpp: EQ, filter, faders, crossfader, cue bus, meters, parameter
+//! EQ, filter, faders, crossfader, cue bus, meters, parameter
 //! ids and inserts. Signals are rendered to buffers only; nothing is played.
 
 use om_core::ParameterTarget;
