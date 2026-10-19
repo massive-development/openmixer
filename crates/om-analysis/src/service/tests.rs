@@ -7,6 +7,7 @@ use crate::{
     MemoryClipSource, SqliteResultCache,
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -258,3 +259,64 @@ fn analyses_wav_files_with_progress() {
         hash_file_content(temp.path()).expect("hashable")
     );
 }
+
+/// Panics inside the analysis, as a buggy third-party analyser might.
+struct PanickingAnalyzer;
+
+impl Analyzer for PanickingAnalyzer {
+    fn id(&self) -> &str {
+        "boom"
+    }
+
+    fn version(&self) -> i32 {
+        1
+    }
+
+    fn analyze(&self, _clip: &AudioClip, _context: &dyn AnalysisContext) -> Option<String> {
+        panic!("analyser exploded");
+    }
+}
+
+#[test]
+fn a_panicking_analyser_fails_its_job_and_the_single_worker_carries_on() {
+    let registry = AnalyzerRegistry::new();
+    registry.add(Arc::new(PanickingAnalyzer)).expect("boom");
+    registry.add(CountingAnalyzer::new("count")).expect("count");
+    let service = AnalysisService::new(Arc::new(registry), None, 1);
+
+    let (tx, rx) = mpsc::channel();
+    let listener: Listener = Box::new(move |job| {
+        let _ = tx.send((job.status(), job.error()));
+    });
+    let first = service.submit(clip_source(0.1), ids(&["boom"]), Some(listener));
+    assert!(first.wait_until_finished(WAIT), "the job must finish");
+    assert_eq!(first.status(), JobStatus::Failed);
+    assert!(first.error().contains("analyser exploded"), "{}", first.error());
+    let (status, error) = rx.recv_timeout(WAIT).expect("listener still fires");
+    assert_eq!(status, JobStatus::Failed);
+    assert!(error.contains("analyser exploded"));
+
+    let second = service.submit(clip_source(0.1), ids(&["count"]), None);
+    assert!(second.wait_until_finished(WAIT), "the worker must survive");
+    assert_eq!(second.status(), JobStatus::Done);
+}
+
+#[test]
+fn a_panicking_listener_does_not_stop_the_worker() {
+    let registry = AnalyzerRegistry::new();
+    registry.add(CountingAnalyzer::new("count")).expect("count");
+    let service = AnalysisService::new(Arc::new(registry), None, 1);
+
+    let panicking: Listener = Box::new(|_| panic!("listener exploded"));
+    let first = service.submit(clip_source(0.1), ids(&["count"]), Some(panicking));
+    assert!(first.wait_until_finished(WAIT));
+
+    let (tx, rx) = mpsc::channel();
+    let listener: Listener = Box::new(move |job| {
+        let _ = tx.send(job.status());
+    });
+    let second = service.submit(clip_source(0.1), ids(&["count"]), Some(listener));
+    assert!(second.wait_until_finished(WAIT));
+    assert_eq!(rx.recv_timeout(WAIT).expect("second listener fires"), JobStatus::Done);
+}
+

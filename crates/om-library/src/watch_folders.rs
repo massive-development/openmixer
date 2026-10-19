@@ -15,6 +15,7 @@ use crate::library::Library;
 use crate::metadata::MetadataReaderRegistry;
 use crate::migrations::{core_migrations, Migration};
 use std::path::Path;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread::JoinHandle;
@@ -236,16 +237,39 @@ fn run(
             scan_library =
                 open_scan_library(library_path, &options.migrations, options.on_error.as_ref());
         }
-        let summary = match &scan_library {
+        // A panic in a reader or in the callbacks must not end the thread: the pass is counted as
+        // failed, reported, and the next pass runs as usual.
+        let scanned = panic::catch_unwind(AssertUnwindSafe(|| match &scan_library {
             Some(library) => scan_all(library, readers, &shared.stop),
             // surfaced to on_scan_done so callers can tell the pass did nothing
             None => IngestSummary {
                 failed: 1,
                 ..IngestSummary::default()
             },
+        }));
+        let summary = match scanned {
+            Ok(summary) => summary,
+            Err(payload) => {
+                // the connection may be mid-transaction; reopen it on the next pass
+                scan_library = None;
+                report_error(
+                    options.on_error.as_ref(),
+                    &format!("watch folders: scan panicked: {}", panic_message(payload.as_ref())),
+                );
+                IngestSummary {
+                    failed: 1,
+                    ..IngestSummary::default()
+                }
+            }
         };
         if let Some(callback) = &options.on_scan_done {
-            callback(&summary);
+            let outcome = panic::catch_unwind(AssertUnwindSafe(|| callback(&summary)));
+            if let Err(payload) = outcome {
+                report_error(
+                    options.on_error.as_ref(),
+                    &format!("watch folders: callback panicked: {}", panic_message(payload.as_ref())),
+                );
+            }
         }
 
         state = shared
@@ -255,6 +279,22 @@ fn run(
         state.passes += 1;
         shared.done.notify_all();
     }
+}
+
+/// Passes a message to the error callback. A callback that itself panics is ignored, so the scan
+/// thread survives.
+fn report_error(on_error: Option<&ErrorCallback>, message: &str) {
+    if let Some(callback) = on_error {
+        let _ = panic::catch_unwind(AssertUnwindSafe(|| callback(message)));
+    }
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_owned())
 }
 
 fn open_scan_library(
