@@ -9,11 +9,12 @@ use gpui::{
     MouseDownEvent, Pixels, Window,
 };
 use om_ui::geometry::Rect;
-use om_ui::theme::ThemeTokens;
 use om_ui::widgets::deck::{deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
+use crate::controls::button as push_button;
+use crate::drag::Target;
 use om_ui::waveform::View;
 use std::f64::consts::TAU;
 
@@ -152,8 +153,7 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
     // Top of the track is the fastest rate.
     let frac = ((1.0 + range - value) / (2.0 * range)).clamp(0.0, 1.0);
     let knob_y = frac as f32 * (area.h as f32 - 12.0);
-    let origin_y = card.y + area.y;
-    let height = f64::from(area.h);
+    let abs_pitch = Rect::new(card.x + area.x, card.y + area.y, area.w, area.h);
 
     place(area)
         .child(
@@ -179,10 +179,7 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                let y = f64::from(f32::from(ev.position.y)) - f64::from(origin_y);
-                let frac = (y - 16.0).clamp(0.0, height - 16.0) / (height - 16.0).max(1.0);
-                let range = this.decks[index].pitch.range();
-                this.decks[index].pitch.user_set(1.0 + range - frac * 2.0 * range);
+                this.begin_drag(Target::Pitch(index), abs_pitch, ev.position);
                 cx.notify();
             }),
         )
@@ -316,30 +313,23 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
     let _ = card;
     let mut area = place(l.loops);
     for (i, rect) in lay.sizes.iter().enumerate() {
-        area = area.child(action(
-            t,
-            *rect,
-            SIZE_NAMES[i],
-            size_lit[i],
-            index,
-            cx,
-            move |this| {
+        area = area.child(push_button(t, *rect, SIZE_NAMES[i], size_lit[i], t.accent_for(index as i32), cx, move |this| {
                 this.decks[index].loops.press_size(i);
             },
         ));
     }
     let reloop_lit = deck.loops.reloop_lit();
     area = area
-        .child(action(t, lay.halve, "1/2x", false, index, cx, move |this| {
+        .child(push_button(t, lay.halve, "1/2x", false, t.accent_for(index as i32), cx, move |this| {
             this.decks[index].loops.halve();
         }))
-        .child(action(t, lay.double, "2x", false, index, cx, move |this| {
+        .child(push_button(t, lay.double, "2x", false, t.accent_for(index as i32), cx, move |this| {
             this.decks[index].loops.double();
         }))
-        .child(action(t, lay.exit, "Exit", false, index, cx, move |this| {
+        .child(push_button(t, lay.exit, "Exit", false, t.accent_for(index as i32), cx, move |this| {
             this.decks[index].loops.exit();
         }))
-        .child(action(t, lay.reloop, "Reloop", reloop_lit, index, cx, move |this| {
+        .child(push_button(t, lay.reloop, "Reloop", reloop_lit, t.accent_for(index as i32), cx, move |this| {
             this.decks[index].loops.reloop();
         }));
     area
@@ -357,45 +347,14 @@ fn transport(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut C
             TransportButton::Play => deck.transport.play_label(),
             other => other.label(),
         };
-        row = row.child(action(t, rects[i], label, lit[i], index, cx, move |this| {
+        row = row.child(push_button(t, rects[i], label, lit[i], t.accent_for(index as i32), cx, move |this| {
             this.decks[index].transport.press(button);
         }));
     }
     row
 }
 
-/// A labelled push button at `rect` (card-local) that runs `on_press` on the deck when clicked.
-fn action(
-    t: &ThemeTokens,
-    rect: Rect,
-    label: &str,
-    lit: bool,
-    index: usize,
-    cx: &mut Context<Shell>,
-    on_press: impl Fn(&mut Shell) + 'static,
-) -> Div {
-    let _ = index;
-    place(rect)
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(t.control_radius))
-        .border_1()
-        .border_color(paint(t.border))
-        .bg(paint(if lit { t.accent_for(index as i32) } else { t.surface_raised }))
-        .text_color(paint(if lit { t.on_accent } else { t.text_primary }))
-        .text_size(px(t.type_small))
-        .child(label.to_owned())
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-                on_press(this);
-                cx.notify();
-            }),
-        )
-}
-
-/// A colour with its alpha scaled to `alpha` (GPUI keeps the RGB of the source colour).
+/// A colour with its alpha replaced by `alpha` (GPUI keeps the RGB of the source colour).
 fn accent_with_alpha(colour: gpui::Rgba, alpha: f32) -> gpui::Rgba {
     gpui::Rgba { a: alpha, ..colour }
 }

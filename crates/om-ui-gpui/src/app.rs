@@ -3,7 +3,10 @@
 //! control side once per frame.
 
 use crate::deck_view::deck_card;
+use crate::drag::Drag;
+use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
+use crate::controls::release_on;
 use gpui::{
     div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds, WindowOptions,
 };
@@ -13,7 +16,10 @@ use om_ui::binding::DeckBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT};
 use om_ui::theme::{ThemeRegistry, ThemeTokens};
+use om_ui::meter::meter_params;
+use om_ui::binding::MixerBinding;
 use om_ui::widgets::deck::DeckWidget;
+use om_ui::widgets::mixer::MixerPanel;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -35,6 +41,10 @@ pub struct Shell {
     pub(crate) theme: ThemeTokens,
     /// One card per engine deck, in deck order.
     pub(crate) decks: Vec<DeckWidget>,
+    /// The mixer page: channel strips, master, crossfader, cue and FX.
+    pub(crate) mixer: MixerPanel,
+    /// The control being dragged, if any.
+    pub(crate) drag: Option<Drag>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -56,7 +66,8 @@ pub fn cells_for(engine_decks: usize, area: Rect, gap: i32) -> Vec<PlacedCell> {
 }
 
 impl Shell {
-    fn new(
+    /// The window's root state. Creates the widget models over the engine's control surface.
+    pub(crate) fn new(
         engine: Arc<DjEngine>,
         router: Arc<ParameterRouter>,
         theme: ThemeTokens,
@@ -64,6 +75,10 @@ impl Shell {
         frames_out: Arc<AtomicU64>,
     ) -> Self {
         let target: Arc<dyn ParameterTarget> = router;
+        let mixer = MixerPanel::new(
+            MixerBinding::new(Arc::clone(&engine), Arc::clone(&target)),
+            meter_params(&theme),
+        );
         let decks = (0..engine.num_decks())
             .map(|index| {
                 DeckWidget::new(DeckBinding::new(
@@ -77,6 +92,8 @@ impl Shell {
             engine,
             theme,
             decks,
+            mixer,
+            drag: None,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -90,14 +107,18 @@ impl Shell {
         self.frames
     }
 
-    /// One frame of upkeep: engine control tick, then the widgets follow the engine.
+    /// One frame of upkeep: engine control tick, then the widgets follow the engine and the meters
+    /// advance by the frame time.
     fn tick(&mut self) {
         let now = self.started.elapsed().as_secs_f64();
+        let dt = (now - self.last_tick) as f32;
         self.engine.update_control(now - self.last_tick);
         self.last_tick = now;
+        let dragging = self.dragging_channel_fader();
         for deck in &mut self.decks {
             deck.refresh(false);
         }
+        self.mixer.refresh(dt, self.engine.mixer(), dragging);
         self.frames += 1;
         self.frames_out.store(self.frames, Ordering::Relaxed);
     }
@@ -106,10 +127,9 @@ impl Shell {
         let t = &self.theme;
         match &cell.kind {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
+            CellKind::Slot(name) if name == MIXER_SLOT => mixer_card(self, cell.bounds, cx),
             CellKind::Slot(name) => {
-                let (title, accent) = if name == MIXER_SLOT {
-                    ("Mixer".to_owned(), t.master)
-                } else if name == LIBRARY_SLOT {
+                let (title, accent) = if name == LIBRARY_SLOT {
                     ("Library (analysis not built yet)".to_owned(), t.border)
                 } else {
                     (name.clone(), t.border)
@@ -143,11 +163,18 @@ impl Render for Shell {
         let area = Rect::new(0, top, width, (height - top).max(0));
         let gap = self.theme.gap;
 
-        let mut root = div()
-            .size_full()
-            .relative()
-            .bg(paint(self.theme.backdrop_top))
-            .text_color(paint(self.theme.text_primary));
+        let mut root = release_on(
+            div()
+                .size_full()
+                .relative()
+                .bg(paint(self.theme.backdrop_top))
+                .text_color(paint(self.theme.text_primary))
+                .on_mouse_move(cx.listener(|this, ev: &gpui::MouseMoveEvent, _, cx| {
+                    this.drag_move(ev.position);
+                    cx.notify();
+                })),
+            cx,
+        );
         if let Some(text) = banner {
             root = root.child(
                 place(Rect::new(0, 0, width, BANNER_HEIGHT))
