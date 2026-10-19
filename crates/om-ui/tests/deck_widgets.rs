@@ -4,11 +4,12 @@
 mod common;
 
 use common::Rig;
+use om_core::DeckSnapshot;
 use om_ui::binding::DeckBinding;
 use om_ui::waveform::{StripPlan, View};
 use om_ui::widgets::deck::{grid_lines_for, DeckWidget, TrackHeader, TrackInfo, WaveformMeta};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
-use om_ui::widgets::loops::{loop_param, LoopControls, SIZES};
+use om_ui::widgets::loops::{loop_param, LoopControls, LoopFrame, SIZES};
 use om_ui::widgets::pitch::PitchFader;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 
@@ -185,6 +186,41 @@ fn loop_buttons_route_exact_ids() {
     rig.recorder.clear();
     assert_eq!(loops.halve(), None);
     assert!(rig.recorder.is_empty(), "no loop to halve");
+}
+
+/// One frame's lit buttons and length come from one snapshot: a lit size button matches the length
+/// reported beside it, and reloop is lit exactly when the loop is.
+#[test]
+fn loop_frame_lights_and_length_come_from_one_snapshot() {
+    let grid = om_engine::grid::FixedTempoGrid::new(120.0, 44_100.0, 0);
+    // 120 BPM: two beats per second, so 22,050 frames is one beat.
+    let looping = DeckSnapshot {
+        looping: true,
+        loop_start: 0,
+        loop_end: 22_050,
+        ..DeckSnapshot::default()
+    };
+    let frame = LoopFrame::from_state(&looping, Some(&grid));
+    assert!((frame.length_beats - 1.0).abs() < 1e-9);
+    assert!(frame.reloop_lit);
+    for (i, lit) in frame.size_lit.iter().enumerate() {
+        assert_eq!(*lit, SIZES[i] == 1.0, "size {i}");
+    }
+
+    let exited = DeckSnapshot {
+        looping: false,
+        ..looping
+    };
+    let frame = LoopFrame::from_state(&exited, Some(&grid));
+    assert!(!frame.reloop_lit);
+    assert_eq!(
+        frame.size_lit, [false; 8],
+        "no lit size without an active loop"
+    );
+
+    let no_grid = LoopFrame::from_state(&looping, None);
+    assert_eq!(no_grid.length_beats, 0.0);
+    assert_eq!(no_grid.size_lit, [false; 8]);
 }
 
 #[test]
