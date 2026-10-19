@@ -1,8 +1,8 @@
 //! Key-lock cases, one test per case, same numbers and tolerances as the original suite.
 //! Generated audio only; nothing here opens an audio device.
 
-use super::tests::{pump_until_buffered, write_float_wav, Fixture, RATE};
-use super::{Deck, DeckAudio};
+use super::{pump_until_buffered, write_float_wav, Fixture, RATE};
+use crate::deck::{Deck, DeckAudio};
 use om_core::ParameterTarget;
 use std::f64::consts::TAU;
 use std::path::{Path, PathBuf};

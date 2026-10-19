@@ -1,8 +1,8 @@
 //! Gapless loop wrap, loop exit, long loops past the prefetch
 //! slot, resizing, seeking out of a loop and hotcues. Same numbers and tolerances as the original suite.
 
-use super::tests::{pump_until_buffered, wait_for, write_ramp, Fixture, FRAMES, RATE};
-use super::{Deck, DeckAudio};
+use super::{pump_until_buffered, wait_for, write_ramp, Fixture, FRAMES, RATE};
+use crate::deck::{Deck, DeckAudio};
 use crate::quantizer::Loop;
 use om_core::ParameterTarget;
 use std::path::PathBuf;
