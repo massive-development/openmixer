@@ -2,6 +2,7 @@
 //! and parses it into the neutral [`ImportedLibrary`] model. Later registrations win, so a better
 //! importer can override a default.
 
+use crate::error::ImportError;
 use crate::import_model::{ImportReport, ImportedLibrary};
 use crate::itunes_importer::ItunesImporter;
 use crate::rekordbox_importer::RekordboxImporter;
@@ -21,7 +22,7 @@ pub trait LibraryImporter: Send + Sync {
         root: &XmlElement,
         out: &mut ImportedLibrary,
         report: &mut ImportReport,
-    ) -> Result<(), String>;
+    ) -> Result<(), ImportError>;
 }
 
 #[derive(Default)]

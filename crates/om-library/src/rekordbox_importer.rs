@@ -3,6 +3,7 @@
 //! (Num -1 memory cue, 0..7 hotcue), Type 4 = loop; other types (fade, load) are ignored.
 //! Times are seconds.
 
+use crate::error::ImportError;
 use crate::file_url::file_url_to_path;
 use crate::import_model::{
     CueKind, ImportReport, ImportedCue, ImportedLibrary, ImportedPlaylist, ImportedTrack,
@@ -36,7 +37,7 @@ impl LibraryImporter for RekordboxImporter {
         root: &XmlElement,
         out: &mut ImportedLibrary,
         report: &mut ImportReport,
-    ) -> Result<(), String> {
+    ) -> Result<(), ImportError> {
         let mut by_path: BTreeMap<String, String> = BTreeMap::new();
         if let Some(collection) = root.child_by_name("COLLECTION") {
             for track in collection.children_named("TRACK") {

@@ -1,7 +1,7 @@
 //! One-call import: parse a foreign library XML with a registered importer and merge it into the
 //! `Library` in one transaction.
 
-use crate::error::{LibraryError, Result};
+use crate::error::{ImportError, Result};
 use crate::import_model::{ImportReport, ImportedLibrary};
 use crate::import_writer::ImportWriter;
 use crate::library::Library;
@@ -17,17 +17,17 @@ pub fn import_library_file(
     xml_file: &Path,
     report: &mut ImportReport,
 ) -> Result<()> {
-    let root = read_xml_file(xml_file)
-        .map_err(|e| LibraryError::Import(format!("Cannot read {}: {e}", xml_file.display())))?;
-    let importer = importers.find(&root).ok_or_else(|| {
-        LibraryError::Import(format!(
-            "Unrecognised library format: {}",
-            xml_file.file_name().unwrap_or_default().to_string_lossy()
-        ))
-    })?;
+    let root = read_xml_file(xml_file)?;
+    let importer = importers
+        .find(&root)
+        .ok_or_else(|| ImportError::Unrecognised {
+            file: xml_file
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        })?;
     let mut data = ImportedLibrary::default();
-    importer
-        .parse(&root, &mut data, report)
-        .map_err(LibraryError::Import)?;
+    importer.parse(&root, &mut data, report)?;
     ImportWriter::new(library, report).write(&data)
 }

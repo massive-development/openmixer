@@ -24,12 +24,36 @@ pub enum LibraryError {
     /// A folder scan was refused (not a folder) or stopped before it finished.
     #[error("{0}")]
     Ingest(String),
-    /// An import file could not be read, was not recognised, or its XML did not parse.
-    #[error("{0}")]
-    Import(String),
+    /// An import file could not be read, was not recognised, or did not parse.
+    #[error(transparent)]
+    Import(#[from] ImportError),
     /// A search query was rejected (unknown field, unreadable value, unsortable field).
     #[error("{0}")]
     Query(String),
+}
+
+/// Why an import file was rejected. Its display text is the message shown in the UI status line.
+#[derive(Debug, thiserror::Error)]
+pub enum ImportError {
+    /// The file could not be read from disk.
+    #[error("Cannot read {}: {source}", path.display())]
+    Io {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The XML is not well formed (a reader or attribute error from quick-xml).
+    #[error(transparent)]
+    Xml(#[from] quick_xml::Error),
+    /// The XML is well formed but its structure is wrong (unbalanced tags, no root, a bad reference).
+    #[error("{what}")]
+    Format { what: &'static str },
+    /// The document parsed but is not an iTunes property list.
+    #[error("Not an iTunes property list")]
+    Plist,
+    /// No registered importer recognises the document root.
+    #[error("Unrecognised library format: {file}")]
+    Unrecognised { file: String },
 }
 
 /// Result alias for library operations.

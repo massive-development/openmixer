@@ -46,7 +46,7 @@ mod xml;
 
 pub use cue_dao::{CueDao, CuePoint, SavedLoop};
 pub use database::{Database, OpenMode, Transaction};
-pub use error::{LibraryError, Result};
+pub use error::{ImportError, LibraryError, Result};
 pub use file_url::file_url_to_path;
 pub use import_cues::{import_cues, ASSUMED_SAMPLE_RATE, FIRST_MEMORY_SLOT};
 pub use import_merge::merge_track_record;
