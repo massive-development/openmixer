@@ -11,6 +11,7 @@ publish = false
 om-core = { path = "../om-core" }
 om-engine = { path = "../om-engine" }
 om-audio = { path = "../om-audio" }
+om-ui = { path = "../om-ui" }
 # The GPUI window (not a workspace member; see the root Cargo.toml). Off by default.
 om-ui-gpui = { path = "../om-ui-gpui", optional = true }
 

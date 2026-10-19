@@ -3938,6 +3938,7 @@ dependencies = [
  "om-audio",
  "om-core",
  "om-engine",
+ "om-ui",
  "om-ui-gpui",
 ]
 

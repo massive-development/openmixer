@@ -3,12 +3,11 @@
 //! `--smoke` renders a fixed number of frames and exits 0. `--debug-panel` shows the device, latency
 //! and raw parameter panel.
 
+use crate::composition::AppComposition;
 use om_audio::{
-    AudioDevice, AudioError, CpalAudioDevice, LatencyMonitor, LatencyStats, MockAudioDevice,
-    OutputRequest,
+    AudioCallback, AudioDevice, AudioError, CpalAudioDevice, LatencyMonitor, LatencyStats,
+    MockAudioDevice, OutputPairs, OutputRequest, OutputRouter,
 };
-use om_core::ParameterRouter;
-use om_engine::{AudioCallback, DjEngine};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
 use std::process::ExitCode;
@@ -16,7 +15,6 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Frames rendered by `--smoke` before it exits.
 const SMOKE_FRAMES: u64 = 120;
-const DECKS: usize = 2;
 const MOCK_RATE: f64 = 48_000.0;
 const MOCK_BLOCK: usize = 256;
 
@@ -91,10 +89,13 @@ pub fn main(args: &[String]) -> ExitCode {
     let smoke = args.iter().any(|a| a == "--smoke");
     let debug = args.iter().any(|a| a == "--debug-panel");
 
-    let (engine, audio) = DjEngine::new(DECKS);
-    let engine = Arc::new(engine);
-    let router = Arc::new(ParameterRouter::new());
-    engine.register(&router);
+    let mut composition = AppComposition::with_defaults();
+    let engine = Arc::clone(&composition.engine);
+    let router = Arc::clone(&composition.router);
+    let Some(audio) = composition.take_audio() else {
+        eprintln!("openmixer: the audio side was already taken");
+        return ExitCode::FAILURE;
+    };
 
     let (device, banner) = if mock {
         (
@@ -120,6 +121,13 @@ pub fn main(args: &[String]) -> ExitCode {
             }
         }
     };
+    // Preferences reach the output routing of the device that was actually opened.
+    let pairs: OutputPairs = match &device {
+        Device::Cpal(d) => d.output_pairs(),
+        Device::Mock(_) => OutputRouter::new().1,
+    };
+    composition.apply_preferences(&pairs);
+
     let device = Arc::new(Mutex::new(device));
     if let Err(error) = lock(&device).start(Box::new(audio)) {
         eprintln!("openmixer: could not start the audio device: {error}");
