@@ -2,23 +2,26 @@
 //! out with om-ui's `MainLayout` rectangles, owns the om-ui widget models, and ticks the engine's
 //! control side once per frame.
 
+use crate::controls::release_on;
 use crate::debug_panel::{device_rows, parameter_rows, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
-use crate::controls::release_on;
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds, WindowOptions,
+    div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds,
+    WindowOptions,
 };
 use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
-use om_ui::geometry::Rect;
-use om_ui::main_layout::{visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT};
-use om_ui::theme::{ThemeRegistry, ThemeTokens};
-use om_ui::meter::meter_params;
 use om_ui::binding::MixerBinding;
+use om_ui::geometry::Rect;
+use om_ui::main_layout::{
+    visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT,
+};
+use om_ui::meter::meter_params;
+use om_ui::theme::{ThemeRegistry, ThemeTokens};
 use om_ui::widgets::deck::DeckWidget;
 use om_ui::widgets::mixer::MixerPanel;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -192,7 +195,11 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.tick();
         window.request_animation_frame();
-        if self.options.smoke_frames.is_some_and(|limit| self.frames >= limit) {
+        if self
+            .options
+            .smoke_frames
+            .is_some_and(|limit| self.frames >= limit)
+        {
             cx.quit();
         }
 
@@ -201,7 +208,11 @@ impl Render for Shell {
         let height = f32::from(viewport.height) as i32;
         let banner = self.options.banner.clone();
         let top = if banner.is_some() { BANNER_HEIGHT } else { 0 };
-        let debug_w = if self.options.debug.is_some() { DEBUG_WIDTH } else { 0 };
+        let debug_w = if self.options.debug.is_some() {
+            DEBUG_WIDTH
+        } else {
+            0
+        };
         let area = Rect::new(0, top, (width - debug_w).max(0), (height - top).max(0));
         let gap = self.theme.gap;
 
@@ -230,7 +241,10 @@ impl Render for Shell {
             root = root.child(self.cell_view(&cell, cx));
         }
         if let Some(status) = self.options.debug.clone() {
-            root = root.child(self.debug_column(&status(), Rect::new(width - debug_w, top, debug_w, (height - top).max(0))));
+            root = root.child(self.debug_column(
+                &status(),
+                Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
+            ));
         }
         root
     }

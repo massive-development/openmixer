@@ -33,7 +33,11 @@ impl Target {
     fn is_knob(self) -> bool {
         matches!(
             self,
-            Target::Trim(_) | Target::Filter(_) | Target::Eq(..) | Target::FxMix | Target::FxParam(_)
+            Target::Trim(_)
+                | Target::Filter(_)
+                | Target::Eq(..)
+                | Target::FxMix
+                | Target::FxParam(_)
         )
     }
 }
@@ -94,10 +98,12 @@ impl Shell {
             let travel = (drag.anchor - axis_of(pos, true)) / KNOB_TRAVEL_PX;
             drag.anchor_value + travel * (max - min)
         } else if drag.vertical {
-            let frac = (axis_of(pos, true) - f64::from(drag.rect.y)) / f64::from(drag.rect.h.max(1));
+            let frac =
+                (axis_of(pos, true) - f64::from(drag.rect.y)) / f64::from(drag.rect.h.max(1));
             max - frac.clamp(0.0, 1.0) * (max - min)
         } else {
-            let frac = (axis_of(pos, false) - f64::from(drag.rect.x)) / f64::from(drag.rect.w.max(1));
+            let frac =
+                (axis_of(pos, false) - f64::from(drag.rect.x)) / f64::from(drag.rect.w.max(1));
             min + frac.clamp(0.0, 1.0) * (max - min)
         };
         self.apply(drag.target, value.clamp(min, max));
@@ -110,7 +116,10 @@ impl Shell {
 
     /// The dragged control shows the pointer: fader drags are excluded from pulling the model.
     pub(crate) fn dragging_channel_fader(&self) -> bool {
-        matches!(self.drag.map(|d| d.target), Some(Target::Channel(_) | Target::Master))
+        matches!(
+            self.drag.map(|d| d.target),
+            Some(Target::Channel(_) | Target::Master)
+        )
     }
 
     fn value_of(&self, target: Target) -> f64 {
@@ -135,9 +144,15 @@ impl Shell {
                 let r = self.decks[d].pitch.range();
                 (1.0 - r, 1.0 + r)
             }
-            Target::Channel(c) => (self.mixer.strips[c].fader.min, self.mixer.strips[c].fader.max),
+            Target::Channel(c) => (
+                self.mixer.strips[c].fader.min,
+                self.mixer.strips[c].fader.max,
+            ),
             Target::Master => (self.mixer.master.fader.min, self.mixer.master.fader.max),
-            Target::Crossfader => (self.mixer.crossfader.slider.min, self.mixer.crossfader.slider.max),
+            Target::Crossfader => (
+                self.mixer.crossfader.slider.min,
+                self.mixer.crossfader.slider.max,
+            ),
             Target::Trim(c) => knob_range(&self.mixer.strips[c].trim),
             Target::Filter(c) => knob_range(&self.mixer.strips[c].filter),
             Target::Eq(c, b) => knob_range(&self.mixer.strips[c].eq[b]),
@@ -271,9 +286,15 @@ mod tests {
         let track = Rect::new(0, 0, 20, 200);
         shell.begin_drag(Target::Pitch(0), track, at(5.0, 0.0));
         let r = shell.decks[0].pitch.range();
-        assert!((engine.deck(0).rate() - (1.0 + r)).abs() < 1e-3, "top is fastest");
+        assert!(
+            (engine.deck(0).rate() - (1.0 + r)).abs() < 1e-3,
+            "top is fastest"
+        );
         shell.drag_move(at(5.0, 200.0));
-        assert!((engine.deck(0).rate() - (1.0 - r)).abs() < 1e-3, "bottom is slowest");
+        assert!(
+            (engine.deck(0).rate() - (1.0 - r)).abs() < 1e-3,
+            "bottom is slowest"
+        );
         // Deck 1 is untouched.
         assert!((engine.deck(1).rate() - 1.0).abs() < 1e-9);
     }
@@ -288,7 +309,10 @@ mod tests {
         assert!((engine.mixer().trim(0) - before).abs() < 1e-4);
         // Moving up half the sweep moves it half its range.
         shell.drag_move(at(20.0, 0.0));
-        let (min, max) = (shell.mixer.strips[0].trim.range.min, shell.mixer.strips[0].trim.range.max);
+        let (min, max) = (
+            shell.mixer.strips[0].trim.range.min,
+            shell.mixer.strips[0].trim.range.max,
+        );
         assert!(engine.mixer().trim(0) > before);
         assert!(f64::from(engine.mixer().trim(0)) <= max + 1e-3 && min <= max);
     }

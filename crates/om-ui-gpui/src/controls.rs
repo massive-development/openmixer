@@ -63,10 +63,20 @@ pub fn slider(
     let vertical = rect.h >= rect.w;
     let thumb = if vertical {
         let travel = (rect.h - 12).max(0) as f32;
-        place(Rect::new(rect.x, rect.y + ((1.0 - frac) * travel) as i32, rect.w, 12))
+        place(Rect::new(
+            rect.x,
+            rect.y + ((1.0 - frac) * travel) as i32,
+            rect.w,
+            12,
+        ))
     } else {
         let travel = (rect.w - 12).max(0) as f32;
-        place(Rect::new(rect.x + (frac * travel) as i32, rect.y, 12, rect.h))
+        place(Rect::new(
+            rect.x + (frac * travel) as i32,
+            rect.y,
+            12,
+            rect.h,
+        ))
     };
     let track = place(rect)
         .bg(paint(t.well))
@@ -139,9 +149,13 @@ pub fn stereo_meter(t: &ThemeTokens, rect: Rect, levels: [f32; 2], clipping: [bo
                 .bg(paint(t.well))
                 .rounded(px(2.)),
         );
-        col = col.child(
-            place(bar).bg(paint(if *level > 0.9 { t.meter_high } else if *level > 0.6 { t.meter_mid } else { t.meter_low })),
-        );
+        col = col.child(place(bar).bg(paint(if *level > 0.9 {
+            t.meter_high
+        } else if *level > 0.6 {
+            t.meter_mid
+        } else {
+            t.meter_low
+        })));
         col = col.child(
             place(Rect::new(x + 1, 2, (half - 2).max(1), 8))
                 .bg(paint(if clip { t.meter_high } else { t.surface_raised }))

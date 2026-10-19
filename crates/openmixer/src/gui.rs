@@ -3,7 +3,10 @@
 //! `--smoke` renders a fixed number of frames and exits 0. `--debug-panel` shows the device, latency
 //! and raw parameter panel.
 
-use om_audio::{AudioDevice, AudioError, CpalAudioDevice, LatencyMonitor, LatencyStats, MockAudioDevice, OutputRequest};
+use om_audio::{
+    AudioDevice, AudioError, CpalAudioDevice, LatencyMonitor, LatencyStats, MockAudioDevice,
+    OutputRequest,
+};
 use om_core::ParameterRouter;
 use om_engine::{AudioCallback, DjEngine};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
@@ -94,7 +97,10 @@ pub fn main(args: &[String]) -> ExitCode {
     engine.register(&router);
 
     let (device, banner) = if mock {
-        (mock_device(), Some("Mock device: silent, no audio output (--mock-device).".to_owned()))
+        (
+            mock_device(),
+            Some("Mock device: silent, no audio output (--mock-device).".to_owned()),
+        )
     } else {
         match CpalAudioDevice::open(&OutputRequest {
             device: None,
@@ -104,7 +110,9 @@ pub fn main(args: &[String]) -> ExitCode {
         }) {
             Ok(device) => (Device::Cpal(device), None),
             Err(error) => {
-                eprintln!("openmixer: no audio device ({error}); running silent on the mock device");
+                eprintln!(
+                    "openmixer: no audio device ({error}); running silent on the mock device"
+                );
                 (
                     mock_device(),
                     Some("No audio device: running silent on the mock device.".to_owned()),
