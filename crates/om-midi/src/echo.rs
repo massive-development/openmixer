@@ -11,9 +11,12 @@ use std::time::{Duration, Instant};
 /// How long a sent message can come back as an echo.
 pub const ECHO_WINDOW: Duration = Duration::from_millis(100);
 
+/// A message sent to a port, with the time it was sent.
+type Record = (Instant, Vec<u8>);
+
 #[derive(Default)]
 pub struct EchoGuard {
-    sent: Mutex<HashMap<String, Vec<(Instant, Vec<u8>)>>>,
+    sent: Mutex<HashMap<String, Vec<Record>>>,
 }
 
 impl EchoGuard {
