@@ -37,14 +37,20 @@ pub struct StemsHost {
     manifest: Option<ModelManifest>,
     service: Option<Arc<StemService>>,
     max_cache_bytes: Option<u64>,
+    auto_prepare: bool,
     /// Every job handed out; cancelled by `clear_cache`.
     jobs: Vec<JobHandle>,
 }
 
 impl StemsHost {
     /// Reads the manifest (unless `mock`) and sets up the installer. `max_cache_bytes` is the cap
-    /// from the preferences (`None` for none).
-    pub fn new(mock: bool, library_path: String, max_cache_bytes: Option<u64>) -> Self {
+    /// from the preferences (`None` for none); `auto_prepare` the preference of the same name.
+    pub fn new(
+        mock: bool,
+        library_path: String,
+        max_cache_bytes: Option<u64>,
+        auto_prepare: bool,
+    ) -> Self {
         let folder = (library_path != om_ui::library::MEMORY_PATH)
             .then(|| {
                 Path::new(&library_path)
@@ -62,6 +68,7 @@ impl StemsHost {
             manifest: None,
             service: None,
             max_cache_bytes,
+            auto_prepare,
             jobs: Vec::new(),
         };
         if mock {
@@ -234,6 +241,14 @@ impl StemHost for StemsHost {
         }
     }
 
+    fn auto_prepare(&self) -> bool {
+        self.auto_prepare
+    }
+
+    fn set_auto_prepare(&mut self, on: bool) {
+        self.auto_prepare = on;
+    }
+
     fn submit(&mut self, job: StemJob) -> SettingsResult<JobHandle> {
         let state = self.model_state();
         if !state.ready() {
@@ -267,7 +282,7 @@ mod tests {
     #[test]
     fn without_a_manifest_the_model_is_not_installed_and_says_where() {
         let dir = tempfile::tempdir().expect("dir");
-        let host = StemsHost::new(false, library_in(dir.path()), None);
+        let host = StemsHost::new(false, library_in(dir.path()), None, false);
         match host.model_state() {
             ModelState::NotInstalled(reason) => assert!(reason.contains("manifest"), "{reason}"),
             other => panic!("unexpected state {other:?}"),
@@ -278,7 +293,7 @@ mod tests {
     #[test]
     fn the_mock_is_installed_and_needs_no_manifest() {
         let dir = tempfile::tempdir().expect("dir");
-        let mut host = StemsHost::new(true, library_in(dir.path()), None);
+        let mut host = StemsHost::new(true, library_in(dir.path()), None, false);
         assert_eq!(
             host.model_state(),
             ModelState::Installed(STEM_SEPARATOR_VERSION)
@@ -290,7 +305,7 @@ mod tests {
     #[test]
     fn a_declined_or_missing_model_refuses_jobs_without_creating_a_service() {
         let dir = tempfile::tempdir().expect("dir");
-        let mut host = StemsHost::new(false, library_in(dir.path()), None);
+        let mut host = StemsHost::new(false, library_in(dir.path()), None, false);
         assert!(host.service_if_ready().expect("ok").is_none());
         let job = StemJob {
             track_id: 1,
@@ -306,7 +321,7 @@ mod tests {
 
     #[test]
     fn an_in_memory_library_has_no_model_folder_or_cache() {
-        let host = StemsHost::new(false, om_ui::library::MEMORY_PATH.into(), None);
+        let host = StemsHost::new(false, om_ui::library::MEMORY_PATH.into(), None, false);
         assert_eq!(host.cache_bytes(), 0);
         assert!(host.cache_root().is_none());
     }
