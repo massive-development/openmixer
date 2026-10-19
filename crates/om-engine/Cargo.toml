@@ -11,13 +11,13 @@ publish = false
 workspace = true
 
 [dependencies]
-om-core = { path = "../om-core" }
-om-dsp = { path = "../om-dsp" }
-om-stretch = { path = "../om-stretch" }
-rtrb = "0.4"
+om-core.workspace = true
+om-dsp.workspace = true
+om-stretch.workspace = true
+rtrb.workspace = true
 symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "ogg", "vorbis", "isomp4", "aac"] }
-thiserror = "2"
-tracing = "0.1"
+thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 assert_no_alloc = "1.1"
