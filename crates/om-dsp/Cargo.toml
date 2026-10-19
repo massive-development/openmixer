@@ -12,3 +12,6 @@ workspace = true
 
 [dependencies]
 om-core.workspace = true
+
+[dev-dependencies]
+om-testing.workspace = true

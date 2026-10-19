@@ -90,19 +90,21 @@ impl Default for SweepFilter {
 #[cfg(test)]
 mod tests {
     use super::SweepFilter;
-    use crate::test_util::{db_of, rms_tail, sine, sine_rms, BLOCK, SAMPLE_RATE};
+    use crate::test_util::{BLOCK, FRAMES, SAMPLE_RATE};
+    use om_testing::level::{gain_to_db, rms_tail, sine_rms};
+    use om_testing::signals::sine_amp;
 
     /// Gain in dB through the sweep filter alone for a sine at `hz`, with `position` applied.
     fn gain_db(hz: f64, position: f32) -> f64 {
         let mut sweep = SweepFilter::new();
         sweep.prepare(SAMPLE_RATE);
         sweep.set_position(position);
-        let mut left = sine(hz, 0.5);
+        let mut left = sine_amp(hz, 0.5, SAMPLE_RATE, FRAMES);
         let mut right = left.clone();
         for (l, r) in left.chunks_mut(BLOCK).zip(right.chunks_mut(BLOCK)) {
             sweep.process(l, r);
         }
-        db_of(rms_tail(&left) / sine_rms(0.5))
+        gain_to_db(rms_tail(&left) / sine_rms(0.5))
     }
 
     #[test]

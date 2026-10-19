@@ -86,19 +86,21 @@ impl Default for ThreeBandEq {
 #[cfg(test)]
 mod tests {
     use super::ThreeBandEq;
-    use crate::test_util::{db_of, rms_tail, sine, sine_rms, BLOCK, SAMPLE_RATE};
+    use crate::test_util::{BLOCK, FRAMES, SAMPLE_RATE};
+    use om_testing::level::{gain_to_db, rms_tail, sine_rms};
+    use om_testing::signals::sine_amp;
 
     /// Gain in dB through the EQ alone for a sine at `hz`, with `setup` applied first.
     fn gain_db(hz: f64, setup: impl FnOnce(&mut ThreeBandEq)) -> f64 {
         let mut eq = ThreeBandEq::new();
         eq.prepare(SAMPLE_RATE);
         setup(&mut eq);
-        let mut left = sine(hz, 0.5);
+        let mut left = sine_amp(hz, 0.5, SAMPLE_RATE, FRAMES);
         let mut right = left.clone();
         for (l, r) in left.chunks_mut(BLOCK).zip(right.chunks_mut(BLOCK)) {
             eq.process(l, r);
         }
-        db_of(rms_tail(&left) / sine_rms(0.5))
+        gain_to_db(rms_tail(&left) / sine_rms(0.5))
     }
 
     #[test]

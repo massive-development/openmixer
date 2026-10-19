@@ -3976,6 +3976,7 @@ name = "om-dsp"
 version = "0.1.0"
 dependencies = [
  "om-core",
+ "om-testing",
 ]
 
 [[package]]
