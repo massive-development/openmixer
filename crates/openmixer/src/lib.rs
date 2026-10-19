@@ -5,6 +5,9 @@
 
 pub mod app_targets;
 pub mod audio_settings;
+pub mod error;
+
+pub use error::AppError;
 pub mod composition;
 pub mod control_timer;
 pub mod engine_state;

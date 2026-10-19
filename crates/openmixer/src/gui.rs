@@ -22,6 +22,7 @@ use openmixer::audio_settings::{
 use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
+use openmixer::AppError;
 use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -104,7 +105,7 @@ pub fn main(args: &[String]) -> ExitCode {
 
     // The library: ingest the smoke tracks and load the first one into deck A, or share the
     // services the composition opened. The window and the smoke check use the same hub.
-    let mut smoke_error: Option<String> = None;
+    let mut smoke_error: Option<AppError> = None;
     let library = composition.hooks.library.take().map(|mut services| {
         if let Some(root) = &smoke_root {
             if let Err(error) = library_smoke::ingest_generated(&mut services, root) {
@@ -180,9 +181,12 @@ pub fn main(args: &[String]) -> ExitCode {
             && engine.deck(0).is_loaded();
         if smoke_error.is_none() {
             if !loaded {
-                smoke_error = Some("deck A is not loaded".to_owned());
+                smoke_error = Some(AppError::Smoke("deck A is not loaded"));
             } else if rows != TRACKS {
-                smoke_error = Some(format!("the table shows {rows} rows, not {TRACKS}"));
+                smoke_error = Some(AppError::SmokeRows {
+                    rows,
+                    expected: TRACKS,
+                });
             }
         }
         {
