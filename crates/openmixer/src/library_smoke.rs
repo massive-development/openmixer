@@ -98,7 +98,7 @@ pub fn load_first_into_deck0(
         .map_err(|e| e.to_string())?;
     tracks.sort_by(|a, b| a.path.cmp(&b.path));
     let first = tracks.into_iter().next().ok_or("the library is empty")?;
-    loader.load_track(engine, services, 0, &first)?;
+    loader.load_track(engine, services, 0, &first, false)?;
     Ok(first.id)
 }
 

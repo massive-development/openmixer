@@ -61,9 +61,10 @@ impl LoaderRig {
         self.services.library().tracks().insert(&track).unwrap()
     }
 
+    /// A normal load: refused while the deck is playing.
     fn load(&mut self, deck: usize, track_id: i64) -> Result<(), String> {
         self.loader
-            .load(&self.engine, &mut self.services, deck, track_id)
+            .load(&self.engine, &mut self.services, deck, track_id, false)
     }
 
     /// Pumps the services and the loader until the deck has a waveform, or the timeout passes.
@@ -211,3 +212,41 @@ fn reference_key_follows_the_playing_deck() {
     rig.engine.deck(1).set_playing(true);
     assert_eq!(rig.loader.reference_camelot(&rig.engine), "9A");
 }
+
+#[test]
+fn a_playing_deck_refuses_a_load_unless_forced() {
+    let mut rig = LoaderRig::new();
+    let first = rig.add_file("first.wav", "8A", true);
+    let second = rig.add_file("second.wav", "9A", true);
+    rig.load(0, first).expect("first loads");
+    rig.engine.deck(0).play();
+    assert!(rig.engine.deck(0).is_playing());
+
+    let refused = rig.load(0, second).expect_err("a playing deck refuses");
+    assert_eq!(refused, "deck is playing");
+    assert!(rig.engine.deck(0).is_playing(), "the deck keeps playing");
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(first));
+
+    rig.loader
+        .load(&rig.engine, &mut rig.services, 0, second, true)
+        .expect("an explicit force loads it");
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(second));
+}
+
+#[test]
+fn a_failed_load_leaves_the_loaded_track_and_its_grid_alone() {
+    let mut rig = LoaderRig::new();
+    let keep = rig.add_file("keep.wav", "8A", true);
+    rig.load(0, keep).expect("loads");
+    assert!(rig.wait_for_waveform(0));
+    let before = rig.engine.deck_control(0).grid().expect("analysed grid");
+
+    let junk = rig.add_file("junk.wav", "8A", true);
+    std::fs::write(rig.dir.path().join("junk.wav"), b"not audio").unwrap();
+    assert!(rig.load(0, junk).is_err());
+
+    let after = rig.engine.deck_control(0).grid().expect("grid restored");
+    assert!((after.bpm() - before.bpm()).abs() < 1e-9);
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(keep));
+}
+

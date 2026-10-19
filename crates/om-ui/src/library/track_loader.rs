@@ -12,6 +12,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
 
 use om_analysis::WaveformData;
+use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
 use om_library::{PrepEntry, PrepStatus, TrackRecord};
 
@@ -24,6 +25,8 @@ struct Slot {
     /// Queued for analysis; refreshed when the queue reports it done.
     awaiting_analysis: bool,
     waveform: Option<Arc<WaveformData>>,
+    /// The grid the deck was given for `track`; put back if a later load fails.
+    grid: Option<Arc<dyn BeatGrid>>,
 }
 
 pub struct TrackLoader {
@@ -40,13 +43,14 @@ impl TrackLoader {
         }
     }
 
-    /// Loads a library track by id into `deck`.
+    /// Loads a library track by id into `deck`. See [`Self::load_track`] for `force`.
     pub fn load(
         &mut self,
         engine: &DjEngine,
         services: &mut LibraryServices,
         deck: usize,
         track_id: i64,
+        force: bool,
     ) -> Result<(), String> {
         let track = services
             .library()
@@ -54,27 +58,39 @@ impl TrackLoader {
             .find_by_id(track_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("unknown track {track_id}"))?;
-        self.load_track(engine, services, deck, &track)
+        self.load_track(engine, services, deck, &track, force)
     }
 
     /// Loads a track into `deck`. A missing file or an undecodable one fails without touching the
     /// deck. A track without cached analysis is queued with priority; the deck is loaded and
     /// playable either way.
+    ///
+    /// A playing deck refuses the load ("deck is playing") unless `force` is set, since loading
+    /// stops it. The deck's grid is cleared before the file changes, so a synced deck never runs
+    /// the old grid over the new audio; if the file then fails to decode, the old grid comes back.
     pub fn load_track(
         &mut self,
         engine: &DjEngine,
         services: &mut LibraryServices,
         deck: usize,
         track: &TrackRecord,
+        force: bool,
     ) -> Result<(), String> {
         if deck >= self.slots.len() {
             return Err("no such deck".to_owned());
+        }
+        if !force && engine.deck(deck).is_playing() {
+            return Err("deck is playing".to_owned());
         }
         let path = Path::new(&track.path);
         if !path.is_file() {
             return Err("file is missing".to_owned());
         }
+        let previous_grid = self.slots[deck].grid.take();
+        engine.set_grid(deck, None);
         if engine.deck(deck).load(path).is_err() {
+            engine.set_grid(deck, previous_grid.clone());
+            self.slots[deck].grid = previous_grid;
             return Err(format!("cannot decode {}", file_name(path)));
         }
         let found = services.analysis_for(track);
@@ -205,6 +221,7 @@ fn apply(
     found: &TrackAnalysis,
 ) {
     engine.set_grid(deck, found.grid.clone());
+    slot.grid = found.grid.clone();
     slot.waveform = found.waveform.clone();
     slot.track = Some(track.clone());
 }
