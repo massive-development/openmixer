@@ -3,16 +3,19 @@
 //! device owner (the binary, or the UI gate) takes the audio side with [`AppComposition::take_audio`]
 //! and drives it, so headless and GUI runs share the same wiring.
 //!
-//! Pieces that depend on crates not yet ported are optional hooks in [`ServiceHooks`]: MIDI
-//! (Todo 10, `om-midi`) and plugins (Todo 14, `om-plugins`). Until those exist the defaults are
-//! no-ops, and the matching preference sections are stored but not acted on. The library (Todo 13)
-//! is attached on demand with [`AppComposition::attach_library`].
+//! MIDI is attached on demand with [`AppComposition::attach_midi`], over a device backend (the
+//! system one, or a mock). Plugins (Todo 14, `om-plugins`) are still an optional hook in
+//! [`ServiceHooks`]; until they exist the plugin preference section is stored but not acted on.
+//! The library (Todo 13) is attached on demand with [`AppComposition::attach_library`].
 
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
 };
+use crate::engine_state::EngineStateReader;
+use crate::midi::{FeedbackThread, MidiService};
 use om_audio::{DjEngine, DjEngineAudio};
-use om_core::ParameterRouter;
+use om_core::{ParameterRouter, StateReader};
+use om_midi::MidiBackend;
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
@@ -30,7 +33,7 @@ pub const THEME_ENV: &str = "OPENMIXER_THEME";
 /// preference section; `None` means nothing is attached and the section is only stored.
 #[derive(Default)]
 pub struct ServiceHooks {
-    /// Placeholder for `om-midi` (Todo 10): receives the MIDI preference section.
+    /// The MIDI preference section, once [`AppComposition::attach_midi`] has run.
     pub midi: Option<Box<dyn MidiSink>>,
     /// Placeholder for `om-plugins` (Todo 14): loads the plugin folder.
     pub plugins: Option<Box<dyn PluginSink>>,
@@ -59,6 +62,10 @@ pub struct AppComposition {
     pub themes: ThemeRegistry,
     pub prefs: Preferences,
     pub hooks: ServiceHooks,
+    /// The MIDI service, once attached: the settings page's controls and the input list.
+    pub midi: Option<Arc<MidiService>>,
+    /// Keeps the feedback thread running for as long as the MIDI service is attached.
+    midi_feedback: Option<FeedbackThread>,
     applier: PreferencesApplier,
     targets: AppTargetsState,
     audio: Option<DjEngineAudio>,
@@ -90,6 +97,8 @@ impl AppComposition {
             themes,
             prefs,
             hooks: ServiceHooks::default(),
+            midi: None,
+            midi_feedback: None,
             applier: PreferencesApplier::new(),
             targets: AppTargetsState::default(),
             audio: Some(audio),
@@ -124,6 +133,23 @@ impl AppComposition {
 
     pub fn take_audio(&mut self) -> Option<DjEngineAudio> {
         self.audio.take()
+    }
+
+    /// Attaches MIDI over `backend`: parameter updates go to the router, feedback reads the engine,
+    /// and the MIDI preference section now opens inputs and loads the map. The system backend, or a
+    /// mock for headless runs. A second call replaces the first service.
+    pub fn attach_midi(&mut self, backend: Box<dyn MidiBackend>) {
+        let state: Arc<dyn StateReader> =
+            Arc::new(EngineStateReader::new(Arc::clone(&self.engine)));
+        let service = MidiService::new(backend, state);
+        let target: Arc<dyn om_core::ParameterTarget> = self.router.clone();
+        service.set_target(target);
+        match service.start_feedback() {
+            Ok(thread) => self.midi_feedback = Some(thread),
+            Err(error) => eprintln!("openmixer: MIDI feedback thread: {error}"),
+        }
+        self.hooks.midi = Some(Box::new(Arc::clone(&service)));
+        self.midi = Some(service);
     }
 
     /// Pushes every changed preference section to its subsystem (first call pushes everything).

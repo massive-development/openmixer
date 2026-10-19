@@ -42,6 +42,15 @@ pub fn main(args: &[String]) -> ExitCode {
     if let Err(error) = composition.attach_library(library_path) {
         eprintln!("openmixer: library unavailable: {error}");
     }
+    // MIDI: the system backend on a real run; a mock under --smoke so the check never opens hardware.
+    if smoke {
+        composition.attach_midi(Box::new(om_midi::MockBackend::new()));
+    } else {
+        match om_midi::system_backend() {
+            Ok(backend) => composition.attach_midi(backend),
+            Err(error) => eprintln!("openmixer: MIDI unavailable: {error}"),
+        }
+    }
     let engine = Arc::clone(&composition.engine);
     let router = Arc::clone(&composition.router);
     let Some(audio) = composition.take_audio() else {
