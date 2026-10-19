@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Plugin API, registry and stage catalog. Port of `src/plugins/`.
+//! Plugin API, registry and stage catalog.
 //!
 //! A plugin implements [`Plugin`] and registers its stages, controller maps, parameter targets and
 //! themes through [`PluginHost`] in `on_load`. The [`PluginRegistry`] owns the loaded plugins and
