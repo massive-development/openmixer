@@ -131,11 +131,17 @@ pub trait AudioCallback: Send {
 - **Reuse when:** shipping starting points for any parameterised unit (EQ curves, mapping defaults).
 - **Notes:** built-in presets are a static table. Loading user preset files from disk is not built yet.
 
+### Generic worker pool (FIFO job queue + job handle)
+- **Where:** `om-core` (`jobs.rs` `WorkerPool<J>`, `JobHandle`, `JobCtx`); `om-analysis` `AnalysisService` is built on it.
+- **Why:** one place for the queue, the N worker threads, progress, cancel, wait, panic containment and join-on-drop, so a feature supplies only a job type and a handler.
+- **Reuse when:** a set of independent jobs runs in the background, served FIFO by a fixed number of threads, and callers want status, progress, cancel or a completion callback. Do not use it for timers or periodic scans (WatchFolders stays a dedicated thread) or for work that is already persisted and paced by its own owner (PrepQueue feeds the pool-backed `AnalysisService`).
+- **Notes:** `new(workers, name, handler)`; `submit(job)` returns a `JobHandle` (id, status Queued/Running/Done/Failed/Cancelled, progress 0..1, `cancel()`, `wait(timeout)`). The handler gets a `&JobCtx` and must poll `is_cancelled()`; a running job is never killed. A panic fails only its job (`Failed` with the message) and the worker carries on. `submit_with_listener` runs a panic-guarded callback on the worker once the job is final. `cancel_all()`, `queued_len()`, and `Drop` (cancel queued and running, then join) complete the API. Waiting is condvar-based; no polling loops in the pool.
+
 ### Background job service (worker threads + shared job handle)
 - **Where:** `om-analysis` (`service.rs` `AnalysisService`, `job.rs` `AnalysisJob`, `job_runner.rs` the job body)
 - **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
 - **Reuse when:** any long-running background task (library scan, stem precompute, export).
-- **Notes:** `submit()` returns `Arc<AnalysisJob>`, shared by caller and worker. Cancellation is an `AtomicBool` polled by the job. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
+- **Notes:** runs on the generic `WorkerPool` (see above); status, progress and cancellation come from its `JobHandle`, and `AnalysisJob` adds the results. `submit()` returns `Arc<AnalysisJob>`. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
 
 ### Content-addressed result cache
 - **Where:** `om-analysis` cache (`result_cache.rs` `ResultCache` trait, `sqlite_cache.rs` `SqliteResultCache`)
