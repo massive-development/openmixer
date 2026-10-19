@@ -110,35 +110,51 @@ impl Database {
 pub struct Transaction<'a> {
     db: &'a Database,
     name: String,
+    /// The outermost transaction is a real `BEGIN IMMEDIATE`, not a savepoint: a deferred start
+    /// can pin a snapshot and then fail its first write with SQLITE_BUSY_SNAPSHOT, with no wait.
+    outermost: bool,
     finished: bool,
 }
 
 impl<'a> Transaction<'a> {
-    /// Opens a savepoint on `db`.
+    /// Opens a transaction on `db`: `BEGIN IMMEDIATE` when none is open, else a savepoint.
     pub fn begin(db: &'a Database) -> Result<Self> {
         let name = format!("om_sp{}", db.next_savepoint_id());
-        db.exec(&format!("SAVEPOINT {name};"))?;
+        let outermost = db.connection().is_autocommit();
+        if outermost {
+            db.exec("BEGIN IMMEDIATE;")?;
+        } else {
+            db.exec(&format!("SAVEPOINT {name};"))?;
+        }
         Ok(Self {
             db,
             name,
+            outermost,
             finished: false,
         })
     }
 
-    /// Releases the savepoint, keeping its changes.
+    /// Ends the transaction, keeping its changes.
     pub fn commit(mut self) -> Result<()> {
         self.finished = true;
-        self.db.exec(&format!("RELEASE {};", self.name))
+        if self.outermost {
+            self.db.exec("COMMIT;")
+        } else {
+            self.db.exec(&format!("RELEASE {};", self.name))
+        }
     }
 }
 
 impl Drop for Transaction<'_> {
     fn drop(&mut self) {
         if !self.finished {
-            // Nothing sensible to do with a failure while unwinding; the savepoint is discarded.
-            let _ = self
-                .db
-                .exec(&format!("ROLLBACK TO {0}; RELEASE {0};", self.name));
+            // Nothing sensible to do with a failure while unwinding; the changes are discarded.
+            let _ = if self.outermost {
+                self.db.exec("ROLLBACK;")
+            } else {
+                self.db
+                    .exec(&format!("ROLLBACK TO {0}; RELEASE {0};", self.name))
+            };
         }
     }
 }
