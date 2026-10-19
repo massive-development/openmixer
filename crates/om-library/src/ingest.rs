@@ -218,7 +218,10 @@ impl<'a> Ingestor<'a> {
             );
             return dao.delete(id);
         }
-        dao.set(id, &ArtworkRecord::new(art.mime_type.clone(), art.data.clone()))
+        dao.set(
+            id,
+            &ArtworkRecord::new(art.mime_type.clone(), art.data.clone()),
+        )
     }
 
     /// Flags tracks under `folder` that were not seen in this pass. A partial pass (stopped, or a

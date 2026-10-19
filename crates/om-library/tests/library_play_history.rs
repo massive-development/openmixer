@@ -96,8 +96,8 @@ fn schema_four_copy_upgrades_to_five_and_keeps_its_data() {
     let v4_path = v4.to_str().expect("utf-8").to_owned();
     {
         // A database as the previous build left it: migrations 1 to 4 only.
-        let lib = Library::open(&v4_path, OpenMode::ReadWrite, &core_migrations()[..4])
-            .expect("open v4");
+        let lib =
+            Library::open(&v4_path, OpenMode::ReadWrite, &core_migrations()[..4]).expect("open v4");
         let id = add_track(&lib, "/m/kept.wav");
         lib.tracks().set_rating(id, 5).unwrap();
         lib.cues()
@@ -124,7 +124,10 @@ fn schema_four_copy_upgrades_to_five_and_keeps_its_data() {
     assert_eq!(kept[0].path, "/m/kept.wav");
     assert_eq!(kept[0].rating, 5);
     assert_eq!(kept[0].play_count, 2);
-    assert_eq!(CueDao::new(lib.database()).cues(kept[0].id).unwrap().len(), 1);
+    assert_eq!(
+        CueDao::new(lib.database()).cues(kept[0].id).unwrap().len(),
+        1
+    );
     assert_eq!(count(&lib, "SELECT COUNT(*) FROM play_history;"), 0);
 
     lib.tracks()

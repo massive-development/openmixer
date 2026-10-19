@@ -102,8 +102,12 @@ impl<'a> ArtworkDao<'a> {
                 |row| {
                     Ok(ArtworkRecord {
                         mime: row.get(0)?,
-                        width: row.get::<_, Option<i64>>(1)?.and_then(|v| u32::try_from(v).ok()),
-                        height: row.get::<_, Option<i64>>(2)?.and_then(|v| u32::try_from(v).ok()),
+                        width: row
+                            .get::<_, Option<i64>>(1)?
+                            .and_then(|v| u32::try_from(v).ok()),
+                        height: row
+                            .get::<_, Option<i64>>(2)?
+                            .and_then(|v| u32::try_from(v).ok()),
                         data: row.get(3)?,
                     })
                 },
@@ -129,9 +133,10 @@ impl<'a> ArtworkDao<'a> {
 
     /// Removes the track's cover. Removing a track that has none is not an error.
     pub fn delete(&self, track_id: i64) -> Result<()> {
-        self.db
-            .connection()
-            .execute("DELETE FROM artwork WHERE track_id = ?1;", params![track_id])?;
+        self.db.connection().execute(
+            "DELETE FROM artwork WHERE track_id = ?1;",
+            params![track_id],
+        )?;
         Ok(())
     }
 }

@@ -107,7 +107,11 @@ fn header_sizes_come_from_png_and_jpeg_headers_only() {
     ];
     assert_eq!(image_size(&jpeg), Some((2, 3)));
 
-    assert_eq!(image_size(b"GIF89a...."), None, "other formats are not sized");
+    assert_eq!(
+        image_size(b"GIF89a...."),
+        None,
+        "other formats are not sized"
+    );
     assert_eq!(image_size(&PNG_1X1[..20]), None, "a truncated header");
     assert_eq!(image_size(&[0xFF, 0xD8, 0xFF]), None);
 }
@@ -154,14 +158,21 @@ fn a_changed_file_updates_its_cover_and_a_removed_one_clears_it() {
         summary
     };
     scan(&lib);
-    let id = lib.tracks().find_by_path(&stored(&file)).unwrap().unwrap().id;
+    let id = lib
+        .tracks()
+        .find_by_path(&stored(&file))
+        .unwrap()
+        .unwrap()
+        .id;
     assert!(lib.artwork().get(id).unwrap().is_some());
 
     // Same bytes and mtime: nothing is re-read, so the cover stays.
     assert_eq!(scan(&lib).unchanged, 1);
 
     // A new cover (a JPEG header) on a touched file replaces the old one.
-    let jpeg = [0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x08, 0x08, 0x00, 0x05, 0x00, 0x07, 0x01];
+    let jpeg = [
+        0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x08, 0x08, 0x00, 0x05, 0x00, 0x07, 0x01,
+    ];
     mp3_with_cover(&file, 10, Some((&jpeg, MimeType::Jpeg)));
     touch(&file, 1_700_000_000_000);
     assert_eq!(scan(&lib).updated, 1);
@@ -191,7 +202,12 @@ fn an_oversized_cover_is_skipped_not_stored() {
         .ingest_folder(tmp.path(), &mut summary, &|| false)
         .unwrap();
     assert_eq!(summary.added, 1, "the track itself is still added");
-    let id = lib.tracks().find_by_path(&stored(&file)).unwrap().unwrap().id;
+    let id = lib
+        .tracks()
+        .find_by_path(&stored(&file))
+        .unwrap()
+        .unwrap()
+        .id;
     assert!(lib.artwork().get(id).unwrap().is_none());
 }
 
@@ -209,6 +225,14 @@ fn a_cover_at_exactly_the_limit_is_stored() {
     Ingestor::new(&lib, &readers)
         .ingest_folder(tmp.path(), &mut summary, &|| false)
         .unwrap();
-    let id = lib.tracks().find_by_path(&stored(&file)).unwrap().unwrap().id;
-    assert_eq!(lib.artwork().get(id).unwrap().unwrap().data.len(), MAX_ARTWORK_BYTES);
+    let id = lib
+        .tracks()
+        .find_by_path(&stored(&file))
+        .unwrap()
+        .unwrap()
+        .id;
+    assert_eq!(
+        lib.artwork().get(id).unwrap().unwrap().data.len(),
+        MAX_ARTWORK_BYTES
+    );
 }

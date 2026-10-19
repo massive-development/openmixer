@@ -294,14 +294,22 @@ fn saved_cues_are_applied_on_load_and_the_outgoing_track_keeps_its_edits() {
     // Loading b before any pump: a's edit is written first, then b's cues go in.
     assert!(rig.load(0, b).is_ok());
     assert_eq!(rig.engine.deck(0).hotcue(5), Some(9_000));
-    assert_eq!(rig.engine.deck(0).hotcue(1), None, "the bank was cleared by the load");
+    assert_eq!(
+        rig.engine.deck(0).hotcue(1),
+        None,
+        "the bank was cleared by the load"
+    );
     assert_eq!(saved_cues(&rig, a), vec![(1, 500)]);
 
     // And a's cue comes back when a is loaded again.
     assert!(rig.load(0, a).is_ok());
     assert_eq!(rig.engine.deck(0).hotcue(1), Some(500));
     rig.loader.pump(&rig.engine, &rig.services);
-    assert_eq!(saved_cues(&rig, a), vec![(1, 500)], "restored, not rewritten");
+    assert_eq!(
+        saved_cues(&rig, a),
+        vec![(1, 500)],
+        "restored, not rewritten"
+    );
     assert_eq!(saved_cues(&rig, b), vec![(5, 9_000)], "b untouched");
 }
 
@@ -316,7 +324,13 @@ fn a_loaded_track_is_played_once_after_thirty_seconds_of_playing() {
         rig.loader
             .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
     }
-    assert!(rig.services.library().tracks().plays_for(id).unwrap().is_empty());
+    assert!(rig
+        .services
+        .library()
+        .tracks()
+        .plays_for(id)
+        .unwrap()
+        .is_empty());
 
     rig.loader
         .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
@@ -325,7 +339,13 @@ fn a_loaded_track_is_played_once_after_thirty_seconds_of_playing() {
     let plays = rig.services.library().tracks().plays_for(id).unwrap();
     assert_eq!(plays.len(), 1, "one play per load");
     assert_eq!(plays[0].deck, Some(0));
-    let track = rig.services.library().tracks().find_by_id(id).unwrap().unwrap();
+    let track = rig
+        .services
+        .library()
+        .tracks()
+        .find_by_id(id)
+        .unwrap()
+        .unwrap();
     assert_eq!(track.play_count, 1);
     assert!(track.last_played_ms.is_some());
 }
@@ -339,7 +359,13 @@ fn paused_decks_record_no_play() {
         rig.loader
             .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
     }
-    assert!(rig.services.library().tracks().plays_for(id).unwrap().is_empty());
+    assert!(rig
+        .services
+        .library()
+        .tracks()
+        .plays_for(id)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -375,7 +401,15 @@ fn rekordbox_imported_hotcues_appear_on_load() {
         .id;
 
     assert!(rig.load(0, id).is_ok());
-    assert_eq!(rig.engine.deck(0).hotcue(0), Some(44_100), "1.0 s at 44.1 kHz");
-    assert_eq!(rig.engine.deck(0).hotcue(3), Some(66_150), "1.5 s at 44.1 kHz");
+    assert_eq!(
+        rig.engine.deck(0).hotcue(0),
+        Some(44_100),
+        "1.0 s at 44.1 kHz"
+    );
+    assert_eq!(
+        rig.engine.deck(0).hotcue(3),
+        Some(66_150),
+        "1.5 s at 44.1 kHz"
+    );
     assert_eq!(rig.engine.deck(0).hotcue(1), None);
 }

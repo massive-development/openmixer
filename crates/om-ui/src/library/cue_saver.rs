@@ -99,8 +99,7 @@ mod tests {
     use om_library::{core_migrations, OpenMode, TrackRecord};
 
     fn library_with_track() -> (Library, i64) {
-        let lib =
-            Library::open(":memory:", OpenMode::ReadWrite, core_migrations()).expect("open");
+        let lib = Library::open(":memory:", OpenMode::ReadWrite, core_migrations()).expect("open");
         let id = lib
             .tracks()
             .insert(&TrackRecord {
