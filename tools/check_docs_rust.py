@@ -1,4 +1,4 @@
-"""Verify the Rust-rewritten docs no longer describe the C++/JUCE/CMake project.
+"""Verify the docs describe the Rust project, not the old C++/JUCE/CMake build.
 
 Run from anywhere: python3 -I tools/check_docs_rust.py
 Exits 1 and prints `file:line: message` per violation, else prints `docs ok`.
@@ -17,12 +17,12 @@ DOC_FILES = [
     "docs/PROGRESS.md",
     "docs/DESIGN_PATTERNS.md",
 ]
-FORBIDDEN = ["JUCE", "CMake", "cmake", "ctest", "g++", "clang-tidy",
+FORBIDDEN = ["C++", "JUCE", "CMake", "cmake", "ctest", "g++", "clang-tidy",
              ".cpp", ".hpp", "GoogleTest", "webkit"]
 HISTORY_FENCE = "```history"
 HISTORY_MARKER = "<!-- cpp-history -->"
 README = "README.md"
-README_REQUIRED = ["AGPL", "clean-room", "Spotify", "cpp-final", "cargo"]
+README_REQUIRED = ["AGPL", "clean-room", "Spotify", "cargo"]
 
 
 def find_violations(path_to_text: dict[str, str]) -> list[str]:
@@ -61,7 +61,7 @@ def _check_forbidden(name: str, text: str) -> list[str]:
             if term in line:
                 found.append(
                     f"{name}:{lineno}: forbidden term {term!r} "
-                    "(C++ project reference in rewritten docs)"
+                    "(C++/JUCE/CMake wording in the Rust project docs)"
                 )
     return found
 

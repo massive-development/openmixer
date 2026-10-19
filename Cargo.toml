@@ -30,8 +30,8 @@ rust-version = "1.91"
 unsafe_code = "forbid"
 
 # `cargo test` runs the engine in real time (the soak and the render-budget tests). Unoptimized DSP
-# misses the 256-frame budget, so test builds optimize the audio crates and their dependencies, as
-# the C++ soak runs in Release. `cargo build` stays unoptimized for debugging.
+# misses the 256-frame budget, so test builds optimize the audio crates and their dependencies (the
+# soak runs in Release). `cargo build` stays unoptimized for debugging.
 [profile.test.package."*"]
 opt-level = 3
 
