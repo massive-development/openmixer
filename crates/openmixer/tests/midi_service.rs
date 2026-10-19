@@ -125,7 +125,10 @@ fn a_learned_binding_is_saved_and_survives_a_reload() {
     let file = scratch.path().join("user-map.json");
     service.save_map(&file).expect("map saves");
     assert!(file.exists());
-    assert!(!file.with_extension("json.tmp").exists(), "no temp file left");
+    assert!(
+        !file.with_extension("json.tmp").exists(),
+        "no temp file left"
+    );
 
     // A fresh session loads the file and the binding works.
     let mut second = composition(scratch.path());

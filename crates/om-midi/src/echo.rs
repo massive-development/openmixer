@@ -62,8 +62,14 @@ mod tests {
         let on = [0x90, 36, 127];
         guard.note_sent("Pad", &on, t0);
 
-        assert!(!guard.is_echo("Other", &on, t0), "other ports are not echoes");
-        assert!(!guard.is_echo("Pad", &[0x90, 37, 127], t0), "other bytes are not echoes");
+        assert!(
+            !guard.is_echo("Other", &on, t0),
+            "other ports are not echoes"
+        );
+        assert!(
+            !guard.is_echo("Pad", &[0x90, 37, 127], t0),
+            "other bytes are not echoes"
+        );
         assert!(
             !guard.is_echo("Pad", &on, t0 + ECHO_WINDOW + Duration::from_millis(1)),
             "after the window the message is a real one"
