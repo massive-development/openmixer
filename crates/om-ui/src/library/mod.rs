@@ -20,4 +20,4 @@ mod control;
 mod track_loader;
 
 pub use browser::{LibraryBrowser, LoadHandler, SEARCH_PLACEHOLDER};
-pub use track_loader::TrackLoader;
+pub use track_loader::{LoadError, TrackLoader};

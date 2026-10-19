@@ -8,12 +8,51 @@ use crate::preferences::{default_user_map_file, AudioPrefs, Preferences};
 use crate::theme::ThemeRegistry;
 use om_core::param_id::{ChannelParam, DeckParam, MixerParam};
 use om_core::ParamId;
+use om_library::LibraryError;
 use std::path::{Path, PathBuf};
 
-/// Error text from a setter, shown to the user.
-pub type SettingsResult<T = bool> = Result<T, String>;
+/// An error from a layer the settings page does not name (the audio device, the MIDI service, the
+/// plugin host). The owning crate's error goes in boxed; its display text is shown as is.
+pub type OpaqueError = Box<dyn std::error::Error + Send + Sync>;
 
-/// What the audio page needs from the audio layer. `Ok(())` / `Err(message)`.
+/// Why a settings change was refused. The display text is shown to the user.
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    /// The audio layer refused the change, or the device would not open with it.
+    #[error("{0}")]
+    Audio(#[source] OpaqueError),
+    /// The MIDI service refused to load or save the controller map.
+    #[error("{0}")]
+    Midi(#[source] OpaqueError),
+    /// The plugin host failed to reload or to load or unload a plugin.
+    #[error("{0}")]
+    Plugin(#[source] OpaqueError),
+    #[error(transparent)]
+    Library(#[from] LibraryError),
+    #[error("The library is not available")]
+    LibraryUnavailable,
+    #[error("no watch folders available")]
+    NoWatchFolders,
+    #[error("import is not available")]
+    ImportUnavailable,
+    #[error("Plugins are not available")]
+    PluginsUnavailable,
+    /// A stored value does not fit the field it is written to.
+    #[error("{field} is out of range")]
+    InvalidValue { field: &'static str },
+    #[error("unknown theme '{id}'")]
+    UnknownTheme { id: String },
+    #[error("no built-in plugin '{id}'")]
+    NoBuiltinPlugin { id: String },
+    #[error("plugin '{id}' is not loaded")]
+    PluginNotLoaded { id: String },
+}
+
+/// Result of a settings change. `Ok(true)` when the stored value changed.
+pub type SettingsResult<T = bool> = Result<T, SettingsError>;
+
+/// What the audio page needs from the audio layer. The layer's errors arrive as
+/// [`SettingsError::Audio`].
 pub trait AudioSettingsModel {
     fn device_types(&self) -> Vec<String>;
     fn device_type(&self) -> String;
@@ -113,14 +152,18 @@ impl<'a> AudioSettingsPage<'a> {
 
     /// `pair` indexes [`Self::pair_labels`]; the master pair is always a real pair.
     pub fn set_master_pair(&mut self, pair: usize) -> SettingsResult {
-        let pair = i32::try_from(pair).map_err(|e| e.to_string())?;
+        let pair = i32::try_from(pair).map_err(|_| SettingsError::InvalidValue {
+            field: "output pair",
+        })?;
         Ok(set_if_changed(&mut self.prefs.audio.master_pair, pair))
     }
 
     /// `None` means no cue output (stored as -1).
     pub fn set_cue_pair(&mut self, pair: Option<usize>) -> SettingsResult {
         let stored = match pair {
-            Some(p) => i32::try_from(p).map_err(|e| e.to_string())?,
+            Some(p) => i32::try_from(p).map_err(|_| SettingsError::InvalidValue {
+                field: "output pair",
+            })?,
             None => -1,
         };
         Ok(set_if_changed(&mut self.prefs.audio.cue_pair, stored))
@@ -209,13 +252,13 @@ impl<'a> MidiSettingsPage<'a> {
 /// Methods take `&self`: the service is shared with the MIDI threads and locks internally.
 pub trait MidiControl {
     /// Replaces the live map with the file's; a bad file changes nothing.
-    fn load_map(&self, file: &Path) -> Result<(), String>;
+    fn load_map(&self, file: &Path) -> Result<(), SettingsError>;
     /// The next control that moves binds to `target`.
     fn arm_learn(&self, target: &str);
     fn cancel_learn(&self);
     fn is_learning(&self) -> bool;
     /// Writes the live map to `file` (atomically).
-    fn save_map(&self, file: &Path) -> Result<(), String>;
+    fn save_map(&self, file: &Path) -> Result<(), SettingsError>;
     /// Counts the edits to the live map (loads and learned bindings). A learn that finished
     /// shows as a change of this count.
     fn map_generation(&self) -> u64 {
@@ -262,7 +305,7 @@ pub fn learnable_targets(decks: usize) -> Vec<String> {
 
 impl MidiSettingsPage<'_> {
     /// Loads the effective map file (the preference, or the default one) into the running service.
-    pub fn load_map_now(&self, control: &dyn MidiControl) -> Result<(), String> {
+    pub fn load_map_now(&self, control: &dyn MidiControl) -> Result<(), SettingsError> {
         control.load_map(&self.prefs.effective_map_file())
     }
 
@@ -281,7 +324,7 @@ impl MidiSettingsPage<'_> {
     pub fn save_learned_map(
         &mut self,
         control: &dyn MidiControl,
-    ) -> Result<(PathBuf, bool), String> {
+    ) -> Result<(PathBuf, bool), SettingsError> {
         let file = if self.prefs.midi.map_file.is_empty() {
             default_user_map_file()
         } else {
@@ -305,7 +348,7 @@ pub trait LibraryControl {
     fn rescan(&mut self) -> SettingsResult<()>;
     /// Imports an iTunes or Rekordbox XML file; returns the one-line outcome for the page.
     fn import_xml(&mut self, _xml: PathBuf) -> SettingsResult<String> {
-        Err("import is not available".to_owned())
+        Err(SettingsError::ImportUnavailable)
     }
 }
 
@@ -362,7 +405,7 @@ impl<'a> LibrarySettingsPage<'a> {
         if self.library.available() {
             Ok(())
         } else {
-            Err("The library is not available".to_owned())
+            Err(SettingsError::LibraryUnavailable)
         }
     }
 }
@@ -390,7 +433,7 @@ impl<'a> AppearanceSettingsPage<'a> {
     /// Stores the id; `false` when it was already stored. Unknown ids are refused.
     pub fn pick(&mut self, id: &str) -> SettingsResult {
         if self.themes.find(id).is_none() {
-            return Err(format!("unknown theme '{id}'"));
+            return Err(SettingsError::UnknownTheme { id: id.to_owned() });
         }
         Ok(set_if_changed(&mut self.prefs.theme, id.to_owned()))
     }
@@ -405,10 +448,10 @@ pub trait PluginHost {
         Vec::new()
     }
     fn load_builtin(&mut self, id: &str) -> SettingsResult<()> {
-        Err(format!("no built-in plugin '{id}'"))
+        Err(SettingsError::NoBuiltinPlugin { id: id.to_owned() })
     }
     fn unload(&mut self, id: &str) -> SettingsResult<()> {
-        Err(format!("plugin '{id}' is not loaded"))
+        Err(SettingsError::PluginNotLoaded { id: id.to_owned() })
     }
 }
 
@@ -625,10 +668,10 @@ mod tests {
         let mut prefs = Preferences::default();
         let mut audio = FakeAudio::new();
         let mut page = AudioSettingsPage::new(&mut prefs, &mut audio);
-        assert_eq!(page.set_sample_rate(96_000), Ok(true));
+        assert_eq!(page.set_sample_rate(96_000).ok(), Some(true));
         assert_eq!(
-            page.set_sample_rate(96_000),
-            Ok(false),
+            page.set_sample_rate(96_000).ok(),
+            Some(false),
             "same state: no change reported"
         );
         assert_eq!(audio.calls, vec!["rate:96000", "rate:96000"]);
@@ -640,10 +683,10 @@ mod tests {
         let mut prefs = Preferences::default();
         let mut audio = FakeAudio::new();
         let mut page = AudioSettingsPage::new(&mut prefs, &mut audio);
-        assert_eq!(page.set_master_pair(1), Ok(true));
-        assert_eq!(page.set_master_pair(1), Ok(false));
-        assert_eq!(page.set_cue_pair(Some(0)), Ok(true));
-        assert_eq!(page.set_cue_pair(None), Ok(true));
+        assert_eq!(page.set_master_pair(1).ok(), Some(true));
+        assert_eq!(page.set_master_pair(1).ok(), Some(false));
+        assert_eq!(page.set_cue_pair(Some(0)).ok(), Some(true));
+        assert_eq!(page.set_cue_pair(None).ok(), Some(true));
         assert_eq!(prefs.audio.master_pair, 1);
         assert_eq!(prefs.audio.cue_pair, -1, "none is stored as -1");
     }
@@ -781,8 +824,8 @@ mod tests {
             .map(|(id, _)| id)
             .find(|id| id != "openmixer.dark")
             .expect("the built-ins ship more than one theme");
-        assert_eq!(page.pick(&other), Ok(true));
-        assert_eq!(page.pick(&other), Ok(false));
+        assert_eq!(page.pick(&other).ok(), Some(true));
+        assert_eq!(page.pick(&other).ok(), Some(false));
         assert_eq!(prefs.theme, other);
     }
 
@@ -882,14 +925,14 @@ mod parity_tests {
         saved: std::cell::RefCell<Vec<PathBuf>>,
     }
     impl MidiControl for FakeControl {
-        fn load_map(&self, file: &Path) -> Result<(), String> {
+        fn load_map(&self, file: &Path) -> Result<(), SettingsError> {
             if file.extension().and_then(|e| e.to_str()) != Some("json") {
-                return Err("not a map".into());
+                return Err(SettingsError::Midi("not a map".into()));
             }
             self.loaded.borrow_mut().push(file.to_path_buf());
             Ok(())
         }
-        fn save_map(&self, file: &Path) -> Result<(), String> {
+        fn save_map(&self, file: &Path) -> Result<(), SettingsError> {
             self.saved.borrow_mut().push(file.to_path_buf());
             Ok(())
         }
@@ -987,7 +1030,7 @@ mod parity_tests {
         }
         fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
             if !self.available {
-                return Err("the library is not available".into());
+                return Err(SettingsError::LibraryUnavailable);
             }
             self.folders.push(folder);
             Ok(())
@@ -1121,7 +1164,7 @@ mod parity_tests {
                 String::new()
             }
             fn set_device_type(&mut self, _: &str) -> SettingsResult<()> {
-                Err("must not be called".into())
+                Err(SettingsError::Audio("must not be called".into()))
             }
             fn output_devices(&self) -> Vec<String> {
                 Vec::new()
@@ -1130,7 +1173,7 @@ mod parity_tests {
                 String::new()
             }
             fn set_output_device(&mut self, _: &str) -> SettingsResult<()> {
-                Err("must not be called".into())
+                Err(SettingsError::Audio("must not be called".into()))
             }
             fn sample_rates(&self) -> Vec<u32> {
                 Vec::new()
@@ -1139,7 +1182,7 @@ mod parity_tests {
                 0
             }
             fn set_sample_rate(&mut self, _: u32) -> SettingsResult<()> {
-                Err("must not be called".into())
+                Err(SettingsError::Audio("must not be called".into()))
             }
             fn buffer_sizes(&self) -> Vec<u32> {
                 Vec::new()
@@ -1148,7 +1191,7 @@ mod parity_tests {
                 0
             }
             fn set_buffer_size(&mut self, _: u32) -> SettingsResult<()> {
-                Err("must not be called".into())
+                Err(SettingsError::Audio("must not be called".into()))
             }
             fn output_channels(&self) -> usize {
                 4

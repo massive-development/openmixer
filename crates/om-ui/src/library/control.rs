@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use super::services::LibraryServices;
-use crate::settings::{LibraryControl, SettingsResult};
+use crate::settings::{LibraryControl, SettingsError, SettingsResult};
 use om_library::ImportReport;
 
 /// The one-line outcome of an import, as the library page and the browser show it.
@@ -35,8 +35,8 @@ impl LibraryControl for LibraryServices {
 
     fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
         let result = match self.watch_folders() {
-            Some(watch) => watch.add(&folder).map_err(|e| e.to_string()),
-            None => Err("no watch folders available".to_owned()),
+            Some(watch) => watch.add(&folder).map_err(SettingsError::from),
+            None => Err(SettingsError::NoWatchFolders),
         };
         self.notify_library_changed();
         result
@@ -44,8 +44,8 @@ impl LibraryControl for LibraryServices {
 
     fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
         let result = match self.watch_folders() {
-            Some(watch) => watch.remove(&folder).map_err(|e| e.to_string()),
-            None => Err("no watch folders available".to_owned()),
+            Some(watch) => watch.remove(&folder).map_err(SettingsError::from),
+            None => Err(SettingsError::NoWatchFolders),
         };
         self.notify_library_changed();
         result
@@ -57,7 +57,7 @@ impl LibraryControl for LibraryServices {
                 watch.trigger_scan();
                 Ok(())
             }
-            None => Err("no watch folders available".to_owned()),
+            None => Err(SettingsError::NoWatchFolders),
         }
     }
 

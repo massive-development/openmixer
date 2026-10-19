@@ -13,7 +13,8 @@ use om_analysis::WaveformData;
 use om_engine::DjEngine;
 use om_library::TrackRecord;
 use om_ui::library::{
-    columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, TrackLoader,
+    columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, LoadError,
+    TrackLoader,
 };
 use om_ui::settings::{LibraryControl, SettingsResult};
 use om_ui::sidebar::SidebarNode;
@@ -252,7 +253,7 @@ impl LibraryPanel {
     }
 
     /// Activates a row (double-click): loads it into the suggested deck.
-    pub fn activate_row(&mut self, row: usize) -> Option<Result<(), String>> {
+    pub fn activate_row(&mut self, row: usize) -> Option<Result<(), LoadError>> {
         self.browser.activate_row(row)
     }
 
@@ -262,22 +263,25 @@ impl LibraryPanel {
     }
 
     /// Loads a track by id into `deck` and reports the outcome in the browser's status line.
-    pub fn load_track_id(&mut self, deck: usize, track_id: i64) -> Result<(), String> {
+    pub fn load_track_id(&mut self, deck: usize, track_id: i64) -> Result<(), LoadError> {
         let track = {
             let h = self.hub.borrow();
             h.services
                 .library()
                 .tracks()
-                .find_by_id(track_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("unknown track {track_id}"))?
+                .find_by_id(track_id)?
+                .ok_or(LoadError::UnknownTrack(track_id))?
         };
         self.browser.request_load(deck, &track)
     }
 
     /// A drop on deck `deck`: loads the library track the description names. `None` when the drag
     /// was not a library track.
-    pub fn drop_on_deck(&mut self, deck: usize, description: &str) -> Option<Result<(), String>> {
+    pub fn drop_on_deck(
+        &mut self,
+        deck: usize,
+        description: &str,
+    ) -> Option<Result<(), LoadError>> {
         let id = parse_track_drag(description)?;
         Some(self.load_track_id(deck, id))
     }

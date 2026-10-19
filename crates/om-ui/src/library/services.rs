@@ -25,7 +25,7 @@ use om_analysis::{
 };
 use om_engine::grid::BeatGrid;
 use om_library::{
-    core_migrations, Database, ImportReport, Library, LibraryImporterRegistry,
+    core_migrations, Database, ImportReport, Library, LibraryError, LibraryImporterRegistry,
     MetadataReaderRegistry, OpenMode, PrepEntry, PrepOptions, PrepQueue, SearchEngine, TrackRecord,
     WatchFolderOptions, WatchFolders,
 };
@@ -153,17 +153,16 @@ impl LibraryServices {
     /// Opens (and migrates) the library, then starts analysis and, for a file library, the watch
     /// folders. Fails with the reason when the library cannot be opened; a cache or watch-folder
     /// failure is reported through `on_error` and the services still start.
-    pub fn create(mut options: Options) -> Result<Self, String> {
+    pub fn create(mut options: Options) -> Result<Self, LibraryError> {
         let in_memory = options.db_path == MEMORY_PATH;
         if !in_memory {
             if let Some(parent) = Path::new(&options.db_path).parent() {
                 if !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                    std::fs::create_dir_all(parent)?;
                 }
             }
         }
-        let library = Library::open(&options.db_path, OpenMode::ReadWrite, core_migrations())
-            .map_err(|e| e.to_string())?;
+        let library = Library::open(&options.db_path, OpenMode::ReadWrite, core_migrations())?;
         // Shared only by handles on the owner thread; the connection is not Sync, and Rc would make
         // the services non-Send for no gain.
         #[allow(clippy::arc_with_non_send_sync)]
@@ -340,10 +339,9 @@ impl LibraryServices {
     }
 
     /// Imports an iTunes or Rekordbox XML file. Subscribers hear about it on success.
-    pub fn import_file(&mut self, xml: &Path) -> Result<ImportReport, String> {
+    pub fn import_file(&mut self, xml: &Path) -> Result<ImportReport, LibraryError> {
         let mut report = ImportReport::default();
-        om_library::import_library_file(&self.library, &self.importers, xml, &mut report)
-            .map_err(|e| e.to_string())?;
+        om_library::import_library_file(&self.library, &self.importers, xml, &mut report)?;
         self.notify_library_changed();
         Ok(report)
     }

@@ -13,10 +13,31 @@ use std::sync::Arc;
 use om_analysis::WaveformData;
 use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
-use om_library::{PrepEntry, PrepStatus, TrackRecord};
+use om_library::{LibraryError, PrepEntry, PrepStatus, TrackRecord};
 
 use super::services::{LibraryEvent, LibraryServices, TrackAnalysis};
 use crate::widgets::deck::TrackInfo;
+
+/// Why a track could not be loaded into a deck. The display text is shown in the status line.
+#[derive(Debug, thiserror::Error)]
+pub enum LoadError {
+    /// Nothing is wired to load tracks (no deck handler).
+    #[error("loading is not available")]
+    Unavailable,
+    #[error("unknown track {0}")]
+    UnknownTrack(i64),
+    #[error("no such deck")]
+    NoSuchDeck,
+    /// A playing deck refuses a load unless forced.
+    #[error("deck is playing")]
+    DeckPlaying,
+    #[error("file is missing")]
+    FileMissing,
+    #[error("cannot decode {file}")]
+    Decode { file: String },
+    #[error(transparent)]
+    Library(#[from] LibraryError),
+}
 
 #[derive(Default)]
 struct Slot {
@@ -50,13 +71,12 @@ impl TrackLoader {
         deck: usize,
         track_id: i64,
         force: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), LoadError> {
         let track = services
             .library()
             .tracks()
-            .find_by_id(track_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("unknown track {track_id}"))?;
+            .find_by_id(track_id)?
+            .ok_or(LoadError::UnknownTrack(track_id))?;
         self.load_track(engine, services, deck, &track, force)
     }
 
@@ -74,23 +94,25 @@ impl TrackLoader {
         deck: usize,
         track: &TrackRecord,
         force: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), LoadError> {
         if deck >= self.slots.len() {
-            return Err("no such deck".to_owned());
+            return Err(LoadError::NoSuchDeck);
         }
         if !force && engine.deck(deck).is_playing() {
-            return Err("deck is playing".to_owned());
+            return Err(LoadError::DeckPlaying);
         }
         let path = Path::new(&track.path);
         if !path.is_file() {
-            return Err("file is missing".to_owned());
+            return Err(LoadError::FileMissing);
         }
         let previous_grid = self.slots[deck].grid.take();
         engine.set_grid(deck, None);
         if engine.deck(deck).load(path).is_err() {
             engine.set_grid(deck, previous_grid.clone());
             self.slots[deck].grid = previous_grid;
-            return Err(format!("cannot decode {}", file_name(path)));
+            return Err(LoadError::Decode {
+                file: file_name(path),
+            });
         }
         let found = services.analysis_for(track);
         let slot = &mut self.slots[deck];
@@ -98,10 +120,7 @@ impl TrackLoader {
         slot.awaiting_analysis = !found.analysed;
         apply(engine, slot, deck, track, &found);
         if !found.analysed {
-            services
-                .prep_queue_mut()
-                .enqueue(track.id, true)
-                .map_err(|e| e.to_string())?;
+            services.prep_queue_mut().enqueue(track.id, true)?;
         }
         Ok(())
     }

@@ -21,7 +21,7 @@ use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
     LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage, PageKind,
-    PluginHost, PluginsSettingsPage, SettingsPanel, SettingsResult,
+    PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel, SettingsResult,
 };
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
 use std::path::PathBuf;
@@ -130,23 +130,21 @@ pub struct SettingsState {
 /// library actions report that there is no library.
 struct NoLibrary;
 
-const NO_LIBRARY: &str = "The library is not available";
-
 impl LibraryControl for NoLibrary {
     fn available(&self) -> bool {
         false
     }
 
     fn add_watch_folder(&mut self, _: PathBuf) -> SettingsResult<()> {
-        Err(NO_LIBRARY.to_owned())
+        Err(SettingsError::LibraryUnavailable)
     }
 
     fn remove_watch_folder(&mut self, _: PathBuf) -> SettingsResult<()> {
-        Err(NO_LIBRARY.to_owned())
+        Err(SettingsError::LibraryUnavailable)
     }
 
     fn rescan(&mut self) -> SettingsResult<()> {
-        Err(NO_LIBRARY.to_owned())
+        Err(SettingsError::LibraryUnavailable)
     }
 }
 
@@ -219,7 +217,7 @@ impl SettingsState {
                     self.changed();
                 }
             }
-            Err(text) => self.setup_error = text,
+            Err(error) => self.setup_error = error.to_string(),
         }
     }
 
@@ -470,7 +468,7 @@ impl SettingsState {
                 self.refresh_lists();
                 self.set_notice(format!("Watching {shown}"), false);
             }
-            Err(error) => self.set_notice(error, true),
+            Err(error) => self.set_notice(error.to_string(), true),
         }
     }
 
@@ -481,14 +479,14 @@ impl SettingsState {
                 self.refresh_lists();
                 self.set_notice(format!("Stopped watching {shown}"), false);
             }
-            Err(error) => self.set_notice(error, true),
+            Err(error) => self.set_notice(error.to_string(), true),
         }
     }
 
     pub fn library_rescan(&mut self) {
         match self.with_library_page(|p| p.rescan()) {
             Ok(()) => self.set_notice("Rescan started", false),
-            Err(error) => self.set_notice(error, true),
+            Err(error) => self.set_notice(error.to_string(), true),
         }
     }
 
@@ -507,7 +505,7 @@ impl SettingsState {
         f: impl FnOnce(&mut PluginsSettingsPage<'_>) -> SettingsResult<T>,
     ) -> SettingsResult<T> {
         let Some(host) = self.plugins.as_deref_mut() else {
-            return Err("Plugins are not available".to_owned());
+            return Err(SettingsError::PluginsUnavailable);
         };
         let mut page = PluginsSettingsPage::new(&self.prefs, host);
         f(&mut page)
@@ -522,7 +520,7 @@ impl SettingsState {
                 self.refresh_lists();
                 self.set_notice(done, false);
             }
-            Err(error) => self.set_notice(error, true),
+            Err(error) => self.set_notice(error.to_string(), true),
         }
     }
 
@@ -1315,7 +1313,9 @@ mod tests {
         }
         fn set_sample_rate(&mut self, rate: u32) -> SettingsResult<()> {
             if rate == 22_050 {
-                return Err("unsupported device configuration: 22050 Hz".into());
+                return Err(SettingsError::Audio(
+                    "unsupported device configuration: 22050 Hz".into(),
+                ));
             }
             self.rate = rate;
             self.log.borrow_mut().push(format!("rate {rate}"));
@@ -1460,9 +1460,9 @@ mod page_tests {
     }
 
     impl MidiControl for FakeMidi {
-        fn load_map(&self, _file: &Path) -> Result<(), String> {
+        fn load_map(&self, _file: &Path) -> Result<(), SettingsError> {
             if self.fail_load {
-                return Err("not a controller map".to_owned());
+                return Err(SettingsError::Midi("not a controller map".into()));
             }
             self.generation.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -1476,9 +1476,9 @@ mod page_tests {
         fn is_learning(&self) -> bool {
             self.learning.lock().unwrap().is_some()
         }
-        fn save_map(&self, file: &Path) -> Result<(), String> {
+        fn save_map(&self, file: &Path) -> Result<(), SettingsError> {
             if self.fail_save {
-                return Err("disk full".to_owned());
+                return Err(SettingsError::Midi("disk full".into()));
             }
             self.saved.lock().unwrap().push(file.to_path_buf());
             Ok(())
@@ -1539,7 +1539,7 @@ mod page_tests {
         }
         fn load_builtin(&mut self, id: &str) -> SettingsResult<()> {
             if id != "demo.a" {
-                return Err(format!("no built-in plugin '{id}'"));
+                return Err(SettingsError::NoBuiltinPlugin { id: id.to_owned() });
             }
             self.loaded.borrow_mut().push(id.to_owned());
             Ok(())
