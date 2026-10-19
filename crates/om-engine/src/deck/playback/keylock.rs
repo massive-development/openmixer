@@ -117,6 +117,11 @@ impl Playback {
         let device_over_file = sh.device_sample_rate.load() / sh.file_sample_rate.load();
         let ratio = device_over_file / rate;
         self.keylock.stretch_ratio = ratio;
+        // Every block may change the ratio (a moving rate or a sync nudge). `set_ratios` compares
+        // before it calls into Rubber Band, which re-plans on each real change. What the allocation
+        // guard in `alloc_guard.rs` covers: the Rust side of this path, which allocates nothing even
+        // with the ratio changing every block. What it does not cover: allocations inside Rubber
+        // Band, and its re-planning CPU cost, which is not measured by any test here.
         if let Some(stretch) = self.keylock.stretch.as_mut() {
             stretch.set_ratios(ratio, 1.0 / device_over_file);
         }

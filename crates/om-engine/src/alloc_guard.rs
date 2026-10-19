@@ -296,3 +296,100 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
         "every block should carry master audio"
     );
 }
+
+/// Live control changes between blocks, as a performer makes them: the master deck's rate moves
+/// every block (so key-lock re-ratios every block), the sync timer nudges the follower's rate,
+/// and FX parameters move. Only `audio.process` runs under the guard.
+///
+/// What the guard can and cannot see: it fails on any Rust allocation made while the guard is
+/// active. Allocations made inside Rubber Band (C++ `new`/`malloc`) bypass the Rust global
+/// allocator, so they are not counted here, and neither is the CPU cost Rubber Band spends
+/// re-planning when its ratio changes. See `deck/playback/keylock.rs`.
+#[test]
+fn keylock_with_live_rate_sync_and_fx_changes_does_not_allocate() {
+    use crate::callback::AudioCallback;
+    use crate::dj_engine::DjEngine;
+    use crate::grid::FixedTempoGrid;
+    use om_core::ParameterTarget;
+    use std::sync::Arc;
+
+    let fixture = crate::deck::tests::Fixture::new();
+    let wav = fixture.path("live.wav");
+    // Rates stay within 0.9..1.1, so the track is longer than the run at the slowest rate.
+    let frames = BLOCK * BLOCKS * 2 + 4096;
+    let mut samples = Vec::with_capacity(frames * 2);
+    for n in 0..frames {
+        let v = (n % 1000) as f32 / 1000.0;
+        samples.push(v);
+        samples.push(-v);
+    }
+    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, BLOCK);
+    for d in 0..2 {
+        engine.deck(d).load(&wav).expect("fixture loads");
+        engine.deck(d).set_keylock(true);
+        engine.set_grid(d, Some(Arc::new(FixedTempoGrid::new(120.0, RATE, 0))));
+    }
+    engine.sync().set_leader(Some(0));
+    engine.sync().set_enabled(1, true);
+    engine.mixer().set_fader(0, 1.0);
+    engine.mixer().set_fader(1, 1.0);
+    for id in ["master.fx0.enable", "ch0.fx1.enable", "ch1.fx2.enable"] {
+        assert!(engine.fx().set_parameter(id, 1.0));
+    }
+
+    let mut pump = [[0.0_f32; BLOCK]; 4];
+    // Unguarded pump: decoders fill their rings and the keylock primes before the guarded run.
+    for d in 0..2 {
+        assert!(
+            crate::deck::tests::wait_for(
+                || {
+                    let [p0, p1, p2, p3] = &mut pump;
+                    let mut outs: [&mut [f32]; 4] = [p0, p1, p2, p3];
+                    audio.process(&[], &mut outs);
+                    engine.deck(d).buffered_frames() >= BLOCK * 4
+                },
+                std::time::Duration::from_secs(10)
+            ),
+            "decoder {d} did not buffer in time"
+        );
+    }
+    engine.deck(0).play();
+    engine.deck(1).play();
+
+    let mut audible_blocks = 0_usize;
+    for block in 0..BLOCKS {
+        let t = block as f64;
+        // Control-thread work between blocks.
+        engine.deck(0).set_rate(1.0 + 0.1 * (t * 0.113).sin());
+        engine.update_control(BLOCK as f64 / RATE);
+        engine
+            .fx()
+            .set_parameter("ch0.fx1.mix", 0.5 + 0.4 * (t * 0.07).sin());
+        engine
+            .fx()
+            .set_parameter("master.fx0.mix", 0.5 + 0.4 * (t * 0.05).cos());
+        for d in 0..2 {
+            assert!(
+                crate::deck::tests::wait_for(
+                    || engine.deck(d).buffered_frames() >= BLOCK * 2,
+                    std::time::Duration::from_secs(10)
+                ),
+                "decoder {d} stalled"
+            );
+        }
+        let [a, b, c, d] = &mut pump;
+        let mut outs: [&mut [f32]; 4] = [a, b, c, d];
+        assert_no_alloc(|| audio.process(&[], &mut outs));
+        if outs[0].iter().any(|&v| v != 0.0) {
+            audible_blocks += 1;
+        }
+    }
+    assert!(engine.deck(0).is_keylock() && engine.deck(1).is_keylock());
+    assert_eq!(
+        audible_blocks, BLOCKS,
+        "every block should carry master audio"
+    );
+}
