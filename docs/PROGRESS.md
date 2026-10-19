@@ -125,6 +125,15 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 8 | Mix recording, broadcasting, DVS (timecode vinyl), video mixing | ⬜ |
 | 9 | Legal audit, trademark check, packaging, docs, v1.0.0 | ⬜ |
 
+## Deferred C++ test ports
+
+Tests from the C++ suite that are not ported yet, each with the Todo that owns it. A line is removed when its port lands.
+
+- `ControlThreadSafetyTest.MapReloadWhileMessagesStream` (`tests/unit/ControlThreadSafetyTest.cpp`): deferred to Todo 32 (MIDI input + mapping). It reloads a MIDI map while messages stream; the Rust map loader and router do not exist yet.
+- `MeterBallisticsTest.DefaultsComeFromTheTheme` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). The meter defaults are read from the theme, which belongs to the widget layer.
+- `MeterBallisticsTest.MeterBarFollowsUpdatesPaintsAndClearsClipOnClick` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It paints the bar and handles the clip click, so it needs the widget.
+- `MeterBallisticsTest.StereoMeterFeedsEachSideSeparately` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It exercises the stereo meter widget.
+
 ---
 
 ## Known out-of-scope / non-goals
