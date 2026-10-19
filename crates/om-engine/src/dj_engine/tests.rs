@@ -258,3 +258,82 @@ fn rejected_ids_are_refused_and_counted_on_both_paths() {
         REJECTED.len() + 2 * ENGINE_REJECTS.len()
     );
 }
+
+/// A playing deck with a loop, a cue, key-lock, slip and sync, next to a second deck, read two ways:
+/// through the getters and through one snapshot taken with the audio side idle. The two must agree.
+#[test]
+fn snapshot_matches_the_getters_of_a_playing_engine() {
+    use om_core::{EngineSnapshot, StateId};
+    use om_testing::fs::TempDir;
+    use om_testing::signals::stereo_sine;
+    use om_testing::wait::{wait_until, DEFAULT_POLL};
+    use om_testing::wav::write_float_wav;
+    use std::time::Duration;
+
+    let dir = TempDir::new("openmixer_snapshot_test");
+    let file = dir.file("sine.wav");
+    write_float_wav(&file, 2, 44_100, &stereo_sine(440.0, 0.5, RATE, 44_100));
+
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    engine.deck(0).load(&file).expect("load");
+    assert!(wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+        let _ = run(&mut audio, 4, 256);
+        engine.deck(0).buffered_frames() > 4096
+    }));
+    engine.deck(0).play();
+    for _ in 0..8 {
+        let _ = run(&mut audio, 4, 256);
+    }
+    engine.deck(0).set_loop(crate::quantizer::Loop {
+        start: 1_000,
+        end: 9_000,
+    });
+    engine.deck(0).set_hotcue(2, 4_321);
+    engine.deck(0).set_keylock(true);
+    engine.deck_control(0).set_slip(true);
+    engine.sync().set_enabled(1, true);
+    engine.sync().set_leader(Some(0));
+    engine.mixer().set_fader(1, 0.4);
+    engine.mixer().set_pfl(1, true);
+    engine.mixer().set_crossfader(-0.25);
+    engine.mixer().set_master_gain(0.7);
+    engine.update_control(0.02);
+
+    let snap: EngineSnapshot = engine.snapshot();
+    assert_eq!(snap.seq, 1, "one control tick so far");
+    assert_eq!(snap.decks.len(), 2);
+    let deck = engine.deck(0);
+    let d = &snap.decks[0];
+    assert!(d.playing && d.loaded && d.keylock && d.looping && d.slip);
+    assert!(d.sync_master && !snap.decks[1].sync_master);
+    assert!(snap.decks[1].sync);
+    assert_eq!(d.position_frames, deck.position_frames());
+    assert_eq!(d.length_frames, deck.length_frames());
+    assert_eq!(d.file_sample_rate, deck.file_sample_rate());
+    assert_eq!(d.rate, deck.rate());
+    assert_eq!((d.loop_start, d.loop_end), (1_000, 9_000));
+    assert_eq!(d.hotcues[2], deck.hotcue(2));
+    assert_eq!(d.hotcues[0], None);
+    assert_eq!(snap.decks[0], engine.deck_snapshot(0));
+    assert_eq!(snap.mixer.channels[1].fader, engine.mixer().fader(1));
+    assert!(snap.mixer.channels[1].pfl);
+    assert_eq!(snap.mixer.crossfader, engine.mixer().crossfader());
+    assert_eq!(snap.mixer.master_gain, engine.mixer().master_gain());
+    assert_eq!(
+        snap.mixer.channels[0].peak_left,
+        engine.mixer().channel_peak_left(0)
+    );
+
+    // The id path reads the same numbers as the typed fields.
+    let read = |id: &str| snap.read(&id.parse::<StateId>().expect(id));
+    assert_eq!(read("deck.0.loop"), Some(1.0));
+    assert_eq!(read("deck.0.cue"), Some(0.0));
+    assert_eq!(read("deck.1.sync.master"), Some(0.0));
+    assert_eq!(read("deck.0.hotcue2.set"), Some(1.0));
+    assert_eq!(
+        read("mixer.ch1.fader"),
+        Some(f64::from(engine.mixer().fader(1)))
+    );
+    assert_eq!(read("deck.9.play"), None);
+}

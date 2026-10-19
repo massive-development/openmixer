@@ -53,7 +53,7 @@ impl PitchFader {
         self.range_index = index.min(RANGES.len() - 1);
         let r = self.range();
         self.fader.set_range(1.0 - r, 1.0 + r, STEP);
-        let engine_rate = self.binding.deck().rate();
+        let engine_rate = self.binding.state().rate;
         let fitted = engine_rate.clamp(1.0 - r, 1.0 + r);
         self.fader.set(fitted);
         if fitted == engine_rate {
@@ -73,7 +73,7 @@ impl PitchFader {
     /// Follows rate changes made elsewhere (sync nudges, MIDI) without echoing them back. The
     /// fader is left alone while the user drags it.
     pub fn refresh(&mut self, dragging: bool) {
-        let rate = self.binding.deck().rate();
+        let rate = self.binding.state().rate;
         if !dragging && (self.fader.value() - rate).abs() > STEP {
             self.fader.set(rate);
         }

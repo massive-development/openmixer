@@ -52,7 +52,8 @@ impl HotcuePads {
 
     /// Whether each pad's cue is set, read from the engine.
     pub fn lit(&self) -> [bool; Self::COUNT] {
-        std::array::from_fn(|i| self.binding.deck().hotcue(i).is_some())
+        let cues = self.binding.state().hotcues;
+        std::array::from_fn(|i| cues[i].is_some())
     }
 
     /// Pads in one row across `area`, `gap` apart.
