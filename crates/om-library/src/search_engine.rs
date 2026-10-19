@@ -2,6 +2,7 @@
 //! Threading: use on the thread that owns the `Database` (the UI gets its own read-only connection).
 
 use crate::database::Database;
+use std::borrow::Borrow;
 use crate::error::{LibraryError, Result};
 use crate::search_compiler::{compile_search, CompileContext};
 use crate::search_fields::SearchFieldRegistry;
@@ -13,20 +14,20 @@ use crate::watch_folders::Clock;
 use rusqlite::params_from_iter;
 use std::sync::Arc;
 
-pub struct SearchEngine<'a> {
-    db: &'a Database,
+pub struct SearchEngine<D: Borrow<Database>> {
+    db: D,
     fields: SearchFieldRegistry,
     /// Clock for relative dates. Tests inject a fixed one.
     pub clock: Clock,
 }
 
-impl<'a> SearchEngine<'a> {
+impl<D: Borrow<Database>> SearchEngine<D> {
     /// An engine over `db` with the built-in fields and the system clock.
-    pub fn new(db: &'a Database) -> Self {
+    pub fn new(db: D) -> Self {
         Self::with_registry(db, SearchFieldRegistry::with_defaults())
     }
 
-    pub fn with_registry(db: &'a Database, fields: SearchFieldRegistry) -> Self {
+    pub fn with_registry(db: D, fields: SearchFieldRegistry) -> Self {
         Self {
             db,
             fields,
@@ -51,7 +52,7 @@ impl<'a> SearchEngine<'a> {
     /// so a partial page is never presented as the answer.
     pub fn search(&self, query: &SearchQuery) -> Result<Vec<TrackRecord>> {
         let compiled = compile_search(query, &self.fields, &self.context())?;
-        self.db.query_rows(
+        self.db.borrow().query_rows(
             &compiled.select_sql,
             params_from_iter(compiled.select_args.iter()),
             read_row,
@@ -70,7 +71,7 @@ impl<'a> SearchEngine<'a> {
     /// Number of matches. Ignores limit and offset.
     pub fn count(&self, query: &SearchQuery) -> Result<i64> {
         let compiled = compile_search(query, &self.fields, &self.context())?;
-        let rows = self.db.query_rows(
+        let rows = self.db.borrow().query_rows(
             &compiled.count_sql,
             params_from_iter(compiled.count_args.iter()),
             |row| row.get::<_, i64>(0),

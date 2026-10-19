@@ -3,6 +3,7 @@
 //! writer to have opened and migrated the file first.
 
 use crate::cue_dao::CueDao;
+use std::sync::Arc;
 use crate::database::{Database, OpenMode};
 use crate::error::Result;
 use crate::migrations::{migrate, Migration};
@@ -14,7 +15,7 @@ use crate::watch_folder_dao::WatchFolderDao;
 
 /// An open library database. DAOs are cheap views created on demand.
 pub struct Library {
-    db: Database,
+    db: Arc<Database>,
 }
 
 impl Library {
@@ -26,11 +27,17 @@ impl Library {
         if mode == OpenMode::ReadWrite {
             migrate(&db, migrations)?;
         }
-        Ok(Self { db })
+        Ok(Self { db: Arc::new(db) })
     }
 
     pub fn database(&self) -> &Database {
         &self.db
+    }
+
+    /// A second handle on the same connection, for readers that must own their database (the UI
+    /// search source and the prep queue views).
+    pub fn shared_database(&self) -> Arc<Database> {
+        Arc::clone(&self.db)
     }
 
     pub fn tracks(&self) -> TrackDao<'_> {

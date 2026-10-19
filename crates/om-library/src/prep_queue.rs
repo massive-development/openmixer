@@ -10,6 +10,7 @@
 //! Port of `src/library/PrepQueue.*`.
 
 use crate::error::Result;
+use std::borrow::Borrow;
 use crate::library::Library;
 use crate::prep_queue_dao::{PrepEntry, PrepStatus};
 use crate::prep_results::apply_prep_results;
@@ -71,9 +72,9 @@ struct InFlight {
     reported: f32,
 }
 
-pub struct PrepQueue<'a> {
-    lib: &'a Library,
-    service: &'a AnalysisService,
+pub struct PrepQueue<L: Borrow<Library>, S: Borrow<AnalysisService>> {
+    lib: L,
+    service: S,
     opts: PrepOptions,
     /// Shared with listeners that may outlive the queue.
     inbox: Arc<Inbox>,
@@ -84,15 +85,16 @@ pub struct PrepQueue<'a> {
     next_generation: i64,
 }
 
-impl<'a> PrepQueue<'a> {
+impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
     /// Library and service must outlive the queue. Entries left Running by a crash go back to
     /// Queued.
     pub fn new(
-        library: &'a Library,
-        service: &'a AnalysisService,
+        library: L,
+        service: S,
         mut options: PrepOptions,
     ) -> Self {
         options.max_in_flight = options.max_in_flight.max(1);
+        let reset = library.borrow().prep_queue().reset_running().err();
         let queue = Self {
             lib: library,
             service,
@@ -102,7 +104,7 @@ impl<'a> PrepQueue<'a> {
             draining: Vec::new(),
             next_generation: 1,
         };
-        if let Err(e) = library.prep_queue().reset_running() {
+        if let Some(e) = reset {
             queue.error(&e.to_string());
         }
         queue
@@ -110,7 +112,7 @@ impl<'a> PrepQueue<'a> {
 
     /// Queues a track. `urgent` runs it before everything queued.
     pub fn enqueue(&mut self, track_id: i64, urgent: bool) -> Result<()> {
-        let dao = self.lib.prep_queue();
+        let dao = self.lib.borrow().prep_queue();
         dao.enqueue(track_id)?;
         if urgent {
             dao.prioritise(track_id)?;
@@ -120,20 +122,20 @@ impl<'a> PrepQueue<'a> {
     }
 
     pub fn prioritise(&mut self, track_id: i64) -> Result<()> {
-        let result = self.lib.prep_queue().prioritise(track_id);
+        let result = self.lib.borrow().prep_queue().prioritise(track_id);
         self.notify(track_id);
         result
     }
 
     /// Moves within the user order.
     pub fn move_to(&mut self, track_id: i64, index: i32) -> Result<()> {
-        self.lib.prep_queue().move_to(track_id, index)
+        self.lib.borrow().prep_queue().move_to(track_id, index)
     }
 
     /// Cancels the track first when it is running, then removes its row.
     pub fn remove(&mut self, track_id: i64) -> Result<()> {
         self.cancel(track_id);
-        self.lib.prep_queue().remove(track_id)
+        self.lib.borrow().prep_queue().remove(track_id)
     }
 
     /// Queued or Running -> Cancelled.
@@ -141,11 +143,11 @@ impl<'a> PrepQueue<'a> {
         if self.in_flight.contains_key(&track_id) {
             return self.cancel_running(track_id);
         }
-        match self.lib.prep_queue().find(track_id) {
+        match self.lib.borrow().prep_queue().find(track_id) {
             Err(e) => self.error(&e.to_string()),
             Ok(Some(entry)) if entry.status == PrepStatus::Queued => {
                 if let Err(e) =
-                    self.lib
+                    self.lib.borrow()
                         .prep_queue()
                         .set_status(track_id, PrepStatus::Cancelled, "")
                 {
@@ -158,7 +160,7 @@ impl<'a> PrepQueue<'a> {
     }
 
     pub fn cancel_all(&mut self) {
-        match self.lib.prep_queue().all() {
+        match self.lib.borrow().prep_queue().all() {
             Err(e) => self.error(&e.to_string()),
             Ok(entries) => {
                 for e in entries {
@@ -171,7 +173,7 @@ impl<'a> PrepQueue<'a> {
     }
 
     pub fn clear_finished(&self) -> Result<()> {
-        self.lib.prep_queue().clear_finished()
+        self.lib.borrow().prep_queue().clear_finished()
     }
 
     /// Applies finished jobs and submits the next ones. Returns true while work remains.
@@ -182,7 +184,7 @@ impl<'a> PrepQueue<'a> {
         if !self.in_flight.is_empty() || !self.draining.is_empty() {
             return true;
         }
-        match self.lib.prep_queue().next_queued() {
+        match self.lib.borrow().prep_queue().next_queued() {
             // An unreadable queue is not known to be idle.
             Err(e) => {
                 self.error(&e.to_string());
@@ -208,7 +210,7 @@ impl<'a> PrepQueue<'a> {
 
     /// The queue in user order, with live progress for running items.
     pub fn list(&self) -> Result<Vec<PrepEntry>> {
-        let mut entries = self.lib.prep_queue().all()?;
+        let mut entries = self.lib.borrow().prep_queue().all()?;
         for e in &mut entries {
             if let Some(f) = self.in_flight.get(&e.track_id) {
                 e.progress = f.job.progress();
@@ -224,7 +226,7 @@ impl<'a> PrepQueue<'a> {
             self.draining.push(job);
         }
         if let Err(e) = self
-            .lib
+            .lib.borrow()
             .prep_queue()
             .set_status(track_id, PrepStatus::Cancelled, "")
         {
@@ -262,11 +264,11 @@ impl<'a> PrepQueue<'a> {
             _ => return,
         }
         self.in_flight.remove(&finished.track_id);
-        let dao = self.lib.prep_queue();
+        let dao = self.lib.borrow().prep_queue();
         match finished.status {
             JobStatus::Done => {
                 if let Err(e) =
-                    apply_prep_results(&self.lib.tracks(), finished.track_id, &finished.results)
+                    apply_prep_results(&self.lib.borrow().tracks(), finished.track_id, &finished.results)
                 {
                     return self.fail(finished.track_id, &e.to_string());
                 }
@@ -286,7 +288,7 @@ impl<'a> PrepQueue<'a> {
 
     fn fail(&mut self, track_id: i64, message: &str) {
         if let Err(e) = self
-            .lib
+            .lib.borrow()
             .prep_queue()
             .set_status(track_id, PrepStatus::Failed, message)
         {
@@ -304,7 +306,7 @@ impl<'a> PrepQueue<'a> {
     /// Submits the next queued track. False when there is nothing to submit (or the queue is
     /// unreadable, which is retried on the next pump).
     fn submit_next(&mut self) -> bool {
-        let next = match self.lib.prep_queue().next_queued() {
+        let next = match self.lib.borrow().prep_queue().next_queued() {
             Ok(Some(next)) => next,
             Ok(None) => return false,
             Err(e) => {
@@ -313,12 +315,12 @@ impl<'a> PrepQueue<'a> {
             }
         };
         let id = next.track_id;
-        match self.lib.tracks().find_by_id(id) {
+        match self.lib.borrow().tracks().find_by_id(id) {
             Err(e) => self.fail(id, &e.to_string()),
             Ok(None) => self.fail(id, "track no longer exists"),
             Ok(Some(track)) => {
                 if let Err(e) = self
-                    .lib
+                    .lib.borrow()
                     .prep_queue()
                     .set_status(id, PrepStatus::Running, "")
                 {
@@ -329,7 +331,7 @@ impl<'a> PrepQueue<'a> {
                 self.next_generation += 1;
                 let source = self.make_source(&track);
                 let inbox = Arc::clone(&self.inbox);
-                let job = self.service.submit(
+                let job = self.service.borrow().submit(
                     Some(source),
                     self.opts.analyzer_ids.clone(),
                     Some(Box::new(move |job: &AnalysisJob| {
@@ -377,7 +379,7 @@ impl<'a> PrepQueue<'a> {
         if self.opts.observer.is_none() {
             return;
         }
-        match self.lib.prep_queue().find(track_id) {
+        match self.lib.borrow().prep_queue().find(track_id) {
             Err(e) => self.error(&e.to_string()),
             Ok(Some(mut entry)) => {
                 if let Some(f) = self.in_flight.get(&track_id) {
@@ -411,7 +413,7 @@ impl<'a> PrepQueue<'a> {
     }
 }
 
-impl Drop for PrepQueue<'_> {
+impl<L: Borrow<Library>, S: Borrow<AnalysisService>> Drop for PrepQueue<L, S> {
     /// Cancels in-flight jobs. Their rows stay Running until the next start resets them.
     fn drop(&mut self) {
         for f in self.in_flight.values().chain(self.draining.iter()) {
