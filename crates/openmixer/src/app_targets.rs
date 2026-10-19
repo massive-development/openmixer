@@ -11,6 +11,7 @@ use crate::error::AppError;
 use om_audio::OutputPairs;
 use om_ui::preferences::{default_map_file, AudioPrefs, MidiPrefs};
 use om_ui::preferences_applier::PreferencesTargets;
+use om_ui::settings::MidiHost;
 use om_ui::theme::{Source, ThemeRegistry};
 use std::path::{Path, PathBuf};
 
@@ -36,12 +37,6 @@ pub trait AudioDeviceControl {
     fn current_state(&self) -> String;
     /// Opens the device described by `state`. The error text is logged, not shown.
     fn initialise(&mut self, state: &str) -> Result<(), AppError>;
-}
-
-/// MIDI side, implemented by `MidiService` in `crate::midi` (which drives `om-midi`). The map is loaded before inputs are changed.
-pub trait MidiSink {
-    fn load_map(&mut self, file: &Path) -> Result<(), AppError>;
-    fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]);
 }
 
 /// One theme a plugin provides, as JSON, with the plugin that owns it.
@@ -87,7 +82,7 @@ pub struct AppPreferencesTargets<'a, 'd> {
     themes: &'a mut ThemeRegistry,
     audio: &'a dyn AudioSink,
     device: Option<&'d mut (dyn AudioDeviceControl + 'd)>,
-    midi: Option<&'a mut (dyn MidiSink + 'static)>,
+    midi: Option<&'a dyn MidiHost>,
     plugins: Option<&'a mut (dyn PluginSink + 'static)>,
 }
 
@@ -97,7 +92,7 @@ impl<'a, 'd> AppPreferencesTargets<'a, 'd> {
         themes: &'a mut ThemeRegistry,
         audio: &'a dyn AudioSink,
         device: Option<&'d mut (dyn AudioDeviceControl + 'd)>,
-        midi: Option<&'a mut (dyn MidiSink + 'static)>,
+        midi: Option<&'a dyn MidiHost>,
         plugins: Option<&'a mut (dyn PluginSink + 'static)>,
     ) -> Self {
         Self {
@@ -201,13 +196,13 @@ impl PreferencesTargets for AppPreferencesTargets<'_, '_> {
         };
         if self.state.last_map.as_ref() != Some(&file) && file.is_file() {
             self.state.last_map = Some(file.clone());
-            if let Some(sink) = self.midi.as_deref_mut() {
+            if let Some(sink) = self.midi {
                 if let Err(error) = sink.load_map(&file) {
                     eprintln!("MIDI map {}: {error}", file.display());
                 }
             }
         }
-        if let Some(sink) = self.midi.as_deref_mut() {
+        if let Some(sink) = self.midi {
             sink.enable_inputs(midi.enable_all, &midi.enabled_inputs);
         }
     }
@@ -218,6 +213,7 @@ mod tests {
     use super::*;
     use om_ui::preferences::Preferences;
     use om_ui::preferences_applier::PreferencesApplier;
+    use om_ui::settings::SettingsError;
     use std::cell::RefCell;
 
     /// The example plugin's theme id and owner, as the example plugin reports them.
@@ -282,17 +278,28 @@ mod tests {
     /// Records the order of MIDI calls.
     #[derive(Default)]
     struct RecordingMidi {
-        log: Vec<String>,
+        log: RefCell<Vec<String>>,
     }
 
-    impl MidiSink for RecordingMidi {
-        fn load_map(&mut self, file: &Path) -> Result<(), AppError> {
-            self.log.push(format!("load:{}", file.display()));
+    impl MidiHost for RecordingMidi {
+        fn load_map(&self, file: &Path) -> Result<(), SettingsError> {
+            self.log
+                .borrow_mut()
+                .push(format!("load:{}", file.display()));
             Ok(())
         }
-        fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]) {
+        fn enable_inputs(&self, enable_all: bool, inputs: &[String]) {
             self.log
+                .borrow_mut()
                 .push(format!("enable:{}:{}", enable_all, inputs.join("+")));
+        }
+        fn save_map(&self, _file: &Path) -> Result<(), SettingsError> {
+            Ok(())
+        }
+        fn arm_learn(&self, _target: &str) {}
+        fn cancel_learn(&self) {}
+        fn is_learning(&self) -> bool {
+            false
         }
     }
 
@@ -583,7 +590,7 @@ mod tests {
         let mut themes = registry();
         let mut state = AppTargetsState::default();
         let audio = RecordingAudio::default();
-        let mut midi = RecordingMidi::default();
+        let midi = RecordingMidi::default();
         let map = scratch.0.join("map.json");
         std::fs::write(
             &map,
@@ -601,13 +608,13 @@ mod tests {
                 &mut themes,
                 &audio,
                 None,
-                Some(&mut midi),
+                Some(&midi),
                 None,
             );
             targets.apply_midi(&prefs);
         }
         assert_eq!(
-            midi.log,
+            midi.log.borrow().clone(),
             vec![
                 format!("load:{}", map.display()),
                 "enable:false:usb-1".to_owned()
@@ -616,20 +623,20 @@ mod tests {
         );
 
         std::fs::write(&map, r#"{"mappings":[]}"#).expect("rewrite map");
-        midi.log.clear();
+        midi.log.borrow_mut().clear();
         {
             let mut targets = AppPreferencesTargets::new(
                 &mut state,
                 &mut themes,
                 &audio,
                 None,
-                Some(&mut midi),
+                Some(&midi),
                 None,
             );
             targets.apply_midi(&prefs);
         }
         assert_eq!(
-            midi.log,
+            midi.log.borrow().clone(),
             vec!["enable:false:usb-1".to_owned()],
             "the same path is not reloaded"
         );
@@ -641,21 +648,15 @@ mod tests {
         let mut themes = registry();
         let mut state = AppTargetsState::default();
         let audio = RecordingAudio::default();
-        let mut midi = RecordingMidi::default();
+        let midi = RecordingMidi::default();
         let prefs = MidiPrefs {
             enable_all: true,
             enabled_inputs: Vec::new(),
             map_file: scratch.0.join("absent.json").to_string_lossy().into_owned(),
         };
-        let mut targets = AppPreferencesTargets::new(
-            &mut state,
-            &mut themes,
-            &audio,
-            None,
-            Some(&mut midi),
-            None,
-        );
+        let mut targets =
+            AppPreferencesTargets::new(&mut state, &mut themes, &audio, None, Some(&midi), None);
         targets.apply_midi(&prefs);
-        assert_eq!(midi.log, vec!["enable:true:".to_owned()]);
+        assert_eq!(*midi.log.borrow(), vec!["enable:true:".to_owned()]);
     }
 }

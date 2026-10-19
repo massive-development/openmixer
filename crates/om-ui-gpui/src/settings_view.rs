@@ -1441,7 +1441,7 @@ mod tests {
 #[cfg(test)]
 mod page_tests {
     use super::*;
-    use om_ui::settings::{MidiControl, PluginHost};
+    use om_ui::settings::{MidiHost, PluginHost};
     use std::cell::Cell;
     use std::path::Path;
     use std::rc::Rc;
@@ -1465,7 +1465,7 @@ mod page_tests {
         }
     }
 
-    impl MidiControl for FakeMidi {
+    impl MidiHost for FakeMidi {
         fn load_map(&self, _file: &Path) -> Result<(), SettingsError> {
             if self.fail_load {
                 return Err(SettingsError::Midi("not a controller map".into()));
@@ -1492,6 +1492,7 @@ mod page_tests {
         fn map_generation(&self) -> u64 {
             self.generation.load(Ordering::SeqCst)
         }
+        fn enable_inputs(&self, _enable_all: bool, _inputs: &[String]) {}
     }
 
     /// A library that keeps its folders in memory.

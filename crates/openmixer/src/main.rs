@@ -85,7 +85,7 @@ fn headless_smoke() -> Result<(), AppError> {
     if composition.router.unknown_count() != 0 {
         return Err(AppError::Smoke("parameter registrations failed"));
     }
-    if composition.midi.is_none() {
+    if composition.services.midi.is_none() {
         return Err(AppError::Smoke("MIDI did not attach"));
     }
     let stats = device.latency_stats();

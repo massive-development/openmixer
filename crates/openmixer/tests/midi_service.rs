@@ -22,7 +22,7 @@ fn controller_bytes_reach_the_mixer_through_the_map() {
     let mock = MockBackend::new();
     mock.add_device("Pad");
     c.attach_midi(Box::new(mock.clone()));
-    let service = c.midi.clone().expect("attached");
+    let service = c.services.midi.clone().expect("attached");
 
     let map = scratch.path().join("map.json");
     std::fs::write(&map, MAP).expect("write map");
@@ -41,7 +41,7 @@ fn deck_state_lights_the_controller_led() {
     let mock = MockBackend::new();
     mock.add_device("Pad");
     c.attach_midi(Box::new(mock.clone()));
-    let service = c.midi.clone().expect("attached");
+    let service = c.services.midi.clone().expect("attached");
 
     let map = scratch.path().join("map.json");
     std::fs::write(&map, MAP).expect("write map");
@@ -65,7 +65,7 @@ fn hot_plug_opens_a_device_that_appears_while_running() {
     let mock = MockBackend::new();
     mock.add_device("Pad");
     c.attach_midi(Box::new(mock.clone()));
-    let service = c.midi.clone().expect("attached");
+    let service = c.services.midi.clone().expect("attached");
     service.select_inputs(true, &[]);
     assert_eq!(service.open_inputs(), vec!["Pad".to_owned()]);
 
@@ -79,13 +79,13 @@ fn hot_plug_opens_a_device_that_appears_while_running() {
 
 #[test]
 fn learn_controls_drive_the_mapper() {
-    use om_ui::settings::MidiControl;
+    use om_ui::settings::MidiHost;
     let scratch = tempfile::tempdir().expect("tempdir");
     let mut c = composition(scratch.path());
     let mock = MockBackend::new();
     mock.add_device("Pad");
     c.attach_midi(Box::new(mock.clone()));
-    let service = c.midi.clone().expect("attached");
+    let service = c.services.midi.clone().expect("attached");
     service.select_inputs(true, &[]);
 
     service.arm_learn("mixer.ch0.fader");
@@ -102,14 +102,14 @@ fn learn_controls_drive_the_mapper() {
 
 #[test]
 fn a_learned_binding_is_saved_and_survives_a_reload() {
-    use om_ui::settings::MidiControl;
+    use om_ui::settings::MidiHost;
 
     let scratch = tempfile::tempdir().expect("tempdir");
     let mock = MockBackend::new();
     mock.add_device("Pad");
     let mut first = composition(scratch.path());
     first.attach_midi(Box::new(mock.clone()));
-    let service = first.midi.clone().expect("attached");
+    let service = first.services.midi.clone().expect("attached");
     service.select_inputs(false, &["Pad".to_owned()]);
 
     // Learn a fader from the controller's CC 7, then save the live map.
@@ -129,7 +129,7 @@ fn a_learned_binding_is_saved_and_survives_a_reload() {
     let mock2 = MockBackend::new();
     mock2.add_device("Pad");
     second.attach_midi(Box::new(mock2.clone()));
-    let service2 = second.midi.clone().expect("attached");
+    let service2 = second.services.midi.clone().expect("attached");
     service2.load_map_file(&file).expect("saved map loads");
     assert_eq!(service2.mapper().num_mappings(), 1);
     service2.select_inputs(false, &["Pad".to_owned()]);

@@ -106,7 +106,7 @@ pub fn main(args: &[String]) -> ExitCode {
     // The library: ingest the smoke tracks and load the first one into deck A, or share the
     // services the composition opened. The window and the smoke check use the same hub.
     let mut smoke_error: Option<AppError> = None;
-    let library = composition.hooks.library.take().map(|mut services| {
+    let library = composition.services.library.take().map(|mut services| {
         if let Some(root) = &smoke_root {
             if let Err(error) = library_smoke::ingest_generated(&mut services, root) {
                 smoke_error = Some(error);
@@ -126,6 +126,7 @@ pub fn main(args: &[String]) -> ExitCode {
     let rows_out = Arc::new(AtomicUsize::new(0));
 
     let midi_page: Option<Arc<dyn MidiPage>> = composition
+        .services
         .midi
         .clone()
         .map(|service| service as Arc<dyn MidiPage>);

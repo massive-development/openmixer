@@ -236,7 +236,15 @@ mod tests {
         );
         app.attach_midi(Box::new(MockBackend::new()));
         app.apply_plugin_midi_map("demo.map").expect("applies");
-        assert_eq!(app.midi.as_ref().expect("midi").mapper().num_mappings(), 1);
+        assert_eq!(
+            app.services
+                .midi
+                .as_ref()
+                .expect("midi")
+                .mapper()
+                .num_mappings(),
+            1
+        );
 
         app.detach_plugin_stage(InsertAt::Master, 0);
         app.plugins.unload(ID);
