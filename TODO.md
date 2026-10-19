@@ -105,15 +105,15 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Tempo estimation, beat grid with downbeat detection
   - Manual tempo markers and correction
 
-- [ ] **Todo 16:** Musical key detection + Camelot mapping
+- [x] **Todo 16:** Musical key detection + Camelot mapping
   - Chroma-based key estimation
   - Camelot code mapping and harmonic compatibility
 
-- [ ] **Todo 17:** Waveform data model
+- [x] **Todo 17:** Waveform data model
   - Multi-resolution overview and zoom data
   - Low/mid/high band data for colouring
 
-- [ ] **Todo 18:** Onset/energy/structure features
+- [x] **Todo 18:** Onset/energy/structure features
   - Onset, energy and section detection (feeds Automix)
   - Mix-in and mix-out points
 
