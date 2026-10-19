@@ -12,7 +12,9 @@ workspace = true
 
 [dependencies]
 om-analysis.workspace = true
+om-core.workspace = true
 om-engine.workspace = true
+om-library.workspace = true
 realfft = "3.5"
 serde_json.workspace = true
 sha2.workspace = true
