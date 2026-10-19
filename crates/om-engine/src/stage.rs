@@ -242,6 +242,23 @@ mod tests {
     }
 
     #[test]
+    fn set_reports_a_full_command_queue() {
+        // The chain stays alive so the queue is open; nothing is applied, so nothing is displaced.
+        let (_chain, insert) = StageChain::new();
+        for n in 0..RING_CAPACITY {
+            assert!(
+                insert.set(0, Some(Box::new(Scale(1.0)))),
+                "command {n} fits in the queue"
+            );
+        }
+        assert!(
+            !insert.set(0, Some(Box::new(Scale(1.0)))),
+            "a command beyond the queue limit is refused"
+        );
+        assert!(!insert.clear(1), "clearing is refused too while the queue is full");
+    }
+
+    #[test]
     fn rejects_bad_slots_and_foreign_interface_versions() {
         struct Stale;
         impl ProcessStage for Stale {
