@@ -283,7 +283,8 @@ fn v7_indexes_existing_rows_of_a_populated_v6_database() {
 
     let lib = Library::open(&path, OpenMode::ReadWrite, core_migrations()).expect("upgrade");
     let db = lib.database();
-    assert_eq!(current_schema_version(db).unwrap(), 7);
+    let latest = i64::from(core_migrations().last().unwrap().version);
+    assert_eq!(current_schema_version(db).unwrap(), latest);
     let matches = |q: &str| {
         row_count(
             db,
