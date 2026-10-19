@@ -11,8 +11,8 @@ use crate::learn::{LearnRequest, MidiLearn};
 use crate::lock;
 use crate::map::{MapMode, Mapping, MidiMap};
 use crate::output_rule::OutputRule;
-use om_core::ParameterTarget;
-use std::collections::HashMap;
+use om_core::{ParameterTarget, StateReader};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,6 +32,9 @@ struct State {
     /// Per (channel, MSB controller): the 14-bit value so far.
     halves14: HashMap<(i32, i32), i32>,
     on_learned: Option<LearnCallback>,
+    /// Reads the engine's live values. A toggle or relative message starts from the engine's value
+    /// when this is installed, so the controller agrees with the UI and the engine.
+    reader: Option<Arc<dyn StateReader>>,
 }
 
 #[derive(Default)]
@@ -49,6 +52,11 @@ impl MidiMapper {
     /// Where produced parameter updates go.
     pub fn set_target(&self, target: Arc<dyn ParameterTarget>) {
         lock(&self.state).target = Some(target);
+    }
+
+    /// Where the engine's live values are read from (see [`State::reader`]).
+    pub fn set_state_reader(&self, reader: Arc<dyn StateReader>) {
+        lock(&self.state).reader = Some(reader);
     }
 
     /// Replaces the map. A bad map changes nothing.
@@ -114,6 +122,7 @@ impl MidiMapper {
             values,
             halves14,
             target,
+            reader,
             ..
         } = &mut *guard;
         let mut fired = 0;
@@ -122,7 +131,13 @@ impl MidiMapper {
                 continue;
             };
             for &i in listeners {
-                if apply(&map.mappings[i], e, values, halves14, target.as_deref()) {
+                let source = Source {
+                    values,
+                    halves14,
+                    target: target.as_deref(),
+                    reader: reader.as_deref(),
+                };
+                if apply(&map.mappings[i], e, source) {
                     fired += 1;
                 }
             }
@@ -244,11 +259,14 @@ impl MidiMapper {
         self.generation.fetch_add(1, Ordering::Release);
     }
 
+    /// Replaces the map. The last value of every target the new map still has is kept, so a
+    /// relative control does not jump back to its initial value on a reload.
     fn install(&self, new_map: MidiMap) {
         {
             let mut s = lock(&self.state);
+            let targets: HashSet<String> = new_map.mappings.iter().map(|m| m.target.clone()).collect();
+            s.values.retain(|id, _| targets.contains(id));
             s.map = new_map;
-            s.values.clear();
             s.halves14.clear();
             rebuild_index(&mut s);
         }
@@ -302,19 +320,34 @@ fn bind(s: &mut State, learned: Mapping) {
     rebuild_index(s);
 }
 
+/// The mutable pieces a mapping application reads and writes.
+struct Source<'a> {
+    values: &'a mut HashMap<String, f64>,
+    halves14: &'a mut HashMap<(i32, i32), i32>,
+    target: Option<&'a dyn ParameterTarget>,
+    reader: Option<&'a dyn StateReader>,
+}
+
 /// Applies one mapping to an event. Returns true when a parameter update was produced.
-fn apply(
-    m: &Mapping,
-    incoming: &MidiEvent,
-    values: &mut HashMap<String, f64>,
-    halves14: &mut HashMap<(i32, i32), i32>,
-    target: Option<&dyn ParameterTarget>,
-) -> bool {
+fn apply(m: &Mapping, incoming: &MidiEvent, source: Source<'_>) -> bool {
+    let Source {
+        values,
+        halves14,
+        target,
+        reader,
+    } = source;
     let mut e = *incoming;
     if m.mode == MapMode::Absolute14 {
         combine14(halves14, m, &mut e);
     }
-    let current = values.get(m.target.as_str()).copied().unwrap_or(0.0);
+    let stored = values.get(m.target.as_str()).copied().unwrap_or(0.0);
+    // Toggle and relative work from the current value; the engine's is the truth when it is known.
+    let current = match m.mode {
+        MapMode::Toggle | MapMode::Relative | MapMode::RelativeTwosComplement => reader
+            .and_then(|r| r.read_state(&m.target))
+            .unwrap_or(stored),
+        _ => stored,
+    };
     let Some(raw) = compute(m, &e, current) else {
         return false;
     };
