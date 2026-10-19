@@ -142,29 +142,37 @@ fn compile_order(query: &SearchQuery, fields: &SearchFieldRegistry) -> Result<St
     Ok(sql)
 }
 
-/// Free text. With FTS5 it is a token-prefix query over the `tracks_fts` index (see [`fts_query`]);
-/// text with no letters or digits has no tokens, so it keeps the LIKE form. The LIKE form matches
-/// substrings of each text column.
+/// Free text matches a track when any text column contains the text as a substring (LIKE, so
+/// "ove" finds "Love"), or, with FTS5, when the `tracks_fts` index matches it as token prefixes
+/// (diacritics folded, so "emile" finds "Émile", which a substring match cannot: LIKE is ASCII
+/// case-insensitive only). The two are OR-ed. Negated free text negates the whole disjunction.
+///
+/// The LIKE branch is not indexable, so the planner scans `tracks` either way; the index branch is
+/// a set lookup inside that scan. Without FTS5, or when the text has no letters or digits (so no
+/// FTS query exists), only the LIKE branch is compiled.
 fn compile_free_text(term: &FilterTerm, fts5: bool, out: &mut SqlFragment) -> Result<()> {
+    let mut f = SqlFragment::default();
     if fts5 {
         if let Some(query) = fts_query(&term.value) {
-            out.sql.push_str(if term.negated {
-                "tracks.id NOT IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)"
-            } else {
-                "tracks.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)"
-            });
-            out.args.push(SearchValue::Text(query));
-            return Ok(());
+            f.sql
+                .push_str("tracks.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)");
+            f.args.push(SearchValue::Text(query));
         }
     }
-    let mut f = SqlFragment::default();
+    let mut like = SqlFragment::default();
     for column in free_text_columns() {
-        if !f.sql.is_empty() {
-            f.sql.push_str(" OR ");
+        if !like.sql.is_empty() {
+            like.sql.push_str(" OR ");
         }
-        f.sql.push_str(&format!("{column} LIKE ? ESCAPE '\\'"));
-        f.args.push(SearchValue::Text(like_pattern(&term.value)));
+        like.sql.push_str(&format!("{column} LIKE ? ESCAPE '\\'"));
+        like.args.push(SearchValue::Text(like_pattern(&term.value)));
     }
+    if !f.sql.is_empty() {
+        f.sql.push_str(" OR ");
+    }
+    f.sql.push_str(&format!("({})", like.sql));
+    f.args.extend(like.args);
+
     out.sql.push_str(if term.negated { "NOT (" } else { "(" });
     out.sql.push_str(&f.sql);
     out.sql.push(')');
@@ -529,6 +537,34 @@ mod tests {
         );
         assert_eq!(fts_query(")(*\"-"), None);
         assert_eq!(fts_query(""), None);
+    }
+
+    #[test]
+    fn free_text_is_index_or_like_and_negation_covers_both() {
+        let fields = SearchFieldRegistry::with_defaults();
+        let query = crate::search_parser::parse_query("-ove", &fields).query;
+
+        let with_index = CompileContext {
+            now_ms: 0,
+            fts5: true,
+        };
+        let c = compile_search(&query, &fields, &with_index).expect("compile");
+        assert!(c.select_sql.contains(
+            "NOT (tracks.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?) OR (tracks.title LIKE ?"
+        ));
+        assert_eq!(c.select_sql.matches('?').count(), c.select_args.len());
+        assert_eq!(c.count_args.len(), 1 + free_text_columns().len());
+
+        let like_only = CompileContext {
+            now_ms: 0,
+            fts5: false,
+        };
+        let c = compile_search(&query, &fields, &like_only).expect("compile");
+        assert!(!c.count_sql.contains("tracks_fts"));
+        assert!(c
+            .count_sql
+            .starts_with("SELECT COUNT(*) FROM tracks WHERE (NOT ("));
+        assert_eq!(c.count_args.len(), free_text_columns().len());
     }
 
     #[test]

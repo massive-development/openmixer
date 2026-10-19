@@ -4,6 +4,21 @@
 //!
 //! Threading: one writer per database file. A `Database` is used by one thread at a time; the UI
 //! opens its own read-only connection to the same file (WAL lets it read while the writer commits).
+//!
+//! ## Free-text search and FTS5 (migration 7)
+//!
+//! Free text (a term with no field, such as `moby` or `"deep house"`) matches when a text column
+//! (title, artist, album, genre, comment) contains it as a substring, so `ove` finds `Love` and
+//! `echno` finds `Techno`. With FTS5 it also matches the `tracks_fts` index, which folds diacritics
+//! and matches token prefixes, so `emile` finds `Émile`. The two are OR-ed; negation covers both.
+//! Field filters (`artist:`, `genre:`) keep their own LIKE predicates. Without FTS5 only the
+//! substring branch runs.
+//!
+//! **Caveat for FTS5 databases.** Migration 7 adds triggers on `tracks` that write to `tracks_fts`.
+//! A build of SQLite without FTS5 cannot run those triggers, so every insert, update or delete of a
+//! track fails on it. Such a build therefore refuses to open a database that has the triggers
+//! ([`LibraryError::Fts5Required`]), for read-only opens too, rather than failing later on a write.
+//! Use a build with FTS5 (the bundled SQLite has it) for any library a no-FTS5 build might open.
 
 #![forbid(unsafe_code)]
 

@@ -33,6 +33,13 @@ pub enum LibraryError {
     /// A search query was rejected (unknown field, unreadable value, unsortable field).
     #[error("{0}")]
     Query(String),
+    /// The database has the FTS5 search triggers (migration 7) but this SQLite build has no FTS5, so
+    /// every write to `tracks` would fail. Opened on a build that has FTS5 instead.
+    #[error(
+        "This library database has the FTS5 search index, but this build of SQLite has no FTS5 \
+         module, so writes to it would fail. Open the library with a build that includes FTS5."
+    )]
+    Fts5Required,
 }
 
 /// Why an import file was rejected. Its display text is the message shown in the UI status line.
