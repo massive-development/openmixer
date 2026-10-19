@@ -25,4 +25,5 @@ om-library = { path = "../om-library" }
 om-ui = { path = "../om-ui" }
 
 [dev-dependencies]
+om-testing = { path = "../om-testing" }
 tempfile = "3"
