@@ -1,5 +1,5 @@
-//! Engine-backed cases of tests/unit/OutputRouterTest.cpp: the router's device output must equal
-//! the engine's own master and cue output, block for block. The rest of that file is ported in
+//! Engine-backed cases: the router's device output must equal
+//! the engine's own master and cue output, block for block. The rest of that suite is in
 //! `om-engine/tests/output_router.rs`.
 
 mod common;

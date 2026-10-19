@@ -1,7 +1,6 @@
 //! Control threads hammering the engine's parameters while the mock device drives audio on its
-//! paced thread. Port of the spirit of tests/unit/ControlThreadSafetyTest.cpp for the engine side:
-//! no panics, no lost audio callbacks, and every id stays reachable. The MIDI map cases belong to
-//! Todo 32 and are not ported here.
+//! paced thread. Engine side:
+//! no panics, no lost audio callbacks, and every id stays reachable.
 
 mod common;
 

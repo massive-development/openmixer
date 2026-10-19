@@ -1,4 +1,4 @@
-//! Port of tests/unit/DjEngineTest.cpp, driven through the mock device.
+//! DJ engine cases, driven through the mock device.
 
 mod common;
 
@@ -135,7 +135,7 @@ fn stop_hands_the_engine_back_and_a_restart_keeps_deck_and_mixer_state() {
     assert!(magnitude(&dev.last_output()[0][..256]) > 0.1);
 }
 
-/// Port of DeckPlaybackSlow.DeckRunsUnderAMockAudioDevice: the deck plays through the paced mock
+/// The deck plays through the paced mock
 /// device thread, not through manual renders.
 #[test]
 fn deck_runs_under_a_mock_audio_device() {

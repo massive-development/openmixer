@@ -1,5 +1,4 @@
-//! The device contract: a real-time backend that drives one [`AudioCallback`]. Port of
-//! `src/engine/AudioDevice.h`. The latency monitor is shared so the control side can read stats
+//! The device contract: a real-time backend that drives one [`AudioCallback`]. The latency monitor is shared so the control side can read stats
 //! while the device runs.
 
 use om_engine::{AudioCallback, LatencyMonitor, LatencyStats};

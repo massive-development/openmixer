@@ -1,6 +1,6 @@
 //! Headless device for tests. Driven by [`MockAudioDevice::render_block`] on the caller's thread, or
 //! by a paced thread after [`MockAudioDevice::start_realtime`]. It renders into memory only and
-//! never opens a device, so nothing is audible. Port of `src/engine/MockAudioDevice.*`.
+//! never opens a device, so nothing is audible.
 //!
 //! The render state sits behind a mutex. That is fine for a test double; the real device path
 //! (`CpalAudioDevice`) takes no lock on its audio thread.

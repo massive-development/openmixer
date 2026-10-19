@@ -1,4 +1,4 @@
-//! Port of tests/unit/EngineWiringTest.cpp: FX racks, sync, quantized loops and slip reached
+//! FX racks, sync, quantized loops and slip reached
 //! through the parameter router, on a real `DjEngine` driven by the mock device.
 
 mod common;

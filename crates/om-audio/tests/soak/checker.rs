@@ -1,11 +1,11 @@
 //! Wraps the engine's audio callback and counts bad output samples (NaN, Inf, overflow) on the
-//! audio thread. Port of `tools/soak/OutputChecker.h`.
+//! audio thread.
 
 use om_audio::AudioCallback;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// |sample| above this counts as overflow: far beyond any legal master level (C++ `kOverflowLimit`).
+/// |sample| above this counts as overflow: far beyond any legal master level.
 pub const OVERFLOW_LIMIT: f32 = 4.0;
 
 /// Totals shared between the audio thread (writer) and the control side (reader).
