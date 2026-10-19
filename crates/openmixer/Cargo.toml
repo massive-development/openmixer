@@ -22,3 +22,6 @@ gui = ["dep:om-ui-gpui"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3"

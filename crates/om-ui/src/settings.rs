@@ -206,9 +206,13 @@ impl<'a> MidiSettingsPage<'a> {
     }
 }
 
-/// What the library page needs. Placeholder for `om-library` (Todo 12).
+/// What the library page needs. Implemented by [`crate::library::LibraryServices`].
 pub trait LibraryControl {
     fn available(&self) -> bool;
+    /// Watch folder paths, in the library's order; empty when there is no library.
+    fn folders(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
     fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn rescan(&mut self) -> SettingsResult<()>;
@@ -225,6 +229,11 @@ impl<'a> LibrarySettingsPage<'a> {
 
     pub fn new(prefs: &'a mut Preferences, library: &'a mut dyn LibraryControl) -> Self {
         Self { prefs, library }
+    }
+
+    /// Watch folders the library currently scans.
+    pub fn folders(&self) -> Vec<PathBuf> {
+        self.library.folders()
     }
 
     pub fn set_scan_on_start(&mut self, on: bool) -> bool {

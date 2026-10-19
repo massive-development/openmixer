@@ -4,15 +4,16 @@
 //! and drives it, so headless and GUI runs share the same wiring.
 //!
 //! Pieces that depend on crates not yet ported are optional hooks in [`ServiceHooks`]: MIDI
-//! (Todo 10, `om-midi`), library (Todo 12, `om-library`) and plugins (Todo 14, `om-plugins`). Until
-//! those exist the defaults are no-ops, and the matching preference sections are stored but not
-//! acted on.
+//! (Todo 10, `om-midi`) and plugins (Todo 14, `om-plugins`). Until those exist the defaults are
+//! no-ops, and the matching preference sections are stored but not acted on. The library (Todo 13)
+//! is attached on demand with [`AppComposition::attach_library`].
 
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
 };
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::ParameterRouter;
+use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
@@ -33,6 +34,9 @@ pub struct ServiceHooks {
     pub midi: Option<Box<dyn MidiSink>>,
     /// Placeholder for `om-plugins` (Todo 14): loads the plugin folder.
     pub plugins: Option<Box<dyn PluginSink>>,
+    /// The library (Todo 13): browser services, analysis and watch folders. Opened by
+    /// [`AppComposition::attach_library`]; `None` until then.
+    pub library: Option<LibraryServices>,
 }
 
 /// A theme registry with the built-in themes and, when given, the user theme folder. The window
@@ -100,6 +104,21 @@ impl AppComposition {
     }
 
     /// The audio side of the engine, once. The device owner passes it to its device.
+    /// Opens the library at `db_path`, or at the default location (`OPENMIXER_LIBRARY_DB` or the user
+    /// data folder) when `None`. The scan interval and scan-on-start come from the preferences and
+    /// apply from this start on. A library that cannot open leaves the hook empty and returns why.
+    pub fn attach_library(&mut self, db_path: Option<PathBuf>) -> Result<(), String> {
+        let mut options = match db_path {
+            Some(path) => Options::for_path(path.to_string_lossy().into_owned()),
+            None => default_options(),
+        };
+        options.scan_on_start = self.prefs.library.scan_on_start;
+        options.scan_interval_ms = i64::from(self.prefs.library.scan_interval_minutes.max(1)) * 60_000;
+        options.on_error = Some(Box::new(|message| eprintln!("openmixer: library: {message}")));
+        self.hooks.library = Some(LibraryServices::create(options)?);
+        Ok(())
+    }
+
     pub fn take_audio(&mut self) -> Option<DjEngineAudio> {
         self.audio.take()
     }
