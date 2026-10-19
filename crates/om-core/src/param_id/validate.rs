@@ -3,7 +3,7 @@
 
 use super::{
     DeckParam, FxParam, FxRack, MixerParam, ParamError, ParamId, SyncParam, HOTCUES_PER_DECK,
-    MAX_CHANNELS, MAX_DECKS, MAX_FX_UNIT, SAMPLER_PADS, STEMS_PER_DECK,
+    MAX_CHANNELS, MAX_DECKS, MAX_FX_UNIT, MAX_LOOP_BEATS, SAMPLER_PADS, STEMS_PER_DECK,
 };
 
 impl ParamId {
@@ -58,10 +58,9 @@ fn validate_deck_param(id: &ParamId, p: &DeckParam) -> Result<(), ParamError> {
         DeckParam::Hotcue { index: cue, .. } => {
             index(id, u16::from(*cue), "hotcue", HOTCUES_PER_DECK)
         }
-        // Loop sizes are checked by the value's own rule (finite, positive, bounded). The parser
-        // enforces the same rule.
+        // The same rule the parser applies to `loop.quantized.<beats>`.
         DeckParam::LoopQuantized(beats) => {
-            if beats.is_finite() && *beats > 0.0 {
+            if beats.is_finite() && *beats > 0.0 && *beats <= MAX_LOOP_BEATS {
                 Ok(())
             } else {
                 Err(malformed(id))

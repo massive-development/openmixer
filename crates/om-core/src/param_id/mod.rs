@@ -41,6 +41,9 @@ pub const STEMS_PER_DECK: u8 = 4;
 pub const SAMPLER_PADS: u8 = 8;
 /// Largest FX unit index the grammar accepts (three digits).
 pub const MAX_FX_UNIT: u16 = 999;
+/// Largest loop size in beats the grammar accepts. The engine's sizes are 0.25 to 32 beats; the
+/// bound keeps a hostile id from asking for a loop no grid could hold.
+pub const MAX_LOOP_BEATS: f64 = 4096.0;
 
 /// A parsed parameter id. `Display` prints the canonical id.
 #[derive(Debug, Clone, PartialEq)]

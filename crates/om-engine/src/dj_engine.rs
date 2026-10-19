@@ -174,13 +174,18 @@ impl DjEngine {
         self.ticks.fetch_add(1, Relaxed);
     }
 
-    /// One deck's state, copied out without allocating. Control thread only.
+    /// One deck's state, copied out without allocating. `None` when the engine has no deck `index`.
+    /// Control thread only.
     ///
     /// Takes no audio lock: deck values are atomics, loop bounds a seqlock read, and the sync and
     /// slip state are control-side mutexes that only control threads take.
-    pub fn deck_snapshot(&self, index: usize) -> DeckSnapshot {
-        let deck = &self.decks[index];
-        let control = &self.controls[index];
+    pub fn deck_snapshot(&self, index: usize) -> Option<DeckSnapshot> {
+        let deck = self.decks.get(index)?;
+        let control = self.controls.get(index)?;
+        Some(self.read_deck(index, deck, control))
+    }
+
+    fn read_deck(&self, index: usize, deck: &Deck, control: &DeckControl) -> DeckSnapshot {
         let bounds = deck.loop_state();
         DeckSnapshot {
             loaded: deck.is_loaded(),
@@ -215,8 +220,12 @@ impl DjEngine {
     /// so a snapshot can mix two audio blocks. Stems, sampler and automix are empty placeholders.
     pub fn snapshot(&self) -> EngineSnapshot {
         let built = self.builds.fetch_add(1, Relaxed) + 1;
-        let decks: Vec<DeckSnapshot> = (0..self.decks.len())
-            .map(|index| self.deck_snapshot(index))
+        let decks: Vec<DeckSnapshot> = self
+            .decks
+            .iter()
+            .zip(&self.controls)
+            .enumerate()
+            .map(|(index, (deck, control))| self.read_deck(index, deck, control))
             .collect();
         let mixer = MixerSnapshot {
             channels: (0..self.mixer.num_channels())
