@@ -193,6 +193,9 @@ struct Render {
     channels: usize,
     monitor: Arc<LatencyMonitor>,
     handback: rtrb::Producer<Box<dyn AudioCallback>>,
+    sample_rate: f64,
+    /// Frame count the monitor's budget was last configured for.
+    configured_frames: usize,
 }
 
 /// Stand-in left in a dropped `Render`. Zero-sized, so boxing it does not allocate.
@@ -212,6 +215,11 @@ impl Render {
         let started = Instant::now();
         let channels = self.channels;
         let frames = data.len() / channels;
+        if frames > 0 && frames != self.configured_frames {
+            // With the backend's default buffer size the real callback size is only known here.
+            self.monitor.configure(self.sample_rate, frames);
+            self.configured_frames = frames;
+        }
         let mut done = 0;
         while done < frames {
             let n = (frames - done).min(self.block);
@@ -271,6 +279,8 @@ impl AudioDevice for CpalAudioDevice {
             channels,
             monitor: Arc::clone(&self.monitor),
             handback: handback_tx,
+            sample_rate,
+            configured_frames: self.block,
         };
         let counters = Arc::clone(&self.counters);
         let stream = self
@@ -320,7 +330,8 @@ impl AudioDevice for CpalAudioDevice {
     }
 
     fn buffer_size(&self) -> usize {
-        self.block
+        // The configured size, which becomes the backend's real callback size after the first callback.
+        self.monitor.stats().buffer_size
     }
 
     fn latency_monitor(&self) -> &LatencyMonitor {
@@ -363,6 +374,8 @@ mod tests {
             channels,
             monitor: Arc::new(LatencyMonitor::default()),
             handback: rtrb::RingBuffer::new(1).0,
+            sample_rate: 48_000.0,
+            configured_frames: block,
         };
         let mut data = vec![-9.0_f32; frames * channels];
         render.run(&mut data);
@@ -377,6 +390,34 @@ mod tests {
         for frame in data.chunks(4) {
             assert_eq!(frame, [1.0, 2.0, 3.0, 4.0]);
         }
+    }
+
+    #[test]
+    fn budget_follows_the_frames_the_backend_delivers() {
+        let (_, pairs) = OutputRouter::new();
+        let mut router = OutputRouter::with_pairs(&pairs);
+        router.prepare(512);
+        let monitor = Arc::new(LatencyMonitor::default());
+        // `start` assumes the 512-frame default when the backend picks the buffer size.
+        monitor.configure(48_000.0, 512);
+        let (handback, _) = rtrb::RingBuffer::new(1);
+        let mut render = Render {
+            router,
+            engine: Box::new(Constants),
+            scratch: vec![vec![0.0; 512]; 2],
+            block: 512,
+            channels: 2,
+            monitor: Arc::clone(&monitor),
+            handback,
+            sample_rate: 48_000.0,
+            configured_frames: 512,
+        };
+        // The backend now delivers 256-frame callbacks.
+        let mut data = vec![0.0_f32; 256 * 2];
+        render.run(&mut data);
+        let stats = monitor.stats();
+        assert_eq!(stats.buffer_size, 256);
+        assert!((stats.budget_us - 1.0e6 * 256.0 / 48_000.0).abs() < 1e-6);
     }
 
     #[test]
@@ -414,6 +455,8 @@ mod tests {
             channels: 2,
             monitor: Arc::new(LatencyMonitor::default()),
             handback: handback_tx,
+            sample_rate: 48_000.0,
+            configured_frames: 16,
         };
         drop(render);
         assert!(!released.load(Relaxed), "dropping the render state does not release");
