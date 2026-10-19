@@ -1,6 +1,6 @@
 //! Port of tests/unit/LibraryImportTest.cpp: iTunes / Rekordbox importers, merge policy and
 //! transactionality. FileUrl decoding is covered by the unit tests in `src/file_url.rs`.
-//! Fixtures are read from tests/data/import at the workspace root.
+//! Fixtures are read from fixtures/import at the workspace root.
 
 mod common;
 
@@ -20,7 +20,7 @@ const PULSE_ONE: &str = "/music/Techno/Pulse One.flac";
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/data/import")
+        .join("../../fixtures/import")
         .join(name)
 }
 

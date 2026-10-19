@@ -186,7 +186,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 ## Wave 6: Hardware I/O
 
 - Todos 32/33 moved to Wave 2
-- [ ] **Todo 34:** Plug-and-play controller maps (none in the C++ tree yet: `tests/data/controllers` holds only test fixtures)
+- [ ] **Todo 34:** Plug-and-play controller maps (none in the C++ tree yet: `fixtures/controllers` holds only test fixtures)
 - [ ] **Todo 35:** HID layer
 - [ ] **Todo 36:** Mapping editor UI
 

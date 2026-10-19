@@ -18,7 +18,7 @@ use om_ui::sidebar::{build_sidebar, SidebarKind};
 
 const REKORDBOX_FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../tests/data/import/rekordbox_small.xml"
+    "/../../fixtures/import/rekordbox_small.xml"
 );
 
 struct BrowserRig {
