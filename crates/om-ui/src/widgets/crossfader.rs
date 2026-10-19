@@ -6,6 +6,7 @@ use crate::binding::{curve_from_index, curve_index, MixerBinding};
 use crate::control::Ranged;
 use crate::geometry::{place_captioned, Rect};
 use crate::theme::ThemeTokens;
+use om_core::param_id::MixerParam;
 use om_dsp::CrossfaderCurve;
 
 /// Curve buttons in display order: Linear, Power.
@@ -54,7 +55,7 @@ impl CrossfaderSection {
     /// The user moved the slider: stores and sends the position.
     pub fn slider_changed(&mut self, value: f64) -> f64 {
         let v = self.slider.set(value);
-        self.binding.send("crossfader", v);
+        self.binding.send(MixerParam::Crossfader, v);
         v
     }
 
@@ -62,7 +63,7 @@ impl CrossfaderSection {
     pub fn curve_pressed(&mut self, index: usize) -> Option<CrossfaderCurve> {
         let curve = curve_from_index(index)?;
         self.binding
-            .send("crossfader.curve", curve_index(curve) as f64);
+            .send(MixerParam::CrossfaderCurve, curve_index(curve) as f64);
         self.pull(false);
         Some(curve)
     }

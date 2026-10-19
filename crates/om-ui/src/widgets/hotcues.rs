@@ -4,6 +4,7 @@
 
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
+use om_core::param_id::DeckParam;
 use om_engine::deck::NUM_CUES;
 
 /// Modifier keys held during a pad click.
@@ -44,12 +45,8 @@ impl HotcuePads {
         if index >= Self::COUNT {
             return false;
         }
-        let id = if clear {
-            format!("hotcue{index}.clear")
-        } else {
-            format!("hotcue{index}")
-        };
-        self.binding.send(&id, 1.0);
+        let index = index as u8;
+        self.binding.send(DeckParam::Hotcue { index, clear }, 1.0);
         true
     }
 

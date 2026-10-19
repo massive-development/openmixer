@@ -5,6 +5,7 @@ use super::px;
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
 use crate::theme::{Colour, ThemeTokens};
+use om_core::param_id::DeckParam;
 
 /// Transport buttons, in display order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,16 +42,17 @@ impl TransportButton {
         }
     }
 
-    /// The `deck.<N>.<route>` id the button sends.
-    pub const fn route(self) -> &'static str {
+    /// The deck parameter the button sends. `None` for Cue, which is not a parameter: it sends
+    /// play and seek instead (see [`TransportPanel::press`]).
+    pub const fn route(self) -> Option<DeckParam> {
         match self {
-            TransportButton::Play => "play",
-            TransportButton::Cue => "cue",
-            TransportButton::Sync => "sync",
-            TransportButton::Master => "sync.master",
-            TransportButton::KeyLock => "keylock",
-            TransportButton::Quantize => "quantize",
-            TransportButton::Slip => "slip",
+            TransportButton::Play => Some(DeckParam::Play),
+            TransportButton::Cue => None,
+            TransportButton::Sync => Some(DeckParam::Sync),
+            TransportButton::Master => Some(DeckParam::SyncMaster),
+            TransportButton::KeyLock => Some(DeckParam::Keylock),
+            TransportButton::Quantize => Some(DeckParam::Quantize),
+            TransportButton::Slip => Some(DeckParam::Slip),
         }
     }
 
@@ -107,14 +109,14 @@ impl TransportPanel {
 
     /// Presses a button. Toggles send the opposite of their current state. Returns the value sent.
     pub fn press(&self, button: TransportButton) -> f64 {
-        if button == TransportButton::Cue {
+        let Some(param) = button.route() else {
             // No main-cue point exists in the engine yet: Cue stops and returns to the start.
-            self.binding.send("play", 0.0);
-            self.binding.send("seek", 0.0);
+            self.binding.send(DeckParam::Play, 0.0);
+            self.binding.send(DeckParam::Seek, 0.0);
             return 0.0;
-        }
+        };
         let value = if self.state(button) { 0.0 } else { 1.0 };
-        self.binding.send(button.route(), value);
+        self.binding.send(param, value);
         value
     }
 

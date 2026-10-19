@@ -6,6 +6,8 @@
 
 use crate::preferences::{default_user_map_file, AudioPrefs, Preferences};
 use crate::theme::ThemeRegistry;
+use om_core::param_id::{ChannelParam, DeckParam, MixerParam};
+use om_core::ParamId;
 use std::path::{Path, PathBuf};
 
 /// Error text from a setter, shown to the user.
@@ -230,18 +232,32 @@ impl<T: MidiInputs + MidiControl + ?Sized> MidiPage for T {}
 /// The parameter ids the MIDI page offers for MIDI learn: the decks' transport and rate, the
 /// channel faders and trims, the crossfader and the master. Ids are the router's full ids.
 pub fn learnable_targets(decks: usize) -> Vec<String> {
-    let mut ids = Vec::new();
+    let mut ids: Vec<ParamId> = Vec::new();
     for deck in 0..decks {
-        ids.push(format!("deck.{deck}.play"));
-        ids.push(format!("deck.{deck}.rate"));
+        let deck = deck as u8;
+        ids.push(ParamId::Deck {
+            deck,
+            p: DeckParam::Play,
+        });
+        ids.push(ParamId::Deck {
+            deck,
+            p: DeckParam::Rate,
+        });
     }
     for channel in 0..decks {
-        ids.push(format!("mixer.ch{channel}.fader"));
-        ids.push(format!("mixer.ch{channel}.trim"));
+        let ch = channel as u8;
+        ids.push(ParamId::Mixer(MixerParam::Channel {
+            ch,
+            p: ChannelParam::Fader,
+        }));
+        ids.push(ParamId::Mixer(MixerParam::Channel {
+            ch,
+            p: ChannelParam::Trim,
+        }));
     }
-    ids.push("mixer.crossfader".to_owned());
-    ids.push("mixer.master".to_owned());
-    ids
+    ids.push(ParamId::Mixer(MixerParam::Crossfader));
+    ids.push(ParamId::Mixer(MixerParam::Master));
+    ids.iter().map(ParamId::to_string).collect()
 }
 
 impl MidiSettingsPage<'_> {
@@ -1174,6 +1190,15 @@ mod page_host_tests {
         assert!(ids.contains(&"mixer.ch0.fader".to_owned()));
         assert!(ids.contains(&"mixer.crossfader".to_owned()));
         assert!(learnable_targets(0).len() == 2, "no decks: mixer only");
+    }
+
+    #[test]
+    fn every_learn_target_parses_back_to_a_typed_id() {
+        for id in learnable_targets(4) {
+            let parsed: ParamId = id.parse().unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(parsed.to_string(), id);
+            assert!(parsed.namespace().is_some(), "{id} is an engine id");
+        }
     }
 
     struct NoLibrary;

@@ -3,6 +3,7 @@
 
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
+use om_core::param_id::DeckParam;
 
 /// Loop sizes in beats, in button order.
 pub const SIZES: [f64; 8] = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
@@ -11,8 +12,8 @@ pub const SIZE_NAMES: [&str; 8] = ["1/4", "1/2", "1", "2", "4", "8", "16", "32"]
 pub const MATCH_TOLERANCE: f64 = 0.01;
 
 /// The route id for a loop size. Keeps the decimal point, as in `1.0` and `0.25`.
-pub fn loop_id(beats: f64) -> String {
-    format!("loop.quantized.{beats:?}")
+pub fn loop_param(beats: f64) -> DeckParam {
+    DeckParam::LoopQuantized(beats)
 }
 
 #[derive(Clone)]
@@ -50,7 +51,7 @@ impl LoopControls {
     /// Sets a loop of size `index` from the playhead (or the nearest grid step).
     pub fn press_size(&self, index: usize) -> bool {
         match SIZES.get(index) {
-            Some(&beats) => self.binding.send(&loop_id(beats), 1.0),
+            Some(&beats) => self.binding.send(loop_param(beats), 1.0),
             None => false,
         }
     }
@@ -71,16 +72,16 @@ impl LoopControls {
             return None;
         }
         let next = (beats * factor).clamp(SIZES[0], SIZES[SIZES.len() - 1]);
-        self.binding.send(&loop_id(next), 1.0);
+        self.binding.send(loop_param(next), 1.0);
         Some(next)
     }
 
     pub fn exit(&self) -> bool {
-        self.binding.send("loop.exit", 1.0)
+        self.binding.send(DeckParam::LoopExit, 1.0)
     }
 
     pub fn reloop(&self) -> bool {
-        self.binding.send("loop.reloop", 1.0)
+        self.binding.send(DeckParam::LoopReloop, 1.0)
     }
 
     /// Whether each size button is lit: a loop is active and its length matches the size.
@@ -128,8 +129,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loop_ids_keep_the_decimal_point() {
-        assert_eq!(loop_id(0.25), "loop.quantized.0.25");
-        assert_eq!(loop_id(1.0), "loop.quantized.1.0");
+    fn loop_sizes_round_trip_through_the_router_grammar() {
+        for beats in [0.25, 0.5, 1.0, 2.0, 4.0] {
+            let id = om_core::ParamId::Deck {
+                deck: 0,
+                p: loop_param(beats),
+            };
+            let text = id.to_string();
+            assert_eq!(text.parse::<om_core::ParamId>(), Ok(id), "{text}");
+        }
+        assert_eq!(loop_param(0.25).to_string(), "loop.quantized.0.25");
     }
 }

@@ -128,7 +128,7 @@ pub struct FxRackParam {
     pub p: FxParam,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DeckParam {
     Play,
     Rate,

@@ -3,6 +3,7 @@
 use crate::binding::DeckBinding;
 use crate::control::Ranged;
 use crate::format;
+use om_core::param_id::DeckParam;
 
 /// Selectable ranges as fractions of the original tempo.
 pub const RANGES: [f64; 3] = [0.08, 0.16, 0.5];
@@ -58,14 +59,14 @@ impl PitchFader {
         if fitted == engine_rate {
             return None;
         }
-        self.binding.send("rate", fitted);
+        self.binding.send(DeckParam::Rate, fitted);
         Some(fitted)
     }
 
     /// The user moved the fader: stores the snapped value and sends it. Returns the value sent.
     pub fn user_set(&mut self, value: f64) -> f64 {
         let stored = self.fader.set(value);
-        self.binding.send("rate", stored);
+        self.binding.send(DeckParam::Rate, stored);
         stored
     }
 
