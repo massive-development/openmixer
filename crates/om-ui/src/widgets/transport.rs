@@ -6,6 +6,7 @@ use crate::binding::DeckBinding;
 use crate::geometry::Rect;
 use crate::theme::{Colour, ThemeTokens};
 use om_core::param_id::DeckParam;
+use om_core::DeckSnapshot;
 
 /// Transport buttons, in display order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +83,19 @@ impl TransportButton {
     }
 }
 
+/// Whether a toggle is on in one deck state. Cue is never a toggle.
+fn lit(button: TransportButton, s: &DeckSnapshot) -> bool {
+    match button {
+        TransportButton::Play => s.playing,
+        TransportButton::Cue => false,
+        TransportButton::Sync => s.sync,
+        TransportButton::Master => s.sync_master,
+        TransportButton::KeyLock => s.keylock,
+        TransportButton::Quantize => s.quantize,
+        TransportButton::Slip => s.slip,
+    }
+}
+
 /// The transport of one deck.
 #[derive(Clone)]
 pub struct TransportPanel {
@@ -95,16 +109,7 @@ impl TransportPanel {
 
     /// Whether a toggle is currently on, read from the engine.
     pub fn state(&self, button: TransportButton) -> bool {
-        let b = &self.binding;
-        match button {
-            TransportButton::Play => b.deck().is_playing(),
-            TransportButton::Cue => false,
-            TransportButton::Sync => b.sync().is_enabled(b.index),
-            TransportButton::Master => b.sync().leader() == Some(b.index),
-            TransportButton::KeyLock => b.deck().is_keylock(),
-            TransportButton::Quantize => b.control().is_quantize(),
-            TransportButton::Slip => b.control().is_slipping(),
-        }
+        lit(button, &self.binding.state())
     }
 
     /// Presses a button. Toggles send the opposite of their current state. Returns the value sent.
@@ -122,12 +127,13 @@ impl TransportPanel {
 
     /// The toggle states to show, in [`TransportButton::ALL`] order. Cue is always off.
     pub fn toggle_states(&self) -> [bool; 7] {
-        TransportButton::ALL.map(|b| b.is_toggle() && self.state(b))
+        let state = self.binding.state();
+        TransportButton::ALL.map(|b| b.is_toggle() && lit(b, &state))
     }
 
     /// Play reads "Pause" while the deck plays.
     pub fn play_label(&self) -> &'static str {
-        if self.binding.deck().is_playing() {
+        if self.binding.state().playing {
             "Pause"
         } else {
             "Play"

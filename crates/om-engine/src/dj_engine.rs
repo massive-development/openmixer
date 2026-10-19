@@ -15,8 +15,12 @@ use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
 use crate::sync::Sync;
-use om_core::param_id::Namespace;
-use om_core::ParameterRouter;
+use om_core::param_id::{Namespace, STEMS_PER_DECK};
+use om_core::{
+    AutomixSnapshot, ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot, ParameterRouter,
+    SamplerSnapshot, StemSnapshot,
+};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::Arc;
 
 /// Control side of the engine. See the module docs.
@@ -26,6 +30,8 @@ pub struct DjEngine {
     sync: Arc<Sync>,
     mixer: Arc<MixerControl>,
     fx: Arc<FxRouting>,
+    /// Control-timer ticks so far; stamps [`EngineSnapshot::seq`].
+    ticks: AtomicU64,
 }
 
 /// Audio side of the engine. Implements [`AudioCallback`].
@@ -87,6 +93,7 @@ impl DjEngine {
             sync,
             mixer: Arc::new(mixer_control),
             fx,
+            ticks: AtomicU64::new(0),
         };
         let audio = DjEngineAudio {
             decks: deck_audio,
@@ -153,6 +160,77 @@ impl DjEngine {
         self.fx.follow_decks(&decks, &self.sync);
         for control in &self.controls {
             control.tick(elapsed_seconds);
+        }
+        self.ticks.fetch_add(1, Relaxed);
+    }
+
+    /// One deck's state, copied out without allocating. Control thread only.
+    ///
+    /// Takes no audio lock: deck values are atomics, loop bounds a seqlock read, and the sync and
+    /// slip state are control-side mutexes that only control threads take.
+    pub fn deck_snapshot(&self, index: usize) -> DeckSnapshot {
+        let deck = &self.decks[index];
+        let control = &self.controls[index];
+        let bounds = deck.loop_state();
+        DeckSnapshot {
+            loaded: deck.is_loaded(),
+            playing: deck.is_playing(),
+            keylock: deck.is_keylock(),
+            looping: deck.is_looping(),
+            slip: control.is_slipping(),
+            quantize: control.is_quantize(),
+            sync: self.sync.is_enabled(index),
+            sync_master: self.sync.leader() == Some(index),
+            rate: deck.rate(),
+            position_frames: deck.position_frames(),
+            length_frames: deck.length_frames(),
+            file_sample_rate: deck.file_sample_rate(),
+            loop_start: bounds.start,
+            loop_end: bounds.end,
+            hotcues: std::array::from_fn(|cue| deck.hotcue(cue)),
+        }
+    }
+
+    /// The whole engine as plain values, for the UI and MIDI feedback. Control thread only.
+    ///
+    /// Pull-based: the caller asks, the engine answers from its atomics and control-side getters.
+    /// It never blocks the audio thread and takes no mixer or deck audio lock (the same rule as
+    /// [`DeckSnapshot`]; the mixer side is atomics only). Approximate: fields are read one by one,
+    /// so a snapshot can mix two audio blocks. Stems, sampler and automix are empty placeholders.
+    pub fn snapshot(&self) -> EngineSnapshot {
+        let decks: Vec<DeckSnapshot> = (0..self.decks.len())
+            .map(|index| self.deck_snapshot(index))
+            .collect();
+        let mixer = MixerSnapshot {
+            channels: (0..self.mixer.num_channels())
+                .map(|ch| ChannelSnapshot {
+                    trim: self.mixer.trim(ch),
+                    fader: self.mixer.fader(ch),
+                    filter: self.mixer.filter(ch),
+                    eq: std::array::from_fn(|band| self.mixer.eq(ch, band)),
+                    pfl: self.mixer.pfl(ch),
+                    peak_left: self.mixer.channel_peak_left(ch),
+                    peak_right: self.mixer.channel_peak_right(ch),
+                })
+                .collect(),
+            crossfader: self.mixer.crossfader(),
+            master_gain: self.mixer.master_gain(),
+            cue_level: self.mixer.cue_level(),
+            cue_mix: self.mixer.cue_mix(),
+            master_peak_left: self.mixer.master_peak_left(),
+            master_peak_right: self.mixer.master_peak_right(),
+        };
+        let stems = decks
+            .iter()
+            .map(|_| [StemSnapshot; STEMS_PER_DECK as usize])
+            .collect();
+        EngineSnapshot {
+            seq: self.ticks.load(Relaxed),
+            decks,
+            mixer,
+            stems,
+            sampler: SamplerSnapshot,
+            automix: AutomixSnapshot,
         }
     }
 }

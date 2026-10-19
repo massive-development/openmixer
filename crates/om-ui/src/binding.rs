@@ -3,7 +3,7 @@
 //! the canonical ids the router parses back to the same typed id. UI and MIDI stay equivalent.
 
 use om_core::param_id::{ChannelParam, DeckParam, FxParam, FxRack, MixerParam};
-use om_core::{ParamId, ParameterTarget};
+use om_core::{DeckSnapshot, ParamId, ParameterTarget};
 use om_dsp::{CrossfaderAssign, CrossfaderCurve};
 use om_engine::deck::Deck;
 use om_engine::{DeckControl, DjEngine, FxRouting, MixerControl, Sync};
@@ -36,6 +36,12 @@ impl DeckBinding {
 
     pub fn sync(&self) -> &Sync {
         self.engine.sync()
+    }
+
+    /// This deck's state, copied out. Display reads use this instead of the getters: one copy
+    /// gives a consistent set of fields for a frame, and it does not allocate.
+    pub fn state(&self) -> DeckSnapshot {
+        self.engine.deck_snapshot(self.index)
     }
 
     /// The typed id of one of this deck's parameters. The engine has at most `MAX_DECKS` decks, so
@@ -244,6 +250,27 @@ mod tests {
             let text = id.to_string();
             assert_eq!(ParamId::from_str(&text).as_ref(), Ok(id), "{text}");
         }
+    }
+
+    /// The display read path: a binding's state matches the engine getters it replaces.
+    #[test]
+    fn deck_state_matches_the_getters_it_replaces() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        let router = Arc::new(om_core::ParameterRouter::new());
+        engine.register(&router);
+        let binding = DeckBinding::new(Arc::clone(&engine), router.clone(), 1);
+        engine.deck(1).play();
+        engine.deck(1).set_keylock(true);
+        engine.deck(1).set_hotcue(4, 900);
+        engine.deck_control(1).set_quantize(false);
+        let state = binding.state();
+        assert!(state.playing && state.keylock && !state.quantize && !state.loop_valid());
+        assert_eq!(state.rate, engine.deck(1).rate());
+        assert_eq!(state.hotcues[4], engine.deck(1).hotcue(4));
+        assert_eq!(state.hotcues[3], None);
+        assert_eq!(state.sync, engine.sync().is_enabled(1));
+        assert_eq!(state.slip, engine.deck_control(1).is_slipping());
     }
 
     /// Ids a binding sends reach the engine through the router, not just the parser.

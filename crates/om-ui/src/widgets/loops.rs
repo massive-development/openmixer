@@ -41,11 +41,11 @@ impl LoopControls {
         let Some(grid) = self.binding.control().grid() else {
             return 0.0;
         };
-        let lp = self.binding.deck().loop_state();
-        if !lp.valid() {
+        let lp = self.binding.state();
+        if !lp.loop_valid() {
             return 0.0;
         }
-        grid.beat_at_frame(lp.end) - grid.beat_at_frame(lp.start)
+        grid.beat_at_frame(lp.loop_end) - grid.beat_at_frame(lp.loop_start)
     }
 
     /// Sets a loop of size `index` from the playhead (or the nearest grid step).
@@ -86,14 +86,15 @@ impl LoopControls {
 
     /// Whether each size button is lit: a loop is active and its length matches the size.
     pub fn size_lit(&self) -> [bool; 8] {
-        let active = self.binding.deck().is_looping();
+        let state = self.binding.state();
+        let active = state.looping;
         let beats = self.current_length_beats();
         std::array::from_fn(|i| active && (beats - SIZES[i]).abs() < MATCH_TOLERANCE)
     }
 
     /// Whether reloop is lit (a loop is active).
     pub fn reloop_lit(&self) -> bool {
-        self.binding.deck().is_looping()
+        self.binding.state().looping
     }
 
     /// Two rows: the size buttons on top, the actions below. `gap` between buttons and rows.
