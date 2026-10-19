@@ -6,6 +6,8 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, ThreadId};
 
 /// Routes `"prefix.rest"` parameter ids to registered targets; the registry is the extension point.
+/// Routing matches raw string prefixes (registry prefixes such as `deck.0` are arbitrary), so the id is
+/// not parsed here; [`crate::ParamId`] is the typed view of the same ids.
 ///
 /// Registration and dispatch are serialised by a reentrant gate that is held across the target call,
 /// so [`ParameterRouter::unregister_target`] returns only once no call into that target is in flight.
@@ -173,6 +175,22 @@ mod tests {
         assert!(router.set_parameter("mixer.ch1.fader", 0.5));
         assert_eq!(*echo.last.lock().unwrap(), "ch1.fader");
         assert_eq!(router.unknown_count(), 0);
+    }
+
+    #[test]
+    fn ext_ids_split_the_same_way_the_router_routes_them() {
+        use crate::ParamId;
+        let router = ParameterRouter::new();
+        let plugin = Arc::new(Echo::default());
+        router.register_target("plugin", plugin.clone());
+        let id = "plugin.knob.x";
+        let parsed: ParamId = id.parse().expect("plugin ids parse as Ext");
+        let ParamId::Ext { prefix, rest } = parsed else {
+            panic!("expected Ext for {id}");
+        };
+        assert!(router.set_parameter(id, 0.5));
+        assert_eq!(prefix, "plugin");
+        assert_eq!(*plugin.last.lock().unwrap(), rest);
     }
 
     #[test]
