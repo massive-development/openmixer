@@ -63,7 +63,7 @@ Spike A (GPUI window), spike B (cpal output callback) and spike C (time-stretch)
 
 Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
-- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device (mock device and cpal code complete; the cpal device has never opened a real ALSA/PipeWire/WASAPI/CoreAudio device; the device test only runs with OPENMIXER_DEVICE_TESTS=1)
+- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device (mock device and cpal code complete; the cpal device has never opened a real ALSA/PipeWire/WASAPI/CoreAudio device; the device tests are `#[ignore]`d; run `OPENMIXER_DEVICE_TESTS=1 cargo test -p om-audio --test cpal_device -- --ignored`)
   - Output via `cpal` (ALSA on Linux first; WASAPI and CoreAudio come with Windows and macOS support)
   - Mock device for CI testing
   - Open: the cpal device has not yet run on a real ALSA/PipeWire device (WSL has none; the device test skips there). See `docs/spikes/cpal.md`
