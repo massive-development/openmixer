@@ -8,6 +8,7 @@ use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
+use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
     div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds,
     WindowOptions,
@@ -45,6 +46,8 @@ pub struct RunOptions {
     pub banner: Option<String>,
     /// Shows the debug column (`--debug-panel`) and reads the device through this.
     pub debug: Option<DeviceStatusFn>,
+    /// The settings overlay (Settings button in the header). `None` leaves the header out.
+    pub settings: Option<SettingsOptions>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -58,6 +61,8 @@ pub struct Shell {
     pub(crate) mixer: MixerPanel,
     /// The control being dragged, if any.
     pub(crate) drag: Option<Drag>,
+    /// The settings overlay's state, when the window was given settings.
+    pub(crate) settings: Option<SettingsState>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -84,9 +89,10 @@ impl Shell {
         engine: Arc<DjEngine>,
         router: Arc<ParameterRouter>,
         theme: ThemeTokens,
-        options: RunOptions,
+        mut options: RunOptions,
         frames_out: Arc<AtomicU64>,
     ) -> Self {
+        let settings = options.settings.take().map(SettingsState::new);
         let target: Arc<dyn ParameterTarget> = Arc::clone(&router) as Arc<dyn ParameterTarget>;
         let mixer = MixerPanel::new(
             MixerBinding::new(Arc::clone(&engine), Arc::clone(&target)),
@@ -108,6 +114,7 @@ impl Shell {
             decks,
             mixer,
             drag: None,
+            settings,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -207,7 +214,13 @@ impl Render for Shell {
         let width = f32::from(viewport.width) as i32;
         let height = f32::from(viewport.height) as i32;
         let banner = self.options.banner.clone();
-        let top = if banner.is_some() { BANNER_HEIGHT } else { 0 };
+        let banner_h = if banner.is_some() { BANNER_HEIGHT } else { 0 };
+        let header_h = if self.settings.is_some() {
+            HEADER_HEIGHT
+        } else {
+            0
+        };
+        let top = banner_h + header_h;
         let debug_w = if self.options.debug.is_some() {
             DEBUG_WIDTH
         } else {
@@ -228,6 +241,9 @@ impl Render for Shell {
                 })),
             cx,
         );
+        if let Some(header) = self.header(banner_h, width, cx) {
+            root = root.child(header);
+        }
         if let Some(text) = banner {
             root = root.child(
                 place(Rect::new(0, 0, width, BANNER_HEIGHT))
@@ -245,6 +261,9 @@ impl Render for Shell {
                 &status(),
                 Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
             ));
+        }
+        if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), cx) {
+            root = root.child(overlay);
         }
         root
     }

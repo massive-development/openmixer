@@ -8,7 +8,9 @@
 //! those exist the defaults are no-ops, and the matching preference sections are stored but not
 //! acted on.
 
-use crate::app_targets::{AppPreferencesTargets, AudioSink, MidiSink, PluginSink};
+use crate::app_targets::{
+    AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
+};
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::ParameterRouter;
 use om_ui::preferences::{self, Preferences};
@@ -33,6 +35,20 @@ pub struct ServiceHooks {
     pub plugins: Option<Box<dyn PluginSink>>,
 }
 
+/// A theme registry with the built-in themes and, when given, the user theme folder. The window
+/// keeps its own copy of this, loaded the same way.
+pub fn load_themes(user_dir: Option<&std::path::Path>) -> ThemeRegistry {
+    let mut themes = ThemeRegistry::new();
+    themes.load_builtins();
+    if let Some(dir) = user_dir {
+        let loaded = themes.load_user_directory(dir);
+        for error in &loaded.errors {
+            eprintln!("openmixer: theme {error}");
+        }
+    }
+    themes
+}
+
 pub struct AppComposition {
     pub engine: Arc<DjEngine>,
     pub router: Arc<ParameterRouter>,
@@ -40,6 +56,7 @@ pub struct AppComposition {
     pub prefs: Preferences,
     pub hooks: ServiceHooks,
     applier: PreferencesApplier,
+    targets: AppTargetsState,
     audio: Option<DjEngineAudio>,
 }
 
@@ -61,14 +78,7 @@ impl AppComposition {
             }
         };
 
-        let mut themes = ThemeRegistry::new();
-        themes.load_builtins();
-        if let Some(dir) = user_themes {
-            let loaded = themes.load_user_directory(&dir);
-            for error in &loaded.errors {
-                eprintln!("openmixer: theme {error}");
-            }
-        }
+        let themes = load_themes(user_themes.as_deref());
 
         Self {
             engine,
@@ -77,6 +87,7 @@ impl AppComposition {
             prefs,
             hooks: ServiceHooks::default(),
             applier: PreferencesApplier::new(),
+            targets: AppTargetsState::default(),
             audio: Some(audio),
         }
     }
@@ -94,14 +105,27 @@ impl AppComposition {
     }
 
     /// Pushes every changed preference section to its subsystem (first call pushes everything).
-    /// The audio sink is the device's output routing (`OutputPairs` on a cpal device).
-    pub fn apply_preferences(&mut self, audio: &dyn AudioSink) -> usize {
+    /// `audio` is the output routing (`OutputPairs` of the audio model) and `device` the open
+    /// device, which is re-initialised only for a stored state it does not already have.
+    /// `started_with` is the state the app opened the device with at start-up, if any, so that
+    /// state is not initialised a second time.
+    pub fn apply_preferences(
+        &mut self,
+        audio: &dyn AudioSink,
+        device: Option<&mut dyn AudioDeviceControl>,
+        started_with: Option<&str>,
+    ) -> usize {
         let mut targets = AppPreferencesTargets::new(
+            &mut self.targets,
             &mut self.themes,
             audio,
+            device,
             self.hooks.midi.as_deref_mut(),
             self.hooks.plugins.as_deref_mut(),
         );
+        if let Some(state) = started_with {
+            targets.note_audio_requested(state);
+        }
         let pushed = self.applier.apply(&mut targets, &self.prefs);
         // OPENMIXER_THEME wins for the session; the saved preference is kept on disk.
         let env = std::env::var(THEME_ENV).ok();

@@ -51,6 +51,29 @@ pub struct AudioStats {
     pub xrun_count: u64,
 }
 
+/// The readout under the audio controls (C++ `AudioSettingsPage::refreshStats`). With no device
+/// open it shows the last setup error, or "No audio device running".
+pub fn stats_text(stats: &AudioStats, setup_error: &str) -> String {
+    if stats.sample_rate <= 0.0 {
+        return if setup_error.is_empty() {
+            "No audio device running".to_owned()
+        } else {
+            setup_error.to_owned()
+        };
+    }
+    format!(
+        "Output {:.1} ms, round trip {:.1} ms at {} Hz / {} samples\nCPU {:.0}% (peak {:.2} ms of {:.2} ms), xruns {}",
+        stats.output_latency_ms,
+        stats.round_trip_latency_ms,
+        stats.sample_rate.round() as i64,
+        stats.buffer_size,
+        stats.cpu_load * 100.0,
+        stats.max_callback_us / 1000.0,
+        stats.budget_us / 1000.0,
+        stats.xrun_count,
+    )
+}
+
 /// The audio page: device choices from the model, output pair choices from the stored preferences.
 pub struct AudioSettingsPage<'a> {
     prefs: &'a mut Preferences,
@@ -654,5 +677,47 @@ mod tests {
         let plugin_tab = with.add_page("Extra");
         assert_eq!(plugin_tab, 5);
         assert_eq!(with.page_kind(plugin_tab), None);
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+
+    fn running() -> AudioStats {
+        AudioStats {
+            sample_rate: 48_000.0,
+            buffer_size: 256,
+            output_latency_ms: 5.3,
+            round_trip_latency_ms: 10.6,
+            cpu_load: 0.25,
+            max_callback_us: 1_500.0,
+            budget_us: 5_333.0,
+            xrun_count: 2,
+        }
+    }
+
+    #[test]
+    fn stats_show_latency_load_and_xruns_for_a_running_device() {
+        let text = stats_text(&running(), "");
+        assert!(text.contains("Output 5.3 ms, round trip 10.6 ms at 48000 Hz / 256 samples"));
+        assert!(text.contains("CPU 25% (peak 1.50 ms of 5.33 ms), xruns 2"));
+    }
+
+    #[test]
+    fn without_a_device_the_label_says_so_unless_a_setup_error_is_pending() {
+        assert_eq!(
+            stats_text(&AudioStats::default(), ""),
+            "No audio device running"
+        );
+        assert_eq!(
+            stats_text(&AudioStats::default(), "no such device"),
+            "no such device"
+        );
+    }
+
+    #[test]
+    fn a_setup_error_is_shown_in_place_of_the_stats_only_without_a_device() {
+        assert!(!stats_text(&running(), "stale error").contains("stale error"));
     }
 }

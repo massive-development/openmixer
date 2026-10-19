@@ -8,7 +8,10 @@ mod cpal_device;
 mod device;
 mod mock;
 
-pub use cpal_device::{output_devices, CpalAudioDevice, OutputDeviceInfo, OutputRequest};
+pub use cpal_device::{
+    default_output_name, hosts, output_devices, output_devices_on, CpalAudioDevice,
+    OutputDeviceInfo, OutputRequest, COMMON_BUFFERS, COMMON_RATES,
+};
 pub use device::{AudioDevice, AudioError};
 pub use mock::MockAudioDevice;
 pub use om_engine::{

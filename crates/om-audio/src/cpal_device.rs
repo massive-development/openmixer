@@ -21,17 +21,28 @@ pub const MAX_DEVICE_CHANNELS: usize = 16;
 /// Block size used when the device leaves the buffer size to the backend.
 pub const DEFAULT_BLOCK: usize = 512;
 
+/// Sample rates offered when the device lists its ranges (checked against them).
+pub const COMMON_RATES: [u32; 6] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
+/// Buffer sizes offered when the device reports a range (or none at all).
+pub const COMMON_BUFFERS: [u32; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
+
 /// Summary of one output device, for the settings UI.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputDeviceInfo {
     pub name: String,
     pub max_channels: u16,
     pub default_sample_rate: u32,
+    /// Rates the device accepts for its default channel count, ascending, default included.
+    pub sample_rates: Vec<u32>,
+    /// Buffer sizes the device accepts, ascending.
+    pub buffer_sizes: Vec<u32>,
 }
 
 /// What to open. `None` fields take the device default.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OutputRequest {
+    /// Host (device type) name as listed by [`hosts`]. `None` uses the default host.
+    pub host: Option<String>,
     /// Device name as listed by [`output_devices`]. `None` uses the default output.
     pub device: Option<String>,
     pub sample_rate: Option<u32>,
@@ -39,9 +50,33 @@ pub struct OutputRequest {
     pub channels: Option<u16>,
 }
 
-/// Lists the host's output devices. Devices that cannot report a config are left out.
+/// Names of the hosts (device types) this platform offers, the default host first.
+pub fn hosts() -> Vec<String> {
+    let default = cpal::default_host().id().name().to_owned();
+    let mut names: Vec<String> = cpal::available_hosts()
+        .iter()
+        .map(|id| id.name().to_owned())
+        .collect();
+    names.retain(|n| *n != default);
+    names.insert(0, default);
+    names
+}
+
+/// Lists the default host's output devices. Devices that cannot report a config are left out.
 pub fn output_devices() -> Result<Vec<OutputDeviceInfo>, AudioError> {
-    let host = cpal::default_host();
+    output_devices_on(None)
+}
+
+/// Name of the default output device of `host` (`None` for the default host).
+pub fn default_output_name(host: Option<&str>) -> Option<String> {
+    let host = host_by_name(host).ok()?;
+    let device = host.default_output_device()?;
+    device.description().ok().map(|d| d.name().to_owned())
+}
+
+/// Lists the output devices of `host` (`None` for the default host). Lists only; opens nothing.
+pub fn output_devices_on(host: Option<&str>) -> Result<Vec<OutputDeviceInfo>, AudioError> {
+    let host = host_by_name(host)?;
     let devices = host
         .output_devices()
         .map_err(|e| AudioError::Stream(e.to_string()))?;
@@ -58,16 +93,54 @@ pub fn output_devices() -> Result<Vec<OutputDeviceInfo>, AudioError> {
 fn describe(device: &cpal::Device) -> Option<OutputDeviceInfo> {
     let name = device.description().ok()?.name().to_owned();
     let default = device.default_output_config().ok()?;
-    let max_channels = device
-        .supported_output_configs()
-        .ok()?
+    let ranges: Vec<cpal::SupportedStreamConfigRange> =
+        device.supported_output_configs().ok()?.collect();
+    let max_channels = ranges
+        .iter()
         .map(|range| range.channels())
         .max()
         .unwrap_or(default.channels());
+    // Rates and buffers are offered for the f32 ranges of the default channel count, the ones
+    // `open` can use with the default request.
+    let usable: Vec<&cpal::SupportedStreamConfigRange> = ranges
+        .iter()
+        .filter(|r| r.sample_format() == cpal::SampleFormat::F32)
+        .filter(|r| r.channels() == default.channels())
+        .collect();
+    let mut sample_rates: Vec<u32> = COMMON_RATES
+        .iter()
+        .copied()
+        .filter(|rate| {
+            usable
+                .iter()
+                .any(|r| (r.min_sample_rate()..=r.max_sample_rate()).contains(rate))
+        })
+        .collect();
+    let default_rate = default.sample_rate();
+    if !sample_rates.contains(&default_rate) {
+        sample_rates.push(default_rate);
+    }
+    sample_rates.sort_unstable();
+    let mut buffer_sizes: Vec<u32> = Vec::new();
+    for range in &usable {
+        match range.buffer_size() {
+            cpal::SupportedBufferSize::Range { min, max } => buffer_sizes.extend(
+                COMMON_BUFFERS
+                    .iter()
+                    .copied()
+                    .filter(|b| (*min..=*max).contains(b)),
+            ),
+            cpal::SupportedBufferSize::Unknown => buffer_sizes.extend(COMMON_BUFFERS),
+        }
+    }
+    buffer_sizes.sort_unstable();
+    buffer_sizes.dedup();
     Some(OutputDeviceInfo {
         name,
         max_channels,
-        default_sample_rate: default.sample_rate(),
+        default_sample_rate: default_rate,
+        sample_rates,
+        buffer_sizes,
     })
 }
 
@@ -95,7 +168,16 @@ impl CpalAudioDevice {
     /// device has no f32 configuration for the request, or when it has more than
     /// [`MAX_DEVICE_CHANNELS`] channels. Does not start the stream.
     pub fn open(request: &OutputRequest) -> Result<Self, AudioError> {
-        let host = cpal::default_host();
+        Self::open_with_pairs(request, OutputRouter::new().1)
+    }
+
+    /// Like [`CpalAudioDevice::open`], but routes through `pairs`, so a pair selection made before
+    /// the device was opened (or on an earlier device) carries over.
+    pub fn open_with_pairs(
+        request: &OutputRequest,
+        pairs: OutputPairs,
+    ) -> Result<Self, AudioError> {
+        let host = host_by_name(request.host.as_deref())?;
         let device = pick_device(&host, request.device.as_deref())?;
         let name = device
             .description()
@@ -142,7 +224,6 @@ impl CpalAudioDevice {
             sample_rate: rate,
             buffer_size,
         };
-        let (_, pairs) = OutputRouter::new();
         Ok(Self {
             device,
             name,
@@ -170,6 +251,17 @@ impl CpalAudioDevice {
     pub fn stream_error_count(&self) -> u64 {
         self.counters.stream_errors.load(Relaxed)
     }
+}
+
+fn host_by_name(name: Option<&str>) -> Result<cpal::Host, AudioError> {
+    let Some(wanted) = name else {
+        return Ok(cpal::default_host());
+    };
+    cpal::available_hosts()
+        .into_iter()
+        .find(|id| id.name() == wanted)
+        .ok_or(AudioError::NoDevice)
+        .and_then(|id| cpal::host_from_id(id).map_err(|e| AudioError::Stream(e.to_string())))
 }
 
 fn pick_device(host: &cpal::Host, name: Option<&str>) -> Result<cpal::Device, AudioError> {

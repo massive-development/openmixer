@@ -231,6 +231,7 @@ mod tests {
             smoke_frames: None,
             banner: None,
             debug: None,
+            settings: None,
         };
         let shell = Shell::new(
             Arc::clone(&engine),

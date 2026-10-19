@@ -1,6 +1,7 @@
-//! Device tests for the cpal backend. They open a real device only when the host has one that
-//! reports a usable config, and then run a callback that writes zeros, so nothing is audible. On
-//! hosts with no device (WSL, CI) they print SKIP and pass.
+//! Device tests for the cpal backend. Opening a real device is opt-in: set
+//! `OPENMIXER_DEVICE_TESTS=1` to open the default output, which then runs a callback that writes
+//! zeros, so nothing is audible. Without it, or on hosts with no usable device (WSL, CI), the test
+//! prints SKIP and passes. Listing devices opens nothing and always runs.
 
 use om_audio::{output_devices, AudioCallback, AudioDevice, CpalAudioDevice, OutputRequest};
 use std::time::Duration;
@@ -26,6 +27,10 @@ fn device_list_is_available_or_empty() {
 
 #[test]
 fn device_opens_or_skips() {
+    if std::env::var_os("OPENMIXER_DEVICE_TESTS").is_none() {
+        println!("SKIP: set OPENMIXER_DEVICE_TESTS=1 to open the default output");
+        return;
+    }
     let mut device = match CpalAudioDevice::open(&OutputRequest::default()) {
         Ok(device) => device,
         Err(e) => {

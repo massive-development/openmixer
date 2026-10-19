@@ -4,4 +4,5 @@
 //! registry, preferences and the applier that pushes them into subsystems. Port of `src/app/`.
 
 pub mod app_targets;
+pub mod audio_settings;
 pub mod composition;

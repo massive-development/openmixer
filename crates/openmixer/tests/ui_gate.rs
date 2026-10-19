@@ -97,7 +97,7 @@ fn run_gate(seconds: u64) -> Report {
     let mut device = MockAudioDevice::new(f64::from(RATE), BLOCK, 0, 4);
     device.start(Box::new(audio)).expect("start mock device");
     let (_router, pairs) = OutputRouter::new();
-    composition.apply_preferences(&pairs);
+    composition.apply_preferences(&pairs, None, None);
     device.start_realtime();
 
     let engine = Arc::clone(&composition.engine);

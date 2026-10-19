@@ -3940,6 +3940,7 @@ dependencies = [
  "om-engine",
  "om-ui",
  "om-ui-gpui",
+ "serde_json",
 ]
 
 [[package]]

@@ -9,3 +9,4 @@ pub mod deck_view;
 pub mod drag;
 pub mod mixer_view;
 pub mod paint;
+pub mod settings_view;
