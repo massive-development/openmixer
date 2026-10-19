@@ -264,7 +264,8 @@ impl MidiMapper {
     fn install(&self, new_map: MidiMap) {
         {
             let mut s = lock(&self.state);
-            let targets: HashSet<String> = new_map.mappings.iter().map(|m| m.target.clone()).collect();
+            let targets: HashSet<String> =
+                new_map.mappings.iter().map(|m| m.target.clone()).collect();
             s.values.retain(|id, _| targets.contains(id));
             s.map = new_map;
             s.halves14.clear();

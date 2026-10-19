@@ -264,7 +264,10 @@ impl MidiSettingsPage<'_> {
     /// Saves the live map after a learn and makes the file the map in use. The file is the stored
     /// map file when there is one, else the user map. Returns the file and whether the preference
     /// changed (the caller saves preferences then).
-    pub fn save_learned_map(&mut self, control: &dyn MidiControl) -> Result<(PathBuf, bool), String> {
+    pub fn save_learned_map(
+        &mut self,
+        control: &dyn MidiControl,
+    ) -> Result<(PathBuf, bool), String> {
         let file = if self.prefs.midi.map_file.is_empty() {
             default_user_map_file()
         } else {
@@ -898,7 +901,10 @@ mod parity_tests {
             assert_eq!(file, crate::preferences::default_user_map_file());
             assert!(changed);
         }
-        assert_eq!(prefs.midi.map_file, crate::preferences::default_user_map_file().to_string_lossy());
+        assert_eq!(
+            prefs.midi.map_file,
+            crate::preferences::default_user_map_file().to_string_lossy()
+        );
         assert_eq!(control.saved.borrow().len(), 1);
 
         prefs.midi.map_file = "/maps/mine.json".into();
@@ -906,7 +912,10 @@ mod parity_tests {
         let (file, changed) = page.save_learned_map(&control).expect("saves");
         assert_eq!(file, PathBuf::from("/maps/mine.json"));
         assert!(!changed, "the stored file is already the map in use");
-        assert_eq!(control.saved.borrow().last(), Some(&PathBuf::from("/maps/mine.json")));
+        assert_eq!(
+            control.saved.borrow().last(),
+            Some(&PathBuf::from("/maps/mine.json"))
+        );
     }
 
     #[test]

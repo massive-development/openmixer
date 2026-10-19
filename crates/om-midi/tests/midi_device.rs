@@ -196,5 +196,9 @@ fn feedback_echo_on_a_paired_input_is_ignored_only_inside_the_window() {
     // The same bytes after the window are a real press.
     std::thread::sleep(ECHO_WINDOW + Duration::from_millis(50));
     assert!(backend.inject("Pad", &[0x90, 36, 127]));
-    assert_eq!(target.changes().len(), 1, "a press after the window is routed");
+    assert_eq!(
+        target.changes().len(),
+        1,
+        "a press after the window is routed"
+    );
 }

@@ -1601,7 +1601,10 @@ mod page_tests {
         fake.generation.fetch_add(1, Ordering::SeqCst);
         s.poll_learn();
         assert_eq!(s.learning_target(), None);
-        assert!(s.notice.text.starts_with("Learned a control for deck.0.play and saved to "));
+        assert!(s
+            .notice
+            .text
+            .starts_with("Learned a control for deck.0.play and saved to "));
         assert_eq!(changes.get(), 1, "the saved map file is the preference");
 
         s.midi_learn("deck.0.play");
