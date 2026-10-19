@@ -14,6 +14,7 @@ mod onnx;
 mod pipeline;
 mod resample;
 mod separator;
+mod service;
 mod spectral;
 mod wav;
 mod weights;
@@ -35,5 +36,6 @@ pub use separator::{
     FileStereoSource, MockSeparator, SliceSource, StemBuffer, StemError, StemKind, StemSeparator,
     StemSet, StemSetSink, StemSink, StereoSource, INTERFACE_VERSION,
 };
+pub use service::{ModelGate, StemRequest, StemService, StemServiceConfig, StemServiceError};
 pub use spectral::Spectral;
 pub use weights::{Downloader, LicensePrompt, UrlDownloader, WeightError, WeightManager};
