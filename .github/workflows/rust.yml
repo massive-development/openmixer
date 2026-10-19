@@ -133,6 +133,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ steps.tc.outputs.channel }}
+          components: rustfmt, clippy
 
       - name: Install GPUI system dependencies
         run: |
@@ -146,6 +147,14 @@ jobs:
       - name: cargo check (openmixer with the gui feature)
         run: cargo check -p openmixer --features gui
 
-      - name: cargo test (om-ui-gpui glue)
+      - name: cargo fmt (om-ui-gpui)
         working-directory: crates/om-ui-gpui
-        run: cargo test --lib
+        run: cargo fmt --check
+
+      - name: cargo clippy (om-ui-gpui)
+        working-directory: crates/om-ui-gpui
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test (om-ui-gpui, all targets)
+        working-directory: crates/om-ui-gpui
+        run: cargo test
