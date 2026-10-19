@@ -9,6 +9,9 @@ members = [
     "crates/om-ui",
     "crates/openmixer",
 ]
+# GPUI window layer: its own workspace (system libraries and a display are needed to build it). The
+# openmixer binary pulls it in behind the `gui` feature. See docs/spikes/DECISIONS.md, "GPUI integration".
+exclude = ["crates/om-ui-gpui"]
 
 [workspace.package]
 version = "0.1.0"
