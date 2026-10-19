@@ -1,0 +1,55 @@
+# cargo-deny policy for om-ui-gpui (GPUI is not a workspace member, so it has its own lock and policy).
+# Starts from the root deny.toml and adds only what the GPUI tree needs (see the per-entry comments).
+# Run from the repo root: cargo deny --manifest-path crates/om-ui-gpui/Cargo.toml --config crates/om-ui-gpui/deny.toml check
+#
+# Unmaintained advisories are checked for workspace crates only: GPUI's transitive tree (zbus/zvariant,
+# async-std, instant, ttf-parser, rustybuzz, ...) is upstream's, and we cannot replace it. Vulnerabilities
+# and unsound advisories are still denied for the whole tree.
+[advisories]
+version = 2
+unmaintained = "workspace"
+# RUSTSEC-2024-0436: `paste` is unmaintained, not vulnerable. It is a build-time proc macro pulled
+# in by lofty_attr (every lofty release depends on it; the om-library tag reader needs lofty).
+# Remove this entry once lofty drops paste.
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste is a build-time proc macro, transitive via lofty; unmaintained, no vulnerability" },
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    # BSD-1-Clause: assert_no_alloc (om-engine dev-dependency; the audio-thread allocation guard in tests).
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    # CDLA-Permissive-2.0: the webpki-roots root bundle that ureq's rustls TLS uses for HTTPS model
+    # downloads (om-stems). A data licence, permissive, and compatible with AGPL-3.0 distribution.
+    "CDLA-Permissive-2.0",
+    # GPL-3.0 family: AGPL-3.0-compatible. Kept so a GPL-3.0 dependency needs no policy edit; none is confirmed to need it.
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "AGPL-3.0-only",
+    # GPL-2.0-or-later: Rubber Band (rubberband-sys, via om-stretch). Chosen in
+    # docs/spikes/DECISIONS.md (time-stretch: Rubber Band R3 behind a Stretcher trait).
+    "GPL-2.0-or-later",
+    # Apache-2.0 WITH LLVM-exception: ar_archive_writer (build-time, via gpui's stacker/psm chain).
+    "Apache-2.0 WITH LLVM-exception",
+    # CC0-1.0: tiny-keccak (gpui's ahash chain, via zed-xim); a public-domain dedication.
+    "CC0-1.0",
+    # NCSA: libfuzzer-sys (via gpui's image/rav1e chain, dev-only in practice); OSI-approved permissive.
+    "NCSA",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies between workspace members (e.g. openmixer -> om-core)
+# have no version and must not be flagged as wildcards.
+allow-wildcard-paths = true
