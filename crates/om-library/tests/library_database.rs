@@ -241,3 +241,23 @@ fn an_outermost_transaction_waits_for_the_write_lock_instead_of_failing_on_a_sta
     assert_eq!(seen, 1, "the reader sees the writer's committed row");
     assert_eq!(row_count(&writer, "SELECT count(*) FROM t;"), 2);
 }
+
+#[test]
+fn bundled_sqlite_has_fts5_with_unicode61_and_prefix_indexes() {
+    let db = memory_db();
+    db.exec(
+        "CREATE VIRTUAL TABLE probe USING fts5(x, tokenize = 'unicode61 remove_diacritics 2', \
+         prefix = '2 3');",
+    )
+    .expect("FTS5 is compiled into the bundled SQLite");
+    db.exec("INSERT INTO probe (x) VALUES ('Émile');")
+        .expect("insert");
+    assert_eq!(
+        row_count(
+            &db,
+            "SELECT COUNT(*) FROM probe WHERE probe MATCH '\"emile\"*';"
+        ),
+        1,
+        "diacritics are folded and the prefix matches"
+    );
+}
