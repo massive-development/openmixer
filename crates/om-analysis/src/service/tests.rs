@@ -1,14 +1,16 @@
 //! Service cases on real threads (the cases are fast on short clips).
 
 use super::*;
-use crate::test_signals::{silence, write_float_wav, TempFile, RATE};
+use crate::test_signals::{silence, TempFile, RATE};
 use crate::{
     hash_file_content, AnalysisContext, Analyzer, AudioClip, FileClipSource, JobStatus,
     MemoryClipSource, SqliteResultCache,
 };
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use om_testing::wav::write_float_wav;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -124,10 +126,7 @@ impl Fixture {
 
 /// Polls `flag` for up to the test timeout.
 fn wait_flag(flag: &AtomicBool) {
-    let start = Instant::now();
-    while !flag.load(Ordering::SeqCst) && start.elapsed() < WAIT {
-        thread::sleep(Duration::from_millis(1));
-    }
+    wait_until(WAIT, DEFAULT_POLL, || flag.load(Ordering::SeqCst));
 }
 
 #[test]
@@ -153,10 +152,9 @@ fn runs_analysers_and_reports_results() {
     assert_eq!(results["other"], "4410");
     assert_eq!(job.content_hash().len(), 64);
     service.cancel_all();
-    let start = Instant::now();
-    while listener_calls.load(Ordering::SeqCst) == 0 && start.elapsed() < WAIT {
-        thread::sleep(Duration::from_millis(1));
-    }
+    wait_until(WAIT, DEFAULT_POLL, || {
+        listener_calls.load(Ordering::SeqCst) > 0
+    });
     assert_eq!(listener_calls.load(Ordering::SeqCst), 1);
 }
 

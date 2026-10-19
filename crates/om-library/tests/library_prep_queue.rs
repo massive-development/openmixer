@@ -217,9 +217,9 @@ impl Fixture {
 }
 
 fn wait_started(gate: &GateAnalyzer) {
-    while !gate.started.load(Ordering::SeqCst) {
-        thread::sleep(Duration::from_millis(1));
-    }
+    om_testing::assert_eventually!(Duration::from_secs(10), || gate
+        .started
+        .load(Ordering::SeqCst));
 }
 
 #[test]
