@@ -218,6 +218,10 @@ mod tests {
 - Tests that use real threads or timing are planned to be split out (e.g. `#[ignore]` with a dedicated CI job) so the fast run stays fast.
 - Name tests for the behaviour they check; use `cargo test -- --list` to see what exists.
 
+### Test Support
+
+`crates/om-testing` holds the shared helpers: WAV fixtures (`wav`), deterministic signals (`signals`), level measures (`level`), condition waits (`wait`: `wait_until`, `assert_eventually!`) and a temporary directory (`fs::TempDir`). Use them rather than copying a generator or poll loop into a crate. It is a dev-dependency only; never add it as a normal dependency.
+
 ### Verification Commands
 
 ```bash

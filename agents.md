@@ -206,6 +206,10 @@ cargo run -p openmixer -- --smoke
 
 Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
 
+### Test support
+
+`crates/om-testing` holds the helpers the crates share in their tests: `wav` (fixture writers and a reader), `signals` (deterministic sines, noise and impulse trains), `level` (dB, peak and RMS), `wait` (`wait_until` and `assert_eventually!`) and `fs::TempDir`. Reuse these instead of writing a new WAV writer, sine or poll loop. Waits poll for the condition they expect, with a timeout; never sleep a fixed time to wait for something to happen. It is a dev-dependency only: no shipped crate may depend on it.
+
 ## Implementation Waves
 
 Waves 1–4 and 6 are verified headlessly on Linux; the Wave 5 UI is partial. Waves 7–9 are new work. Status by Todo is in `TODO.md`.
