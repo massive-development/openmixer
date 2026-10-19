@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 om-analysis = { path = "../om-analysis" }
 rusqlite = { version = "0.35", features = ["bundled"] }
+lofty = "0.25"
 thiserror = "2"
 
 [dev-dependencies]
