@@ -1,4 +1,4 @@
-//! User preferences (Todo 29): one plain model, versioned JSON on disk.
+//! User preferences: one plain model, versioned JSON on disk.
 //!
 //! Schema, field names and migration rules are kept stable: unknown or bad fields fall back to
 //! their default one by one; a file from a newer schema (or not a JSON object) is refused and the

@@ -1,5 +1,5 @@
 //! Plain-data model of the browser sidebar: All tracks, Playlists (folders nest), Watch folders and
-//! the Prep queue. Built from a [`LibraryTree`], so the tree is testable without the library. The SQLite-backed tree arrives with the library (Todo 12).
+//! the Prep queue. Built from a [`LibraryTree`], so the tree is testable without the library. The SQLite-backed tree lives in `library/tree.rs`.
 
 use std::path::Path;
 

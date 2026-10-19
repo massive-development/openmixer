@@ -179,7 +179,7 @@ fn soak_short() {
     check(30);
 }
 
-/// The Wave 2 gate (Todo 13): 10 minutes of paced mix. Takes 10 minutes of wall time.
+/// The 10-minute paced-mix soak gate. Takes 10 minutes of wall time.
 #[test]
 #[ignore = "10-minute soak: cargo test -p om-audio --test soak -- --ignored --nocapture"]
 fn soak_10min() {

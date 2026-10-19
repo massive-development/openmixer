@@ -1,4 +1,4 @@
-//! Settings model: the logic behind the settings overlay (Todo 29). The non-drawing parts: the audio, MIDI, library, appearance and plugin pages.
+//! Settings model: the logic behind the settings overlay. The non-drawing parts: the audio, MIDI, library, appearance and plugin pages.
 //!
 //! Pages edit the shared [`Preferences`] and report whether an edit changed anything; the caller
 //! saves and applies (see `openmixer::composition`). The MIDI, library and plugin pages talk to

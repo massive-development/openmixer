@@ -7,7 +7,7 @@
 //! system one, or a mock). Plugins are owned by the composition ([`AppComposition::plugins`]): their
 //! parameter targets route through the router, their stages insert into the engine, their maps
 //! apply to the MIDI mapper and their themes reach the theme registry (see `crate::plugins`).
-//! The library (Todo 13) is attached on demand with [`AppComposition::attach_library`].
+//! The library is attached on demand with [`AppComposition::attach_library`].
 
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
@@ -39,7 +39,7 @@ pub const THEME_ENV: &str = "OPENMIXER_THEME";
 pub struct ServiceHooks {
     /// The MIDI preference section, once [`AppComposition::attach_midi`] has run.
     pub midi: Option<Box<dyn MidiSink>>,
-    /// The library (Todo 13): browser services, analysis and watch folders. Opened by
+    /// The library: browser services, analysis and watch folders. Opened by
     /// [`AppComposition::attach_library`]; `None` until then.
     pub library: Option<LibraryServices>,
 }
