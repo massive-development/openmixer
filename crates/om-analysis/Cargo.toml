@@ -11,11 +11,11 @@ publish = false
 workspace = true
 
 [dependencies]
-om-dsp = { path = "../om-dsp" }
-om-engine = { path = "../om-engine" }
+om-dsp.workspace = true
+om-engine.workspace = true
 base64 = "0.22"
 realfft = "3.5"
-rusqlite = { version = "0.35", features = ["bundled"] }
-serde_json = "1"
-sha2 = "0.10"
-thiserror = "2"
+rusqlite.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
