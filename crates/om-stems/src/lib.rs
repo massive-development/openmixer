@@ -17,7 +17,7 @@ mod spectral;
 mod weights;
 
 pub use contract::ModelContract;
-pub use manifest::{ManifestError, ModelManifest};
+pub use manifest::{ManifestError, ModelManifest, HTDEMUCS_LICENSE_NAME, HTDEMUCS_LICENSE_TEXT};
 #[cfg(feature = "onnx")]
 pub use onnx::{default_threads, OrtInference};
 pub use pipeline::{
