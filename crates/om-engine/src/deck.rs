@@ -66,13 +66,34 @@ impl Deck {
     /// Creates an empty deck and starts its decoder thread. `ring_frames` is rounded up to a power
     /// of two by the ring; `prefetch_frames` bounds the loop prefetch slot. Control thread.
     pub fn with_prefetch(ring_frames: usize, prefetch_frames: i64) -> (Self, DeckAudio) {
+        Self::spawn(ring_frames, prefetch_frames, |_| {})
+    }
+
+    /// Test constructor: `hook` runs on the decoder thread before every chunk, so a test can make
+    /// the decoder fault. Control thread.
+    #[cfg(test)]
+    pub(crate) fn with_decoder_hook(
+        ring_frames: usize,
+        hook: impl FnMut() + Send + 'static,
+    ) -> (Self, DeckAudio) {
+        Self::spawn(ring_frames, DEFAULT_PREFETCH_FRAMES, move |worker| {
+            worker.before_chunk = Some(Box::new(hook));
+        })
+    }
+
+    fn spawn(
+        ring_frames: usize,
+        prefetch_frames: i64,
+        configure: impl FnOnce(&mut DecoderWorker),
+    ) -> (Self, DeckAudio) {
         // Plain rtrb ring. The om-core wrapper only carried `Copy` items, and the stage and device
         // rings hold boxed payloads, so there is one SPSC primitive: rtrb. Capacity is rounded up
         // to a power of two (minimum 2), as the wrapper did.
         let capacity = (ring_frames.max(1) * 2).max(2).next_power_of_two();
         let (producer, consumer) = rtrb::RingBuffer::<f32>::new(capacity);
         let shared = Arc::new(Shared::new(prefetch_frames));
-        let worker = DecoderWorker::new(Arc::clone(&shared), producer);
+        let mut worker = DecoderWorker::new(Arc::clone(&shared), producer);
+        configure(&mut worker);
         let failed = Arc::clone(&shared);
         let decoder = std::thread::Builder::new()
             .name("openmixer-deck-decoder".into())
