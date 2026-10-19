@@ -39,7 +39,7 @@ struct Selection {
 
 impl Selection {
     fn selects(&self, port: &MidiPortInfo) -> bool {
-        self.all || self.ids.iter().any(|id| *id == port.id)
+        self.all || self.ids.contains(&port.id)
     }
 }
 

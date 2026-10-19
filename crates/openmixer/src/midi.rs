@@ -153,7 +153,7 @@ impl MidiService {
                 while !flag.load(Ordering::Acquire) {
                     service.feedback_tick();
                     tick = tick.wrapping_add(1);
-                    if tick % HOTPLUG_TICKS == 0 {
+                    if tick.is_multiple_of(HOTPLUG_TICKS) {
                         service.refresh();
                     }
                     std::thread::sleep(period);

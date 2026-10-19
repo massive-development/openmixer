@@ -22,7 +22,7 @@ pub fn pair_outputs(
 ) -> Vec<MidiPortInfo> {
     let names: Vec<&str> = inputs
         .iter()
-        .filter(|p| all || enabled_ids.iter().any(|id| *id == p.id))
+        .filter(|p| all || enabled_ids.contains(&p.id))
         .map(|p| p.name.as_str())
         .collect();
     outputs
