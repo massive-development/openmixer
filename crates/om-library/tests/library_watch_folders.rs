@@ -263,3 +263,49 @@ fn scan_thread_open_failure_is_reported() {
     assert_eq!(failed.load(Ordering::SeqCst), 1);
     assert!(reported.lock().unwrap().contains("newer"));
 }
+
+/// A WAV reader that panics, as a broken decoder might. Registered after the defaults, so it wins
+/// for `.wav`.
+struct PanickingReader;
+
+impl om_library::MetadataReader for PanickingReader {
+    fn name(&self) -> &str {
+        "panicking"
+    }
+
+    fn extensions(&self) -> &'static [&'static str] {
+        &["wav"]
+    }
+
+    fn read(&self, _path: &std::path::Path, _out: &mut om_library::TrackMetadata) -> om_library::Result<()> {
+        panic!("decoder exploded");
+    }
+}
+
+#[test]
+fn a_panicking_scan_is_reported_and_later_rescans_still_run() {
+    let f = Fixture::new();
+    write_wav(&f.music.join("a.wav"), 0.5, &Tags::default(), 440.0);
+    let mut readers = MetadataReaderRegistry::with_defaults();
+    readers.add(PanickingReader);
+    let errors = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = Arc::clone(&errors);
+    let options = WatchFolderOptions {
+        on_error: Some(Arc::new(move |message: &str| {
+            sink.lock().unwrap().push(message.to_owned());
+        })),
+        ..f.options(1000, false)
+    };
+    let w = WatchFolders::create(&f.db(), readers, options).expect("create");
+    w.add(&f.music).unwrap();
+    assert!(w.wait_for_scans(1, WAIT), "the panicking pass still counts as finished");
+    assert!(
+        errors.lock().unwrap().iter().any(|m| m.contains("decoder exploded")),
+        "the panic is reported: {:?}",
+        errors.lock().unwrap()
+    );
+
+    w.trigger_scan();
+    assert!(w.wait_for_scans(2, WAIT), "the scan thread keeps rescanning");
+}
+

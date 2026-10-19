@@ -6,6 +6,7 @@
 use crate::job_runner::run_analysis_job;
 use crate::{AnalysisJob, AnalyzerRegistry, ClipSource, ResultCache};
 use std::collections::VecDeque;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 
@@ -134,21 +135,39 @@ fn cancel_all(state: &State) {
     }
 }
 
+/// Runs tasks until the service stops. A panic in an analyser, decoder or listener is contained to
+/// its task: the job is marked failed (so nothing waits on it forever) and the worker goes on.
 fn worker_loop(shared: &Shared) {
     while let Some(mut task) = wait_for_task(shared) {
-        run_analysis_job(
-            &task.job,
-            task.source.as_mut(),
-            &task.analyzer_ids,
-            &shared.registry,
-            shared.cache.as_deref(),
-        );
+        let run = panic::catch_unwind(AssertUnwindSafe(|| {
+            run_analysis_job(
+                &task.job,
+                task.source.as_mut(),
+                &task.analyzer_ids,
+                &shared.registry,
+                shared.cache.as_deref(),
+            );
+        }));
+        if let Err(payload) = run {
+            task.job
+                .fail(format!("analysis panicked: {}", panic_message(payload.as_ref())));
+        }
         if let Some(listener) = task.listener.take() {
-            listener(&task.job);
+            // The job is already final; a listener that panics has nothing left to report to.
+            let _ = panic::catch_unwind(AssertUnwindSafe(|| listener(&task.job)));
         }
         let mut state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.running.retain(|job| !Arc::ptr_eq(job, &task.job));
     }
+}
+
+/// The text of a panic payload (`panic!` gives a `&str` or a `String`).
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_owned())
 }
 
 /// Next queued task, moved to the running list. `None` once stopping with nothing queued.
