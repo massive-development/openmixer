@@ -24,13 +24,11 @@ impl LibraryControl for LibraryServices {
         self.watch_folders().is_some()
     }
 
-    fn folders(&self) -> Vec<PathBuf> {
-        self.watch_folders()
-            .and_then(|watch| watch.list().ok())
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .collect()
+    fn folders(&self) -> SettingsResult<Vec<PathBuf>> {
+        let Some(watch) = self.watch_folders() else {
+            return Ok(Vec::new());
+        };
+        Ok(watch.list()?.into_iter().map(PathBuf::from).collect())
     }
 
     fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {

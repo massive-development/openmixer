@@ -91,22 +91,35 @@ pub fn parse_hex(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn parse_event(v: &Value) -> Result<TimedMidi, String> {
-    let o = v.as_object().ok_or("not an object")?;
+/// Why one trace event is rejected; `from_json` prefixes the event index.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum TraceError {
+    #[error("not an object")]
+    NotObject,
+    #[error("missing or invalid bytes")]
+    BadBytes,
+    #[error("first byte is not a status byte")]
+    NotStatus,
+    #[error("wrong message length")]
+    WrongLength,
+}
+
+fn parse_event(v: &Value) -> Result<TimedMidi, TraceError> {
+    let o = v.as_object().ok_or(TraceError::NotObject)?;
     let bytes = o
         .get("bytes")
         .and_then(Value::as_str)
         .and_then(parse_hex)
-        .ok_or("missing or invalid bytes")?;
+        .ok_or(TraceError::BadBytes)?;
 
     let status = bytes[0];
     if status & 0x80 == 0 {
-        return Err("first byte is not a status byte".into());
+        return Err(TraceError::NotStatus);
     }
     // Sysex length is variable, so only fixed-length messages are length-checked.
     if let Some(len) = message_length(status) {
         if len != bytes.len() {
-            return Err("wrong message length".into());
+            return Err(TraceError::WrongLength);
         }
     }
     let time = o.get("time").and_then(Value::as_f64).unwrap_or(0.0);
@@ -124,4 +137,47 @@ pub fn replay_trace(trace: &MidiTrace, mapper: &MidiMapper) -> usize {
         .iter()
         .map(|e| mapper.handle_message(&e.bytes))
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reason(json: &str) -> String {
+        match MidiTrace::from_json(json) {
+            Err(MidiError::Invalid(message)) => message,
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn each_bad_event_names_its_index_and_rule() {
+        let event = |body: &str| format!(r#"{{"events":[{{"time":0,{body}}}]}}"#);
+        assert_eq!(reason(r#"{"events":[1]}"#), "event 0: not an object");
+        assert_eq!(
+            reason(&event(r#""bytes":"zz""#)),
+            "event 0: missing or invalid bytes"
+        );
+        assert_eq!(
+            reason(&event(r#""bytes":"07 7F""#)),
+            "event 0: first byte is not a status byte"
+        );
+        assert_eq!(
+            reason(&event(r#""bytes":"B0 07""#)),
+            "event 0: wrong message length"
+        );
+    }
+
+    #[test]
+    fn a_valid_event_parses() {
+        let json = r#"{"events":[{"time":1.5,"bytes":"B0 07 7F"}]}"#;
+        let trace = MidiTrace::from_json(json).unwrap();
+        assert_eq!(
+            trace.events,
+            vec![TimedMidi {
+                time: 1.5,
+                bytes: vec![0xB0, 0x07, 0x7F]
+            }]
+        );
+    }
 }

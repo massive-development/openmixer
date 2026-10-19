@@ -21,7 +21,7 @@ fn a_memory_library_refuses_watch_folder_edits() {
     let mut prefs = Preferences::default();
     let mut services = make_services(memory_options());
     let mut page = LibrarySettingsPage::new(&mut prefs, &mut services);
-    assert!(page.folders().is_empty());
+    assert!(page.folders().unwrap().is_empty());
     assert!(page.add_watch_folder("/music".into()).is_err());
     assert!(page.rescan().is_err());
 }
@@ -36,12 +36,16 @@ fn watch_folders_can_be_added_removed_and_rescanned() {
 
     let mut page = LibrarySettingsPage::new(&mut prefs, &mut services);
     page.add_watch_folder(music.clone()).expect("folder added");
-    assert_eq!(page.folders(), vec![music.clone()]);
+    assert_eq!(page.folders().unwrap(), vec![music.clone()]);
     assert!(page.add_watch_folder(dir.path().join("missing")).is_err());
-    assert_eq!(page.folders().len(), 1, "a refused folder is not listed");
+    assert_eq!(
+        page.folders().unwrap().len(),
+        1,
+        "a refused folder is not listed"
+    );
     page.rescan().expect("rescan starts");
     page.remove_watch_folder(music).expect("folder removed");
-    assert!(page.folders().is_empty());
+    assert!(page.folders().unwrap().is_empty());
 }
 
 #[test]

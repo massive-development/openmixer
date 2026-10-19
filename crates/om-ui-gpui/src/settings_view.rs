@@ -258,8 +258,14 @@ impl SettingsState {
         if let Some(midi) = &self.midi {
             self.lists.midi_inputs = MidiInputs::input_names(&**midi);
         }
-        if let Some(library) = &self.library {
-            self.lists.folders = library.folders();
+        if let Some(read) = self.library.as_ref().map(|library| library.folders()) {
+            match read {
+                Ok(folders) => self.lists.folders = folders,
+                Err(error) => {
+                    self.lists.folders.clear();
+                    self.set_notice(format!("Could not read watch folders: {error}"), true);
+                }
+            }
         }
         if let Some(plugins) = &self.plugins {
             self.lists.loaded_plugins = plugins.loaded_plugins();
@@ -1498,8 +1504,8 @@ mod page_tests {
         fn available(&self) -> bool {
             true
         }
-        fn folders(&self) -> Vec<PathBuf> {
-            self.folders.clone()
+        fn folders(&self) -> SettingsResult<Vec<PathBuf>> {
+            Ok(self.folders.clone())
         }
         fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
             self.folders.push(folder);
