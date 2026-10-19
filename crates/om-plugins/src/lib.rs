@@ -16,7 +16,7 @@ mod loader;
 mod registry;
 
 pub use api::{Plugin, PluginError, PluginHost, PluginInfo, StageFactory, StageKind, API_VERSION};
-pub use catalog::{InsertAt, InsertPoint, StageCatalog};
+pub use catalog::{InsertAt, InsertPoint, InsertRefused, StageCatalog};
 pub use loader::{builtin_plugins, PluginLoader, SHARED_LIBRARY_EXTENSIONS};
 pub use om_engine::ProcessStage;
 pub use registry::{PluginRegistry, ProvidedTheme};

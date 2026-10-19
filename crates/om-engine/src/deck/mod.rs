@@ -206,20 +206,20 @@ impl Deck {
     }
 
     pub fn is_looping(&self) -> bool {
-        let mut snap = LoopSnapshot::default();
-        self.shared.loop_state.load(&mut snap) && snap.active()
+        self.shared
+            .loop_state
+            .load()
+            .is_some_and(|snap| snap.active())
     }
 
     /// Current loop bounds; the default (`0..0`) when none is set.
     pub fn loop_state(&self) -> Loop {
-        let mut snap = LoopSnapshot::default();
-        if self.shared.loop_state.load(&mut snap) {
-            Loop {
+        match self.shared.loop_state.load() {
+            Some(snap) => Loop {
                 start: snap.start,
                 end: snap.end,
-            }
-        } else {
-            Loop::default()
+            },
+            None => Loop::default(),
         }
     }
 

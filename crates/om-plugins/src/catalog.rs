@@ -15,12 +15,21 @@ pub enum InsertAt {
     Channel(usize),
 }
 
+/// An insert point refused the stage: the slot is invalid for it or the mixer rejected it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InsertRefused;
+
 /// Something stages can be inserted into. The engine's mixer control implements it, and so does
 /// the engine handle; tests can implement it over a stub.
 pub trait InsertPoint: Send + Sync {
     fn channel_count(&self) -> usize;
-    /// Inserts (`Some`) or clears (`None`) `slot`. False when refused.
-    fn set_insert(&self, at: InsertAt, slot: usize, stage: Option<Box<dyn ProcessStage>>) -> bool;
+    /// Inserts (`Some`) or clears (`None`) `slot`. Err when refused.
+    fn set_insert(
+        &self,
+        at: InsertAt,
+        slot: usize,
+        stage: Option<Box<dyn ProcessStage>>,
+    ) -> Result<(), InsertRefused>;
 }
 
 impl InsertPoint for MixerControl {
@@ -28,15 +37,21 @@ impl InsertPoint for MixerControl {
         self.num_channels()
     }
 
-    fn set_insert(&self, at: InsertAt, slot: usize, stage: Option<Box<dyn ProcessStage>>) -> bool {
-        match at {
+    fn set_insert(
+        &self,
+        at: InsertAt,
+        slot: usize,
+        stage: Option<Box<dyn ProcessStage>>,
+    ) -> Result<(), InsertRefused> {
+        let accepted = match at {
             InsertAt::Master => self.set_master_insert(slot, stage),
             // Out of range is refused here: the mixer control clamps channel indices.
             InsertAt::Channel(ch) if ch < self.num_channels() => {
                 self.set_channel_insert(ch, slot, stage)
             }
             InsertAt::Channel(_) => false,
-        }
+        };
+        accepted.then_some(()).ok_or(InsertRefused)
     }
 }
 
@@ -45,7 +60,12 @@ impl InsertPoint for DjEngine {
         self.mixer().channel_count()
     }
 
-    fn set_insert(&self, at: InsertAt, slot: usize, stage: Option<Box<dyn ProcessStage>>) -> bool {
+    fn set_insert(
+        &self,
+        at: InsertAt,
+        slot: usize,
+        stage: Option<Box<dyn ProcessStage>>,
+    ) -> Result<(), InsertRefused> {
         self.mixer().set_insert(at, slot, stage)
     }
 }
@@ -130,9 +150,9 @@ impl StageCatalog {
         }
         let owner = factory.owner.clone();
         let stage = (factory.make)();
-        if !point.set_insert(at, slot, Some(stage)) {
-            return Err(PluginError::CannotInsert(stage_id.to_owned()));
-        }
+        point
+            .set_insert(at, slot, Some(stage))
+            .map_err(|InsertRefused| PluginError::CannotInsert(stage_id.to_owned()))?;
         match self.position(point, at, slot) {
             Some(index) => self.live[index].owner = owner,
             None => self.live.push(Live {
@@ -173,6 +193,7 @@ impl StageCatalog {
 
     fn remove(&mut self, index: usize) {
         let live = self.live.remove(index);
-        live.point.set_insert(live.at, live.slot, None);
+        // Clearing a slot the point already dropped is harmless; nothing to report.
+        let _ = live.point.set_insert(live.at, live.slot, None);
     }
 }
