@@ -181,6 +181,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** any large optional asset not shipped in the repo (models, sample packs, skins from a catalogue).
 - **Notes:** a `Downloader` trait with a URL implementation. Run it off the UI thread. Manifests are JSON so users can point at mirrors. Tests use `file://` URLs, no network.
 
+### Streamed pipeline around a swappable network
+- **Where:** `om-stems` (`pipeline.rs` `HtDemucsPipeline` over the `StemInference` trait, `resample.rs`, `spectral.rs`; the ONNX network is `onnx.rs`, feature `onnx`)
+- **Why:** everything except the neural network (resampling, segmenting, overlap-add, normalisation, STFT) is plain Rust that tests drive with a fake network that splits the signal exactly; ONNX Runtime stays optional.
+- **Reuse when:** any model that works on fixed-size windows of a long signal (other separators, denoisers, beat or key networks).
+- **Notes:** a `StereoSource` is pulled and a `StemSink` is pushed in chunks, so memory is a few segments whatever the track length. Output length equals input length. Cancellation and progress go through `AnalysisContext`, checked once per segment. The model's tensor names and shapes are explicit data (`ModelContract`, carried in the manifest), not code. `om-stems` keeps `forbid(unsafe_code)`: `ort`'s API is safe.
+
 ### Analyzer registry (extension point)
 - **Where:** `om-analysis` (`analyzer.rs` `Analyzer` trait, `registry.rs` `AnalyzerRegistry`)
 - **Why:** built-in and plugin analysers are looked up by id.
@@ -278,7 +284,7 @@ pub trait AudioCallback: Send {
 - **Notes:** the gate uses the same composition root as the binary, so window wiring is never duplicated in the rig. Runs: `cargo test -p openmixer --test ui_gate` (about 8 s), `-- --ignored` (10 minutes), and `openmixer --smoke` for the window.
 
 ### Typed error enums per crate, AppError at the composition root
-- **Where:** each crate's error type, next to the code that fails: `om-core` (`ParamError`, `CommandError`), `om-audio` (`AudioError`), `om-midi` (`MidiError`, `TraceError`), `om-library` (`LibraryError`, `ImportError`), `om-analysis` (`RegistryError`, `CacheError`), `om-engine` (`SourceError`), `om-stretch` (`StretchError`), `om-stems` (`ManifestError`, `WeightError`), `om-plugins` (`PluginError`), `om-ui` (`SettingsError`, `LoadError`, `LayoutError`, `PreferencesError`, `ThemeError`), and `openmixer/src/error.rs` (`AppError`).
+- **Where:** each crate's error type, next to the code that fails: `om-core` (`ParamError`, `CommandError`), `om-audio` (`AudioError`), `om-midi` (`MidiError`, `TraceError`), `om-library` (`LibraryError`, `ImportError`), `om-analysis` (`RegistryError`, `CacheError`), `om-engine` (`SourceError`), `om-stretch` (`StretchError`), `om-stems` (`ManifestError`, `WeightError`, `StemError`), `om-plugins` (`PluginError`), `om-ui` (`SettingsError`, `LoadError`, `LayoutError`, `PreferencesError`, `ThemeError`), and `openmixer/src/error.rs` (`AppError`).
 - **Why:** callers match on causes instead of strings, and status lines show the `Display` text of the enum. A `String` error loses the cause and cannot be matched.
 - **Reuse when:** a function can fail. Return a `thiserror` enum from the crate, never `Result<_, String>`. The composition root converts subsystem errors into `AppError` with `#[from]`, so `?` works across the composition.
 - **Notes:** subsystem variants use `#[error(transparent)]`, so their text reaches the status line unchanged. `AppError` also carries composition-only failures (for example no audio device open, or a device restore that failed). The binary does not use `anyhow`. A failed lookup is an error, never a "not found" default (see the importer entry).

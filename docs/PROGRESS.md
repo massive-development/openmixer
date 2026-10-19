@@ -17,7 +17,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|------|--------|
 | 1 | Foundation | ✅ Repo, Cargo workspace, CI, test harness |
 | 2 | Audio engine | 🟡 (debug panel 26a partial; 8b FFmpeg optional and open; 10-minute soak not in CI) |
-| 3 | Analysis | 🟡 (stems ONNX backend, 19, open) |
+| 3 | Analysis | 🟡 (htdemucs model export and app wiring, 19, open) |
 | 4 | Library | 🟡 (crates open) |
 | 5 | UI | 🟡 (LookAndFeel 25 partial, stem pads 30 open; decks, mixer and settings partial; not checked by eye) |
 | 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 34-36 open) |
@@ -78,7 +78,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 16 Key detection | Chroma-based key with Camelot mapping and harmonic compatibility; synthetic cadences in 8 keys detected | Chroma key estimation, Camelot mapping, harmonic compatibility | Tuning-offset estimation (assumes A440); key changes within a track |
 | 17 Waveform model | Multi-resolution overview and zoom data; low/mid/high band data for colouring; coarser levels rebuilt on load | `WaveformData` with levels and band data (`om-analysis`); drawn in the deck view from analysed peaks (blank until a track is analysed) | Stereo and per-stem waveforms; progressive results while analysing; not checked by eye |
 | 18 Structure features | Onset picking, energy curve, section boundaries with intro/main/breakdown/outro labels, mix-in/out points (feeds Automix) | Onset picking, energy, segmenter with intro, main, breakdown and outro labels, mix-in and mix-out points | Bar-aligned boundaries; timbre and repetition features; real-music evaluation |
-| 19 Stems precompute | Partial (`om-stems`): separator trait, mock separator, JSON model manifest, licence-gated download of `file://`, `http://` and `https://` URLs (rustls), SHA-256 and size verified, licence digest remembered | `StemSeparator` trait and `MockSeparator`; JSON manifest; `Downloader` with licence gate, SHA-256 and size checks, licence digest remembered | ONNX Runtime backend (`ort`, not in the build); model export and hosted manifest; chunked overlap-add inference; stem storage keyed by content hash and separator version; UI licence dialog |
+| 19 Stems precompute | Partial (`om-stems`): streamed separator trait, mock separator, htdemucs pipeline, ONNX backend (feature `onnx`), JSON model manifest, licence-gated download of `file://`, `http://` and `https://` URLs (rustls), SHA-256 and size verified, licence digest remembered | Stereo `StemSet`, streamed `StemSeparator` v2 and `MockSeparator`; htdemucs pipeline (resampling, 7.8 s segments, overlap-add, normalisation, STFT/iSTFT) tested with fake networks; `OrtInference` behind the off-by-default `onnx` feature (`ort` 2.0.0-rc.13) with a toy ONNX model test; JSON manifest with a model contract; `Downloader` with licence gate, SHA-256 and size checks, licence digest remembered | The real htdemucs model: export script (`tools/export_htdemucs.py`) and I/O contract unverified, nothing listened to; hosted manifest; `StemService` on `WorkerPool`; stem storage keyed by content hash and separator version; UI licence dialog; ONNX CI job unproven on a clean runner |
 
 ---
 
