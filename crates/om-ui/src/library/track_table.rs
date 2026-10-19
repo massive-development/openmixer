@@ -1,6 +1,6 @@
 //! Table model for the library browser: paged (rows are fetched [`PAGE_SIZE`] at a time from a
 //! [`TrackSource`] and a few pages are cached), with sortable columns, cell formatting and the key
-//! compatibility rule against the loaded deck's key. Port of `src/ui/TrackTableModel.{h,cpp}`; the
+//! compatibility rule against the loaded deck's key. The
 //! paint code belongs to the gpui front end, which reads these values.
 
 use std::collections::BTreeMap;
@@ -230,7 +230,7 @@ impl TrackTableModel {
     }
 
     /// Header click: the sort field and direction for the next source. `forwards` is the header's
-    /// own direction, so a forward click sorts descending (the C++ convention). `None` for
+    /// own direction, so a forward click sorts descending. `None` for
     /// columns that cannot sort.
     pub fn sort_order_changed(column_id: i32, forwards: bool) -> Option<(&'static str, bool)> {
         columns()
@@ -245,7 +245,7 @@ impl TrackTableModel {
         self.row_at(row).cloned()
     }
 
-    /// Drag payload for the selected rows: the first one, as the C++ model does. `None` when
+    /// Drag payload for the selected rows: the first one. `None` when
     /// nothing is selected.
     pub fn drag_source_description(&mut self, rows: &[usize]) -> Option<String> {
         let first = *rows.first()?;

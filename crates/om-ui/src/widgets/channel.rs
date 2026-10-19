@@ -1,6 +1,5 @@
 //! One mixer channel: trim, filter, a three-band EQ with kill switches, PFL, the FX shortcut,
-//! crossfader assignment, the channel fader and a stereo meter. Routes `mixer.ch<N>.<id>`. Port of
-//! `src/ui/ChannelStripWidget.cpp` (state, routing and layout).
+//! crossfader assignment, the channel fader and a stereo meter. Routes `mixer.ch<N>.<id>`. State, routing and layout.
 
 use super::{px, CAPTION_HEIGHT};
 use crate::binding::{assign_from_index, assign_index, LevelSource, MixerBinding};

@@ -1,6 +1,6 @@
-//! User preferences (Todo 29): one plain model, versioned JSON on disk. Port of `src/ui/Preferences.cpp`.
+//! User preferences (Todo 29): one plain model, versioned JSON on disk.
 //!
-//! Same schema, field names and migration rules as the C++ app: unknown or bad fields fall back to
+//! Schema, field names and migration rules are kept stable: unknown or bad fields fall back to
 //! their default one by one; a file from a newer schema (or not a JSON object) is refused and the
 //! target is left untouched; a corrupt file is kept as `<name>.bad` and the defaults are used until
 //! the next save. No UI or subsystem knowledge here: `PreferencesApplier` pushes values into

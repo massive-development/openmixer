@@ -1,6 +1,6 @@
 //! Eight hotcue pads. A click sets an empty cue at the playhead or jumps to a set one; Shift, Alt or
 //! Ctrl with the click (or `press_pad` with `clear`) deletes it. Routes `deck.<N>.hotcue<i>` and
-//! `...hotcue<i>.clear`. Port of `src/ui/HotcuePads.cpp`.
+//! `...hotcue<i>.clear`.
 
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
@@ -15,7 +15,7 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
-    /// Any of the three means "clear", matching the C++ pad handler.
+    /// Any of the three means "clear".
     pub fn clears(self) -> bool {
         self.shift || self.alt || self.ctrl
     }

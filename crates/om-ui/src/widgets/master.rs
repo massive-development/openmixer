@@ -1,5 +1,5 @@
 //! Master section: the master fader (up to the engine's gain ceiling) and its stereo meter. Routes
-//! `mixer.master`. Port of `src/ui/MasterSection.cpp`.
+//! `mixer.master`.
 
 use super::{px, CAPTION_HEIGHT};
 use crate::binding::{LevelSource, MixerBinding};

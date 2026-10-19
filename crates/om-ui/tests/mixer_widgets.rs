@@ -1,5 +1,5 @@
-//! Port of tests/unit/MixerWidgetTest.cpp and tests/unit/FxPanelTest.cpp: routing, mirroring,
-//! meters, page switching and layout, headless. Painting and font-metric checks are not ported.
+//! Mixer and FX panel widgets: routing, mirroring,
+//! meters, page switching and layout, headless. Painting and font-metric checks are not covered.
 
 mod common;
 

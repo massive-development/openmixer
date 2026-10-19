@@ -1,7 +1,6 @@
 //! Library UI logic, without a window: the services that own the library, analysis, the prep queue
 //! and the watch folders; the track table and its sources; the browser; the track loader; and the
-//! library settings page. Port of `src/ui/Library*`, `TrackTableModel`, `TrackSource`, `TrackLoader`,
-//! `TrackDrag` and `LibrarySettingsPage`. The gpui front end renders these models.
+//! library settings page. The gpui front end renders these models.
 
 mod services;
 mod track_drag;

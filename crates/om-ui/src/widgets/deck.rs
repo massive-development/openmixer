@@ -1,6 +1,5 @@
 //! One deck: track header, overview and zoomed waveforms, and the composition of the deck card.
-//! Models only; drawing and drag-and-drop are the gpui layer's job. Port of `src/ui/DeckWidget.cpp`,
-//! `TrackHeader.cpp`, `OverviewWaveform.cpp` and `ZoomWaveform.cpp` (state and geometry).
+//! Models only; drawing and drag-and-drop are the gpui layer's job. State and geometry only.
 
 use super::{
     hotcues::HotcuePads, loops::LoopControls, pitch::PitchFader, px, transport::TransportPanel,

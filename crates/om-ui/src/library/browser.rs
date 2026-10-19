@@ -1,7 +1,7 @@
 //! The library browser's logic: the track table, the sidebar selection, the search box (applied on
 //! the next tick, not per keystroke), the status line, load requests to the decks, prep queueing and
 //! XML import. The browser does not own the services: each action takes them, so the owner keeps the
-//! one mutable handle. Port of `src/ui/LibraryBrowser.{h,cpp}` (logic only; the view is in gpui).
+//! one mutable handle. Logic only; the view is in gpui.
 
 use std::collections::BTreeSet;
 use std::path::Path;

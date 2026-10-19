@@ -1,6 +1,5 @@
 //! Pixel <-> frame geometry for the overview and zoomed waveforms, and the zoomed strip cache
-//! decisions. Pure: no painting, so seek-by-click and scrolling can be tested headless. Port of
-//! `src/ui/WaveformGeometry.cpp` plus the cache rules in `ZoomWaveform.cpp`.
+//! decisions. Pure: no painting, so seek-by-click and scrolling can be tested headless. Includes the zoomed strip cache rules.
 
 pub const MIN_FRAMES_PER_PIXEL: f64 = 32.0;
 pub const MAX_FRAMES_PER_PIXEL: f64 = 8192.0;

@@ -1,6 +1,5 @@
 //! Deck transport: play, cue, sync, master, key-lock, quantize, slip. Every button routes a
-//! `deck.<N>.<id>` parameter; toggles send the opposite of the engine's current state. Port of
-//! `src/ui/TransportPanel.cpp`.
+//! `deck.<N>.<id>` parameter; toggles send the opposite of the engine's current state.
 
 use super::px;
 use crate::binding::DeckBinding;

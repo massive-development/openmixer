@@ -1,5 +1,5 @@
 //! Shared fixtures for the library UI tests: services over an in-memory library with instant fake
-//! analysers, seeded tracks, real WAV files and a pump helper. Port of `tests/unit/LibraryUiTestUtil.h`.
+//! analysers, seeded tracks, real WAV files and a pump helper.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};

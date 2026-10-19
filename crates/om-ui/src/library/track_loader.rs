@@ -1,7 +1,6 @@
 //! Loads library tracks into decks. The file goes to the engine deck; the track metadata, the cached
 //! waveform and the cached beat grid follow. A track that is not analysed yet is queued in the prep
 //! queue with priority, and when the queue reports it done the deck is refreshed from the library.
-//! Port of `src/ui/TrackLoader.{h,cpp}`.
 //!
 //! The waveform and track metadata are kept per deck for the deck widgets to read ([`Self::waveform`],
 //! [`Self::track_info`]); the beat grid is set on the engine, which owns the clock. The loader holds
