@@ -14,6 +14,7 @@ om-audio.workspace = true
 om-midi.workspace = true
 om-plugins.workspace = true
 om-library.workspace = true
+om-stems.workspace = true
 thiserror.workspace = true
 om-ui.workspace = true
 dirs.workspace = true
@@ -25,6 +26,8 @@ om-ui-gpui = { path = "../om-ui-gpui", optional = true }
 
 [features]
 default = []
+# Real stem separation through ONNX Runtime (see om-stems). Off by default: no runtime, no network.
+onnx = ["om-stems/onnx"]
 gui = ["dep:om-ui-gpui"]
 
 [lints]
