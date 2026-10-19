@@ -128,3 +128,68 @@ fn stop_hands_the_engine_back_and_a_restart_keeps_deck_and_mixer_state() {
     assert_eq!(engine.mixer().crossfader(), 0.25, "crossfader survives a restart");
     assert!(magnitude(&dev.last_output()[0][..256]) > 0.1);
 }
+
+/// Port of DeckPlaybackSlow.DeckRunsUnderAMockAudioDevice: the deck plays through the paced mock
+/// device thread, not through manual renders.
+#[test]
+fn deck_runs_under_a_mock_audio_device() {
+    let dir = TempDir::new("openmixer_engine_test");
+    let file = write_sine(&dir);
+    let (engine, audio) = DjEngine::new(1);
+    let mut dev = MockAudioDevice::new(RATE, 256, 0, 2);
+    engine.deck(0).load(&file).expect("load");
+    dev.start(Box::new(audio)).expect("start");
+    dev.render_blocks(1);
+    assert!(
+        pump_until(&dev, || engine.deck(0).buffered_frames() > 1024),
+        "decoder did not buffer in time"
+    );
+    engine.deck(0).play();
+    dev.start_realtime();
+    assert!(
+        wait_until(
+            || engine.deck(0).position_frames() > 1000,
+            Duration::from_secs(5)
+        ),
+        "the paced device did not advance the deck"
+    );
+    assert!(engine.deck(0).position_frames() > 1000);
+    assert!(dev.latency_stats().callback_count > 0);
+    dev.stop();
+}
+
+/// A track that fails to load, or a truncated file, while another deck plays must leave the
+/// playing deck and the engine running.
+#[test]
+fn a_bad_or_truncated_file_mid_play_does_not_stop_the_engine() {
+    let dir = TempDir::new("openmixer_engine_test");
+    let good = write_sine(&dir);
+    let bytes = std::fs::read(&good).expect("read fixture");
+    let truncated = dir.file("truncated.wav");
+    std::fs::write(&truncated, &bytes[..bytes.len() / 10]).expect("write truncated");
+    let garbage = dir.file("garbage.wav");
+    std::fs::write(&garbage, b"RIFF but not a wave file at all").expect("write garbage");
+
+    let (engine, audio) = DjEngine::new(2);
+    let mut dev = MockAudioDevice::new(RATE, 256, 0, 4);
+    engine.deck(0).load(&good).expect("load");
+    dev.start(Box::new(audio)).expect("start");
+    engine.deck(0).play();
+    assert!(pump_until(&dev, || engine.deck(0).position_frames() > 2000));
+
+    assert!(engine.deck(1).load(&garbage).is_err(), "garbage is rejected");
+    // A truncated file may load (its readable head plays) or be rejected; either is fine.
+    let _ = engine.deck(1).load(&truncated);
+    engine.deck(1).play();
+    let before = engine.deck(0).position_frames();
+    assert!(
+        pump_until(&dev, || engine.deck(0).position_frames() > before + 4000),
+        "the playing deck keeps running after the bad load"
+    );
+    assert!(!engine.deck(0).is_errored());
+    assert!(!engine.deck(1).is_errored(), "a bad file is not a decoder fault");
+    assert!(
+        magnitude(&dev.last_output()[0][..256]) > 0.1,
+        "the playing deck is still audible on master"
+    );
+}
