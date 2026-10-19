@@ -1,4 +1,4 @@
-//! Port of `tests/unit/BpmEstimatorTest.cpp`: tempo, phase and downbeat on synthetic click tracks,
+//! Tempo, phase and downbeat on synthetic click tracks,
 //! plus grid model edits, the service-backed case (`BpmAnalyzerSlow`) and the analysed grid
 //! driving the engine's sync and quantize (Todo 12).
 

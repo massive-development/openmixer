@@ -1,4 +1,4 @@
-//! Tempo and phase search steps on an onset envelope. Port of `src/analysis/TempoSearch.{h,cpp}`.
+//! Tempo and phase search steps on an onset envelope.
 //! Indices are envelope frames (fractional); periods are frames per beat.
 
 use crate::{jlimit, OnsetEnvelope};

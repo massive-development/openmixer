@@ -1,4 +1,4 @@
-//! Port of `tests/unit/AnalysisCacheTest.cpp` (the SQLite result cache cases).
+//! SQLite result cache cases.
 
 use super::*;
 use crate::test_signals::TempFile;

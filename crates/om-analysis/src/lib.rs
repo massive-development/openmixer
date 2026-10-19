@@ -1,6 +1,5 @@
 //! Offline analysis: STFT, onset envelopes, tempo and beat-grid estimation, key, structure and
-//! waveform data, plus the job service (registry, job runner, SQLite result cache). Port of
-//! `src/analysis/` (Todos 14-18). Analysis runs on worker threads, so it may allocate; it never
+//! waveform data, plus the job service (registry, job runner, SQLite result cache). Analysis runs on worker threads, so it may allocate; it never
 //! runs on the audio thread.
 
 #![forbid(unsafe_code)]
@@ -59,7 +58,7 @@ pub use tempo::{
 pub use waveform::{WaveformAnalyzer, WaveformBuilder, WaveformOptions};
 pub use waveform_data::{WaveformData, WaveformLevel, WaveformPoint};
 
-/// Clamps `value` into `[lo, hi]` with JUCE's `jlimit` semantics (never panics on odd bounds).
+/// Clamps `value` into `[lo, hi]` (never panics on odd bounds).
 pub(crate) fn jlimit(lo: f64, hi: f64, value: f64) -> f64 {
     value.max(lo).min(hi)
 }

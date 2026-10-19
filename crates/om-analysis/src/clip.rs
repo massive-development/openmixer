@@ -1,4 +1,4 @@
-//! Decoded mono audio handed to analysers. Port of `src/analysis/AudioClip.h`.
+//! Decoded mono audio handed to analysers.
 
 /// Mono samples in `[-1, 1]` at `sample_rate`. Immutable once a job starts.
 #[derive(Debug, Clone, PartialEq)]

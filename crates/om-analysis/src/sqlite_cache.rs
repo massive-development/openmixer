@@ -1,5 +1,5 @@
-//! [`ResultCache`] on SQLite (one table). Use `":memory:"` for tests. Port of
-//! `src/analysis/SqliteResultCache.{h,cpp}`: same table, columns, primary key and `user_version`.
+//! [`ResultCache`] on SQLite (one table). Use `":memory:"` for tests.
+//! The table, columns, primary key and `user_version` are kept stable so existing caches stay valid.
 //! The connection sits behind a mutex, so any thread may call it.
 
 use crate::ResultCache;

@@ -1,5 +1,4 @@
-//! Synthetic test signals for analysis tests (no copyrighted audio). Port of
-//! `tests/unit/AnalysisTestSignals.h`, plus a float WAV writer and a temporary-file helper for the
+//! Synthetic test signals for analysis tests (no copyrighted audio)., plus a float WAV writer and a temporary-file helper for the
 //! file-backed tests.
 
 use crate::AudioClip;
@@ -13,7 +12,7 @@ pub fn silence(seconds: f64, rate: f64) -> AudioClip {
     AudioClip::new(vec![0.0; (seconds * rate) as usize], rate)
 }
 
-/// Deterministic noise source standing in for `juce::Random`: same role, not the same sequence.
+/// Deterministic noise source; the sequence is not bit-compatible with any other generator.
 /// The tests that use it are tolerance-based, so the exact noise does not matter.
 pub struct TestRandom(u64);
 
@@ -117,7 +116,7 @@ pub fn add_noise(clip: &mut AudioClip, gain: f32, seed: u64) {
     }
 }
 
-/// Writes interleaved 32-bit float PCM (WAVE format 3). Port of `test::writeWav`.
+/// Writes interleaved 32-bit float PCM (WAVE format 3).
 pub fn write_float_wav(path: &Path, channels: u16, rate: u32, interleaved: &[f32]) {
     let data_len = (interleaved.len() * 4) as u32;
     let block_align = channels * 4;

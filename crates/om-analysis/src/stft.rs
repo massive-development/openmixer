@@ -1,4 +1,4 @@
-//! Hann-windowed magnitude STFT over a mono clip. Port of `src/analysis/Stft.{h,cpp}`. Frame `i`
+//! Hann-windowed magnitude STFT over a mono clip. Frame `i`
 //! covers samples `[i * hop, i * hop + frame_size)`; the tail is zero padded. Magnitudes are
 //! normalised so a full-scale sine peaks near 1. Holds scratch buffers, so use one instance per
 //! thread.

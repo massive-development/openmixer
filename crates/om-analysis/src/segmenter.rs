@@ -1,6 +1,5 @@
 //! Loudness curve and section boundaries for structure analysis (feeds Automix). Sections are cut
 //! where the smoothed energy before and after a point differs most, then labelled by loudness.
-//! Port of `src/analysis/Segmenter.{h,cpp}`.
 
 use crate::AudioClip;
 

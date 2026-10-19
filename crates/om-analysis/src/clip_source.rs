@@ -1,5 +1,5 @@
 //! Where a job's audio comes from. The content hash keys the cache, so it must depend only on the
-//! audio bytes (renaming or moving a file keeps its results). Port of `src/analysis/ClipSource.*`.
+//! audio bytes (renaming or moving a file keeps its results).
 //! Called on a worker thread.
 
 use crate::{AnalysisContext, AudioClip};

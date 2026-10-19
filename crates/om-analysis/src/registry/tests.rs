@@ -1,4 +1,4 @@
-//! Port of the `AnalyzerRegistry` case in `tests/unit/AnalysisCacheTest.cpp`.
+//! The `AnalyzerRegistry` case.
 
 use super::*;
 use crate::{AnalysisContext, AudioClip};

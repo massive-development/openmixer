@@ -1,4 +1,4 @@
-//! Port of `tests/unit/StructureAnalyzerTest.cpp`: onsets, energy curve, sections and mix points on
+//! Onsets, energy curve, sections and mix points on
 //! synthetic tracks.
 
 use super::*;

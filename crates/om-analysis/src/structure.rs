@@ -1,7 +1,6 @@
 //! Track structure for Automix and cue suggestions: onset times, a loudness curve, labelled sections
 //! and suggested mix-in and mix-out points (start and end of the loud part). Stateless and
-//! thread-safe. [`StructureAnalyzer`] is the job-service wrapper (id "structure"). Port of
-//! `src/analysis/StructureAnalyzer.{h,cpp}`.
+//! thread-safe. [`StructureAnalyzer`] is the job-service wrapper (id "structure").
 
 use crate::segmenter::{
     compute_energy_curve, segment_sections, EnergyCurve, Section, SegmentOptions,
@@ -21,7 +20,7 @@ pub struct StructureResult {
     pub mix_out_seconds: f64,
 }
 
-/// JUCE-style numeric read: a missing or non-numeric property is zero.
+/// Lenient numeric read: a missing or non-numeric property is zero.
 fn num(v: &Value, key: &str) -> f64 {
     v.get(key).and_then(Value::as_f64).unwrap_or(0.0)
 }

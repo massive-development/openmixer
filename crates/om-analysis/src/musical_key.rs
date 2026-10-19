@@ -1,5 +1,5 @@
 //! Musical key with note names and Camelot wheel notation (1-12 plus A minor / B major). Pitch
-//! classes: 0 = C ... 11 = B. Port of `src/analysis/MusicalKey.{h,cpp}`.
+//! classes: 0 = C ... 11 = B.
 
 const SHARP_NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
