@@ -245,3 +245,40 @@ fn a_failed_load_leaves_the_loaded_track_and_its_grid_alone() {
     assert!((after.bpm() - before.bpm()).abs() < 1e-9);
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(keep));
 }
+
+#[test]
+fn a_loaded_track_is_played_once_after_thirty_seconds_of_playing() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("played.wav", "8A", true);
+    assert!(rig.load(0, id).is_ok());
+    rig.engine.deck(0).set_playing(true);
+
+    for _ in 0..29 {
+        rig.loader
+            .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
+    }
+    assert!(rig.services.library().tracks().plays_for(id).unwrap().is_empty());
+
+    rig.loader
+        .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
+    rig.loader
+        .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(5));
+    let plays = rig.services.library().tracks().plays_for(id).unwrap();
+    assert_eq!(plays.len(), 1, "one play per load");
+    assert_eq!(plays[0].deck, Some(0));
+    let track = rig.services.library().tracks().find_by_id(id).unwrap().unwrap();
+    assert_eq!(track.play_count, 1);
+    assert!(track.last_played_ms.is_some());
+}
+
+#[test]
+fn paused_decks_record_no_play() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("paused.wav", "8A", true);
+    assert!(rig.load(1, id).is_ok());
+    for _ in 0..60 {
+        rig.loader
+            .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
+    }
+    assert!(rig.services.library().tracks().plays_for(id).unwrap().is_empty());
+}

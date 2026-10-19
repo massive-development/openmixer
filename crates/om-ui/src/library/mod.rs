@@ -17,7 +17,9 @@ pub use track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
 pub use track_table::{columns, Column, TrackTableModel, MAX_CACHED_PAGES, PAGE_SIZE};
 mod browser;
 mod control;
+mod play_tracker;
 mod track_loader;
 
 pub use browser::{LibraryBrowser, LoadHandler, SEARCH_PLACEHOLDER};
+pub use play_tracker::{PlayTracker, MAX_STEP, PLAY_THRESHOLD};
 pub use track_loader::{LoadError, TrackLoader};

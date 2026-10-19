@@ -118,6 +118,16 @@ CREATE TABLE prep_queue (
 CREATE INDEX idx_prep_queue_order ON prep_queue (status, priority DESC, position);
 "#;
 
+const SCHEMA_V5: &str = r#"
+CREATE TABLE play_history (
+  id INTEGER PRIMARY KEY,
+  track_id INTEGER NOT NULL REFERENCES tracks (id) ON DELETE CASCADE,
+  played_ms INTEGER NOT NULL,
+  deck INTEGER
+);
+CREATE INDEX idx_play_history_track ON play_history (track_id, played_ms);
+"#;
+
 const CORE_MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -138,6 +148,11 @@ const CORE_MIGRATIONS: &[Migration] = &[
         version: 4,
         name: "track prep queue",
         sql: SCHEMA_V4,
+    },
+    Migration {
+        version: 5,
+        name: "play history",
+        sql: SCHEMA_V5,
     },
 ];
 

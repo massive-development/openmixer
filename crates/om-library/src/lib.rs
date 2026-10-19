@@ -76,7 +76,7 @@ pub use search_fields::{free_text_columns, FieldKind, SearchField, SearchFieldRe
 pub use search_keys::key_camelot_codes;
 pub use search_parser::{parse_query, ParsedQuery};
 pub use search_query::{FilterTerm, SearchQuery, SearchValue, SqlFragment};
-pub use track_dao::{read_row, TrackDao, SELECT_COLUMNS};
+pub use track_dao::{read_row, PlayEntry, TrackDao, SELECT_COLUMNS};
 pub use track_file_dao::{TrackFileDao, TrackFileEntry, TrackFileState};
 pub use track_key::{normalise_key, set_key};
 pub use track_record::TrackRecord;
