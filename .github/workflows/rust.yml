@@ -15,12 +15,6 @@ env:
 permissions:
   contents: read
 
-# TODO (not added, Todo 29): a Linux job for `cargo check -p openmixer --features gui` (the window). The
-# link line on this box needs the freetype, xcb, xkbcommon and xkbcommon-x11 development packages (apt:
-# libfreetype-dev, libxcb1-dev, libxkbcommon-dev, libxkbcommon-x11-dev); wayland and fontconfig are not
-# verified on a clean runner (no Docker here to test one), and the GPUI tree is large enough to need a cache. Until
-# that is checked on a runner, see docs/spikes/DECISIONS.md "GPUI integration".
-
 jobs:
   check:
     name: check (${{ matrix.os }})
@@ -78,3 +72,42 @@ jobs:
 
       - name: cargo deny check
         run: cargo deny check
+
+  # Non-blocking: the first runs reveal which system packages the GPUI window needs on a clean runner.
+  # GPUI is not a workspace member (see docs/spikes/DECISIONS.md, "GPUI integration"), so its tests run
+  # from its own directory. Remove `continue-on-error` once the package list is verified.
+  gui-check:
+    name: gui check (linux, non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+
+      - name: Install GPUI system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev libvulkan-dev libssl-dev \
+            libclang-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check (openmixer with the gui feature)
+        run: cargo check -p openmixer --features gui
+
+      - name: cargo test (om-ui-gpui glue)
+        working-directory: crates/om-ui-gpui
+        run: cargo test --lib
