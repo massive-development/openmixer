@@ -12,6 +12,7 @@
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
 };
+use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
 use crate::midi::{FeedbackThread, MidiService};
 use om_audio::{DjEngine, DjEngineAudio};
@@ -83,6 +84,8 @@ pub struct AppComposition {
     pub midi: Option<Arc<MidiService>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
     midi_feedback: Option<FeedbackThread>,
+    /// Drives the engine's control clock (sync, slip, FX tempo) from its own thread.
+    _control_timer: Option<ControlTimer>,
     applier: PreferencesApplier,
     targets: AppTargetsState,
     audio: Option<DjEngineAudio>,
@@ -109,8 +112,16 @@ impl AppComposition {
         };
 
         let themes = load_themes(user_themes.as_deref());
+        let control_timer = match ControlTimer::start(Arc::clone(&engine)) {
+            Ok(timer) => Some(timer),
+            Err(error) => {
+                eprintln!("openmixer: control clock thread: {error}");
+                None
+            }
+        };
 
         Self {
+            _control_timer: control_timer,
             engine,
             router,
             themes,

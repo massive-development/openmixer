@@ -155,12 +155,12 @@ impl Shell {
         self.frames
     }
 
-    /// One frame of upkeep: engine control tick, then the widgets follow the engine and the meters
-    /// advance by the frame time.
+    /// One frame of upkeep: the widgets follow the engine and the meters advance by the frame
+    /// time. The engine's control clock runs on its own thread (see the composition), so it keeps
+    /// going when no frames are drawn.
     fn tick(&mut self) {
         let now = self.started.elapsed().as_secs_f64();
         let dt = (now - self.last_tick) as f32;
-        self.engine.update_control(now - self.last_tick);
         self.last_tick = now;
         let dragging = self.dragging_channel_fader();
         if let Some(panel) = self.library.as_mut() {
