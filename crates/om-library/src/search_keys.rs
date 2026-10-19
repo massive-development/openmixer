@@ -1,10 +1,9 @@
 //! Key-filter helper: resolves "8A" / "Am" (and compatible neighbours) to Camelot codes.
-//! Port of `src/library/SearchKeys.{h,cpp}`.
 
 use om_analysis::{is_harmonically_compatible, MusicalKey};
 
 /// Empty when `text` is not a key. With `compatible`, includes the keys that mix harmonically (same
-/// slot, +-1 on the wheel, relative), in the order the C++ enumerates them.
+/// slot, +-1 on the wheel, relative), in declaration order.
 pub fn key_camelot_codes(text: &str, compatible: bool) -> Vec<String> {
     let mut codes = Vec::new();
     let Some(base) = resolve(text) else {
@@ -32,7 +31,7 @@ pub fn key_camelot_codes(text: &str, compatible: bool) -> Vec<String> {
 
 fn resolve(text: &str) -> Option<MusicalKey> {
     let t = text.trim();
-    // `from_camelot` upper-cases its input, as the C++ `toUpperCase` did.
+    // `from_camelot` upper-cases its input.
     MusicalKey::from_camelot(t).or_else(|| MusicalKey::from_name(t))
 }
 

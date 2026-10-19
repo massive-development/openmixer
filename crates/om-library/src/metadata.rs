@@ -1,5 +1,4 @@
-//! Tag and duration reading for ingest. Port of `src/library/MetadataReader.*` and
-//! `JuceMetadataReader.*`. The default reader uses lofty instead of JUCE's format manager: tags for
+//! Tag and duration reading for ingest. The default reader uses lofty: tags for
 //! MP3 (ID3v2), FLAC and OGG (Vorbis comments), M4A/MP4 (iTunes atoms), and WAV/AIFF (RIFF INFO),
 //! plus duration and the front cover where the container has one.
 //! Called from the ingest thread only.

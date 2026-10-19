@@ -1,5 +1,5 @@
-//! Text-to-value rules the importers inherit from JUCE: lenient numeric parsing and ISO-8601
-//! dates. Kept here so the importers read the same values the C++ code read.
+//! Text-to-value rules the importers need: lenient numeric parsing and ISO-8601
+//! dates. Kept here so every importer reads values the same way.
 
 /// `String::getIntValue`: optional leading whitespace and sign, then digits. 0 when there are none.
 pub fn int_value(text: &str) -> i64 {

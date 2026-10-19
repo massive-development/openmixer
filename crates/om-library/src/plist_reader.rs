@@ -1,5 +1,4 @@
 //! Typed access to an Apple property-list `<dict>` (alternating `<key>` and value elements).
-//! Port of `src/library/PlistReader.*`.
 
 use crate::juce_text::iso8601_ms;
 use crate::xml::XmlElement;

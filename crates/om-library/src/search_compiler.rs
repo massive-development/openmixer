@@ -1,7 +1,6 @@
 //! Compiles a `SearchQuery` to parameterised SQL over the `tracks` table, and the per-term compilers
 //! for the built-in field kinds. Column names come from the registry (code constants); every user
-//! value is a bound argument. Port of `src/library/SearchCompiler.{h,cpp}` and the term helpers in
-//! `SearchTerms.cpp`.
+//! value is a bound argument.
 
 use crate::error::{LibraryError, Result};
 use crate::search_fields::{free_text_columns, FieldKind, SearchField, SearchFieldRegistry};
@@ -327,7 +326,7 @@ fn parse_number(s: &str) -> Option<f64> {
     if !well_formed {
         return None;
     }
-    // Rust accepts "5." and ".5" as floats, matching the C++ getDoubleValue on these inputs.
+    // Rust accepts "5." and ".5" as floats, so both forms parse as numbers.
     s.parse().ok()
 }
 

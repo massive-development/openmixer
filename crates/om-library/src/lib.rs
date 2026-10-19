@@ -2,7 +2,6 @@
 //! track record and key helpers (Todo 20). Metadata readers, folder ingest and watch folders
 //! (Todo 21). Search and filter (Todo 23). Library import (iTunes, Rekordbox) (Todo 22) and the
 //! track prep queue (Todo 24).
-//! Port of `src/library/`.
 //!
 //! Threading: one writer per database file. A `Database` is used by one thread at a time; the UI
 //! opens its own read-only connection to the same file (WAL lets it read while the writer commits).

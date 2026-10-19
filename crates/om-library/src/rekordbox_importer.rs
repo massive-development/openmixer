@@ -1,7 +1,7 @@
 //! Rekordbox XML export (`DJ_PLAYLISTS`): `COLLECTION/TRACK` with `TEMPO` and `POSITION_MARK`
 //! cues, and the `PLAYLISTS` node tree (folders and playlists). `POSITION_MARK` Type 0 = cue
 //! (Num -1 memory cue, 0..7 hotcue), Type 4 = loop; other types (fade, load) are ignored.
-//! Times are seconds. Port of `src/library/RekordboxImporter.*`.
+//! Times are seconds.
 
 use crate::file_url::file_url_to_path;
 use crate::import_model::{

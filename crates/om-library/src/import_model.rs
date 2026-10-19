@@ -1,6 +1,5 @@
 //! Importer-neutral view of a foreign library: what an importer parses and the writer merges.
 //! Plain values only, so importers stay free of database code and are testable on their own.
-//! Port of `src/library/ImportModel.h`.
 
 use crate::track_record::TrackRecord;
 

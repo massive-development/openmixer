@@ -1,6 +1,5 @@
 //! Keeps watched folders in step with the library: the folder list lives in the database, and a
-//! background thread rescans every folder on an interval or on demand. Port of
-//! `src/library/WatchFolders.*`. Plain std threads and polling, as in the C++ (no filesystem
+//! background thread rescans every folder on an interval or on demand. Plain std threads and polling (no filesystem
 //! notifications).
 //!
 //! The scan thread opens its own `Library` connection (WAL and the busy timeout let it run next to

@@ -1,5 +1,5 @@
-//! Port of tests/unit/LibraryIngestTest.cpp, MetadataReaderTest group, plus lofty coverage for the
-//! formats JUCE did not tag (MP3, FLAC, OGG, M4A) and cover art.
+//! Metadata reader tests, plus lofty coverage for MP3, FLAC, OGG and M4A tags
+//! and cover art.
 
 mod common;
 

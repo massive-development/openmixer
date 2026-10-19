@@ -1,5 +1,4 @@
 //! Value types for the search engine: the parsed query, and the SQL fragments fields compile to.
-//! Port of `src/library/SearchQuery.h`.
 
 use rusqlite::types::{ToSql, ToSqlOutput};
 

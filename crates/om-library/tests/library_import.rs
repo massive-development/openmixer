@@ -1,4 +1,4 @@
-//! Port of tests/unit/LibraryImportTest.cpp: iTunes / Rekordbox importers, merge policy and
+//! iTunes / Rekordbox importers, merge policy and
 //! transactionality. FileUrl decoding is covered by the unit tests in `src/file_url.rs`.
 //! Fixtures are read from fixtures/import at the workspace root.
 
