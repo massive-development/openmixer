@@ -3817,6 +3817,8 @@ dependencies = [
 name = "om-analysis"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "om-dsp",
  "om-engine",
  "realfft",
  "serde_json",
