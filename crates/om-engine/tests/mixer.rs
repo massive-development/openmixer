@@ -4,7 +4,8 @@
 use om_core::ParameterTarget;
 use om_dsp::{CrossfaderAssign, CrossfaderCurve};
 use om_engine::{ChannelInput, Mixer, MixerControl, ProcessStage};
-use std::f64::consts::PI;
+use om_testing::level::{gain_to_db, rms_tail};
+use om_testing::signals::sine_amp;
 
 const SR: f64 = 48_000.0;
 const N: usize = 16_384;
@@ -36,11 +37,9 @@ impl Rig {
     }
 
     fn set_sine(&mut self, ch: usize, hz: f64, amp: f32) {
-        for i in 0..N {
-            let s = amp * ((2.0 * PI * hz * i as f64 / SR).sin() as f32);
-            self.ins[ch][0][i] = s;
-            self.ins[ch][1][i] = s;
-        }
+        let s = sine_amp(hz, amp, SR, N);
+        self.ins[ch][0].copy_from_slice(&s);
+        self.ins[ch][1].copy_from_slice(&s);
     }
 
     /// Block-wise like a device.
@@ -69,18 +68,8 @@ impl Rig {
 
     /// RMS over the second half, after the filters have settled.
     fn rms(v: &[f32]) -> f64 {
-        let tail = &v[N / 2..];
-        (tail
-            .iter()
-            .map(|&x| f64::from(x) * f64::from(x))
-            .sum::<f64>()
-            / tail.len() as f64)
-            .sqrt()
+        rms_tail(v)
     }
-}
-
-fn db_of(ratio: f64) -> f64 {
-    20.0 * ratio.max(1e-12).log10()
 }
 
 /// Gain in dB through master for a 0.5-peak sine at `hz` with the given setup.
@@ -89,7 +78,7 @@ fn gain_db(hz: f64, setup: impl FnOnce(&MixerControl)) -> f64 {
     r.set_sine(0, hz, 0.5);
     setup(&r.ctl);
     r.run();
-    db_of(Rig::rms(&r.ml) / (0.5 / 2.0_f64.sqrt()))
+    gain_to_db(Rig::rms(&r.ml) / (0.5 / 2.0_f64.sqrt()))
 }
 
 fn unity() -> f64 {
