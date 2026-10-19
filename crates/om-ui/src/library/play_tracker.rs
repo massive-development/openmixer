@@ -110,19 +110,31 @@ mod tests {
     fn reset_on_load_starts_the_count_again() {
         let mut t = PlayTracker::default();
         t.reset(Some(1));
-        assert_eq!(run(&mut t, &deck(true, true), 30, Duration::from_secs(1)), vec![1]);
+        assert_eq!(
+            run(&mut t, &deck(true, true), 30, Duration::from_secs(1)),
+            vec![1]
+        );
         t.reset(Some(2));
         assert!(run(&mut t, &deck(true, true), 29, Duration::from_secs(1)).is_empty());
-        assert_eq!(run(&mut t, &deck(true, true), 1, Duration::from_secs(1)), vec![2]);
+        assert_eq!(
+            run(&mut t, &deck(true, true), 1, Duration::from_secs(1)),
+            vec![2]
+        );
     }
 
     #[test]
     fn a_second_load_of_the_same_track_counts_again() {
         let mut t = PlayTracker::default();
         t.reset(Some(5));
-        assert_eq!(run(&mut t, &deck(true, true), 30, Duration::from_secs(1)), vec![5]);
+        assert_eq!(
+            run(&mut t, &deck(true, true), 30, Duration::from_secs(1)),
+            vec![5]
+        );
         t.reset(Some(5));
-        assert_eq!(run(&mut t, &deck(true, true), 30, Duration::from_secs(1)), vec![5]);
+        assert_eq!(
+            run(&mut t, &deck(true, true), 30, Duration::from_secs(1)),
+            vec![5]
+        );
     }
 
     #[test]
@@ -130,7 +142,9 @@ mod tests {
         let mut t = PlayTracker::default();
         t.reset(Some(3));
         assert!(run(&mut t, &deck(true, true), 20, Duration::from_secs(1)).is_empty());
-        assert!(t.observe(&deck(false, false), Duration::from_secs(1)).is_none());
+        assert!(t
+            .observe(&deck(false, false), Duration::from_secs(1))
+            .is_none());
         assert_eq!(t.track_id(), None);
         assert!(run(&mut t, &deck(true, true), 60, Duration::from_secs(1)).is_empty());
     }

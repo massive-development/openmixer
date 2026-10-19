@@ -177,7 +177,10 @@ impl TrackLoader {
             if let Some(track_id) = self.plays[deck].observe(&snapshot, elapsed) {
                 let played_ms = now_ms();
                 let deck_number = u8::try_from(deck).ok();
-                if let Err(error) = library.tracks().record_play(track_id, deck_number, played_ms) {
+                if let Err(error) = library
+                    .tracks()
+                    .record_play(track_id, deck_number, played_ms)
+                {
                     eprintln!("library: could not record a play of track {track_id}: {error}");
                 }
             }
