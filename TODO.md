@@ -166,10 +166,11 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 28:** Library browser + app wiring
   - Tree, track list, search
+  - Partial (Todo 13a): the library logic is ported and tested (`om-ui::library`: services over the library, analysis, prep queue and watch folders; the track table and its paged source with the search syntax and the key tint; the browser state, status line, load requests, prep queueing and XML import; the track loader that applies cached waveform and grid and queues analysis; the track drag payload), and the composition attaches it on demand. Open (Todo 13b): the gpui browser view, the deck drop target and load buttons, and the waveform drawing from the loader
 
 - [ ] **Todo 29:** Automix panel + settings
   - Audio/MIDI settings, preferences
-  - Partial: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; audio and appearance pages live, latency/xrun/CPU readout), audio device state restore on start-up (`openmixer::audio_settings`). Open: the MIDI, library and plugin pages show placeholders until Todos 10, 12, 14; no Escape key on the overlay yet (needs a focus handle); overlay not checked by eye
+  - Partial: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; audio and appearance pages live, latency/xrun/CPU readout), audio device state restore on start-up (`openmixer::audio_settings`). Open: the MIDI and plugin pages show placeholders until Todos 10 and 14; the library page drives the library services (Todo 13a); no Escape key on the overlay yet (needs a focus handle); overlay not checked by eye
   - Also open: `--settings` start flag; the Linux GPUI CI job (see the TODO in `.github/workflows/rust.yml`)
   - Automix panel (Wave 7, needs Todo 38)
 

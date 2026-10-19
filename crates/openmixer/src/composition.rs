@@ -113,8 +113,11 @@ impl AppComposition {
             None => default_options(),
         };
         options.scan_on_start = self.prefs.library.scan_on_start;
-        options.scan_interval_ms = i64::from(self.prefs.library.scan_interval_minutes.max(1)) * 60_000;
-        options.on_error = Some(Box::new(|message| eprintln!("openmixer: library: {message}")));
+        options.scan_interval_ms =
+            i64::from(self.prefs.library.scan_interval_minutes.max(1)) * 60_000;
+        options.on_error = Some(Box::new(|message| {
+            eprintln!("openmixer: library: {message}")
+        }));
         self.hooks.library = Some(LibraryServices::create(options)?);
         Ok(())
     }

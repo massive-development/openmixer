@@ -4006,10 +4006,13 @@ name = "om-ui"
 version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
+ "om-analysis",
  "om-core",
  "om-dsp",
  "om-engine",
+ "om-library",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -4084,6 +4087,7 @@ dependencies = [
  "om-ui",
  "om-ui-gpui",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -115,7 +115,11 @@ fn an_unanalysed_track_is_queued_with_priority_and_filled_in_when_done() {
     assert!(rig.wait_for_waveform(0));
     let grid = rig.engine.deck_control(0).grid().expect("grid applied");
     assert!((grid.bpm() - 128.0).abs() < 1e-6);
-    assert_eq!(rig.loader.loaded_track(0).and_then(|t| t.bpm), Some(128.0), "written back");
+    assert_eq!(
+        rig.loader.loaded_track(0).and_then(|t| t.bpm),
+        Some(128.0),
+        "written back"
+    );
 }
 
 #[test]
@@ -135,7 +139,11 @@ fn an_already_analysed_track_loads_immediately_without_queueing() {
     assert!(rig.load(1, id).is_ok());
     assert!(rig.loader.waveform(1).is_some());
     assert!(rig.engine.deck_control(1).grid().is_some());
-    assert_eq!(rig.prep_entries()[0].status, PrepStatus::Done, "not re-queued");
+    assert_eq!(
+        rig.prep_entries()[0].status,
+        PrepStatus::Done,
+        "not re-queued"
+    );
 }
 
 #[test]
@@ -159,7 +167,7 @@ fn loading_another_track_clears_the_old_waveform_and_grid() {
 fn missing_files_and_bad_decks_fail_without_touching_the_deck() {
     let mut rig = LoaderRig::new();
     let missing = rig.add_file("gone.wav", "8A", false);
-    let error = rig.load(0, missing).err().expect("missing file fails");
+    let error = rig.load(0, missing).expect_err("missing file fails");
     assert!(error.contains("missing"), "{error}");
     assert!(!rig.engine.deck(0).is_loaded());
 
@@ -178,7 +186,11 @@ fn suggested_deck_prefers_an_empty_idle_deck() {
     assert_eq!(rig.loader.suggested_deck(&rig.engine), 1);
     let q = rig.add_file("q.wav", "9A", true);
     assert!(rig.load(1, q).is_ok());
-    assert_eq!(rig.loader.suggested_deck(&rig.engine), 0, "both loaded and idle: the first");
+    assert_eq!(
+        rig.loader.suggested_deck(&rig.engine),
+        0,
+        "both loaded and idle: the first"
+    );
     rig.engine.deck(0).set_playing(true);
     assert_eq!(rig.loader.suggested_deck(&rig.engine), 1);
 }
@@ -191,7 +203,11 @@ fn reference_key_follows_the_playing_deck() {
     assert!(rig.load(0, p).is_ok());
     let q = rig.add_file("q.wav", "9A", true);
     assert!(rig.load(1, q).is_ok());
-    assert_eq!(rig.loader.reference_camelot(&rig.engine), "8A", "nothing playing: first loaded");
+    assert_eq!(
+        rig.loader.reference_camelot(&rig.engine),
+        "8A",
+        "nothing playing: first loaded"
+    );
     rig.engine.deck(1).set_playing(true);
     assert_eq!(rig.loader.reference_camelot(&rig.engine), "9A");
 }

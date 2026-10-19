@@ -20,7 +20,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use om_analysis::{
-    hash_file_content, make_engine_grid, Analyzer, AnalyzerRegistry, AnalysisService, BpmResult,
+    hash_file_content, make_engine_grid, AnalysisService, Analyzer, AnalyzerRegistry, BpmResult,
     FileClipSource, ResultCache, SqliteResultCache, WaveformData,
 };
 use om_engine::grid::BeatGrid;
@@ -35,6 +35,9 @@ pub const MEMORY_PATH: &str = ":memory:";
 
 /// Environment variable that overrides the default library location.
 pub const LIBRARY_DB_ENV: &str = "OPENMIXER_LIBRARY_DB";
+
+/// Receives an error message on the owner thread.
+pub type ErrorHandler = Box<dyn Fn(&str)>;
 
 /// Changes the owner thread reports to subscribers.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,7 +71,7 @@ pub struct Options {
     /// `None`: the built-in analysers (bpm, key, waveform, structure).
     pub analyzers: Option<Arc<AnalyzerRegistry>>,
     /// Always called on the owner thread, from `pump` or the call that failed.
-    pub on_error: Option<Box<dyn Fn(&str)>>,
+    pub on_error: Option<ErrorHandler>,
 }
 
 impl Options {
@@ -106,7 +109,7 @@ struct Outbox {
 }
 
 pub struct LibraryServices {
-    on_error: Option<Box<dyn Fn(&str)>>,
+    on_error: Option<ErrorHandler>,
     outbox: Rc<RefCell<Outbox>>,
     /// Errors raised on the scan thread; moved to the outbox by `pump`.
     scan_errors: Arc<Mutex<Vec<String>>>,
@@ -137,6 +140,9 @@ impl LibraryServices {
         }
         let library = Library::open(&options.db_path, OpenMode::ReadWrite, core_migrations())
             .map_err(|e| e.to_string())?;
+        // Shared only by handles on the owner thread; the connection is not Sync, and Rc would make
+        // the services non-Send for no gain.
+        #[allow(clippy::arc_with_non_send_sync)]
         let library = Arc::new(library);
         let on_error = options.on_error.take();
         let outbox = Rc::new(RefCell::new(Outbox::default()));

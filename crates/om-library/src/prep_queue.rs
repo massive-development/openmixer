@@ -10,12 +10,12 @@
 //! Port of `src/library/PrepQueue.*`.
 
 use crate::error::Result;
-use std::borrow::Borrow;
 use crate::library::Library;
 use crate::prep_queue_dao::{PrepEntry, PrepStatus};
 use crate::prep_results::apply_prep_results;
 use crate::track_record::TrackRecord;
 use om_analysis::{AnalysisJob, AnalysisService, ClipSource, FileClipSource, JobStatus};
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -88,11 +88,7 @@ pub struct PrepQueue<L: Borrow<Library>, S: Borrow<AnalysisService>> {
 impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
     /// Library and service must outlive the queue. Entries left Running by a crash go back to
     /// Queued.
-    pub fn new(
-        library: L,
-        service: S,
-        mut options: PrepOptions,
-    ) -> Self {
+    pub fn new(library: L, service: S, mut options: PrepOptions) -> Self {
         options.max_in_flight = options.max_in_flight.max(1);
         let reset = library.borrow().prep_queue().reset_running().err();
         let queue = Self {
@@ -147,7 +143,8 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
             Err(e) => self.error(&e.to_string()),
             Ok(Some(entry)) if entry.status == PrepStatus::Queued => {
                 if let Err(e) =
-                    self.lib.borrow()
+                    self.lib
+                        .borrow()
                         .prep_queue()
                         .set_status(track_id, PrepStatus::Cancelled, "")
                 {
@@ -225,10 +222,11 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
             // So a re-enqueue can start a fresh job at once.
             self.draining.push(job);
         }
-        if let Err(e) = self
-            .lib.borrow()
-            .prep_queue()
-            .set_status(track_id, PrepStatus::Cancelled, "")
+        if let Err(e) =
+            self.lib
+                .borrow()
+                .prep_queue()
+                .set_status(track_id, PrepStatus::Cancelled, "")
         {
             self.error(&e.to_string());
         }
@@ -267,9 +265,11 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
         let dao = self.lib.borrow().prep_queue();
         match finished.status {
             JobStatus::Done => {
-                if let Err(e) =
-                    apply_prep_results(&self.lib.borrow().tracks(), finished.track_id, &finished.results)
-                {
+                if let Err(e) = apply_prep_results(
+                    &self.lib.borrow().tracks(),
+                    finished.track_id,
+                    &finished.results,
+                ) {
                     return self.fail(finished.track_id, &e.to_string());
                 }
                 if let Err(e) = dao.set_status(finished.track_id, PrepStatus::Done, "") {
@@ -287,10 +287,11 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
     }
 
     fn fail(&mut self, track_id: i64, message: &str) {
-        if let Err(e) = self
-            .lib.borrow()
-            .prep_queue()
-            .set_status(track_id, PrepStatus::Failed, message)
+        if let Err(e) =
+            self.lib
+                .borrow()
+                .prep_queue()
+                .set_status(track_id, PrepStatus::Failed, message)
         {
             self.error(&e.to_string());
         }
@@ -319,10 +320,11 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
             Err(e) => self.fail(id, &e.to_string()),
             Ok(None) => self.fail(id, "track no longer exists"),
             Ok(Some(track)) => {
-                if let Err(e) = self
-                    .lib.borrow()
-                    .prep_queue()
-                    .set_status(id, PrepStatus::Running, "")
+                if let Err(e) =
+                    self.lib
+                        .borrow()
+                        .prep_queue()
+                        .set_status(id, PrepStatus::Running, "")
                 {
                     self.error(&e.to_string());
                     return false;
