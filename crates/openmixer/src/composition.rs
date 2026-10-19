@@ -16,14 +16,12 @@ use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
 use crate::error::AppError;
 use crate::midi::{FeedbackThread, MidiService};
+use crate::stems_host::StemsHost;
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::{ParameterRouter, StateReader};
 use om_midi::MidiBackend;
 use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
-use om_stems::{
-    MockSeparator, ModelGate, ModelManifest, StemSeparator, StemService, StemServiceConfig,
-    UrlDownloader, WeightManager,
-};
+use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
@@ -113,6 +111,8 @@ pub struct AppComposition {
     audio: Option<DjEngineAudio>,
     /// The library file path, once [`AppComposition::attach_library`] has opened it.
     library_db: Option<String>,
+    /// The stems host, until the window takes it.
+    stems_host: Option<StemsHost>,
 }
 
 impl AppComposition {
@@ -158,6 +158,7 @@ impl AppComposition {
             targets: AppTargetsState::default(),
             audio: Some(audio),
             library_db: None,
+            stems_host: None,
         }
     }
 
@@ -189,47 +190,26 @@ impl AppComposition {
         Ok(())
     }
 
-    /// Attaches the stem service, after the library. Its cache lives in `stems` beside the library
-    /// file and its cap comes from `stems.max_cache_gb`. With `mock`, the mock separator is used
-    /// (no model, no runtime). Otherwise the separator is the htdemucs model, when the `onnx`
-    /// feature is built in, the manifest is present and the model is installed; if not, stem
-    /// separation stays off and that is not an error.
+    /// Attaches the stems: the host (model state, licence, download, cache) and, when the model is
+    /// ready now, the stem service in `services.stems`. The cap comes from `stems.max_cache_gb`.
+    /// With `mock`, the mock separator stands in for an installed model. A model that is not
+    /// installed is not an error: the host says so and the service is created later, on the first
+    /// job after an install. The host goes to the window with [`AppComposition::take_stems_host`].
     pub fn attach_stems(&mut self, mock: bool) -> Result<(), AppError> {
         let db = self
             .library_db
             .clone()
             .ok_or_else(|| AppError::Stems("attach the library first".into()))?;
-        let folder = std::path::Path::new(&db)
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_default();
         let max_cache_bytes = u64::try_from(self.prefs.stems.max_cache_gb).unwrap_or(0) * GIB;
-        let (separator, gate): (Arc<dyn StemSeparator>, Option<ModelGate>) = if mock {
-            (Arc::new(MockSeparator::new()), None)
-        } else {
-            let models = folder.join("models");
-            let manifest_path = models.join(STEM_MANIFEST_FILE);
-            if !manifest_path.is_file() {
-                return Ok(());
-            }
-            let manifest = ModelManifest::from_json(&std::fs::read_to_string(&manifest_path)?)
-                .map_err(|e| AppError::Stems(e.to_string()))?;
-            let weights = WeightManager::new(models.clone(), Box::new(UrlDownloader::default()));
-            let Some(separator) = installed_separator(&weights, &manifest)? else {
-                return Ok(());
-            };
-            (separator, Some(ModelGate::new(manifest, weights)))
-        };
-        let service = StemService::new(StemServiceConfig {
-            separator,
-            cache_root: folder.join("stems"),
-            library_path: db,
-            max_cache_bytes: Some(max_cache_bytes),
-            gate,
-        })
-        .map_err(|e| AppError::Stems(e.to_string()))?;
-        self.services.stems = Some(Arc::new(service));
+        let mut host = StemsHost::new(mock, db, Some(max_cache_bytes));
+        self.services.stems = host.service_if_ready()?;
+        self.stems_host = Some(host);
         Ok(())
+    }
+
+    /// The stems host, once [`AppComposition::attach_stems`] has run. Taken by the window.
+    pub fn take_stems_host(&mut self) -> Option<StemsHost> {
+        self.stems_host.take()
     }
 
     pub fn take_audio(&mut self) -> Option<DjEngineAudio> {
@@ -368,7 +348,7 @@ impl AppComposition {
 /// The htdemucs separator over ONNX Runtime, when the model is installed and the `onnx` feature is
 /// built in. `None` (with a line on stderr) otherwise.
 #[cfg(feature = "onnx")]
-fn installed_separator(
+pub(crate) fn installed_separator(
     weights: &WeightManager,
     manifest: &ModelManifest,
 ) -> Result<Option<Arc<dyn StemSeparator>>, AppError> {
@@ -398,7 +378,7 @@ fn installed_separator(
 }
 
 #[cfg(not(feature = "onnx"))]
-fn installed_separator(
+pub(crate) fn installed_separator(
     _weights: &WeightManager,
     _manifest: &ModelManifest,
 ) -> Result<Option<Arc<dyn StemSeparator>>, AppError> {
