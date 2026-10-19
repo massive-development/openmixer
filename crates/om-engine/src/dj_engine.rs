@@ -9,7 +9,7 @@
 //! Threads: control methods from any non-audio thread; `prepare`/`process` on the audio side only.
 
 use crate::callback::AudioCallback;
-use crate::deck::{Deck, DeckAudio, DEFAULT_RING_FRAMES};
+use crate::deck::{Deck, DeckAudio, DEFAULT_RING_FRAMES, NUM_CUES};
 use crate::deck_control::{DeckBank, DeckControl};
 use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
@@ -22,6 +22,13 @@ use om_core::{
 };
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::Arc;
+
+// The id grammar (om-core) and the engine must agree on every limit. A mismatch fails the build, so
+// the parser never accepts an index the engine cannot hold. The engine has one deck per mixer
+// channel, so the deck limit is the channel limit.
+const _: () = assert!(om_core::param_id::MAX_CHANNELS as usize == MAX_CHANNELS);
+const _: () = assert!(om_core::param_id::MAX_DECKS as usize == MAX_CHANNELS);
+const _: () = assert!(om_core::param_id::HOTCUES_PER_DECK as usize == NUM_CUES);
 
 /// Control side of the engine. See the module docs.
 pub struct DjEngine {
