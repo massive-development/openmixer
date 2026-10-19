@@ -1,4 +1,4 @@
-//! Port of `tests/unit/StemsTest.cpp`: model manifests, licence-gated verified downloads and stem
+//! Model manifests, licence-gated verified downloads and stem
 //! types. Downloads use local files and a loopback HTTP server; nothing leaves the machine.
 
 use om_analysis::{hash_file_content, AnalysisContext, AudioClip, NullAnalysisContext};

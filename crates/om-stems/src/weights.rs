@@ -1,4 +1,4 @@
-//! Fetches model weights on first use. Port of `src/stems/WeightManager.cpp`.
+//! Fetches model weights on first use.
 //!
 //! The user must accept the model's licence (a prompt callback) before anything is downloaded. The
 //! file is fetched to `<id>.part`, checked against the manifest's size and SHA-256, and moved into the
@@ -57,7 +57,7 @@ pub trait Downloader: Send {
 }
 
 /// Downloads `file://`, `http://` and `https://` URLs. HTTPS goes through rustls with the
-/// webpki root bundle, as the C++ tree's `juce::URL` did through the platform stack.
+/// webpki root bundle, not the platform trust store.
 #[derive(Debug, Clone, Copy)]
 pub struct UrlDownloader {
     connect_timeout: Duration,

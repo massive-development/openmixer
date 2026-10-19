@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! Stem separation: the separator interface, the model manifest, and licence-gated, checksum-verified
-//! weight downloads. Port of `src/stems/`. The ONNX Runtime separator (Todo 19) is not built yet; the
+//! weight downloads. The ONNX Runtime separator (Todo 19) is not built yet; the
 //! [`MockSeparator`] stands in for it.
 
 mod manifest;
