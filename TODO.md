@@ -51,10 +51,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - No signing/allow-list gatekeeping (see CONTRIBUTING "Extensibility")
   - Plugins are deferred; CLAP-first if and when needed (design spec)
 
-- [ ] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
-  - `midir` input -> JSON map file -> mixer/deck parameters
+- [x] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
+  - MIDI input -> JSON map file -> mixer/deck parameters; controller feedback (LEDs) from engine state
+  - Device layer: an ALSA sequencer backend on Linux (the `alsa` crate cpal already links, so midir does not join the build) and a mock backend for tests. macOS and Windows get a midir backend in the porting phase, behind `system_backend` (see `docs/spikes/DECISIONS.md`)
   - Mapping editor UI stays in Wave 6 (Todo 36)
-  - Partial: `om-midi` has events, map JSON, mapper (hot reload), learn and trace replay. The `midir` device layer is not in yet: midir's ALSA and CoreMIDI versions conflict with the cpal and gpui pins
 
 - [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
@@ -186,7 +186,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 ## Wave 6: Hardware I/O
 
 - Todos 32/33 moved to Wave 2
-- [ ] **Todo 34:** Plug-and-play controller maps
+- [ ] **Todo 34:** Plug-and-play controller maps (none in the C++ tree yet: `tests/data/controllers` holds only test fixtures)
 - [ ] **Todo 35:** HID layer
 - [ ] **Todo 36:** Mapping editor UI
 

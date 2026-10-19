@@ -103,3 +103,14 @@ Date: 2026-10-18. Ports `JuceAudioSettingsModel`, `AppPreferencesTargets` and th
 - **Overlay.** `om-ui-gpui::settings_view`. Opened by the Settings button in a header strip above the layout; closed by Close or a click on the scrim. Audio and appearance are live (the theme switches at once in the window). MIDI, library and plugin pages show their stored state and say what is not ported. Escape is not wired: GPUI key events need a focus handle, which is not set up yet.
 - **Build notes.** The om-ui-gpui test binary links only with the `libxkbcommon-x11` shim above (`RUSTFLAGS="-L /tmp/libshim"`). `--mock-device --smoke` exits 0 with that build. The overlay has not been looked at by eye.
 - **Not done.** `--settings` start flag; plugin themes reach only the composition's registry (the window keeps its own copy, loaded from the built-ins and the user folder); the example-plugin cases of `AppPreferencesTargetsTest` wait on Todo 14.
+
+## MIDI device layer (Todo 32)
+
+Date: 2026-10-19. Crate: `crates/om-midi` (`backend.rs`, `alsa_backend.rs`, `mock.rs`).
+
+- **Why not midir yet.** midir's Linux backend links `alsa` at a version that conflicts with the one cpal links, and its macOS backend pins CoreMIDI crates that clash with the gpui tree. Adopting it in the workspace now would break the build on one platform or the other.
+- **Linux: ALSA sequencer, direct.** `AlsaBackend` uses the `alsa` crate at the version already in `Cargo.lock` through cpal (`alsa = "0.11"`), so the build links one `alsa`. Inputs and outputs are sequencer clients subscribed to the device's ports. Port ids are the port names, the same strings the MIDI settings page shows. The backend has no unsafe code of its own (the `alsa` crate carries the FFI); construction and enumeration are smoke-tested and skip when `/dev/snd/seq` is absent.
+- **Other platforms: documented stub.** `om_midi::system_backend()` returns a device error outside Linux, so the app runs without MIDI there. The midir backend for macOS and Windows plugs in at that point: it implements `MidiBackend` (enumerate, open input with a byte callback, open output, `refresh` for hot-plug) and needs no change to the routers, the mapper or the feedback unit.
+- **Tests never open hardware.** `MockBackend` delivers injected bytes and records sent bytes. Every routing, selection, hot-plug and feedback test runs on it.
+- **Trait boundary.** `MidiBackend` is the only thing the device-facing code knows. Input callbacks run on the backend's thread and take only the mapper's locks; feedback is evaluated on a control thread at 30 Hz, and hot-plug is checked about once a second.
+
