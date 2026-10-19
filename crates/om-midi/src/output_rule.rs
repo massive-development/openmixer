@@ -1,6 +1,6 @@
 //! One controller feedback rule (an LED or ring driven by engine state). Rules live in the map's
-//! `outputs` array. Port of `src/controllers/MidiOutputRule.*`; the schema and its error messages
-//! are the C++ ones.
+//! `outputs` array. The schema and its error messages
+//! are kept stable for existing map files.
 //!
 //! ```json
 //! { "source": "deck.0.play", "type": "note", "channel": 1, "number": 36, "on": 127, "off": 0 }

@@ -1,6 +1,5 @@
 //! Controller feedback: evaluates the map's output rules against engine state and sends a note or
-//! CC only when its value changes. Blinking rules change on a half-period clock. Port of
-//! `src/controllers/MidiFeedback.*`. Control thread only; reads state through a [`StateReader`],
+//! CC only when its value changes. Blinking rules change on a half-period clock. Control thread only; reads state through a [`StateReader`],
 //! never touches the audio thread.
 
 use crate::mapper::MidiMapper;

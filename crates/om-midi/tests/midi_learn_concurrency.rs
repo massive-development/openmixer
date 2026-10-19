@@ -1,4 +1,4 @@
-//! Port of tests/unit/MidiLearnConcurrencySlowTest.cpp: a MIDI thread streams while the control
+//! A MIDI thread streams while the control
 //! thread arms, cancels and edits the map. Bounded (400 rounds), so it runs in the normal suite.
 
 mod support;

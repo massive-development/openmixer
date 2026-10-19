@@ -1,4 +1,4 @@
-//! User-editable JSON controller map. Schema is the same as the C++ build:
+//! User-editable JSON controller map. Schema:
 //!
 //! ```json
 //! { "name": "My controller", "mappings": [
@@ -172,7 +172,7 @@ impl MidiMap {
     }
 }
 
-/// Parses every feedback rule; the first failure names its index, as the C++ build does.
+/// Parses every feedback rule; the first failure names its index.
 fn parse_outputs(list: &[Value]) -> Result<Vec<OutputRule>, MidiError> {
     list.iter()
         .enumerate()
@@ -305,7 +305,7 @@ fn parse_lsb(o: &Object, m: &mut Mapping) -> RuleResult {
     Ok(())
 }
 
-/// Numeric view of a JSON value, the way the C++ `var` conversions read it: numbers as they are,
+/// Numeric view of a JSON value: numbers as they are,
 /// numeric strings parsed, anything else 0.
 pub(crate) fn number_of(v: Option<&Value>) -> f64 {
     match v {
