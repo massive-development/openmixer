@@ -1,14 +1,13 @@
 //! Control threads hammering the engine's parameters while the mock device drives audio on its
-//! paced thread. Port of the spirit of tests/unit/ControlThreadSafetyTest.cpp for the engine side:
-//! no panics, no lost audio callbacks, and every id stays reachable. The MIDI map cases belong to
-//! Todo 32 and are not ported here.
+//! paced thread. Engine side:
+//! no panics, no lost audio callbacks, and every id stays reachable.
 
-mod common;
-
-use common::{sine_stereo, write_float_wav, TempDir};
 use om_audio::{AudioDevice, DjEngine, MockAudioDevice};
 use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::grid::{BeatGrid, FixedTempoGrid};
+use om_testing::fs::TempDir;
+use om_testing::signals::stereo_sine;
+use om_testing::wav::write_float_wav;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,7 +22,7 @@ fn control_threads_hammering_parameters_while_the_mock_device_drives_audio() {
         &file,
         2,
         RATE as u32,
-        &sine_stereo(220.0, 0.3, 44_100 * 4, RATE),
+        &stereo_sine(220.0, 0.3, RATE, 44_100 * 4),
     );
 
     let (engine, audio) = DjEngine::new(2);

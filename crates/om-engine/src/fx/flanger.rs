@@ -6,7 +6,7 @@ use super::math::flush_denormal;
 
 const MIN_DELAY_SEC: f64 = 0.0005;
 const SWEEP_SEC: f64 = 0.004;
-// C++ literal, kept verbatim so the sweep stays bit-identical.
+// Literal kept verbatim so the sweep stays bit-identical.
 #[allow(clippy::approx_constant)]
 const TWO_PI: f64 = 6.283_185_307_179_586;
 

@@ -1,4 +1,4 @@
-//! Engine-level cases from tests/unit/DjEngineTest.cpp that need no device. The device-driven
+//! Engine-level cases that need no device. The device-driven
 //! cases live in `crates/om-audio/tests/dj_engine.rs`.
 
 use super::DjEngine;

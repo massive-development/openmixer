@@ -1,10 +1,10 @@
-//! Port of tests/unit/AudioDeviceTest.cpp: mock device lifecycle, capture, latency instrumentation
+//! Mock device lifecycle, capture, latency instrumentation
 //! and the paced realtime thread. Nothing here opens a real device.
 
-mod common;
-
 use om_audio::{AudioCallback, AudioDevice, AudioError, LatencyMonitor, MockAudioDevice};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+use om_core::atomic::AtomicF64;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ struct Probe {
     prepared: AtomicUsize,
     released: AtomicUsize,
     calls: AtomicUsize,
-    sample_rate_bits: AtomicU64,
+    sample_rate: AtomicF64,
     block: AtomicUsize,
 }
 
@@ -36,9 +36,7 @@ impl GainCallback {
 
 impl AudioCallback for GainCallback {
     fn prepare(&mut self, sample_rate: f64, block: usize) {
-        self.probe
-            .sample_rate_bits
-            .store(sample_rate.to_bits(), Relaxed);
+        self.probe.sample_rate.store(sample_rate);
         self.probe.block.store(block, Relaxed);
         self.probe.prepared.fetch_add(1, Relaxed);
     }
@@ -64,7 +62,7 @@ impl AudioCallback for GainCallback {
 }
 
 fn wait_for_calls(probe: &Probe, count: usize, timeout: Duration) -> bool {
-    common::wait_until(|| probe.calls.load(Relaxed) >= count, timeout)
+    wait_until(timeout, DEFAULT_POLL, || probe.calls.load(Relaxed) >= count)
 }
 
 #[test]
@@ -81,10 +79,7 @@ fn mock_device_lifecycle_and_block_rendering() {
         "double start rejected"
     );
     assert_eq!(probe.prepared.load(Relaxed), 1);
-    assert_eq!(
-        f64::from_bits(probe.sample_rate_bits.load(Relaxed)),
-        44_100.0
-    );
+    assert_eq!(probe.sample_rate.load(), 44_100.0);
     assert_eq!(probe.block.load(Relaxed), 128);
 
     for i in 0..128 {

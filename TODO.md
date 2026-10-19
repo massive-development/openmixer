@@ -1,22 +1,54 @@
 # OpenMixer TODO
 
-OpenMixer is written in Rust with GPUI. The statuses below are the Rust state. The C++ baseline is the parity reference: its TODO is in the `cpp-final` tag (`git show cpp-final:TODO.md`). Todo numbers and titles match `docs/parity.md`, which maps each one to its C++ tests and its Rust test.
+OpenMixer is a free, open-source DJ application written in Rust with GPUI. The statuses below describe the current code. Todo numbers are stable identifiers.
 
-## Rust rewrite: phases 0-1 (done)
+## Before Wave 7
 
-**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
+Checked against the code on 2026-10-19 (not against the older docs). Size: S = up to a day, M = a few days, L = a week or more.
 
-Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`. Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
+### (A) Blockers for Wave 7
 
-- [x] Plan task 1: Workspace scaffold and `--smoke`
-- [x] Plan task 2: Rust CI and licence policy
-- [x] Plan task 3: ADR 0004 supersedes ADR 0002
-- [x] Plan task 4: Parity inventory
-- [x] Plan task 5: Documentation rewrite
-- [x] Plan task 6: Spike A, GPUI window (go/no-go)
-- [x] Plan task 7: Spike B, cpal output callback
-- [x] Plan task 8: Spike C, time-stretch quality
-- [x] Plan task 9: Phase 1 decision record
+- **Todo 19:** ONNX stems backend (`ort`) not built; `om-stems` has only `MockSeparator`, and nothing in the app calls the separator. L
+- **Todo 37:** stem-aware mixing DSP not started (needs stems from 19). L
+- **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
+- **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
+- **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
+- **Todo 20:** play history: no table (only a `play_count` column). Automix and recently played need it. S
+- **Todo 12 / 20:** hotcue save-back: `DjEngine::set_hotcue` exists, but only the import path writes `cues`; no caller stores engine hotcues in the library. S
+- **Todo 21:** artwork persistence: read into `Artwork` in `metadata.rs`, no artwork table. S
+- **Todo 23:** FTS: search is LIKE-based; no FTS5 table in the migrations. S
+- **Todo 25:** LookAndFeel: `ThemeTokens` exist in `om-ui::theme`, but nothing styles knobs, faders, menus, tabs or tooltips from them (no LookAndFeel type in the tree). M
+- **Todo 26a:** debug panel load/play: `debug_panel.rs` only shows rows; no load or play control. S (or retire it when Wave 5 lands)
+
+### (B) Quality and verification debt
+
+- **Todos 26, 27, 28, 29, 31:** the GPUI window has never been viewed by eye (only launched and inspected with `xwininfo`). M, needs a native display run.
+- **Todo 7:** cpal has never opened a real ALSA or PipeWire device (the device test skips on WSL). S, needs hardware.
+- **Todo 7 / 13:** headphone-cue second stream failed on WSLg ("Invalid argument"), cause not isolated. M, verify on native Linux with two devices.
+- **Todo 32:** no real MIDI device has been used; the ALSA backend is only smoke-tested. S, needs hardware.
+- **Wave 1 CI:** macOS and Windows legs are `continue-on-error`. macOS `soak_short` exceeds its xrun budget on shared runners; the Windows `file_url` fix is not confirmed by a run. S-M
+- **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. Add a scheduled job. S
+- **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
+- **Wave 1 CI:** the `gui-check` job has not run on a clean runner (non-blocking). S
+
+### (C) Smaller gaps
+
+- **Todo 29:** `--settings` start flag: not in `crates/openmixer/src`. S
+- **Todo 29:** live scan-interval change: the interval is read when the library starts (`om-ui::settings`). S
+- **Todo 29:** MIDI hot-plug refresh: `midi.rs` reconciles ports about once a second, but the MIDI page list is read on open and on page change only. S
+- **Todo 10a:** plugin dynamic loading: open decision; `PluginLoader` reports every shared library as unsupported. S for the decision, L to implement
+- **Todo 35:** HID layer: not started. L
+- **Todo 36:** mapping editor: only learn start and cancel exist; no in-app editing of maps. M
+- **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
+- **Todo 8b:** FFmpeg decode backend: not started (optional). M
+- **Todo 24:** auto-enqueue after scan: the prep queue is fed only by a browser click and by track load (`browser.rs`, `track_loader.rs`); a scan does not enqueue. S
+- **Todo 28:** playlist editing UI: the playlist DAO has create, rename, move, add and remove, but the sidebar only selects. M
+
+Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
+
+## Spikes (done)
+
+Spike A (GPUI window), spike B (cpal output callback) and spike C (time-stretch) and the decision record are in `docs/spikes/`. Decisions: `docs/spikes/DECISIONS.md`.
 
 ## Wave 1: Foundation (COMPLETE)
 
@@ -31,8 +63,8 @@ Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`
 
 Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
-- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device (mock device and cpal code complete; the cpal device has never opened a real ALSA/PipeWire/WASAPI/CoreAudio device; the device test only runs with OPENMIXER_DEVICE_TESTS=1)
-  - Output via `cpal` (ALSA backend first; WASAPI and CoreAudio in the porting phase)
+- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device (mock device and cpal code complete; the cpal device has never opened a real ALSA/PipeWire/WASAPI/CoreAudio device; the device tests are `#[ignore]`d; run `OPENMIXER_DEVICE_TESTS=1 cargo test -p om-audio --test cpal_device -- --ignored`)
+  - Output via `cpal` (ALSA on Linux first; WASAPI and CoreAudio come with Windows and macOS support)
   - Mock device for CI testing
   - Open: the cpal device has not yet run on a real ALSA/PipeWire device (WSL has none; the device test skips there). See `docs/spikes/cpal.md`
 
@@ -46,14 +78,14 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - PFL cue bus
 
 - [x] **Todo 10a:** Plugin API + registry (extension points)
-  - `om-plugins` crate: versioned `Plugin` and `PluginHost` traits, registry with the C++ id, prefix and collision rules, unload order
+  - `om-plugins` crate: versioned `Plugin` and `PluginHost` traits, registry with id, prefix and collision rules, unload order
   - Stage catalog over the engine insert chains (channel and master), MIDI maps, parameter targets and themes, all installed through the composition (`openmixer::plugins`)
   - Example plugin: `examples/plugins/gain-plugin`. Plugins are in-process for now; shared-library loading is a documented stub, and the choice (C ABI, WASM or compiled in) is open in `docs/spikes/DECISIONS.md`
   - No signing/allow-list gatekeeping (see CONTRIBUTING "Extensibility")
 
 - [x] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
   - MIDI input -> JSON map file -> mixer/deck parameters; controller feedback (LEDs) from engine state
-  - Device layer: an ALSA sequencer backend on Linux (the `alsa` crate cpal already links, so midir does not join the build) and a mock backend for tests. macOS and Windows get a midir backend in the porting phase, behind `system_backend` (see `docs/spikes/DECISIONS.md`)
+  - Device layer: an ALSA sequencer backend on Linux (the `alsa` crate cpal already links, so midir does not join the build) and a mock backend for tests. macOS and Windows get a midir backend later, behind `system_backend` (see `docs/spikes/DECISIONS.md`)
   - Mapping editor UI stays in Wave 6 (Todo 36)
   - No test or CI job has exercised a real MIDI device. The ALSA backend is smoke-tested only for sequencer enumeration and skips without `/dev/snd/seq`. macOS and Windows have no backend (a stub returns a device error).
 
@@ -66,7 +98,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Plain widgets, no design tokens; replaced by Wave 5 UI
 
 - [x] **Todo 13a:** Short soak test in CI (30-60s headless mix)
-  - Soak mix tool carried over from the frozen baseline (`cpp-final`)
+  - Soak mix scenario in `crates/om-audio/tests/soak.rs`
   - Full 10-minute run remains the Wave 2 gate (Todo 13)
 
 - [x] **Todo 9:** Key-lock time-stretch via Rubber Band
@@ -92,7 +124,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
 - [x] **Todo 13:** Engine soak test (10-minute headless mix)
-  - Soak mix tool carried over from the frozen baseline (`cpp-final`)
+  - Soak mix scenario in `crates/om-audio/tests/soak.rs`
   - Performance verification: zero xruns, no audio-thread allocation
 
 **Gate:** All Wave 2 todos must pass before Wave 3
@@ -191,7 +223,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 ## Wave 6: Hardware I/O
 
 - Todos 32/33 moved to Wave 2
-- [ ] **Todo 34:** Plug-and-play controller maps (not in the C++ baseline; `fixtures/controllers` holds only test fixtures)
+- [ ] **Todo 34:** Plug-and-play controller maps (`fixtures/controllers` holds only test fixtures)
 - [ ] **Todo 35:** HID layer
 - [ ] **Todo 36:** Mapping editor UI
 
@@ -219,4 +251,4 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ---
 
-**Next Work:** the Windows and macOS porting phase (Linux first until then), then Waves 7-9. Open in Waves 1-6: 8b, 19 (ONNX stems backend), 25 (LookAndFeel; tokens exist), 26, 26a, 27, 29 (partial), 30, 31 (window-driven pass), 34, 35, 36.
+**Next:** the Before-Wave-7 list above, then Wave 7. Windows and macOS support comes after Linux (see `docs/spikes/DECISIONS.md`).

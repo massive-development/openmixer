@@ -8,7 +8,7 @@ use crate::callback::AudioCallback;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
-/// Pair value meaning "no output" (C++ `OutputRouter::kNoPair`).
+/// Pair value meaning "no output".
 pub const NO_PAIR: i32 = -1;
 const ENGINE_CHANNELS: usize = 4;
 
@@ -48,7 +48,7 @@ pub struct OutputRouter {
 }
 
 impl OutputRouter {
-    /// Master on pair 0 and cue on pair 1, as in C++. Control thread.
+    /// Master on pair 0 and cue on pair 1. Control thread.
     pub fn new() -> (Self, OutputPairs) {
         let cells = Arc::new(PairCells {
             master: AtomicI32::new(0),

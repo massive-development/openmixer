@@ -1,13 +1,11 @@
-# OpenMixer Progress & Parity Tracker
+# OpenMixer Progress Tracker
 
-Where the project stands against the goal: a clean-room, djay-Pro-class DJ application, being rewritten in Rust with GPUI.
+Where the project stands against the goal: a clean-room, djay-Pro-class DJ application, built in Rust with GPUI.
 `TODO.md` is the task list; this page explains **what each task entails, what exists today, and what is still missing**. The "Entails" column is the behavioural spec each Rust task must meet.
-
-C++ baseline: The C++ implementation was removed in this commit range. It is preserved at the `cpp-final` tag (commit c6d2747), and the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`.
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next. Update this file in the same PR that changes a task's status._
+_Last updated: 2026-10-19. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -22,12 +20,12 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 3 | Analysis | 🟡 (stems ONNX backend, 19, open) |
 | 4 | Library | 🟡 (crates, play history, artwork and FTS open) |
 | 5 | UI | 🟡 (LookAndFeel 25 and stem pads 30 open; decks, mixer and settings partial; not checked by eye) |
-| 6 | Hardware | 🟡 Parity (32 and 33 moved to Wave 2); 34-36 were never in the C++ baseline and are open |
-| 7 | Intelligence | ⬜ Not in the C++ baseline |
-| 8 | Pro surface | ⬜ Not in the C++ baseline |
-| 9 | Release | ⬜ Not in the C++ baseline |
+| 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 34-36 open) |
+| 7 | Intelligence | ⬜ |
+| 8 | Pro surface | ⬜ |
+| 9 | Release | ⬜ |
 
-**Rust port status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next. See `docs/spikes/DECISIONS.md`.
+**Current state:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock) on cpal or a mock device; analysis (BPM, key, waveform, structure); the library (ingest, import, search, prep queue); MIDI (ALSA sequencer on Linux, mapping and feedback); in-process plugins; the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel), stems (mock separator only), the hardware wave. The GPUI window has never been viewed by eye. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7. See `docs/spikes/DECISIONS.md`.
 
 **What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test --workspace`), check startup with `cargo run -p openmixer -- --smoke`, and with the `gui` feature open the GPUI window (`cargo run -p openmixer --features gui -- --mock-device`). Audio, analysis, library, MIDI and the UI are implemented; the wave sections say what is partial.
 
@@ -48,13 +46,13 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 
 ## Wave 2 — Audio engine 🟡
 
-The Done and Missing cells below describe the Rust code (`crates/om-*`, `openmixer`) and agree with `TODO.md`. The C++ baseline is only the parity reference.
+The Done and Missing cells below describe the Rust code (`crates/om-*`, `openmixer`) and agree with `TODO.md`.
 
 Goal: reliable, low-latency playback of two decks through a mixer, controllable by MIDI, testable headlessly.
 
 | Todo | Entails | Done | Missing |
 |------|---------|------|---------|
-| 7 Audio device layer | Device abstraction over `cpal` with latency/xrun instrumentation and a headless mock device for CI | `AudioDevice` trait (`om-audio`) with a cpal backend (xrun counters, latency monitor in `om-engine`) and a mock device | Not yet run on a real ALSA or PipeWire device (the WSL device test skips); WASAPI and CoreAudio backends (porting phase) |
+| 7 Audio device layer | Device abstraction over `cpal` with latency/xrun instrumentation and a headless mock device for CI | `AudioDevice` trait (`om-audio`) with a cpal backend (xrun counters, latency monitor in `om-engine`) and a mock device | Not yet run on a real ALSA or PipeWire device (the WSL device test skips); WASAPI and CoreAudio backends (Windows and macOS support, later) |
 | 8 Deck engine | Streaming decode (`symphonia`), lock-free buffer, play/pause/seek/rate | Streaming decode with symphonia (`om-engine` deck source), SPSC ring to the audio callback, play, pause, seek, rate, loop prefetch slots | FFmpeg decode backend (Todo 8b, optional, open) |
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | Channel trim, 3-band EQ, sweep filter (`om-dsp`, `om-engine::mixer`), crossfader with linear and constant-power curves, PFL cue bus, master and headphone outputs | — |
 | 10a Plugin API | In-process plugin API (`om-plugins`): plugin and host traits; registry with the id, prefix and collision rules and unload order; stage catalog over the engine insert chains; MIDI maps, parameter targets and themes installed through the composition; plugins settings page model; example plugin (`examples/plugins/gain-plugin`) | All of the above, in-process | Shared-library loading (a stub; open decision, see `docs/spikes/DECISIONS.md`) |
@@ -67,7 +65,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 11 FX rack | 8 effects (echo, reverb, flanger, phaser, crush, gate, roll, tape stop) with wet/dry and beat-sync; one rack per mixer channel and one on master (`fx.ch<N>.*`, `fx.master.*`); no allocation on the audio thread, buffer clears amortised | `Effect` trait with `FxUnit` wrapper (enable, smoothed wet/dry, tail), `FxRack` per channel and master, name factory, built-in presets, beat-synced times; FX panel widget in `om-ui` | Beat-phase lock to the grid; FX panel not checked by eye |
 | 13 Full soak test | 10-minute headless mix with a scripted DJ (loops, hotcues, key-lock toggles, master FX, seeks); glitch and xrun budget (zero xruns, no audio-thread allocation) | 10-minute run as an `#[ignore]` test in `om-audio` (`tests/soak.rs`) | Not in CI (10 minutes); paced mock device, not real hardware |
 
-**Parity gap vs. pro DJ apps in this wave:** 4-deck support, recording-quality resampling, FX beat-phase lock.
+**Gap vs. pro DJ apps in this wave:** 4-deck support, recording-quality resampling, FX beat-phase lock.
 
 ---
 
@@ -111,7 +109,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 ---
 
-## Wave 6 — Hardware 🟡 (parity; 34-36 not in the C++ baseline)
+## Wave 6 — Hardware 🟡
 
 | Todo | Entails | Done | Missing |
 |------|---------|------|---------|
@@ -119,7 +117,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 35 HID layer | Non-MIDI controllers | — | All |
 | 36 Mapping editor UI | In-app learn and edit | Learn start and cancel on the MIDI settings page | In-app editing of maps |
 
-## Waves 7–9 ⬜ (not in the C++ baseline)
+## Waves 7–9 ⬜
 
 | Wave | Contents | Status |
 |------|----------|--------|
@@ -127,24 +125,14 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 8 | Mix recording, broadcasting, DVS (timecode vinyl), video mixing | ⬜ |
 | 9 | Legal audit, trademark check, packaging, docs, v1.0.0 | ⬜ |
 
-## Deferred C++ test ports
+## Not yet covered by tests
 
-Tests from the C++ suite that are not ported yet, each with the Todo that owns it. A line is removed when its port lands.
+GPUI paint and layout tests that do not exist yet. Each is covered at model level only (the logic behind the widget is tested in `om-ui`). A line is removed when its test lands.
 
-- `MeterBallisticsTest.DefaultsComeFromTheTheme` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). The meter defaults are read from the theme, which belongs to the widget layer. <!-- cpp-history -->
-- `MeterBallisticsTest.MeterBarFollowsUpdatesPaintsAndClearsClipOnClick` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It paints the bar and handles the clip click, so it needs the widget. <!-- cpp-history -->
-- `MeterBallisticsTest.StereoMeterFeedsEachSideSeparately` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It exercises the stereo meter widget. <!-- cpp-history -->
-- `LibraryBrowserTest.SearchBoxTextIsVerticallyCentred` (`tests/unit/LibraryBrowserTest.cpp`): deferred to Todo 28 (library browser window). GPUI paint and layout; covered at model level only (the query text and the status line in `om-ui`). <!-- cpp-history -->
-- `LibraryBrowserTest.BrowserAndTableRenderWithGlassTheme` (`tests/unit/LibraryBrowserTest.cpp`): deferred to Todo 28 (library browser window). GPUI paint in the glass theme; covered at model level only. <!-- cpp-history -->
-- `LibraryBrowserTest.EveryToolbarButtonLabelFitsAndNothingOverlaps` (`tests/unit/LibraryBrowserTest.cpp`): deferred to Todo 28 (library browser window). GPUI layout of the toolbar; covered at model level only. <!-- cpp-history -->
-- `ThemeRegistryTest.SwitchingUpdatesLookAndFeelColours` (`tests/unit/ThemeRegistryTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). Needs the look-and-feel that paints the colours; covered at model level only (the registry's selection and listeners). <!-- cpp-history -->
-- `ThemeRegistryTest.ThemeSwitchReachesLiveComponents` (`tests/unit/ThemeRegistryTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). Checks live GPUI components after a switch; covered at model level only. <!-- cpp-history -->
-- `SettingsPanelTest.ShowsOnePageAtATime` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI widget test of the page switcher; covered at model level only. <!-- cpp-history -->
-- `SettingsPanelTest.ReflectAllPicksUpPreferencesChangedElsewhere` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI widget test of reflecting a preferences change; covered at model level only. <!-- cpp-history -->
-- `SettingsPanelTest.CloseButtonEscapeAndClickOutsideDismiss` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI input handling of the overlay; covered at model level only. <!-- cpp-history -->
-- `SettingsPanelTest.CardFitsTheWindowAndShrinksInSmallWindows` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI layout at window sizes; covered at model level only. <!-- cpp-history -->
-- `SettingsPanelTest.EveryTabLaysOutInsideTheCardWithoutOverlap` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI layout of every tab; covered at model level only. <!-- cpp-history -->
-- `SettingsPanelTest.RendersEveryTabInBothThemes` (`tests/unit/SettingsPanelTest.cpp`): deferred to Todo 29 (settings overlay). GPUI paint of every tab in both themes; covered at model level only. <!-- cpp-history -->
+- Todo 25 (LookAndFeel): meter defaults read from the theme; a theme switch repaints live components.
+- Todo 27 (mixer widgets): the meter bar paints, and clicking the clip indicator clears it; the stereo meter feeds each side separately.
+- Todo 28 (library browser): the search box text is vertically centred; the browser and table render in the glass theme; every toolbar button label fits and nothing overlaps.
+- Todo 29 (settings overlay): one page at a time; reflects preferences changed elsewhere; close button, Escape and click-outside dismiss; the card fits the window and shrinks in small windows; every tab lays out without overlap and renders in both themes.
 
 ---
 

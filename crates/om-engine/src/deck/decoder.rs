@@ -2,21 +2,19 @@
 //! seek and ring-reposition requests from the audio thread's handshake and keeps the ring topped
 //! up in chunks. Never runs on the audio thread.
 
-use super::loop_state::LoopSnapshot;
 use super::shared::Shared;
 use super::source::SourceReader;
-use om_core::SpscProducer;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Frames decoded per ring write (C++ `kChunkFrames`).
+/// Frames decoded per ring write.
 pub(super) const CHUNK_FRAMES: usize = 2048;
 const IDLE_SLEEP: Duration = Duration::from_millis(3);
 
 pub(super) struct DecoderWorker {
     shared: Arc<Shared>,
-    ring: SpscProducer<f32>,
+    ring: rtrb::Producer<f32>,
     reader: Option<SourceReader>,
     read_pos: i64,
     local_ack: u32,
@@ -27,10 +25,14 @@ pub(super) struct DecoderWorker {
     /// Loop start the prefetch slot currently holds, or -1.
     prefetched_start: i64,
     chunk: Vec<[f32; 2]>,
+    /// Test-only hook run on the decoder thread before each chunk. A panic in it takes the same
+    /// fault path as a decode failure, which is what the fault test exercises.
+    #[cfg(test)]
+    pub(super) before_chunk: Option<Box<dyn FnMut() + Send>>,
 }
 
 impl DecoderWorker {
-    pub(super) fn new(shared: Arc<Shared>, ring: SpscProducer<f32>) -> Self {
+    pub(super) fn new(shared: Arc<Shared>, ring: rtrb::Producer<f32>) -> Self {
         Self {
             shared,
             ring,
@@ -43,6 +45,8 @@ impl DecoderWorker {
             reader_load_id: 0,
             prefetched_start: -1,
             chunk: vec![[0.0; 2]; CHUNK_FRAMES],
+            #[cfg(test)]
+            before_chunk: None,
         }
     }
 
@@ -108,12 +112,13 @@ impl DecoderWorker {
     /// Fills a prefetch slot when the loop start changes. Loops that are not set, or are invalid,
     /// leave the slot alone.
     fn service_prefetch(&mut self) {
-        let mut loop_snap = LoopSnapshot::default();
-        if self.reader.is_none()
-            || !self.shared.loop_state.load(&mut loop_snap)
-            || !loop_snap.valid()
-            || loop_snap.start == self.prefetched_start
-        {
+        if self.reader.is_none() {
+            return;
+        }
+        let Some(loop_snap) = self.shared.loop_state.load() else {
+            return;
+        };
+        if !loop_snap.valid() || loop_snap.start == self.prefetched_start {
             return;
         }
         self.fill_prefetch(loop_snap.start);
@@ -160,13 +165,13 @@ impl DecoderWorker {
             && self.local_ack == self.shared.request_epoch.load(Acquire)
             && self.shared.drained_seq.load(Acquire) == self.local_seq
             && self.read_pos < self.length()
-            && self.ring.writable_count() >= CHUNK_FRAMES * 2
+            && self.ring.slots() >= CHUNK_FRAMES * 2
     }
 
     fn produce_chunk(&mut self) {
         #[cfg(test)]
-        if self.shared.inject_decoder_panic.load(Relaxed) {
-            panic!("injected decoder fault");
+        if let Some(hook) = self.before_chunk.as_mut() {
+            hook();
         }
         let len = self.length();
         let n = (len - self.read_pos).min(CHUNK_FRAMES as i64) as usize;
@@ -174,7 +179,8 @@ impl DecoderWorker {
             return;
         };
         reader.read_stereo(self.read_pos, &mut self.chunk[..n]);
-        let written = self.ring.write(self.chunk[..n].as_flattened());
+        let (written, _) = self.ring.push_partial_slice(self.chunk[..n].as_flattened());
+        let written = written.len();
         self.local_written += written as u64;
         self.shared
             .written_samples

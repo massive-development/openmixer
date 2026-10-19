@@ -5,12 +5,13 @@
 //! start of the next `process` call. The displaced stage goes back on a second ring and is freed by
 //! the control thread, so the audio thread never allocates, locks or drops.
 
-use crate::fx::math::AtomicF64;
+use om_core::atomic::AtomicF64;
+use om_core::sync::LockExt;
 use rtrb::PushError;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-/// Interface version a stage must report to be inserted (C++ `ProcessStage::kInterfaceVersion`).
+/// Interface version a stage must report to be inserted.
 pub const INTERFACE_VERSION: u32 = 1;
 /// Insert slots per chain.
 pub const MAX_STAGES: usize = 4;
@@ -157,7 +158,7 @@ impl StageInsert {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_unpoisoned()
 }
 
 #[cfg(test)]

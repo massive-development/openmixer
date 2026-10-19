@@ -1,11 +1,12 @@
-//! Port of the MIDI half of tests/unit/ControlThreadSafetyTest.cpp: a map reload while messages
+//! The MIDI half of the control thread safety checks: a map reload while messages
 //! stream. The router cases live with om-core's router tests and the engine-side cases in om-audio.
 
 mod support;
 
 use om_midi::{control_change, MidiMapper};
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use support::RecordingTarget;
 
 const ROUNDS: usize = 300;
@@ -29,16 +30,15 @@ fn map_reload_while_messages_stream() {
                     + mapper.handle_message(&control_change(1, 8, 1));
                 fired.fetch_add(n, Ordering::Relaxed);
                 v = v.wrapping_add(1);
-                mapper.get_value("a");
+                mapper.value("a");
                 std::thread::sleep(Duration::from_micros(20));
             }
         });
 
         // Let the stream start (generous bound for slow hosts).
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while fired.load(Ordering::Relaxed) == 0 && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+            fired.load(Ordering::Relaxed) > 0
+        });
         for i in 0..ROUNDS {
             let json = if i % 2 == 0 { map_b } else { map_a };
             mapper.load_from_json(json).expect("reload");

@@ -1,8 +1,10 @@
 //! Shared state of one submitted analysis job. The service writes it from a worker thread; any
-//! thread may read it, cancel it or wait for it. Port of `src/analysis/AnalysisJob.{h,cpp}`.
+//! thread may read it, cancel it or wait for it.
 
+use om_core::atomic::AtomicF32;
+use om_core::sync::LockExt;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -37,8 +39,7 @@ struct JobState {
 pub struct AnalysisJob {
     id: i64,
     name: String,
-    /// `f32` progress, stored as its bit pattern.
-    progress: AtomicU32,
+    progress: AtomicF32,
     cancelled: AtomicBool,
     state: Mutex<JobState>,
     finished: Condvar,
@@ -49,7 +50,7 @@ impl AnalysisJob {
         Self {
             id,
             name: source_name,
-            progress: AtomicU32::new(0.0f32.to_bits()),
+            progress: AtomicF32::new(0.0),
             cancelled: AtomicBool::new(false),
             state: Mutex::new(JobState::default()),
             finished: Condvar::new(),
@@ -74,7 +75,7 @@ impl AnalysisJob {
 
     /// Progress 0..1.
     pub fn progress(&self) -> f32 {
-        f32::from_bits(self.progress.load(Ordering::Relaxed))
+        self.progress.load()
     }
 
     pub fn cancel(&self) {
@@ -115,7 +116,7 @@ impl AnalysisJob {
     }
 
     pub(crate) fn set_progress(&self, value: f32) {
-        self.progress.store(value.to_bits(), Ordering::Relaxed);
+        self.progress.store(value);
     }
 
     pub(crate) fn set_status(&self, status: JobStatus) {
@@ -147,6 +148,6 @@ impl AnalysisJob {
     }
 
     fn lock(&self) -> MutexGuard<'_, JobState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+        self.state.lock_unpoisoned()
     }
 }

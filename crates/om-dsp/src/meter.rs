@@ -3,30 +3,30 @@
 //! peak-hold tick and a latching clip flag. It is fed one peak per frame with the frame time, so it is
 //! frame-rate independent and testable with synthetic levels.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use om_core::atomic::AtomicF32;
 
 /// Decaying peak level written by the audio thread and read by any thread.
 #[derive(Debug, Default)]
 pub struct PeakMeter {
-    value: AtomicU32,
+    value: AtomicF32,
 }
 
 impl PeakMeter {
     pub fn push(&self, block_peak: f32, decay: f32) {
         let next = block_peak.max(self.get() * decay);
-        self.value.store(next.to_bits(), Ordering::Relaxed);
+        self.value.store(next);
     }
 
     pub fn reset(&self) {
-        self.value.store(0.0_f32.to_bits(), Ordering::Relaxed);
+        self.value.store(0.0);
     }
 
     pub fn get(&self) -> f32 {
-        f32::from_bits(self.value.load(Ordering::Relaxed))
+        self.value.load()
     }
 }
 
-/// Display ballistics parameters. Defaults match the C++ theme fallbacks.
+/// Display ballistics parameters. Defaults are the theme fallbacks.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeterParams {
     pub floor_db: f32,

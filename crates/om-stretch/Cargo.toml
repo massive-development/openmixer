@@ -15,4 +15,7 @@ unsafe_code = "deny"
 
 [dependencies]
 rubberband-sys = "0.1.4"
-thiserror = "2"
+thiserror.workspace = true
+
+[dev-dependencies]
+om-testing.workspace = true

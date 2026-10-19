@@ -2,7 +2,7 @@
 
 use std::f32::consts::PI;
 
-// C++ literal, kept verbatim so coefficients stay bit-identical.
+// Literal kept verbatim so coefficients stay bit-identical.
 #[allow(clippy::approx_constant)]
 const SHELF_Q: f32 = 0.707_106_78;
 
@@ -182,7 +182,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(clippy::approx_constant)] // C++ Q literal
+    #[allow(clippy::approx_constant)] // literal kept for bit-identical coefficients
     fn low_pass_has_unity_dc_gain() {
         let c = design_low_pass(48_000.0, 1_000.0, 0.7071);
         let dc = (c.b0 + c.b1 + c.b2) / (1.0 + c.a1 + c.a2);
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::approx_constant)] // C++ Q literal
+    #[allow(clippy::approx_constant)] // literal kept for bit-identical coefficients
     fn reset_clears_state_so_identical_input_gives_identical_output() {
         let mut filter = Biquad::new();
         filter.set_coeffs(design_high_pass(48_000.0, 500.0, 0.7071));

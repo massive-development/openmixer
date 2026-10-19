@@ -1,4 +1,4 @@
-//! Port of tests/unit/LibraryDatabaseTest.cpp: database wrapper, transactions and migrations.
+//! Database wrapper, transactions and migrations.
 
 use om_library::{
     core_migrations, current_schema_version, migrate, Database, Library, Migration, OpenMode,

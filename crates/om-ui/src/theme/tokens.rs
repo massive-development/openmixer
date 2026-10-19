@@ -1,7 +1,6 @@
-//! Theme tokens: colours, spacing, shape, type scale, widget metrics and translucency. Port of
-//! `src/ui/ThemeTokens.h` and the built-in dark theme in `src/ui/Theme.cpp`.
+//! Theme tokens: colours, spacing, shape, type scale, widget metrics and translucency. The built-in dark theme is defined here too.
 
-/// An ARGB colour, stored as JUCE does (`0xAARRGGBB`).
+/// An ARGB colour, stored as `0xAARRGGBB`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Colour(u32);
 
@@ -23,7 +22,7 @@ impl Colour {
         self.0 >> 24 == 0
     }
 
-    /// Same colour with alpha set to `alpha` (0..=1, quantised to 8 bits like JUCE).
+    /// Same colour with alpha set to `alpha` (0..=1, quantised to 8 bits).
     pub fn with_alpha(self, alpha: f32) -> Self {
         let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
         Self((self.0 & 0x00FF_FFFF) | (a << 24))
@@ -34,7 +33,7 @@ impl Colour {
         self.with_alpha(self.alpha() * factor)
     }
 
-    /// Largest channel as 0..=1 (JUCE's `getBrightness`).
+    /// Largest channel as 0..=1.
     pub fn brightness(self) -> f32 {
         let r = (self.0 >> 16) & 0xFF;
         let g = (self.0 >> 8) & 0xFF;
@@ -43,7 +42,7 @@ impl Colour {
     }
 }
 
-/// Every design token one theme sets. Field names follow the C++ `ThemeTokens` in snake case.
+/// Every design token one theme sets. Field names are snake case.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeTokens {
     // Backdrop: gradient plus two soft glows the glass surfaces pick up.

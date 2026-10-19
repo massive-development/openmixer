@@ -1,7 +1,6 @@
 //! Effects panel for one rack at a time (master or one channel): pick the unit, switch it on, set
 //! the wet/dry mix and the effect's own parameters. Knobs are built from the effect's descriptors,
 //! so any registered effect gets controls for free. Routes `fx.<master|ch<N>>.fx<unit>.<param>`.
-//! Port of `src/ui/FxPanel.cpp` (state, routing and layout).
 
 use super::px;
 use crate::binding::MixerBinding;

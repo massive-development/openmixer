@@ -11,12 +11,14 @@ publish = false
 workspace = true
 
 [dependencies]
-om-analysis = { path = "../om-analysis" }
-rusqlite = { version = "0.35", features = ["bundled"] }
+om-core.workspace = true
+om-analysis.workspace = true
+rusqlite.workspace = true
 lofty = "0.25"
-thiserror = "2"
+thiserror.workspace = true
 quick-xml = "0.41"
 
 [dev-dependencies]
+om-testing.workspace = true
 proptest = "1"
-tempfile = "3"
+tempfile.workspace = true

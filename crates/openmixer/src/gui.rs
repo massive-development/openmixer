@@ -62,7 +62,8 @@ pub fn main(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     };
     let prefs_file = om_ui::preferences::default_file();
-    let user_themes = default_user_directory(std::env::var_os("HOME").as_deref());
+    let home = dirs::home_dir().map(std::path::PathBuf::into_os_string);
+    let user_themes = default_user_directory(home.as_deref());
 
     // The device: cpal output at the stored setup, else the default output. A failure, or
     // `--mock-device`, falls back to the silent mock with a banner.

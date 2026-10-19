@@ -1,40 +1,25 @@
-//! Ports of tests/unit/DeckTest.cpp and the engine-level part of TrackLoaderTest.cpp. Fixtures are
-//! generated in-test: 32-bit float WAVs whose samples are exact, so the C++ tolerances apply.
+//! Deck tests, and the engine-level track loading cases. Fixtures are
+//! generated in-test: 32-bit float WAVs whose samples are exact, so the tight tolerances apply.
 
 use super::{Deck, DeckAudio};
 use crate::callback::AudioCallback;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use std::time::Duration;
+
+// Scenario suites: key-lock cases and loop cases. They share the fixtures above.
+#[cfg(test)]
+mod keylock;
+#[cfg(test)]
+mod loops;
+
+use om_testing::fs::TempDir;
+use om_testing::wav::write_float_wav;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub(crate) const FRAMES: i64 = 20_000;
 pub(crate) const RATE: f64 = 44_100.0;
-
-/// Unique temporary directory per test, removed on drop.
-pub(crate) struct Fixture {
-    dir: PathBuf,
-}
-
-impl Fixture {
-    pub(crate) fn new() -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("openmixer-deck-test-{}-{id}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create fixture dir");
-        Self { dir }
-    }
-
-    pub(crate) fn path(&self, name: &str) -> PathBuf {
-        self.dir.join(name)
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
 
 /// Writes a 32-bit float WAV of `FRAMES` frames: left = n / FRAMES, right = -left. Mono files
 /// carry only the left ramp.
@@ -47,42 +32,7 @@ pub(crate) fn write_ramp(path: &Path, channels: u16) {
             samples.push(-v);
         }
     }
-    write_float_wav(path, channels, &samples);
-}
-
-pub(crate) fn write_float_wav(path: &Path, channels: u16, samples: &[f32]) {
-    let data_len = (samples.len() * 4) as u32;
-    let sample_rate = RATE as u32;
-    let mut bytes = Vec::with_capacity(44 + data_len as usize);
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
-    bytes.extend_from_slice(b"WAVE");
-    bytes.extend_from_slice(b"fmt ");
-    bytes.extend_from_slice(&16_u32.to_le_bytes());
-    bytes.extend_from_slice(&3_u16.to_le_bytes()); // IEEE float
-    bytes.extend_from_slice(&channels.to_le_bytes());
-    bytes.extend_from_slice(&sample_rate.to_le_bytes());
-    bytes.extend_from_slice(&(sample_rate * u32::from(channels) * 4).to_le_bytes());
-    bytes.extend_from_slice(&(channels * 4).to_le_bytes());
-    bytes.extend_from_slice(&32_u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_len.to_le_bytes());
-    for s in samples {
-        bytes.extend_from_slice(&s.to_le_bytes());
-    }
-    std::fs::write(path, bytes).expect("write fixture");
-}
-
-/// Bounded poll: the decoder thread exposes no signal to wait on.
-pub(crate) fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
-    let end = Instant::now() + timeout;
-    while !cond() {
-        if Instant::now() > end {
-            return false;
-        }
-        std::thread::yield_now();
-    }
-    true
+    write_float_wav(path, channels, RATE as u32, &samples);
 }
 
 /// Renders 64-frame blocks until the deck sits at `expected_pos` with `frames` buffered, or times out.
@@ -95,17 +45,14 @@ pub(crate) fn pump_until_buffered(
 ) -> bool {
     let mut l = [0.0_f32; 64];
     let mut r = [0.0_f32; 64];
-    wait_for(
-        || {
-            audio.render_stereo(&mut l, &mut r);
-            deck.position_frames() == expected_pos && deck.buffered_frames() >= frames
-        },
-        Duration::from_secs(10),
-    )
+    wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
+        audio.render_stereo(&mut l, &mut r);
+        deck.position_frames() == expected_pos && deck.buffered_frames() >= frames
+    })
 }
 
-fn deck_with_ramp(fixture: &Fixture) -> (Deck, DeckAudio, PathBuf) {
-    let wav = fixture.path("ramp.wav");
+fn deck_with_ramp(fixture: &TempDir) -> (Deck, DeckAudio, PathBuf) {
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, mut audio) = Deck::new(1 << 16);
     audio.prepare(RATE, 256);
@@ -115,8 +62,8 @@ fn deck_with_ramp(fixture: &Fixture) -> (Deck, DeckAudio, PathBuf) {
 
 #[test]
 fn load_rejects_non_audio_files() {
-    let fixture = Fixture::new();
-    let junk = fixture.path("junk.wav");
+    let fixture = TempDir::new("om_engine");
+    let junk = fixture.file("junk.wav");
     std::fs::write(&junk, "not audio").unwrap();
     let (deck, _audio) = Deck::new(1 << 16);
     assert!(deck.load(&junk).is_err());
@@ -125,7 +72,7 @@ fn load_rejects_non_audio_files() {
 
 #[test]
 fn load_reports_length_and_sample_rate() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, _audio, _) = deck_with_ramp(&fixture);
     assert!(deck.is_loaded());
     assert_eq!(deck.length_frames(), FRAMES);
@@ -134,16 +81,16 @@ fn load_reports_length_and_sample_rate() {
 
 #[test]
 fn missing_file_fails_without_touching_the_deck() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, _audio) = Deck::new(1 << 16);
-    assert!(deck.load(&fixture.path("gone.wav")).is_err());
+    assert!(deck.load(&fixture.file("gone.wav")).is_err());
     assert!(!deck.is_loaded());
     assert_eq!(deck.length_frames(), 0);
 }
 
 #[test]
 fn paused_deck_outputs_silence_and_does_not_advance() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = deck_with_ramp(&fixture);
     assert!(
         pump_until_buffered(&deck, &mut audio, 1000, 0),
@@ -158,8 +105,8 @@ fn paused_deck_outputs_silence_and_does_not_advance() {
 
 #[test]
 fn playback_at_rate_one_reproduces_the_source_and_finishes() {
-    let fixture = Fixture::new();
-    let wav = fixture.path("ramp.wav");
+    let fixture = TempDir::new("om_engine");
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, mut audio) = Deck::new(1 << 12); // small ring forces many wraparounds
     audio.prepare(RATE, 256);
@@ -173,21 +120,18 @@ fn playback_at_rate_one_reproduces_the_source_and_finishes() {
     let mut out = Vec::new();
     let mut l = [0.0_f32; 256];
     let mut r = [0.0_f32; 256];
-    let ok = wait_for(
-        || {
-            // Pace like a device: only render when a full block is buffered
-            // (or everything remaining is already buffered).
-            if deck.buffered_frames() < 300
-                && deck.position_frames() + (deck.buffered_frames() as i64) < FRAMES - 3
-            {
-                return false;
-            }
-            audio.render_stereo(&mut l, &mut r);
-            out.extend_from_slice(&l);
-            deck.has_finished()
-        },
-        Duration::from_secs(5),
-    );
+    let ok = wait_until(Duration::from_secs(5), DEFAULT_POLL, || {
+        // Pace like a device: only render when a full block is buffered
+        // (or everything remaining is already buffered).
+        if deck.buffered_frames() < 300
+            && deck.position_frames() + (deck.buffered_frames() as i64) < FRAMES - 3
+        {
+            return false;
+        }
+        audio.render_stereo(&mut l, &mut r);
+        out.extend_from_slice(&l);
+        deck.has_finished()
+    });
     assert!(ok, "deck should reach the end");
     assert!(!deck.is_playing());
 
@@ -204,8 +148,8 @@ fn playback_at_rate_one_reproduces_the_source_and_finishes() {
 
 #[test]
 fn underrun_is_counted_and_outputs_silence_when_decoder_is_starved() {
-    let fixture = Fixture::new();
-    let wav = fixture.path("ramp.wav");
+    let fixture = TempDir::new("om_engine");
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, mut audio) = Deck::new(1 << 12);
     audio.prepare(RATE, 256);
@@ -227,7 +171,7 @@ fn underrun_is_counted_and_outputs_silence_when_decoder_is_starved() {
 
 #[test]
 fn seek_repositions_playback() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = deck_with_ramp(&fixture);
     assert!(
         pump_until_buffered(&deck, &mut audio, 512, 0),
@@ -236,23 +180,17 @@ fn seek_repositions_playback() {
     deck.seek(10_000);
     let mut l = [0.0_f32; 64];
     let mut r = [0.0_f32; 64];
-    let synced = wait_for(
-        || {
-            audio.render_stereo(&mut l, &mut r);
-            deck.position_frames() == 10_000 && deck.buffered_frames() > 256
-        },
-        Duration::from_secs(3),
-    );
+    let synced = wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+        audio.render_stereo(&mut l, &mut r);
+        deck.position_frames() == 10_000 && deck.buffered_frames() > 256
+    });
     assert!(synced, "seek handshake should complete");
     deck.play();
     assert!(
-        wait_for(
-            || {
-                audio.render_stereo(&mut l, &mut r);
-                l[0] != 0.0
-            },
-            Duration::from_secs(3),
-        ),
+        wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+            audio.render_stereo(&mut l, &mut r);
+            l[0] != 0.0
+        }),
         "playback after the seek produced no audio"
     );
     assert!((l[0] - 10_000.0 / FRAMES as f32).abs() <= 1e-4);
@@ -262,7 +200,7 @@ fn seek_repositions_playback() {
 
 #[test]
 fn rate_half_advances_half_as_fast_and_interpolates() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = deck_with_ramp(&fixture);
     deck.seek(4000);
     deck.set_rate(0.5);
@@ -285,8 +223,8 @@ fn rate_half_advances_half_as_fast_and_interpolates() {
 
 #[test]
 fn mono_files_play_on_both_channels() {
-    let fixture = Fixture::new();
-    let mono = fixture.path("mono.wav");
+    let fixture = TempDir::new("om_engine");
+    let mono = fixture.file("mono.wav");
     write_ramp(&mono, 1);
     let (deck, mut audio) = Deck::new(1 << 16);
     audio.prepare(RATE, 256);
@@ -299,13 +237,10 @@ fn mono_files_play_on_both_channels() {
     let mut l = [0.0_f32; 64];
     let mut r = [0.0_f32; 64];
     assert!(
-        wait_for(
-            || {
-                audio.render_stereo(&mut l, &mut r);
-                deck.position_frames() == 5000 && deck.buffered_frames() > 128
-            },
-            Duration::from_secs(3),
-        ),
+        wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+            audio.render_stereo(&mut l, &mut r);
+            deck.position_frames() == 5000 && deck.buffered_frames() > 128
+        }),
         "seek to 5000 did not settle"
     );
     deck.play();
@@ -316,7 +251,7 @@ fn mono_files_play_on_both_channels() {
 
 #[test]
 fn deck_renders_through_the_audio_callback_in_device_blocks() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = deck_with_ramp(&fixture);
     audio.prepare(RATE, 256);
     let block = 256;
@@ -324,25 +259,19 @@ fn deck_renders_through_the_audio_callback_in_device_blocks() {
     let mut left = vec![0.0_f32; block];
     let mut right = vec![0.0_f32; block];
     let mut prepared_blocks = 0;
-    let buffered = wait_for(
-        || {
-            let mut outs: [&mut [f32]; 2] = [&mut left, &mut right];
-            audio.process(&[&silent], &mut outs);
-            prepared_blocks += 1;
-            deck.buffered_frames() > 1024
-        },
-        Duration::from_secs(10),
-    );
+    let buffered = wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
+        let mut outs: [&mut [f32]; 2] = [&mut left, &mut right];
+        audio.process(&[&silent], &mut outs);
+        prepared_blocks += 1;
+        deck.buffered_frames() > 1024
+    });
     assert!(buffered, "decoder did not buffer in time");
     deck.play();
-    let advanced = wait_for(
-        || {
-            let mut outs: [&mut [f32]; 2] = [&mut left, &mut right];
-            audio.process(&[], &mut outs);
-            deck.position_frames() > 1000
-        },
-        Duration::from_secs(10),
-    );
+    let advanced = wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
+        let mut outs: [&mut [f32]; 2] = [&mut left, &mut right];
+        audio.process(&[], &mut outs);
+        deck.position_frames() > 1000
+    });
     assert!(advanced, "playback did not advance past 1000 frames");
     assert!(deck.position_frames() > 1000);
     assert!(prepared_blocks > 0);
@@ -351,7 +280,7 @@ fn deck_renders_through_the_audio_callback_in_device_blocks() {
 #[test]
 fn hotcue_parameters_trigger_seek_and_clear() {
     use om_core::ParameterTarget;
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = deck_with_ramp(&fixture);
     assert!(pump_until_buffered(&deck, &mut audio, 512, 0));
     assert!(deck.set_parameter("hotcue2", 1.0)); // empty cue: set at the playhead
@@ -368,24 +297,32 @@ fn hotcue_parameters_trigger_seek_and_clear() {
 
 #[test]
 fn a_decoder_fault_silences_the_deck_and_is_reported() {
-    let fixture = Fixture::new();
-    let (deck, mut audio, _) = deck_with_ramp(&fixture);
+    let fixture = TempDir::new("om_engine");
+    // The hook is inert until armed; once armed, the decoder panics on its next chunk.
+    let armed = Arc::new(AtomicBool::new(false));
+    let trip = Arc::clone(&armed);
+    let wav = fixture.file("ramp.wav");
+    write_ramp(&wav, 2);
+    // A small ring keeps the decoder from producing the whole ramp before the hook is armed.
+    // With the default ring it could finish first, and then no chunk would ever reach the hook.
+    let (deck, mut audio) = Deck::with_decoder_hook(1 << 13, move || {
+        if trip.load(Ordering::SeqCst) {
+            panic!("injected decoder fault");
+        }
+    });
+    audio.prepare(RATE, 256);
+    deck.load(&wav).expect("ramp loads");
     assert!(pump_until_buffered(&deck, &mut audio, 512, 0));
     deck.play();
-    deck.shared
-        .inject_decoder_panic
-        .store(true, Ordering::SeqCst);
+    armed.store(true, Ordering::SeqCst);
 
     let mut l = [0.0_f32; 256];
     let mut r = [0.0_f32; 256];
     // Rendering frees ring space, which lets the decoder reach its next chunk and fault.
-    let faulted = wait_for(
-        || {
-            audio.render_stereo(&mut l, &mut r);
-            deck.is_errored()
-        },
-        Duration::from_secs(5),
-    );
+    let faulted = wait_until(Duration::from_secs(5), DEFAULT_POLL, || {
+        audio.render_stereo(&mut l, &mut r);
+        deck.is_errored()
+    });
     assert!(faulted, "the decoder fault should be reported");
     assert!(!deck.is_playing(), "a faulted deck stops playing");
     for _ in 0..4 {

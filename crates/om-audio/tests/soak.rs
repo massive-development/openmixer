@@ -1,8 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! Headless engine soak: two decks through the mixer on a paced mock device while a scripted DJ
-//! moves controls, loops, hotcues, key-lock, FX and seeks. Port of `tools/soak_mix.cpp` and
-//! `tools/soak/`, with the same invariants:
+//! moves controls, loops, hotcues, key-lock, FX and seeks. Checks these invariants:
 //!
 //! - no NaN or Inf and no overflow (|sample| > 4) on the outputs;
 //! - at most 5 xruns (callbacks over the buffer's time budget);
@@ -13,8 +12,6 @@
 //! ever read by the engine. Run the short soak with `cargo test -p om-audio --test soak`, the
 //! 10-minute soak with `cargo test -p om-audio --test soak -- --ignored --nocapture`.
 
-mod common;
-
 #[path = "soak/checker.rs"]
 mod checker;
 #[path = "soak/scenario.rs"]
@@ -23,18 +20,18 @@ mod scenario;
 mod tone;
 
 use checker::{OutputChecker, OutputReport};
-use common::TempDir;
 use om_audio::{AudioDevice, DjEngine, LatencyStats, MockAudioDevice};
 use om_core::{ParameterRouter, ParameterTarget};
+use om_testing::fs::TempDir;
 use scenario::{ActionCounts, Scenario, CONTROL_PERIOD};
 use std::time::{Duration, Instant};
 
 const RATE: u32 = 48_000;
 const BLOCK: usize = 256;
 const TONE_SECONDS: u32 = 6;
-/// C++ `--max-xruns` default in CMake: shared runners hiccup, systemic xruns still fail.
+/// Xrun budget: shared runners hiccup, systemic xruns still fail.
 const MAX_XRUNS: u64 = 5;
-/// C++ `--max-underruns` default.
+/// Underrun budget.
 const MAX_STEADY_UNDERRUNS: u32 = 0;
 
 struct Outcome {
@@ -174,13 +171,13 @@ fn check(seconds: u32) {
     assert!(failed.is_empty(), "soak failed:\n  {}", failed.join("\n  "));
 }
 
-/// 30 s of paced simulated mix, as the C++ `soak_short` test. Roughly 30 s of wall time.
+/// 30 s of paced simulated mix. Roughly 30 s of wall time.
 #[test]
 fn soak_short() {
     check(30);
 }
 
-/// The Wave 2 gate (Todo 13): 10 minutes of paced mix. Takes 10 minutes of wall time.
+/// The 10-minute paced-mix soak gate. Takes 10 minutes of wall time.
 #[test]
 #[ignore = "10-minute soak: cargo test -p om-audio --test soak -- --ignored --nocapture"]
 fn soak_10min() {

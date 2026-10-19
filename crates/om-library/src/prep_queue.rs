@@ -7,7 +7,6 @@
 //! shared. The owner calls `pump()` regularly (a UI timer, or `pump_until_idle()` in tests):
 //! `pump()` applies finished results, then tops up the service. Only `max_in_flight` jobs are
 //! ever submitted at once, so the order of the rest stays editable (move, prioritise, cancel).
-//! Port of `src/library/PrepQueue.*`.
 
 use crate::error::Result;
 use crate::library::Library;
@@ -15,6 +14,7 @@ use crate::prep_queue_dao::{PrepEntry, PrepStatus};
 use crate::prep_results::apply_prep_results;
 use crate::track_record::TrackRecord;
 use om_analysis::{AnalysisJob, AnalysisService, ClipSource, FileClipSource, JobStatus};
+use om_core::sync::LockExt;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -235,11 +235,7 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
 
     fn drain(&mut self) {
         let finished = {
-            let mut done = self
-                .inbox
-                .done
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut done = self.inbox.done.lock_unpoisoned();
             std::mem::take(&mut *done)
         };
         for f in finished {
@@ -402,11 +398,7 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
     }
 
     fn wait_for_inbox(&self, timeout: Duration) {
-        let done = self
-            .inbox
-            .done
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let done = self.inbox.done.lock_unpoisoned();
         let _ = self
             .inbox
             .wake
@@ -433,10 +425,6 @@ fn post(inbox: &Inbox, track_id: i64, generation: i64, job: &AnalysisJob) {
         results: job.results(),
         error: job.error(),
     };
-    inbox
-        .done
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(finished);
+    inbox.done.lock_unpoisoned().push(finished);
     inbox.wake.notify_all();
 }

@@ -3635,6 +3635,7 @@ name = "om-analysis"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "om-core",
  "om-dsp",
  "om-engine",
  "realfft",
@@ -3647,13 +3648,13 @@ dependencies = [
 [[package]]
 name = "om-core"
 version = "0.1.0"
-dependencies = [
- "rtrb",
-]
 
 [[package]]
 name = "om-dsp"
 version = "0.1.0"
+dependencies = [
+ "om-core",
+]
 
 [[package]]
 name = "om-engine"
@@ -3674,6 +3675,7 @@ version = "0.1.0"
 dependencies = [
  "lofty",
  "om-analysis",
+ "om-core",
  "quick-xml",
  "rusqlite",
  "thiserror 2.0.21",
@@ -3685,6 +3687,13 @@ version = "0.1.0"
 dependencies = [
  "rubberband-sys",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "om-testing"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]
@@ -3710,7 +3719,9 @@ dependencies = [
  "om-core",
  "om-engine",
  "om-library",
+ "om-testing",
  "om-ui",
+ "tempfile",
 ]
 
 [[package]]

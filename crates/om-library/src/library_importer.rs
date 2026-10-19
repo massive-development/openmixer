@@ -1,6 +1,6 @@
 //! Import extension point: an importer recognises one foreign library format (by its XML root)
 //! and parses it into the neutral [`ImportedLibrary`] model. Later registrations win, so a better
-//! importer can override a default. Port of `src/library/LibraryImporter.*`.
+//! importer can override a default.
 
 use crate::import_model::{ImportReport, ImportedLibrary};
 use crate::itunes_importer::ItunesImporter;

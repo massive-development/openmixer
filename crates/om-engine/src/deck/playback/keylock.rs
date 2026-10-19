@@ -1,6 +1,5 @@
 //! Key-lock render path: source frames go through a [`Stretcher`] and the stretcher's output is
-//! played, so tempo follows rate while pitch stays put. Port of `src/engine/DeckKeylock.cpp` and
-//! the key-lock parts of `DeckPlayback.cpp`.
+//! played, so tempo follows rate while pitch stays put.
 //!
 //! Switching on primes the stretcher while the interpolator keeps playing: each block pulls a few
 //! hundred source frames, tees them into the stretcher, and discards stretcher output until it lines
@@ -15,11 +14,11 @@ use om_stretch::{RubberBandStretcher, Stretcher};
 use std::sync::atomic::Ordering::Relaxed;
 
 /// Frames the interpolator replays before pulling new ones, and the newest frames kept for a
-/// replay on leaving the path (C++ `FrameRing { 16384 }`).
+/// replay on leaving the path (a 16384-frame ring).
 const RING_FRAMES: usize = 16_384;
-/// Below this rate the stretch ratio explodes, so the deck is silent (C++ `kMinKeylockRate`).
+/// Below this rate the stretch ratio explodes, so the deck is silent.
 const MIN_KEYLOCK_RATE: f64 = 0.05;
-/// Extra frames pulled per block while priming, which bounds the CPU cost (C++ `kPrimeChunk`).
+/// Extra frames pulled per block while priming, which bounds the CPU cost.
 const PRIME_CHUNK: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,12 +174,11 @@ impl Playback {
 
     /// Pulls up to `frames` source frames into the lookahead ring, teeing each into the stretcher.
     fn pull_ahead(&mut self, sh: &Shared, frames: usize) {
-        let mut frame = [0.0_f32; 2];
         for _ in 0..frames {
             if self.keylock.lookahead.len() >= self.keylock.lookahead.capacity() {
                 break;
             }
-            let Some(index) = self.pull_frame(sh, &mut frame) else {
+            let Some((index, frame)) = self.pull_frame(sh) else {
                 break;
             };
             self.keylock.lookahead.push(frame, index);
@@ -282,9 +280,8 @@ impl Playback {
             Some(stretch) => stretch.samples_required().max(1),
             None => return false,
         };
-        let mut frame = [0.0_f32; 2];
         while self.keylock.tee_count < need {
-            let Some(index) = self.next_source_frame(sh, &mut frame) else {
+            let Some((index, frame)) = self.next_source_frame(sh) else {
                 break;
             };
             self.tee_frame(frame, index);
@@ -340,15 +337,14 @@ impl Playback {
 
     /// Next source frame for the interpolator: replayed lookahead first, then the ring or a loop
     /// slot. While priming, frames pulled from the source are also teed into the stretcher.
-    pub(super) fn next_source_frame(&mut self, sh: &Shared, out: &mut [f32; 2]) -> Option<i64> {
+    pub(super) fn next_source_frame(&mut self, sh: &Shared) -> Option<(i64, [f32; 2])> {
         if let Some((frame, index)) = self.keylock.lookahead.pop() {
-            *out = frame;
-            return Some(index);
+            return Some((index, frame));
         }
-        let index = self.pull_frame(sh, out)?;
+        let (index, frame) = self.pull_frame(sh)?;
         if self.keylock.mode == Mode::Priming {
-            self.tee_frame(*out, index);
+            self.tee_frame(frame, index);
         }
-        Some(index)
+        Some((index, frame))
     }
 }

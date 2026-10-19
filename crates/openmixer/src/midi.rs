@@ -1,12 +1,12 @@
 //! The MIDI side of the app, shared between the preferences, the MIDI settings page and a feedback
 //! thread. It owns the mapper (the one map), the input router over the device backend, the output
-//! router that lights controllers, and the feedback unit that decides what to send. Port of the
-//! MIDI wiring in `src/app/AppComposition.cpp` and `src/app/MainComponent.cpp`.
+//! router that lights controllers, and the feedback unit that decides what to send.
 //!
 //! Lock order, to keep the control threads deadlock-free: backend, then feedback, then the output
 //! ports. Input callbacks run on the device threads and take only the mapper's locks.
 
 use crate::app_targets::MidiSink;
+use om_core::sync::LockExt;
 use om_core::{ParameterTarget, StateReader};
 use om_midi::{
     system_clock, EchoGuard, LearnRequest, MidiBackend, MidiFeedback, MidiInputRouter, MidiMapper,
@@ -16,7 +16,7 @@ use om_ui::settings::{MidiControl, MidiInputs};
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ pub const FEEDBACK_HZ: u32 = 30;
 const HOTPLUG_TICKS: u32 = FEEDBACK_HZ;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_unpoisoned()
 }
 
 /// The inputs the preferences selected: every input, or the listed ids.

@@ -3,8 +3,6 @@
 //!    local one is empty or unset;
 //!  - rating and play count: the imported value is taken only when the local one is still 0;
 //!  - id, path, content hash, analysis and date added are never touched.
-//!
-//! Port of `src/library/ImportMerge.*`.
 
 use crate::track_key::normalise_key;
 use crate::track_record::TrackRecord;

@@ -1,6 +1,5 @@
 //! The mixer section for the main window's mixer slot: channel strips around the master section,
-//! crossfader and headphone cue below, and an effects page. Port of `src/ui/MixerPanel.cpp` (page
-//! state, refresh and layout). The frame clock belongs to the gpui layer.
+//! crossfader and headphone cue below, and an effects page. Page state, refresh and layout. The frame clock belongs to the gpui layer.
 
 use super::channel::ChannelStrip;
 use super::crossfader::CrossfaderSection;

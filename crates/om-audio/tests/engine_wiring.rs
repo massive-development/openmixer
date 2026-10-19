@@ -1,13 +1,15 @@
-//! Port of tests/unit/EngineWiringTest.cpp: FX racks, sync, quantized loops and slip reached
+//! FX racks, sync, quantized loops and slip reached
 //! through the parameter router, on a real `DjEngine` driven by the mock device.
 
-mod common;
-
-use common::{sine_stereo, wait_until, write_float_wav, TempDir};
 use om_audio::{AudioDevice, DjEngine, MockAudioDevice};
 use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::grid::{BeatGrid, FixedTempoGrid};
 use om_engine::sync::SyncDeckState;
+use om_testing::fs::TempDir;
+use om_testing::level::rms;
+use om_testing::signals::stereo_sine;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use om_testing::wav::write_float_wav;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,7 +39,7 @@ impl Wiring {
             &file,
             2,
             RATE as u32,
-            &sine_stereo(220.0, 0.3, FRAMES, RATE),
+            &stereo_sine(220.0, 0.3, RATE, FRAMES),
         );
         let (engine, audio) = DjEngine::new(2);
         let router = ParameterRouter::new();
@@ -55,24 +57,18 @@ impl Wiring {
 
     /// Renders until the deck sits on `target`, servicing its seek handshake. Bounded.
     fn settle_at(&self, deck: usize, target: i64) -> bool {
-        wait_until(
-            || {
-                self.dev.render_block();
-                self.engine.deck(deck).position_frames() == target
-            },
-            Duration::from_secs(20),
-        )
+        wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+            self.dev.render_block();
+            self.engine.deck(deck).position_frames() == target
+        })
     }
 
     /// Renders until the deck has `frames` buffered, so playback starts without underruns.
     fn buffered(&self, deck: usize, frames: usize) -> bool {
-        wait_until(
-            || {
-                self.dev.render_block();
-                self.engine.deck(deck).buffered_frames() >= frames
-            },
-            Duration::from_secs(20),
-        )
+        wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+            self.dev.render_block();
+            self.engine.deck(deck).buffered_frames() >= frames
+        })
     }
 }
 
@@ -120,13 +116,12 @@ fn racks_sit_in_the_signal_path() {
     w.engine.deck(0).play();
     let settled_rms = || {
         for _ in 0..400 {
-            wait_until(
-                || w.engine.deck(0).buffered_frames() >= 2048,
-                Duration::from_secs(10),
-            ); // keep the pump ahead
+            wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
+                w.engine.deck(0).buffered_frames() >= 2048
+            }); // keep the pump ahead
             w.dev.render_block();
         }
-        common::rms(&w.dev.last_output()[0][..256])
+        rms(&w.dev.last_output()[0][..256])
     };
     let dry = settled_rms();
     w.router.set_parameter("fx.master.fx0.mix", 1.0);
@@ -243,13 +238,9 @@ fn sync_aligns_two_decks_on_fixed_grids() {
     w.engine.deck(1).play();
 
     for block in 0..1200 {
-        assert!(wait_until(
-            || {
-                w.engine.deck(0).buffered_frames() >= 2048
-                    && w.engine.deck(1).buffered_frames() >= 2048
-            },
-            Duration::from_secs(20),
-        )); // keep the unpaced pump from underrunning
+        assert!(wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+            w.engine.deck(0).buffered_frames() >= 2048 && w.engine.deck(1).buffered_frames() >= 2048
+        })); // keep the unpaced pump from underrunning
         w.dev.render_block();
         if block % 8 == 0 {
             w.engine.update_control(0.046);
@@ -281,12 +272,12 @@ fn quantized_loop_bounds_come_from_the_grid() {
     );
     w.engine.set_grid(0, grid(120.0));
     assert!(w.router.set_parameter("deck.0.loop.quantized.2", 1.0));
-    let loop_ = w.engine.deck(0).get_loop();
+    let loop_ = w.engine.deck(0).loop_state();
     assert_eq!(loop_.start, 22_050);
     assert_eq!(loop_.end, 22_050 + 44_100);
 
     assert!(w.router.set_parameter("deck.0.loop.quantized.0.5", 1.0));
-    let loop_ = w.engine.deck(0).get_loop();
+    let loop_ = w.engine.deck(0).loop_state();
     assert_eq!(loop_.end - loop_.start, 11_025, "half-beat loop");
 }
 
@@ -301,7 +292,7 @@ fn quantize_off_starts_the_loop_exactly_at_the_playhead() {
     assert!(w.router.set_parameter("deck.0.quantize", 0.0));
     assert!(!w.engine.deck_control(0).is_quantize());
     assert!(w.router.set_parameter("deck.0.loop.quantized.1", 1.0));
-    assert_eq!(w.engine.deck(0).get_loop().start, 30_000);
+    assert_eq!(w.engine.deck(0).loop_state().start, 30_000);
 
     assert!(w.router.set_parameter("deck.0.quantize", 1.0));
     assert!(w.engine.deck_control(0).is_quantize());

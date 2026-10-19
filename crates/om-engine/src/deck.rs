@@ -18,7 +18,8 @@ use crate::callback::AudioCallback;
 use crate::quantizer::Loop;
 use decoder::DecoderWorker;
 use loop_state::LoopSnapshot;
-use om_core::{spsc, ParameterTarget};
+use om_core::sync::LockExt;
+use om_core::ParameterTarget;
 use playback::Playback;
 use shared::Shared;
 use std::panic::AssertUnwindSafe;
@@ -31,12 +32,12 @@ pub use hotcues::NUM_CUES;
 pub use prefetch::LoopPrefetch;
 pub use source::{SourceError, SourceReader, TrackInfo};
 
-/// Default loop prefetch size in source frames (C++ `Deck` default).
+/// Default loop prefetch size in source frames.
 pub const DEFAULT_PREFETCH_FRAMES: i64 = 1 << 16;
 
-/// Default ring size in source frames (C++ `Deck` default).
+/// Default ring size in source frames.
 pub const DEFAULT_RING_FRAMES: usize = 1 << 16;
-/// Rate clamp range (C++ `setRate`).
+/// Rate clamp range.
 pub const MAX_RATE: f64 = 8.0;
 const DEFAULT_DEVICE_RATE: f64 = 44_100.0;
 const DEFAULT_MONO_SINK: usize = 4096;
@@ -65,9 +66,34 @@ impl Deck {
     /// Creates an empty deck and starts its decoder thread. `ring_frames` is rounded up to a power
     /// of two by the ring; `prefetch_frames` bounds the loop prefetch slot. Control thread.
     pub fn with_prefetch(ring_frames: usize, prefetch_frames: i64) -> (Self, DeckAudio) {
-        let (producer, consumer) = spsc::<f32>(ring_frames.max(1) * 2);
+        Self::spawn(ring_frames, prefetch_frames, |_| {})
+    }
+
+    /// Test constructor: `hook` runs on the decoder thread before every chunk, so a test can make
+    /// the decoder fault. Control thread.
+    #[cfg(test)]
+    pub(crate) fn with_decoder_hook(
+        ring_frames: usize,
+        hook: impl FnMut() + Send + 'static,
+    ) -> (Self, DeckAudio) {
+        Self::spawn(ring_frames, DEFAULT_PREFETCH_FRAMES, move |worker| {
+            worker.before_chunk = Some(Box::new(hook));
+        })
+    }
+
+    fn spawn(
+        ring_frames: usize,
+        prefetch_frames: i64,
+        configure: impl FnOnce(&mut DecoderWorker),
+    ) -> (Self, DeckAudio) {
+        // Plain rtrb ring. The om-core wrapper only carried `Copy` items, and the stage and device
+        // rings hold boxed payloads, so there is one SPSC primitive: rtrb. Capacity is rounded up
+        // to a power of two (minimum 2), as the wrapper did.
+        let capacity = (ring_frames.max(1) * 2).max(2).next_power_of_two();
+        let (producer, consumer) = rtrb::RingBuffer::<f32>::new(capacity);
         let shared = Arc::new(Shared::new(prefetch_frames));
-        let worker = DecoderWorker::new(Arc::clone(&shared), producer);
+        let mut worker = DecoderWorker::new(Arc::clone(&shared), producer);
+        configure(&mut worker);
         let failed = Arc::clone(&shared);
         let decoder = std::thread::Builder::new()
             .name("openmixer-deck-decoder".into())
@@ -132,10 +158,7 @@ impl Deck {
     }
 
     fn hand_over(&self, reader: Option<SourceReader>) {
-        let mut pending = match self.shared.pending.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut pending = self.shared.pending.lock_unpoisoned();
         if reader.is_some() {
             pending.load_counter = pending.load_counter.wrapping_add(1);
             pending.load_id = pending.load_counter;
@@ -159,7 +182,7 @@ impl Deck {
     /// Jumps to `source_frame` (clamped to zero from below) and clears the finished flag. Jumping
     /// outside an active loop exits it.
     pub fn seek(&self, source_frame: i64) {
-        let loop_ = self.get_loop();
+        let loop_ = self.loop_state();
         if self.is_looping() && (source_frame < loop_.start || source_frame >= loop_.end) {
             self.exit_loop();
         }
@@ -208,20 +231,20 @@ impl Deck {
     }
 
     pub fn is_looping(&self) -> bool {
-        let mut snap = LoopSnapshot::default();
-        self.shared.loop_state.load(&mut snap) && snap.active()
+        self.shared
+            .loop_state
+            .load()
+            .is_some_and(|snap| snap.active())
     }
 
     /// Current loop bounds; the default (`0..0`) when none is set.
-    pub fn get_loop(&self) -> Loop {
-        let mut snap = LoopSnapshot::default();
-        if self.shared.loop_state.load(&mut snap) {
-            Loop {
+    pub fn loop_state(&self) -> Loop {
+        match self.shared.loop_state.load() {
+            Some(snap) => Loop {
                 start: snap.start,
                 end: snap.end,
-            }
-        } else {
-            Loop::default()
+            },
+            None => Loop::default(),
         }
     }
 
@@ -428,9 +451,5 @@ fn parse_hotcue_id(id: &str) -> Option<(usize, bool)> {
         _ => None,
     }
 }
-#[cfg(test)]
-mod keylock_tests;
-#[cfg(test)]
-mod loop_tests;
 #[cfg(test)]
 pub(crate) mod tests;

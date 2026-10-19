@@ -1,4 +1,4 @@
-//! SQLite connection with the C++ pragmas (foreign keys, 5 s busy timeout, WAL on writable files)
+//! SQLite connection with foreign keys, a 5 s busy timeout and WAL on writable files,
 //! and nested savepoint transactions.
 
 use crate::error::{LibraryError, Result};

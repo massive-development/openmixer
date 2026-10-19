@@ -1,5 +1,4 @@
-//! Tempo fader with a selectable range (+-8 / 16 / 50 %). Routes `deck.<N>.rate`. Port of
-//! `src/ui/PitchFader.cpp`.
+//! Tempo fader with a selectable range (+-8 / 16 / 50 %). Routes `deck.<N>.rate`.
 
 use crate::binding::DeckBinding;
 use crate::control::Ranged;
@@ -17,7 +16,7 @@ pub struct PitchFader {
 }
 
 impl PitchFader {
-    /// Starts on the narrowest range, as the C++ constructor does. That may pull the tempo back
+    /// Starts on the narrowest range. That may pull the tempo back
     /// into range if the engine is already outside it.
     pub fn new(binding: DeckBinding) -> Self {
         let mut pitch = Self {

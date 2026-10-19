@@ -1,5 +1,4 @@
-//! Readouts for control values: what a knob means, not its raw position. Port of
-//! `src/ui/ValueFormat.h` and `src/ui/ClockFormat.h`.
+//! Readouts for control values: what a knob means, not its raw position.
 
 /// Fixed-point text with an explicit `+` for positive values and never `-0.0`.
 pub fn signed_fixed(value: f64, decimals: usize) -> String {
@@ -43,7 +42,7 @@ pub fn rate(rate: f64) -> String {
     format!("{}%", signed_fixed((rate - 1.0) * 100.0, 1))
 }
 
-/// Rounds half away from zero, as JUCE's `roundToInt`.
+/// Rounds half away from zero.
 pub fn round_half_away(v: f64) -> i64 {
     v.round() as i64
 }

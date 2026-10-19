@@ -1,10 +1,9 @@
-//! The audio settings model: port of `src/ui/JuceAudioSettingsModel.cpp` over the om-audio output
+//! The audio settings model over the om-audio output
 //! backends, plus the device restore that `AppPreferencesTargets` asks for at start-up.
 //!
 //! [`OutputSettings`] owns the open device and its callback. A change (device type, output device,
 //! rate, buffer) stops the device, takes the callback back, opens the new setup and starts the
-//! callback again. If the new setup fails the previous one is reopened, as the C++ setup call
-//! leaves the device unchanged on error. Every output channel of the device is opened (up to
+//! callback again. If the new setup fails the previous one is reopened. A failed setup leaves the device unchanged. Every output channel of the device is opened (up to
 //! [`MAX_OUTPUTS`]), so the master and cue pair choice happens in the routing, not in the device.
 //!
 //! Tests use [`MockBackend`] only. [`CpalBackend`] is the real one, used by the binary.
@@ -15,11 +14,12 @@ use om_audio::{
     CpalAudioDevice, LatencyStats, MockAudioDevice, OutputDeviceInfo, OutputPairs, OutputRequest,
     OutputRouter,
 };
+use om_core::sync::LockExt;
 use om_ui::settings::{AudioSettingsModel, AudioStats, SettingsResult};
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-/// Outputs the device is opened with (C++ `JuceAudioSettingsModel::kMaxOutputs`).
+/// Outputs the device is opened with.
 pub const MAX_OUTPUTS: u16 = 8;
 
 /// Enumerates and opens output devices. Listing must not open anything.
@@ -442,7 +442,7 @@ impl SharedOutput {
     }
 
     pub fn lock(&self) -> MutexGuard<'_, OutputSettings> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.0.lock_unpoisoned()
     }
 }
 

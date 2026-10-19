@@ -1,6 +1,5 @@
-//! Port of `tests/unit/PluginRegistryTest.cpp`. The C++ test loaded the example plugin from a shared
-//! library; that case moved to `examples/plugins/gain-plugin/tests`, and the loader stub is tested
-//! here instead.
+//! Plugin registry cases. Loading the example plugin from a shared library is covered by
+//! `examples/plugins/gain-plugin/tests`, and the loader stub is tested here instead.
 
 use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::{ChannelInput, Mixer, MixerControl, ProcessStage};
@@ -15,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 const BLOCK: usize = 256;
 
-/// The C++ `Rig`: a mixer fed a constant signal, measured at the master peak.
+/// Test rig: a mixer fed a constant signal, measured at the master peak.
 struct Rig {
     mixer: Mixer,
     control: Arc<MixerControl>,
@@ -315,7 +314,7 @@ fn invalid_libraries_are_rejected() {
     std::fs::write(&not_lib, "nope").expect("write");
     assert!(reg.load_library(&not_lib).is_err());
 
-    // A folder with a shared library in it: the stub refuses it and says so. The C++ count was 1.
+    // A folder with a shared library in it: the stub refuses it and says so. The count is 1.
     let example = dir.path().join("libgain.so");
     std::fs::write(&example, "placeholder").expect("write");
     let mut errors = Vec::new();

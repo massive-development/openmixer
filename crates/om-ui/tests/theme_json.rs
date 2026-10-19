@@ -1,4 +1,4 @@
-//! Port of tests/unit/ThemeJsonTest.cpp.
+//! Theme JSON parsing.
 
 use om_ui::theme::{parse_theme, parse_theme_file, Colour, ThemeTokens};
 use std::path::Path;

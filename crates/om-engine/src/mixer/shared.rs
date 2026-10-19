@@ -1,14 +1,14 @@
 //! Parameter cells written by the control thread and read by the audio thread, plus the decaying
 //! meters the audio thread writes. Shared by `Arc` between [`super::Mixer`] and [`super::MixerControl`].
 
-use crate::fx::math::AtomicF32;
+use om_core::atomic::AtomicF32;
 use om_dsp::{CrossfaderAssign, PeakMeter, ThreeBandEq};
 use std::sync::atomic::{AtomicBool, AtomicU8};
 
 pub const MAX_CHANNELS: usize = 4;
-/// Master and cue level ceiling (C++ `Mixer::kMaxGain`).
+/// Master and cue level ceiling.
 pub const MAX_GAIN: f32 = 2.0;
-/// Trim ceiling (C++ `ChannelStrip::setTrim` clamp).
+/// Trim ceiling.
 pub const MAX_TRIM: f32 = 4.0;
 
 pub struct ChannelShared {

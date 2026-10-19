@@ -12,6 +12,7 @@ members = [
     "crates/om-ui",
     "crates/om-plugins",
     "crates/om-stems",
+    "crates/om-testing",
     "examples/plugins/gain-plugin",
     "crates/openmixer",
 ]
@@ -26,12 +27,34 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/massive-development/openmixer"
 rust-version = "1.91"
 
+[workspace.dependencies]
+dirs = "5"
+om-analysis = { path = "crates/om-analysis" }
+om-audio = { path = "crates/om-audio" }
+om-core = { path = "crates/om-core" }
+om-dsp = { path = "crates/om-dsp" }
+om-engine = { path = "crates/om-engine" }
+om-library = { path = "crates/om-library" }
+om-midi = { path = "crates/om-midi" }
+om-plugins = { path = "crates/om-plugins" }
+om-stems = { path = "crates/om-stems" }
+om-stretch = { path = "crates/om-stretch" }
+om-testing = { path = "crates/om-testing" }
+om-ui = { path = "crates/om-ui" }
+rtrb = "0.4"
+rusqlite = { version = "0.35", features = ["bundled"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tracing = "0.1"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
 # `cargo test` runs the engine in real time (the soak and the render-budget tests). Unoptimized DSP
-# misses the 256-frame budget, so test builds optimize the audio crates and their dependencies, as
-# the C++ soak runs in Release. `cargo build` stays unoptimized for debugging.
+# misses the 256-frame budget, so test builds optimize the audio crates and their dependencies (the
+# soak runs in Release). `cargo build` stays unoptimized for debugging.
 [profile.test.package."*"]
 opt-level = 3
 

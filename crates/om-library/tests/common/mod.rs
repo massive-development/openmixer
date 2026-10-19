@@ -1,5 +1,5 @@
 //! Shared fixtures for the ingest and metadata tests: generated audio files with tags, built from
-//! bytes so no binary fixtures are checked in. Port of tests/unit/LibraryIngestTestUtil.h.
+//! bytes so no binary fixtures are checked in.
 //!
 //! WAV (with RIFF INFO), FLAC, MP3, OGG Vorbis and M4A are hand-built minimal containers. Tags for
 //! ID3v2, Vorbis comments and iTunes atoms are then written with lofty's own writer.
@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use tempfile::TempDir;
+
+use om_testing::signals::sine_amp;
 
 /// The sample rate used by every generated file.
 pub const RATE: u32 = 8000;
@@ -30,7 +32,7 @@ pub struct Tags {
 }
 
 impl Tags {
-    /// The tag set used by the C++ `tags()` helper.
+    /// The tag set used by the `tags()` helper.
     pub fn night_drive() -> Self {
         Self {
             title: Some("Night Drive"),
@@ -49,14 +51,12 @@ fn create_parent(path: &Path) {
     }
 }
 
-/// Sine samples as 16-bit little-endian PCM, mono, at `RATE`.
+/// Sine samples as 16-bit little-endian PCM, mono, at `RATE`, at half scale.
 fn sine_pcm(seconds: f64, freq: f32) -> Vec<u8> {
     let n = (seconds * f64::from(RATE)) as usize;
     let mut out = Vec::with_capacity(n * 2);
-    for i in 0..n {
-        let phase = 2.0 * std::f32::consts::PI * freq * i as f32 / RATE as f32;
-        let sample = (0.5 * phase.sin() * f32::from(i16::MAX)) as i16;
-        out.extend_from_slice(&sample.to_le_bytes());
+    for s in sine_amp(f64::from(freq), 0.5, f64::from(RATE), n) {
+        out.extend_from_slice(&((s * f32::from(i16::MAX)) as i16).to_le_bytes());
     }
     out
 }
@@ -346,7 +346,7 @@ pub fn write_m4a(path: &Path, seconds: u32, tags: &Tags) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Sets the file's modification time, as the C++ `touch` helper does.
+/// Sets the file's modification time.
 pub fn touch(path: &Path, ms: u64) {
     let when = UNIX_EPOCH + Duration::from_millis(ms);
     fs::OpenOptions::new()

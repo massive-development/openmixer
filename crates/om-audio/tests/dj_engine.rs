@@ -1,9 +1,11 @@
-//! Port of tests/unit/DjEngineTest.cpp, driven through the mock device.
+//! DJ engine cases, driven through the mock device.
 
-mod common;
-
-use common::{magnitude, sine_stereo, wait_until, write_float_wav, TempDir};
 use om_audio::{AudioDevice, DjEngine, MockAudioDevice};
+use om_testing::fs::TempDir;
+use om_testing::level::peak;
+use om_testing::signals::stereo_sine;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use om_testing::wav::write_float_wav;
 use std::time::Duration;
 
 const RATE: f64 = 44_100.0;
@@ -15,23 +17,20 @@ fn write_sine(dir: &TempDir) -> std::path::PathBuf {
         &path,
         2,
         RATE as u32,
-        &sine_stereo(440.0, 0.5, FRAMES, RATE),
+        &stereo_sine(440.0, 0.5, RATE, FRAMES),
     );
     path
 }
 
 /// Renders blocks until `cond` holds, or gives up after 3 s (the decoder has no signal to wait on).
 fn pump_until(dev: &MockAudioDevice, mut cond: impl FnMut() -> bool) -> bool {
-    wait_until(
-        || {
-            let done = cond();
-            if !done {
-                dev.render_block();
-            }
-            done
-        },
-        Duration::from_secs(3),
-    )
+    wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+        let done = cond();
+        if !done {
+            dev.render_block();
+        }
+        done
+    })
 }
 
 #[test]
@@ -41,7 +40,7 @@ fn silent_when_nothing_is_loaded() {
     dev.start(Box::new(audio)).expect("start");
     dev.render_blocks(4);
     for channel in dev.last_output() {
-        assert_eq!(magnitude(&channel[..256]), 0.0);
+        assert_eq!(peak(&channel[..256]), 0.0);
     }
 }
 
@@ -59,18 +58,12 @@ fn deck_audio_reaches_master_pfl_reaches_cue_fader_gates_master() {
 
     assert!(pump_until(&dev, || engine.deck(0).position_frames() > 2000));
     let out = dev.last_output();
-    assert!(
-        magnitude(&out[0][..256]) < 1e-6,
-        "fader at zero silences master"
-    );
-    assert!(
-        magnitude(&out[2][..256]) > 0.1,
-        "PFL carries pre-fader audio"
-    );
+    assert!(peak(&out[0][..256]) < 1e-6, "fader at zero silences master");
+    assert!(peak(&out[2][..256]) > 0.1, "PFL carries pre-fader audio");
 
     engine.mixer().set_fader(0, 1.0);
     // The decoder may still be refilling after the position check: pump until audio reaches master.
-    assert!(pump_until(&dev, || magnitude(&dev.last_output()[0][..256]) > 0.1));
+    assert!(pump_until(&dev, || peak(&dev.last_output()[0][..256]) > 0.1));
     assert!(engine.mixer().channel_peak(0) > 0.1);
 }
 
@@ -89,12 +82,11 @@ fn works_on_a_two_channel_and_a_one_channel_device() {
             "outs={outs}"
         );
         // Unpaced pumping can outrun the decoder: let it refill before sampling output.
-        wait_until(
-            || engine.deck(1).buffered_frames() >= 1024,
-            Duration::from_secs(3),
-        );
+        wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+            engine.deck(1).buffered_frames() >= 1024
+        });
         dev.render_blocks(2);
-        assert!(magnitude(&dev.last_output()[0][..256]) > 0.1, "outs={outs}");
+        assert!(peak(&dev.last_output()[0][..256]) > 0.1, "outs={outs}");
     }
 }
 
@@ -132,10 +124,10 @@ fn stop_hands_the_engine_back_and_a_restart_keeps_deck_and_mixer_state() {
         0.25,
         "crossfader survives a restart"
     );
-    assert!(magnitude(&dev.last_output()[0][..256]) > 0.1);
+    assert!(peak(&dev.last_output()[0][..256]) > 0.1);
 }
 
-/// Port of DeckPlaybackSlow.DeckRunsUnderAMockAudioDevice: the deck plays through the paced mock
+/// The deck plays through the paced mock
 /// device thread, not through manual renders.
 #[test]
 fn deck_runs_under_a_mock_audio_device() {
@@ -153,10 +145,10 @@ fn deck_runs_under_a_mock_audio_device() {
     engine.deck(0).play();
     dev.start_realtime();
     assert!(
-        wait_until(
-            || engine.deck(0).position_frames() > 1000,
-            Duration::from_secs(5)
-        ),
+        wait_until(Duration::from_secs(5), DEFAULT_POLL, || engine
+            .deck(0)
+            .position_frames()
+            > 1000),
         "the paced device did not advance the deck"
     );
     assert!(engine.deck(0).position_frames() > 1000);
@@ -201,7 +193,7 @@ fn a_bad_or_truncated_file_mid_play_does_not_stop_the_engine() {
         "a bad file is not a decoder fault"
     );
     assert!(
-        magnitude(&dev.last_output()[0][..256]) > 0.1,
+        peak(&dev.last_output()[0][..256]) > 0.1,
         "the playing deck is still audible on master"
     );
 }

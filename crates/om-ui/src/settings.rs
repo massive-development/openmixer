@@ -1,6 +1,4 @@
-//! Settings model: the logic behind the settings overlay (Todo 29). Port of the non-drawing parts of
-//! `src/ui/SettingsPanel.cpp`, `SettingsPage.cpp`, `AudioSettingsPage.cpp`, `MidiSettingsPage.cpp`,
-//! `LibrarySettingsPage.cpp`, `AppearanceSettingsPage.cpp` and `PluginsSettingsPage.cpp`.
+//! Settings model: the logic behind the settings overlay. The non-drawing parts: the audio, MIDI, library, appearance and plugin pages.
 //!
 //! Pages edit the shared [`Preferences`] and report whether an edit changed anything; the caller
 //! saves and applies (see `openmixer::composition`). The MIDI, library and plugin pages talk to
@@ -13,7 +11,7 @@ use std::path::{Path, PathBuf};
 /// Error text from a setter, shown to the user.
 pub type SettingsResult<T = bool> = Result<T, String>;
 
-/// What the audio page needs from the audio layer. `Ok(())` / `Err(message)`, like the C++ setters.
+/// What the audio page needs from the audio layer. `Ok(())` / `Err(message)`.
 pub trait AudioSettingsModel {
     fn device_types(&self) -> Vec<String>;
     fn device_type(&self) -> String;
@@ -50,7 +48,7 @@ pub struct AudioStats {
     pub xrun_count: u64,
 }
 
-/// The readout under the audio controls (C++ `AudioSettingsPage::refreshStats`). With no device
+/// The readout under the audio controls. With no device
 /// open it shows the last setup error, or "No audio device running".
 pub fn stats_text(stats: &AudioStats, setup_error: &str) -> String {
     if stats.sample_rate <= 0.0 {
@@ -839,7 +837,7 @@ mod stats_tests {
 
 #[cfg(test)]
 mod parity_tests {
-    //! The logic cases of the C++ `SettingsPanelTest` that the other settings tests do not cover.
+    //! Logic cases that the other settings tests do not cover.
     use super::*;
     use crate::preferences::Preferences;
     use crate::theme::ThemeRegistry;

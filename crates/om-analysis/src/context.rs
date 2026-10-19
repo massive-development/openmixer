@@ -1,5 +1,4 @@
-//! Cancellation and progress reporting for analysis steps. Port of the `AnalysisContext` family in
-//! `src/analysis/Analyzer.h`. Methods take `&self`: implementations that cross threads keep their
+//! Cancellation and progress reporting for analysis steps. Methods take `&self`: implementations that cross threads keep their
 //! state in atomics.
 
 /// Cancellation and progress for one analysis run.

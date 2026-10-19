@@ -1,6 +1,6 @@
-//! Port of tests/unit/LibraryBrowserTest.cpp (logic parts) and the LibraryServicesTest cases. The
+//! Browser logic cases and the library services cases. The
 //! view cases (glass theme snapshots, toolbar layout, search-box centring, deck drop targets) are
-//! gpui concerns and are not ported here.
+//! gpui concerns and are not covered here.
 
 mod library_common;
 

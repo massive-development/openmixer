@@ -1,4 +1,4 @@
-//! Port of tests/unit/MidiFeedbackTest.cpp: output rules, change-only sending, blink on an injected
+//! Output rules, change-only sending, blink on an injected
 //! clock, the output router's pairing rule, and the rule schema (OutputRuleTest).
 
 mod support;

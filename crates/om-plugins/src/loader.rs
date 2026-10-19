@@ -7,14 +7,14 @@
 //! is open (`docs/spikes/DECISIONS.md`, "Plugins: in-process only"). Until it is made, the loader
 //! only reports what it found, and plugins come from [`builtin_plugins`] or [`crate::PluginRegistry::add_plugin`].
 //!
-//! The C++ host loaded any shared library exporting the entry points and had no allow-list. The
-//! Rust host keeps that open-by-default stance for the future loader: no allow-list and no signature
+//! Loading is open by default: any shared library exporting the entry points is accepted, with no allow-list. The
+//! future loader keeps that stance: no allow-list and no signature
 //! check are planned.
 
 use crate::api::{Plugin, PluginError};
 use std::path::{Path, PathBuf};
 
-/// Extensions the C++ host treated as plugin libraries. The stub reports them without loading them.
+/// Extensions treated as plugin libraries. The stub reports them without loading them.
 pub const SHARED_LIBRARY_EXTENSIONS: [&str; 3] = ["so", "dll", "dylib"];
 
 pub struct PluginLoader;
@@ -54,8 +54,8 @@ impl PluginLoader {
     }
 }
 
-/// Plugins compiled into the application, loaded by every folder load. Empty by default: the C++
-/// example plugin was a separate library, and so is `examples/plugins/gain-plugin` here.
+/// Plugins compiled into the application, loaded by every folder load. Empty by default: the
+/// example plugin is a separate library, and so is `examples/plugins/gain-plugin`.
 pub fn builtin_plugins() -> Vec<Box<dyn Plugin>> {
     Vec::new()
 }

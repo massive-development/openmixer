@@ -1,7 +1,7 @@
-//! Text-to-value rules the importers inherit from JUCE: lenient numeric parsing and ISO-8601
-//! dates. Kept here so the importers read the same values the C++ code read.
+//! Text-to-value rules the importers need: lenient numeric parsing and ISO-8601
+//! dates. Kept here so every importer reads values the same way.
 
-/// `String::getIntValue`: optional leading whitespace and sign, then digits. 0 when there are none.
+/// Leading whitespace, an optional sign, then digits. 0 when there are none.
 pub fn int_value(text: &str) -> i64 {
     let s = text.trim_start();
     let (negative, digits_part) = match s.strip_prefix('-') {
@@ -25,7 +25,7 @@ pub fn int_value(text: &str) -> i64 {
     }
 }
 
-/// `String::getDoubleValue`: the longest leading number, or 0.0 when there is none.
+/// The longest leading decimal number (optional sign, fraction, exponent), or 0.0 when there is none.
 pub fn double_value(text: &str) -> f64 {
     let s = text.trim_start().as_bytes();
     let mut end = 0;
@@ -149,7 +149,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn int_and_double_follow_juce_leniency() {
+    fn int_and_double_parse_leniently() {
         assert_eq!(int_value("  -12abc"), -12);
         assert_eq!(int_value("abc"), 0);
         assert_eq!(double_value("215.5x"), 215.5);

@@ -12,8 +12,12 @@ workspace = true
 
 [dependencies]
 cpal = "0.18"
-om-core = { path = "../om-core" }
-om-engine = { path = "../om-engine" }
-rtrb = "0.4"
-thiserror = "2"
-tracing = "0.1"
+om-core.workspace = true
+om-engine.workspace = true
+rtrb.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+om-core.workspace = true
+om-testing.workspace = true

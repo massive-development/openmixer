@@ -1,6 +1,6 @@
-//! User preferences (Todo 29): one plain model, versioned JSON on disk. Port of `src/ui/Preferences.cpp`.
+//! User preferences: one plain model, versioned JSON on disk.
 //!
-//! Same schema, field names and migration rules as the C++ app: unknown or bad fields fall back to
+//! Schema, field names and migration rules are kept stable: unknown or bad fields fall back to
 //! their default one by one; a file from a newer schema (or not a JSON object) is refused and the
 //! target is left untouched; a corrupt file is kept as `<name>.bad` and the defaults are used until
 //! the next save. No UI or subsystem knowledge here: `PreferencesApplier` pushes values into
@@ -346,11 +346,8 @@ mod tests {
         }
     }
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("om-ui-prefs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
 
     #[test]
@@ -418,29 +415,29 @@ mod tests {
 
     #[test]
     fn save_and_load_through_a_file() {
-        let dir = scratch("roundtrip");
-        let file = dir.join("nested").join("preferences.json");
+        let dir = scratch();
+        let file = dir.path().join("nested").join("preferences.json");
         customised().save(&file).unwrap();
         assert_eq!(Preferences::load(&file).unwrap(), customised());
     }
 
     #[test]
     fn missing_file_means_defaults() {
-        let dir = scratch("missing");
+        let dir = scratch();
         assert_eq!(
-            Preferences::load(&dir.join("none.json")).unwrap(),
+            Preferences::load(&dir.path().join("none.json")).unwrap(),
             Preferences::default()
         );
     }
 
     #[test]
     fn corrupt_file_is_kept_as_bad_and_the_next_save_replaces_it() {
-        let dir = scratch("corrupt");
-        let file = dir.join("preferences.json");
+        let dir = scratch();
+        let file = dir.path().join("preferences.json");
         fs::write(&file, "{ broken").unwrap();
         assert!(Preferences::load(&file).is_err());
         assert_eq!(
-            fs::read_to_string(dir.join("preferences.json.bad")).unwrap(),
+            fs::read_to_string(dir.path().join("preferences.json.bad")).unwrap(),
             "{ broken"
         );
         Preferences::default().save(&file).unwrap();
@@ -449,8 +446,8 @@ mod tests {
 
     #[test]
     fn an_unreadable_file_is_never_replaced_but_a_corrupt_one_may_be() {
-        let dir = scratch("unreadable");
-        let file = dir.join("preferences.json");
+        let dir = scratch();
+        let file = dir.path().join("preferences.json");
         let bytes = [0xff_u8, 0xfe, 0x00];
         fs::write(&file, bytes).unwrap();
         let error = Preferences::load(&file).unwrap_err();

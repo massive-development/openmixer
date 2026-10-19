@@ -3944,12 +3944,15 @@ name = "om-analysis"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "om-core",
  "om-dsp",
  "om-engine",
+ "om-testing",
  "realfft",
  "rusqlite",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -3960,6 +3963,7 @@ dependencies = [
  "cpal",
  "om-core",
  "om-engine",
+ "om-testing",
  "rtrb",
  "thiserror 2.0.21",
  "tracing",
@@ -3968,13 +3972,14 @@ dependencies = [
 [[package]]
 name = "om-core"
 version = "0.1.0"
-dependencies = [
- "rtrb",
-]
 
 [[package]]
 name = "om-dsp"
 version = "0.1.0"
+dependencies = [
+ "om-core",
+ "om-testing",
+]
 
 [[package]]
 name = "om-engine"
@@ -3984,8 +3989,10 @@ dependencies = [
  "om-core",
  "om-dsp",
  "om-stretch",
+ "om-testing",
  "rtrb",
  "symphonia",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -3996,6 +4003,8 @@ version = "0.1.0"
 dependencies = [
  "lofty",
  "om-analysis",
+ "om-core",
+ "om-testing",
  "proptest",
  "quick-xml",
  "rusqlite",
@@ -4010,6 +4019,7 @@ dependencies = [
  "alsa",
  "om-core",
  "om-engine",
+ "om-testing",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
@@ -4043,8 +4053,16 @@ dependencies = [
 name = "om-stretch"
 version = "0.1.0"
 dependencies = [
+ "om-testing",
  "rubberband-sys",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "om-testing"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]
@@ -4057,6 +4075,7 @@ dependencies = [
  "om-dsp",
  "om-engine",
  "om-library",
+ "om-testing",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
@@ -4129,12 +4148,14 @@ dependencies = [
 name = "openmixer"
 version = "0.1.0"
 dependencies = [
+ "dirs 5.0.1",
  "gain-plugin",
  "om-audio",
  "om-core",
  "om-engine",
  "om-midi",
  "om-plugins",
+ "om-testing",
  "om-ui",
  "om-ui-gpui",
  "serde_json",

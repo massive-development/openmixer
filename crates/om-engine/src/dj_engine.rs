@@ -1,5 +1,5 @@
 //! The whole signal path: decks feed the mixer, which drives master (outputs 0/1) and headphone cue
-//! (outputs 2/3). Port of `src/engine/DjEngine.*`.
+//! (outputs 2/3).
 //!
 //! [`DjEngine::new`] returns two halves. [`DjEngine`] is the control side: deck handles, sync, FX,
 //! the mixer control and the timer step, shareable across control threads. [`DjEngineAudio`] is the

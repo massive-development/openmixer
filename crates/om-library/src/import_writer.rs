@@ -1,7 +1,7 @@
 //! Writes an [`ImportedLibrary`] into the database in one transaction, merging by path (see
 //! `import_merge`). Any database failure rolls everything back, so a half-imported library never
 //! exists. Playlists merge by name under the same parent, so re-importing adds no duplicates.
-//! Port of `src/library/ImportWriter.*`. Runs on the thread that owns the `Library`.
+//! Runs on the thread that owns the `Library`.
 
 use crate::error::Result;
 use crate::import_cues::import_cues;
@@ -91,7 +91,7 @@ impl<'a> ImportWriter<'a> {
 
     fn write_playlist(&mut self, node: &ImportedPlaylist, parent: Option<i64>) -> Result<()> {
         let playlists = self.library.playlists();
-        // Last match wins, as in the C++ loop.
+        // Last match wins.
         let existing = playlists
             .children(parent)?
             .into_iter()

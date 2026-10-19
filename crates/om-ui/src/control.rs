@@ -1,6 +1,5 @@
 //! Value state of the on-screen controls: a ranged slider or knob that snaps to its interval and
-//! clamps to its range, and the readout format each knob shows. Port of the value handling of
-//! `juce::Slider` and `LabeledKnob` as the widgets use them.
+//! clamps to its range, and the readout format each knob shows. Covers the value handling the widgets use.
 
 use crate::format;
 

@@ -1,5 +1,5 @@
 //! Describes a downloadable model (for example Demucs ONNX weights): where to fetch it, how to verify
-//! it and the licence the user must accept first. Port of `src/stems/ModelManifest.cpp`. Weights are
+//! it and the licence the user must accept first. Weights are
 //! never committed to the repository; manifests are plain JSON so users and plugins can point at other
 //! models or mirrors.
 

@@ -5,10 +5,11 @@
 //! insertion; `process` on the audio thread (fixed-size scratch, no allocation, locks or I/O).
 
 use super::effect::{Effect, FxContext, ParamControl, MAX_BPM, MIN_BPM};
-use super::math::{AtomicF32, AtomicF64, Smoother};
 use super::wipe::SLICE;
 use crate::ProcessStage;
+use om_core::atomic::{AtomicF32, AtomicF64};
 use om_core::ParameterTarget;
+use om_dsp::Smoother;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

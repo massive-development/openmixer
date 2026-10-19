@@ -1,4 +1,4 @@
-//! Port of tests/unit/LibraryDaoTest.cpp: track, cue/loop and playlist DAOs.
+//! Track, cue/loop and playlist DAOs.
 
 use om_library::{core_migrations, CuePoint, Library, OpenMode, Playlist, SavedLoop, TrackRecord};
 

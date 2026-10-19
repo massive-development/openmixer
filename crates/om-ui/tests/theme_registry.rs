@@ -1,4 +1,4 @@
-//! Port of tests/unit/ThemeRegistryTest.cpp (the GUI-only cases are listed in the report).
+//! Theme registry cases (the GUI-only cases are not covered here).
 
 use om_ui::theme::{
     default_user_directory, session_theme_override, Colour, Source, ThemeInfo, ThemeRegistry,

@@ -1,4 +1,4 @@
-//! Port of tests/unit/FxTest.cpp: FX rack, beat-synced timing, wet/dry, tails, bounds, ids, presets.
+//! FX rack, beat-synced timing, wet/dry, tails, bounds, ids, presets.
 //! Signals are rendered to buffers only; nothing is played.
 
 use om_core::ParameterTarget;
@@ -9,8 +9,8 @@ use om_engine::fx::{
     GateFx, MAX_BPM, MIN_BPM,
 };
 use om_engine::ProcessStage;
+use om_testing::signals::{noise as lcg_noise, sine_amp};
 use std::collections::HashSet;
-use std::f64::consts::PI;
 
 const SR: f64 = 48000.0;
 
@@ -33,44 +33,18 @@ impl Signal {
     }
 }
 
-/// 48-bit LCG seeded like `juce::Random`, so the noise is deterministic per seed.
-struct Rng(u64);
-
-impl Rng {
-    const MASK: u64 = (1 << 48) - 1;
-
-    fn new(seed: u64) -> Self {
-        Self((seed ^ 0x5_DEEC_E66D) & Self::MASK)
-    }
-
-    fn next_int(&mut self) -> u32 {
-        self.0 = (self.0.wrapping_mul(0x5_DEEC_E66D).wrapping_add(11)) & Self::MASK;
-        (self.0 >> 16) as u32
-    }
-
-    fn next_float(&mut self) -> f32 {
-        (self.next_int() & 0x00ff_ffff) as f32 / 16_777_216.0
-    }
-}
-
 fn sine(n: usize, hz: f64, amp: f32) -> Signal {
-    let mut s = Signal::zeros(n);
-    for i in 0..n {
-        let v = amp * ((2.0 * PI * hz * i as f64 / SR).sin() as f32);
-        s.l[i] = v;
-        s.r[i] = v;
-    }
-    s
+    let v = sine_amp(hz, amp, SR, n);
+    Signal { l: v.clone(), r: v }
 }
 
+/// Independent uniform noise on each channel, scaled to `amp`.
 fn noise(n: usize, amp: f32) -> Signal {
-    let mut rng = Rng::new(1234);
-    let mut s = Signal::zeros(n);
-    for i in 0..n {
-        s.l[i] = amp * (rng.next_float() * 2.0 - 1.0);
-        s.r[i] = amp * (rng.next_float() * 2.0 - 1.0);
+    let scaled = |seed| -> Vec<f32> { lcg_noise(seed, n).into_iter().map(|s| amp * s).collect() };
+    Signal {
+        l: scaled(1234),
+        r: scaled(1235),
     }
-    s
 }
 
 fn run<S: ProcessStage>(stage: &mut S, s: &mut Signal, from: usize, to: usize, block: usize) {
@@ -528,8 +502,8 @@ fn fx_rack_parameter_ids_route_to_units() {
     }
 }
 
-// The C++ test drives the grid overload with a FixedTempoGrid; that type lands with the deck
-// (BeatGrid) port, so this case passes the grid's BPM directly.
+// The grid overload would normally take a FixedTempoGrid; that type lands with the deck
+// (BeatGrid) work, so this case passes the grid's BPM directly.
 #[test]
 fn fx_rack_tempo_from_id_and_grid_bpm() {
     let rack = FxRack::default();
@@ -586,7 +560,7 @@ fn fx_rack_inserts_into_mixer_master_without_colouring_when_off() {
     let input = sine(N, 440.0, 0.5);
     let (mut a_l, mut a_r) = (vec![0.0_f32; N], vec![0.0_f32; N]);
     let (mut b_l, mut b_r) = (vec![0.0_f32; N], vec![0.0_f32; N]);
-    // Cue is not compared; each mixer gets its own buffer (C++ aliased one buffer for both).
+    // Cue is not compared; each mixer gets its own buffer.
     let (mut cue_a, mut cue_b) = (vec![0.0_f32; N], vec![0.0_f32; N]);
     for off in (0..N).step_by(BLOCK) {
         let end = off + BLOCK;

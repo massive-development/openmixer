@@ -5,6 +5,7 @@
 use crate::deck::Deck;
 use crate::mixer::{ChannelInput, Mixer};
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
@@ -15,8 +16,8 @@ const RATE: f64 = 44_100.0;
 
 #[test]
 fn mixer_and_deck_render_paths_do_not_allocate() {
-    let fixture = crate::deck::tests::Fixture::new();
-    let wav = fixture.path("long.wav");
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("long.wav");
     let frames = BLOCK * BLOCKS + 4096;
     let mut samples = Vec::with_capacity(frames * 2);
     for n in 0..frames {
@@ -24,7 +25,7 @@ fn mixer_and_deck_render_paths_do_not_allocate() {
         samples.push(v);
         samples.push(-v);
     }
-    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+    om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
 
     let (mut mixer, _control) = Mixer::new(2);
     mixer.prepare(RATE, BLOCK);
@@ -49,10 +50,9 @@ fn mixer_and_deck_render_paths_do_not_allocate() {
     // mixer render paths run inside assert_no_alloc. Every block carries real audio.
     for _ in 0..BLOCKS {
         assert!(
-            crate::deck::tests::wait_for(
-                || deck.buffered_frames() >= BLOCK,
-                std::time::Duration::from_secs(10)
-            ),
+            wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || deck
+                .buffered_frames()
+                >= BLOCK),
             "decoder stalled"
         );
         assert_no_alloc(|| audio.render_stereo(&mut dl, &mut dr));
@@ -76,8 +76,8 @@ fn mixer_and_deck_render_paths_do_not_allocate() {
 #[test]
 fn loop_playback_does_not_allocate() {
     use crate::quantizer::Loop;
-    let fixture = crate::deck::tests::Fixture::new();
-    let wav = fixture.path("loop.wav");
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("loop.wav");
     let frames = BLOCK * BLOCKS + 4096;
     let mut samples = Vec::with_capacity(frames * 2);
     for n in 0..frames {
@@ -85,7 +85,7 @@ fn loop_playback_does_not_allocate() {
         samples.push(v);
         samples.push(-v);
     }
-    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+    om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
 
     let (mut mixer, _control) = Mixer::new(2);
     mixer.prepare(RATE, BLOCK);
@@ -101,10 +101,8 @@ fn loop_playback_does_not_allocate() {
         end: 5120
     }));
     assert!(
-        crate::deck::tests::wait_for(
-            || deck.is_loop_prefetched(),
-            std::time::Duration::from_secs(10)
-        ),
+        wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || deck
+            .is_loop_prefetched()),
         "loop start was not prefetched"
     );
     deck.play();
@@ -144,8 +142,8 @@ fn keylock_playback_does_not_allocate() {
     // Rubber Band's own allocations are invisible here: this allocator only sees Rust allocations.
     // The Rust side of the stretcher (pointer arrays, tee and sink buffers, lookahead and history
     // rings) is preallocated in `prepare`, so the guarded render should not allocate.
-    let fixture = crate::deck::tests::Fixture::new();
-    let wav = fixture.path("keylock.wav");
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("keylock.wav");
     // Rate 1.1 consumes more source than the output blocks, so the track must be longer.
     let frames = BLOCK * BLOCKS * 2 + 4096;
     let mut samples = Vec::with_capacity(frames * 2);
@@ -154,7 +152,7 @@ fn keylock_playback_does_not_allocate() {
         samples.push(v);
         samples.push(-v);
     }
-    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+    om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
 
     let (mut mixer, _control) = Mixer::new(2);
     mixer.prepare(RATE, BLOCK);
@@ -180,10 +178,9 @@ fn keylock_playback_does_not_allocate() {
     // Priming runs inside the first guarded blocks; the stretcher then takes over.
     for _ in 0..BLOCKS {
         assert!(
-            crate::deck::tests::wait_for(
-                || deck.buffered_frames() >= BLOCK * 2,
-                std::time::Duration::from_secs(10)
-            ),
+            wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || deck
+                .buffered_frames()
+                >= BLOCK * 2),
             "decoder stalled"
         );
         assert_no_alloc(|| audio.render_stereo(&mut dl, &mut dr));
@@ -212,8 +209,8 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
     use crate::quantizer::Loop;
     use om_core::ParameterTarget;
 
-    let fixture = crate::deck::tests::Fixture::new();
-    let wav = fixture.path("engine.wav");
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("engine.wav");
     // Keylock at rate 1.1 consumes more source than the output, so the track is longer than the run.
     let frames = BLOCK * BLOCKS * 2 + 4096;
     let mut samples = Vec::with_capacity(frames * 2);
@@ -222,7 +219,7 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
         samples.push(v);
         samples.push(-v);
     }
-    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+    om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
 
     let (engine, mut audio) = DjEngine::new(2);
     audio.prepare(RATE, BLOCK);
@@ -236,13 +233,10 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
     let mut outs: [&mut [f32]; 4] = [p0, p1, p2, p3];
     for d in 0..2 {
         assert!(
-            crate::deck::tests::wait_for(
-                || {
-                    audio.process(&[], &mut outs);
-                    engine.deck(d).buffered_frames() >= BLOCK * 4
-                },
-                std::time::Duration::from_secs(10)
-            ),
+            wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || {
+                audio.process(&[], &mut outs);
+                engine.deck(d).buffered_frames() >= BLOCK * 4
+            }),
             "decoder {d} did not buffer in time"
         );
     }
@@ -251,10 +245,9 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
         end: 5120
     }));
     assert!(
-        crate::deck::tests::wait_for(
-            || engine.deck(0).is_loop_prefetched(),
-            std::time::Duration::from_secs(10)
-        ),
+        wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || engine
+            .deck(0)
+            .is_loop_prefetched()),
         "loop start was not prefetched"
     );
     engine.deck(0).set_keylock(true);
@@ -276,10 +269,10 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
     for _ in 0..BLOCKS {
         for d in 0..2 {
             assert!(
-                crate::deck::tests::wait_for(
-                    || engine.deck(d).buffered_frames() >= BLOCK * 2,
-                    std::time::Duration::from_secs(10)
-                ),
+                wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || engine
+                    .deck(d)
+                    .buffered_frames()
+                    >= BLOCK * 2),
                 "decoder {d} stalled"
             );
         }
@@ -302,7 +295,7 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
 /// and FX parameters move. Only `audio.process` runs under the guard.
 ///
 /// What the guard can and cannot see: it fails on any Rust allocation made while the guard is
-/// active. Allocations made inside Rubber Band (C++ `new`/`malloc`) bypass the Rust global
+/// active. Allocations made inside Rubber Band (its own `new`/`malloc` calls) bypass the Rust global
 /// allocator, so they are not counted here, and neither is the CPU cost Rubber Band spends
 /// re-planning when its ratio changes. See `deck/playback/keylock.rs`.
 #[test]
@@ -313,8 +306,8 @@ fn keylock_with_live_rate_sync_and_fx_changes_does_not_allocate() {
     use om_core::ParameterTarget;
     use std::sync::Arc;
 
-    let fixture = crate::deck::tests::Fixture::new();
-    let wav = fixture.path("live.wav");
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("live.wav");
     // Rates stay within 0.9..1.1, so the track is longer than the run at the slowest rate.
     let frames = BLOCK * BLOCKS * 2 + 4096;
     let mut samples = Vec::with_capacity(frames * 2);
@@ -323,7 +316,7 @@ fn keylock_with_live_rate_sync_and_fx_changes_does_not_allocate() {
         samples.push(v);
         samples.push(-v);
     }
-    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+    om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
 
     let (engine, mut audio) = DjEngine::new(2);
     audio.prepare(RATE, BLOCK);
@@ -344,15 +337,12 @@ fn keylock_with_live_rate_sync_and_fx_changes_does_not_allocate() {
     // Unguarded pump: decoders fill their rings and the keylock primes before the guarded run.
     for d in 0..2 {
         assert!(
-            crate::deck::tests::wait_for(
-                || {
-                    let [p0, p1, p2, p3] = &mut pump;
-                    let mut outs: [&mut [f32]; 4] = [p0, p1, p2, p3];
-                    audio.process(&[], &mut outs);
-                    engine.deck(d).buffered_frames() >= BLOCK * 4
-                },
-                std::time::Duration::from_secs(10)
-            ),
+            wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || {
+                let [p0, p1, p2, p3] = &mut pump;
+                let mut outs: [&mut [f32]; 4] = [p0, p1, p2, p3];
+                audio.process(&[], &mut outs);
+                engine.deck(d).buffered_frames() >= BLOCK * 4
+            }),
             "decoder {d} did not buffer in time"
         );
     }
@@ -373,10 +363,10 @@ fn keylock_with_live_rate_sync_and_fx_changes_does_not_allocate() {
             .set_parameter("master.fx0.mix", 0.5 + 0.4 * (t * 0.05).cos());
         for d in 0..2 {
             assert!(
-                crate::deck::tests::wait_for(
-                    || engine.deck(d).buffered_frames() >= BLOCK * 2,
-                    std::time::Duration::from_secs(10)
-                ),
+                wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || engine
+                    .deck(d)
+                    .buffered_frames()
+                    >= BLOCK * 2),
                 "decoder {d} stalled"
             );
         }

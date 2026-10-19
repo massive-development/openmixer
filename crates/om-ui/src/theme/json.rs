@@ -1,4 +1,4 @@
-//! Theme file parsing: JSON to [`ThemeTokens`] with validation. Port of `src/ui/ThemeJson.cpp`.
+//! Theme file parsing: JSON to [`ThemeTokens`] with validation.
 //! Pure; no global state. Missing keys inherit the built-in dark theme; a malformed value rejects
 //! the whole theme; unknown keys are reported as warnings and ignored.
 
@@ -31,7 +31,7 @@ pub struct ParsedTheme {
     pub warnings: Vec<String>,
 }
 
-/// Why a theme was rejected. Messages read `where: why`, as in the C++ loader.
+/// Why a theme was rejected. Messages read `where: why`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ThemeError {
     #[error("invalid JSON: {0}")]
