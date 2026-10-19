@@ -175,4 +175,4 @@ Listen for, on `drums_*`: kick/snare/click attacks softened, pre-echo before hit
 - Engine configs were mostly defaults; only Rubber Band got an option sweep. Other engines may have untried settings (`wsola` hop/search, `timestretch` profiles with pre-analysis, Signalsmith presets).
 - Peak memory not measured. Candidate maintenance: all four are young (0.x) crates with a single maintainer visible; I did not audit upkeep, issue trackers, or security beyond the licence field.
 - Timing is wall-clock on a shared WSL2 VM.
-- The `deny.toml` `GPL-2.0-or-later` entry is enabled when `om-stretch` lands in Phase 2 (decided, see `docs/spikes/DECISIONS.md`). Signalsmith and `wsola`/`timestretch` need no licence change.
+- The `deny.toml` `GPL-2.0-or-later` entry is enabled (om-stretch has landed; decided, see `docs/spikes/DECISIONS.md`). Signalsmith and `wsola`/`timestretch` need no licence change.

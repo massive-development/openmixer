@@ -4,7 +4,7 @@
 
 OpenMixer is a clean-room, legally original implementation of professional DJ software, written in Rust with GPUI for the UI. This document provides instructions for any AI agent to understand the codebase and continue development.
 
-**Status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.
+**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
 
 The C++ implementation was removed in this commit range. It is preserved at the `cpp-final` tag (commit c6d2747), and the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`. The design is `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`, and the toolkit decision is `docs/adr/0004-stack-rust-gpui.md`.
 
@@ -35,13 +35,13 @@ openmixer/
 
 The crate list and their roles are in the README architecture section.
 
-## Current State (Rust port at parity)
+## Current State (Rust port, Linux-first)
 
-{STATUS}.
+**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
 
 **Implemented:**
 - Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
-- Waves 1-6 at parity with `cpp-final`: the audio device layer (cpal, and a mock device), decks, mixer, FX racks, sync and quantize, key-lock, MIDI input and feedback (ALSA sequencer on Linux, mock backend), trace replay, the library (database, ingest, iTunes and Rekordbox import, search, prep queue), analysis (BPM, key, waveform, structure), the plugin API, themes, preferences and the settings overlay, the debug panel and the headless UI gate
+- Waves 1-4 and 6 reach the `cpp-final` baseline's functionality, verified headlessly on Linux: the audio device layer (cpal, and a mock device), decks, mixer, FX racks, sync and quantize, key-lock, MIDI input and feedback (ALSA sequencer on Linux, mock backend), trace replay, the library (database, ingest, iTunes and Rekordbox import, search, prep queue), analysis (BPM, key, waveform, structure), the plugin API, themes, preferences and the settings overlay, the debug panel and the headless UI gate
 - The GPUI window behind the `gui` feature
 - Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature on Linux (non-blocking)
 
@@ -52,6 +52,14 @@ The crate list and their roles are in the README architecture section.
 - Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: the porting phase. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
+- Design tokens and LookAndFeel (25): the tokens exist, the LookAndFeel does not; the debug panel's load/play (26a) is not wired. Both were done in the C++ baseline
+- FFmpeg decode backend (Todo 8b, optional, open)
+- Library: artwork is not stored (no artwork table); FTS is not used (LIKE only); there is no play-history table (only a `play_count` column)
+- Saving engine hotcues back to the library is not confirmed
+- Auto-enqueue after a library scan; playlist editing
+- macOS: `soak_short` exceeds its xrun budget on hosted runners (that CI leg is non-blocking)
+- The headphone-cue second stream is unproven (it failed on WSLg)
+- The window-opening `--smoke` (behind `gui`) is not run in CI
 
 ## Architecture Decisions
 
@@ -217,7 +225,7 @@ Sanitizer and Miri runs for concurrent code are planned; the current real-time c
 
 ## Implementation Waves
 
-Waves 1–6 are at parity with the C++ baseline (`cpp-final`). Waves 7–9 were never in it. The phasing is in `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
+Waves 1–4 and 6 reach the C++ baseline's functionality (`cpp-final`), verified headlessly on Linux; the Wave 5 UI is partial. Waves 7–9 were never in it. The phasing is in `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
 
 ### Wave 1: Foundation ✅ COMPLETE
 - Repository setup

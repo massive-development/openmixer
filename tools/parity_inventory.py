@@ -29,7 +29,9 @@ PARAGRAPH = (
     "say they port. The Rust column lists the crate test files (and inline test modules) "
     "that replace them. Status comes from `docs/progress.json`: `done`, `partial` or "
     "`todo`. Todos that the C++ baseline never implemented (Waves 7-9, and Todos 30, "
-    "34-36) say so in the C++ column."
+    "34-36) say so in the C++ column. The Rust note column gives the current Rust state "
+    "(the `RUST_NOTES` table in the script). The C++ baseline's parenthetical status text is "
+    "not copied into the title."
 )
 
 # Todo ids that the C++ baseline never implemented; their C++ column says so.
@@ -137,6 +139,33 @@ RUST_TESTS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Todo id -> current Rust state, shown in the Rust note column. The C++ titles in `cpp-final`
+# carry parentheticals that describe the baseline's own state ("partial: ...", "done: ...",
+# "open: ..."); they are dropped from the title and these notes replace them. Keep each note
+# short and free of `|`. Update it when the Rust state changes (docs/PROGRESS.md is the source).
+RUST_NOTES: dict[str, str] = {
+    "12": "analysed grids drive sync (test in `om-analysis`); saving engine hotcues back to the library is not confirmed",
+    "19": "separator trait, mock and licence-gated downloads done; ONNX Runtime backend open",
+    "21": "lofty tags implemented; artwork read but not stored; polling watch folders only",
+    "25": "design tokens exist; the LookAndFeel that styles the widgets does not",
+    "25a": "JSON themes, built-in, user and plugin sources, live switching; layouts and theme-folder file watching missing",
+    "26": "deck cards drawn and wired; main cue point missing; not checked by eye",
+    "27": "channel strips, master, crossfader, cue and FX panel drawn; RMS meters missing; not verified by eye",
+    "28": "browser verified headlessly; window never viewed by eye; playlist editing missing",
+    "29": "settings overlay drives the services; Automix panel waits on Todo 38; window never viewed by eye",
+    "30": "not started; waits on Wave 7 stem playback",
+    "31": "logic layer; window-driven pass open",
+}
+
+# A C++ status parenthetical at the end of a baseline title, e.g. " (partial: ...)".
+CPP_STATUS_RE = re.compile(r"\s*\((?:done|partial|open|missing)\b.*$")
+
+
+def rust_title(title: str) -> str:
+    """The Todo title without the C++ baseline's status parenthetical."""
+    return CPP_STATUS_RE.sub("", title).strip()
+
+
 @dataclass(frozen=True)
 class Todo:
     id: str
@@ -210,7 +239,7 @@ def build_rows(
     mapping: dict[str, tuple[str, ...]],
     known: set[str],
     read_rust,
-) -> list[tuple[str, str, str, str, str]]:
+) -> list[tuple[str, str, str, str, str, str]]:
     rows = []
     for todo in todos:
         rust_paths = mapping.get(todo.id, ())
@@ -224,28 +253,30 @@ def build_rows(
             names = {f for f in todo.files if f in known} | (ported & known)
             cpp_names = [f"`{name}`" for name in sorted(names)] or ["—"]
         rust_cells = [f"`{rel}`" for rel in rust_paths] or ["—"]
-        title = todo.title.replace("|", "\\|")
+        title = rust_title(todo.title).replace("|", "\\|")
+        note = RUST_NOTES.get(todo.id, "—")
         rows.append((
             todo.id,
             title,
             ", ".join(cpp_names),
             ", ".join(rust_cells),
             statuses.get(todo.id, "todo"),
+            note,
         ))
     return rows
 
 
-def render(rows: list[tuple[str, str, str, str, str]]) -> str:
+def render(rows: list[tuple[str, str, str, str, str, str]]) -> str:
     lines = [
         "# C++ to Rust parity inventory",
         "",
         PARAGRAPH,
         "",
-        "| Todo | Title | C++ test(s) | Rust crate(s) / test file(s) | Status |",
-        "| --- | --- | --- | --- | --- |",
+        "| Todo | Title | C++ test(s) | Rust crate(s) / test file(s) | Status | Rust note |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
-    for todo_id, title, cpp, rust, status in rows:
-        lines.append(f"| {todo_id} | {title} | {cpp} | {rust} | {status} |")
+    for todo_id, title, cpp, rust, status, note in rows:
+        lines.append(f"| {todo_id} | {title} | {cpp} | {rust} | {status} | {note} |")
     return "\n".join(lines) + "\n"
 
 
