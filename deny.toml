@@ -19,6 +19,9 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "Unicode-3.0",
+    # CDLA-Permissive-2.0: the webpki-roots root bundle that ureq's rustls TLS uses for HTTPS model
+    # downloads (om-stems). A data licence, permissive, and compatible with AGPL-3.0 distribution.
+    "CDLA-Permissive-2.0",
     "GPL-3.0-only",
     "GPL-3.0-or-later",
     "AGPL-3.0-only",

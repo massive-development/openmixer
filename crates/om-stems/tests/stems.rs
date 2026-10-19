@@ -241,14 +241,25 @@ fn http_error_status_is_a_download_failure() {
     assert!(!manager.is_installed(&manifest));
 }
 
+/// A loopback listener that accepts and hangs up without speaking TLS. The HTTPS path must reach
+/// the handshake and fail there, not on a "scheme not supported" refusal. Nothing leaves the host.
 #[test]
-fn https_is_refused_until_a_tls_backend_is_chosen() {
+fn https_reaches_the_tls_handshake_and_fails_cleanly_without_a_tls_server() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let url = format!("https://{}/m.onnx", listener.local_addr().expect("addr"));
+    std::thread::spawn(move || {
+        if let Ok((stream, _)) = listener.accept() {
+            drop(stream);
+        }
+    });
     let dir = tempfile::tempdir().expect("dir");
     let target = dir.path().join("out.bin");
     let err = UrlDownloader
-        .download("https://example.org/m.onnx", &target, &mut |_| true)
+        .download(&url, &target, &mut |_| true)
         .unwrap_err();
-    assert!(err.to_string().contains("https is not supported"));
+    let text = err.to_string();
+    assert!(!text.contains("not supported"), "{text}");
+    assert!(!target.exists(), "a failed handshake writes nothing");
 }
 
 #[test]

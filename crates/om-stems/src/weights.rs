@@ -50,7 +50,8 @@ pub trait Downloader: Send {
     ) -> Result<(), WeightError>;
 }
 
-/// Downloads `file://` and plain `http://` URLs. HTTPS is refused until a TLS backend is chosen.
+/// Downloads `file://`, `http://` and `https://` URLs. HTTPS goes through rustls with the
+/// webpki root bundle, as the C++ tree's `juce::URL` did through the platform stack.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UrlDownloader;
 
@@ -70,12 +71,7 @@ impl Downloader for UrlDownloader {
                 let file = File::open(path).map_err(|e| fail(e.to_string()))?;
                 let total = file.metadata().ok().map(|m| m.len());
                 (Box::new(file), total)
-            } else if url.starts_with("https://") {
-                // No TLS backend is built in (see Cargo.toml): a licence decision for the root store.
-                return Err(fail(
-                    "https is not supported yet (no TLS backend built in)".into(),
-                ));
-            } else if url.starts_with("http://") {
+            } else if url.starts_with("http://") || url.starts_with("https://") {
                 let response = ureq::get(url)
                     .timeout(TIMEOUT)
                     .call()
