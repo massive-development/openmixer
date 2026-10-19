@@ -316,7 +316,7 @@ fn snapshot_matches_the_getters_of_a_playing_engine() {
     assert_eq!((d.loop_start, d.loop_end), (1_000, 9_000));
     assert_eq!(d.hotcues[2], deck.hotcue(2));
     assert_eq!(d.hotcues[0], None);
-    assert_eq!(snap.decks[0], engine.deck_snapshot(0));
+    assert_eq!(Some(snap.decks[0]), engine.deck_snapshot(0));
     assert_eq!(snap.mixer.channels[1].fader, engine.mixer().fader(1));
     assert!(snap.mixer.channels[1].pfl);
     assert_eq!(snap.mixer.crossfader, engine.mixer().crossfader());
@@ -337,4 +337,27 @@ fn snapshot_matches_the_getters_of_a_playing_engine() {
         Some(f64::from(engine.mixer().fader(1)))
     );
     assert_eq!(read("deck.9.play"), None);
+}
+
+/// Asking for a deck the engine lacks answers `None`; it does not panic.
+#[test]
+fn deck_snapshot_of_a_missing_deck_is_none() {
+    let (engine, _audio) = DjEngine::new(2);
+    assert!(engine.deck_snapshot(1).is_some());
+    assert_eq!(engine.deck_snapshot(2), None);
+    assert_eq!(engine.deck_snapshot(usize::MAX), None);
+}
+
+/// `sync.<d>.sync` for a deck the engine lacks is unhandled, as `deck.<d>.*` ids are.
+#[test]
+fn sync_enable_for_a_missing_deck_is_unhandled() {
+    let (engine, _audio) = DjEngine::new(2);
+    let router = ParameterRouter::new();
+    engine.register(&router);
+    assert!(router.set_parameter("sync.1.sync", 1.0));
+    assert!(engine.sync().is_enabled(1));
+    assert!(!router.set_parameter("sync.3.sync", 1.0));
+    assert!(!router.set_parameter("sync.3.sync", 0.0));
+    assert!(!router.set_parameter("deck.3.play", 1.0));
+    assert_eq!(router.unknown_count(), 3);
 }

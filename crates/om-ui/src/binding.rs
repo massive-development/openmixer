@@ -71,9 +71,10 @@ impl DeckBinding {
     }
 
     /// This deck's state, copied out. Display reads use this instead of the getters: one copy
-    /// gives a consistent set of fields for a frame, and it does not allocate.
+    /// gives a consistent set of fields for a frame, and it does not allocate. A binding for a deck
+    /// the engine lacks reads as an empty deck.
     pub fn state(&self) -> DeckSnapshot {
-        self.engine.deck_snapshot(self.index)
+        self.engine.deck_snapshot(self.index).unwrap_or_default()
     }
 
     /// The typed id of one of this deck's parameters. Fails when the index does not fit a deck id.

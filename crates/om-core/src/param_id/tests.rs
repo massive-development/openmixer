@@ -555,3 +555,28 @@ fn command_param_refuses_invalid_ids() {
         })
     );
 }
+
+/// Loop sizes are finite and within (0, MAX_LOOP_BEATS]. The parser and `validate` agree.
+#[test]
+fn loop_sizes_are_bounded_at_parse_and_validate() {
+    for text in [
+        "deck.0.loop.quantized.0",
+        "deck.0.loop.quantized.4097",
+        "deck.0.loop.quantized.99999999999999999999999999",
+        "deck.0.loop.quantized.1.2.3",
+        "deck.0.loop.quantized.NaN",
+    ] {
+        assert!(text.parse::<ParamId>().is_err(), "{text} must not parse");
+    }
+    let top: ParamId = "deck.0.loop.quantized.4096"
+        .parse()
+        .expect("the bound itself parses");
+    assert_eq!(top.validate(), Ok(()));
+    for beats in [0.0, -1.0, 4096.5, 1e9, f64::NAN, f64::INFINITY] {
+        let id = ParamId::Deck {
+            deck: 0,
+            p: DeckParam::LoopQuantized(beats),
+        };
+        assert!(id.validate().is_err(), "{beats} must not validate");
+    }
+}

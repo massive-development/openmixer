@@ -89,10 +89,15 @@ impl Sync {
         st.leader = deck.filter(|&d| d < st.slots.len());
     }
 
-    pub fn set_enabled(&self, deck: usize, on: bool) {
+    /// Sets whether `deck` follows the leader. `false` when the engine has no such deck.
+    pub fn set_enabled(&self, deck: usize, on: bool) -> bool {
         let mut st = self.lock();
-        if let Some(slot) = st.slots.get_mut(deck) {
-            slot.enabled = on;
+        match st.slots.get_mut(deck) {
+            Some(slot) => {
+                slot.enabled = on;
+                true
+            }
+            None => false,
         }
     }
 
@@ -250,7 +255,10 @@ impl Sync {
                     SyncMode::Beat
                 });
             }
-            SyncParam::DeckEnabled(deck) => self.set_enabled(usize::from(*deck), value >= 0.5),
+            // A deck the engine does not have is not handled, as `deck.<d>.*` ids are not.
+            SyncParam::DeckEnabled(deck) => {
+                return self.set_enabled(usize::from(*deck), value >= 0.5)
+            }
         }
         true
     }

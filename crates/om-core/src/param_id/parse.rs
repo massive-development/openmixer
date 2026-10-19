@@ -1,7 +1,7 @@
 use super::{
     AutomixParam, ChannelParam, DeckParam, EqBand, FxParam, FxRack, FxRackParam, MixerParam,
     ParamError, ParamId, SamplerParam, StemParam, SyncParam, HOTCUES_PER_DECK, MAX_CHANNELS,
-    MAX_DECKS, MAX_FX_UNIT, SAMPLER_PADS, STEMS_PER_DECK,
+    MAX_DECKS, MAX_FX_UNIT, MAX_LOOP_BEATS, SAMPLER_PADS, STEMS_PER_DECK,
 };
 use std::str::FromStr;
 
@@ -157,7 +157,7 @@ fn parse_hotcue(id: &str, hot: &str, action: &[&str]) -> Result<DeckParam, Param
     Ok(DeckParam::Hotcue { index, clear })
 }
 
-/// Digits, one dot at most, no leading or trailing dot, and a finite positive value.
+/// Digits, one dot at most, no leading or trailing dot, and a finite value in (0, MAX_LOOP_BEATS].
 fn parse_beats(id: &str, text: &str) -> Result<f64, ParamError> {
     let well_formed = text.bytes().all(|b| b.is_ascii_digit() || b == b'.')
         && text.matches('.').count() <= 1
@@ -167,7 +167,7 @@ fn parse_beats(id: &str, text: &str) -> Result<f64, ParamError> {
         return Err(malformed(id));
     }
     match text.parse::<f64>() {
-        Ok(beats) if beats.is_finite() && beats > 0.0 => Ok(beats),
+        Ok(beats) if beats.is_finite() && beats > 0.0 && beats <= MAX_LOOP_BEATS => Ok(beats),
         _ => Err(malformed(id)),
     }
 }
