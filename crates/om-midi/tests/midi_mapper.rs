@@ -1,5 +1,5 @@
-//! Port of tests/unit/MidiMapperTest.cpp: map parsing, value modes, trace replay, parameter
-//! routing, plus MidiTraceTest and ParameterRouterTest (kept in the same file as in C++).
+//! Map parsing, value modes, trace replay, parameter
+//! routing, plus MidiTraceTest and ParameterRouterTest (kept in this file).
 
 mod support;
 

@@ -1,6 +1,5 @@
 //! Output side of the device layer: the open controller output ports and the rule that pairs
 //! them with the enabled inputs. Feedback reaches controllers through [`MidiOutputSink`].
-//! Port of `src/controllers/MidiOutputRouter.*` and `MidiOutputSink.h`.
 
 use crate::backend::{MidiBackend, MidiOutputPort, MidiPortInfo};
 use crate::echo::EchoGuard;

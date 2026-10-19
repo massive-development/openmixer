@@ -1,4 +1,4 @@
-//! Port of the MIDI half of tests/unit/ControlThreadSafetyTest.cpp: a map reload while messages
+//! The MIDI half of the control thread safety checks: a map reload while messages
 //! stream. The router cases live with om-core's router tests and the engine-side cases in om-audio.
 
 mod support;

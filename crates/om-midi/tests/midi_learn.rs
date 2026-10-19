@@ -1,9 +1,8 @@
-//! Port of tests/unit/MidiLearnTest.cpp (learn per control type, relative and 14-bit decoding, map
-//! save/load, binding edits) and MidiMapSchemaTest.
+//! MIDI learn per control type, relative and 14-bit decoding, map
+//! save/load, binding edits) and the map schema.
 //!
 //! Deviations, each marked where it occurs: the feedback rule validation (`outputs`) belongs to the
-//! feedback unit and is only round-tripped here. Two C++ assertions do not hold for the C++ logic
-//! as written and are ported to what the code produces: the eq offset encoder (the expected value
+//! feedback unit and is only round-tripped here. Two expectations follow what the code produces: the eq offset encoder (the expected value
 //! assumed an initial of -48 dB; the request default is 0), and the hotcue button (its release
 //! drives the target back to 0, so the last change is 0, not 1; the press is checked first).
 
@@ -147,7 +146,7 @@ fn offset_encoder_decodes_around_sixty_four() {
     assert_eq!(f.learn(r, "B0 15 41").mode, MapMode::Relative);
     f.replay(&["B0 15 41", "B0 15 42", "B0 15 3F"]); // +1, +2, -1 steps of 0.5
                                                      // The learned initial is 0 (the request default), so the three steps leave 0 + 0.5 + 1.0 - 0.5.
-                                                     // (The C++ expression assumed an initial of -48 and was looser than the arithmetic by 0.5.)
+                                                     // (The expression assumed an initial of -48 and was looser than the arithmetic by 0.5.)
     assert_near(f.m.get_value("mixer.ch0.eq.low"), 1.0);
     let changes = f.t.changes();
     assert_eq!(changes.len(), 3);
