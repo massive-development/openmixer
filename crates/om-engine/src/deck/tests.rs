@@ -245,12 +245,15 @@ fn seek_repositions_playback() {
     );
     assert!(synced, "seek handshake should complete");
     deck.play();
-    wait_for(
-        || {
-            audio.render_stereo(&mut l, &mut r);
-            l[0] != 0.0
-        },
-        Duration::from_secs(3),
+    assert!(
+        wait_for(
+            || {
+                audio.render_stereo(&mut l, &mut r);
+                l[0] != 0.0
+            },
+            Duration::from_secs(3),
+        ),
+        "playback after the seek produced no audio"
     );
     assert!((l[0] - 10_000.0 / FRAMES as f32).abs() <= 1e-4);
     assert!((r[0] + 10_000.0 / FRAMES as f32).abs() <= 1e-4);
@@ -295,12 +298,15 @@ fn mono_files_play_on_both_channels() {
     deck.seek(5000);
     let mut l = [0.0_f32; 64];
     let mut r = [0.0_f32; 64];
-    wait_for(
-        || {
-            audio.render_stereo(&mut l, &mut r);
-            deck.position_frames() == 5000 && deck.buffered_frames() > 128
-        },
-        Duration::from_secs(3),
+    assert!(
+        wait_for(
+            || {
+                audio.render_stereo(&mut l, &mut r);
+                deck.position_frames() == 5000 && deck.buffered_frames() > 128
+            },
+            Duration::from_secs(3),
+        ),
+        "seek to 5000 did not settle"
     );
     deck.play();
     audio.render_stereo(&mut l, &mut r);
@@ -318,7 +324,7 @@ fn deck_renders_through_the_audio_callback_in_device_blocks() {
     let mut left = vec![0.0_f32; block];
     let mut right = vec![0.0_f32; block];
     let mut prepared_blocks = 0;
-    wait_for(
+    let buffered = wait_for(
         || {
             let mut outs: [&mut [f32]; 2] = [&mut left, &mut right];
             audio.process(&[&silent], &mut outs);
@@ -327,8 +333,9 @@ fn deck_renders_through_the_audio_callback_in_device_blocks() {
         },
         Duration::from_secs(10),
     );
+    assert!(buffered, "decoder did not buffer in time");
     deck.play();
-    wait_for(
+    let advanced = wait_for(
         || {
             let mut outs: [&mut [f32]; 2] = [&mut left, &mut right];
             audio.process(&[], &mut outs);
@@ -336,6 +343,7 @@ fn deck_renders_through_the_audio_callback_in_device_blocks() {
         },
         Duration::from_secs(10),
     );
+    assert!(advanced, "playback did not advance past 1000 frames");
     assert!(deck.position_frames() > 1000);
     assert!(prepared_blocks > 0);
 }
