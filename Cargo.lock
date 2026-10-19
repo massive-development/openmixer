@@ -4091,7 +4091,9 @@ name = "om-stems"
 version = "0.1.0"
 dependencies = [
  "om-analysis",
+ "om-core",
  "om-engine",
+ "om-library",
  "ort",
  "realfft",
  "serde_json",
@@ -4208,6 +4210,7 @@ dependencies = [
  "om-library",
  "om-midi",
  "om-plugins",
+ "om-stems",
  "om-testing",
  "om-ui",
  "om-ui-gpui",
