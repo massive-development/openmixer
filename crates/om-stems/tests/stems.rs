@@ -12,6 +12,7 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// The real URL downloader (file URLs) that counts calls.
 struct CountingDownloader {
@@ -23,10 +24,11 @@ impl Downloader for CountingDownloader {
         &self,
         url: &str,
         destination: &Path,
+        max_bytes: u64,
         on_progress: &mut dyn FnMut(f32) -> bool,
     ) -> Result<(), WeightError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        UrlDownloader.download(url, destination, on_progress)
+        UrlDownloader::default().download(url, destination, max_bytes, on_progress)
     }
 }
 
@@ -254,12 +256,109 @@ fn https_reaches_the_tls_handshake_and_fails_cleanly_without_a_tls_server() {
     });
     let dir = tempfile::tempdir().expect("dir");
     let target = dir.path().join("out.bin");
-    let err = UrlDownloader
-        .download(&url, &target, &mut |_| true)
+    let err = UrlDownloader::default()
+        .download(&url, &target, 0, &mut |_| true)
         .unwrap_err();
     let text = err.to_string();
     assert!(!text.contains("not supported"), "{text}");
     assert!(!target.exists(), "a failed handshake writes nothing");
+}
+
+/// Serves `chunks` one at a time with `pause` between them. The total is sent as Content-Length,
+/// so the client knows the body size, and nothing waits on the client.
+fn serve_chunks(chunks: Vec<Vec<u8>>, pause: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let url = format!("http://{}/slow.onnx", listener.local_addr().expect("addr"));
+    let total: usize = chunks.iter().map(Vec::len).sum();
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
+            if stream.write_all(head.as_bytes()).is_err() {
+                return;
+            }
+            for (index, chunk) in chunks.iter().enumerate() {
+                if index > 0 {
+                    std::thread::sleep(pause);
+                }
+                if stream.write_all(chunk).is_err() {
+                    return;
+                }
+            }
+        }
+    });
+    url
+}
+
+/// Serves `head` then `body` (close-delimited: no Content-Length), then waits `stall` before
+/// closing. Used to check the read timeout and the size cap, which the server cannot bypass.
+fn serve_close_delimited(body: Vec<u8>, stall: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let url = format!("http://{}/open.onnx", listener.local_addr().expect("addr"));
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            if stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n").is_err() {
+                return;
+            }
+            let _ = stream.write_all(&body);
+            std::thread::sleep(stall);
+        }
+    });
+    url
+}
+
+#[test]
+fn a_slow_body_longer_than_the_overall_budget_still_downloads() {
+    // Five chunks with 120 ms between them: about 480 ms in total, more than the injected 300 ms.
+    // Each gap is under the 300 ms read timeout, so the download must not be cut short.
+    let f = Fixture::new();
+    let body = std::fs::read(&f.source).expect("read source");
+    let chunks: Vec<Vec<u8>> = body.chunks(body.len() / 5 + 1).map(<[u8]>::to_vec).collect();
+    let url = serve_chunks(chunks, Duration::from_millis(120));
+    let downloader = UrlDownloader::with_timeouts(
+        Duration::from_millis(300),
+        Duration::from_millis(300),
+    );
+    let dir = tempfile::tempdir().expect("dir");
+    let target = dir.path().join("slow.part");
+    let started = Instant::now();
+    downloader
+        .download(&url, &target, 0, &mut |_| true)
+        .expect("a steady slow body completes");
+    assert!(started.elapsed() > Duration::from_millis(300));
+    assert_eq!(std::fs::read(&target).expect("read"), body);
+}
+
+#[test]
+fn a_stalled_connection_hits_the_read_timeout() {
+    let url = serve_close_delimited(b"partial".to_vec(), Duration::from_millis(1500));
+    let dir = tempfile::tempdir().expect("dir");
+    let target = dir.path().join("stall.part");
+    let downloader = UrlDownloader::with_timeouts(
+        Duration::from_millis(200),
+        Duration::from_millis(200),
+    );
+    let started = Instant::now();
+    assert!(downloader
+        .download(&url, &target, 0, &mut |_| true)
+        .is_err());
+    assert!(started.elapsed() < Duration::from_millis(1200));
+}
+
+#[test]
+fn a_body_over_the_manifest_size_is_cut_off_before_the_hash_check() {
+    let url = serve_close_delimited(vec![7_u8; 64 * 1024], Duration::from_millis(0));
+    let dir = tempfile::tempdir().expect("dir");
+    let target = dir.path().join("big.part");
+    let err = UrlDownloader::default()
+        .download(&url, &target, 1000, &mut |_| true)
+        .unwrap_err();
+    assert!(err.to_string().contains("more than 1000"), "{err}");
+    let written = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+    assert!(written <= 1000, "wrote {written} bytes past the cap");
 }
 
 #[test]

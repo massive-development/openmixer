@@ -15,7 +15,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
 
-const TIMEOUT: Duration = Duration::from_secs(15);
+/// Per-phase HTTP budgets. Both bound a single stalled step (connect, or one read); neither limits
+/// the whole transfer, so a large model on a slow link still finishes.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const READ_TIMEOUT: Duration = Duration::from_secs(15);
 const CHUNK: usize = 1 << 16;
 
 #[derive(Debug, Error)]
@@ -40,26 +43,53 @@ pub enum WeightError {
     },
 }
 
-/// Writes `url` to `destination`. `on_progress` gets 0..=1 after each chunk and returns false to abort.
+/// Writes `url` to `destination`. `max_bytes` caps what is written (0 = no cap): the transfer is
+/// abandoned as soon as it would exceed it, so a hostile or broken server cannot fill the disk.
+/// `on_progress` gets 0..=1 after each chunk and returns false to abort.
 pub trait Downloader: Send {
     fn download(
         &self,
         url: &str,
         destination: &Path,
+        max_bytes: u64,
         on_progress: &mut dyn FnMut(f32) -> bool,
     ) -> Result<(), WeightError>;
 }
 
 /// Downloads `file://`, `http://` and `https://` URLs. HTTPS goes through rustls with the
 /// webpki root bundle, as the C++ tree's `juce::URL` did through the platform stack.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct UrlDownloader;
+#[derive(Debug, Clone, Copy)]
+pub struct UrlDownloader {
+    connect_timeout: Duration,
+    read_timeout: Duration,
+}
+
+impl Default for UrlDownloader {
+    fn default() -> Self {
+        Self {
+            connect_timeout: CONNECT_TIMEOUT,
+            read_timeout: READ_TIMEOUT,
+        }
+    }
+}
+
+impl UrlDownloader {
+    /// A downloader with explicit connect and per-read budgets. There is deliberately no overall
+    /// deadline.
+    pub fn with_timeouts(connect_timeout: Duration, read_timeout: Duration) -> Self {
+        Self {
+            connect_timeout,
+            read_timeout,
+        }
+    }
+}
 
 impl Downloader for UrlDownloader {
     fn download(
         &self,
         url: &str,
         destination: &Path,
+        max_bytes: u64,
         on_progress: &mut dyn FnMut(f32) -> bool,
     ) -> Result<(), WeightError> {
         let fail = |reason: String| WeightError::Download {
@@ -72,8 +102,12 @@ impl Downloader for UrlDownloader {
                 let total = file.metadata().ok().map(|m| m.len());
                 (Box::new(file), total)
             } else if url.starts_with("http://") || url.starts_with("https://") {
-                let response = ureq::get(url)
-                    .timeout(TIMEOUT)
+                let agent = ureq::AgentBuilder::new()
+                    .timeout_connect(self.connect_timeout)
+                    .timeout_read(self.read_timeout)
+                    .build();
+                let response = agent
+                    .get(url)
                     .call()
                     .map_err(|e| fail(e.to_string()))?;
                 let total = response
@@ -89,7 +123,12 @@ impl Downloader for UrlDownloader {
             path: destination.display().to_string(),
             source: e,
         })?;
-        copy_with_progress(&mut reader, total, &mut out, on_progress)?;
+        copy_with_progress(&mut reader, total, max_bytes, &mut out, on_progress).map_err(|e| {
+            match e {
+                WeightError::Download { reason, .. } => fail(reason),
+                other => other,
+            }
+        })?;
         out.flush().map_err(|e| WeightError::Io {
             path: destination.display().to_string(),
             source: e,
@@ -100,6 +139,7 @@ impl Downloader for UrlDownloader {
 fn copy_with_progress(
     reader: &mut dyn Read,
     total: Option<u64>,
+    max_bytes: u64,
     out: &mut File,
     on_progress: &mut dyn FnMut(f32) -> bool,
 ) -> Result<(), WeightError> {
@@ -114,6 +154,12 @@ fn copy_with_progress(
             })?;
         if read == 0 {
             return Ok(());
+        }
+        if max_bytes > 0 && written + read as u64 > max_bytes {
+            return Err(WeightError::Download {
+                url: String::new(),
+                reason: format!("server sent more than {max_bytes} bytes"),
+            });
         }
         out.write_all(&buffer[..read])
             .map_err(|e| WeightError::Io {
@@ -250,7 +296,7 @@ impl WeightManager {
             !context.is_cancelled()
         };
         self.downloader
-            .download(&manifest.url, part, &mut progress)?;
+            .download(&manifest.url, part, manifest.size_bytes, &mut progress)?;
 
         let size = fs::metadata(part).map(|m| m.len()).unwrap_or(0);
         if manifest.size_bytes > 0 && size != manifest.size_bytes {
