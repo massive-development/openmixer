@@ -176,7 +176,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 23:** Search + filter engine
   - Field registry (extension point), query parser, parameterised SQL
   - Index migration; LIKE-based matching unless FTS5 is available
-  - FTS5 (Phase L4): `tracks_fts` over title, artist, album, genre and comment, with sync triggers and a rebuild in migration 7. Free text is token-prefix matching (a quoted phrase is one phrase; 'ove' no longer finds 'Love'); field filters keep substring matching. Diacritics are folded.
+  - FTS5 (Phase L4): `tracks_fts` over title, artist, album, genre and comment, with sync triggers and a rebuild in migration 7. Free text is a substring match (LIKE, so 'ove' finds 'Love') OR-ed with the token-prefix match of the index, which folds diacritics ('emile' finds 'Émile'); a quoted phrase is one phrase; negation covers both. Field filters keep substring matching. A no-FTS5 build refuses to open a database with the FTS5 triggers.
 
 - [x] **Todo 24:** Track prep queue
   - Persisted queue with order, priority and status

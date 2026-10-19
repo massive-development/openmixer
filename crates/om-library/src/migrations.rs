@@ -145,6 +145,11 @@ CREATE TABLE artwork (
 /// (`title artist album genre comment`), kept in step with `tracks` by triggers. Diacritics are
 /// folded (`emile` finds `Émile`); prefixes of 2 and 3 characters are indexed so `*` queries are
 /// fast. Existing rows are indexed by the final `rebuild`. Forward-only.
+///
+/// Caveat: the triggers write to `tracks_fts`, so a SQLite build without FTS5 cannot write to a
+/// database at this version. `Library::open` refuses such a database with `Fts5Required` (see the
+/// crate docs). A build without FTS5 can still migrate a database below this version: the step is
+/// skipped there and the database stays at the previous version.
 const SCHEMA_V7: &str = r#"
 CREATE VIRTUAL TABLE tracks_fts USING fts5(
   title, artist, album, genre, comment,
