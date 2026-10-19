@@ -5,7 +5,7 @@ use crate::biquad::{design_high_shelf, design_low_shelf, design_peaking, Biquad}
 const LOW_HZ: f32 = 250.0;
 const MID_HZ: f32 = 1000.0;
 const HIGH_HZ: f32 = 4000.0;
-// C++ literal, kept verbatim so coefficients stay bit-identical.
+// Literal kept verbatim so coefficients stay bit-identical.
 #[allow(clippy::approx_constant)]
 const MID_Q: f32 = 0.7071;
 /// Sentinel that never equals a real gain, so the first `prepare` designs every band.

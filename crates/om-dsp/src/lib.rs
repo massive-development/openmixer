@@ -24,7 +24,7 @@ pub(crate) mod test_util {
     pub const FRAMES: usize = 16_384;
     pub const BLOCK: usize = 512;
 
-    /// Sine at `hz` with peak amplitude `amp`, computed in double then narrowed like the C++ rig.
+    /// Sine at `hz` with peak amplitude `amp`, computed in double then narrowed.
     pub fn sine(hz: f64, amp: f32) -> Vec<f32> {
         (0..FRAMES)
             .map(|i| {
