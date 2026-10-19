@@ -21,7 +21,7 @@
     ["26a Debug panel", "partial"],
     ["13a Soak (short)", "done"],
     ["9 Key-lock", "done"],
-    ["12 Sync", "partial"],
+    ["12 Sync", "done"],
     ["11 FX rack", "done"],
     ["13 Soak (10m)", "done"]
    ]
@@ -29,8 +29,8 @@
   {
    "name": "3 Analysis",
    "items": [
-    ["14 Service+cache", "todo"],
-    ["15 BPM/grid", "partial"],
+    ["14 Service+cache", "done"],
+    ["15 BPM/grid", "done"],
     ["16 Key", "done"],
     ["17 Waveform", "done"],
     ["18 Structure", "done"],
