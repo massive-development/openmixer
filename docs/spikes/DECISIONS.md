@@ -154,3 +154,13 @@ Date: 2026-10-19. Decided at the port's close-out, Waves 1-6 at parity with `cpp
 - **Gitignore:** the C++ build outputs (`build/`, `build-*/`, `_deps/`, `CMakeFiles/`, `CMakeCache.txt`, `compile_commands.json`, `*.o`, `*.a`) are no longer ignored. Local copies of those directories may still exist on disk and show as untracked until they are deleted.
 - **Left in place:** the tracked `.claude/skills/` entries for C++ (`cmake`, `cpp-pro`, `cpp-testing`, `static-analysis`) are not part of the build. Remove them separately if they should go.
 - **Not verified:** the `gui-check` job (see the GPUI integration section above) has not yet run on a clean runner.
+
+## CI status by platform
+
+Date: 2026-10-19. Run 39296306022 on PR #66. Linux is the required signal; macOS and Windows legs are `continue-on-error` in `rust.yml` until the porting phase.
+
+- **ubuntu-latest:** green (fmt, clippy, test, `cargo deny`, legal guards, progress heatmap).
+- **windows-latest:** `om-library` `file_url` tests asserted `/` separators, but `native_separators` returns `\` on Windows by design. Fixed in the test (expectations go through a platform helper). fmt, clippy and the other test binaries already passed on this leg, so no other Windows work is known.
+- **macos-latest:** `om-audio` `soak_short` failed on its xrun budget (23 xruns against a budget of 5, max callback 38.7 ms against 5.3 ms). The test is timing-based and the hosted runner is shared, so the budget is not loosened. Porting work: run the soak on a dedicated macOS CoreAudio device and set the budget per platform from measured numbers.
+- **Build deps:** `rubberband-sys` (bindgen) needs `libclang`. The workflow installs `libclang-dev` only on Linux. The macOS and Windows legs compiled without a failure in the build step, so no LLVM install was needed in this run. Porting work: keep an eye on bindgen when the Windows toolchain or the audio backends change.
+- **GUI:** the `gui check` job is Linux-only and still non-blocking; it has not been verified on a clean runner.
