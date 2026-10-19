@@ -410,3 +410,148 @@ fn namespaces_and_reserved_prefixes() {
     );
     assert_eq!("plugin.x".parse::<ParamId>().unwrap().namespace(), None);
 }
+
+/// Hand-built values that `Display` would print in a form the parser refuses. `validate` must reject
+/// each one, and no validated id may fail to print back.
+#[test]
+fn hand_built_ids_that_do_not_round_trip_fail_validation() {
+    let holes = [
+        // An FX rack id with no unit can only be a rack tempo; the others print without a unit.
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: None,
+            p: FxParam::Enable,
+        },
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: None,
+            p: FxParam::Mix,
+        },
+        ParamId::Fx {
+            rack: FxRack::Channel(1),
+            unit: None,
+            p: FxParam::Effect("feedback".to_owned()),
+        },
+        // Units run 0 to 999.
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: Some(1000),
+            p: FxParam::Enable,
+        },
+        // Deck and channel indices come from the engine's limits.
+        ParamId::Deck {
+            deck: 4,
+            p: DeckParam::Play,
+        },
+        ParamId::Mixer(MixerParam::Channel {
+            ch: 4,
+            p: ChannelParam::Fader,
+        }),
+        ParamId::Deck {
+            deck: 0,
+            p: DeckParam::Hotcue {
+                index: 8,
+                clear: false,
+            },
+        },
+        // An effect parameter is one segment: no dot, not empty, and not a word the grammar owns.
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: Some(1),
+            p: FxParam::Effect("a.b".to_owned()),
+        },
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: Some(1),
+            p: FxParam::Effect(String::new()),
+        },
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: Some(1),
+            p: FxParam::Effect("enable".to_owned()),
+        },
+        ParamId::Stem {
+            deck: 0,
+            stem: STEMS_PER_DECK,
+            p: StemParam::Mute,
+        },
+        ParamId::Sampler {
+            pad: SAMPLER_PADS,
+            p: SamplerParam::Trigger,
+        },
+        ParamId::Sync(SyncParam::DeckEnabled(MAX_DECKS)),
+        ParamId::Ext {
+            prefix: "deck".to_owned(),
+            rest: "play".to_owned(),
+        },
+        ParamId::Ext {
+            prefix: "plug".to_owned(),
+            rest: String::new(),
+        },
+        ParamId::Ext {
+            prefix: "plug".to_owned(),
+            rest: "a..b".to_owned(),
+        },
+    ];
+    for id in &holes {
+        let validated = id.validate();
+        assert!(validated.is_err(), "{id:?} must not validate");
+        let printed = id.to_string();
+        assert_ne!(
+            printed.parse::<ParamId>().as_ref(),
+            Ok(id),
+            "{printed} must not round-trip, or the rejection is wrong"
+        );
+    }
+}
+
+/// Every id the grammar accepts validates, and the ids that validate print back to themselves.
+#[test]
+fn parsed_and_validated_ids_round_trip() {
+    for text in GOLDEN {
+        let id: ParamId = text.parse().expect(text);
+        assert_eq!(id.validate(), Ok(()), "{text}");
+        assert_eq!(id.to_string().parse::<ParamId>(), Ok(id), "{text}");
+    }
+    let built = [
+        ParamId::Fx {
+            rack: FxRack::Master,
+            unit: None,
+            p: FxParam::Bpm,
+        },
+        ParamId::Fx {
+            rack: FxRack::Channel(3),
+            unit: Some(999),
+            p: FxParam::Effect("feedback".to_owned()),
+        },
+        ParamId::Ext {
+            prefix: "plug".to_owned(),
+            rest: "a.b".to_owned(),
+        },
+    ];
+    for id in built {
+        assert_eq!(id.validate(), Ok(()), "{id:?}");
+        assert_eq!(id.to_string().parse::<ParamId>(), Ok(id.clone()), "{id:?}");
+    }
+}
+
+/// `Command::param` only builds a `Param` for a valid id.
+#[test]
+fn command_param_refuses_invalid_ids() {
+    let bad = ParamId::Deck {
+        deck: 9,
+        p: DeckParam::Play,
+    };
+    assert!(crate::Command::param(bad, 1.0).is_err());
+    let good = ParamId::Deck {
+        deck: 1,
+        p: DeckParam::Play,
+    };
+    assert_eq!(
+        crate::Command::param(good.clone(), 1.0),
+        Ok(crate::Command::Param {
+            id: good,
+            value: 1.0
+        })
+    );
+}

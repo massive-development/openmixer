@@ -12,7 +12,8 @@ use om_engine::deck::Deck;
 use om_engine::{DeckControl, DjEngine, FxRouting, MixerControl, Sync};
 use std::sync::Arc;
 
-/// Delivers one id: a typed command when a sink is present, else the string target.
+/// Delivers one id: a typed command when a sink is present, else the string target. An id that
+/// does not validate is never sent.
 fn deliver(
     sink: Option<&Arc<dyn CommandSink>>,
     target: &Arc<dyn ParameterTarget>,
@@ -20,8 +21,8 @@ fn deliver(
     value: f64,
 ) -> bool {
     match sink {
-        Some(sink) => sink.send(Command::Param { id, value }).is_ok(),
-        None => target.set_parameter(&id.to_string(), value),
+        Some(sink) => Command::param(id, value).is_ok_and(|cmd| sink.send(cmd).is_ok()),
+        None => id.validate().is_ok() && target.set_parameter(&id.to_string(), value),
     }
 }
 
@@ -82,7 +83,9 @@ impl DeckBinding {
             what: "deck",
             max: u16::from(om_core::param_id::MAX_DECKS) - 1,
         })?;
-        Ok(ParamId::Deck { deck, p })
+        let id = ParamId::Deck { deck, p };
+        id.validate()?;
+        Ok(id)
     }
 
     /// Sends one of this deck's parameters. `false` when the id is invalid or the router does not
@@ -436,5 +439,47 @@ mod tests {
         let router = Arc::new(om_core::ParameterRouter::new());
         let deck = DeckBinding::typed(Arc::clone(&engine), router, 0);
         assert!(!deck.send(DeckParam::Play, 1.0));
+    }
+
+    /// Ids that do not validate never reach the sink or the string target.
+    #[test]
+    fn a_binding_refuses_ids_that_do_not_validate() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        let router = Arc::new(om_core::ParameterRouter::new());
+        engine.register(&router);
+        let sink = Arc::new(RecordingSink {
+            router: Arc::clone(&router),
+            commands: std::sync::Mutex::new(Vec::new()),
+        });
+        let mixer = MixerBinding {
+            engine: Arc::clone(&engine),
+            sink: Some(sink.clone()),
+            target: Arc::new(NoText),
+        };
+        assert!(!mixer.send_fx(FxRack::Master, Some(1000), FxParam::Enable, 1.0));
+        assert!(!mixer.send_fx(FxRack::Master, None, FxParam::Mix, 1.0));
+        assert!(!mixer.send_channel(4, ChannelParam::Fader, 1.0));
+        let deck = DeckBinding {
+            engine: Arc::clone(&engine),
+            sink: Some(sink.clone()),
+            target: Arc::new(NoText),
+            index: 4,
+        };
+        assert!(!deck.send(DeckParam::Play, 1.0));
+        assert!(sink.commands.lock().unwrap().is_empty());
+
+        // The string path validates too: a hand-built id is refused before it is printed.
+        let text_only = MixerBinding::new(Arc::clone(&engine), Arc::new(Silent));
+        assert!(!text_only.send_fx(FxRack::Master, None, FxParam::Mix, 1.0));
+    }
+
+    /// Accepts every write and reports it handled; used where a refusal must come before it.
+    struct Silent;
+
+    impl ParameterTarget for Silent {
+        fn set_parameter(&self, _id: &str, _value: f64) -> bool {
+            true
+        }
     }
 }
