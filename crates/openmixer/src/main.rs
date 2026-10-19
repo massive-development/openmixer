@@ -3,12 +3,10 @@
 //! `openmixer` binary. Headless flags run the engine and composition without a window; the GPUI window
 //! is behind the `gui` feature (see `gui.rs`). `--smoke` is the headless start-up check.
 
-mod app_targets;
-mod composition;
 #[cfg(feature = "gui")]
 mod gui;
 
-use composition::AppComposition;
+use openmixer::composition::{self, AppComposition};
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
 use std::process::ExitCode;
 

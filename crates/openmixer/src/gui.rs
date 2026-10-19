@@ -3,7 +3,7 @@
 //! `--smoke` renders a fixed number of frames and exits 0. `--debug-panel` shows the device, latency
 //! and raw parameter panel.
 
-use crate::composition::AppComposition;
+use openmixer::composition::AppComposition;
 use om_audio::{
     AudioCallback, AudioDevice, AudioError, CpalAudioDevice, LatencyMonitor, LatencyStats,
     MockAudioDevice, OutputPairs, OutputRequest, OutputRouter,
