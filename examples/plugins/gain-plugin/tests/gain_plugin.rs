@@ -19,7 +19,12 @@ fn master_peak(mixer: &mut Mixer, control: &MixerControl) -> f32 {
         },
         ChannelInput::default(),
     ];
-    let mut out = [vec![0.0_f32; BLOCK], vec![0.0; BLOCK], vec![0.0; BLOCK], vec![0.0; BLOCK]];
+    let mut out = [
+        vec![0.0_f32; BLOCK],
+        vec![0.0; BLOCK],
+        vec![0.0; BLOCK],
+        vec![0.0; BLOCK],
+    ];
     for _ in 0..400 {
         let [ml, mr, cl, cr] = &mut out;
         mixer.process(&inputs, ml, mr, cl, cr);

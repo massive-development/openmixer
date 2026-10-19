@@ -193,7 +193,10 @@ fn weight_manager_rejects_corrupt_or_cancelled_downloads() {
 /// Serves `body` once on a loopback port, with `status`, and returns the URL.
 fn serve_once(status: &'static str, body: Vec<u8>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
-    let url = format!("http://{}/weights.onnx", listener.local_addr().expect("addr"));
+    let url = format!(
+        "http://{}/weights.onnx",
+        listener.local_addr().expect("addr")
+    );
     std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut request = [0_u8; 4096];
@@ -278,5 +281,7 @@ fn mock_separator_splits_into_four_stems_that_sum_back_to_the_input() {
 #[test]
 fn mock_separator_gives_nothing_when_cancelled() {
     let clip = AudioClip::new(vec![0.4_f32; 8], 48_000.0);
-    assert!(MockSeparator::new().separate(&clip, &CancelledContext).is_none());
+    assert!(MockSeparator::new()
+        .separate(&clip, &CancelledContext)
+        .is_none());
 }

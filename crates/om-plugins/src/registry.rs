@@ -76,7 +76,9 @@ impl PluginHost for LoadContext<'_> {
 
     fn register_midi_map(&mut self, map_name: &str, json: &str) -> Result<(), PluginError> {
         if map_name.is_empty() || self.regs.maps.contains_key(map_name) {
-            return Err(PluginError::Rejected(format!("MIDI map {map_name:?} is taken or unnamed")));
+            return Err(PluginError::Rejected(format!(
+                "MIDI map {map_name:?} is taken or unnamed"
+            )));
         }
         MidiMap::parse(json).map_err(|e| PluginError::InvalidMap {
             name: map_name.to_owned(),
@@ -98,7 +100,9 @@ impl PluginHost for LoadContext<'_> {
         target: Arc<dyn ParameterTarget>,
     ) -> Result<(), PluginError> {
         if prefix.is_empty() || self.regs.targets.iter().any(|t| t.prefix == prefix) {
-            return Err(PluginError::Rejected(format!("parameter prefix {prefix:?} is taken or empty")));
+            return Err(PluginError::Rejected(format!(
+                "parameter prefix {prefix:?} is taken or empty"
+            )));
         }
         if let Some(router) = &self.regs.router {
             router.register_target(prefix, Arc::clone(&target));
@@ -124,7 +128,9 @@ impl PluginHost for LoadContext<'_> {
             return Err(PluginError::Rejected("theme has no string id".into()));
         }
         if self.regs.themes.iter().any(|t| t.id == id) {
-            return Err(PluginError::Rejected(format!("theme {id} is already provided")));
+            return Err(PluginError::Rejected(format!(
+                "theme {id} is already provided"
+            )));
         }
         self.regs.themes.push(ProvidedTheme {
             id: id.to_owned(),
