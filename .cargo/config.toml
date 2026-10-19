@@ -1,0 +1,6 @@
+# Keep parallel rustc/linker memory bounded so long builds (gpui, rubberband-sys) cannot exhaust the WSL VM.
+[build]
+jobs = 6
+
+[profile.dev]
+debug = "line-tables-only"

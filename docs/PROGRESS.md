@@ -129,10 +129,10 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 Tests from the C++ suite that are not ported yet, each with the Todo that owns it. A line is removed when its port lands.
 
-- `ControlThreadSafetyTest.MapReloadWhileMessagesStream` (`tests/unit/ControlThreadSafetyTest.cpp`): deferred to Todo 32 (MIDI input + mapping). It reloads a MIDI map while messages stream; the Rust map loader and router do not exist yet.
-- `MeterBallisticsTest.DefaultsComeFromTheTheme` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). The meter defaults are read from the theme, which belongs to the widget layer.
-- `MeterBallisticsTest.MeterBarFollowsUpdatesPaintsAndClearsClipOnClick` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It paints the bar and handles the clip click, so it needs the widget.
-- `MeterBallisticsTest.StereoMeterFeedsEachSideSeparately` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It exercises the stereo meter widget.
+- `ControlThreadSafetyTest.MapReloadWhileMessagesStream` (`tests/unit/ControlThreadSafetyTest.cpp`): deferred to Todo 32 (MIDI input + mapping). It reloads a MIDI map while messages stream; the Rust map loader and router do not exist yet. <!-- cpp-history -->
+- `MeterBallisticsTest.DefaultsComeFromTheTheme` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). The meter defaults are read from the theme, which belongs to the widget layer. <!-- cpp-history -->
+- `MeterBallisticsTest.MeterBarFollowsUpdatesPaintsAndClearsClipOnClick` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It paints the bar and handles the clip click, so it needs the widget. <!-- cpp-history -->
+- `MeterBallisticsTest.StereoMeterFeedsEachSideSeparately` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It exercises the stereo meter widget. <!-- cpp-history -->
 
 ---
 
