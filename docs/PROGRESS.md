@@ -18,7 +18,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 1 | Foundation | ✅ Repo, Cargo workspace, CI, test harness |
 | 2 | Audio engine | 🟡 (debug panel 26a partial; 8b FFmpeg optional and open; 10-minute soak not in CI) |
 | 3 | Analysis | 🟡 (stems ONNX backend, 19, open) |
-| 4 | Library | 🟡 (crates and FTS open) |
+| 4 | Library | 🟡 (crates open) |
 | 5 | UI | 🟡 (LookAndFeel 25 and stem pads 30 open; decks, mixer and settings partial; not checked by eye) |
 | 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 34-36 open) |
 | 7 | Intelligence | ⬜ |
@@ -86,10 +86,10 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 | Todo | Entails | Done | Missing |
 |------|---------|------|---------|
-| 20 Schema + DAO | Tracks, playlists, crates, cues (hotcues and saved loops in frames), play history; forward-only migrations; WAL and foreign keys | `rusqlite` schema with forward-only migrations, WAL and foreign keys; DAOs for tracks, cues, playlists, watch folders and the prep queue; play history (`play_history`, one row per play recorded at 30 s of playing time); import runs in one transaction; the app opens the library from preferences | Crates and tags; FTS index (Todo 23) |
+| 20 Schema + DAO | Tracks, playlists, crates, cues (hotcues and saved loops in frames), play history; forward-only migrations; WAL and foreign keys | `rusqlite` schema with forward-only migrations, WAL and foreign keys; DAOs for tracks, cues, playlists, watch folders and the prep queue; play history (`play_history`, one row per play recorded at 30 s of playing time); import runs in one transaction; the app opens the library from preferences | Crates and tags |
 | 21 Metadata ingest | Tag reading (ID3/Vorbis/MP4 and RIFF INFO), duration, artwork, recursive scan with content-hash change detection, missing-file flags, watch folders with background rescan | `MetadataReaderRegistry` with the built-in `lofty` reader (MP3, FLAC, M4A and others); front cover stored in `artwork` (up to 512 KiB); duration; recursive scan with content-hash checks; watch folders on their own thread and connection, polling rescan | Move detection by content hash; file-system change notifications (polling only) |
 | 22 Import | iTunes and Rekordbox XML: ratings, play counts, playlists and folders, cues and loops from Rekordbox; single transaction with rollback; merge by path | iTunes and Rekordbox XML importers behind the `LibraryImporter` registry; neutral import model; one-transaction merge by path with rollback; Rekordbox cues imported; file URL decoding | Traktor and Serato importers; smart-playlist rules; artwork; path remapping when the library moved; Camelot from Rekordbox tonality (not confirmed in the importer) |
-| 23 Search + filter | Text and field queries (`artist:foo bpm:120-128 key:~8A added:7d -genre:techno sort:-bpm limit:50`) compiled to bound parameters; registry of searchable fields that plugins can extend | Query parser with sort and limit; field registry; compiler to parameter-bound SQL; LIKE contains-match with escaped wildcards | FTS (LIKE is used); saved smart filters and smart crates; ranking |
+| 23 Search + filter | Text and field queries (`artist:foo bpm:120-128 key:~8A added:7d -genre:techno sort:-bpm limit:50`) compiled to bound parameters; registry of searchable fields that plugins can extend | Query parser with sort and limit; field registry; compiler to parameter-bound SQL; free text over an FTS5 token-prefix index (`tracks_fts`, migration 7, diacritics folded, user text quoted so it is never query syntax) with automatic LIKE fallback when FTS5 is missing; field filters keep LIKE contains-match with escaped wildcards | Saved smart filters and smart crates; ranking (no relevance sort yet) |
 | 24 Prep queue | Analyse-on-import: persisted order and priority, prioritise/move/requeue/cancel, crash recovery, bounded in-flight analysis, results (BPM, key) written back to the library | Persisted queue with order, priority and urgent enqueue; bounded in-flight analysis through the analysis service; BPM and key written back; the app timer pumps the queue | Auto-enqueue after ingest (tracks are queued when loaded); waveform and structure results not stored in the library; progress events |
 
 ---

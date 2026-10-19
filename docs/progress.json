@@ -44,6 +44,7 @@
     ["21 Ingest", "done"],
     ["22 Import", "done"],
     ["23 Search", "done"],
+    ["23 FTS5", "done"],
     ["24 Prep queue", "done"],
     ["20 Play history", "done"],
     ["20 Hotcue save-back", "done"],

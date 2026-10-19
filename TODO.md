@@ -14,8 +14,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
 - **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
 - **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
-- **Library (Phase L, L1-L3): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, and cover art stored per track (`artwork`, front cover up to 512 KiB). Showing artwork in the UI is not built.
-- **Todo 23:** FTS: search is LIKE-based; no FTS5 table in the migrations. S
+- **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Showing artwork in the UI is not built.
 - **Todo 25:** LookAndFeel: `ThemeTokens` exist in `om-ui::theme`, but nothing styles knobs, faders, menus, tabs or tooltips from them (no LookAndFeel type in the tree). M
 - **Todo 26a:** debug panel load/play: `debug_panel.rs` only shows rows; no load or play control. S (or retire it when Wave 5 lands)
 
@@ -177,6 +176,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 23:** Search + filter engine
   - Field registry (extension point), query parser, parameterised SQL
   - Index migration; LIKE-based matching unless FTS5 is available
+  - FTS5 (Phase L4): `tracks_fts` over title, artist, album, genre and comment, with sync triggers and a rebuild in migration 7. Free text is token-prefix matching (a quoted phrase is one phrase; 'ove' no longer finds 'Love'); field filters keep substring matching. Diacritics are folded.
 
 - [x] **Todo 24:** Track prep queue
   - Persisted queue with order, priority and status
