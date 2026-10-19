@@ -39,6 +39,9 @@ pub const HEADER_HEIGHT: i32 = 32;
 /// Minutes the Library page offers for the rescan timer.
 const RESCAN_CHOICES: [i32; 6] = [1, 5, 15, 30, 60, 240];
 
+/// Copies the plugin themes into a window's theme registry.
+pub type ThemeSync = Box<dyn Fn(&mut ThemeRegistry)>;
+
 /// What the binary hands the window to run the settings.
 pub struct SettingsOptions {
     pub prefs: Preferences,
@@ -58,7 +61,7 @@ pub struct SettingsOptions {
     pub plugins: Option<Box<dyn PluginHost>>,
     /// Makes this window's theme registry hold the plugins' themes. Called on start-up, when the
     /// overlay opens and after a plugin or preference change.
-    pub sync_themes: Option<Box<dyn Fn(&mut ThemeRegistry)>>,
+    pub sync_themes: Option<ThemeSync>,
 }
 
 /// What a text field is for: what Enter does with the text.
@@ -120,7 +123,7 @@ pub struct SettingsState {
     learning: Option<(String, u64)>,
     library: Option<Box<dyn LibraryControl>>,
     plugins: Option<Box<dyn PluginHost>>,
-    sync_themes: Option<Box<dyn Fn(&mut ThemeRegistry)>>,
+    sync_themes: Option<ThemeSync>,
 }
 
 /// Stands in for the library when it did not open: the scan settings are still stored, and the
@@ -1414,16 +1417,18 @@ mod tests {
 mod page_tests {
     use super::*;
     use om_ui::settings::{MidiControl, PluginHost};
-    use std::cell::{Cell, RefCell};
+    use std::cell::Cell;
     use std::path::Path;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
 
     /// A MIDI service that records loads and learn requests without touching a device.
     #[derive(Default)]
     struct FakeMidi {
         inputs: Vec<String>,
-        learning: RefCell<Option<String>>,
-        generation: Cell<u64>,
+        learning: Mutex<Option<String>>,
+        generation: AtomicU64,
         fail_load: bool,
     }
 
@@ -1438,20 +1443,20 @@ mod page_tests {
             if self.fail_load {
                 return Err("not a controller map".to_owned());
             }
-            self.generation.set(self.generation.get() + 1);
+            self.generation.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
         fn arm_learn(&self, target: &str) {
-            *self.learning.borrow_mut() = Some(target.to_owned());
+            *self.learning.lock().unwrap() = Some(target.to_owned());
         }
         fn cancel_learn(&self) {
-            *self.learning.borrow_mut() = None;
+            *self.learning.lock().unwrap() = None;
         }
         fn is_learning(&self) -> bool {
-            self.learning.borrow().is_some()
+            self.learning.lock().unwrap().is_some()
         }
         fn map_generation(&self) -> u64 {
-            self.generation.get()
+            self.generation.load(Ordering::SeqCst)
         }
     }
 
@@ -1487,7 +1492,7 @@ mod page_tests {
     /// Plugins that can be loaded and unloaded by id.
     #[derive(Default)]
     struct FakePlugins {
-        loaded: RefCell<Vec<String>>,
+        loaded: std::cell::RefCell<Vec<String>>,
     }
 
     impl PluginHost for FakePlugins {
@@ -1564,8 +1569,8 @@ mod page_tests {
         assert!(s.notice.text.starts_with("Learning deck.0.play"));
 
         // The service learns a control: the map changes and the learn ends.
-        *fake.learning.borrow_mut() = None;
-        fake.generation.set(fake.generation.get() + 1);
+        *fake.learning.lock().unwrap() = None;
+        fake.generation.fetch_add(1, Ordering::SeqCst);
         s.poll_learn();
         assert_eq!(s.learning_target(), None);
         assert_eq!(s.notice.text, "Learned a control for deck.0.play");
