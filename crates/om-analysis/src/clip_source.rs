@@ -11,6 +11,11 @@ use std::path::{Path, PathBuf};
 
 /// Frames decoded per progress report.
 const READ_BLOCK: usize = 1 << 16;
+/// Longest clip analysed. Longer files are analysed from their first four hours.
+const MAX_LOAD_SECONDS: f64 = 4.0 * 3600.0;
+/// Memory reserved up front. The buffer grows past this as the audio is decoded, so a bogus
+/// length in a container header cannot make the reservation itself huge.
+const RESERVE_SECONDS: f64 = 600.0;
 
 pub trait ClipSource: Send {
     /// Hex SHA-256 of the audio; `None` when the source is unreadable.
@@ -42,22 +47,35 @@ impl ClipSource for FileClipSource {
     fn load(&mut self, context: &dyn AnalysisContext) -> Option<AudioClip> {
         let mut reader = SourceReader::open(&self.path).ok()?;
         let info = reader.info();
-        let total = usize::try_from(info.length_frames)
+        let claimed = usize::try_from(info.length_frames)
             .ok()
             .filter(|&n| n > 0)?;
+        let cap = (info.sample_rate * MAX_LOAD_SECONDS) as usize;
+        let total = claimed.min(cap);
+        let reserve = total.min((info.sample_rate * RESERVE_SECONDS) as usize);
 
-        let mut samples = Vec::with_capacity(total);
+        let mut samples: Vec<f32> = Vec::with_capacity(reserve);
         let mut block = vec![[0.0f32; 2]; READ_BLOCK];
-        let mut pos = 0usize;
-        while pos < total {
+        let mut decoded = 0usize;
+        while decoded < total {
             if context.is_cancelled() {
                 return None;
             }
-            let frames = READ_BLOCK.min(total - pos);
-            reader.read_stereo(pos as i64, &mut block[..frames]);
-            samples.extend(block[..frames].iter().map(|f| (f[0] + f[1]) * 0.5));
-            pos += frames;
-            context.set_progress(pos as f32 / total as f32);
+            let frames = READ_BLOCK.min(total - decoded);
+            let got = reader.read_stereo(decoded as i64, &mut block[..frames]);
+            // Only frames the decoder produced are kept: silence past the end never enters the clip.
+            samples.extend(block[..got].iter().map(|f| (f[0] + f[1]) * 0.5));
+            decoded += got;
+            if got < frames {
+                break;
+            }
+            context.set_progress(decoded as f32 / total as f32);
+        }
+        // A header that overstates the length is tolerated only for a sliver (1 % or one second);
+        // anything more means the file is damaged or lying, and the job fails.
+        let tolerance = (total / 100).max(info.sample_rate as usize);
+        if total - decoded > tolerance || samples.is_empty() {
+            return None;
         }
         Some(AudioClip::new(samples, info.sample_rate))
     }
