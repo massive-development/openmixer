@@ -1,9 +1,15 @@
 //! View models of the deck and mixer widgets: state, routing and layout, without drawing. Each
 //! model reads the engine through its binding and writes through the control surface.
 
+pub mod channel;
+pub mod crossfader;
+pub mod cue;
 pub mod deck;
+pub mod fx_panel;
 pub mod hotcues;
 pub mod loops;
+pub mod master;
+pub mod mixer;
 pub mod pitch;
 pub mod transport;
 

@@ -55,7 +55,9 @@ impl Ranged {
     /// `value` snapped to the interval and clamped to the range.
     pub fn snap(&self, value: f64) -> f64 {
         let stepped = if self.interval > 0.0 {
-            self.min + ((value - self.min) / self.interval).round() * self.interval
+            let steps = ((value - self.min) / self.interval).round();
+            // Round to nine decimals so 0.7 stays 0.7 instead of 0.7000000000000001.
+            ((self.min + steps * self.interval) * 1e9).round() / 1e9
         } else {
             value
         };
