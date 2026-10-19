@@ -6,7 +6,7 @@
 //! saves and applies (see `openmixer::composition`). The MIDI, library and plugin pages talk to
 //! traits that the app implements over `om-midi`, `om-library` and `om-plugins`. Drawing lives in `om-ui-gpui`.
 
-use crate::preferences::{AudioPrefs, Preferences};
+use crate::preferences::{default_user_map_file, AudioPrefs, Preferences};
 use crate::theme::ThemeRegistry;
 use std::path::{Path, PathBuf};
 
@@ -214,6 +214,8 @@ pub trait MidiControl {
     fn arm_learn(&self, target: &str);
     fn cancel_learn(&self);
     fn is_learning(&self) -> bool;
+    /// Writes the live map to `file` (atomically).
+    fn save_map(&self, file: &Path) -> Result<(), String>;
     /// Counts the edits to the live map (loads and learned bindings). A learn that finished
     /// shows as a change of this count.
     fn map_generation(&self) -> u64 {
@@ -257,6 +259,20 @@ impl MidiSettingsPage<'_> {
 
     pub fn cancel_learn(&self, control: &dyn MidiControl) {
         control.cancel_learn();
+    }
+
+    /// Saves the live map after a learn and makes the file the map in use. The file is the stored
+    /// map file when there is one, else the user map. Returns the file and whether the preference
+    /// changed (the caller saves preferences then).
+    pub fn save_learned_map(&mut self, control: &dyn MidiControl) -> Result<(PathBuf, bool), String> {
+        let file = if self.prefs.midi.map_file.is_empty() {
+            default_user_map_file()
+        } else {
+            PathBuf::from(&self.prefs.midi.map_file)
+        };
+        control.save_map(&file)?;
+        let changed = self.set_map_file(Some(file.clone()));
+        Ok((file, changed))
     }
 }
 
@@ -846,6 +862,7 @@ mod parity_tests {
     struct FakeControl {
         loaded: std::cell::RefCell<Vec<PathBuf>>,
         learning: std::cell::RefCell<Option<String>>,
+        saved: std::cell::RefCell<Vec<PathBuf>>,
     }
     impl MidiControl for FakeControl {
         fn load_map(&self, file: &Path) -> Result<(), String> {
@@ -853,6 +870,10 @@ mod parity_tests {
                 return Err("not a map".into());
             }
             self.loaded.borrow_mut().push(file.to_path_buf());
+            Ok(())
+        }
+        fn save_map(&self, file: &Path) -> Result<(), String> {
+            self.saved.borrow_mut().push(file.to_path_buf());
             Ok(())
         }
         fn arm_learn(&self, target: &str) {
@@ -864,6 +885,28 @@ mod parity_tests {
         fn is_learning(&self) -> bool {
             self.learning.borrow().is_some()
         }
+    }
+
+    #[test]
+    fn learn_saves_the_map_to_the_stored_file_or_the_user_map() {
+        let control = FakeControl::default();
+        let mut prefs = Preferences::default();
+        let inputs = Inputs(Vec::new());
+        {
+            let mut page = MidiSettingsPage::new(&mut prefs, &inputs);
+            let (file, changed) = page.save_learned_map(&control).expect("saves");
+            assert_eq!(file, crate::preferences::default_user_map_file());
+            assert!(changed);
+        }
+        assert_eq!(prefs.midi.map_file, crate::preferences::default_user_map_file().to_string_lossy());
+        assert_eq!(control.saved.borrow().len(), 1);
+
+        prefs.midi.map_file = "/maps/mine.json".into();
+        let mut page = MidiSettingsPage::new(&mut prefs, &inputs);
+        let (file, changed) = page.save_learned_map(&control).expect("saves");
+        assert_eq!(file, PathBuf::from("/maps/mine.json"));
+        assert!(!changed, "the stored file is already the map in use");
+        assert_eq!(control.saved.borrow().last(), Some(&PathBuf::from("/maps/mine.json")));
     }
 
     #[test]

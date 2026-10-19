@@ -147,6 +147,11 @@ pub fn default_map_file() -> PathBuf {
     data_dir().join("controller_map.json")
 }
 
+/// Where a learned binding is saved when no map file is set: the user map beside the preferences.
+pub fn default_user_map_file() -> PathBuf {
+    data_dir().join("midi-user-map.json")
+}
+
 impl Preferences {
     pub fn effective_plugin_folder(&self) -> PathBuf {
         if self.plugin_folder.is_empty() {

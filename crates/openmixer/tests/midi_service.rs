@@ -105,3 +105,37 @@ fn learn_controls_drive_the_mapper() {
     assert!(mock.inject("Pad", &[0xB0, 9, 127]));
     assert!((f64::from(c.engine.mixer().fader(0)) - 1.0).abs() < 1e-6);
 }
+
+#[test]
+fn a_learned_binding_is_saved_and_survives_a_reload() {
+    use om_ui::settings::MidiControl;
+
+    let scratch = tempfile::tempdir().expect("tempdir");
+    let mock = MockBackend::new();
+    mock.add_device("Pad");
+    let mut first = composition(scratch.path());
+    first.attach_midi(Box::new(mock.clone()));
+    let service = first.midi.clone().expect("attached");
+    service.select_inputs(false, &["Pad".to_owned()]);
+
+    // Learn a fader from the controller's CC 7, then save the live map.
+    service.arm_learn("mixer.ch0.fader");
+    assert!(mock.inject("Pad", &[0xB0, 7, 64]));
+    assert!(!service.is_learning(), "the first control ends the learn");
+    let file = scratch.path().join("user-map.json");
+    service.save_map(&file).expect("map saves");
+    assert!(file.exists());
+    assert!(!file.with_extension("json.tmp").exists(), "no temp file left");
+
+    // A fresh session loads the file and the binding works.
+    let mut second = composition(scratch.path());
+    let mock2 = MockBackend::new();
+    mock2.add_device("Pad");
+    second.attach_midi(Box::new(mock2.clone()));
+    let service2 = second.midi.clone().expect("attached");
+    service2.load_map_file(&file).expect("saved map loads");
+    assert_eq!(service2.mapper().num_mappings(), 1);
+    service2.select_inputs(false, &["Pad".to_owned()]);
+    assert!(mock2.inject("Pad", &[0xB0, 7, 127]));
+    assert!((f64::from(second.engine.mixer().fader(0)) - 1.0).abs() < 1e-6);
+}
