@@ -120,7 +120,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 19:** Stems precompute (Demucs ONNX) (partial)
   - Done in `om-stems`: `StemSeparator` trait, `MockSeparator`, JSON model manifest, licence-gated download with size and SHA-256 checks, licence digest remembered
-  - Downloads: `file://` and plain `http://` only. HTTPS is refused until a TLS backend is chosen (the root bundle is CDLA-Permissive-2.0, which `deny.toml` does not allow)
+  - Downloads: `file://`, `http://` and `https://` (ureq with rustls; the webpki root bundle is CDLA-Permissive-2.0, allowed in `deny.toml` with a comment). Tests stay offline
   - ONNX Runtime backend (`ort`) not yet built (open): the mock stands in for it
 
 ## Wave 4: Library & Data
@@ -167,12 +167,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [x] **Todo 28:** Library browser + app wiring
   - Tree, track list, search
-  - Done (Todo 13a and 13b): the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page is still the placeholder (Todo 29)
+  - Done (Todo 13a and 13b): the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page drives the library (Todo 29)
 
-- [ ] **Todo 29:** Automix panel + settings
+- [x] **Todo 29:** Automix panel + settings (partial: the Automix panel is Wave 7)
   - Audio/MIDI settings, preferences
-  - Partial: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; audio and appearance pages live, latency/xrun/CPU readout), audio device state restore on start-up (`openmixer::audio_settings`). Open: the MIDI and plugin pages show placeholders until Todos 10 and 14; the library page drives the library services (Todo 13a); no Escape key on the overlay yet (needs a focus handle); overlay not checked by eye
-  - Also open: `--settings` start flag; the Linux GPUI CI job (see the TODO in `.github/workflows/rust.yml`)
+  - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
+  - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job (see the TODO in `.github/workflows/rust.yml`)
   - Automix panel (Wave 7, needs Todo 38)
 
 - [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)

@@ -90,7 +90,7 @@ Date: 2026-10-18. Crate: `crates/om-ui-gpui` (drawing and event glue only; the m
 - **CI.** Unchanged: the `gui` feature is not built in CI. Open item (Todo 29, `.github/workflows/rust.yml` has the TODO): a Linux-only job for `cargo check -p openmixer --features gui`. The link line on this box needs the development packages for freetype, xcb, xkbcommon and xkbcommon-x11; wayland and fontconfig are not verified on a clean runner. Not added: the job would compile the whole GPUI tree on every run, and the apt list cannot be verified here.
 - **Verified.** `openmixer --mock-device --smoke` (with and without `--debug-panel`) exits 0 after 120 frames under X11. `xwininfo` lists the 1280x800 window while the app runs. The crate's headless tests drive the widget models over a real `DjEngine` through the same string-id router the UI uses (drag mapping, pitch ends, crossfader, knob travel, engine-side changes pulled into the model). Nobody has looked at the window: layout, colours and text were not checked by eye.
 - **Library browser (Todo 13b).** The browser is drawn in `crates/om-ui-gpui/src/library_view.rs` over the glue in `library.rs`, which holds no gpui types and is tested by `tests/library_panel.rs`. Drag and drop uses gpui's in-app `on_drag` and `on_drop` on the deck cards (a row drags as `openmixer.track:<id>`). The search box is a focusable card that reads keystrokes (`key_char`), not an input-method field, so IME composition is not supported. The `#[gpui::test]` TestAppContext tests were not added: they need gpui's `test-support` feature and its extra dependencies; the glue tests cover the same logic without a window.
-- **Not done.** No C++ keyboard shortcuts exist for the deck or mixer views. The om-ui widget tests that need visual checks remain untested by eye, and so does the library browser. The gpui settings library page is still a placeholder (Todo 29). See `TODO.md` Todos 26, 26a and 27 for what is partial.
+- **Not done.** No C++ keyboard shortcuts exist for the deck or mixer views. The om-ui widget tests that need visual checks remain untested by eye, and so does the library browser. The settings library page drives the library (Todo 29). See `TODO.md` Todos 26, 26a and 27 for what is partial.
 
 ## Audio settings and overlay (Todo 29, 9b)
 
@@ -100,9 +100,19 @@ Date: 2026-10-18. Ports `JuceAudioSettingsModel`, `AppPreferencesTargets` and th
 - **Routing across devices.** One `OutputPairs` handle lives in the model and every device is opened through it (`CpalAudioDevice::open_with_pairs`), so master and headphone pairs survive a device change.
 - **Restore.** The device state is a JSON string (host, device, rate, buffer, channels) in `AudioPrefs::device_state`. Start-up restores it, else opens the default output. `AppTargetsState` keeps what the targets remember across calls (last map, wanted theme, plugin folder, last audio state); the composition owns it, because the C++ targets object lives for the whole app.
 - **Tests.** Every new test runs on `MockBackend` (no device opened). The one existing test that opens the default cpal output is now opt-in: set `OPENMIXER_DEVICE_TESTS=1`.
-- **Overlay.** `om-ui-gpui::settings_view`. Opened by the Settings button in a header strip above the layout; closed by Close or a click on the scrim. Audio and appearance are live (the theme switches at once in the window). MIDI, library and plugin pages show their stored state and say what is not ported. Escape is not wired: GPUI key events need a focus handle, which is not set up yet.
+- **Overlay.** `om-ui-gpui::settings_view`. Opened by the Settings button in a header strip above the layout; closed by Close or a click on the scrim. Audio and appearance are live (the theme switches at once in the window). Every page drives its service (see "Settings pages over the services" below). Escape closes the overlay: the card holds focus while it is open.
 - **Build notes.** The om-ui-gpui test binary links only with the `libxkbcommon-x11` shim above (`RUSTFLAGS="-L /tmp/libshim"`). `--mock-device --smoke` exits 0 with that build. The overlay has not been looked at by eye.
-- **Not done.** `--settings` start flag; plugin themes reach only the composition's registry (the window keeps its own copy, loaded from the built-ins and the user folder); the example-plugin cases of `AppPreferencesTargetsTest` wait on Todo 14.
+- **Not done.** `--settings` start flag; the example-plugin cases of `AppPreferencesTargetsTest` wait on Todo 14.
+
+## Settings pages over the services (Todo 29)
+
+Date: 2026-10-19. Crates: `om-ui::settings` (the page models), `om-ui-gpui::settings_view` (the overlay), `openmixer::gui` (the wiring).
+
+- **MIDI.** The page reads the input list from `MidiService` (refreshed when the overlay opens and on each page change, not per frame). Enable and per-input toggles go through the preferences; the applier opens inputs. Map file: a typed path is loaded first and stored only when it loads; the Load button reloads the map in use. Learn targets are full router ids (`deck.<i>.play|rate`, `mixer.ch<i>.fader|trim`, `mixer.crossfader`, `mixer.master`). A learn that finishes shows as a change of the map generation.
+- **Library.** `HubLibrary` wraps the window's shared hub. Without a library the scan settings are still stored, and the watch-folder, rescan and import actions say so.
+- **Plugins.** The built-in catalog is `openmixer::plugins::builtin_catalog()` (the gain example, linked in as a dependency). Built-ins are not loaded at start-up. Loading or unloading a plugin re-syncs its themes into the window's registry (`sync_plugin_themes`), so they appear in Appearance.
+- **Text field.** GPUI has no text input in this overlay, so a path is typed into a small field at the foot of the card: Enter applies, Escape cancels. This covers watch folders, the XML file and the map file.
+- **Smoke.** `--mock-device` and `--smoke` attach a mock controller (`Mock controller`); no run in those modes opens hardware. The smoke run prints `MIDI:` and `plugins:` status lines before the ok line.
 
 ## MIDI device layer (Todo 32)
 
@@ -128,6 +138,6 @@ Date: 2026-10-19. Crate: `crates/om-plugins`. Example: `examples/plugins/gain-pl
 
 Date: 2026-10-19. Crate: `crates/om-stems`.
 
-- **Downloads.** The C++ tree downloaded weights over HTTP, HTTPS and file URLs through `juce::URL`. The Rust port keeps the licence gate, the `.part` file, the size and SHA-256 checks and the marker files. Transport: `file://` and plain `http://` (`ureq` 2 without TLS). Tests use local files and a loopback server; no test reaches the network.
-- **HTTPS is refused until a TLS backend is chosen.** Every Rust TLS root bundle that `ureq` or `rustls` pulls in (`webpki-roots`) is CDLA-Permissive-2.0, which `deny.toml` does not allow. Allowing that licence, or using the platform trust store through a backend with its own licence, is a licence-policy call for the maintainers. Until then HTTPS model URLs fail with a clear message.
+- **Downloads.** The C++ tree downloaded weights over HTTP, HTTPS and file URLs through `juce::URL`. The Rust port keeps the licence gate, the `.part` file, the size and SHA-256 checks and the marker files. Transport: `file://`, `http://` and `https://` (`ureq` 2 with rustls). Tests use local files and a loopback server; no test reaches the network.
+- **HTTPS uses rustls with the webpki root bundle.** `webpki-roots` is CDLA-Permissive-2.0 (a permissive data licence, compatible with AGPL-3.0 distribution). `deny.toml` allows it with a comment. The https test reaches a loopback listener that hangs up and checks the TLS handshake fails, so no test leaves the host.
 - **The ONNX Runtime backend stays open.** `StemSeparator` is the interface; `MockSeparator` stands in and returns four quarters of the input, so the pipeline can run without a model. The `ort` backend, model export and the hosted manifest are Todo 19 work.
