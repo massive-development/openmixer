@@ -9,6 +9,7 @@
 #[cfg(target_os = "linux")]
 mod alsa_backend;
 mod backend;
+mod echo;
 mod error;
 mod event;
 mod feedback;
@@ -31,6 +32,7 @@ pub use backend::{
     system_backend, MidiBackend, MidiCallback, MidiInputConnection, MidiOutputPort, MidiPortInfo,
     PortSnapshot,
 };
+pub use echo::{EchoGuard, ECHO_WINDOW};
 pub use error::MidiError;
 pub use event::{MidiEvent, MidiKind};
 pub use feedback::{system_clock, Clock, MidiFeedback};

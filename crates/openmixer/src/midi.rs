@@ -9,7 +9,7 @@
 use crate::app_targets::MidiSink;
 use om_core::{ParameterTarget, StateReader};
 use om_midi::{
-    system_clock, LearnRequest, MidiBackend, MidiFeedback, MidiInputRouter, MidiMapper,
+    system_clock, EchoGuard, LearnRequest, MidiBackend, MidiFeedback, MidiInputRouter, MidiMapper,
     MidiOutputRouter, MidiOutputSink,
 };
 use om_ui::settings::{MidiControl, MidiInputs};
@@ -50,12 +50,15 @@ impl MidiService {
     /// opened until inputs are selected.
     pub fn new(backend: Box<dyn MidiBackend>, state: Arc<dyn StateReader>) -> Arc<Self> {
         let mapper = Arc::new(MidiMapper::new());
-        let output = Arc::new(MidiOutputRouter::new());
+        // Feedback sends and the inputs share one echo guard, so a controller's LED messages
+        // coming back on its input are not heard as presses.
+        let echo = Arc::new(EchoGuard::new());
+        let output = Arc::new(MidiOutputRouter::with_echo(Arc::clone(&echo)));
         let mut feedback = MidiFeedback::new(state, Arc::clone(&mapper), Some(system_clock()));
         let sink: Arc<dyn MidiOutputSink> = output.clone();
         feedback.set_sink(Some(sink));
         Arc::new(Self {
-            input: MidiInputRouter::new(Arc::clone(&mapper)),
+            input: MidiInputRouter::with_echo(Arc::clone(&mapper), echo),
             mapper,
             output,
             feedback: Mutex::new(feedback),

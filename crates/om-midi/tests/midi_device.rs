@@ -160,3 +160,41 @@ fn mock_backend_reports_refresh_changes_once() {
     backend.add_output("Pad");
     assert!(backend.refresh().unwrap());
 }
+
+const ECHO_MAP: &str = r#"{"version":2,"mappings":[
+  {"type":"note","number":36,"target":"deck.0.play","mode":"toggle"}]}"#;
+
+#[test]
+fn feedback_echo_on_a_paired_input_is_ignored_only_inside_the_window() {
+    use om_midi::{EchoGuard, ECHO_WINDOW};
+    use std::time::Duration;
+
+    let target = Arc::new(RecordingTarget::default());
+    let mapper = Arc::new(MidiMapper::new());
+    mapper.set_target(target.clone());
+    mapper.load_from_json(ECHO_MAP).expect("map loads");
+
+    let echo = Arc::new(EchoGuard::new());
+    let router = MidiInputRouter::with_echo(Arc::clone(&mapper), Arc::clone(&echo));
+    let output = MidiOutputRouter::with_echo(echo);
+    let mut backend = MockBackend::new();
+    backend.add_device("Pad");
+    let ids = ["Pad".to_owned()];
+    router.enable(&mut backend, false, &ids).expect("enable");
+    output
+        .open_paired_with(&mut backend, &ids, false)
+        .expect("outputs open");
+
+    // Feedback lights the LED on the paired output (note 36 on).
+    output.send(&[0x90, 36, 127]);
+    assert_eq!(backend.sent("Pad"), vec![vec![0x90, 36, 127]]);
+
+    // The controller sends the same message back at once: an echo, not a press.
+    assert!(backend.inject("Pad", &[0x90, 36, 127]));
+    assert!(target.changes().is_empty(), "an echo is not routed");
+
+    // The same bytes after the window are a real press.
+    std::thread::sleep(ECHO_WINDOW + Duration::from_millis(50));
+    assert!(backend.inject("Pad", &[0x90, 36, 127]));
+    assert_eq!(target.changes().len(), 1, "a press after the window is routed");
+}
