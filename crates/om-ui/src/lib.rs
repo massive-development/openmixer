@@ -11,6 +11,8 @@ pub mod format;
 pub mod geometry;
 pub mod main_layout;
 pub mod meter;
+pub mod preferences;
+pub mod preferences_applier;
 pub mod sidebar;
 pub mod theme;
 pub mod waveform;
