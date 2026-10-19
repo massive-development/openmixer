@@ -250,6 +250,31 @@ impl StemService {
         Ok(rows.len())
     }
 
+    /// Removes every committed stem set and every index row. Cancel the running jobs first; a
+    /// job still writing would be left with a directory it cannot commit. Returns the number of
+    /// directories removed.
+    pub fn clear_cache(&self) -> Result<usize, StemServiceError> {
+        let library = Library::open(
+            &self.inner.library_path,
+            OpenMode::ReadWrite,
+            core_migrations(),
+        )?;
+        let mut removed = 0;
+        for entry in self.inner.cache.entries()? {
+            self.inner.cache.remove(&entry.dir_name)?;
+            removed += 1;
+        }
+        for row in library.track_stems().list_all_bytes()? {
+            library.track_stems().delete_by_dir(&row.dir)?;
+        }
+        Ok(removed)
+    }
+
+    /// Bytes the committed stem sets take up on disk, as recorded in their `meta.json`.
+    pub fn cache_bytes(&self) -> Result<u64, StemServiceError> {
+        Ok(self.inner.cache.total_bytes()?)
+    }
+
     /// Drops index rows whose directory is gone (removed by hand, or evicted by another run), and
     /// returns how many. Directories without rows are left to the cap's eviction.
     pub fn reconcile(&self) -> Result<usize, StemServiceError> {
