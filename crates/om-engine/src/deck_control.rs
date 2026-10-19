@@ -15,6 +15,7 @@ use crate::grid::BeatGrid;
 use crate::quantizer::make_quantized_loop;
 use crate::slip::SlipTracker;
 use crate::sync::Sync;
+use om_core::sync::LockExt;
 use om_core::ParameterTarget;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
@@ -111,7 +112,7 @@ impl DeckControl {
     }
 
     fn slip_lock(&self) -> std::sync::MutexGuard<'_, SlipTracker> {
-        self.slip.lock().unwrap_or_else(|p| p.into_inner())
+        self.slip.lock_unpoisoned()
     }
 
     fn set_leader(&self, on: bool) {

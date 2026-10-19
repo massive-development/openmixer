@@ -13,6 +13,7 @@ use crate::ingest::{full_path, IngestSummary, Ingestor};
 use crate::library::Library;
 use crate::metadata::MetadataReaderRegistry;
 use crate::migrations::{core_migrations, Migration};
+use om_core::sync::LockExt;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -166,16 +167,11 @@ impl WatchFolders {
     }
 
     fn lock_state(&self) -> MutexGuard<'_, WakeState> {
-        self.shared
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.shared.state.lock_unpoisoned()
     }
 
     fn lock_control(&self) -> MutexGuard<'_, Library> {
-        self.control
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.control.lock_unpoisoned()
     }
 }
 
@@ -214,10 +210,7 @@ fn run(
     let mut scan_library: Option<Library> = None;
     let mut last_scan = clock();
 
-    let mut state = shared
-        .state
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut state = shared.state.lock_unpoisoned();
     while !state.stopping {
         let now = clock();
         if !state.triggered && now - last_scan < options.interval_ms {
@@ -277,10 +270,7 @@ fn run(
             }
         }
 
-        state = shared
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state = shared.state.lock_unpoisoned();
         state.passes += 1;
         shared.done.notify_all();
     }

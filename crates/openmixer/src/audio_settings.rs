@@ -14,9 +14,10 @@ use om_audio::{
     CpalAudioDevice, LatencyStats, MockAudioDevice, OutputDeviceInfo, OutputPairs, OutputRequest,
     OutputRouter,
 };
+use om_core::sync::LockExt;
 use om_ui::settings::{AudioSettingsModel, AudioStats, SettingsResult};
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Outputs the device is opened with.
 pub const MAX_OUTPUTS: u16 = 8;
@@ -441,7 +442,7 @@ impl SharedOutput {
     }
 
     pub fn lock(&self) -> MutexGuard<'_, OutputSettings> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.0.lock_unpoisoned()
     }
 }
 

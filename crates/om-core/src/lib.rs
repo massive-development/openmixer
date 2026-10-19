@@ -9,6 +9,7 @@ mod parameter;
 mod ring;
 mod router;
 mod state;
+pub mod sync;
 
 pub use frame_ring::FrameRing;
 pub use parameter::ParameterTarget;

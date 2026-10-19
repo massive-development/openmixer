@@ -3,8 +3,9 @@
 
 use crate::analyzer::INTERFACE_VERSION;
 use crate::{Analyzer, BpmAnalyzer, KeyAnalyzer, StructureAnalyzer, WaveformAnalyzer};
+use om_core::sync::LockExt;
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RegistryError {
@@ -75,9 +76,7 @@ impl AnalyzerRegistry {
     }
 
     fn lock(&self) -> MutexGuard<'_, BTreeMap<String, Arc<dyn Analyzer>>> {
-        self.analyzers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.analyzers.lock_unpoisoned()
     }
 }
 

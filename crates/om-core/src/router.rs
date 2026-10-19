@@ -1,3 +1,4 @@
+use crate::sync::LockExt;
 use crate::ParameterTarget;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -67,7 +68,7 @@ impl ParameterTarget for ParameterRouter {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_unpoisoned()
 }
 
 /// Reentrant exclusion: one owning thread at a time, and the owner may enter again.
