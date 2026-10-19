@@ -15,6 +15,9 @@ pub enum LibraryError {
     /// The migration list is invalid, a migration failed, or the database is newer than the app.
     #[error("{0}")]
     Migration(String),
+    /// A file or folder the library needs could not be created or read.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     /// Connection setup failed (for example, WAL is unavailable).
     #[error("{0}")]
     Setup(String),
