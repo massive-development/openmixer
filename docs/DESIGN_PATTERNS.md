@@ -2,7 +2,7 @@
 
 Registry for agents and contributors. Check here before starting a large implementation; add an entry when you introduce or adopt a pattern.
 
-Most entries below describe the Rust design. Where a pattern comes from the C++ tree, the entry says so and names its file in the frozen baseline (`cpp-final`). Entries marked **(planned)** are designed but not yet written in Rust; **(deferred)** patterns wait for a later phase. Patterns that the Rust port replaces are listed under "Replaced in the Rust port" with what replaces them.
+Most entries below describe the Rust design. Where a pattern comes from the C++ tree, the entry says so and names its file in the frozen baseline (`cpp-final`). Entries marked **(planned)** were written as design before the Rust code existed, and the marker may lag the code (check the crate); **(deferred)** patterns wait for a later phase. Patterns that the Rust port replaces are listed under "Replaced in the Rust port" with what replaces them.
 
 ## Entry template
 
@@ -86,7 +86,7 @@ pub trait AudioProcessor: Send {
 - **Notes:** `Sync::step` is a pure function of deck states (control thread, ~20-50 Hz); only `apply` sends a rate command. Grids are shared immutably as `Arc<dyn BeatGrid + Send + Sync>`.
 
 ### Checking decorator for headless runs (OutputChecker)
-- **Where:** `tools/soak` (planned in Rust; the C++ version was `OutputChecker.h` at `cpp-final`)
+- **Where:** `crates/om-audio/tests/soak/` (the C++ version was `tools/soak/OutputChecker.h` at `cpp-final`)
 - **Why:** wrap any `AudioProcessor` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
 - **Reuse when:** long-running or fuzz-style runs (soak, golden-audio, plugin stress) need output assertions.
 - **Notes:** a generic wrapper struct `Checked<P: AudioProcessor>` with atomic counters; no allocation in `process`.
@@ -253,7 +253,7 @@ pub trait AudioProcessor: Send {
 - **Notes:** the composition root is the only place that holds concrete types and `Box<dyn ...>` objects. Local variables in the composition function drop in reverse declaration order, so declare objects that others reference before them; they then drop after those references (struct fields work the other way, see Library services composition).
 
 ### UI gate: rig + scripted operator (planned)
-- **Where:** `tools/ui_gate` (planned; the C++ version was the `ui_gate` source and `UiRig.h` at `cpp-final`)
+- **Where:** `crates/openmixer/tests/ui_gate.rs` (the C++ version was the `ui_gate` source and `UiRig.h` at `cpp-final`)
 - **Why:** the soak drives the engine directly; the gate proves the wiring by using the widgets' own paths and then asserting the widget and the engine agree.
 - **Reuse when:** a new panel needs end-to-end coverage: add its actions to the scripted scenario and count them, so the gate fails if an area is never exercised.
 - **Notes:** the gate uses the same composition root as the binary, so window wiring is never duplicated in the rig. Labels: `ui_gate` (short, default), `uigate_long` (10 min, planned), `smoke` (`openmixer --smoke`).

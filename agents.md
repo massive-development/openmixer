@@ -4,26 +4,27 @@
 
 OpenMixer is a clean-room, legally original implementation of professional DJ software, written in Rust with GPUI for the UI. This document provides instructions for any AI agent to understand the codebase and continue development.
 
-The project is being rewritten from the C++ tree. The frozen baseline is the git tag `cpp-final` (commit c6d2747). It is the behavioural reference until Phase 5 of the rewrite passes; it is deleted from `main` only after that. The design is `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`, and the toolkit decision is `docs/adr/0004-stack-rust-gpui.md`.
+**Status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.
+
+The C++ implementation was removed in this commit range. It is preserved at the `cpp-final` tag (commit c6d2747), and the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`. The design is `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`, and the toolkit decision is `docs/adr/0004-stack-rust-gpui.md`.
 
 ## Project Structure
 
 ```
-/home/brandon/projects/openmixer/
-├── .github/workflows/        # rust.yml = Rust CI (every PR); pr-tests.yml and ci.yml = legacy C++ workflows, kept until Phase 5
-├── crates/                   # Cargo workspace members
-│   ├── om-core/              # currently exposes only VERSION; parameter/target traits, state snapshots, command enum planned (no I/O)
-│   ├── om-dsp/               # empty scaffold; filters, EQ, FX primitives, resampling helpers planned
-│   ├── om-engine/            # empty scaffold; decks, channel strips, crossfader, FX routing, sync, loops planned
-│   ├── om-audio/             # empty scaffold; cpal device layer, latency monitor planned
-│   ├── om-ui/                # UI logic without a window: themes, formats, widget view models (gpui front end in Todo 8b)
-│   └── openmixer/            # binary: currently supports --smoke and --version; composition root and preferences planned
+openmixer/
+├── .github/workflows/        # rust.yml: the Rust CI (every PR); gui-check is non-blocking
+├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
+│   └── om-ui-gpui/           # GPUI window: its own workspace, behind the openmixer `gui` feature
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── legal/                # Legal documentation
+│   ├── spikes/               # Phase 1 decision record (DECISIONS.md) and spike notes
 │   └── superpowers/specs/    # Design specs (rust-rewrite-design.md)
-├── tools/                    # Development tools (Python scripts, soak and UI gate harnesses)
-├── tests/                    # Integration tests and fixtures
+├── examples/plugins/         # Example in-process plugin (gain-plugin)
+├── fixtures/                 # Small test inputs: controller maps and traces, library exports
+├── resources/themes/         # Built-in theme JSON
+├── tests/tools/              # Unit tests for the Python tools
+├── tools/                    # check_docs_rust.py, parity_inventory.py, progress_heatmap.py
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain
@@ -32,21 +33,25 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 └── deny.toml                 # Licence and ban policy (cargo deny)
 ```
 
-Planned crates, added in their phases: `om-stretch` (Phase 2, the only crate allowed `unsafe`), `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`.
+The crate list and their roles are in the README architecture section.
 
-## Current State (Rust rewrite, Phase 1 spikes run)
+## Current State (Rust port at parity)
 
-Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase.
+{STATUS}.
 
 **Implemented:**
-- Repository initialization and governance documents (LICENSE, ADRs, CONTRIBUTING)
-- Cargo workspace with the `om-core`, `om-dsp`, `om-engine`, `om-audio` crates (`om-core` exposes only `VERSION`; the other three are empty scaffolds) and the `openmixer` binary (`--smoke`, `--version`)
-- Rust CI matrix (`rust.yml`): fmt, clippy, test on Linux, macOS and Windows; `cargo deny` on Linux (all three OSes stay in CI so portability does not rot; Linux is the only runtime target until the porting phase)
-- Frozen C++ baseline at tag `cpp-final`, the behavioural reference for parity
+- Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
+- Waves 1-6 at parity with `cpp-final`: the audio device layer (cpal, and a mock device), decks, mixer, FX racks, sync and quantize, key-lock, MIDI input and feedback (ALSA sequencer on Linux, mock backend), trace replay, the library (database, ingest, iTunes and Rekordbox import, search, prep queue), analysis (BPM, key, waveform, structure), the plugin API, themes, preferences and the settings overlay, the debug panel and the headless UI gate
+- The GPUI window behind the `gui` feature
+- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature on Linux (non-blocking)
 
-**In progress / planned:**
-- Phase 1 decision record: `docs/spikes/DECISIONS.md`; `docs/parity.md` is already generated from `cpp-final`
-- Linux first (see `docs/spikes/DECISIONS.md`, Rescope): the GPUI gate is closed on Linux; the time-stretch decision is made (Rubber Band R3 via FFI behind a `Stretcher` trait). Open for Phase 2 on Linux: native-Linux cpal device runs and the headphone-cue second stream. Porting phase: Windows and macOS GPUI, WASAPI and CoreAudio checks.
+**Known gaps:**
+- Automix (Todo 38, Wave 7; the Automix panel waits on it) and the stem features (stem DSP, stem transitions, stem pads: Todos 37, 39, 30)
+- The stems ONNX Runtime backend (Todo 19); the separator interface and the licence-gated downloads are done
+- HID (Todo 35), the mapping editor UI (Todo 36) and plug-and-play controller maps (Todo 34)
+- Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
+- Windows (WASAPI) and macOS (CoreAudio) runtime targets: the porting phase. The cpal device has not been run on a real ALSA or PipeWire device
+- Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
 
 ## Architecture Decisions
 
@@ -78,14 +83,14 @@ Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux,
 All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
 
 1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
-2. Open a PR into `stage` with `gh pr create --base stage`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, macOS and Windows, `cargo deny`) runs on every pull request. `pr-tests.yml` and `ci.yml` are the legacy C++ workflows, kept until Phase 5; `pr-tests.yml` still runs on PRs into `stage`, but it is not the Rust gate. The description must include:
+2. Open a PR into `stage` with `gh pr create --base stage`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, macOS and Windows, `cargo deny`, the progress heatmap check and the ASIO SDK guard) runs on every pull request. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key crates/modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Release: batch `stage` into `main` with a PR (`--base main`); the legacy full C++ matrix (`ci.yml`, kept until Phase 5) runs only there, and `rust.yml` runs as on every PR. Pushes alone never trigger CI.
+5. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
 6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
 7. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
 8. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
@@ -96,7 +101,7 @@ All changes — including those by AI agents and maintainers — land through a 
 All code must follow Rust best practices (edition 2021, toolchain pinned in `rust-toolchain.toml`). Outdated, unsafe or leaking code is not acceptable.
 
 - **Ownership:** owned values and borrows by default. Use `Arc` only when ownership is genuinely shared across threads, and `Rc` never on the audio path. Pass data by value or by reference; avoid `'static` leaks and `Box::leak`.
-- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate `om-stretch` (planned for Phase 2: Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md). Every `unsafe` block there has a `// SAFETY:` line stating the invariant.
+- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate `om-stretch` (Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md). Every `unsafe` block there has a `// SAFETY:` line stating the invariant.
 - **Idioms:** `enum`s and `match` for state and commands, newtypes for ids and units, `Option`/`Result` instead of sentinel values, `?` for propagation, `#[must_use]` where a result must not be ignored, iterators over index loops where clearer. Prefer `&str`/`&[T]` parameters.
 - **Errors:** `thiserror` for typed errors in library crates, `anyhow` only in the `openmixer` binary. Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
 - **Logging:** `tracing` macros with structured fields. Never log from the audio thread.
@@ -151,7 +156,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 - **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (serde-loaded files) over fixed code paths.
 - **Stable plugin API:** keep extension traits small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
-- **Plugins are deferred.** The design defers the plugin host (CLAP-first if and when it is needed). Until its wave, keep new extension points as traits and registries in the owning crate, so they can be exposed later without restructuring.
+- **Plugins are in-process for now.** `om-plugins` has the plugin API and registry; loading from a shared library is open (see `docs/spikes/DECISIONS.md`). Keep new extension points as traits and registries in the owning crate, so they can be exposed later without restructuring.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
 ## Progress Files (required)
@@ -212,15 +217,15 @@ Sanitizer and Miri runs for concurrent code are planned; the current real-time c
 
 ## Implementation Waves
 
-The design maps these waves onto Phases 0–6 (see `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`). Wave 1 is the C++ baseline; the others are rebuilt in Rust.
+Waves 1–6 are at parity with the C++ baseline (`cpp-final`). Waves 7–9 were never in it. The phasing is in `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
 
-### Wave 1: Foundation ✅ COMPLETE (C++ baseline, `cpp-final`)
+### Wave 1: Foundation ✅ COMPLETE
 - Repository setup
 - Legal framework
 - Build system and CI (replaced by the Cargo workspace and `rust.yml`)
 - Test harness
 
-### Wave 2: Audio Engine (Rust, Phases 1–2)
+### Wave 2: Audio Engine
 - Audio device layer over `cpal` (with a mock device for CI)
 - Deck streaming decoder (`symphonia`)
 - Time-stretch / keylock (Rubber Band R3 via `om-stretch`, behind a `Stretcher` trait)
@@ -252,7 +257,7 @@ The design maps these waves onto Phases 0–6 (see `docs/superpowers/specs/2026-
 - Library browser
 - Automix panel
 - Settings screens
-- **Gate:** scripted UI-driven 10-minute mix (`tools/ui_gate`) plus `openmixer --smoke`; UI screenshot suite and keyboard-only testing (planned)
+- **Gate:** scripted UI-driven 10-minute mix (`crates/openmixer/tests/ui_gate.rs`, the 10-minute run is `#[ignore]`) plus `openmixer --smoke`; UI screenshot suite and keyboard-only testing (planned)
 
 ### Wave 6: Hardware I/O
 - MIDI mapping engine (`midir`)
@@ -309,15 +314,15 @@ pub use mixer::Mixer;
 ### Testing
 
 - TDD for engine and analysis logic
-- Golden-vector fixtures carried over from the C++ tests (kept under `tests/`)
+- Golden-vector fixtures carried over from the C++ tests (kept in the crates' test modules and `fixtures/`)
 - Property tests (`proptest`) for parsers and search
 - Metric tests for DSP accuracy; `criterion` benchmarks for DSP
 - Real-time tests: render the engine inside `assert_no_alloc`
 - Screenshot tests for UI (planned)
 
-## Next Steps (Phase 2, Linux first)
+## Next Steps (porting phase, Linux first)
 
-Work follows the design phasing. The parity inventory in `docs/parity.md` lists which C++ test each Todo replaces.
+Work follows the design's porting phase: Windows (WASAPI) and macOS (CoreAudio) runtime targets, then Waves 7–9. The parity inventory in `docs/parity.md` lists which C++ test each Todo replaces.
 
 ### Todo 7: Audio Device Layer
 

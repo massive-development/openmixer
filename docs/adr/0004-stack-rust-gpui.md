@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (supersedes ADR 0002). Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase
+Accepted (supersedes ADR 0002). Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next
 
 ## Context
 
@@ -73,7 +73,7 @@ Negative / risks:
 - GPUI's release stability and licence (expected Apache-2.0, AGPL-compatible) are unverified beyond the Linux spike; Windows support is unverified until the porting phase.
 - No pure-Rust time-stretcher passed the design bar in the Phase 1 spike. Decided: Rubber Band R3 via FFI behind a `Stretcher` trait, to be re-measured in the real engine.
 - Windows (WASAPI) and macOS (CoreAudio) latency via cpal is measured in the porting phase.
-- A full rewrite: the C++ tree stays on `main` until the Rust engine reaches parity. It is deleted only after Phase 5 passes.
+- A full rewrite: the C++ tree stayed on the branch until the Rust port reached parity. It was then removed in one commit range; the `cpp-final` tag keeps it.
 
 Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`. Rubber Band (GPL-2.0-or-later) is AGPL-compatible and is chosen; its `deny.toml` entry is enabled when `om-stretch` lands in Phase 2, not before.
 

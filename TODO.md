@@ -1,10 +1,10 @@
 # OpenMixer TODO
 
-OpenMixer is being rewritten in Rust with GPUI. The statuses below are the Rust state. The statuses of the frozen C++ baseline are in the `cpp-final` tag (`git show cpp-final:TODO.md`). Todo numbers and titles match `docs/parity.md`, which maps each one to its C++ tests and its Rust test.
+OpenMixer is written in Rust with GPUI. The statuses below are the Rust state. The C++ baseline is the parity reference: its TODO is in the `cpp-final` tag (`git show cpp-final:TODO.md`). Todo numbers and titles match `docs/parity.md`, which maps each one to its C++ tests and its Rust test.
 
-## Rust rewrite Phase 0-1
+## Rust rewrite: phases 0-1 (done)
 
-**Status:** Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase.
+**Status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.
 
 Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`. Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
 
@@ -163,16 +163,16 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 27:** Mixer widgets + metering
   - Knobs, faders, meters
-  - Partial (Todo 8b): channel strips, master, crossfader, cue and FX page drawn with drag; not verified by eye
+  - Partial: channel strips, master, crossfader, cue and FX page drawn with drag; not verified by eye
 
 - [x] **Todo 28:** Library browser + app wiring
   - Tree, track list, search
-  - Done (Todo 13a and 13b): the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page drives the library (Todo 29)
+  - Done: the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page drives the library (Todo 29)
 
 - [x] **Todo 29:** Automix panel + settings (partial: the Automix panel is Wave 7)
   - Audio/MIDI settings, preferences
   - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
-  - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job (see the TODO in `.github/workflows/rust.yml`)
+  - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
   - Automix panel (Wave 7, needs Todo 38)
 
 - [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
@@ -186,7 +186,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 ## Wave 6: Hardware I/O
 
 - Todos 32/33 moved to Wave 2
-- [ ] **Todo 34:** Plug-and-play controller maps (none in the C++ tree yet: `fixtures/controllers` holds only test fixtures)
+- [ ] **Todo 34:** Plug-and-play controller maps (not in the C++ baseline; `fixtures/controllers` holds only test fixtures)
 - [ ] **Todo 35:** HID layer
 - [ ] **Todo 36:** Mapping editor UI
 
@@ -214,4 +214,4 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ---
 
-**Next Work:** Wave 2 Todos 7, 8, 10, 32/33 (MIDI), 26a (debug panel), Linux first.
+**Next Work:** the Windows and macOS porting phase (Linux first until then), then Waves 7-9. Open in Waves 1-6: 19 (ONNX stems backend), 25 and 30 (not started), 26, 26a, 27 and 29 (partial), 31 (window-driven pass).

@@ -3,11 +3,11 @@
 Where the project stands against the goal: a clean-room, djay-Pro-class DJ application, being rewritten in Rust with GPUI.
 `TODO.md` is the task list; this page explains **what each task entails, what exists today, and what is still missing**. The "Entails" column is the behavioural spec each Rust task must meet.
 
-C++ reference: see `cpp-final`.
+C++ baseline: The C++ implementation was removed in this commit range. It is preserved at the `cpp-final` tag (commit c6d2747), and the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`.
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase. Update this file in the same PR that changes a task's status._
+_Last updated: Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -17,19 +17,19 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 
 | Wave | Area | Status |
 |------|------|--------|
-| 1 | Foundation | ✅ Rust scaffold (repo, Cargo workspace, CI, test harness) |
-| 2 | Audio engine | ⬜ |
-| 3 | Analysis | ⬜ |
-| 4 | Library | ⬜ |
-| 5 | UI | ⬜ |
-| 6 | Hardware | ⬜ |
-| 7 | Intelligence | ⬜ |
-| 8 | Pro surface | ⬜ |
-| 9 | Release | ⬜ |
+| 1 | Foundation | ✅ Repo, Cargo workspace, CI, test harness |
+| 2 | Audio engine | ✅ (debug panel 26a partial) |
+| 3 | Analysis | 🟡 (stems ONNX backend, 19, open) |
+| 4 | Library | ✅ |
+| 5 | UI | 🟡 (design tokens 25 and stem pads 30 open; decks, mixer and settings partial) |
+| 6 | Hardware | 🟡 Parity (32 and 33 moved to Wave 2); 34-36 were never in the C++ baseline and are open |
+| 7 | Intelligence | ⬜ Not in the C++ baseline |
+| 8 | Pro surface | ⬜ Not in the C++ baseline |
+| 9 | Release | ⬜ Not in the C++ baseline |
 
-**Rust rewrite status:** Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux, stretcher decided (Rubber Band R3 behind a Stretcher trait); Windows/macOS deferred to a porting phase; see `docs/spikes/DECISIONS.md`; see the plan in `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`.
+**Rust port status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next. See `docs/spikes/DECISIONS.md`.
 
-**What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test`), and check startup with `cargo run -p openmixer -- --smoke`. No audio, analysis, library or UI features exist yet.
+**What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test --workspace`), check startup with `cargo run -p openmixer -- --smoke`, and with the `gui` feature open the GPUI window (`cargo run -p openmixer --features gui -- --mock-device`). Audio, analysis, library, MIDI and the UI are implemented; the wave sections say what is partial.
 
 ---
 
@@ -46,7 +46,9 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 
 ---
 
-## Wave 2 — Audio engine ⬜
+## Wave 2 — Audio engine ✅
+
+The status marks come from `docs/progress.json`. The Done and Missing cells in the tables from Wave 2 to Wave 5 were written before the Rust port finished; `TODO.md` has the current state per Todo.
 
 Goal: reliable, low-latency playback of two decks through a mixer, controllable by MIDI, testable headlessly.
 
@@ -69,7 +71,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 ---
 
-## Wave 3 — Analysis ⬜
+## Wave 3 — Analysis 🟡
 
 | Todo | Entails | Missing |
 |------|---------|---------|
@@ -82,7 +84,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 ---
 
-## Wave 4 — Library ⬜
+## Wave 4 — Library ✅
 
 | Todo | Entails | Missing |
 |------|---------|---------|
@@ -94,7 +96,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 ---
 
-## Wave 5 — UI ⬜
+## Wave 5 — UI 🟡
 
 | Todo | Entails | Missing |
 |------|---------|---------|
@@ -109,7 +111,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 ---
 
-## Wave 6 — Hardware ⬜
+## Wave 6 — Hardware 🟡 (parity; 34-36 not in the C++ baseline)
 
 | Todo | Entails | Missing |
 |------|---------|---------|
@@ -117,7 +119,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 35 HID layer | Non-MIDI controllers | All |
 | 36 Mapping editor UI | In-app learn and edit | All |
 
-## Waves 7–9 ⬜
+## Waves 7–9 ⬜ (not in the C++ baseline)
 
 | Wave | Contents | Status |
 |------|----------|--------|

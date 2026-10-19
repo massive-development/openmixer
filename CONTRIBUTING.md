@@ -32,7 +32,7 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 **While implementing:**
 - [ ] Follow existing code patterns
 - [ ] Add/expand tests
-- [ ] Keep audio-thread code allocation-, lock- and syscall-free, and check it in tests where the harness allows (`assert_no_alloc`, planned for Phase 2)
+- [ ] Keep audio-thread code allocation-, lock- and syscall-free, and check it in tests where the harness allows (the `alloc_guard` module in `om-engine`, active in debug builds)
 - [ ] Create evidence file: `.omo/evidence/task-<N>-openmixer-dj-app.*`
 
 **After completing:**
@@ -74,7 +74,7 @@ All changes — including those by AI agents and maintainers — land through a 
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`), `docs/PROGRESS.md` and `docs/parity.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Release: batch `stage` into `main` with a PR (`--base main`); the full matrix (Linux/macOS/Windows, license, progress, sign) runs only there. Pushes alone never trigger CI.
+5. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
 6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
 7. Promote early: open a `stage` -> `main` PR at every major milestone (a finished Todo or feature group), not only at the end of a wave, so release PRs stay small and reviewable.
 
@@ -195,7 +195,7 @@ See "Comments & Function Size" above. Each crate's `lib.rs` (or `main.rs`) start
 | Unit | `crates/<crate>/src/` (`#[cfg(test)]` modules) or `crates/<crate>/tests/` | Logic verification |
 | Golden | `tests/golden/` (planned) | DSP correctness; vectors carried over from the baseline |
 | Metric | `tests/metrics/` (planned) | Accuracy thresholds |
-| Screenshot | `tests/screenshots/` (planned, Phase 5) | UI verification |
+| Screenshot | `tests/screenshots/` (planned) | UI verification |
 
 ### Adding Tests
 
