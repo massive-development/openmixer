@@ -14,9 +14,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
 - **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
 - **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
-- **Todo 20:** play history: no table (only a `play_count` column). Automix and recently played need it. S
-- **Todo 12 / 20:** hotcue save-back: `DjEngine::set_hotcue` exists, but only the import path writes `cues`; no caller stores engine hotcues in the library. S
-- **Todo 21:** artwork persistence: read into `Artwork` in `metadata.rs`, no artwork table. S
+- **Library (Phase L, L1-L3): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, and cover art stored per track (`artwork`, front cover up to 512 KiB). Showing artwork in the UI is not built.
 - **Todo 23:** FTS: search is LIKE-based; no FTS5 table in the migrations. S
 - **Todo 25:** LookAndFeel: `ThemeTokens` exist in `om-ui::theme`, but nothing styles knobs, faders, menus, tabs or tooltips from them (no LookAndFeel type in the tree). M
 - **Todo 26a:** debug panel load/play: `debug_panel.rs` only shows rows; no load or play control. S (or retire it when Wave 5 lands)
@@ -112,7 +110,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Beat phase alignment
   - Control ids: `deck.N.sync`, `sync.master`, `loop.quantized.<beats>`, `slip`
   - Gapless deck loop playback and hotcues
-  - Open: saving engine hotcues back to the library is not confirmed
+  - Hotcue edits are saved per track and restored on load (`CueSaver`, `TrackLoader`)
 
 - [x] **Todo 11:** FX rack (8 essential effects)
   - Effects: echo, reverb, flanger, phaser, crush, gate, roll, tape stop
@@ -163,12 +161,13 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 20:** Library schema + DAO layer
   - SQLite schema with migrations and transactions (`rusqlite`)
   - DAOs for tracks, cues, playlists
+  - Play history: `play_history` table; a play is recorded when a deck has played its track for 30 s
 
 - [x] **Todo 21:** Metadata ingest + watch folders
   - Metadata reader registry; RIFF INFO tags and duration
-  - Tags for MP3/FLAC/M4A via `lofty`; artwork read (not stored)
+  - Tags for MP3/FLAC/M4A via `lofty`; front cover stored in `artwork` (up to 512 KiB, no re-encoding)
   - Recursive ingest and watch folders
-  - Open: artwork is read, not stored (no artwork table), polling watch folders only
+  - Open: polling watch folders only; artwork is not shown in the UI
 
 - [x] **Todo 22:** Import (iTunes/Rekordbox XML)
   - Importer registry (extension point)
