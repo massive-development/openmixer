@@ -26,6 +26,7 @@ mod error;
 mod parse;
 #[cfg(test)]
 mod tests;
+mod validate;
 
 pub use error::ParamError;
 
@@ -237,6 +238,8 @@ impl ParamId {
     }
 }
 
+/// `Display` prints the canonical id, and that text parses back to the same value only for an id
+/// that passes [`ParamId::validate`]. Ids from `FromStr` always do; check hand-built ids first.
 impl fmt::Display for ParamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

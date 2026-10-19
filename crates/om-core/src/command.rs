@@ -4,7 +4,7 @@
 //!
 //! Threads: sending is a control-thread operation, like [`crate::ParameterTarget`].
 
-use crate::param_id::AutomixParam;
+use crate::param_id::{AutomixParam, ParamError};
 use crate::ParamId;
 use thiserror::Error;
 
@@ -40,6 +40,15 @@ pub enum Command {
         sample: SampleId,
     },
     Automix(AutomixCommand),
+}
+
+impl Command {
+    /// A `Command::Param` for `id`. Fails for an id that does not validate (see
+    /// [`ParamId::validate`]), so a control surface cannot send one the engine would print wrongly.
+    pub fn param(id: ParamId, value: f64) -> Result<Self, ParamError> {
+        id.validate()?;
+        Ok(Self::Param { id, value })
+    }
 }
 
 /// Why a command was not carried out.
