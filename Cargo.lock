@@ -4075,6 +4075,7 @@ dependencies = [
  "om-dsp",
  "om-engine",
  "om-library",
+ "om-testing",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
