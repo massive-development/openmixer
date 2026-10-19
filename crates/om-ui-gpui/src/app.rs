@@ -1,13 +1,19 @@
 //! Application shell: the themed main window. Lays the decks, the mixer and the library placeholder
-//! out with om-ui's `MainLayout` rectangles, and ticks the engine's control side once per frame.
+//! out with om-ui's `MainLayout` rectangles, owns the om-ui widget models, and ticks the engine's
+//! control side once per frame.
 
+use crate::deck_view::deck_card;
 use crate::paint::{paint, place};
-use gpui::{div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds, WindowOptions};
-use om_core::ParameterRouter;
+use gpui::{
+    div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds, WindowOptions,
+};
+use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::DjEngine;
+use om_ui::binding::DeckBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT};
 use om_ui::theme::{ThemeRegistry, ThemeTokens};
+use om_ui::widgets::deck::DeckWidget;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,17 +29,16 @@ pub struct RunOptions {
     pub banner: Option<String>,
 }
 
-/// The root view. Owns the handles the rest of the window reads from.
+/// The root view. Owns the widget models and the handles they read from.
 pub struct Shell {
-    engine: Arc<DjEngine>,
-    #[allow(dead_code)] // The control router; the widgets reach it in step 4.
-    router: Arc<ParameterRouter>,
-    theme: ThemeTokens,
+    pub(crate) engine: Arc<DjEngine>,
+    pub(crate) theme: ThemeTokens,
+    /// One card per engine deck, in deck order.
+    pub(crate) decks: Vec<DeckWidget>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
     frames: u64,
-    /// Shared with the caller so it can read the count after the window closes.
     frames_out: Arc<AtomicU64>,
 }
 
@@ -51,36 +56,74 @@ pub fn cells_for(engine_decks: usize, area: Rect, gap: i32) -> Vec<PlacedCell> {
 }
 
 impl Shell {
+    fn new(
+        engine: Arc<DjEngine>,
+        router: Arc<ParameterRouter>,
+        theme: ThemeTokens,
+        options: RunOptions,
+        frames_out: Arc<AtomicU64>,
+    ) -> Self {
+        let target: Arc<dyn ParameterTarget> = router;
+        let decks = (0..engine.num_decks())
+            .map(|index| {
+                DeckWidget::new(DeckBinding::new(
+                    Arc::clone(&engine),
+                    Arc::clone(&target),
+                    index,
+                ))
+            })
+            .collect();
+        Self {
+            engine,
+            theme,
+            decks,
+            options,
+            started: Instant::now(),
+            last_tick: 0.0,
+            frames: 0,
+            frames_out,
+        }
+    }
+
     /// Frames rendered so far.
     pub fn frames(&self) -> u64 {
         self.frames
     }
 
-    /// One frame of engine upkeep: sync, FX tempo, slip ghosts. Runs on the UI thread at frame rate.
+    /// One frame of upkeep: engine control tick, then the widgets follow the engine.
     fn tick(&mut self) {
         let now = self.started.elapsed().as_secs_f64();
         self.engine.update_control(now - self.last_tick);
         self.last_tick = now;
+        for deck in &mut self.decks {
+            deck.refresh(false);
+        }
         self.frames += 1;
         self.frames_out.store(self.frames, Ordering::Relaxed);
     }
 
-    fn cell_view(&self, cell: &PlacedCell) -> gpui::Div {
+    fn cell_view(&self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
         let t = &self.theme;
-        let (title, accent) = match &cell.kind {
-            CellKind::Deck(index) => (format!("Deck {}", index + 1), t.accent_for(*index as i32)),
-            CellKind::Slot(name) if name == MIXER_SLOT => ("Mixer".to_owned(), t.master),
-            CellKind::Slot(name) if name == LIBRARY_SLOT => ("Library (analysis not built yet)".to_owned(), t.border),
-            CellKind::Slot(name) => (name.clone(), t.border),
-        };
-        place(cell.bounds)
-            .bg(paint(t.surface))
-            .border_1()
-            .border_color(paint(accent))
-            .rounded(px(t.control_radius))
-            .text_color(paint(t.text_primary))
-            .p(px(t.pad as f32))
-            .child(title)
+        match &cell.kind {
+            CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
+            CellKind::Slot(name) => {
+                let (title, accent) = if name == MIXER_SLOT {
+                    ("Mixer".to_owned(), t.master)
+                } else if name == LIBRARY_SLOT {
+                    ("Library (analysis not built yet)".to_owned(), t.border)
+                } else {
+                    (name.clone(), t.border)
+                };
+                place(cell.bounds)
+                    .bg(paint(t.surface))
+                    .border_1()
+                    .border_color(paint(accent))
+                    .rounded(px(t.control_radius))
+                    .text_color(paint(t.text_primary))
+                    .p(px(t.pad as f32))
+                    .child(title)
+            }
+        }
     }
 }
 
@@ -115,7 +158,7 @@ impl Render for Shell {
             );
         }
         for cell in cells_for(self.engine.num_decks(), area, gap) {
-            root = root.child(self.cell_view(&cell));
+            root = root.child(self.cell_view(&cell, cx));
         }
         root
     }
@@ -136,17 +179,9 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, options: RunOpti
                 ..Default::default()
             },
             move |_, cx| {
-                let (engine, router, theme, options, frames_out) = slot.take().expect("window opened once");
-                cx.new(|_| Shell {
-                    engine,
-                    router,
-                    theme,
-                    options,
-                    started: Instant::now(),
-                    last_tick: 0.0,
-                    frames: 0,
-                    frames_out,
-                })
+                let (engine, router, theme, options, counter) =
+                    slot.take().expect("window opened once");
+                cx.new(|_| Shell::new(engine, router, theme, options, counter))
             },
         )
         .expect("open main window");
