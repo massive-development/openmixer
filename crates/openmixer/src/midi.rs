@@ -6,6 +6,7 @@
 //! ports. Input callbacks run on the device threads and take only the mapper's locks.
 
 use crate::app_targets::MidiSink;
+use om_core::sync::LockExt;
 use om_core::{ParameterTarget, StateReader};
 use om_midi::{
     system_clock, EchoGuard, LearnRequest, MidiBackend, MidiFeedback, MidiInputRouter, MidiMapper,
@@ -15,7 +16,7 @@ use om_ui::settings::{MidiControl, MidiInputs};
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -25,7 +26,7 @@ pub const FEEDBACK_HZ: u32 = 30;
 const HOTPLUG_TICKS: u32 = FEEDBACK_HZ;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_unpoisoned()
 }
 
 /// The inputs the preferences selected: every input, or the listed ids.

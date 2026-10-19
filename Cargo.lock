@@ -4002,6 +4002,7 @@ version = "0.1.0"
 dependencies = [
  "lofty",
  "om-analysis",
+ "om-core",
  "proptest",
  "quick-xml",
  "rusqlite",

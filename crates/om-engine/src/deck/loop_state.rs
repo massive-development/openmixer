@@ -1,6 +1,7 @@
 //! Loop bounds shared from control threads to the decoder and audio threads. Writers serialise on
 //! a mutex (control side only); readers take a lock-free seqlock snapshot.
 
+use om_core::sync::LockExt;
 use std::sync::atomic::{fence, AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::Mutex;
 
@@ -36,7 +37,7 @@ const READ_ATTEMPTS: usize = 4;
 
 impl LoopState {
     pub fn store(&self, s: LoopSnapshot) {
-        let _guard = self.write_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let _guard = self.write_lock.lock_unpoisoned();
         self.write_locked(s);
     }
 
@@ -44,7 +45,7 @@ impl LoopState {
     /// new ones, or `None` to leave them alone. Concurrent writers cannot slip in between the read
     /// and the write, so none of their updates is lost. Returns whether bounds were written.
     pub fn update(&self, change: impl FnOnce(&LoopSnapshot) -> Option<LoopSnapshot>) -> bool {
-        let _guard = self.write_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let _guard = self.write_lock.lock_unpoisoned();
         let current = LoopSnapshot {
             start: self.start.load(Ordering::Relaxed),
             end: self.end.load(Ordering::Relaxed),

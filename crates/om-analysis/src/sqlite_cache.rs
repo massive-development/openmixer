@@ -3,8 +3,9 @@
 //! The connection sits behind a mutex, so any thread may call it.
 
 use crate::ResultCache;
+use om_core::sync::LockExt;
 use rusqlite::{params, Connection};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 /// Value of `PRAGMA user_version` written by this build.
 pub const SCHEMA_VERSION: i32 = 1;
@@ -47,7 +48,7 @@ impl SqliteResultCache {
     }
 
     fn lock(&self) -> MutexGuard<'_, Connection> {
-        self.db.lock().unwrap_or_else(PoisonError::into_inner)
+        self.db.lock_unpoisoned()
     }
 }
 

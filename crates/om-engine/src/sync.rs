@@ -6,6 +6,7 @@
 
 use crate::deck::Deck;
 use crate::grid::BeatGrid;
+use om_core::sync::LockExt;
 use om_core::ParameterTarget;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -70,7 +71,7 @@ impl Sync {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        self.state.lock_unpoisoned()
     }
 
     /// Grids are shared with the analysis side. `None` removes the grid, so the deck cannot sync.

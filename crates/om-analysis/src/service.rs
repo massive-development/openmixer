@@ -5,6 +5,7 @@
 
 use crate::job_runner::run_analysis_job;
 use crate::{AnalysisJob, AnalyzerRegistry, ClipSource, ResultCache};
+use om_core::sync::LockExt;
 use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -104,10 +105,7 @@ impl AnalysisService {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.shared
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.shared.state.lock_unpoisoned()
     }
 }
 
@@ -158,7 +156,7 @@ fn worker_loop(shared: &Shared) {
             // The job is already final; a listener that panics has nothing left to report to.
             let _ = panic::catch_unwind(AssertUnwindSafe(|| listener(&task.job)));
         }
-        let mut state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut state = shared.state.lock_unpoisoned();
         state.running.retain(|job| !Arc::ptr_eq(job, &task.job));
     }
 }
@@ -174,7 +172,7 @@ pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 
 /// Next queued task, moved to the running list. `None` once stopping with nothing queued.
 fn wait_for_task(shared: &Shared) -> Option<Task> {
-    let state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+    let state = shared.state.lock_unpoisoned();
     let mut state = shared
         .wake
         .wait_while(state, |s| !s.stopping && s.queue.is_empty())

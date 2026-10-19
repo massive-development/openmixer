@@ -2,6 +2,7 @@
 //! thread may read it, cancel it or wait for it.
 
 use om_core::atomic::AtomicF32;
+use om_core::sync::LockExt;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
@@ -147,6 +148,6 @@ impl AnalysisJob {
     }
 
     fn lock(&self) -> MutexGuard<'_, JobState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+        self.state.lock_unpoisoned()
     }
 }

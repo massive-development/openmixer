@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 cpal = "0.18"
+om-core.workspace = true
 om-engine.workspace = true
 rtrb.workspace = true
 thiserror.workspace = true

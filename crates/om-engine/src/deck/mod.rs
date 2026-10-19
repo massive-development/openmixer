@@ -18,6 +18,7 @@ use crate::callback::AudioCallback;
 use crate::quantizer::Loop;
 use decoder::DecoderWorker;
 use loop_state::LoopSnapshot;
+use om_core::sync::LockExt;
 use om_core::{spsc, ParameterTarget};
 use playback::Playback;
 use shared::Shared;
@@ -132,10 +133,7 @@ impl Deck {
     }
 
     fn hand_over(&self, reader: Option<SourceReader>) {
-        let mut pending = match self.shared.pending.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut pending = self.shared.pending.lock_unpoisoned();
         if reader.is_some() {
             pending.load_counter = pending.load_counter.wrapping_add(1);
             pending.load_id = pending.load_counter;
