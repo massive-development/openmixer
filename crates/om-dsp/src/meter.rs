@@ -26,7 +26,7 @@ impl PeakMeter {
     }
 }
 
-/// Display ballistics parameters. Defaults match the C++ theme fallbacks.
+/// Display ballistics parameters. Defaults are the theme fallbacks.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeterParams {
     pub floor_db: f32,

@@ -3,7 +3,7 @@
 use crate::biquad::{design_high_pass, design_low_pass, Biquad};
 
 const DEAD_ZONE: f32 = 0.02;
-// C++ literal, kept verbatim so coefficients stay bit-identical.
+// Literal kept verbatim so coefficients stay bit-identical.
 #[allow(clippy::approx_constant)]
 const Q: f32 = 0.7071;
 const MIN_LOW_PASS_HZ: f32 = 40.0;
