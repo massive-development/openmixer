@@ -3,10 +3,11 @@
 //! never committed to the repository; manifests are plain JSON so users and plugins can point at other
 //! models or mirrors.
 
+use crate::contract::ModelContract;
 use serde_json::{json, Value};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelManifest {
     /// Also the file name in the model folder. Letters, digits, `.`, `_` and `-`; no leading dot.
     pub id: String,
@@ -19,6 +20,8 @@ pub struct ModelManifest {
     pub license_name: String,
     /// Shown to the user before downloading.
     pub license_text: String,
+    /// How the pipeline talks to the model; `None` means [`ModelContract::htdemucs`].
+    pub contract: Option<ModelContract>,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -35,6 +38,8 @@ pub enum ManifestError {
     InvalidSha256,
     #[error("licence name and text are required")]
     MissingLicence,
+    #[error("invalid model contract: {0}")]
+    InvalidContract(String),
 }
 
 fn is_safe_id(id: &str) -> bool {
@@ -70,6 +75,12 @@ impl ModelManifest {
             size_bytes: value["sizeBytes"].as_u64().unwrap_or(0),
             license_name: text_field(&value, "licenseName"),
             license_text: text_field(&value, "licenseText"),
+            contract: match value.get("contract").filter(|c| !c.is_null()) {
+                None => None,
+                Some(c) => {
+                    Some(ModelContract::from_json(c).map_err(ManifestError::InvalidContract)?)
+                }
+            },
         };
         if !is_safe_id(&manifest.id) {
             return Err(ManifestError::InvalidId);
@@ -86,15 +97,23 @@ impl ModelManifest {
         Ok(manifest)
     }
 
+    /// The contract to run the model with.
+    pub fn contract_or_default(&self) -> ModelContract {
+        self.contract.clone().unwrap_or_default()
+    }
+
     pub fn to_json(&self) -> String {
-        json!({
+        let mut value = json!({
             "id": self.id,
             "url": self.url,
             "sha256": self.sha256,
             "sizeBytes": self.size_bytes,
             "licenseName": self.license_name,
             "licenseText": self.license_text,
-        })
-        .to_string()
+        });
+        if let Some(contract) = &self.contract {
+            value["contract"] = contract.to_json();
+        }
+        value.to_string()
     }
 }

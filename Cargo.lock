@@ -4048,6 +4048,8 @@ name = "om-stems"
 version = "0.1.0"
 dependencies = [
  "om-analysis",
+ "om-engine",
+ "realfft",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
