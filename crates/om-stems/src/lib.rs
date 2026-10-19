@@ -38,6 +38,8 @@ pub use separator::{
     FileStereoSource, MockSeparator, SliceSource, StemBuffer, StemError, StemKind, StemSeparator,
     StemSet, StemSetSink, StemSink, StereoSource, INTERFACE_VERSION,
 };
-pub use service::{ModelGate, StemRequest, StemService, StemServiceConfig, StemServiceError};
+pub use service::{
+    clear_stem_cache, ModelGate, StemRequest, StemService, StemServiceConfig, StemServiceError,
+};
 pub use spectral::Spectral;
 pub use weights::{Downloader, LicensePrompt, UrlDownloader, WeightError, WeightManager};
