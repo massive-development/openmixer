@@ -234,6 +234,7 @@ mod tests {
             settings: None,
             library: None,
             library_rows_out: None,
+            demo_grid_bpm: None,
         };
         let shell = Shell::new(
             Arc::clone(&engine),

@@ -177,10 +177,12 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .border_color(paint(if search_active { t.highlight } else { t.border }))
         .bg(paint(t.surface_raised))
         .text_color(paint(if search_text.is_empty() && !search_active {
-            t.text_secondary
+            t.text_muted.with_multiplied_alpha(0.8)
         } else {
             t.text_primary
         }))
+        // The hint is dim and italic so it never reads as a typed query.
+        .when(search_text.is_empty() && !search_active, |el| el.italic())
         .child(search_label)
         .on_mouse_down(
             MouseButton::Left,

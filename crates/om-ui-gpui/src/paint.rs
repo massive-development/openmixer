@@ -11,6 +11,14 @@ pub fn paint(colour: Colour) -> Rgba {
     rgba(((argb & 0x00FF_FFFF) << 8) | (argb >> 24))
 }
 
+/// Black at `alpha`: the scrim behind an overlay, so the window shows through.
+pub fn scrim(alpha: f32) -> Rgba {
+    Rgba {
+        a: alpha.clamp(0.0, 1.0),
+        ..rgba(0x0000_00ff)
+    }
+}
+
 /// An empty box placed at `rect` inside its positioned parent.
 pub fn place(rect: Rect) -> Div {
     div()

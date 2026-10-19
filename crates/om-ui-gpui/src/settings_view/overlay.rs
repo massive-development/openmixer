@@ -32,10 +32,18 @@ impl Shell {
         Some(
             place(Rect::new(0, y, width, HEADER_HEIGHT))
                 .bg(paint(t.popup))
+                .border_b_1()
+                .border_color(paint(t.border))
                 .flex()
-                .justify_end()
+                .justify_between()
                 .items_center()
-                .px(px(8.))
+                .px(px(14.))
+                .child(
+                    div()
+                        .text_size(px(t.type_caption))
+                        .text_color(paint(t.text_secondary))
+                        .child("OpenMixer"),
+                )
                 .child(button),
         )
     }
@@ -96,7 +104,14 @@ impl Shell {
         }
         settings.poll_learn();
         let w = CARD_WIDTH.min(area.w - 2 * CARD_MARGIN).max(0);
-        let h = CARD_HEIGHT.min(area.h - 2 * CARD_MARGIN).max(0);
+        // The Appearance page is short: its card fits the content instead of showing empty space.
+        let wanted =
+            if settings.panel.page_kind(settings.panel.current()) == Some(PageKind::Appearance) {
+                CARD_HEIGHT * 5 / 9
+            } else {
+                CARD_HEIGHT
+            };
+        let h = wanted.min(area.h - 2 * CARD_MARGIN).max(0);
         let card_x = area.x + (area.w - w) / 2;
         let card_y = area.y + (area.h - h) / 2;
 
@@ -166,7 +181,7 @@ impl Shell {
             );
 
         let scrim = place(area)
-            .bg(paint(t.backdrop_top))
+            .bg(crate::paint::scrim(t.settings_dim_alpha))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _: &MouseDownEvent, _, cx| {

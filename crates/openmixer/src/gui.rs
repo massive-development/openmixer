@@ -195,6 +195,9 @@ pub fn main(args: &[String]) -> ExitCode {
         settings: Some(settings),
         library: library.clone(),
         library_rows_out: smoke.then(|| Arc::clone(&rows_out)),
+        // The demo's tracks are sine tones with no tempo: give deck A a fixed grid once its
+        // analysis lands, so screenshots show beat ticks.
+        demo_grid_bpm: demo.then_some(120.0),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();

@@ -3,7 +3,7 @@
 
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
-use crate::paint::{paint, place, skin};
+use crate::paint::{border, paint, place, skin};
 use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent, MouseUpEvent};
 use om_ui::geometry::Rect;
 use om_ui::style::LookAndFeel;
@@ -98,6 +98,12 @@ pub fn knob(
 ) -> Div {
     let look = LookAndFeel::from_tokens(t);
     let (inset_s, inset_l) = (look.inset_small, look.inset_large);
+    // A narrow knob (the debug layout) drops the unit so the readout stays on one line.
+    let readout = if rect.w < 48 {
+        readout.strip_suffix(" dB").unwrap_or(readout)
+    } else {
+        readout
+    };
     let frac = fraction(value, min, max) as f32;
     let fill_h = ((rect.h as f32 - inset_l) * frac) as i32;
     // The value fill is translucent and drawn first; label and readout are drawn above it in the
@@ -155,12 +161,16 @@ pub fn stereo_meter(t: &ThemeTokens, rect: Rect, levels: [f32; 2], clipping: [bo
         let side = m.bar_inset as i32;
         let bar = Rect::new(x + side, rect.h - bar_h, (half - 2 * side).max(1), bar_h);
         col = col.child(
-            place(Rect::new(
-                x,
-                headroom,
-                half.max(1),
-                (rect.h - headroom).max(1),
-            ))
+            border(
+                place(Rect::new(
+                    x,
+                    headroom,
+                    half.max(1),
+                    (rect.h - headroom).max(1),
+                )),
+                t.border_width,
+            )
+            .border_color(paint(m.border))
             .bg(paint(m.well))
             .rounded(px(m.radius)),
         );
