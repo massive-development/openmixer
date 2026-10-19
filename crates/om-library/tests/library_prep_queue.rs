@@ -1,4 +1,4 @@
-//! Port of tests/unit/LibraryPrepQueueTest.cpp: the persisted prep queue feeding the analysis
+//! The persisted prep queue feeding the analysis
 //! service.
 
 mod common;

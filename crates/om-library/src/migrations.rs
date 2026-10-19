@@ -1,5 +1,5 @@
-//! Forward-only schema migrations. The table and column names match the C++ schema, so databases
-//! written by the C++ app open unchanged. Later subsystems append their own entries.
+//! Forward-only schema migrations. The table and column names are kept from the original schema, so databases
+//! written by earlier builds open unchanged. Later subsystems append their own entries.
 
 use crate::database::{Database, Transaction};
 use crate::error::{LibraryError, Result};

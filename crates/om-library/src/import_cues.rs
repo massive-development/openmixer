@@ -1,7 +1,7 @@
 //! Adds imported cues and loops to a track without disturbing local ones (merge policy in
 //! `import_merge`). Hotcue `num` n goes to slot n; memory cues and loops (`num` -1) go to the
 //! first free slot from 8 up. Times are seconds, converted to engine frames with the track's
-//! sample rate (44100 when unknown). Port of `src/library/ImportCues.*`.
+//! sample rate (44100 when unknown).
 
 use crate::cue_dao::{CueDao, CuePoint, SavedLoop};
 use crate::error::Result;

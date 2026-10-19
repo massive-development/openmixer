@@ -1,4 +1,4 @@
-//! Port of tests/unit/LibraryWatchFoldersTest.cpp: persisted folder list and background rescans.
+//! Persisted folder list and background rescans.
 
 mod common;
 

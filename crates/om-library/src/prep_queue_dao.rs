@@ -1,7 +1,6 @@
 //! Persisted track prep queue: which tracks are waiting to be analysed, in what order, and how
 //! each ended. Processing order is priority (highest first), then position; position is the
 //! user's list order. Non-owning view of a `Database`; use from the thread that owns it.
-//! Port of `src/library/PrepQueueDao.*`.
 
 use crate::database::{Database, Transaction};
 use crate::error::{LibraryError, Result};

@@ -1,5 +1,5 @@
 //! One-call import: parse a foreign library XML with a registered importer and merge it into the
-//! `Library` in one transaction. Port of `src/library/LibraryImport.*`.
+//! `Library` in one transaction.
 
 use crate::error::{LibraryError, Result};
 use crate::import_model::{ImportReport, ImportedLibrary};

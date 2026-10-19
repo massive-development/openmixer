@@ -1,5 +1,5 @@
 //! Field registry for search: maps a query field name ("bpm", "artist") to how it filters and sorts.
-//! Extension point: plugins add fields with a custom compile hook. Port of `src/library/SearchFields.{h,cpp}`.
+//! Extension point: plugins add fields with a custom compile hook.
 
 use crate::error::Result;
 use crate::search_compiler::{compile_folder_term, compile_key_term, compile_playlist_term};

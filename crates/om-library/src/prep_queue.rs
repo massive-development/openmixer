@@ -7,7 +7,6 @@
 //! shared. The owner calls `pump()` regularly (a UI timer, or `pump_until_idle()` in tests):
 //! `pump()` applies finished results, then tops up the service. Only `max_in_flight` jobs are
 //! ever submitted at once, so the order of the rest stays editable (move, prioritise, cancel).
-//! Port of `src/library/PrepQueue.*`.
 
 use crate::error::Result;
 use crate::library::Library;

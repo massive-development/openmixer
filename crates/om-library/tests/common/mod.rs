@@ -1,5 +1,5 @@
 //! Shared fixtures for the ingest and metadata tests: generated audio files with tags, built from
-//! bytes so no binary fixtures are checked in. Port of tests/unit/LibraryIngestTestUtil.h.
+//! bytes so no binary fixtures are checked in.
 //!
 //! WAV (with RIFF INFO), FLAC, MP3, OGG Vorbis and M4A are hand-built minimal containers. Tags for
 //! ID3v2, Vorbis comments and iTunes atoms are then written with lofty's own writer.
@@ -30,7 +30,7 @@ pub struct Tags {
 }
 
 impl Tags {
-    /// The tag set used by the C++ `tags()` helper.
+    /// The tag set used by the `tags()` helper.
     pub fn night_drive() -> Self {
         Self {
             title: Some("Night Drive"),
@@ -346,7 +346,7 @@ pub fn write_m4a(path: &Path, seconds: u32, tags: &Tags) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Sets the file's modification time, as the C++ `touch` helper does.
+/// Sets the file's modification time.
 pub fn touch(path: &Path, ms: u64) {
     let when = UNIX_EPOCH + Duration::from_millis(ms);
     fs::OpenOptions::new()

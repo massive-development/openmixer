@@ -1,4 +1,4 @@
-//! Port of tests/unit/LibrarySearchTest.cpp: query parser, SQL compilation and results over a seeded
+//! Query parser, SQL compilation and results over a seeded
 //! library. Fixtures are built with the DAOs in a temporary database file.
 
 use om_library::{

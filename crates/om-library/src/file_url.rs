@@ -95,7 +95,7 @@ mod tests {
         }
     }
 
-    // Expectations from tests/unit/LibraryImportTest.cpp (ImportFileUrl.DecodesCommonForms).
+    // Expectations for the common file URL forms.
     #[test]
     fn decodes_common_forms() {
         assert_eq!(
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn broken_escapes_stay_literal() {
-        // A truncated or non-hex escape is kept as typed (as the C++ test expects), not decoded.
+        // A truncated or non-hex escape is kept as typed, not decoded.
         assert_eq!(file_url_to_path("file:///a%2"), Some(native("/a%2")));
         assert_eq!(file_url_to_path("file:///a%zz"), Some(native("/a%zz")));
     }

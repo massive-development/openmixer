@@ -1,5 +1,5 @@
 //! Small XML tree for the importers: elements with attributes, child elements and their text.
-//! Covers the part of `juce::XmlElement` the C++ importers use. Comments, processing
+//! Covers the part of XML the importers use. Comments, processing
 //! instructions and the DOCTYPE are dropped; entity and character references are decoded.
 
 use quick_xml::events::{BytesRef, BytesStart, Event};
@@ -60,14 +60,14 @@ impl XmlElement {
         self.attribute(name).unwrap_or_default().to_owned()
     }
 
-    /// The attribute read as an integer (JUCE rules, see [`crate::juce_text::int_value`]), or
+    /// The attribute read as an integer (lenient parse, see [`crate::juce_text::int_value`]), or
     /// `default` when absent.
     pub fn int_attribute(&self, name: &str, default: i64) -> i64 {
         self.attribute(name)
             .map_or(default, crate::juce_text::int_value)
     }
 
-    /// The attribute read as a number (JUCE rules), or 0.0 when absent.
+    /// The attribute read as a number (lenient parse), or 0.0 when absent.
     pub fn double_attribute(&self, name: &str) -> f64 {
         self.attribute(name)
             .map_or(0.0, crate::juce_text::double_value)
@@ -145,7 +145,7 @@ fn element_from(start: &BytesStart<'_>) -> Result<XmlElement, String> {
 }
 
 /// Adds a finished element to its parent. Only the first root element is kept; anything after
-/// it is ignored, as `juce::XmlDocument` does.
+/// it is ignored.
 fn attach(stack: &mut [XmlElement], root: &mut Option<XmlElement>, element: XmlElement) {
     if let Some(parent) = stack.last_mut() {
         parent.children.push(element);
