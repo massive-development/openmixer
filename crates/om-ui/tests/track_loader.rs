@@ -413,3 +413,77 @@ fn rekordbox_imported_hotcues_appear_on_load() {
     );
     assert_eq!(rig.engine.deck(0).hotcue(1), None);
 }
+
+#[test]
+fn a_library_file_loaded_by_path_loads_as_its_track() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("known.wav", "8A", true);
+    let path = rig.dir.path().join("known.wav");
+    rig.loader
+        .load_path(&rig.engine, &mut rig.services, 0, &path, false)
+        .expect("a library file loads by path");
+    assert!(rig.engine.deck(0).is_loaded());
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(id));
+    assert_eq!(rig.loader.track_info(0).artist, "Artist");
+}
+
+#[test]
+fn a_file_outside_the_library_plays_without_metadata_and_clears_the_old_track() {
+    let mut rig = LoaderRig::new();
+    let first = rig.add_file("first.wav", "8A", true);
+    rig.load(0, first).expect("loads");
+    assert!(rig.loader.loaded_track(0).is_some());
+
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    rig.loader
+        .load_path(&rig.engine, &mut rig.services, 0, &loose, false)
+        .expect("a loose file loads");
+    assert!(rig.engine.deck(0).is_loaded());
+    assert!(rig.loader.loaded_track(0).is_none(), "no library metadata");
+    assert!(rig.loader.waveform(0).is_none());
+    assert!(rig.engine.deck_control(0).grid().is_none());
+}
+
+#[test]
+fn load_by_path_refuses_a_playing_deck_unless_forced() {
+    let mut rig = LoaderRig::new();
+    let first = rig.add_file("first.wav", "8A", true);
+    rig.load(0, first).expect("loads");
+    rig.engine.deck(0).play();
+
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    let refused = rig
+        .loader
+        .load_path(&rig.engine, &mut rig.services, 0, &loose, false)
+        .expect_err("a playing deck refuses");
+    assert_eq!(refused.to_string(), "deck is playing");
+    assert!(rig.engine.deck(0).is_playing());
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(first));
+
+    rig.loader
+        .load_path(&rig.engine, &mut rig.services, 0, &loose, true)
+        .expect("a forced load by path goes through");
+    assert!(rig.loader.loaded_track(0).is_none());
+}
+
+#[test]
+fn load_by_path_reports_missing_files_and_bad_decks() {
+    let mut rig = LoaderRig::new();
+    let missing = rig.dir.path().join("nope.wav");
+    let err = rig
+        .loader
+        .load_path(&rig.engine, &mut rig.services, 0, &missing, false)
+        .expect_err("missing file");
+    assert_eq!(err.to_string(), "file is missing");
+
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    let err = rig
+        .loader
+        .load_path(&rig.engine, &mut rig.services, 9, &loose, false)
+        .expect_err("no such deck");
+    assert_eq!(err.to_string(), "no such deck");
+    assert!(!rig.engine.deck(0).is_loaded());
+}

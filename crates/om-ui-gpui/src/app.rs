@@ -3,7 +3,7 @@
 //! control side once per frame.
 
 use crate::controls::release_on;
-use crate::debug_panel::{device_rows, parameter_rows, DeviceStatus};
+use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControls, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::library::{LibraryPanel, SharedHub};
@@ -12,8 +12,8 @@ use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, Window,
-    WindowBounds, WindowOptions,
+    div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, KeyDownEvent,
+    Window, WindowBounds, WindowOptions,
 };
 use om_analysis::WaveformData;
 use om_core::ParameterRouter;
@@ -61,7 +61,7 @@ pub struct RunOptions {
 /// The root view. Owns the widget models and the handles they read from.
 pub struct Shell {
     pub(crate) engine: Arc<DjEngine>,
-    router: Arc<ParameterRouter>,
+    pub(crate) router: Arc<ParameterRouter>,
     pub(crate) theme: ThemeTokens,
     /// One card per engine deck, in deck order.
     pub(crate) decks: Vec<DeckWidget>,
@@ -77,6 +77,10 @@ pub struct Shell {
     pub(crate) library_focus: Option<FocusHandle>,
     /// Focus for the settings card: its keys (text fields, Escape) go here while it is open.
     pub(crate) settings_focus: Option<FocusHandle>,
+    /// Focus for the debug column: its path fields take the keys while one is open.
+    pub(crate) debug_focus: Option<FocusHandle>,
+    /// The debug column's per-deck path fields and its status line.
+    pub(crate) deck_controls: DeckControls,
     /// What each deck card last showed, so the widgets only change on a real change.
     shown_info: Vec<TrackInfo>,
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
@@ -139,6 +143,8 @@ impl Shell {
             library,
             library_focus: None,
             settings_focus: None,
+            debug_focus: None,
+            deck_controls: DeckControls::new(deck_count),
             shown_info: vec![TrackInfo::default(); deck_count],
             shown_waveform: vec![None; deck_count],
             options,
@@ -200,9 +206,19 @@ impl Shell {
         }
     }
 
-    /// The `--debug-panel` column: device figures, then the raw control-surface values.
-    fn debug_column(&self, status: &DeviceStatus, bounds: Rect) -> gpui::Div {
+    /// The `--debug-panel` column: the per-deck load and play controls, device figures, then the raw
+    /// control-surface values. Keys go to the column (`focus`), which passes them to an open path field.
+    fn debug_column(
+        &self,
+        status: &DeviceStatus,
+        bounds: Rect,
+        focus: FocusHandle,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
         let t = &self.theme;
+        let playing: Vec<bool> = (0..self.engine.num_decks())
+            .map(|deck| self.engine.deck(deck).is_playing())
+            .collect();
         let mut lines = vec![("Device".to_owned(), String::new())];
         lines.extend(device_rows(status));
         lines.push((String::new(), String::new()));
@@ -212,7 +228,8 @@ impl Shell {
             .flex()
             .flex_col()
             .gap(px(2.))
-            .text_size(px(t.type_caption));
+            .text_size(px(t.type_caption))
+            .child(decks_section(t, &self.deck_controls, &playing, cx));
         for (label, value) in lines {
             let row = div()
                 .flex()
@@ -227,6 +244,14 @@ impl Shell {
             .border_color(paint(t.border))
             .p(px(6.))
             .overflow_hidden()
+            .track_focus(&focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                let keys = &ev.keystroke;
+                if !(keys.modifiers.control || keys.modifiers.platform) {
+                    this.debug_key(&keys.key, keys.key_char.as_deref());
+                    cx.notify();
+                }
+            }))
             .child(body)
     }
 
@@ -316,9 +341,15 @@ impl Render for Shell {
             root = root.child(self.cell_view(&cell, cx));
         }
         if let Some(status) = self.options.debug.clone() {
+            let focus = self
+                .debug_focus
+                .get_or_insert_with(|| cx.focus_handle())
+                .clone();
             root = root.child(self.debug_column(
                 &status(),
                 Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
+                focus,
+                cx,
             ));
         }
         if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), window, cx) {

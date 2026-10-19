@@ -82,7 +82,10 @@ pub struct MeterStyle {
     pub radius: f32,
     pub headroom: f32,
     pub lamp_height: f32,
+    /// Top of the clip lamp below the well's edge.
     pub inset: f32,
+    /// Side gap between a bar and its well's edge.
+    pub bar_inset: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -240,6 +243,7 @@ impl LookAndFeel {
                 headroom: t.meter_headroom,
                 lamp_height: t.lamp_height,
                 inset: t.inset_small,
+                bar_inset: t.border_width,
             },
             panel: shape(
                 t.surface_scaled(),

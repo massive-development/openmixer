@@ -12,3 +12,4 @@ pub mod library_view;
 pub mod mixer_view;
 pub mod paint;
 pub mod settings_view;
+pub mod text_entry;
