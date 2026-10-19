@@ -12,6 +12,7 @@ members = [
     "crates/om-ui",
     "crates/om-plugins",
     "crates/om-stems",
+    "crates/om-testing",
     "examples/plugins/gain-plugin",
     "crates/openmixer",
 ]
@@ -38,6 +39,7 @@ om-midi = { path = "crates/om-midi" }
 om-plugins = { path = "crates/om-plugins" }
 om-stems = { path = "crates/om-stems" }
 om-stretch = { path = "crates/om-stretch" }
+om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
 rtrb = "0.4"
 rusqlite = { version = "0.35", features = ["bundled"] }
