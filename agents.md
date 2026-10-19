@@ -4,9 +4,7 @@
 
 OpenMixer is a clean-room, legally original implementation of professional DJ software, written in Rust with GPUI for the UI. This document provides instructions for any AI agent to understand the codebase and continue development.
 
-**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
-
-The C++ implementation was removed in this commit range. It is preserved at the `cpp-final` tag (commit c6d2747), and the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`. The design is `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`, and the toolkit decision is `docs/adr/0004-stack-rust-gpui.md`.
+**Status:** see "Current State" below.
 
 ## Project Structure
 
@@ -18,13 +16,13 @@ openmixer/
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── legal/                # Legal documentation
-│   ├── spikes/               # Phase 1 decision record (DECISIONS.md) and spike notes
-│   └── superpowers/specs/    # Design specs (rust-rewrite-design.md)
+│   ├── spikes/               # Spike notes and the decision record (DECISIONS.md)
+│   └── superpowers/          # Historical design specs and plans
 ├── examples/plugins/         # Example in-process plugin (gain-plugin)
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports
 ├── resources/themes/         # Built-in theme JSON
 ├── tests/tools/              # Unit tests for the Python tools
-├── tools/                    # check_docs_rust.py, parity_inventory.py, progress_heatmap.py
+├── tools/                    # check_docs_rust.py, progress_heatmap.py
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain
@@ -35,31 +33,17 @@ openmixer/
 
 The crate list and their roles are in the README architecture section.
 
-## Current State (Rust port, Linux-first)
+## Current State (Linux first)
 
-**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
+**Status:** Works, verified headlessly on Linux: the audio engine (cpal and a mock device, decks, mixer, FX racks, sync and quantize, key-lock), analysis (BPM, key, waveform, structure), the library (database, ingest, iTunes and Rekordbox import, search, prep queue), MIDI (ALSA sequencer, mapping, feedback, trace replay), the plugin API, themes, preferences and the settings overlay, the debug panel, and the GPUI app. Partial: the Wave 5 UI and stems (mock separator only). The GPUI window has never been viewed by eye. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7.
 
 **Implemented:**
 - Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
-- Waves 1-4 and 6 reach the `cpp-final` baseline's functionality, verified headlessly on Linux: the audio device layer (cpal, and a mock device), decks, mixer, FX racks, sync and quantize, key-lock, MIDI input and feedback (ALSA sequencer on Linux, mock backend), trace replay, the library (database, ingest, iTunes and Rekordbox import, search, prep queue), analysis (BPM, key, waveform, structure), the plugin API, themes, preferences and the settings overlay, the debug panel and the headless UI gate
+- The crates and features in the status above, plus the headless UI gate
 - The GPUI window behind the `gui` feature
 - Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature on Linux (non-blocking)
 
-**Known gaps:**
-- Automix (Todo 38, Wave 7; the Automix panel waits on it) and the stem features (stem DSP, stem transitions, stem pads: Todos 37, 39, 30)
-- The stems ONNX Runtime backend (Todo 19); the separator interface and the licence-gated downloads are done
-- HID (Todo 35), the mapping editor UI (Todo 36) and plug-and-play controller maps (Todo 34)
-- Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
-- Windows (WASAPI) and macOS (CoreAudio) runtime targets: the porting phase. The cpal device has not been run on a real ALSA or PipeWire device
-- Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
-- Design tokens and LookAndFeel (25): the tokens exist, the LookAndFeel does not; the debug panel's load/play (26a) is not wired. Both were done in the C++ baseline
-- FFmpeg decode backend (Todo 8b, optional, open)
-- Library: artwork is not stored (no artwork table); FTS is not used (LIKE only); there is no play-history table (only a `play_count` column)
-- Saving engine hotcues back to the library is not confirmed
-- Auto-enqueue after a library scan; playlist editing
-- macOS: `soak_short` exceeds its xrun budget on hosted runners (that CI leg is non-blocking)
-- The headphone-cue second stream is unproven (it failed on WSLg)
-- The window-opening `--smoke` (behind `gui`) is not run in CI
+**Known gaps:** see the list in `ROADMAP.md` (Known gaps) and the Before-Wave-7 list in `TODO.md`, which is the authoritative list.
 
 ## Architecture Decisions
 
@@ -70,7 +54,7 @@ The crate list and their roles are in the README architecture section.
 - All assets must be original
 
 ### ADR-0002: Technology Stack (superseded)
-- Superseded by ADR-0004. The C++ application framework and its dependencies are recorded there for history only.
+- Superseded by ADR-0004.
 
 ### ADR-0003: Licensing
 - **Pure AGPLv3** (no Contributor CLA)
@@ -83,7 +67,7 @@ The crate list and their roles are in the README architecture section.
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
 - **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
-- **MIDI:** ALSA sequencer (`alsa`, same version as cpal) on Linux; `midir` for macOS and Windows in the porting phase (see `docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
+- **MIDI:** ALSA sequencer (`alsa`, same version as cpal) on Linux; `midir` for macOS and Windows, later (see `docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
 - **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
 
 ## Pull Request Workflow (required)
@@ -119,7 +103,7 @@ All code must follow Rust best practices (edition 2021, toolchain pinned in `rus
 - **Licences and bans:** `cargo deny check` must pass (`deny.toml`). New dependencies must be AGPL-compatible.
 - **Adopting crates:** well-established crates (cpal, symphonia, rusqlite, midir and similar) are adopted directly; reserve spikes for genuine unknowns.
 - **Check current guidance:** when unsure about an API, check docs.rs for the crate version in `Cargo.lock` rather than reusing older patterns from memory.
-- **Skills:** the Rust skills in `.agents/skills/` (`rust-best-practices`, `rust-patterns`, `rust-async-patterns`) are the reference for idioms and async code. The directory is planned for this rewrite; check it exists before relying on it. Async is not the default: prefer threads and channels for the audio and analysis paths.
+- **Skills:** the Rust skills in `.agents/skills/` (`rust-best-practices`, `rust-patterns`, `rust-async-patterns`) are the reference for idioms and async code. Check the directory exists before relying on it. Async is not the default: prefer threads and channels for the audio and analysis paths.
 
 ## Comments & Function Size (required)
 
@@ -172,7 +156,6 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 Every PR that completes or advances a task must update, in the same PR:
 - `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
 - the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
-- `docs/parity.md` is generated from the `cpp-final` tag by `python3 -I tools/parity_inventory.py`. Do not edit it by hand; fill in the Rust test columns through the PR that adds the test.
 
 ## CI Workflow Changes (required)
 
@@ -225,12 +208,12 @@ Sanitizer and Miri runs for concurrent code are planned; the current real-time c
 
 ## Implementation Waves
 
-Waves 1–4 and 6 reach the C++ baseline's functionality (`cpp-final`), verified headlessly on Linux; the Wave 5 UI is partial. Waves 7–9 were never in it. The phasing is in `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
+Waves 1–4 and 6 are verified headlessly on Linux; the Wave 5 UI is partial. Waves 7–9 are new work. Status by Todo is in `TODO.md`.
 
 ### Wave 1: Foundation ✅ COMPLETE
 - Repository setup
 - Legal framework
-- Build system and CI (replaced by the Cargo workspace and `rust.yml`)
+- Build system and CI (Cargo workspace and `rust.yml`)
 - Test harness
 
 ### Wave 2: Audio Engine
@@ -296,7 +279,7 @@ Waves 1–4 and 6 reach the C++ baseline's functionality (`cpp-final`), verified
 
 - Values are owned by default; use `Box`, `Vec` and `Arc` deliberately
 - No `unsafe` outside the designated FFI crate
-- Types are not `Clone` or `Copy` unless copying is meaningful; this replaces the non-copyable declarations of the C++ tree
+- Types are not `Clone` or `Copy` unless copying is meaningful
 - Allocation happens off the audio thread; `assert_no_alloc` guards the render path in tests
 
 ### Crate and Module Layout
@@ -322,15 +305,15 @@ pub use mixer::Mixer;
 ### Testing
 
 - TDD for engine and analysis logic
-- Golden-vector fixtures carried over from the C++ tests (kept in the crates' test modules and `fixtures/`)
+- Golden-vector fixtures (kept in the crates' test modules and `fixtures/`)
 - Property tests (`proptest`) for parsers and search
 - Metric tests for DSP accuracy; `criterion` benchmarks for DSP
 - Real-time tests: render the engine inside `assert_no_alloc`
 - Screenshot tests for UI (planned)
 
-## Next Steps (porting phase, Linux first)
+## Next Steps (Linux first)
 
-Work follows the design's porting phase: Windows (WASAPI) and macOS (CoreAudio) runtime targets, then Waves 7–9. The parity inventory in `docs/parity.md` lists which C++ test each Todo replaces.
+Next: the Before-Wave-7 list in `TODO.md`, then Wave 7. Windows (WASAPI) and macOS (CoreAudio) runtime targets come later.
 
 ### Todo 7: Audio Device Layer
 
@@ -338,7 +321,7 @@ Work follows the design's porting phase: Windows (WASAPI) and macOS (CoreAudio) 
 
 **Implementation:**
 1. `cpal` output stream behind a device trait
-2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio in the porting phase)
+2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio later)
 3. Mock device for CI testing
 4. Latency probing
 
@@ -389,7 +372,7 @@ fn device_opens_and_closes() {
 **Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
 
 ### Issue: GPUI fails to start on WSL
-**Solution:** WSL-only trouble is a dev-loop issue, not a gate failure (ADR 0004). Check the GPU/Vulkan setup with `vulkaninfo --summary` and record the result in the Phase 1 notes
+**Solution:** WSL-only trouble is a dev-loop issue, not a gate failure (ADR 0004). Check the GPU/Vulkan setup with `vulkaninfo --summary` and record the result in `docs/spikes/DECISIONS.md`
 
 ## Verification
 
@@ -401,9 +384,8 @@ After each wave:
 
 ## References
 
-- Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
+- Design (historical): `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
 - ADR 0004 (Rust with GPUI): `docs/adr/0004-stack-rust-gpui.md`
-- Frozen C++ baseline: git tag `cpp-final`
 - cpal: https://docs.rs/cpal
 - rtrb: https://docs.rs/rtrb
 - arc-swap: https://docs.rs/arc-swap
