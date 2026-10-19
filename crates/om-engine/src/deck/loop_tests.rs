@@ -274,3 +274,48 @@ fn resizing_a_loop_while_looping_stays_continuous() {
     assert!(tail_max < 1400, "tail max {tail_max}");
     assert_eq!(deck.underrun_count(), 0);
 }
+
+/// Loop bounds set from one control thread while another toggles `enabled`. The toggles must
+/// never put back bounds the writer has already replaced. The race window is small, so each
+/// round is repeated.
+#[test]
+fn toggling_the_loop_never_reverts_newer_bounds() {
+    use std::sync::atomic::{AtomicBool, Ordering::{Acquire, Release}};
+    use std::sync::Arc;
+    let fixture = crate::deck::tests::Fixture::new();
+    let wav = fixture.path("toggle.wav");
+    crate::deck::tests::write_ramp(&wav, 2);
+    let (deck, _audio) = Deck::new(1 << 12);
+    deck.load(&wav).expect("fixture loads");
+    let deck = Arc::new(deck);
+    const ROUNDS: usize = 20;
+    const SETS: i64 = 100_000;
+    // The fixture is FRAMES long, so starts wrap inside it; the last start is the expected result.
+    let start_of = |i: i64| i % (FRAMES - 1000);
+    for _ in 0..ROUNDS {
+        let done = Arc::new(AtomicBool::new(false));
+        let toggler = {
+            let (deck, done) = (Arc::clone(&deck), Arc::clone(&done));
+            std::thread::spawn(move || {
+                while !done.load(Acquire) {
+                    deck.exit_loop();
+                    deck.reloop();
+                }
+            })
+        };
+        for i in 0..SETS {
+            let start = start_of(i);
+            assert!(deck.set_loop(Loop {
+                start,
+                end: start + 100
+            }));
+        }
+        done.store(true, Release);
+        toggler.join().expect("toggler");
+        assert_eq!(
+            deck.get_loop().start,
+            start_of(SETS - 1),
+            "a toggle reverted the bounds"
+        );
+    }
+}
