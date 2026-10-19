@@ -357,3 +357,29 @@ fn hotcue_parameters_trigger_seek_and_clear() {
     assert!(!deck.set_parameter("hotcue1.bogus", 1.0));
     assert!(!deck.set_parameter("nonsense", 1.0));
 }
+
+#[test]
+fn a_decoder_fault_silences_the_deck_and_is_reported() {
+    let fixture = Fixture::new();
+    let (deck, mut audio, _) = deck_with_ramp(&fixture);
+    assert!(pump_until_buffered(&deck, &mut audio, 512, 0));
+    deck.play();
+    deck.shared.inject_decoder_panic.store(true, Ordering::SeqCst);
+
+    let mut l = [0.0_f32; 256];
+    let mut r = [0.0_f32; 256];
+    // Rendering frees ring space, which lets the decoder reach its next chunk and fault.
+    let faulted = wait_for(
+        || {
+            audio.render_stereo(&mut l, &mut r);
+            deck.is_errored()
+        },
+        Duration::from_secs(5),
+    );
+    assert!(faulted, "the decoder fault should be reported");
+    assert!(!deck.is_playing(), "a faulted deck stops playing");
+    for _ in 0..4 {
+        audio.render_stereo(&mut l, &mut r);
+        assert!(l.iter().chain(r.iter()).all(|&v| v == 0.0), "faulted deck is silent");
+    }
+}

@@ -26,6 +26,11 @@ pub(super) struct Shared {
     pub end_of_stream: AtomicBool,
     pub stop: AtomicBool,
     pub keylock: AtomicBool,
+    /// Set when the decoder thread panicked. The deck renders silence from then on.
+    pub errored: AtomicBool,
+    /// Test hook: makes the decoder thread panic on its next chunk.
+    #[cfg(test)]
+    pub inject_decoder_panic: AtomicBool,
 
     pub rate: AtomicF64,
     pub device_sample_rate: AtomicF64,
@@ -73,6 +78,9 @@ impl Shared {
             end_of_stream: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             keylock: AtomicBool::new(false),
+            errored: AtomicBool::new(false),
+            #[cfg(test)]
+            inject_decoder_panic: AtomicBool::new(false),
             rate: AtomicF64::new(1.0),
             device_sample_rate: AtomicF64::new(44_100.0),
             file_sample_rate: AtomicF64::new(44_100.0),

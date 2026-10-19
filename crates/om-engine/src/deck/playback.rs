@@ -62,8 +62,10 @@ impl Playback {
 
     /// Renders one block. Both slices have the same length. Silence unless playing and loaded.
     pub(super) fn render(&mut self, sh: &Shared, left: &mut [f32], right: &mut [f32]) {
-        let running =
-            self.service_handshake(sh) && sh.playing.load(Relaxed) && sh.loaded.load(Relaxed);
+        let running = !sh.errored.load(Relaxed)
+            && self.service_handshake(sh)
+            && sh.playing.load(Relaxed)
+            && sh.loaded.load(Relaxed);
         if !running {
             clear_tail(left, right, 0);
             return;

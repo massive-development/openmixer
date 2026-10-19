@@ -164,6 +164,10 @@ impl DecoderWorker {
     }
 
     fn produce_chunk(&mut self) {
+        #[cfg(test)]
+        if self.shared.inject_decoder_panic.load(Relaxed) {
+            panic!("injected decoder fault");
+        }
         let len = self.length();
         let n = (len - self.read_pos).min(CHUNK_FRAMES as i64) as usize;
         let Some(reader) = self.reader.as_mut() else {
