@@ -2,6 +2,7 @@
 //! through a [`MidiBackend`]; the routing itself runs on injected bytes too, so tests need no device.
 
 use crate::backend::{MidiBackend, MidiInputConnection, MidiPortInfo};
+use crate::echo::EchoGuard;
 use crate::error::MidiError;
 use crate::lock;
 use crate::mapper::MidiMapper;
@@ -17,10 +18,18 @@ struct Recording {
 struct Shared {
     mapper: Arc<MidiMapper>,
     recording: Mutex<Option<Recording>>,
+    echo: Arc<EchoGuard>,
 }
 
 impl Shared {
-    fn handle(&self, bytes: &[u8]) -> usize {
+    /// One message from the input `port` (None when it is not from a device). An echo of
+    /// feedback sent to that port is dropped before recording or routing.
+    fn handle(&self, port: Option<&str>, bytes: &[u8]) -> usize {
+        if let Some(port) = port {
+            if self.echo.is_echo(port, bytes, Instant::now()) {
+                return 0;
+            }
+        }
         if let Some(rec) = lock(&self.recording).as_mut() {
             // Debug use only: allocates.
             rec.trace
@@ -65,10 +74,16 @@ pub struct MidiInputRouter {
 
 impl MidiInputRouter {
     pub fn new(mapper: Arc<MidiMapper>) -> Self {
+        Self::with_echo(mapper, Arc::new(EchoGuard::new()))
+    }
+
+    /// A router that drops echoes of the feedback recorded in `echo` (shared with the output router).
+    pub fn with_echo(mapper: Arc<MidiMapper>, echo: Arc<EchoGuard>) -> Self {
         Self {
             shared: Arc::new(Shared {
                 mapper,
                 recording: Mutex::new(None),
+                echo,
             }),
             open: Mutex::new(Open::default()),
         }
@@ -90,7 +105,7 @@ impl MidiInputRouter {
     /// The input callback body: records (when recording) and routes one raw message through the
     /// mapper. Returns the number of parameter updates produced.
     pub fn handle_incoming(&self, bytes: &[u8]) -> usize {
-        self.shared.handle(bytes)
+        self.shared.handle(None, bytes)
     }
 
     /// Replaces the selection: closes every open input, then opens the selected ones
@@ -167,10 +182,11 @@ impl MidiInputRouter {
         id: &str,
     ) -> Result<Box<dyn MidiInputConnection>, MidiError> {
         let shared = Arc::clone(&self.shared);
+        let port = id.to_owned();
         backend.open_input(
             id,
             Box::new(move |bytes: &[u8]| {
-                shared.handle(bytes);
+                shared.handle(Some(&port), bytes);
             }),
         )
     }

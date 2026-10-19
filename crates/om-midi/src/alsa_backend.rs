@@ -23,6 +23,14 @@ use std::thread::JoinHandle;
 
 /// The sequencer client name for every client this app opens. Enumeration skips them.
 const CLIENT_NAME: &str = "openmixer";
+/// The kernel's loopback client. It is both an input and an output, so pairing by name would
+/// feed every message straight back into the app.
+const MIDI_THROUGH: &str = "Midi Through";
+
+/// Clients enumeration leaves out: the system client (id 0), this app, and Midi Through.
+fn skipped_client(client_id: i32, client_name: &str) -> bool {
+    client_id == 0 || client_name == CLIENT_NAME || client_name == MIDI_THROUGH
+}
 const CLIENT: &CStr = c"openmixer";
 /// How long the input thread waits for events before it checks for a stop request.
 const POLL_MS: i32 = 100;
@@ -66,7 +74,7 @@ impl AlsaBackend {
         for client in ClientIter::new(&seq) {
             let client_id = client.get_client();
             let client_name = client.get_name().map_err(device_error)?.to_owned();
-            if client_id == 0 || client_name == CLIENT_NAME {
+            if skipped_client(client_id, &client_name) {
                 continue;
             }
             for port in PortIter::new(&seq, client_id) {
@@ -337,6 +345,14 @@ impl MidiOutputPort for AlsaOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn midi_through_and_the_system_client_are_not_enumerated() {
+        assert!(skipped_client(0, "System"));
+        assert!(skipped_client(14, "Midi Through"));
+        assert!(skipped_client(20, "openmixer"));
+        assert!(!skipped_client(24, "Launchpad Mini"));
+    }
 
     #[test]
     fn controller_and_pitch_bend_round_trip_through_sequencer_events() {
