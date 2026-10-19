@@ -15,8 +15,9 @@ om-analysis = { path = "../om-analysis" }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
-# Plain HTTP only: ureq 2 with TLS pulls webpki-roots (CDLA-Permissive-2.0, not allowed in deny.toml).
-ureq = { version = "2", default-features = false }
+# HTTPS through rustls (the `tls` feature). The root bundle is webpki-roots, licensed
+# CDLA-Permissive-2.0, which deny.toml allows (see the comment there).
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [dev-dependencies]
 tempfile = "3"
