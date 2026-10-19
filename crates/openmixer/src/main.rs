@@ -63,7 +63,7 @@ fn headless_smoke() -> Result<(), String> {
 
     // The mock has no output router, so the pair selection goes to a detached one.
     let (_router, pairs) = OutputRouter::new();
-    composition.apply_preferences(&pairs);
+    composition.apply_preferences(&pairs, None, None);
 
     let rendered = device.render_blocks(SMOKE_BLOCKS);
     device.stop();
