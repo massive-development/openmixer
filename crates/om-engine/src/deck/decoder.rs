@@ -4,7 +4,6 @@
 
 use super::shared::Shared;
 use super::source::SourceReader;
-use om_core::SpscProducer;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +14,7 @@ const IDLE_SLEEP: Duration = Duration::from_millis(3);
 
 pub(super) struct DecoderWorker {
     shared: Arc<Shared>,
-    ring: SpscProducer<f32>,
+    ring: rtrb::Producer<f32>,
     reader: Option<SourceReader>,
     read_pos: i64,
     local_ack: u32,
@@ -29,7 +28,7 @@ pub(super) struct DecoderWorker {
 }
 
 impl DecoderWorker {
-    pub(super) fn new(shared: Arc<Shared>, ring: SpscProducer<f32>) -> Self {
+    pub(super) fn new(shared: Arc<Shared>, ring: rtrb::Producer<f32>) -> Self {
         Self {
             shared,
             ring,
@@ -160,7 +159,7 @@ impl DecoderWorker {
             && self.local_ack == self.shared.request_epoch.load(Acquire)
             && self.shared.drained_seq.load(Acquire) == self.local_seq
             && self.read_pos < self.length()
-            && self.ring.writable_count() >= CHUNK_FRAMES * 2
+            && self.ring.slots() >= CHUNK_FRAMES * 2
     }
 
     fn produce_chunk(&mut self) {
@@ -174,7 +173,8 @@ impl DecoderWorker {
             return;
         };
         reader.read_stereo(self.read_pos, &mut self.chunk[..n]);
-        let written = self.ring.write(self.chunk[..n].as_flattened());
+        let (written, _) = self.ring.push_partial_slice(self.chunk[..n].as_flattened());
+        let written = written.len();
         self.local_written += written as u64;
         self.shared
             .written_samples

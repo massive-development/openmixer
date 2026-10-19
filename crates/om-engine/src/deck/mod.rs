@@ -19,7 +19,7 @@ use crate::quantizer::Loop;
 use decoder::DecoderWorker;
 use loop_state::LoopSnapshot;
 use om_core::sync::LockExt;
-use om_core::{spsc, ParameterTarget};
+use om_core::ParameterTarget;
 use playback::Playback;
 use shared::Shared;
 use std::panic::AssertUnwindSafe;
@@ -66,7 +66,11 @@ impl Deck {
     /// Creates an empty deck and starts its decoder thread. `ring_frames` is rounded up to a power
     /// of two by the ring; `prefetch_frames` bounds the loop prefetch slot. Control thread.
     pub fn with_prefetch(ring_frames: usize, prefetch_frames: i64) -> (Self, DeckAudio) {
-        let (producer, consumer) = spsc::<f32>(ring_frames.max(1) * 2);
+        // Plain rtrb ring. The om-core wrapper only carried `Copy` items, and the stage and device
+        // rings hold boxed payloads, so there is one SPSC primitive: rtrb. Capacity is rounded up
+        // to a power of two (minimum 2), as the wrapper did.
+        let capacity = (ring_frames.max(1) * 2).max(2).next_power_of_two();
+        let (producer, consumer) = rtrb::RingBuffer::<f32>::new(capacity);
         let shared = Arc::new(Shared::new(prefetch_frames));
         let worker = DecoderWorker::new(Arc::clone(&shared), producer);
         let failed = Arc::clone(&shared);

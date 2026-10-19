@@ -6,13 +6,12 @@ use super::loop_state::LoopSnapshot;
 use super::prefetch::PrefetchSlot;
 use super::shared::Shared;
 use keylock::KeylockState;
-use om_core::SpscConsumer;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 mod keylock;
 
 pub(super) struct Playback {
-    ring: SpscConsumer<f32>,
+    ring: rtrb::Consumer<f32>,
     primed: bool,
     have_first: bool,
     phase: f64,
@@ -38,7 +37,7 @@ pub(super) struct Playback {
 }
 
 impl Playback {
-    pub(super) fn new(ring: SpscConsumer<f32>) -> Self {
+    pub(super) fn new(ring: rtrb::Consumer<f32>) -> Self {
         Self {
             ring,
             primed: false,
@@ -93,8 +92,8 @@ impl Playback {
         let seq = sh.ack_seq.load(Acquire);
         if sh.drained_seq.load(Relaxed) != seq {
             // Everything buffered before the ack is stale.
-            let stale = self.ring.readable_count();
-            let skipped = self.ring.skip(stale);
+            let stale = self.ring.slots();
+            let skipped = discard(&mut self.ring, stale);
             self.consume(sh, skipped);
             self.ring_idx = sh.ack_target.load(Relaxed);
             sh.drained_seq.store(seq, Release);
@@ -130,7 +129,7 @@ impl Playback {
         if self.slot.is_none()
             && self.ring_idx == self.read_idx
             && sh.end_of_stream.load(Acquire)
-            && self.ring.readable_count() < 2
+            && self.ring.slots() < 2
         {
             sh.playing.store(false, Relaxed);
             sh.finished.store(true, Relaxed);
@@ -213,7 +212,8 @@ impl Playback {
             return None;
         }
         let mut out = [0.0_f32; 2];
-        if self.ring.read(&mut out) < 2 {
+        let (got, _) = self.ring.pop_partial_slice(&mut out);
+        if got.len() < 2 {
             return None;
         }
         self.consume(sh, 2);
@@ -297,6 +297,17 @@ impl Playback {
 }
 
 /// Zeroes `left` and `right` from index `from` onwards.
+/// Discards up to `n` buffered items from the decode ring; returns how many were discarded.
+fn discard(ring: &mut rtrb::Consumer<f32>, n: usize) -> usize {
+    let count = n.min(ring.slots());
+    if count > 0 {
+        if let Ok(chunk) = ring.read_chunk(count) {
+            chunk.commit_all();
+        }
+    }
+    count
+}
+
 fn clear_tail(left: &mut [f32], right: &mut [f32], from: usize) {
     for s in left.iter_mut().skip(from) {
         *s = 0.0;

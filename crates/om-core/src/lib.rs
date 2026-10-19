@@ -6,14 +6,12 @@
 pub mod atomic;
 mod frame_ring;
 mod parameter;
-mod ring;
 mod router;
 mod state;
 pub mod sync;
 
 pub use frame_ring::FrameRing;
 pub use parameter::ParameterTarget;
-pub use ring::{spsc, SpscConsumer, SpscProducer};
 pub use router::ParameterRouter;
 pub use state::StateReader;
 
