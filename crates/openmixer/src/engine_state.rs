@@ -95,6 +95,38 @@ mod tests {
         }
     }
 
+    /// A feedback pass over many rules takes one snapshot, not one per rule.
+    #[test]
+    fn a_pass_over_many_keys_builds_one_snapshot() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        let reader = EngineStateReader::new(Arc::clone(&engine));
+        let keys: Vec<StateKey> = [
+            "deck.0.play",
+            "deck.1.play",
+            "deck.0.hotcue1.set",
+            "mixer.ch0.level",
+            "mixer.ch1.fader",
+            "mixer.master.level",
+            "plugin.thing",
+        ]
+        .iter()
+        .map(|id| StateKey::new(id))
+        .collect();
+        let mut out = vec![None; keys.len()];
+
+        let before = engine.snapshots_built();
+        reader.read_states(&keys, &mut out);
+        assert_eq!(engine.snapshots_built() - before, 1);
+        assert_eq!(out[0], Some(0.0));
+        assert!(out[3].is_some());
+        assert_eq!(out[6], None, "an id that is not engine state reads None");
+
+        let before = engine.snapshots_built();
+        reader.read_states(&[], &mut []);
+        assert_eq!(engine.snapshots_built() - before, 0, "no keys, no snapshot");
+    }
+
     /// Snapshot form of the same cases: parsed ids read from one snapshot.
     #[test]
     fn a_snapshot_answers_the_same_ids_as_the_string_reader() {
