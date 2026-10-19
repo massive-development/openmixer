@@ -7,6 +7,24 @@ use crate::contract::ModelContract;
 use serde_json::{json, Value};
 use thiserror::Error;
 
+/// Licence name for the htdemucs weights.
+pub const HTDEMUCS_LICENSE_NAME: &str = "MIT (Demucs code and weights); training data not covered";
+
+/// Shown in the licence dialog before htdemucs is downloaded (S4 wires the UI). Keep in step with
+/// `LICENSE_TEXT` in `tools/export_htdemucs.py` and the row in `docs/legal/asset-provenance.csv`.
+pub const HTDEMUCS_LICENSE_TEXT: &str = "\
+htdemucs is Demucs by Meta Platforms, Inc. and affiliates. The Demucs code and the released \
+weights are published under the MIT licence (see the LICENSE file of the Demucs repository), which \
+permits use, copying, modification and distribution of the software and the weights, provided the \
+copyright and permission notice is kept.
+
+Important: the MIT licence covers the code and the weights as published. It does not grant any \
+rights in the data the model was trained on. The training set includes MUSDB18-HQ, which is \
+distributed for research and academic use under its own terms. Those terms are not changed by the \
+MIT licence of the weights. If you intend to use separated stems commercially, check that your use \
+is acceptable for yourself. OpenMixer downloads the model to your computer only after you accept \
+this notice, and never uploads your music.";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelManifest {
     /// Also the file name in the model folder. Letters, digits, `.`, `_` and `-`; no leading dot.
@@ -95,6 +113,20 @@ impl ModelManifest {
             return Err(ManifestError::MissingLicence);
         }
         Ok(manifest)
+    }
+
+    /// A manifest for an htdemucs ONNX exported by `tools/export_htdemucs.py`, with the licence text
+    /// the dialog shows. `url` and `sha256` come from the exporter's output.
+    pub fn htdemucs(url: &str, sha256: &str, size_bytes: u64) -> Self {
+        Self {
+            id: "htdemucs.onnx".into(),
+            url: url.into(),
+            sha256: sha256.to_ascii_lowercase(),
+            size_bytes,
+            license_name: HTDEMUCS_LICENSE_NAME.into(),
+            license_text: HTDEMUCS_LICENSE_TEXT.into(),
+            contract: Some(ModelContract::htdemucs()),
+        }
     }
 
     /// The contract to run the model with.

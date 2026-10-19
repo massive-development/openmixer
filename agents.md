@@ -40,6 +40,7 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
 - **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops. Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
 - **`om-audio`, `om-dsp`, `om-stretch`**: device layer, DSP, and key-lock time-stretch (the only crate allowed `unsafe`, for FFI).
 - **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`.
+- **`om-stems` detail:** `StemSeparator` v2 is streamed (`separate_to(StereoSource, StemSink, ctx)`); `HtDemucsPipeline<I: StemInference>` does resampling, 7.8 s segments with overlap-add and STFT in Rust; `OrtInference` (ONNX Runtime) exists only with `--features onnx` (off by default, downloads the runtime at build time; own non-blocking CI job). Nothing in the app calls it yet (S2). Real htdemucs is exported with `tools/export_htdemucs.py` (unverified).
 - **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
 - **`om-ui-gpui`** (own workspace, behind the `gui` feature): GPUI drawing and events over `om-ui` models.
 - **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.

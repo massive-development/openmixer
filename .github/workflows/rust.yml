@@ -74,6 +74,39 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
 
+  # Non-blocking: the `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build
+  # downloads a prebuilt runtime, so it needs network). Off in the default build and in the jobs above.
+  # Remove `continue-on-error` once the first runs are green on a clean runner.
+  onnx:
+    name: onnx (linux, non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+
+      - name: Install Linux audio dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test -p om-stems --features onnx
+        run: cargo test -p om-stems --features onnx
+
   # The progress heatmap must match docs/progress.json (stdlib only).
   progress-check:
     name: progress heatmap is current
