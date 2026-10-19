@@ -459,7 +459,10 @@ mod tests {
             configured_frames: 16,
         };
         drop(render);
-        assert!(!released.load(Relaxed), "dropping the render state does not release");
+        assert!(
+            !released.load(Relaxed),
+            "dropping the render state does not release"
+        );
         let mut engine = handback_rx.pop().expect("the engine is handed back");
         engine.release();
         assert!(released.load(Relaxed));

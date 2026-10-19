@@ -113,19 +113,26 @@ fn stop_hands_the_engine_back_and_a_restart_keeps_deck_and_mixer_state() {
     assert!(pump_until(&dev, || engine.deck(0).position_frames() > 2000));
     let before = engine.deck(0).position_frames();
 
-    let engine_audio = dev.stop().expect("stop returns the callback it was driving");
+    let engine_audio = dev
+        .stop()
+        .expect("stop returns the callback it was driving");
     assert!(!dev.is_running());
     assert!(engine.deck(0).is_loaded(), "stop keeps the loaded track");
     assert!(engine.deck(0).is_playing(), "stop does not pause the deck");
 
-    dev.start(engine_audio).expect("restart with the returned engine");
+    dev.start(engine_audio)
+        .expect("restart with the returned engine");
     assert!(engine.deck(0).is_loaded());
     assert!(
         pump_until(&dev, || engine.deck(0).position_frames() > before + 2000),
         "the deck keeps playing from its position after a restart"
     );
     assert_eq!(engine.mixer().fader(0), 0.5, "fader survives a restart");
-    assert_eq!(engine.mixer().crossfader(), 0.25, "crossfader survives a restart");
+    assert_eq!(
+        engine.mixer().crossfader(),
+        0.25,
+        "crossfader survives a restart"
+    );
     assert!(magnitude(&dev.last_output()[0][..256]) > 0.1);
 }
 
@@ -177,7 +184,10 @@ fn a_bad_or_truncated_file_mid_play_does_not_stop_the_engine() {
     engine.deck(0).play();
     assert!(pump_until(&dev, || engine.deck(0).position_frames() > 2000));
 
-    assert!(engine.deck(1).load(&garbage).is_err(), "garbage is rejected");
+    assert!(
+        engine.deck(1).load(&garbage).is_err(),
+        "garbage is rejected"
+    );
     // A truncated file may load (its readable head plays) or be rejected; either is fine.
     let _ = engine.deck(1).load(&truncated);
     engine.deck(1).play();
@@ -187,7 +197,10 @@ fn a_bad_or_truncated_file_mid_play_does_not_stop_the_engine() {
         "the playing deck keeps running after the bad load"
     );
     assert!(!engine.deck(0).is_errored());
-    assert!(!engine.deck(1).is_errored(), "a bad file is not a decoder fault");
+    assert!(
+        !engine.deck(1).is_errored(),
+        "a bad file is not a decoder fault"
+    );
     assert!(
         magnitude(&dev.last_output()[0][..256]) > 0.1,
         "the playing deck is still audible on master"
