@@ -6,6 +6,7 @@
 pub mod app_targets;
 pub mod audio_settings;
 pub mod error;
+pub mod flags;
 
 pub use error::AppError;
 pub mod composition;

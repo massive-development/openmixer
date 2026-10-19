@@ -233,6 +233,21 @@ mod tests {
     use std::rc::Rc;
 
     #[test]
+    fn start_tab_opens_the_overlay_on_the_named_tab() {
+        let mut o = options(
+            None,
+            None,
+            None,
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+        );
+        o.start_tab = Some("library".to_owned());
+        let s = SettingsState::new(o);
+        assert!(s.open);
+        assert_eq!(s.panel.tabs()[s.panel.current()], "Library");
+    }
+
+    #[test]
     fn an_empty_path_keeps_the_field_open_and_cancel_closes_it() {
         let mut s = SettingsState::new(options(
             None,

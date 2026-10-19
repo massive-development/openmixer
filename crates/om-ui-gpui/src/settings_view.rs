@@ -68,6 +68,9 @@ pub struct SettingsOptions {
     /// Makes this window's theme registry hold the plugins' themes. Called on start-up, when the
     /// overlay opens and after a plugin or preference change.
     pub sync_themes: Option<ThemeSync>,
+    /// Opens the overlay at start-up on the tab with this title (`--settings=midi`), ignoring
+    /// case. An unknown title opens the first tab.
+    pub start_tab: Option<String>,
 }
 
 /// What a text field is for: what Enter does with the text.
@@ -155,6 +158,17 @@ impl SettingsState {
             plugins: options.plugins,
             sync_themes: options.sync_themes,
         };
+        if let Some(title) = options.start_tab.as_deref() {
+            let index = state
+                .panel
+                .tabs()
+                .iter()
+                .position(|t| t.eq_ignore_ascii_case(title))
+                .unwrap_or(0);
+            state.panel.show(index);
+            state.open = true;
+            state.focus_pending = true;
+        }
         state.sync_plugin_themes();
         state.refresh_lists();
         state
@@ -230,6 +244,7 @@ mod fixtures {
             library: None,
             plugins: None,
             sync_themes: None,
+            start_tab: None,
         })
     }
 
@@ -254,6 +269,7 @@ mod fixtures {
             library,
             plugins,
             sync_themes: Some(Box::new(move |_| syncs.set(syncs.get() + 1))),
+            start_tab: None,
         }
     }
 }
