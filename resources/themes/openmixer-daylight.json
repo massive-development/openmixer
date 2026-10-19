@@ -25,6 +25,7 @@
     "popup": "#F5F8FAFD",
     "capTop": "#FFFFFFFF",
     "capBottom": "#FFD5DCE8",
+    "dropTarget": "#330284C7",
     "waveLow": "#FFEA580C",
     "waveMid": "#FF059669",
     "waveHigh": "#FF0284C7"
@@ -44,5 +45,7 @@
   "library": { "rowHeight": 26, "headerHeight": 26, "sidebarWidth": 190, "toolbarHeight": 34, "buttonWidth": 78,
                "sidebarRowHeight": 24, "ratingDot": 5, "searchMinWidth": 160, "compatAlpha": 0.22, "stripeAlpha": 0.04, "dropAlpha": 0.18 },
   "settings": { "panelWidth": 760, "panelHeight": 540, "tabHeight": 32, "rowHeight": 30, "labelWidth": 150, "buttonWidth": 96, "dimAlpha": 0.55 },
+  "style": { "borderWidth": 1, "focusBorderWidth": 2, "thumbSize": 12, "insetSmall": 2, "insetLarge": 4,
+             "barRadius": 2, "lampHeight": 8, "meterHeadroom": 14, "disabledAlpha": 0.4 },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }
