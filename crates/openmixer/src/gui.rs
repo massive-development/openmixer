@@ -54,6 +54,9 @@ pub fn main(args: &[String]) -> ExitCode {
     if let Err(error) = composition.attach_library(library_path) {
         eprintln!("openmixer: library unavailable: {error}");
     }
+    if let Err(error) = composition.attach_stems(openmixer::flags::mock_stems(args)) {
+        eprintln!("openmixer: stems unavailable: {error}");
+    }
     // MIDI: the system backend on a real run; a mock controller under --mock-device and --smoke, so
     // neither run opens hardware.
     if mock || smoke {
