@@ -20,6 +20,10 @@ use om_audio::{DjEngine, DjEngineAudio};
 use om_core::{ParameterRouter, StateReader};
 use om_midi::MidiBackend;
 use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
+use om_stems::{
+    MockSeparator, ModelGate, ModelManifest, StemSeparator, StemService, StemServiceConfig,
+    UrlDownloader, WeightManager,
+};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
@@ -30,6 +34,14 @@ use std::sync::Arc;
 
 /// Number of decks the app starts with.
 pub const DECKS: usize = 2;
+
+/// Stem model manifest, in the `models` folder beside the library. Written by the model install
+/// step (S4); absent means stem separation stays off.
+pub const STEM_MANIFEST_FILE: &str = "htdemucs.manifest.json";
+/// The separator's id and version: part of every stem cache key.
+pub const STEM_SEPARATOR_ID: &str = "htdemucs";
+pub const STEM_SEPARATOR_VERSION: i32 = 1;
+const GIB: u64 = 1024 * 1024 * 1024;
 
 /// Environment variable that selects a theme for the session (wins over the saved preference).
 pub const THEME_ENV: &str = "OPENMIXER_THEME";
@@ -44,6 +56,9 @@ pub struct Services {
     /// The MIDI service, once [`AppComposition::attach_midi`] has run: the preferences, the
     /// settings page and the input list all reach it.
     pub midi: Option<Arc<MidiService>>,
+    /// The stem service, once [`AppComposition::attach_stems`] found a separator (an installed
+    /// model with the `onnx` feature, or the mock). Jobs only start when something submits them.
+    pub stems: Option<Arc<StemService>>,
 }
 
 impl Services {
@@ -96,6 +111,8 @@ pub struct AppComposition {
     applier: PreferencesApplier,
     targets: AppTargetsState,
     audio: Option<DjEngineAudio>,
+    /// The library file path, once [`AppComposition::attach_library`] has opened it.
+    library_db: Option<String>,
 }
 
 impl AppComposition {
@@ -140,6 +157,7 @@ impl AppComposition {
             applier: PreferencesApplier::new(),
             targets: AppTargetsState::default(),
             audio: Some(audio),
+            library_db: None,
         }
     }
 
@@ -166,7 +184,51 @@ impl AppComposition {
         options.on_error = Some(Box::new(|message| {
             eprintln!("openmixer: library: {message}")
         }));
+        self.library_db = Some(options.db_path.clone());
         self.services.library = Some(LibraryServices::create(options)?);
+        Ok(())
+    }
+
+    /// Attaches the stem service, after the library. Its cache lives in `stems` beside the library
+    /// file and its cap comes from `stems.max_cache_gb`. With `mock`, the mock separator is used
+    /// (no model, no runtime). Otherwise the separator is the htdemucs model, when the `onnx`
+    /// feature is built in, the manifest is present and the model is installed; if not, stem
+    /// separation stays off and that is not an error.
+    pub fn attach_stems(&mut self, mock: bool) -> Result<(), AppError> {
+        let db = self
+            .library_db
+            .clone()
+            .ok_or_else(|| AppError::Stems("attach the library first".into()))?;
+        let folder = std::path::Path::new(&db)
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let max_cache_bytes = u64::try_from(self.prefs.stems.max_cache_gb).unwrap_or(0) * GIB;
+        let (separator, gate): (Arc<dyn StemSeparator>, Option<ModelGate>) = if mock {
+            (Arc::new(MockSeparator::new()), None)
+        } else {
+            let models = folder.join("models");
+            let manifest_path = models.join(STEM_MANIFEST_FILE);
+            if !manifest_path.is_file() {
+                return Ok(());
+            }
+            let manifest = ModelManifest::from_json(&std::fs::read_to_string(&manifest_path)?)
+                .map_err(|e| AppError::Stems(e.to_string()))?;
+            let weights = WeightManager::new(models.clone(), Box::new(UrlDownloader::default()));
+            let Some(separator) = installed_separator(&weights, &manifest)? else {
+                return Ok(());
+            };
+            (separator, Some(ModelGate::new(manifest, weights)))
+        };
+        let service = StemService::new(StemServiceConfig {
+            separator,
+            cache_root: folder.join("stems"),
+            library_path: db,
+            max_cache_bytes: Some(max_cache_bytes),
+            gate,
+        })
+        .map_err(|e| AppError::Stems(e.to_string()))?;
+        self.services.stems = Some(Arc::new(service));
         Ok(())
     }
 
@@ -301,4 +363,45 @@ impl AppComposition {
         );
         targets.reload_plugins();
     }
+}
+
+/// The htdemucs separator over ONNX Runtime, when the model is installed and the `onnx` feature is
+/// built in. `None` (with a line on stderr) otherwise.
+#[cfg(feature = "onnx")]
+fn installed_separator(
+    weights: &WeightManager,
+    manifest: &ModelManifest,
+) -> Result<Option<Arc<dyn StemSeparator>>, AppError> {
+    use om_stems::{default_threads, HtDemucsSeparator, OrtInference};
+    if !weights.is_installed(manifest) {
+        eprintln!(
+            "openmixer: stem model {} is not installed; stems are off",
+            manifest.id
+        );
+        return Ok(None);
+    }
+    let contract = manifest.contract_or_default();
+    let inference = OrtInference::load(
+        &weights.model_file(manifest),
+        contract.clone(),
+        Some(default_threads()),
+    )
+    .map_err(|e| AppError::Stems(e.to_string()))?;
+    let separator = HtDemucsSeparator::new(
+        STEM_SEPARATOR_ID,
+        STEM_SEPARATOR_VERSION,
+        inference,
+        contract,
+    )
+    .map_err(|e| AppError::Stems(e.to_string()))?;
+    Ok(Some(Arc::new(separator)))
+}
+
+#[cfg(not(feature = "onnx"))]
+fn installed_separator(
+    _weights: &WeightManager,
+    _manifest: &ModelManifest,
+) -> Result<Option<Arc<dyn StemSeparator>>, AppError> {
+    eprintln!("openmixer: built without the onnx feature; stem separation is off");
+    Ok(None)
 }
