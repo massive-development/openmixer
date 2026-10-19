@@ -31,12 +31,12 @@ pub use hotcues::NUM_CUES;
 pub use prefetch::LoopPrefetch;
 pub use source::{SourceError, SourceReader, TrackInfo};
 
-/// Default loop prefetch size in source frames (C++ `Deck` default).
+/// Default loop prefetch size in source frames.
 pub const DEFAULT_PREFETCH_FRAMES: i64 = 1 << 16;
 
-/// Default ring size in source frames (C++ `Deck` default).
+/// Default ring size in source frames.
 pub const DEFAULT_RING_FRAMES: usize = 1 << 16;
-/// Rate clamp range (C++ `setRate`).
+/// Rate clamp range.
 pub const MAX_RATE: f64 = 8.0;
 const DEFAULT_DEVICE_RATE: f64 = 44_100.0;
 const DEFAULT_MONO_SINK: usize = 4096;

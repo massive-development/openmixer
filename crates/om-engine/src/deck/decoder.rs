@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Frames decoded per ring write (C++ `kChunkFrames`).
+/// Frames decoded per ring write.
 pub(super) const CHUNK_FRAMES: usize = 2048;
 const IDLE_SLEEP: Duration = Duration::from_millis(3);
 

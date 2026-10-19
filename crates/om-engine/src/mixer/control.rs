@@ -1,5 +1,5 @@
 //! Control-thread surface of the mixer: setters and getters, insert queueing and the string-id
-//! parameter router that MIDI, the UI and tests share. Ids match C++ `MixerParameters.cpp`.
+//! parameter router that MIDI, the UI and tests share.
 
 use super::shared::{
     assign_from_u8, assign_to_u8, ChannelShared, MixerShared, MAX_EQ_DB, MAX_GAIN, MAX_TRIM,
@@ -34,7 +34,7 @@ impl MixerControl {
         self.shared.channels.len()
     }
 
-    /// Out-of-range indices clamp to the nearest channel, as in the C++ `strip()`.
+    /// Out-of-range indices clamp to the nearest channel.
     fn index(&self, ch: usize) -> usize {
         ch.min(self.num_channels() - 1)
     }

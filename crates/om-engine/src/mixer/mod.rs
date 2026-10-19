@@ -19,7 +19,7 @@ use std::sync::Arc;
 pub use control::MixerControl;
 pub use shared::{MAX_CHANNELS, MAX_GAIN, MAX_TRIM};
 
-/// Meter decay time constant in seconds (C++ `kMeterDecaySeconds`).
+/// Meter decay time constant in seconds.
 const METER_DECAY_SECONDS: f32 = 0.3;
 const DEFAULT_SAMPLE_RATE: f64 = 44_100.0;
 

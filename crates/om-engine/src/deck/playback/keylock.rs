@@ -1,6 +1,5 @@
 //! Key-lock render path: source frames go through a [`Stretcher`] and the stretcher's output is
-//! played, so tempo follows rate while pitch stays put. Port of `src/engine/DeckKeylock.cpp` and
-//! the key-lock parts of `DeckPlayback.cpp`.
+//! played, so tempo follows rate while pitch stays put.
 //!
 //! Switching on primes the stretcher while the interpolator keeps playing: each block pulls a few
 //! hundred source frames, tees them into the stretcher, and discards stretcher output until it lines
@@ -15,11 +14,11 @@ use om_stretch::{RubberBandStretcher, Stretcher};
 use std::sync::atomic::Ordering::Relaxed;
 
 /// Frames the interpolator replays before pulling new ones, and the newest frames kept for a
-/// replay on leaving the path (C++ `FrameRing { 16384 }`).
+/// replay on leaving the path (a 16384-frame ring).
 const RING_FRAMES: usize = 16_384;
-/// Below this rate the stretch ratio explodes, so the deck is silent (C++ `kMinKeylockRate`).
+/// Below this rate the stretch ratio explodes, so the deck is silent.
 const MIN_KEYLOCK_RATE: f64 = 0.05;
-/// Extra frames pulled per block while priming, which bounds the CPU cost (C++ `kPrimeChunk`).
+/// Extra frames pulled per block while priming, which bounds the CPU cost.
 const PRIME_CHUNK: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

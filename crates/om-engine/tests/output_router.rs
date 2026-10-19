@@ -1,4 +1,4 @@
-//! Port of tests/unit/OutputRouterTest.cpp (the engine-backed cases follow with the deck engine).
+//! Output router cases (the engine-backed cases follow with the deck engine).
 
 use om_engine::{AudioCallback, OutputRouter, NO_PAIR};
 

@@ -5,7 +5,7 @@ use super::effect::{Effect, FxContext, ParamSet, ParamSpec, MIN_BPM};
 use super::math::flush_denormal;
 use om_dsp::{design_high_pass, design_low_pass, Biquad};
 
-// C++ literal, kept verbatim so coefficients stay bit-identical.
+// Literal kept verbatim so coefficients stay bit-identical.
 #[allow(clippy::approx_constant)]
 const Q: f32 = 0.7071;
 const LOW_CUT_HZ: f32 = 70.0;

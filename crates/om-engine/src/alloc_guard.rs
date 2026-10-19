@@ -302,7 +302,7 @@ fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
 /// and FX parameters move. Only `audio.process` runs under the guard.
 ///
 /// What the guard can and cannot see: it fails on any Rust allocation made while the guard is
-/// active. Allocations made inside Rubber Band (C++ `new`/`malloc`) bypass the Rust global
+/// active. Allocations made inside Rubber Band (its own `new`/`malloc` calls) bypass the Rust global
 /// allocator, so they are not counted here, and neither is the CPU cost Rubber Band spends
 /// re-planning when its ratio changes. See `deck/playback/keylock.rs`.
 #[test]

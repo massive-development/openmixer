@@ -9,7 +9,7 @@ use std::sync::Arc;
 pub const MIN_BPM: f64 = 50.0;
 pub const MAX_BPM: f64 = 250.0;
 
-/// Parameters per effect (C++ `Effect::kMaxParams`).
+/// Parameters per effect.
 pub const MAX_PARAMS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,7 +99,7 @@ impl ParamSet {
         self.len == 0
     }
 
-    /// Clamped like the C++ `getParamSpec`: out-of-range indices map to the nearest slot.
+    /// Clamped: out-of-range indices map to the nearest slot.
     pub fn spec(&self, index: usize) -> &ParamSpec {
         &self.specs[index.min(MAX_PARAMS - 1)]
     }

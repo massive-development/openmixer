@@ -1,4 +1,4 @@
-//! Port of tests/unit/DeckKeylockTest.cpp, one test per C++ case, same numbers and tolerances.
+//! Key-lock cases, one test per case, same numbers and tolerances as the original suite.
 //! Generated audio only; nothing here opens an audio device.
 
 use super::tests::{pump_until_buffered, write_float_wav, Fixture, RATE};
@@ -12,7 +12,7 @@ const TONE_HZ: f64 = 440.0;
 const TONE_FRAMES: usize = 66_150; // 1.5 s
 const BLOCK: usize = 256;
 
-/// Writes a stereo 440 Hz tone at half scale: the C++ `writeTone` fixture.
+/// Writes a stereo 440 Hz tone at half scale.
 fn write_tone(path: &Path) {
     let mut samples = Vec::with_capacity(TONE_FRAMES * 2);
     for i in 0..TONE_FRAMES {
@@ -23,8 +23,7 @@ fn write_tone(path: &Path) {
     write_float_wav(path, 2, &samples);
 }
 
-/// Renders `blocks` blocks of 256 frames (left channel), pausing 1 ms per block as the C++ test
-/// does so the decoder keeps up. `before_block` runs ahead of each block.
+/// Renders `blocks` blocks of 256 frames (left channel), pausing 1 ms per block so the decoder keeps up. `before_block` runs ahead of each block.
 fn render_left(
     deck: &Deck,
     audio: &mut DeckAudio,
@@ -68,7 +67,7 @@ fn longest_silent_run(x: &[f32], from: usize) -> usize {
     best
 }
 
-/// The C++ `KeylockFixture`: a deck prepared at 44.1 kHz with the tone loaded and buffered.
+/// The keylock fixture: a deck prepared at 44.1 kHz with the tone loaded and buffered.
 fn keylock_fixture(fixture: &Fixture) -> (Deck, DeckAudio, PathBuf) {
     let tone = fixture.path("tone.wav");
     write_tone(&tone);

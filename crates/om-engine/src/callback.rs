@@ -1,4 +1,4 @@
-//! The real-time callback an audio device drives. Shape of C++ `AudioCallback`; the device layer
+//! The real-time callback an audio device drives. The device layer
 //! itself lands with the audio task.
 
 /// `process` runs on the audio thread: no allocation, locks or blocking. Every slice in `inputs`

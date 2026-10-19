@@ -1,6 +1,5 @@
 //! Loop bounds shared from control threads to the decoder and audio threads. Writers serialise on
-//! a mutex (control side only); readers take a lock-free seqlock snapshot. Port of
-//! `src/engine/LoopState.h`.
+//! a mutex (control side only); readers take a lock-free seqlock snapshot.
 
 use std::sync::atomic::{fence, AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::Mutex;
