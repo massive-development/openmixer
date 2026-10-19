@@ -2,6 +2,7 @@
 //! and playlist folders. Cues do not exist in this format. Remote and file-less tracks are
 //! skipped.
 
+use crate::error::ImportError;
 use crate::file_url::file_url_to_path;
 use crate::import_model::{ImportReport, ImportedLibrary, ImportedPlaylist, ImportedTrack};
 use crate::library_importer::LibraryImporter;
@@ -28,8 +29,8 @@ impl LibraryImporter for ItunesImporter {
         root: &XmlElement,
         out: &mut ImportedLibrary,
         report: &mut ImportReport,
-    ) -> Result<(), String> {
-        let dict = root_dict(root).ok_or_else(|| "Not an iTunes property list".to_owned())?;
+    ) -> Result<(), ImportError> {
+        let dict = root_dict(root).ok_or(ImportError::Plist)?;
         let top = PlistDict::new(dict);
         read_tracks(&top, out, report);
         let flat = read_playlists(&top);
