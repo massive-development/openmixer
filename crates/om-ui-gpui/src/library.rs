@@ -38,7 +38,7 @@ impl LibraryControl for HubLibrary {
         LibraryControl::available(&self.0.borrow().services)
     }
 
-    fn folders(&self) -> Vec<PathBuf> {
+    fn folders(&self) -> SettingsResult<Vec<PathBuf>> {
         LibraryControl::folders(&self.0.borrow().services)
     }
 

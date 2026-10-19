@@ -339,9 +339,10 @@ impl MidiSettingsPage<'_> {
 /// What the library page needs. Implemented by [`crate::library::LibraryServices`].
 pub trait LibraryControl {
     fn available(&self) -> bool;
-    /// Watch folder paths, in the library's order; empty when there is no library.
-    fn folders(&self) -> Vec<PathBuf> {
-        Vec::new()
+    /// Watch folder paths, in the library's order; empty when there is no library. A read failure
+    /// is an error, so the page can show it rather than an empty list.
+    fn folders(&self) -> SettingsResult<Vec<PathBuf>> {
+        Ok(Vec::new())
     }
     fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
@@ -366,7 +367,7 @@ impl<'a> LibrarySettingsPage<'a> {
     }
 
     /// Watch folders the library currently scans.
-    pub fn folders(&self) -> Vec<PathBuf> {
+    pub fn folders(&self) -> SettingsResult<Vec<PathBuf>> {
         self.library.folders()
     }
 
@@ -1057,6 +1058,37 @@ mod parity_tests {
         page.add_watch_folder(PathBuf::from("/more")).unwrap();
         page.remove_watch_folder(PathBuf::from("/music")).unwrap();
         assert_eq!(library.folders, vec![PathBuf::from("/more")]);
+    }
+
+    /// A library whose watch-folder table cannot be read.
+    struct UnreadableFolders;
+    impl LibraryControl for UnreadableFolders {
+        fn available(&self) -> bool {
+            true
+        }
+        fn folders(&self) -> SettingsResult<Vec<PathBuf>> {
+            Err(SettingsError::Library(LibraryError::Io(
+                std::io::Error::other("watch table is locked"),
+            )))
+        }
+        fn add_watch_folder(&mut self, _: PathBuf) -> SettingsResult<()> {
+            Ok(())
+        }
+        fn remove_watch_folder(&mut self, _: PathBuf) -> SettingsResult<()> {
+            Ok(())
+        }
+        fn rescan(&mut self) -> SettingsResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_watch_folder_read_error_reaches_the_library_page() {
+        let mut prefs = Preferences::default();
+        let mut library = UnreadableFolders;
+        let page = LibrarySettingsPage::new(&mut prefs, &mut library);
+        let err = page.folders().unwrap_err();
+        assert!(err.to_string().contains("watch table is locked"), "{err}");
     }
 
     #[test]
