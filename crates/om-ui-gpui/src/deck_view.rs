@@ -3,19 +3,19 @@
 //! through the string-id control surface. Waveforms are synthetic until the analysis crate exists.
 
 use crate::app::Shell;
+use crate::controls::button as push_button;
+use crate::drag::Target;
 use crate::paint::{paint, place};
 use gpui::{
     canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton,
     MouseDownEvent, Pixels, Window,
 };
 use om_ui::geometry::Rect;
+use om_ui::waveform::View;
 use om_ui::widgets::deck::{deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
-use crate::controls::button as push_button;
-use crate::drag::Target;
-use om_ui::waveform::View;
 use std::f64::consts::TAU;
 
 /// Sample rate assumed for the synthetic waveform when a deck reports none.
@@ -48,11 +48,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
         place(l.header)
             .flex()
             .flex_col()
-            .child(
-                div()
-                    .text_size(px(t.type_title))
-                    .child(text.title.clone()),
-            )
+            .child(div().text_size(px(t.type_title)).child(text.title.clone()))
             .child(
                 div()
                     .text_size(px(t.type_small))
@@ -82,7 +78,13 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
     root
 }
 
-fn overview(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
+fn overview(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    l: &DeckLayout,
+    cx: &mut Context<Shell>,
+) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let area = l.overview;
@@ -93,7 +95,8 @@ fn overview(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Co
     let loaded = length > 0;
     let origin_x = card.x + area.x;
     let bar_count = (area.w / 3).max(1);
-    let (wave_colour, head_colour, head_w) = (paint(t.wave_mid), paint(t.highlight), t.playhead_width);
+    let (wave_colour, head_colour, head_w) =
+        (paint(t.wave_mid), paint(t.highlight), t.playhead_width);
 
     let wave = canvas(
         |_, _, _| (),
@@ -112,7 +115,10 @@ fn overview(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Co
                     }
                     window.paint_quad(fill(
                         Bounds::new(
-                            point(bounds.origin.x + px(x), bounds.origin.y + px(mid - amp.max(1.0))),
+                            point(
+                                bounds.origin.x + px(x),
+                                bounds.origin.y + px(mid - amp.max(1.0)),
+                            ),
                             size(px(2.0), px((amp * 2.0).max(2.0))),
                         ),
                         wave_colour,
@@ -229,7 +235,10 @@ fn zoom(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Contex
                         let amp = synthetic_peak(frame / rate) * mid * 0.9;
                         window.paint_quad(fill(
                             Bounds::new(
-                                point(bounds.origin.x + px(x), bounds.origin.y + px(mid - amp.max(1.0))),
+                                point(
+                                    bounds.origin.x + px(x),
+                                    bounds.origin.y + px(mid - amp.max(1.0)),
+                                ),
                                 size(px(1.0), px((amp * 2.0).max(1.0))),
                             ),
                             wave_colour,
@@ -262,14 +271,22 @@ fn zoom(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Contex
         .bg(paint(t.well))
         .rounded(px(t.control_radius))
         .child(strip)
-        .on_scroll_wheel(cx.listener(move |this, ev: &gpui::ScrollWheelEvent, _, cx| {
-            let dy = f32::from(ev.delta.pixel_delta(px(16.)).y);
-            this.decks[index].zoom.wheel(dy);
-            cx.notify();
-        }))
+        .on_scroll_wheel(
+            cx.listener(move |this, ev: &gpui::ScrollWheelEvent, _, cx| {
+                let dy = f32::from(ev.delta.pixel_delta(px(16.)).y);
+                this.decks[index].zoom.wheel(dy);
+                cx.notify();
+            }),
+        )
 }
 
-fn hotcues(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
+fn hotcues(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    l: &DeckLayout,
+    cx: &mut Context<Shell>,
+) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let pads = HotcuePads::layout(l.hotcues, t.inner_gap);
@@ -284,7 +301,11 @@ fn hotcues(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Con
             .rounded(px(t.control_radius))
             .border_1()
             .border_color(paint(t.border))
-            .bg(paint(if lit[i] { t.accent_for(index as i32) } else { t.surface_raised }))
+            .bg(paint(if lit[i] {
+                t.accent_for(index as i32)
+            } else {
+                t.surface_raised
+            }))
             .text_color(paint(if lit[i] { t.on_accent } else { t.text_primary }))
             .text_size(px(t.type_small))
             .child(format!("{}", i + 1))
@@ -313,29 +334,74 @@ fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
     let _ = card;
     let mut area = place(l.loops);
     for (i, rect) in lay.sizes.iter().enumerate() {
-        area = area.child(push_button(t, *rect, SIZE_NAMES[i], size_lit[i], t.accent_for(index as i32), cx, move |this| {
+        area = area.child(push_button(
+            t,
+            *rect,
+            SIZE_NAMES[i],
+            size_lit[i],
+            t.accent_for(index as i32),
+            cx,
+            move |this| {
                 this.decks[index].loops.press_size(i);
             },
         ));
     }
     let reloop_lit = deck.loops.reloop_lit();
     area = area
-        .child(push_button(t, lay.halve, "1/2x", false, t.accent_for(index as i32), cx, move |this| {
-            this.decks[index].loops.halve();
-        }))
-        .child(push_button(t, lay.double, "2x", false, t.accent_for(index as i32), cx, move |this| {
-            this.decks[index].loops.double();
-        }))
-        .child(push_button(t, lay.exit, "Exit", false, t.accent_for(index as i32), cx, move |this| {
-            this.decks[index].loops.exit();
-        }))
-        .child(push_button(t, lay.reloop, "Reloop", reloop_lit, t.accent_for(index as i32), cx, move |this| {
-            this.decks[index].loops.reloop();
-        }));
+        .child(push_button(
+            t,
+            lay.halve,
+            "1/2x",
+            false,
+            t.accent_for(index as i32),
+            cx,
+            move |this| {
+                this.decks[index].loops.halve();
+            },
+        ))
+        .child(push_button(
+            t,
+            lay.double,
+            "2x",
+            false,
+            t.accent_for(index as i32),
+            cx,
+            move |this| {
+                this.decks[index].loops.double();
+            },
+        ))
+        .child(push_button(
+            t,
+            lay.exit,
+            "Exit",
+            false,
+            t.accent_for(index as i32),
+            cx,
+            move |this| {
+                this.decks[index].loops.exit();
+            },
+        ))
+        .child(push_button(
+            t,
+            lay.reloop,
+            "Reloop",
+            reloop_lit,
+            t.accent_for(index as i32),
+            cx,
+            move |this| {
+                this.decks[index].loops.reloop();
+            },
+        ));
     area
 }
 
-fn transport(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
+fn transport(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    l: &DeckLayout,
+    cx: &mut Context<Shell>,
+) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let rects = TransportPanel::layout(l.transport, t.inner_gap);
@@ -347,9 +413,17 @@ fn transport(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut C
             TransportButton::Play => deck.transport.play_label(),
             other => other.label(),
         };
-        row = row.child(push_button(t, rects[i], label, lit[i], t.accent_for(index as i32), cx, move |this| {
-            this.decks[index].transport.press(button);
-        }));
+        row = row.child(push_button(
+            t,
+            rects[i],
+            label,
+            lit[i],
+            t.accent_for(index as i32),
+            cx,
+            move |this| {
+                this.decks[index].transport.press(button);
+            },
+        ));
     }
     row
 }

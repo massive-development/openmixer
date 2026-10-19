@@ -60,6 +60,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
   - 2 decks: load/play, faders, EQ knobs, level meters
+  - Partial (Todo 8b): `--debug-panel` shows device, latency, xruns, CPU and the raw parameter list; load/play waits on the library (Todo 28)
   - Plain widgets, no design tokens; replaced by Wave 5 UI
 
 - [x] **Todo 13a:** Short soak test in CI (30-60s headless mix)
@@ -157,9 +158,11 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 26:** Main window + deck widgets
   - Waveforms, transport, hotcues, loops
+  - Partial (Todo 8b): deck cards drawn and wired; waveforms are synthetic until the analysis crate (Todo 17) lands
 
 - [ ] **Todo 27:** Mixer widgets + metering
   - Knobs, faders, meters
+  - Partial (Todo 8b): channel strips, master, crossfader, cue and FX page drawn with drag; not verified by eye
 
 - [ ] **Todo 28:** Library browser + app wiring
   - Tree, track list, search

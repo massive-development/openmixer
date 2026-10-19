@@ -23,14 +23,29 @@ pub struct DeviceStatus {
 pub fn device_rows(status: &DeviceStatus) -> Vec<(String, String)> {
     vec![
         ("device".to_owned(), status.name.clone()),
-        ("sample rate".to_owned(), format!("{:.0} Hz", status.sample_rate)),
-        ("buffer".to_owned(), format!("{} frames", status.buffer_size)),
-        ("round trip".to_owned(), format!("{:.2} ms", status.round_trip_ms)),
+        (
+            "sample rate".to_owned(),
+            format!("{:.0} Hz", status.sample_rate),
+        ),
+        (
+            "buffer".to_owned(),
+            format!("{} frames", status.buffer_size),
+        ),
+        (
+            "round trip".to_owned(),
+            format!("{:.2} ms", status.round_trip_ms),
+        ),
         (
             "callback avg / max".to_owned(),
-            format!("{:.0} / {:.0} us (budget {:.0} us)", status.callback_avg_us, status.callback_max_us, status.budget_us),
+            format!(
+                "{:.0} / {:.0} us (budget {:.0} us)",
+                status.callback_avg_us, status.callback_max_us, status.budget_us
+            ),
         ),
-        ("cpu load".to_owned(), format!("{:.1} %", status.cpu_load * 100.0)),
+        (
+            "cpu load".to_owned(),
+            format!("{:.1} %", status.cpu_load * 100.0),
+        ),
         ("xruns".to_owned(), status.xruns.to_string()),
         ("callbacks".to_owned(), status.callbacks.to_string()),
     ]
@@ -50,7 +65,10 @@ pub fn parameter_rows(engine: &DjEngine, unknown: usize) -> Vec<(String, String)
         rows.push((format!("{p}.length"), d.length_frames().to_string()));
         rows.push((format!("{p}.looping"), d.is_looping().to_string()));
         rows.push((format!("{p}.keylock"), d.is_keylock().to_string()));
-        rows.push((format!("sync.enabled.{deck}"), engine.sync().is_enabled(deck).to_string()));
+        rows.push((
+            format!("sync.enabled.{deck}"),
+            engine.sync().is_enabled(deck).to_string(),
+        ));
     }
     for ch in 0..mixer.num_channels() {
         let c = format!("mixer.ch{ch}");
@@ -58,16 +76,37 @@ pub fn parameter_rows(engine: &DjEngine, unknown: usize) -> Vec<(String, String)
         rows.push((format!("{c}.fader"), format!("{:.3}", mixer.fader(ch))));
         rows.push((format!("{c}.filter"), format!("{:.3}", mixer.filter(ch))));
         for band in 0..3 {
-            rows.push((format!("{c}.eq.{band}"), format!("{:.2}", mixer.eq(ch, band))));
+            rows.push((
+                format!("{c}.eq.{band}"),
+                format!("{:.2}", mixer.eq(ch, band)),
+            ));
         }
         rows.push((format!("{c}.pfl"), mixer.pfl(ch).to_string()));
-        rows.push((format!("{c}.xfader"), format!("{:?}", mixer.crossfader_assign(ch))));
+        rows.push((
+            format!("{c}.xfader"),
+            format!("{:?}", mixer.crossfader_assign(ch)),
+        ));
     }
-    rows.push(("mixer.master".to_owned(), format!("{:.3}", mixer.master_gain())));
-    rows.push(("mixer.crossfader".to_owned(), format!("{:.3}", mixer.crossfader())));
-    rows.push(("mixer.crossfader.curve".to_owned(), format!("{:?}", mixer.crossfader_curve())));
-    rows.push(("mixer.cue.mix".to_owned(), format!("{:.3}", mixer.cue_mix())));
-    rows.push(("mixer.cue.level".to_owned(), format!("{:.3}", mixer.cue_level())));
+    rows.push((
+        "mixer.master".to_owned(),
+        format!("{:.3}", mixer.master_gain()),
+    ));
+    rows.push((
+        "mixer.crossfader".to_owned(),
+        format!("{:.3}", mixer.crossfader()),
+    ));
+    rows.push((
+        "mixer.crossfader.curve".to_owned(),
+        format!("{:?}", mixer.crossfader_curve()),
+    ));
+    rows.push((
+        "mixer.cue.mix".to_owned(),
+        format!("{:.3}", mixer.cue_mix()),
+    ));
+    rows.push((
+        "mixer.cue.level".to_owned(),
+        format!("{:.3}", mixer.cue_level()),
+    ));
     rows
 }
 
