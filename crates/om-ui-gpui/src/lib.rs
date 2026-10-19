@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod controls;
+pub mod debug_panel;
 pub mod deck_view;
 pub mod drag;
 pub mod mixer_view;

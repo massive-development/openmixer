@@ -2,6 +2,7 @@
 //! out with om-ui's `MainLayout` rectangles, owns the om-ui widget models, and ticks the engine's
 //! control side once per frame.
 
+use crate::debug_panel::{device_rows, parameter_rows, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::mixer_view::mixer_card;
@@ -27,17 +28,26 @@ use std::time::Instant;
 /// Height of the banner strip shown above the layout (no audio device, and so on).
 const BANNER_HEIGHT: i32 = 24;
 
+/// Reads the device's figures for the debug panel. Called on the UI thread once per frame.
+pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
+
+/// Width of the `--debug-panel` column on the right.
+const DEBUG_WIDTH: i32 = 340;
+
 /// What the caller decides before the window opens.
 pub struct RunOptions {
     /// Quit after this many rendered frames and return (`--smoke`). `None` runs until closed.
     pub smoke_frames: Option<u64>,
     /// Visible notice above the layout, such as the mock-device fallback.
     pub banner: Option<String>,
+    /// Shows the debug column (`--debug-panel`) and reads the device through this.
+    pub debug: Option<DeviceStatusFn>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
 pub struct Shell {
     pub(crate) engine: Arc<DjEngine>,
+    router: Arc<ParameterRouter>,
     pub(crate) theme: ThemeTokens,
     /// One card per engine deck, in deck order.
     pub(crate) decks: Vec<DeckWidget>,
@@ -74,7 +84,7 @@ impl Shell {
         options: RunOptions,
         frames_out: Arc<AtomicU64>,
     ) -> Self {
-        let target: Arc<dyn ParameterTarget> = router;
+        let target: Arc<dyn ParameterTarget> = Arc::clone(&router) as Arc<dyn ParameterTarget>;
         let mixer = MixerPanel::new(
             MixerBinding::new(Arc::clone(&engine), Arc::clone(&target)),
             meter_params(&theme),
@@ -90,6 +100,7 @@ impl Shell {
             .collect();
         Self {
             engine,
+            router,
             theme,
             decks,
             mixer,
@@ -121,6 +132,36 @@ impl Shell {
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
         self.frames += 1;
         self.frames_out.store(self.frames, Ordering::Relaxed);
+    }
+
+    /// The `--debug-panel` column: device figures, then the raw control-surface values.
+    fn debug_column(&self, status: &DeviceStatus, bounds: Rect) -> gpui::Div {
+        let t = &self.theme;
+        let mut lines = vec![("Device".to_owned(), String::new())];
+        lines.extend(device_rows(status));
+        lines.push((String::new(), String::new()));
+        lines.push(("Parameters".to_owned(), String::new()));
+        lines.extend(parameter_rows(&self.engine, self.router.unknown_count()));
+        let mut body = div()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .text_size(px(t.type_caption));
+        for (label, value) in lines {
+            let row = div()
+                .flex()
+                .justify_between()
+                .child(div().text_color(paint(t.text_secondary)).child(label))
+                .child(div().text_color(paint(t.text_primary)).child(value));
+            body = body.child(row);
+        }
+        place(bounds)
+            .bg(paint(t.popup))
+            .border_1()
+            .border_color(paint(t.border))
+            .p(px(6.))
+            .overflow_hidden()
+            .child(body)
     }
 
     fn cell_view(&self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
@@ -160,7 +201,8 @@ impl Render for Shell {
         let height = f32::from(viewport.height) as i32;
         let banner = self.options.banner.clone();
         let top = if banner.is_some() { BANNER_HEIGHT } else { 0 };
-        let area = Rect::new(0, top, width, (height - top).max(0));
+        let debug_w = if self.options.debug.is_some() { DEBUG_WIDTH } else { 0 };
+        let area = Rect::new(0, top, (width - debug_w).max(0), (height - top).max(0));
         let gap = self.theme.gap;
 
         let mut root = release_on(
@@ -186,6 +228,9 @@ impl Render for Shell {
         }
         for cell in cells_for(self.engine.num_decks(), area, gap) {
             root = root.child(self.cell_view(&cell, cx));
+        }
+        if let Some(status) = self.options.debug.clone() {
+            root = root.child(self.debug_column(&status(), Rect::new(width - debug_w, top, debug_w, (height - top).max(0))));
         }
         root
     }

@@ -215,6 +215,7 @@ mod tests {
         let options = RunOptions {
             smoke_frames: None,
             banner: None,
+            debug: None,
         };
         let shell = Shell::new(
             Arc::clone(&engine),
