@@ -24,6 +24,9 @@ pub enum LibraryError {
     /// A folder scan was refused (not a folder) or stopped before it finished.
     #[error("{0}")]
     Ingest(String),
+    /// An import file could not be read, was not recognised, or its XML did not parse.
+    #[error("{0}")]
+    Import(String),
     /// A search query was rejected (unknown field, unreadable value, unsortable field).
     #[error("{0}")]
     Query(String),

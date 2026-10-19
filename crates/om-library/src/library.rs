@@ -7,6 +7,7 @@ use crate::database::{Database, OpenMode};
 use crate::error::Result;
 use crate::migrations::{migrate, Migration};
 use crate::playlist_dao::PlaylistDao;
+use crate::prep_queue_dao::PrepQueueDao;
 use crate::track_dao::TrackDao;
 use crate::track_file_dao::TrackFileDao;
 use crate::watch_folder_dao::WatchFolderDao;
@@ -50,5 +51,9 @@ impl Library {
 
     pub fn watch_folders(&self) -> WatchFolderDao<'_> {
         WatchFolderDao::new(&self.db)
+    }
+
+    pub fn prep_queue(&self) -> PrepQueueDao<'_> {
+        PrepQueueDao::new(&self.db)
     }
 }

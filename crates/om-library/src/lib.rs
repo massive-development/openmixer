@@ -1,6 +1,7 @@
 //! Library database: SQLite schema and migrations, track/cue/playlist/watch-folder DAOs, and the
 //! track record and key helpers (Todo 20). Metadata readers, folder ingest and watch folders
-//! (Todo 21). Search and filter (Todo 23). Importers and the prep queue come later (Todos 22, 24).
+//! (Todo 21). Search and filter (Todo 23). Library import (iTunes, Rekordbox) (Todo 22) and the
+//! track prep queue (Todo 24).
 //! Port of `src/library/`.
 //!
 //! Threading: one writer per database file. A `Database` is used by one thread at a time; the UI
@@ -12,12 +13,25 @@ mod cue_dao;
 mod database;
 mod error;
 mod file_url;
+mod import_cues;
+mod import_merge;
+mod import_model;
+mod import_writer;
 mod ingest;
+mod itunes_importer;
+mod juce_text;
 mod library;
+mod library_import;
+mod library_importer;
 mod metadata;
 mod migrations;
 mod ordered_list;
 mod playlist_dao;
+mod plist_reader;
+mod prep_queue;
+mod prep_queue_dao;
+mod prep_results;
+mod rekordbox_importer;
 mod search_compiler;
 mod search_engine;
 mod search_fields;
@@ -30,11 +44,28 @@ mod track_key;
 mod track_record;
 mod watch_folder_dao;
 mod watch_folders;
+mod xml;
 
 pub use cue_dao::{CueDao, CuePoint, SavedLoop};
 pub use database::{Database, OpenMode, Transaction};
 pub use error::{LibraryError, Result};
 pub use file_url::file_url_to_path;
+pub use import_cues::{import_cues, ASSUMED_SAMPLE_RATE, FIRST_MEMORY_SLOT};
+pub use import_merge::merge_track_record;
+pub use import_model::{
+    CueKind, ImportReport, ImportedCue, ImportedLibrary, ImportedPlaylist, ImportedTrack,
+};
+pub use import_writer::ImportWriter;
+pub use itunes_importer::ItunesImporter;
+pub use library_import::import_library_file;
+pub use library_importer::{LibraryImporter, LibraryImporterRegistry};
+pub use juce_text::{double_value, int_value, iso8601_ms};
+pub use plist_reader::PlistDict;
+pub use prep_queue::{ErrorHandler, Observer, PrepOptions, PrepQueue, SourceFactory};
+pub use prep_queue_dao::{PrepEntry, PrepQueueDao, PrepStatus};
+pub use prep_results::apply_prep_results;
+pub use rekordbox_importer::RekordboxImporter;
+pub use xml::{parse_xml, read_xml_file, XmlElement};
 pub use ingest::{IngestSummary, Ingestor};
 pub use library::Library;
 pub use metadata::{
