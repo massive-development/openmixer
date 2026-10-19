@@ -4,7 +4,8 @@
 mod common;
 
 use om_audio::{AudioCallback, AudioDevice, AudioError, LatencyMonitor, MockAudioDevice};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+use om_core::atomic::AtomicF64;
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ struct Probe {
     prepared: AtomicUsize,
     released: AtomicUsize,
     calls: AtomicUsize,
-    sample_rate_bits: AtomicU64,
+    sample_rate: AtomicF64,
     block: AtomicUsize,
 }
 
@@ -36,9 +37,7 @@ impl GainCallback {
 
 impl AudioCallback for GainCallback {
     fn prepare(&mut self, sample_rate: f64, block: usize) {
-        self.probe
-            .sample_rate_bits
-            .store(sample_rate.to_bits(), Relaxed);
+        self.probe.sample_rate.store(sample_rate);
         self.probe.block.store(block, Relaxed);
         self.probe.prepared.fetch_add(1, Relaxed);
     }
@@ -81,10 +80,7 @@ fn mock_device_lifecycle_and_block_rendering() {
         "double start rejected"
     );
     assert_eq!(probe.prepared.load(Relaxed), 1);
-    assert_eq!(
-        f64::from_bits(probe.sample_rate_bits.load(Relaxed)),
-        44_100.0
-    );
+    assert_eq!(probe.sample_rate.load(), 44_100.0);
     assert_eq!(probe.block.load(Relaxed), 128);
 
     for i in 0..128 {
