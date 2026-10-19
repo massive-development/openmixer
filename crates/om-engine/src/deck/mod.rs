@@ -201,12 +201,10 @@ impl Deck {
     }
 
     fn set_loop_enabled(&self, enabled: bool) {
-        let mut snap = LoopSnapshot::default();
-        if self.shared.loop_state.load(&mut snap) && snap.valid() {
-            self.shared
-                .loop_state
-                .store(LoopSnapshot { enabled, ..snap });
-        }
+        // Under the writer lock, so a concurrent `set_loop` cannot be undone by this toggle.
+        self.shared
+            .loop_state
+            .update(|snap| snap.valid().then_some(LoopSnapshot { enabled, ..*snap }));
     }
 
     pub fn is_looping(&self) -> bool {

@@ -38,6 +38,30 @@ const READ_ATTEMPTS: usize = 4;
 impl LoopState {
     pub fn store(&self, s: LoopSnapshot) {
         let _guard = self.write_lock.lock().unwrap_or_else(|p| p.into_inner());
+        self.write_locked(s);
+    }
+
+    /// Read-modify-write under the writer lock: `change` sees the current bounds and returns the
+    /// new ones, or `None` to leave them alone. Concurrent writers cannot slip in between the read
+    /// and the write, so none of their updates is lost. Returns whether bounds were written.
+    pub fn update(&self, change: impl FnOnce(&LoopSnapshot) -> Option<LoopSnapshot>) -> bool {
+        let _guard = self.write_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let current = LoopSnapshot {
+            start: self.start.load(Ordering::Relaxed),
+            end: self.end.load(Ordering::Relaxed),
+            enabled: self.enabled.load(Ordering::Relaxed),
+        };
+        match change(&current) {
+            Some(next) => {
+                self.write_locked(next);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Caller holds `write_lock`.
+    fn write_locked(&self, s: LoopSnapshot) {
         let v = self.seq.load(Ordering::Relaxed);
         self.seq.store(v.wrapping_add(1), Ordering::Relaxed);
         // Keeps the odd sequence number visible before any of the new fields.
