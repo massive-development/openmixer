@@ -3,11 +3,13 @@
 
 mod support;
 
+use om_core::{StateKey, StateReader};
 use om_midi::{
     pair_outputs, MidiEvent, MidiFeedback, MidiKind, MidiMapper, MidiOutputSink, MidiPortInfo,
     OutputRule,
 };
 use serde_json::json;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use support::{FakeState, RecordingOutputSink};
 
@@ -260,4 +262,56 @@ fn output_pairing_matches_outputs_to_enabled_inputs_by_name() {
     assert_eq!(some[0].id, "out1");
     assert_eq!(pair_outputs(&inputs, &[], true, &outputs).len(), 2);
     assert_eq!(pair_outputs(&inputs, &[], false, &outputs).len(), 0);
+}
+
+/// Counts how a pass reads state: one batched read per pass, and no single-id reads.
+#[derive(Default)]
+struct CountingState {
+    inner: FakeState,
+    batches: AtomicUsize,
+    singles: AtomicUsize,
+}
+
+impl StateReader for CountingState {
+    fn read_state(&self, id: &str) -> Option<f64> {
+        self.singles.fetch_add(1, Ordering::Relaxed);
+        self.inner.read_state(id)
+    }
+
+    fn read_states(&self, keys: &[StateKey], out: &mut [Option<f64>]) {
+        self.batches.fetch_add(1, Ordering::Relaxed);
+        for (key, slot) in keys.iter().zip(out.iter_mut()) {
+            *slot = self.inner.read_state(key.as_str());
+        }
+    }
+}
+
+/// A pass over N rules reads state once, as one batch, and reuses the parsed ids on every pass.
+#[test]
+fn one_pass_reads_all_rules_in_a_single_batch() {
+    let state = Arc::new(CountingState::default());
+    for source in ["deck.0.play", "deck.1.play", "mixer.ch0.level"] {
+        state.inner.set(source, 1.0);
+    }
+    let mapper = Arc::new(MidiMapper::new());
+    mapper
+        .load_from_json(
+            r#"{"version":2,"mappings":[],"outputs":[
+                {"source":"deck.0.play","type":"note","number":36,"on":127,"off":0},
+                {"source":"deck.1.play","type":"note","number":37,"on":127,"off":0},
+                {"source":"mixer.ch0.level","type":"cc","number":8,"mode":"level","off":0,"on":127}
+            ]}"#,
+        )
+        .expect("map loads");
+    let mut feedback = MidiFeedback::new(state.clone(), mapper, Some(Box::new(|| 0.0)));
+    let sink = Arc::new(RecordingOutputSink::default());
+    feedback.set_sink(Some(sink.clone()));
+
+    assert_eq!(feedback.update(), 3);
+    assert_eq!(state.batches.load(Ordering::Relaxed), 1);
+    assert_eq!(state.singles.load(Ordering::Relaxed), 0);
+
+    assert_eq!(feedback.update(), 0, "no change, nothing sent");
+    assert_eq!(state.batches.load(Ordering::Relaxed), 2);
+    assert_eq!(state.singles.load(Ordering::Relaxed), 0);
 }

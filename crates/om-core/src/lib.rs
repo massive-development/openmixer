@@ -24,7 +24,7 @@ pub use snapshot::{
     AutomixSnapshot, ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot, SamplerSnapshot,
     StemSnapshot,
 };
-pub use state::StateReader;
+pub use state::{StateKey, StateReader};
 pub use state_id::StateId;
 
 /// The OpenMixer crate version, taken from the workspace package version.

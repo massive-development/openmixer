@@ -10,7 +10,7 @@
 //! mixer.crossfader | mixer.master (gain) | mixer.master.level (decaying peak, louder side)
 //! ```
 
-use om_core::{StateId, StateReader};
+use om_core::{StateId, StateKey, StateReader};
 use om_engine::DjEngine;
 use std::sync::Arc;
 
@@ -28,6 +28,18 @@ impl StateReader for EngineStateReader {
     fn read_state(&self, id: &str) -> Option<f64> {
         let id: StateId = id.parse().ok()?;
         self.engine.snapshot().read(&id)
+    }
+
+    /// One snapshot for the whole pass: every rule reads the same capture, and the ids were parsed
+    /// when the keys were made.
+    fn read_states(&self, keys: &[StateKey], out: &mut [Option<f64>]) {
+        if keys.is_empty() {
+            return;
+        }
+        let snapshot = self.engine.snapshot();
+        for (key, slot) in keys.iter().zip(out.iter_mut()) {
+            *slot = key.state_id().and_then(|id| snapshot.read(id));
+        }
     }
 }
 
