@@ -10,7 +10,7 @@ use om_midi::{
     MidiMapper, MidiTrace,
 };
 use std::sync::Arc;
-use support::{assert_near, data_dir, RecordingTarget};
+use support::{assert_near, data_dir, FakeState, RecordingTarget};
 
 struct Fixture {
     m: MidiMapper,
@@ -225,4 +225,31 @@ fn user_targets_can_be_registered_replaced_and_removed() {
         !router.set_parameter("fxx.time", 1.0),
         "prefix must match a whole segment"
     );
+}
+
+#[test]
+fn toggle_and_relative_start_from_the_engine_value_and_keep_it_across_reloads() {
+    let f = fixture();
+    let engine = Arc::new(FakeState::default());
+    f.m.set_state_reader(engine.clone());
+    let map = r#"{"mappings":[
+        {"type":"note","number":36,"target":"deck.0.play","mode":"toggle"},
+        {"type":"cc","number":21,"target":"mixer.ch0.eq.low","mode":"relative","step":1,"min":-100,"max":100}]}"#;
+    f.m.load_from_json(map).unwrap();
+
+    // The deck was started with the mouse: the engine says playing, so the press stops it.
+    engine.set("deck.0.play", 1.0);
+    f.m.handle_message(&note_on(0, 36, 127));
+    assert_eq!(f.t.last("deck.0.play"), 0.0);
+
+    // A relative encoder adds to the engine's value (10), not the mapper's stored 0.
+    engine.set("mixer.ch0.eq.low", 10.0);
+    f.m.handle_message(&control_change(0, 21, 65));
+    assert_eq!(f.t.last("mixer.ch0.eq.low"), 11.0);
+
+    // A reload with the engine unknown keeps the last value for the unchanged target.
+    f.m.set_state_reader(Arc::new(FakeState::default()));
+    f.m.load_from_json(map).unwrap();
+    f.m.handle_message(&control_change(0, 21, 65));
+    assert_eq!(f.t.last("mixer.ch0.eq.low"), 12.0);
 }

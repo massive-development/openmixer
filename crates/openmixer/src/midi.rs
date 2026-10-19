@@ -54,6 +54,7 @@ impl MidiService {
         // coming back on its input are not heard as presses.
         let echo = Arc::new(EchoGuard::new());
         let output = Arc::new(MidiOutputRouter::with_echo(Arc::clone(&echo)));
+        mapper.set_state_reader(Arc::clone(&state));
         let mut feedback = MidiFeedback::new(state, Arc::clone(&mapper), Some(system_clock()));
         let sink: Arc<dyn MidiOutputSink> = output.clone();
         feedback.set_sink(Some(sink));
