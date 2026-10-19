@@ -106,6 +106,42 @@ impl Database {
     }
 }
 
+/// Optional SQLite features the library uses, detected when an engine opens the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LibraryCapabilities {
+    /// The FTS5 module is compiled in and the `tracks_fts` index exists. Free-text search uses it;
+    /// otherwise it uses LIKE.
+    pub fts5: bool,
+}
+
+impl LibraryCapabilities {
+    /// Probes `db`. Read-only connections probe too: the FTS5 check uses a temporary table.
+    pub fn detect(db: &Database) -> Self {
+        let has_index = db
+            .query_optional(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';",
+                [],
+                |_| Ok(()),
+            )
+            .ok()
+            .flatten()
+            .is_some();
+        Self {
+            fts5: has_index && fts5_module_available(db),
+        }
+    }
+}
+
+/// True when this SQLite build can create FTS5 tables. Uses a temporary table, so it is safe on a
+/// read-only connection and leaves nothing behind.
+pub fn fts5_module_available(db: &Database) -> bool {
+    let created = db
+        .exec("CREATE VIRTUAL TABLE temp.om_fts5_probe USING fts5(x);")
+        .is_ok();
+    let _ = db.exec("DROP TABLE IF EXISTS temp.om_fts5_probe;");
+    created
+}
+
 /// Rolls back on drop unless `commit` ran. Nests via savepoints, so DAO calls compose.
 pub struct Transaction<'a> {
     db: &'a Database,

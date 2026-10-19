@@ -47,7 +47,7 @@ mod xml;
 
 pub use artwork_dao::{image_size, ArtworkDao, ArtworkRecord, MAX_ARTWORK_BYTES};
 pub use cue_dao::{CueDao, CuePoint, SavedLoop};
-pub use database::{Database, OpenMode, Transaction};
+pub use database::{Database, LibraryCapabilities, OpenMode, Transaction};
 pub use error::{ImportError, LibraryError, Result};
 pub use file_url::file_url_to_path;
 pub use import_cues::{import_cues, ASSUMED_SAMPLE_RATE, FIRST_MEMORY_SLOT};

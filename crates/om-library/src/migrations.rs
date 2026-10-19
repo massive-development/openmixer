@@ -1,7 +1,7 @@
 //! Forward-only schema migrations. The table and column names are kept from the original schema, so databases
 //! written by earlier builds open unchanged. Later subsystems append their own entries.
 
-use crate::database::{Database, Transaction};
+use crate::database::{fts5_module_available, Database, Transaction};
 use crate::error::{LibraryError, Result};
 
 /// One numbered schema step. Versions are strictly increasing and start at 1.
@@ -11,6 +11,9 @@ pub struct Migration {
     pub name: &'static str,
     /// One or more statements.
     pub sql: &'static str,
+    /// The SQL creates FTS5 objects. On a SQLite build without FTS5 the migration is left unapplied
+    /// (and so is every later one, to keep the order); the library then searches with LIKE.
+    pub needs_fts5: bool,
 }
 
 const VERSION_TABLE: &str = "CREATE TABLE IF NOT EXISTS schema_version (
@@ -138,36 +141,79 @@ CREATE TABLE artwork (
 );
 "#;
 
+/// Free-text search index. External-content FTS5 over the text columns free-text search covers
+/// (`title artist album genre comment`), kept in step with `tracks` by triggers. Diacritics are
+/// folded (`emile` finds `Émile`); prefixes of 2 and 3 characters are indexed so `*` queries are
+/// fast. Existing rows are indexed by the final `rebuild`. Forward-only.
+const SCHEMA_V7: &str = r#"
+CREATE VIRTUAL TABLE tracks_fts USING fts5(
+  title, artist, album, genre, comment,
+  content = 'tracks', content_rowid = 'id',
+  tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3'
+);
+
+CREATE TRIGGER tracks_fts_ai AFTER INSERT ON tracks BEGIN
+  INSERT INTO tracks_fts (rowid, title, artist, album, genre, comment)
+  VALUES (new.id, new.title, new.artist, new.album, new.genre, new.comment);
+END;
+
+CREATE TRIGGER tracks_fts_ad AFTER DELETE ON tracks BEGIN
+  INSERT INTO tracks_fts (tracks_fts, rowid, title, artist, album, genre, comment)
+  VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre, old.comment);
+END;
+
+CREATE TRIGGER tracks_fts_au AFTER UPDATE OF title, artist, album, genre, comment ON tracks BEGIN
+  INSERT INTO tracks_fts (tracks_fts, rowid, title, artist, album, genre, comment)
+  VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre, old.comment);
+  INSERT INTO tracks_fts (rowid, title, artist, album, genre, comment)
+  VALUES (new.id, new.title, new.artist, new.album, new.genre, new.comment);
+END;
+
+INSERT INTO tracks_fts (tracks_fts) VALUES ('rebuild');
+"#;
+
 const CORE_MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
         name: "tracks, cues, loops, playlists",
         sql: SCHEMA_V1,
+        needs_fts5: false,
     },
     Migration {
         version: 2,
         name: "track file state, watch folders",
         sql: SCHEMA_V2,
+        needs_fts5: false,
     },
     Migration {
         version: 3,
         name: "search indexes",
         sql: SCHEMA_V3,
+        needs_fts5: false,
     },
     Migration {
         version: 4,
         name: "track prep queue",
         sql: SCHEMA_V4,
+        needs_fts5: false,
     },
     Migration {
         version: 5,
         name: "play history",
         sql: SCHEMA_V5,
+        needs_fts5: false,
     },
     Migration {
         version: 6,
         name: "track artwork",
         sql: SCHEMA_V6,
+        needs_fts5: false,
+    },
+    Migration {
+        version: 7,
+        name: "free-text search index (FTS5)",
+        sql: SCHEMA_V7,
+        needs_fts5: true,
     },
 ];
 
@@ -195,6 +241,14 @@ pub fn migrate(db: &Database, migrations: &[Migration]) -> Result<()> {
     }
     for m in migrations {
         if i64::from(m.version) > current {
+            if m.needs_fts5 && !fts5_module_available(db) {
+                tracing::warn!(
+                    "SQLite has no FTS5: migration {} ({}) is not applied; search uses LIKE",
+                    m.version,
+                    m.name
+                );
+                break;
+            }
             apply(db, m)?;
         }
     }
