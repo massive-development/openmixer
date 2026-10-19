@@ -1602,12 +1602,13 @@ mod page_tests {
         s.poll_learn();
         assert_eq!(s.learning_target(), None);
         assert!(s.notice.text.starts_with("Learned a control for deck.0.play and saved to "));
+        assert_eq!(changes.get(), 1, "the saved map file is the preference");
 
         s.midi_learn("deck.0.play");
         s.midi_cancel_learn();
         assert_eq!(s.learning_target(), None);
         assert_eq!(s.notice.text, "Learn cancelled");
-        assert_eq!(changes.get(), 0, "learn edits no preference");
+        assert_eq!(changes.get(), 1, "arming and cancelling edit no preference");
     }
 
     #[test]
