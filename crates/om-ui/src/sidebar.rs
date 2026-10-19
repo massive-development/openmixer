@@ -53,8 +53,11 @@ impl SidebarNode {
     pub fn scope_query(&self) -> String {
         match self.kind {
             SidebarKind::Playlist => format!("playlist:#{}", self.playlist_id),
-            // Anchored prefix, not a substring: quotes cannot be escaped in the query grammar.
-            SidebarKind::WatchFolder => format!("folder:\"{}\"", self.path.replace('"', "")),
+            // Anchored prefix, not a substring. A quote in the path is doubled, which the query
+            // grammar reads back as one quote.
+            SidebarKind::WatchFolder => {
+                format!("folder:\"{}\"", self.path.replace('"', "\"\""))
+            }
             _ => String::new(),
         }
     }
@@ -285,5 +288,18 @@ mod tests {
         let top = build_sidebar(&tree);
         assert!(top[0].scope_query().is_empty());
         assert!(top[3].scope_query().is_empty(), "prep queue has no query");
+    }
+
+    #[test]
+    fn watch_folder_scope_keeps_a_quote_in_the_path() {
+        let node = SidebarNode {
+            kind: SidebarKind::WatchFolder,
+            label: "say".to_owned(),
+            playlist_id: 0,
+            path: r#"/m/say "hi""#.to_owned(),
+            children: Vec::new(),
+        };
+        // Escaped as a doubled quote, not stripped: the path must still match its tracks.
+        assert_eq!(node.scope_query(), r#"folder:"/m/say ""hi""""#);
     }
 }

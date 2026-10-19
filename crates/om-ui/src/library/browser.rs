@@ -42,6 +42,8 @@ pub struct LibraryBrowser {
     status: String,
     status_is_error: bool,
     shown_reference: String,
+    /// The page error last shown in the status line; empty when none.
+    shown_page_error: String,
     selected_rows: BTreeSet<usize>,
     events: Receiver<LibraryEvent>,
 }
@@ -75,6 +77,7 @@ impl LibraryBrowser {
             status: String::new(),
             status_is_error: false,
             shown_reference: String::new(),
+            shown_page_error: String::new(),
             selected_rows: BTreeSet::new(),
             events,
         };
@@ -271,6 +274,17 @@ impl LibraryBrowser {
             self.refresh(services);
         } else if self.search_pending || self.stale {
             self.apply_query(services);
+        }
+        // Rows that could not be read while painting are reported here, once per change.
+        let page_error = self.model.source_error();
+        if page_error != self.shown_page_error {
+            let was_failing = !self.shown_page_error.is_empty();
+            self.shown_page_error = page_error.clone();
+            if !page_error.is_empty() {
+                self.set_status(format!("cannot read rows: {page_error}"), true);
+            } else if was_failing {
+                self.apply_query(services);
+            }
         }
         let reference = self.reference_key.as_ref().map(|f| f());
         if let Some(reference) = reference {

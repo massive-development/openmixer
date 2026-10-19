@@ -55,11 +55,19 @@ impl Scanner {
 }
 
 /// Splits on whitespace outside double quotes. A '-' before anything else on the token negates it.
+/// Inside quotes a doubled quote (`""`) is a literal quote, so any text can be quoted.
 fn tokenize(text: &str) -> Vec<RawToken> {
     let mut s = Scanner::default();
     let mut quoted = false;
-    for c in text.chars() {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
         if c == '"' {
+            if quoted && chars.peek() == Some(&'"') {
+                chars.next();
+                s.started = true;
+                s.current.push('"');
+                continue;
+            }
             quoted = !quoted;
             s.started = true;
             continue;
@@ -152,5 +160,14 @@ mod tests {
         assert!(p.query.sort_field.is_empty());
         assert_eq!(p.query.terms[0].value, "sort:bpm");
         assert!(p.query.terms[0].negated);
+    }
+
+    #[test]
+    fn a_doubled_quote_inside_quotes_is_a_literal_quote() {
+        let fields = SearchFieldRegistry::with_defaults();
+        let p = parse_query(r#"folder:"/m/say ""hi""" x"#, &fields);
+        assert_eq!(p.query.terms[0].field, "folder");
+        assert_eq!(p.query.terms[0].value, r#"/m/say "hi""#);
+        assert_eq!(p.query.terms[1].value, "x");
     }
 }

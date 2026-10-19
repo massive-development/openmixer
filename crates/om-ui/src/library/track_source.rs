@@ -9,8 +9,9 @@ use om_library::{Database, Library, PrepEntry, SearchEngine, SearchQuery, TrackR
 /// A counted, pageable list of tracks.
 pub trait TrackSource {
     fn count(&mut self) -> usize;
-    fn fetch(&mut self, offset: usize, limit: usize) -> Vec<TrackRecord>;
-    /// Why the last count or fetch failed, or the query text was rejected; empty when fine.
+    /// The rows at `offset`; an `Err` carries the reason the page could not be read.
+    fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String>;
+    /// Why the last count failed, or the query text was rejected; empty when fine.
     fn error(&self) -> String {
         String::new()
     }
@@ -63,17 +64,11 @@ impl TrackSource for SearchTrackSource {
         }
     }
 
-    fn fetch(&mut self, offset: usize, limit: usize) -> Vec<TrackRecord> {
+    fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String> {
         let mut page = self.query.clone();
         page.offset = u32::try_from(offset).unwrap_or(u32::MAX);
         page.limit = Some(u32::try_from(limit).unwrap_or(u32::MAX));
-        match self.engine.search(&page) {
-            Ok(rows) => rows,
-            Err(error) => {
-                self.last_error = error.to_string();
-                Vec::new()
-            }
-        }
+        self.engine.search(&page).map_err(|error| error.to_string())
     }
 
     fn error(&self) -> String {
@@ -99,9 +94,10 @@ impl TrackSource for PrepQueueSource {
         self.entries.len()
     }
 
-    fn fetch(&mut self, offset: usize, limit: usize) -> Vec<TrackRecord> {
+    fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String> {
         let end = self.entries.len().min(offset.saturating_add(limit));
-        self.entries
+        Ok(self
+            .entries
             .get(offset.min(end)..end)
             .unwrap_or_default()
             .iter()
@@ -112,7 +108,7 @@ impl TrackSource for PrepQueueSource {
                     .ok()
                     .flatten()
             })
-            .collect()
+            .collect())
     }
 }
 
@@ -130,15 +126,15 @@ mod tests {
             self.total
         }
 
-        fn fetch(&mut self, offset: usize, limit: usize) -> Vec<TrackRecord> {
+        fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String> {
             self.fetches += 1;
-            (offset..self.total.min(offset + limit))
+            Ok((offset..self.total.min(offset + limit))
                 .map(|i| TrackRecord {
                     id: i as i64 + 1,
                     title: format!("T{i}"),
                     ..TrackRecord::default()
                 })
-                .collect()
+                .collect())
         }
     }
 
@@ -149,7 +145,7 @@ mod tests {
             fetches: 0,
         };
         assert_eq!(source.count(), 250);
-        let page = source.fetch(200, 100);
+        let page = source.fetch(200, 100).expect("counting source never fails");
         assert_eq!(page.len(), 50);
         assert_eq!(page[49].title, "T249");
         assert_eq!(source.fetches, 1);

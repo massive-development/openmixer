@@ -109,7 +109,16 @@ mod tests {
     #[test]
     fn rejects_non_file_urls_and_empty_paths() {
         assert_eq!(file_url_to_path("https://example.com/a.mp3"), None);
+        assert_eq!(file_url_to_path("http://example.invalid/a"), None);
+        assert_eq!(file_url_to_path(""), None);
         assert_eq!(file_url_to_path("file://"), None);
+    }
+
+    #[test]
+    fn broken_escapes_stay_literal() {
+        // A truncated or non-hex escape is kept as typed (as the C++ test expects), not decoded.
+        assert_eq!(file_url_to_path("file:///a%2").as_deref(), Some("/a%2"));
+        assert_eq!(file_url_to_path("file:///a%zz").as_deref(), Some("/a%zz"));
     }
 
     #[test]

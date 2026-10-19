@@ -155,15 +155,15 @@ impl TrackSource for CountingSource {
         self.total
     }
 
-    fn fetch(&mut self, offset: usize, limit: usize) -> Vec<TrackRecord> {
+    fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String> {
         self.fetches.set(self.fetches.get() + 1);
-        (offset..self.total.min(offset + limit))
+        Ok((offset..self.total.min(offset + limit))
             .map(|i| TrackRecord {
                 id: i as i64 + 1,
                 title: format!("T{i}"),
                 ..TrackRecord::default()
             })
-            .collect()
+            .collect())
     }
 }
 
