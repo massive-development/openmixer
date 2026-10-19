@@ -17,9 +17,8 @@ pub use track_drag::{describe as describe_track_drag, parse as parse_track_drag}
 pub use track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
 pub use track_table::{columns, Column, TrackTableModel, MAX_CACHED_PAGES, PAGE_SIZE};
 mod browser;
-mod settings;
+mod control;
 mod track_loader;
 
 pub use browser::{LibraryBrowser, LoadHandler, SEARCH_PLACEHOLDER};
-pub use settings::{interval_label, LibrarySettingsPage, SCAN_INTERVALS_MINUTES};
 pub use track_loader::TrackLoader;

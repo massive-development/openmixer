@@ -30,6 +30,9 @@ pub fn main(args: &[String]) -> ExitCode {
     let debug = args.iter().any(|a| a == "--debug-panel");
 
     let mut composition = AppComposition::with_defaults();
+    if let Err(error) = composition.attach_library(None) {
+        eprintln!("openmixer: library unavailable: {error}");
+    }
     let engine = Arc::clone(&composition.engine);
     let router = Arc::clone(&composition.router);
     let Some(audio) = composition.take_audio() else {
