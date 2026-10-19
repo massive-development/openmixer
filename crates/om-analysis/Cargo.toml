@@ -11,6 +11,8 @@ publish = false
 workspace = true
 
 [dependencies]
+om-dsp = { path = "../om-dsp" }
 om-engine = { path = "../om-engine" }
+base64 = "0.22"
 realfft = "3.5"
 serde_json = "1"

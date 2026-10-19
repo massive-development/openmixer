@@ -85,6 +85,28 @@ pub fn click_track(
     clip
 }
 
+/// Sine tone over the whole clip.
+pub fn add_tone(clip: &mut AudioClip, freq: f64, gain: f32) {
+    add_tone_between(clip, freq, gain, 0.0, f64::INFINITY);
+}
+
+/// Sine tone between `from_seconds` and `to_seconds` (clipped to the clip).
+pub fn add_tone_between(
+    clip: &mut AudioClip,
+    freq: f64,
+    gain: f32,
+    from_seconds: f64,
+    to_seconds: f64,
+) {
+    let rate = clip.sample_rate;
+    let from = (from_seconds * rate) as usize;
+    let to = ((to_seconds * rate) as usize).min(clip.samples.len());
+    for i in from..to {
+        let phase = 2.0 * PI * freq * i as f64 / rate;
+        clip.samples[i] += gain * phase.sin() as f32;
+    }
+}
+
 pub fn add_noise(clip: &mut AudioClip, gain: f32, seed: u64) {
     let mut random = TestRandom::new(seed);
     for s in &mut clip.samples {
