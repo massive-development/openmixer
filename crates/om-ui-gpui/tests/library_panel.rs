@@ -3,14 +3,13 @@
 //! in-memory library and real WAV files. Nothing here opens a device: the engine's audio side is
 //! dropped, so the decks load and report, but never play.
 
-use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use om_engine::DjEngine;
 use om_library::TrackRecord;
+use om_testing::wav::write_pcm16_wav;
 use om_ui::library::{describe_track_drag, LibraryServices, Options};
 use om_ui::sidebar::SidebarKind;
 use om_ui_gpui::library::{KeyOutcome, LibraryHub, LibraryPanel, SharedHub};
@@ -19,26 +18,11 @@ use tempfile::TempDir;
 /// A 16-bit mono WAV with a short tone, enough for the loader to decode.
 fn write_wav(path: &Path) {
     const RATE: u32 = 8_000;
-    let frames: u32 = RATE / 4;
-    let data_len = frames * 2;
-    let mut out = Vec::new();
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&RATE.to_le_bytes());
-    out.extend_from_slice(&(RATE * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    for n in 0..frames {
-        let sample = ((n as f32 * 0.3).sin() * 4000.0) as i16;
-        out.extend_from_slice(&sample.to_le_bytes());
-    }
-    fs::File::create(path).unwrap().write_all(&out).unwrap();
+    let frames = (RATE / 4) as usize;
+    let samples: Vec<i16> = (0..frames)
+        .map(|n| ((n as f32 * 0.3).sin() * 4000.0) as i16)
+        .collect();
+    write_pcm16_wav(path, 1, RATE, &samples);
 }
 
 struct Fixture {
