@@ -4,7 +4,7 @@
 use crate::AudioClip;
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use tempfile::TempDir;
 
 pub const RATE: f64 = 44_100.0;
 
@@ -139,31 +139,20 @@ pub fn write_float_wav(path: &Path, channels: u16, rate: u32, interleaved: &[f32
     std::fs::write(path, bytes).expect("write test wav");
 }
 
-/// A unique path in the system temp directory, removed on drop.
-pub struct TempFile(PathBuf);
+/// A unique path inside a temporary directory, removed on drop. The file itself is not created.
+pub struct TempFile {
+    _dir: TempDir,
+    path: PathBuf,
+}
 
 impl TempFile {
     pub fn new(extension: &str) -> Self {
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        let name = format!(
-            "om_analysis_{}_{}_{}.{extension}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed),
-            nanos
-        );
-        Self(std::env::temp_dir().join(name))
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join(format!("signal.{extension}"));
+        Self { _dir: dir, path }
     }
 
     pub fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        &self.path
     }
 }
