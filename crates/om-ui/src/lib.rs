@@ -9,6 +9,7 @@ pub mod binding;
 pub mod control;
 pub mod format;
 pub mod geometry;
+pub mod library;
 pub mod main_layout;
 pub mod meter;
 pub mod preferences;
