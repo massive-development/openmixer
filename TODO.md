@@ -4,7 +4,7 @@ OpenMixer is written in Rust with GPUI. The statuses below are the Rust state. T
 
 ## Rust rewrite: phases 0-1 (done)
 
-**Status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.
+**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
 
 Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`. Design: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`.
 
@@ -31,7 +31,7 @@ Source: `docs/superpowers/plans/2026-10-18-rust-phase0-1-scaffold-and-spikes.md`
 
 Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before heavy dependencies.
 
-- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device
+- [x] **Todo 7:** Audio device layer + latency instrumentation + mock device (mock device and cpal code complete; the cpal device has never opened a real ALSA/PipeWire/WASAPI/CoreAudio device; the device test only runs with OPENMIXER_DEVICE_TESTS=1)
   - Output via `cpal` (ALSA backend first; WASAPI and CoreAudio in the porting phase)
   - Mock device for CI testing
   - Open: the cpal device has not yet run on a real ALSA/PipeWire device (WSL has none; the device test skips there). See `docs/spikes/cpal.md`
@@ -55,13 +55,14 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - MIDI input -> JSON map file -> mixer/deck parameters; controller feedback (LEDs) from engine state
   - Device layer: an ALSA sequencer backend on Linux (the `alsa` crate cpal already links, so midir does not join the build) and a mock backend for tests. macOS and Windows get a midir backend in the porting phase, behind `system_backend` (see `docs/spikes/DECISIONS.md`)
   - Mapping editor UI stays in Wave 6 (Todo 36)
+  - No test or CI job has exercised a real MIDI device. The ALSA backend is smoke-tested only for sequencer enumeration and skips without `/dev/snd/seq`. macOS and Windows have no backend (a stub returns a device error).
 
 - [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
 
 - [ ] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
   - 2 decks: load/play, faders, EQ knobs, level meters
-  - Partial (Todo 8b): `--debug-panel` shows device, latency, xruns, CPU and the raw parameter list; load/play waits on the library (Todo 28)
+  - Partial: `--debug-panel` shows device, latency, xruns, CPU and the raw parameter list; load/play from the debug panel is not wired (the panel shows device figures and parameter values only)
   - Plain widgets, no design tokens; replaced by Wave 5 UI
 
 - [x] **Todo 13a:** Short soak test in CI (30-60s headless mix)
@@ -71,13 +72,14 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 9:** Key-lock time-stretch via Rubber Band
   - Realtime mode
   - Golden audio tests
-  - Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`). Enable `GPL-2.0-or-later` in `deny.toml` when this lands
+  - Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`). The `GPL-2.0-or-later` entry in `deny.toml` is enabled for it
 
 - [x] **Todo 12:** Beat-sync + quantized cue/loop/slip
   - Engine side done (grid, sync, quantize, slip, gapless loops, hotcues); analysed beat grids (Todo 15) drive sync and quantize through `DjEngine::set_grid` (test: `analysed_grid_drives_sync_and_quantize_through_the_engine`)
   - Beat phase alignment
   - Control ids: `deck.N.sync`, `sync.master`, `loop.quantized.<beats>`, `slip`
   - Gapless deck loop playback and hotcues
+  - Open: saving engine hotcues back to the library is not confirmed
 
 - [x] **Todo 11:** FX rack (8 essential effects)
   - Effects: echo, reverb, flanger, phaser, crush, gate, roll, tape stop
@@ -131,8 +133,9 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [x] **Todo 21:** Metadata ingest + watch folders
   - Metadata reader registry; RIFF INFO tags and duration
-  - Tags for MP3/FLAC/M4A via `lofty`; artwork
+  - Tags for MP3/FLAC/M4A via `lofty`; artwork read (not stored)
   - Recursive ingest and watch folders
+  - Open: artwork is read, not stored (no artwork table), polling watch folders only
 
 - [x] **Todo 22:** Import (iTunes/Rekordbox XML)
   - Importer registry (extension point)
@@ -167,10 +170,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [x] **Todo 28:** Library browser + app wiring
   - Tree, track list, search
+  - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page drives the library (Todo 29)
 
-- [x] **Todo 29:** Automix panel + settings (partial: the Automix panel is Wave 7)
+- [ ] **Todo 29:** Automix panel + settings (partial: the Automix panel is Wave 7)
   - Audio/MIDI settings, preferences
+  - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
   - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
   - Automix panel (Wave 7, needs Todo 38)
@@ -178,10 +183,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
   - Per-stem mute/volume
 
-- [x] **Todo 31:** UI verification gate
+- [x] **Todo 31:** UI verification gate (logic layer; window-driven pass open)
   - Scripted 10-minute mix driven through the UI
   - Done at the logic layer: `crates/openmixer/tests/ui_gate.rs` (8 s `#[test]`, 10-minute `#[ignore]`) drives the composition over a paced mock device with the om-ui transport and binding models. Not done: a window-driven pass (needs a display)
-  - `--smoke` startup check (opens the window; skipped without a display)
+  - `--smoke` without the `gui` feature is headless (checked by `crates/openmixer/tests/smoke.rs`). The window-opening `--smoke` exists only behind `--features gui` and is not run in CI; `gui-check` only runs `cargo check` and the `om-ui-gpui` lib tests.
 
 ## Wave 6: Hardware I/O
 
@@ -214,4 +219,4 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ---
 
-**Next Work:** the Windows and macOS porting phase (Linux first until then), then Waves 7-9. Open in Waves 1-6: 19 (ONNX stems backend), 25 and 30 (not started), 26, 26a, 27 and 29 (partial), 31 (window-driven pass).
+**Next Work:** the Windows and macOS porting phase (Linux first until then), then Waves 7-9. Open in Waves 1-6: 8b, 19 (ONNX stems backend), 25 (LookAndFeel; tokens exist), 26, 26a, 27, 29 (partial), 30, 31 (window-driven pass), 34, 35, 36.

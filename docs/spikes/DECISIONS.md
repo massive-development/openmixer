@@ -2,7 +2,7 @@
 
 Date: 2026-10-18. Source documents: `docs/spikes/gpui.md`, `docs/spikes/cpal.md`, `docs/spikes/stretch.md` (read those for method, caveats and raw numbers). This record claims nothing they do not support. All spike code is throwaway and lives in `spikes/`. The GPUI and stretch spikes played no audio. Early cpal runs (5 s and 60 s on WSL) were audible: a 440 Hz tone at gain 0.5, before the silent-only rule. Everything since is silent by default; an audible tone is opt-in (`OPENMIXER_AUDIBLE=1`, gain at most 0.05) and user-run only.
 
-**Status: Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.**
+**Status: Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.**
 
 ## Rescope: Linux-first
 
@@ -11,7 +11,7 @@ Decided by the user, with the time-stretch choice made by the author. This super
 - **Scope.** Phase 2 and later target Linux only. Windows and macOS become a later porting phase. CI keeps building and testing the Rust workspace on Linux, macOS and Windows so portability does not rot, but no Windows or macOS spike run, device run or listening test is a gate any more.
 - **GPUI gate: closed on Linux.** `gpui =0.2.2` ran on WSL2 X11 (Spike A). The only remaining Linux check is a native-Linux run on a real GPU: nice-to-have, not blocking. The fallback toolkit text (iced, then Slint) stays only for a Linux failure. Windows and macOS GPUI checks move to the porting phase.
 - **Real-device audio: Linux (ALSA/PipeWire) only for now.** Windows WASAPI and macOS CoreAudio move to the porting phase. The headphone-cue second-stream failure on WSLg stays recorded as an open Linux item for Phase 2, to verify on native Linux with a real device.
-- **Time-stretch: decided (author call; the user may revisit by ear).** Rubber Band R3 via FFI in a dedicated `om-stretch` crate, the one crate allowed `unsafe`, behind a small `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Rationale: reference quality; GPL-2.0-or-later is AGPLv3-compatible and design-accepted; it is used in the C++ baseline; stereo CPU is 4.9-5.6% of a core per deck on WSL wall-clock, which is marginal and is to be re-measured in the real engine. The `GPL-2.0-or-later` allow-entry in `deny.toml` must be enabled when `om-stretch` lands in Phase 2. It is not enabled now. The Windows and macOS C++ build cost of the FFI route is a porting-phase concern.
+- **Time-stretch: decided (author call; the user may revisit by ear).** Rubber Band R3 via FFI in a dedicated `om-stretch` crate, the one crate allowed `unsafe`, behind a small `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Rationale: reference quality; GPL-2.0-or-later is AGPLv3-compatible and design-accepted; it is used in the C++ baseline; stereo CPU is 4.9-5.6% of a core per deck on WSL wall-clock, which is marginal and is to be re-measured in the real engine. The `GPL-2.0-or-later` allow-entry in `deny.toml` is enabled (om-stretch has landed; the reason is recorded in `deny.toml`). The Windows and macOS C++ build cost of the FFI route is a porting-phase concern.
 - **General rule.** For well-established crates (cpal, symphonia, rusqlite, midir and similar), adopt directly. Reserve spikes for genuine unknowns.
 
 ## Summary
@@ -20,7 +20,7 @@ Decided by the user, with the time-stretch choice made by the author. This super
 |---|---|---|---|---|
 | A. GPUI window | `gpui =0.2.2` window with a custom-painted scrolling waveform, built and run on WSL2 (Ubuntu 24.04, X11 via WSLg) | Builds (after a `libc` pin and a missing `libxkbcommon-x11` dev symlink). X11: 60.0 fps release, 30.0 fps debug, about 114% CPU. Wayland (WSLg) panics at startup. Window not visually seen; GPU backend not confirmed, probably software (llvmpipe) | GO on Linux (WSL2 X11). Gate CLOSED on Linux | Nothing blocking. Optional: a native-Linux run on a real GPU, and `vulkaninfo --summary` plus a look at the window on WSL. Windows and macOS runs moved to the porting phase |
 | B. cpal output callback | Alloc-free render under `assert_no_alloc` (test, no device); 60 s real stream via the cpal PulseAudio host to WSLg `RDPSink`; second-stream (cue) probe | Render path proven allocation-free. 60 s at a 256-frame request: 0 xruns, 1 late callback, mean gap 6.045 ms, max 15.4 ms (virtualised sink, not hardware-representative). Second stream failed to open on WSLg ("Invalid argument", cause not isolated) | cpal stays the choice. GO on Linux for the single stream (WSL2 pulse; native-Linux device run is a Phase 2 item). The headphone-cue second stream is an open Linux item for Phase 2 | On native Linux with a real device, test `--cue` with two physical output devices. Windows and macOS moved to the porting phase |
-| C. Time-stretch | Offline harness comparing `wsola`, `timestretch` (3 profiles), `signalsmith-stretch` and Rubber Band 4.0.0 (R2, R3) on synthetic chord and drums material (WAV in, WAV out) | No pure-Rust candidate passes the design bar in stereo. Signalsmith passes every measured bar; Rubber Band R3 is marginal on CPU | DECIDED: Rubber Band R3 via FFI behind a `Stretcher` trait (author call; see Rescope) | Optional: A/B listen to `spikes/stretch/out/` and revisit by ear; re-measure in the real engine. The `om-stretch` crate and its `deny.toml` entry land in Phase 2 |
+| C. Time-stretch | Offline harness comparing `wsola`, `timestretch` (3 profiles), `signalsmith-stretch` and Rubber Band 4.0.0 (R2, R3) on synthetic chord and drums material (WAV in, WAV out) | No pure-Rust candidate passes the design bar in stereo. Signalsmith passes every measured bar; Rubber Band R3 is marginal on CPU | DECIDED: Rubber Band R3 via FFI behind a `Stretcher` trait (author call; see Rescope) | Optional: A/B listen to `spikes/stretch/out/` and revisit by ear; re-measure in the real engine. The `om-stretch` crate and its `deny.toml` entry have landed |
 
 ## Spike A: GPUI window (go/no-go gate)
 
@@ -75,8 +75,8 @@ This writes about 42 WAVs (2 originals plus 40 stretched) and `results.md` into 
 |---|---|---|
 | UI toolkit | `gpui =0.2.2` from crates.io, no Zed git pin. Fallback only on a Linux NO-GO: iced, then Slint | Gate CLOSED on Linux (WSL2 X11 ran; native-Linux GPU run optional). Windows and macOS checks in the porting phase |
 | Audio I/O | cpal for the engine output callback (rationale corrected above). rodio is acceptable for library preview | Chosen. Linux (ALSA/PipeWire) real-device numbers and the headphone-cue second stream are open Phase 2 items; Windows (WASAPI) and macOS (CoreAudio) are in the porting phase |
-| Time-stretch | Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait | DECIDED (author call; the user may revisit by ear). Crate lands in Phase 2 |
-| `deny.toml` | The `GPL-2.0-or-later` entry stays commented out until Phase 2 | Enable it when `om-stretch` lands (option B). Not enabled now: it would allow GPL-2.0-or-later crates workspace-wide before the crate exists |
+| Time-stretch | Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait | DECIDED (author call; the user may revisit by ear). Crate has landed (`om-stretch`) |
+| `deny.toml` | The `GPL-2.0-or-later` entry is enabled (Rubber Band R3 in `om-stretch`; the reason is in `deny.toml`) | Enabled. It was commented out until `om-stretch` landed |
 
 Phase 2 planning may start: the GPUI gate is closed on Linux and the time-stretch decision is made.
 
@@ -144,15 +144,14 @@ Date: 2026-10-19. Crate: `crates/om-stems`.
 
 ## C++ removal and CI close-out
 
-Date: 2026-10-19. Decided at the port's close-out, Waves 1-6 at parity with `cpp-final`.
+Date: 2026-10-19. Decided at the port's close-out; Waves 1-4 and 6 reach the functionality of `cpp-final`.
 
 - **Removed in this commit range:** `src/`, `tests/unit/`, `tests/valgrind.supp`, the C++ tools (`tools/soak`, `tools/soak_mix.cpp`, `tools/ui_gate`, `tools/ui_gate.cpp`, `tools/license_check.py`, `tools/fetch_test_data.py`), `cmake/`, `CMakeLists.txt`, `CMakePresets.json`, `examples/plugins/GainPlugin.cpp`, and the legacy `ci.yml` and `pr-tests.yml` workflows. The baseline stays at tag `cpp-final`; the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`.
 - **Kept:** `resources/themes/` (read by `om-ui`), `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, and the test data, moved from `tests/data/` to the repo-root `fixtures/`.
-- **Ported into `rust.yml`:** the progress heatmap check (`progress-check`, which `tools/progress_heatmap.py --check` backs) and the ASIO SDK guard (`legal-guards`, now a `git grep` over every tracked file outside `docs/` and `.github/`, so it is no longer limited to `*.h`).
+- **Ported into `rust.yml`:** the progress heatmap check (`progress-check`, which `tools/progress_heatmap.py --check` backs) and the ASIO SDK guard (`legal-guards`: a `git grep` for `asiodrv` and `ASIO SDK` over every tracked file outside `docs/`, `.github/`, `*.md` and `NOTICE`, which name the rule; then a file-name check on tracked paths for `iasiodrv`, `asiosdk` and `asiodrivers`).
 - **Replaced:** the C++ licence checker is replaced by `cargo deny` (the `deny` job), which covers the Rust dependency licences. The legacy sign job was a stub for todo 49 and is not carried over; signing is still a pre-release decision.
 - **Not in CI:** `tools/parity_inventory.py` needs the `cpp-final` tag, and the default checkout has no tags. Regenerate `docs/parity.md` locally and run `python3 -I -m unittest discover -s tests/tools` (the parity test checks that every Todo has a row).
-- **Gitignore:** the C++ build outputs (`build/`, `build-*/`, `_deps/`, `CMakeFiles/`, `CMakeCache.txt`, `compile_commands.json`, `*.o`, `*.a`) are no longer ignored. Local copies of those directories may still exist on disk and show as untracked until they are deleted.
-- **Left in place:** the tracked `.claude/skills/` entries for C++ (`cmake`, `cpp-pro`, `cpp-testing`, `static-analysis`) are not part of the build. Remove them separately if they should go.
+- **Gitignore:** the C++ build outputs (`/build/`, `/build-*/`, `/_deps/`, `/CMakeFiles/`) are ignored again via `.gitignore` (commit d8d7e08). Local copies on disk stay untracked.
 - **Not verified:** the `gui-check` job (see the GPUI integration section above) has not yet run on a clean runner.
 
 ## CI status by platform
@@ -160,7 +159,7 @@ Date: 2026-10-19. Decided at the port's close-out, Waves 1-6 at parity with `cpp
 Date: 2026-10-19. Run 39296306022 on PR #66. Linux is the required signal; macOS and Windows legs are `continue-on-error` in `rust.yml` until the porting phase.
 
 - **ubuntu-latest:** green (fmt, clippy, test, `cargo deny`, legal guards, progress heatmap).
-- **windows-latest:** `om-library` `file_url` tests asserted `/` separators, but `native_separators` returns `\` on Windows by design. Fixed in the test (expectations go through a platform helper). fmt, clippy and the other test binaries already passed on this leg, so no other Windows work is known.
+- **windows-latest:** `om-library` `file_url` tests asserted `/` separators, but `native_separators` returns `\` on Windows by design. Fixed in the test (expectations go through a platform helper); the fix is not yet confirmed by a CI run. fmt, clippy and the other test binaries already passed on this leg, so no other Windows work is known.
 - **macos-latest:** `om-audio` `soak_short` failed on its xrun budget (23 xruns against a budget of 5, max callback 38.7 ms against 5.3 ms). The test is timing-based and the hosted runner is shared, so the budget is not loosened. Porting work: run the soak on a dedicated macOS CoreAudio device and set the budget per platform from measured numbers.
 - **Build deps:** `rubberband-sys` (bindgen) needs `libclang`. The workflow installs `libclang-dev` only on Linux. The macOS and Windows legs compiled without a failure in the build step, so no LLVM install was needed in this run. Porting work: keep an eye on bindgen when the Windows toolchain or the audio backends change.
 - **GUI:** the `gui check` job is Linux-only and still non-blocking; it has not been verified on a clean runner.

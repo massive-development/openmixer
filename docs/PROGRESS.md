@@ -7,7 +7,7 @@ C++ baseline: The C++ implementation was removed in this commit range. It is pre
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next. Update this file in the same PR that changes a task's status._
+_Last updated: Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -27,7 +27,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 8 | Pro surface | ⬜ Not in the C++ baseline |
 | 9 | Release | ⬜ Not in the C++ baseline |
 
-**Rust port status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next. See `docs/spikes/DECISIONS.md`.
+**Rust port status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next. See `docs/spikes/DECISIONS.md`.
 
 **What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test --workspace`), check startup with `cargo run -p openmixer -- --smoke`, and with the `gui` feature open the GPUI window (`cargo run -p openmixer --features gui -- --mock-device`). Audio, analysis, library, MIDI and the UI are implemented; the wave sections say what is partial.
 
@@ -39,7 +39,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|---------|--------|
 | Repo, governance, legal | AGPLv3 licence, clean-room ADRs (ADR 0004 records the Rust + GPUI stack), contributing guide and code of conduct, asset provenance record, licence check | ✅ |
 | Build system | Cargo workspace (resolver 2, shared lints that forbid `unsafe` outside the FFI crate), `rust-toolchain.toml`, `cargo deny` licence policy | ✅ |
-| CI | `.github/workflows/rust.yml`: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` and `cargo deny` on Linux, macOS and Windows | ✅ green on Linux, macOS and Windows, plus `cargo deny` |
+| CI | `.github/workflows/rust.yml`: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` and `cargo deny` on Linux, macOS and Windows | ✅ Linux green (required). macOS and Windows legs are non-blocking (`continue-on-error`): macOS `soak_short` exceeds its xrun budget on shared runners; the Windows `file_url` test fix is unconfirmed. See `docs/spikes/DECISIONS.md`, 'CI status by platform'. |
 | Test harness | `cargo test`; `openmixer --smoke` mode (prints `smoke ok`, exit 0) checked by an integration test | ✅ |
 
 **Missing:** packaging.
@@ -60,7 +60,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 10a Plugin API | In-process plugin API (`om-plugins`): plugin and host traits; registry with the id, prefix and collision rules and unload order; stage catalog over the engine insert chains; MIDI maps, parameter targets and themes installed through the composition; plugins settings page model; example plugin (`examples/plugins/gain-plugin`) | All of the above, in-process | Shared-library loading (a stub; open decision, see `docs/spikes/DECISIONS.md`) |
 | 32 MIDI input + mapping | `midir` input → JSON map → engine parameters | Event model, JSON map with typed feedback rules, mapper with hot reload, learn, LED feedback, input and output routing over a backend trait; ALSA sequencer backend on Linux and a mock backend; wired into the composition (`om-midi`, `openmixer::midi`). Linux does not use `midir` (see TODO 32) | midir backend for macOS and Windows (behind `system_backend`); the MIDI settings page toggles inputs, loads a map by typed path and starts or cancels learn; no hot-plug refresh while the page is open |
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | Trace read, write and replay through the mapper (`om-midi` trace module) | — |
-| 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | `--debug-panel` (with `gui`) shows device, latency, xruns, CPU and the parameter list | Load and play per deck (waits on the library wiring); removed once the Wave 5 UI replaces it |
+| 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | `--debug-panel` (with `gui`) shows device, latency, xruns, CPU and the parameter list | Load and play per deck: not wired from the debug panel (the main window's library loader does this); removed once the Wave 5 UI replaces it |
 | 13a Short soak test | 30–60 s headless mix in CI, asserting zero xruns, no steady-state underruns, no NaN/Inf/overflow | Short soak in `om-audio` (`tests/soak.rs`) with the `OutputChecker` decorator counting NaN, Inf and overflow, and an xrun budget | — |
 | 9 Key-lock time-stretch | Tempo change without pitch change. Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`) | `Stretcher` trait; Rubber Band R3 through `rubberband-sys` (the only `unsafe` in `om-stretch`); key-lock in deck playback; `GPL-2.0-or-later` allowed in `deny.toml` | — |
 | 12 Sync & quantize | Beat-phase alignment, quantized cue/loop, slip mode, gapless deck loops, 8 hotcues. Control ids `deck.N.sync`, `sync.master`, `deck.N.loop.quantized.<beats>`, `deck.N.slip` | Sync, quantizer and slip in the engine; gapless loops; hotcues; control ids as listed; transport buttons for sync, master, quantize and slip; analysed grids drive sync through `DjEngine::set_grid` | Saving engine hotcues back to the library is not confirmed in code (the cue DAO serves import) |

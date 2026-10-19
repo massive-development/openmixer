@@ -19,7 +19,7 @@ OpenMixer is built under a strict clean-room doctrine:
 
 OpenMixer is written in Rust with [GPUI](https://www.gpui.rs/) for the UI.
 
-**Status:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next.
+**Status:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next.
 
 The C++ implementation was removed in this commit range. It is preserved at the `cpp-final` git tag (commit c6d2747), and the MIDI learn and feedback C++ is on `origin/wave6-midi-learn-feedback`. The design and decisions are:
 
@@ -175,14 +175,14 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 1 | Foundation, build system, CI, test harness | ✅ Done |
 | 2 | Audio engine (device, decks, mixer, FX, sync, MIDI input, soak gate) | ✅ Done; the debug panel (26a) is partial |
 | 3 | Analysis pipeline | 🟡 Partial: the ONNX stems backend (19) is open |
-| 4 | Library and data | ✅ Done |
+| 4 | Library and data | 🟡 Done except play history, artwork persistence and FTS |
 | 5 | User interface | 🟡 Partial: design tokens (25) and stem pads (30) open; decks, mixer and settings partial |
-| 6 | Hardware I/O | At parity: its C++ Todos moved to Wave 2; controller maps, HID and the mapping editor (34-36) were never in the C++ baseline and are open |
+| 6 | Hardware I/O | Reaches the C++ baseline: its Todos moved to Wave 2; controller maps, HID and the mapping editor (34-36) were never in the C++ baseline and are open |
 | 7 | Intelligence (stems, Automix, sampler) | ⬜ Not started (not in the C++ baseline) |
 | 8 | Pro features (recording, broadcast, DVS, video) | ⬜ Not started (not in the C++ baseline) |
 | 9 | Release | ⬜ Not started (not in the C++ baseline) |
 
-The Rust rewrite ran in phases (scaffolding, spikes, engine, analysis and library, MIDI, UI, then the remaining waves and the porting phase); see the design document. Waves 1-6 are at parity with the C++ baseline. Next: the Windows and macOS porting phase, then Waves 7-9.
+The Rust rewrite ran in phases (scaffolding, spikes, engine, analysis and library, MIDI, UI, then the remaining waves and the porting phase); see the design document. Waves 1-4 and 6 reach the C++ baseline's functionality (verified headlessly on Linux); Wave 5 UI is partial. Next: the Windows and macOS porting phase, then Waves 7-9.
 
 See [TODO.md](TODO.md) for the task list and [docs/PROGRESS.md](docs/PROGRESS.md) for what each task entails, what is done, and what is missing. Both are being rewritten for Rust.
 
@@ -202,7 +202,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Rust port at parity with the C++ baseline (Waves 1-6); Linux first; Windows/macOS porting phase and Waves 7-9 next. See `docs/spikes/DECISIONS.md`.
+**Current State:** Rust port reaches the C++ baseline's engine, analysis, library, MIDI and plugin functionality (Waves 1-4 and 6), verified headlessly on Linux. UI (Wave 5) is partial: design tokens/LookAndFeel (25) and the debug panel's load/play (26a) are behind the C++ baseline, and the GPUI window has never been viewed by eye. Linux-first; Windows/macOS porting phase and Waves 7-9 next. See `docs/spikes/DECISIONS.md`.
 
 **Known gaps, honestly listed:**
 
@@ -212,6 +212,14 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: the porting phase. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
+- Design tokens and LookAndFeel (25): the tokens exist, the LookAndFeel does not; the debug panel's load/play (26a) is not wired. Both were done in the C++ baseline
+- FFmpeg decode backend (Todo 8b, optional, open)
+- Library: artwork is not stored (no artwork table); FTS is not used (LIKE only); there is no play-history table (only a `play_count` column)
+- Saving engine hotcues back to the library is not confirmed
+- Auto-enqueue after a library scan; playlist editing
+- macOS: `soak_short` exceeds its xrun budget on hosted runners (that CI leg is non-blocking)
+- The headphone-cue second stream is unproven (it failed on WSLg)
+- The window-opening `--smoke` (behind `gui`) is not run in CI
 
 ---
 
