@@ -183,11 +183,39 @@ impl<'a> TrackDao<'a> {
         )
     }
 
-    /// Increments the play count and stamps the last-played time (the playback path).
-    pub fn record_play(&self, id: i64, when_ms: i64) -> Result<()> {
+    /// Records one play: appends a `play_history` row and bumps the play count and last-played
+    /// time on the track. `deck` is the deck it played on, if known. Atomic; an unknown track
+    /// changes nothing.
+    pub fn record_play(&self, track_id: i64, deck: Option<u8>, played_ms: i64) -> Result<()> {
+        let tx = Transaction::begin(self.db)?;
         self.run_checked(
             "UPDATE tracks SET play_count = play_count + 1, last_played_ms=?2 WHERE id=?1;",
-            params![id, when_ms],
+            params![track_id, played_ms],
+        )?;
+        self.db.connection().execute(
+            "INSERT INTO play_history (track_id, played_ms, deck) VALUES (?1, ?2, ?3);",
+            params![track_id, played_ms, deck.map(i64::from)],
+        )?;
+        tx.commit()
+    }
+
+    /// The most recent plays across the library, newest first.
+    pub fn recent_plays(&self, limit: usize) -> Result<Vec<PlayEntry>> {
+        self.db.query_rows(
+            "SELECT id, track_id, played_ms, deck FROM play_history \
+             ORDER BY played_ms DESC, id DESC LIMIT ?1;",
+            params![i64::try_from(limit).unwrap_or(i64::MAX)],
+            read_play,
+        )
+    }
+
+    /// Every recorded play of one track, newest first.
+    pub fn plays_for(&self, track_id: i64) -> Result<Vec<PlayEntry>> {
+        self.db.query_rows(
+            "SELECT id, track_id, played_ms, deck FROM play_history WHERE track_id = ?1 \
+             ORDER BY played_ms DESC, id DESC;",
+            params![track_id],
+            read_play,
         )
     }
 
@@ -224,6 +252,27 @@ impl<'a> TrackDao<'a> {
     fn first(&self, tail: &str, params: impl Params) -> Result<Option<TrackRecord>> {
         Ok(self.query(tail, params)?.into_iter().next())
     }
+}
+
+/// One row of `play_history`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlayEntry {
+    pub id: i64,
+    pub track_id: i64,
+    pub played_ms: i64,
+    /// Deck the track played on, when it was known when the play was recorded.
+    pub deck: Option<u8>,
+}
+
+fn read_play(row: &Row<'_>) -> rusqlite::Result<PlayEntry> {
+    Ok(PlayEntry {
+        id: row.get(0)?,
+        track_id: row.get(1)?,
+        played_ms: row.get(2)?,
+        deck: row
+            .get::<_, Option<i64>>(3)?
+            .and_then(|d| u8::try_from(d).ok()),
+    })
 }
 
 fn added_or_now(t: &TrackRecord) -> i64 {

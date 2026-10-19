@@ -5,16 +5,20 @@
 //! The waveform and track metadata are kept per deck for the deck widgets to read ([`Self::waveform`],
 //! [`Self::track_info`]); the beat grid is set on the engine, which owns the clock. The loader holds
 //! a subscription to the services and must be pumped ([`Self::pump`]) after the services are.
+//!
+//! Each pump counts playing time for the play history ([`PlayTracker`]).
 
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use om_analysis::WaveformData;
 use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
-use om_library::{LibraryError, PrepEntry, PrepStatus, TrackRecord};
+use om_library::{Library, LibraryError, PrepEntry, PrepStatus, TrackRecord};
 
+use super::play_tracker::PlayTracker;
 use super::services::{LibraryEvent, LibraryServices, TrackAnalysis};
 use crate::widgets::deck::TrackInfo;
 
@@ -52,6 +56,9 @@ struct Slot {
 pub struct TrackLoader {
     slots: Vec<Slot>,
     events: Receiver<LibraryEvent>,
+    plays: Vec<PlayTracker>,
+    /// When the previous pump ran; the playing time credited to the decks is measured from here.
+    last_pump: Option<Instant>,
 }
 
 impl TrackLoader {
@@ -60,6 +67,8 @@ impl TrackLoader {
         Self {
             slots: (0..num_decks).map(|_| Slot::default()).collect(),
             events: services.subscribe(),
+            plays: vec![PlayTracker::default(); num_decks],
+            last_pump: None,
         }
     }
 
@@ -114,6 +123,7 @@ impl TrackLoader {
                 file: file_name(path),
             });
         }
+        self.plays[deck].reset(Some(track.id));
         let found = services.analysis_for(track);
         let slot = &mut self.slots[deck];
         slot.track = Some(track.clone());
@@ -125,7 +135,8 @@ impl TrackLoader {
         Ok(())
     }
 
-    /// Applies analysis completions delivered since the last call.
+    /// Applies analysis completions delivered since the last call, then counts playback for the
+    /// play history.
     pub fn pump(&mut self, engine: &DjEngine, services: &LibraryServices) {
         loop {
             match self.events.try_recv() {
@@ -134,6 +145,30 @@ impl TrackLoader {
                 }
                 Ok(LibraryEvent::LibraryChanged) => {}
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+        let now = Instant::now();
+        let elapsed = self
+            .last_pump
+            .map_or(Duration::ZERO, |last| now.duration_since(last));
+        self.last_pump = Some(now);
+        self.observe_playback(engine, services.library(), elapsed);
+    }
+
+    /// One control tick of playback bookkeeping. `elapsed` is the wall time since the previous
+    /// tick. Each deck that has played its loaded track for 30 s gets one play recorded. [`Self::pump`]
+    /// calls this; it is public so a host with its own clock, and the tests, can drive it.
+    pub fn observe_playback(&mut self, engine: &DjEngine, library: &Library, elapsed: Duration) {
+        for deck in 0..self.slots.len() {
+            let Some(snapshot) = engine.deck_snapshot(deck) else {
+                continue;
+            };
+            if let Some(track_id) = self.plays[deck].observe(&snapshot, elapsed) {
+                let played_ms = now_ms();
+                let deck_number = u8::try_from(deck).ok();
+                if let Err(error) = library.tracks().record_play(track_id, deck_number, played_ms) {
+                    eprintln!("library: could not record a play of track {track_id}: {error}");
+                }
             }
         }
     }
@@ -242,6 +277,13 @@ fn apply(
     slot.grid = found.grid.clone();
     slot.waveform = found.waveform.clone();
     slot.track = Some(track.clone());
+}
+
+/// Wall-clock time as Unix milliseconds, for the play history.
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
 fn file_name(path: &Path) -> String {
