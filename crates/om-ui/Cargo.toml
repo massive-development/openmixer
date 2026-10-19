@@ -16,3 +16,4 @@ om-dsp = { path = "../om-dsp" }
 om-engine = { path = "../om-engine" }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
+dirs = "5"
