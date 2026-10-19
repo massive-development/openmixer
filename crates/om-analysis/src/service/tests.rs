@@ -63,7 +63,7 @@ impl Analyzer for BlockingAnalyzer {
     fn analyze(&self, _clip: &AudioClip, context: &dyn AnalysisContext) -> Option<String> {
         self.started.store(true, Ordering::SeqCst);
         while !context.is_cancelled() {
-            thread::sleep(Duration::from_millis(1));
+            std::thread::sleep(Duration::from_millis(1));
         }
         None
     }
