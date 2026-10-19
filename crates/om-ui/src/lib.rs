@@ -16,6 +16,7 @@ pub mod preferences;
 pub mod preferences_applier;
 pub mod settings;
 pub mod sidebar;
+pub mod stems;
 pub mod style;
 pub mod theme;
 pub mod waveform;
