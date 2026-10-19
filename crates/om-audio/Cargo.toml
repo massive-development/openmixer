@@ -11,6 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
+cpal = "0.18"
 om-core = { path = "../om-core" }
 om-engine = { path = "../om-engine" }
 thiserror = "2"
