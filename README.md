@@ -72,6 +72,11 @@ cargo build
 # Run tests
 cargo test --workspace
 
+# Engine soak: 30 s paced mix with a scripted DJ (also in cargo test --workspace)
+cargo test -p om-audio --test soak
+# 10-minute soak (Wave 2 gate, not in CI): takes 10 minutes of wall time
+cargo test -p om-audio --test soak -- --ignored --nocapture
+
 # Format, lint and policy checks (same as CI)
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
