@@ -270,6 +270,11 @@ impl FxUnitControl {
     pub fn tempo(&self) -> f64 {
         self.shared.bpm.load()
     }
+
+    /// Descriptors and target values of the effect's own parameters.
+    pub fn params(&self) -> &ParamControl {
+        &self.params
+    }
 }
 
 impl ParameterTarget for FxUnitControl {

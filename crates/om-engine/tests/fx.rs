@@ -612,3 +612,17 @@ fn fx_rack_inserts_into_mixer_master_without_colouring_when_off() {
     assert_eq!(a_l, b_l);
     assert_eq!(a_r, b_r);
 }
+
+#[test]
+fn control_handle_exposes_param_specs_and_targets() {
+    let rack = FxRack::new(&["echo"], &FxFactory::with_built_ins());
+    let control = rack.control();
+    let unit = control.unit(0).expect("echo unit");
+    let params = unit.params();
+    let feedback = params.find("feedback").expect("echo has feedback");
+    assert_eq!(params.spec(feedback).map(|s| s.name), Some("feedback"));
+    assert!(params.set(feedback, 0.8));
+    assert!((params.target(feedback).unwrap() - 0.8).abs() < 1e-6);
+    assert!(params.spec(params.len()).is_none());
+    assert!(params.target(params.len()).is_none());
+}
