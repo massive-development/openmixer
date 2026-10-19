@@ -131,7 +131,7 @@ impl LibraryPanel {
         browser.on_load_requested = Some(Box::new(move |deck, track| {
             let mut h = load_hub.borrow_mut();
             let LibraryHub { services, loader } = &mut *h;
-            loader.load_track(&load_engine, services, deck, track)
+            loader.load_track(&load_engine, services, deck, track, false)
         }));
         let suggest_hub = Rc::clone(&hub);
         let suggest_engine = Arc::clone(&engine);
