@@ -24,6 +24,9 @@ pub enum LibraryError {
     /// A folder scan was refused (not a folder) or stopped before it finished.
     #[error("{0}")]
     Ingest(String),
+    /// A search query was rejected (unknown field, unreadable value, unsortable field).
+    #[error("{0}")]
+    Query(String),
 }
 
 /// Result alias for library operations.

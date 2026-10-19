@@ -138,7 +138,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - iTunes and Rekordbox XML importers
   - One transaction per import, merge by path; file URL decoding
 
-- [ ] **Todo 23:** Search + filter engine
+- [x] **Todo 23:** Search + filter engine
   - Field registry (extension point), query parser, parameterised SQL
   - Index migration; LIKE-based matching unless FTS5 is available
 
