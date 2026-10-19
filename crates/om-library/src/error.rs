@@ -18,6 +18,12 @@ pub enum LibraryError {
     /// Connection setup failed (for example, WAL is unavailable).
     #[error("{0}")]
     Setup(String),
+    /// A metadata reader could not decode the file (corrupt, unsupported, unreadable).
+    #[error("{0}")]
+    Metadata(String),
+    /// A folder scan was refused (not a folder) or stopped before it finished.
+    #[error("{0}")]
+    Ingest(String),
 }
 
 /// Result alias for library operations.
