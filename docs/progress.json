@@ -19,11 +19,11 @@
     ["32 MIDI map", "todo"],
     ["33 Trace harness", "todo"],
     ["26a Debug panel", "todo"],
-    ["13a Soak (short)", "todo"],
+    ["13a Soak (short)", "done"],
     ["9 Key-lock", "done"],
     ["12 Sync", "partial"],
     ["11 FX rack", "done"],
-    ["13 Soak (10m)", "todo"]
+    ["13 Soak (10m)", "done"]
    ]
   },
   {
