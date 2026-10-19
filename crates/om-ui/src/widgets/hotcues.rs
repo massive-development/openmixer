@@ -4,6 +4,7 @@
 
 use crate::binding::DeckBinding;
 use crate::geometry::Rect;
+use om_core::param_id::DeckParam;
 use om_engine::deck::NUM_CUES;
 
 /// Modifier keys held during a pad click.
@@ -44,18 +45,15 @@ impl HotcuePads {
         if index >= Self::COUNT {
             return false;
         }
-        let id = if clear {
-            format!("hotcue{index}.clear")
-        } else {
-            format!("hotcue{index}")
-        };
-        self.binding.send(&id, 1.0);
+        let index = index as u8;
+        self.binding.send(DeckParam::Hotcue { index, clear }, 1.0);
         true
     }
 
     /// Whether each pad's cue is set, read from the engine.
     pub fn lit(&self) -> [bool; Self::COUNT] {
-        std::array::from_fn(|i| self.binding.deck().hotcue(i).is_some())
+        let cues = self.binding.state().hotcues;
+        std::array::from_fn(|i| cues[i].is_some())
     }
 
     /// Pads in one row across `area`, `gap` apart.

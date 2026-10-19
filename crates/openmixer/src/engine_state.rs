@@ -1,5 +1,6 @@
-//! The engine as a [`StateReader`]: the ids a controller map's feedback rules can read. Every read is a control-side getter (an atomic or a short
-//! uncontended lock), so nothing here touches the audio thread.
+//! The engine as a [`StateReader`]: the ids a controller map's feedback rules can read. A read
+//! parses the id into a [`StateId`] and looks it up in a fresh [`EngineSnapshot`], so the values
+//! are the same ones the UI reads. Snapshots are built on the control thread, never the audio one.
 //!
 //! ```text
 //! deck.<N>.play | loaded | keylock | loop | cue (loaded and stopped) | sync | sync.master
@@ -9,7 +10,7 @@
 //! mixer.crossfader | mixer.master (gain) | mixer.master.level (decaying peak, louder side)
 //! ```
 
-use om_core::StateReader;
+use om_core::{StateId, StateKey, StateReader};
 use om_engine::DjEngine;
 use std::sync::Arc;
 
@@ -23,107 +24,31 @@ impl EngineStateReader {
     }
 }
 
-/// A decimal index: non-empty, digits only.
-fn digits(s: &str) -> Option<usize> {
-    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    s.parse().ok()
-}
-
-fn flag(on: bool) -> f64 {
-    if on {
-        1.0
-    } else {
-        0.0
-    }
-}
-
 impl StateReader for EngineStateReader {
     fn read_state(&self, id: &str) -> Option<f64> {
-        let parts: Vec<&str> = id.split('.').collect();
-        if parts.len() < 2 {
-            return None;
-        }
-        match parts[0] {
-            "deck" => self.read_deck(&parts),
-            "mixer" => self.read_mixer(&parts),
-            _ => None,
-        }
-    }
-}
-
-impl EngineStateReader {
-    fn read_deck(&self, parts: &[&str]) -> Option<f64> {
-        if parts.len() < 3 {
-            return None;
-        }
-        let index = digits(parts[1])?;
-        if index >= self.engine.num_decks() {
-            return None;
-        }
-        let deck = self.engine.deck(index);
-        let control = self.engine.deck_control(index);
-        let sync = self.engine.sync();
-        let what = parts[2..].join(".");
-        Some(match what.as_str() {
-            "play" => flag(deck.is_playing()),
-            "loaded" => flag(deck.is_loaded()),
-            "keylock" => flag(deck.is_keylock()),
-            "loop" => flag(deck.is_looping()),
-            "cue" => flag(deck.is_loaded() && !deck.is_playing()),
-            "sync" => flag(sync.is_enabled(index)),
-            "sync.master" => flag(sync.leader() == Some(index)),
-            "slip" => flag(control.is_slipping()),
-            "quantize" => flag(control.is_quantize()),
-            "rate" => deck.rate(),
-            "position" => {
-                let length = deck.length_frames();
-                if length > 0 {
-                    deck.position_frames() as f64 / length as f64
-                } else {
-                    0.0
-                }
-            }
-            other => {
-                let cue = other
-                    .strip_suffix(".set")
-                    .and_then(|name| name.strip_prefix("hotcue"))
-                    .and_then(digits)?;
-                flag(deck.hotcue(cue).is_some())
-            }
-        })
+        let id: StateId = id.parse().ok()?;
+        self.engine.snapshot().read(&id)
     }
 
-    fn read_mixer(&self, parts: &[&str]) -> Option<f64> {
-        let mixer = self.engine.mixer();
-        if let Some(channel) = parts[1].strip_prefix("ch").and_then(digits) {
-            if channel >= mixer.num_channels() || parts.len() != 3 {
-                return None;
-            }
-            return Some(match parts[2] {
-                "pfl" => flag(mixer.pfl(channel)),
-                "fader" => f64::from(mixer.fader(channel)),
-                "trim" => f64::from(mixer.trim(channel)),
-                "filter" => f64::from(mixer.filter(channel)),
-                "level" => f64::from(mixer.channel_peak(channel)),
-                _ => return None,
-            });
+    /// One snapshot for the whole pass: every rule reads the same capture, and the ids were parsed
+    /// when the keys were made.
+    fn read_states(&self, keys: &[StateKey], out: &mut [Option<f64>]) {
+        if keys.is_empty() {
+            return;
         }
-        Some(match parts[1..].join(".").as_str() {
-            "crossfader" => f64::from(mixer.crossfader()),
-            "master" => f64::from(mixer.master_gain()),
-            "master.level" => f64::from(mixer.master_peak_left().max(mixer.master_peak_right())),
-            _ => return None,
-        })
+        let snapshot = self.engine.snapshot();
+        for (key, slot) in keys.iter().zip(out.iter_mut()) {
+            *slot = key.state_id().and_then(|id| snapshot.read(id));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use om_core::StateId;
 
-    /// Reads deck and mixer state by id and rejects unknown ids.
+    /// The same read through the string adapter and through a snapshot; unknown ids read `None`.
     #[test]
     fn reports_deck_and_mixer_state_by_id_and_rejects_unknown_ids() {
         let (engine, _audio) = DjEngine::new(2);
@@ -168,5 +93,65 @@ mod tests {
         ] {
             assert_eq!(reader.read_state(id), None, "{id}");
         }
+    }
+
+    /// A feedback pass over many rules takes one snapshot, not one per rule.
+    #[test]
+    fn a_pass_over_many_keys_builds_one_snapshot() {
+        let (engine, _audio) = DjEngine::new(2);
+        let engine = Arc::new(engine);
+        let reader = EngineStateReader::new(Arc::clone(&engine));
+        let keys: Vec<StateKey> = [
+            "deck.0.play",
+            "deck.1.play",
+            "deck.0.hotcue1.set",
+            "mixer.ch0.level",
+            "mixer.ch1.fader",
+            "mixer.master.level",
+            "plugin.thing",
+        ]
+        .iter()
+        .map(|id| StateKey::new(id))
+        .collect();
+        let mut out = vec![None; keys.len()];
+
+        let before = engine.snapshots_built();
+        reader.read_states(&keys, &mut out);
+        assert_eq!(engine.snapshots_built() - before, 1);
+        assert_eq!(out[0], Some(0.0));
+        assert!(out[3].is_some());
+        assert_eq!(out[6], None, "an id that is not engine state reads None");
+
+        let before = engine.snapshots_built();
+        reader.read_states(&[], &mut []);
+        assert_eq!(engine.snapshots_built() - before, 0, "no keys, no snapshot");
+    }
+
+    /// Snapshot form of the same cases: parsed ids read from one snapshot.
+    #[test]
+    fn a_snapshot_answers_the_same_ids_as_the_string_reader() {
+        let (engine, _audio) = DjEngine::new(2);
+        engine.deck(0).play();
+        engine.mixer().set_pfl(1, true);
+        engine.deck(1).set_hotcue(2, 1000);
+        engine.sync().set_leader(Some(1));
+        let snap = engine.snapshot();
+        let reader = EngineStateReader::new(Arc::new(engine));
+        for id in [
+            "deck.0.play",
+            "deck.0.loaded",
+            "deck.0.cue",
+            "deck.0.position",
+            "mixer.ch1.pfl",
+            "deck.1.hotcue2.set",
+            "deck.1.sync.master",
+            "mixer.master.level",
+            "deck.0.bogus",
+        ] {
+            let parsed: Option<StateId> = id.parse().ok();
+            let from_snapshot = parsed.and_then(|p| snap.read(&p));
+            assert_eq!(from_snapshot, reader.read_state(id), "{id}");
+        }
+        assert_eq!(snap.read(&"deck.0.play".parse().unwrap()), Some(1.0));
     }
 }

@@ -1,44 +1,27 @@
-//! Background analysis: a FIFO of jobs served by worker threads, with per-job progress and
-//! cancellation and a shared result cache.
+//! Background analysis: a FIFO of jobs served by worker threads (`om_core::jobs::WorkerPool`), with
+//! per-job progress and cancellation and a shared result cache.
 //! Listeners run on a worker thread after the job reaches its final status; keep them short and
 //! hop to the UI thread for UI work. `submit` and `cancel_all` may be called from any thread.
 
+use crate::job::{AnalysisJob, JobOutput};
 use crate::job_runner::run_analysis_job;
-use crate::{AnalysisJob, AnalyzerRegistry, ClipSource, ResultCache};
+use crate::{AnalyzerRegistry, ClipSource, ResultCache};
+use om_core::jobs::{JobCtx, JobHandle, OnFinished, WorkerPool};
 use om_core::sync::LockExt;
-use std::collections::VecDeque;
-use std::panic::{self, AssertUnwindSafe};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
-use std::thread::{self, JoinHandle};
+use std::sync::{Arc, Mutex};
 
 /// Called once with the finished job, on the worker thread.
 pub type Listener = Box<dyn FnOnce(&AnalysisJob) + Send>;
 
+/// One queued analysis: what to read and which analysers to run on it.
 struct Task {
-    job: Arc<AnalysisJob>,
+    output: Arc<JobOutput>,
     source: Box<dyn ClipSource>,
     analyzer_ids: Vec<String>,
-    listener: Option<Listener>,
-}
-
-#[derive(Default)]
-struct State {
-    queue: VecDeque<Task>,
-    running: Vec<Arc<AnalysisJob>>,
-    stopping: bool,
-    next_id: i64,
-}
-
-struct Shared {
-    registry: Arc<AnalyzerRegistry>,
-    cache: Option<Arc<dyn ResultCache>>,
-    state: Mutex<State>,
-    wake: Condvar,
 }
 
 pub struct AnalysisService {
-    shared: Arc<Shared>,
-    workers: Vec<JoinHandle<()>>,
+    pool: WorkerPool<Task>,
 }
 
 impl AnalysisService {
@@ -48,138 +31,73 @@ impl AnalysisService {
         cache: Option<Arc<dyn ResultCache>>,
         workers: usize,
     ) -> Self {
-        let shared = Arc::new(Shared {
-            registry,
-            cache,
-            state: Mutex::new(State {
-                next_id: 1,
-                ..State::default()
-            }),
-            wake: Condvar::new(),
+        let pool = WorkerPool::new(workers, "analysis", move |ctx: &JobCtx, mut task: Task| {
+            run_analysis_job(
+                ctx,
+                &task.output,
+                task.source.as_mut(),
+                &task.analyzer_ids,
+                &registry,
+                cache.as_deref(),
+            );
         });
-        let workers = (0..workers.max(1))
-            .map(|_| {
-                let shared = Arc::clone(&shared);
-                thread::spawn(move || worker_loop(&shared))
-            })
-            .collect();
-        Self { shared, workers }
+        Self { pool }
     }
 
-    /// Queues a job. A `None` source, or a service that is shutting down, fails the job at once
-    /// (its listener is then never called).
+    /// Queues a job. A `None` source fails the job at once and nothing is queued (its listener is
+    /// then never called).
     pub fn submit(
         &self,
         source: Option<Box<dyn ClipSource>>,
         analyzer_ids: Vec<String>,
         listener: Option<Listener>,
     ) -> Arc<AnalysisJob> {
-        let mut state = self.lock();
-        let id = state.next_id;
-        state.next_id += 1;
-        let name = source.as_ref().map(|s| s.describe()).unwrap_or_default();
-        let job = Arc::new(AnalysisJob::new(id, name));
-        match source {
-            None => job.fail("no source".to_owned()),
-            Some(_) if state.stopping => job.fail("service is shutting down".to_owned()),
-            Some(source) => {
-                state.queue.push_back(Task {
-                    job: Arc::clone(&job),
-                    source,
-                    analyzer_ids,
-                    listener,
-                });
-                self.shared.wake.notify_one();
-            }
-        }
-        job
+        let Some(source) = source else {
+            let handle = self.pool.submit_failed("no source");
+            let output = Arc::new(JobOutput::default());
+            return Arc::new(AnalysisJob::new(handle, String::new(), output));
+        };
+        let name = source.describe();
+        let output = Arc::new(JobOutput::default());
+        let task = Task {
+            output: Arc::clone(&output),
+            source,
+            analyzer_ids,
+        };
+        let handle = match listener {
+            None => self.pool.submit(task),
+            Some(listener) => self.pool.submit_with_listener(
+                task,
+                listener_hook(listener, name.clone(), Arc::clone(&output)),
+            ),
+        };
+        Arc::new(AnalysisJob::new(handle, name, output))
     }
 
     /// Cancels every queued and running job.
     pub fn cancel_all(&self) {
-        cancel_all(&self.lock());
+        self.pool.cancel_all();
     }
 
     pub fn queued_count(&self) -> usize {
-        self.lock().queue.len()
-    }
-
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.shared.state.lock_unpoisoned()
+        self.pool.queued_len()
     }
 }
 
-impl Drop for AnalysisService {
-    /// Cancels queued and running jobs, then joins the workers.
-    fn drop(&mut self) {
-        {
-            let mut state = self.lock();
-            state.stopping = true;
-            cancel_all(&state);
-        }
-        self.shared.wake.notify_all();
-        for worker in self.workers.drain(..) {
-            let _ = worker.join();
-        }
-    }
-}
-
-fn cancel_all(state: &State) {
-    for task in &state.queue {
-        task.job.cancel();
-    }
-    for job in &state.running {
-        job.cancel();
-    }
-}
-
-/// Runs tasks until the service stops. A panic in an analyser, decoder or listener is contained to
-/// its task: the job is marked failed (so nothing waits on it forever) and the worker goes on.
-fn worker_loop(shared: &Shared) {
-    while let Some(mut task) = wait_for_task(shared) {
-        let run = panic::catch_unwind(AssertUnwindSafe(|| {
-            run_analysis_job(
-                &task.job,
-                task.source.as_mut(),
-                &task.analyzer_ids,
-                &shared.registry,
-                shared.cache.as_deref(),
-            );
-        }));
-        if let Err(payload) = run {
-            task.job.fail(format!(
-                "analysis panicked: {}",
-                panic_message(payload.as_ref())
+/// Adapts a one-shot listener to the pool's completion hook. The listener gets the job as an
+/// `AnalysisJob` over the same handle and output the caller holds.
+fn listener_hook(listener: Listener, name: String, output: Arc<JobOutput>) -> OnFinished {
+    let listener = Mutex::new(Some(listener));
+    Arc::new(move |handle: &JobHandle| {
+        let taken = listener.lock_unpoisoned().take();
+        if let Some(listener) = taken {
+            listener(&AnalysisJob::new(
+                handle.clone(),
+                name.clone(),
+                Arc::clone(&output),
             ));
         }
-        if let Some(listener) = task.listener.take() {
-            // The job is already final; a listener that panics has nothing left to report to.
-            let _ = panic::catch_unwind(AssertUnwindSafe(|| listener(&task.job)));
-        }
-        let mut state = shared.state.lock_unpoisoned();
-        state.running.retain(|job| !Arc::ptr_eq(job, &task.job));
-    }
-}
-
-/// The text of a panic payload (`panic!` gives a `&str` or a `String`).
-pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|s| (*s).to_owned())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "unknown panic".to_owned())
-}
-
-/// Next queued task, moved to the running list. `None` once stopping with nothing queued.
-fn wait_for_task(shared: &Shared) -> Option<Task> {
-    let state = shared.state.lock_unpoisoned();
-    let mut state = shared
-        .wake
-        .wait_while(state, |s| !s.stopping && s.queue.is_empty())
-        .unwrap_or_else(PoisonError::into_inner);
-    let task = state.queue.pop_front()?;
-    state.running.push(Arc::clone(&task.job));
-    Some(task)
+    })
 }
 
 #[cfg(test)]

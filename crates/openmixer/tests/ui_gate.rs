@@ -6,7 +6,7 @@
 //! `cargo test -p openmixer --test ui_gate -- --ignored`.
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
-use om_core::ParameterTarget;
+use om_core::param_id::ChannelParam;
 use om_testing::signals::sine_amp;
 use om_testing::wav::write_pcm16_wav;
 use om_ui::binding::{DeckBinding, LevelSource, MixerBinding};
@@ -87,17 +87,17 @@ fn run_gate(seconds: u64) -> Report {
     device.start_realtime();
 
     let engine = Arc::clone(&composition.engine);
-    let target: Arc<dyn ParameterTarget> = composition.router.clone();
+    let router = Arc::clone(&composition.router);
     let transports: Vec<TransportPanel> = (0..DECKS)
         .map(|d| {
-            TransportPanel::new(DeckBinding::new(
+            TransportPanel::new(DeckBinding::typed(
                 Arc::clone(&engine),
-                Arc::clone(&target),
+                Arc::clone(&router),
                 d,
             ))
         })
         .collect();
-    let mixer = MixerBinding::new(Arc::clone(&engine), Arc::clone(&target));
+    let mixer = MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router));
 
     let mut report = Report::default();
     let expect = |report: &mut Report, ok: bool| {
@@ -117,8 +117,8 @@ fn run_gate(seconds: u64) -> Report {
     );
 
     // Faders up, then deck 0 plays (controls must reflect the press).
-    mixer.send(&MixerBinding::channel_id(0, "fader"), 0.8);
-    mixer.send(&MixerBinding::channel_id(1, "fader"), 0.8);
+    mixer.send_channel(0, ChannelParam::Fader, 0.8);
+    mixer.send_channel(1, ChannelParam::Fader, 0.8);
     expect(&mut report, (engine.mixer().fader(0) - 0.8).abs() < 1e-3);
     transports[0].press(TransportButton::Play);
     expect(&mut report, transports[0].state(TransportButton::Play));

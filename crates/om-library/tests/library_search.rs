@@ -2,8 +2,9 @@
 //! library. Fixtures are built with the DAOs in a temporary database file.
 
 use om_library::{
-    compile_search, core_migrations, parse_query, CompileContext, FilterTerm, Library, OpenMode,
-    SearchEngine, SearchField, SearchFieldRegistry, SearchQuery, SearchValue, TrackRecord,
+    compile_search, core_migrations, parse_query, CompileContext, FilterTerm, Library,
+    LibraryCapabilities, OpenMode, SearchEngine, SearchField, SearchFieldRegistry, SearchQuery,
+    SearchValue, TrackRecord, Transaction,
 };
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -505,5 +506,432 @@ fn compiled_count_and_page_args_are_bound_in_order() {
     assert_eq!(
         c.select_args,
         vec![SearchValue::Int(3), SearchValue::Int(6)]
+    );
+}
+
+// ---- free text over the FTS5 index ----
+
+/// A library in a temporary file, with the given `(title, artist, genre)` rows.
+fn library_with(
+    rows: &[(&str, &str, &str)],
+    migrations: &[om_library::Migration],
+) -> (TempDir, Library) {
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("library.db");
+    let lib = Library::open(
+        path.to_str().expect("utf-8 path"),
+        OpenMode::ReadWrite,
+        migrations,
+    )
+    .expect("open library");
+    for (i, (title, artist, genre)) in rows.iter().enumerate() {
+        let track = TrackRecord {
+            path: format!("/f/{i}.wav"),
+            title: (*title).into(),
+            artist: (*artist).into(),
+            genre: (*genre).into(),
+            ..Default::default()
+        };
+        lib.tracks().insert(&track).expect("insert");
+    }
+    (dir, lib)
+}
+
+fn titles_of(engine: &SearchEngine<&om_library::Database>, q: &str) -> Vec<String> {
+    let mut titles: Vec<String> = engine
+        .search_text(q)
+        .unwrap_or_else(|e| panic!("query {q:?} failed: {e}"))
+        .into_iter()
+        .map(|r| r.title)
+        .collect();
+    titles.sort();
+    titles
+}
+
+#[test]
+fn free_text_folds_diacritics_and_matches_token_prefixes() {
+    let (_dir, lib) = library_with(
+        &[
+            ("Émile Hymne", "Daft", "House"),
+            ("Love Song", "Moby", "Techno"),
+        ],
+        core_migrations(),
+    );
+    let engine = SearchEngine::new(lib.database());
+    assert!(
+        engine.capabilities.fts5,
+        "a fresh library has the FTS5 index"
+    );
+    assert_eq!(titles_of(&engine, "emile"), ["Émile Hymne"]);
+    assert_eq!(titles_of(&engine, "ÉMILE"), ["Émile Hymne"]);
+    assert_eq!(
+        titles_of(&engine, "hym"),
+        ["Émile Hymne"],
+        "a prefix of a token"
+    );
+    // Was "a token suffix is not a match" under token-only free text. Free text is a substring
+    // match again (the LIKE branch, so mid-word text finds the word), so the suffix matches.
+    assert_eq!(
+        titles_of(&engine, "ymne"),
+        ["Émile Hymne"],
+        "a substring of a word matches"
+    );
+    assert_eq!(
+        titles_of(&engine, "love mo"),
+        ["Love Song"],
+        "each term may match any column"
+    );
+}
+
+#[test]
+fn quoted_phrase_matches_adjacent_tokens_only() {
+    let (_dir, lib) = library_with(
+        &[
+            ("A", "x", "Deep House"),
+            ("B", "x", "House Deep"),
+            ("C", "x", "Deep Techno House"),
+        ],
+        core_migrations(),
+    );
+    let engine = SearchEngine::new(lib.database());
+    assert_eq!(titles_of(&engine, "\"deep house\""), ["A"]);
+    assert_eq!(titles_of(&engine, "deep"), ["A", "B", "C"]);
+    assert_eq!(
+        titles_of(&engine, "house deep"),
+        ["A", "B", "C"],
+        "separate terms AND together"
+    );
+    assert_eq!(titles_of(&engine, "-deep"), Vec::<String>::new());
+}
+
+#[test]
+fn hostile_free_text_is_plain_text_and_never_errors() {
+    let (_dir, lib) = library_with(
+        &[
+            ("House Mix", "NEAR Band", "Ambient"),
+            ("Plain", "Quiet", "Ambient"),
+        ],
+        core_migrations(),
+    );
+    let engine = SearchEngine::new(lib.database());
+    let hostile = [
+        "\"",
+        "\"\"",
+        "\"unbalanced",
+        "*",
+        "**",
+        "^",
+        "NEAR",
+        "NEAR(",
+        "NEAR/2",
+        "OR",
+        "AND",
+        "NOT",
+        "a OR b",
+        ")(",
+        "()",
+        "x)(y",
+        "%",
+        "_",
+        "\\",
+        "'; DROP TABLE tracks; --",
+        "\"x\" * NEAR OR \"",
+        "title:\"",
+        "-",
+        "-\"",
+        "{a}",
+        "+x",
+        ":",
+    ];
+    for h in hostile {
+        engine
+            .search_text(h)
+            .unwrap_or_else(|e| panic!("{h:?} errored: {e}"));
+        engine
+            .count(&engine.parse(h).query)
+            .unwrap_or_else(|e| panic!("count of {h:?} errored: {e}"));
+    }
+    // Operators are words here: "OR" is a token that no track contains.
+    assert!(titles_of(&engine, "house OR techno").is_empty());
+    assert_eq!(titles_of(&engine, "house"), ["House Mix"]);
+    assert_eq!(titles_of(&engine, "NEAR"), ["House Mix"]); // the artist "NEAR Band"
+    assert_eq!(lib.tracks().count().expect("count"), 2);
+}
+
+#[test]
+fn index_follows_insert_update_and_delete_and_rescan() {
+    let (_dir, lib) = library_with(&[("Alpha", "Daft", "House")], core_migrations());
+    let tracks = lib.tracks();
+    let id = tracks
+        .find_by_path("/f/0.wav")
+        .expect("find")
+        .expect("row")
+        .id;
+    {
+        let engine = SearchEngine::new(lib.database());
+        assert_eq!(titles_of(&engine, "alpha"), ["Alpha"]);
+    }
+
+    // Update of an indexed text column: the old token goes, the new one comes.
+    let mut t = tracks.find_by_id(id).expect("find").expect("row");
+    t.title = "Bravo".into();
+    tracks.update(&t).expect("update");
+    {
+        let engine = SearchEngine::new(lib.database());
+        assert!(titles_of(&engine, "alpha").is_empty());
+        assert_eq!(titles_of(&engine, "bravo"), ["Bravo"]);
+    }
+
+    // A rescan refreshes by path (an UPDATE on the same row).
+    tracks
+        .upsert_by_path(&TrackRecord {
+            path: "/f/0.wav".into(),
+            title: "Charlie".into(),
+            artist: "Moby".into(),
+            ..Default::default()
+        })
+        .expect("upsert");
+    {
+        let engine = SearchEngine::new(lib.database());
+        assert!(titles_of(&engine, "bravo").is_empty());
+        assert_eq!(titles_of(&engine, "moby"), ["Charlie"]);
+    }
+
+    tracks.remove(id).expect("remove");
+    let engine = SearchEngine::new(lib.database());
+    assert!(titles_of(&engine, "charlie").is_empty());
+    assert!(titles_of(&engine, "moby").is_empty());
+    let fts_rows: i64 = lib
+        .database()
+        .connection()
+        .query_row("SELECT COUNT(*) FROM tracks_fts_docsize;", [], |r| r.get(0))
+        .expect("docsize");
+    assert_eq!(fts_rows, 0, "no index entries remain after the delete");
+}
+
+#[test]
+fn free_text_falls_back_to_like_when_the_fts_index_is_missing_at_run_time() {
+    let (_dir, lib) = library_with(
+        &[("Alpha", "Moby", "House"), ("Bravo", "Daft", "Techno")],
+        core_migrations(),
+    );
+    let engine = SearchEngine::new(lib.database());
+    assert!(engine.capabilities.fts5);
+    // The index disappears after the engine was created: the search must still answer.
+    lib.database()
+        .exec("DROP TABLE tracks_fts;")
+        .expect("drop index");
+    assert_eq!(titles_of(&engine, "moby"), ["Alpha"]);
+    assert_eq!(
+        titles_of(&engine, "echno"),
+        ["Bravo"],
+        "LIKE substring again"
+    );
+}
+
+#[test]
+fn free_text_uses_like_when_fts5_is_disabled_and_both_paths_agree() {
+    let (_dir, lib) = library_with(
+        &[
+            ("Alpha", "Moby", "House"),
+            ("Bravo", "Daft", "Techno"),
+            ("Charlie", "Moby", "House"),
+        ],
+        core_migrations(),
+    );
+    let fts = SearchEngine::new(lib.database());
+    let mut like = SearchEngine::new(lib.database());
+    like.capabilities = LibraryCapabilities { fts5: false };
+    for q in ["moby", "house", "techno", "-house", "moby -house", "alpha"] {
+        assert_eq!(titles_of(&fts, q), titles_of(&like, q), "query {q:?}");
+    }
+    // Both forms match substrings inside a word: the FTS form also keeps the LIKE branch, so the
+    // results agree. (Before the LIKE branch was restored, the FTS form found nothing here.)
+    assert_eq!(titles_of(&like, "echno"), ["Bravo"]);
+    assert_eq!(titles_of(&fts, "echno"), ["Bravo"]);
+}
+
+#[test]
+fn library_without_the_index_detects_no_fts5_and_searches_with_like() {
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("v6.db");
+    let path = path.to_str().expect("utf-8 path");
+    {
+        let lib = Library::open(path, OpenMode::ReadWrite, &core_migrations()[..6]).expect("v6");
+        lib.tracks()
+            .insert(&TrackRecord {
+                path: "/v6/a.wav".into(),
+                title: "Moby Dick".into(),
+                ..Default::default()
+            })
+            .expect("insert");
+    }
+    let lib = Library::open(path, OpenMode::ReadWrite, core_migrations()).expect("upgrade");
+    let v6 = Library::open(path, OpenMode::ReadOnly, core_migrations()).expect("read-only");
+    assert!(
+        LibraryCapabilities::detect(v6.database()).fts5,
+        "read-only sees the migrated index"
+    );
+    let engine = SearchEngine::new(lib.database());
+    assert_eq!(
+        titles_of(&engine, "oby"),
+        ["Moby Dick"],
+        "substring, from the LIKE branch (was token-only before it was restored)"
+    );
+    assert_eq!(titles_of(&engine, "moby"), ["Moby Dick"]);
+
+    let (_d2, old) = {
+        let d = TempDir::new().expect("temp dir");
+        let p = d.path().join("old.db");
+        let l = Library::open(
+            p.to_str().expect("path"),
+            OpenMode::ReadWrite,
+            &core_migrations()[..6],
+        )
+        .expect("v6");
+        l.tracks()
+            .insert(&TrackRecord {
+                path: "/old.wav".into(),
+                title: "Moby Dick".into(),
+                ..Default::default()
+            })
+            .expect("insert");
+        (d, l)
+    };
+    assert!(
+        !LibraryCapabilities::detect(old.database()).fts5,
+        "no tracks_fts table"
+    );
+    let old_engine = SearchEngine::new(old.database());
+    assert_eq!(
+        titles_of(&old_engine, "oby"),
+        ["Moby Dick"],
+        "LIKE substring"
+    );
+}
+
+#[test]
+fn free_text_matches_substrings_inside_words() {
+    let (_dir, lib) = library_with(
+        &[
+            ("Love Song", "Moby", "Techno"),
+            ("Plain", "Quiet", "Ambient"),
+        ],
+        core_migrations(),
+    );
+    let engine = SearchEngine::new(lib.database());
+    assert!(engine.capabilities.fts5);
+    assert_eq!(
+        titles_of(&engine, "ove"),
+        ["Love Song"],
+        "mid-word of the title"
+    );
+    assert_eq!(
+        titles_of(&engine, "OVE"),
+        ["Love Song"],
+        "ASCII case-insensitive"
+    );
+    assert_eq!(
+        titles_of(&engine, "echno"),
+        ["Love Song"],
+        "mid-word of the genre"
+    );
+    assert_eq!(titles_of(&engine, "ambient"), ["Plain"]);
+    assert!(titles_of(&engine, "xyz").is_empty());
+}
+
+#[test]
+fn accented_text_is_found_through_the_index_not_the_substring_branch() {
+    let (_dir, lib) = library_with(&[("Émile Hymne", "Daft", "House")], core_migrations());
+    let fts = SearchEngine::new(lib.database());
+    let mut like = SearchEngine::new(lib.database());
+    like.capabilities = LibraryCapabilities { fts5: false };
+    // LIKE is ASCII case-insensitive and does not fold 'É' to 'e', so only the index finds these.
+    assert_eq!(titles_of(&fts, "emile"), ["Émile Hymne"]);
+    assert_eq!(titles_of(&fts, "émile"), ["Émile Hymne"]);
+    assert!(titles_of(&like, "emile").is_empty());
+    assert!(titles_of(&like, "émile").is_empty());
+}
+
+#[test]
+fn phrase_and_negation_apply_to_the_whole_free_text_match() {
+    let (_dir, lib) = library_with(
+        &[
+            ("A", "x", "Deep House"),
+            ("B", "x", "House Deep"),
+            ("C", "x", "Deep Techno House"),
+            ("D", "x", "Émile Techno"),
+        ],
+        core_migrations(),
+    );
+    let engine = SearchEngine::new(lib.database());
+    assert_eq!(
+        titles_of(&engine, "\"ep hou\""),
+        ["A"],
+        "phrase as a substring"
+    );
+    assert_eq!(
+        titles_of(&engine, "\"deep house\""),
+        ["A"],
+        "adjacent words only"
+    );
+    assert_eq!(titles_of(&engine, "\"house deep\""), ["B"]);
+    assert_eq!(
+        titles_of(&engine, "-\"deep house\""),
+        ["B", "C", "D"],
+        "negated phrase"
+    );
+    assert_eq!(titles_of(&engine, "-ech"), ["A", "B"], "negated substring");
+    assert_eq!(
+        titles_of(&engine, "-emile"),
+        ["A", "B", "C"],
+        "negated index-only match: the NOT covers the FTS branch too"
+    );
+    assert_eq!(titles_of(&engine, "deep -techno"), ["A", "B"]);
+}
+
+#[test]
+fn free_text_on_twenty_thousand_tracks_answers_quickly() {
+    let (_dir, lib) = library_with(&[], core_migrations());
+    {
+        let tx = Transaction::begin(lib.database()).expect("begin");
+        for i in 0..20_000u32 {
+            let title = if i % 5_000 == 17 {
+                format!("Needle {i}")
+            } else {
+                format!("Track {i} Mix")
+            };
+            lib.tracks()
+                .insert(&TrackRecord {
+                    path: format!("/bulk/{i}.wav"),
+                    title,
+                    artist: format!("Artist {}", i % 300),
+                    genre: if i % 2 == 0 { "House" } else { "Techno" }.into(),
+                    ..Default::default()
+                })
+                .expect("insert");
+        }
+        tx.commit().expect("commit");
+    }
+    let engine = SearchEngine::new(lib.database());
+    // Free text is the substring (LIKE) branch OR the FTS5 branch, so every query scans `tracks`.
+    // The bound scales with the data (a linear scan of 20k rows), not with the machine: om-library
+    // is a workspace member, so the `[profile.test.package."*"]` opt-level 3 override does not cover
+    // it and this runs at opt-level 0. It measures about 3.5 ms there; 1.5 s leaves room for a
+    // loaded WSL machine and still fails a query that is accidentally quadratic per row.
+    let start = std::time::Instant::now();
+    let rows = engine.search_text("needle").expect("search");
+    let elapsed = start.elapsed();
+    assert_eq!(rows.len(), 4);
+    assert!(
+        elapsed < std::time::Duration::from_millis(1500),
+        "free-text search took {elapsed:?} over 20k tracks"
+    );
+    // Artist 7, 307, ... : 67 of the 20 000 rows.
+    assert_eq!(
+        engine
+            .count(&engine.parse("artist:\"=Artist 7\"").query)
+            .expect("count"),
+        67
     );
 }

@@ -7,11 +7,12 @@ use crate::control::{Knob, Ranged, Readout};
 use crate::geometry::Rect;
 use crate::meter::{MeterParams, StereoMeter};
 use crate::theme::ThemeTokens;
+use om_core::param_id::{ChannelParam, EqBand};
 use om_dsp::CrossfaderAssign;
 
 /// EQ bands in engine order: low, mid, high.
 pub const BANDS: usize = 3;
-pub const EQ_IDS: [&str; BANDS] = ["eq.low", "eq.mid", "eq.high"];
+pub const EQ_BANDS: [EqBand; BANDS] = [EqBand::Low, EqBand::Mid, EqBand::High];
 pub const EQ_LABELS: [&str; BANDS] = ["Lo", "Mid", "Hi"];
 /// Assignment buttons in display order: Thru ("Mid"), Left, Right.
 pub const ASSIGN_LABELS: [&str; 3] = ["Mid", "L", "R"];
@@ -99,33 +100,32 @@ impl ChannelStrip {
         self.meter.update(left, right, dt);
     }
 
-    fn send(&self, id: &str, value: f64) {
-        self.binding
-            .send(&MixerBinding::channel_id(self.channel, id), value);
+    fn send(&self, p: ChannelParam, value: f64) {
+        self.binding.send_channel(self.channel, p, value);
     }
 
     pub fn trim_changed(&mut self, value: f64) -> f64 {
         let v = self.trim.range.set(value);
-        self.send("trim", v);
+        self.send(ChannelParam::Trim, v);
         v
     }
 
     pub fn filter_changed(&mut self, value: f64) -> f64 {
         let v = self.filter.range.set(value);
-        self.send("filter", v);
+        self.send(ChannelParam::Filter, v);
         v
     }
 
     pub fn eq_changed(&mut self, band: usize, value: f64) -> f64 {
         let v = self.eq[band].range.set(value);
-        self.send(EQ_IDS[band], v);
+        self.send(ChannelParam::Eq(EQ_BANDS[band]), v);
         v
     }
 
     /// The fader moved: stores the snapped value and sends it.
     pub fn fader_changed(&mut self, value: f64) -> f64 {
         let v = self.fader.set(value);
-        self.send("fader", v);
+        self.send(ChannelParam::Fader, v);
         v
     }
 
@@ -138,10 +138,13 @@ impl ChannelStrip {
     /// Kill drops the band to the floor and remembers where it was; releasing goes back there.
     pub fn kill_pressed(&mut self, band: usize) {
         if self.is_killed(band) {
-            self.send(EQ_IDS[band], self.restore_db[band]);
+            self.send(ChannelParam::Eq(EQ_BANDS[band]), self.restore_db[band]);
         } else {
             self.restore_db[band] = f64::from(self.binding.mixer().eq(self.channel, band));
-            self.send(EQ_IDS[band], f64::from(om_dsp::ThreeBandEq::MIN_DB));
+            self.send(
+                ChannelParam::Eq(EQ_BANDS[band]),
+                f64::from(om_dsp::ThreeBandEq::MIN_DB),
+            );
         }
         self.pull(false);
     }
@@ -149,7 +152,7 @@ impl ChannelStrip {
     /// PFL toggles the channel into the headphone cue.
     pub fn pfl_pressed(&mut self) -> bool {
         let on = !self.binding.mixer().pfl(self.channel);
-        self.send("pfl", if on { 1.0 } else { 0.0 });
+        self.send(ChannelParam::Pfl, if on { 1.0 } else { 0.0 });
         self.pull(false);
         on
     }
@@ -159,7 +162,7 @@ impl ChannelStrip {
         let Some(assign) = assign_from_index(index) else {
             return false;
         };
-        self.send("xfader", assign_index(assign) as f64);
+        self.send(ChannelParam::Xfader, assign_index(assign) as f64);
         self.pull(false);
         true
     }

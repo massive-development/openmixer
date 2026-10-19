@@ -10,7 +10,7 @@ OpenMixer is a clean-room, legally original implementation of professional DJ so
 
 ```
 openmixer/
-├── .github/workflows/        # rust.yml: the Rust CI (every PR); gui-check is non-blocking
+├── .github/workflows/        # rust.yml: the Rust CI (every PR); gui-check and gpui-lint are non-blocking
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   └── om-ui-gpui/           # GPUI window: its own workspace, behind the openmixer `gui` feature
 ├── docs/
@@ -22,16 +22,49 @@ openmixer/
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports
 ├── resources/themes/         # Built-in theme JSON
 ├── tests/tools/              # Unit tests for the Python tools
-├── tools/                    # check_docs_rust.py, progress_heatmap.py
+├── tools/                    # check_docs_rust.py, progress_heatmap.py, screenshots.sh
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain
 ├── rustfmt.toml
 ├── clippy.toml
-└── deny.toml                 # Licence and ban policy (cargo deny)
+├── deny.toml                 # Licence and ban policy (cargo deny)
+└── crates/om-ui-gpui/deny.toml  # GPUI policy: the root policy plus what the GPUI tree needs
 ```
 
-The crate list and their roles are in the README architecture section.
+## Architecture and Crate Responsibilities
+
+Dependencies point toward `om-core` (see "Modularity" above). The README architecture section has the directory tree; this is what each crate owns.
+
+- **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
+- **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops. Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
+- **`om-audio`, `om-dsp`, `om-stretch`**: device layer, DSP, and key-lock time-stretch (the only crate allowed `unsafe`, for FFI).
+- **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`.
+- **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
+- **`om-ui-gpui`** (own workspace, behind the `gui` feature): GPUI drawing and events over `om-ui` models.
+- **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
+
+Control paths, and what is live today:
+- **UI (production window):** `DeckBinding::typed` and `MixerBinding::typed` send `Command::Param { id, value }` through the router's `CommandSink`, with no string formatting or parsing. The binding constructors without a sink (`new`) write through the string façade; the widget test rig uses them.
+- **MIDI mappings and plugins:** the string façade, `ParameterTarget::set_parameter(&str, f64)` on the router. It parses the id once there and dispatches typed ids the same way.
+- **Typed entry point:** `Command` and `CommandSink` are used by tests, by automix and by the Wave 7 features. The router's sink accepts only `Command::Param` today; `LoadStems`, `SamplerAssign` and `Automix` return `CommandError::Rejected` until their engine sinks land.
+
+Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
+
+### Plugin control targets
+
+- A plugin registers its target with the router (`register_target`, a string prefix). The router holds its reentrant gate across every target call, and registration and unregistration wait on the same gate. So a slow or blocking `set_parameter` stalls MIDI and UI dispatch for everything else. Do not block, wait on I/O or take a long lock in `set_parameter`; hand the work to a thread or queue and return `true` at once.
+
+### How to add a control id
+
+1. `om-core/src/param_id/mod.rs`: add the variant to the owning enum (`DeckParam`, `MixerParam`, ...) and its line in the grammar doc comment.
+2. `om-core/src/param_id/parse.rs`: parse it in the sub-namespace `FromStr`. `Display` in `mod.rs` must print it back exactly.
+3. `om-core/src/param_id/tests.rs`: add the id to `GOLDEN`. Every id must round-trip canonically.
+4. The owning target's `set_param` match arm (for example `om-engine/src/mixer/control.rs` or `deck_control.rs`): handle the variant and return `true`. Return `false` for variants it does not own.
+5. If the value is readable: add a `StateId` variant (`om-core/src/state_id.rs`), a field on `DeckSnapshot` or `MixerSnapshot` with its read arm (`om-core/src/snapshot.rs`), and fill the field in `DjEngine::snapshot()` (`om-engine/src/dj_engine.rs`).
+6. If a UI control or MIDI target uses it: build the id from `ParamId` in `om-ui/src/binding.rs`, and list it in `learnable_targets` (`om-ui/src/settings/midi.rs`) when MIDI learn should reach it.
+7. Test with `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-core -p om-engine`, and add a binding test in `om-ui` when step 6 applies.
+
 
 ## Current State (Linux first)
 
@@ -41,7 +74,7 @@ The crate list and their roles are in the README architecture section.
 - Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
 - The crates and features in the status above, plus the headless UI gate
 - The GPUI window behind the `gui` feature
-- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature on Linux (non-blocking)
+- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature and runs its tests on Linux, and `gpui-lint` runs fmt, clippy and `cargo deny` for `om-ui-gpui` (both non-blocking)
 
 **Known gaps:** see the list in `ROADMAP.md` (Known gaps) and the Before-Wave-7 list in `TODO.md`, which is the authoritative list.
 
@@ -129,6 +162,19 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
 4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
 
+## Styling a control (LookAndFeel)
+
+Colours, radii, border widths, insets and font sizes come from the theme, never from literals in view code.
+
+1. Read the theme's tokens (`om_ui::theme::ThemeTokens`, built from `resources/themes/*.json`).
+2. Get the control's recipe from `om_ui::style::LookAndFeel::from_tokens(t)`: `button` (idle, hover, active, disabled), `lit_button(accent)`, `knob`, `fader`, `tabs`, `tooltip`, `text_field` (idle, focus), `meter`, `panel`, `panel_caption`, `separator`, `drop_target`.
+3. In `om-ui-gpui`, draw with `paint::skin(el, &style)` for a box, `paint::border(el, width)` for a bare border, and `paint(colour)` for a colour. Radii and insets come from the style fields, not literals.
+4. A value no token covers: add a token field in `theme/tokens.rs` (default in `builtin_dark`), a reader in `theme/json.rs` (range-checked, with a key in the matching section), and a value in both built-in theme JSON files. Old theme files stay valid because a missing key inherits the default.
+5. Add the new style to `LookAndFeel::entries()` so the contrast and live-switch tests cover it. Text on a control needs contrast 3.0 (control) or 4.5 (body) against its fill over both backdrop ends; disabled controls are exempt.
+6. `crates/om-ui-gpui/tests/style_lint.rs` fails on raw colour calls (`rgb(`, `rgba(`, `hsla(`, `from_argb(`, bare 6 or 8 digit hex) in `src/`. Only `paint.rs` may name them.
+
+gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
+
 ## Token Efficiency & Knowledge Reuse (required)
 
 Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
@@ -156,6 +202,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 Every PR that completes or advances a task must update, in the same PR:
 - `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
 - the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
+- screenshots: `tools/screenshots.sh` rebuilds the `gui` binary and regenerates `docs/screenshots/*.png` from the real window (X11, `--mock-device` only, temp library and preferences; every `import` passes `-silent`)
 
 ## CI Workflow Changes (required)
 
@@ -302,7 +349,7 @@ pub use mixer::Mixer;
 ### Error Handling
 
 - Library crates: `thiserror` enums per module, returned as `Result<T, Error>`
-- Binary: `anyhow::Result` at the top level with context on each step
+- Binary: `AppError` (`crates/openmixer/src/error.rs`) with `#[from]` for each subsystem error; `anyhow` is not used
 - Log errors with `tracing::error!` (or `warn!`) and include the failing id or path as a field
 - Never panic on bad input; do not use `unwrap()` on file, network or MIDI data
 

@@ -119,7 +119,9 @@ mod library_tracks {
             .set_analysis(id, 128.0, "C", "8B")
             .expect("set_analysis");
         lib.tracks().set_rating(id, 5).expect("set_rating");
-        lib.tracks().record_play(id, 9999).expect("record_play");
+        lib.tracks()
+            .record_play(id, None, 9999)
+            .expect("record_play");
         let got = lib.tracks().find_by_id(id).unwrap().unwrap();
         assert_eq!(got.bpm.unwrap(), 128.0);
         assert_eq!(got.camelot, "8B");

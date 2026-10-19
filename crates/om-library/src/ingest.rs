@@ -3,10 +3,11 @@
 //! missing (rows and user data are kept, so a returning file restores its rating and cues).
 //! Runs on the thread that owns the `Library` it is given.
 
+use crate::artwork_dao::{ArtworkRecord, MAX_ARTWORK_BYTES};
 use crate::database::Transaction;
 use crate::error::{LibraryError, Result};
 use crate::library::Library;
-use crate::metadata::{MetadataReaderRegistry, TrackMetadata};
+use crate::metadata::{Artwork, MetadataReaderRegistry, TrackMetadata};
 use crate::track_record::TrackRecord;
 use std::collections::HashSet;
 use std::fs;
@@ -178,21 +179,49 @@ impl<'a> Ingestor<'a> {
             }
         }
 
-        match self.commit_record(&record, stamp) {
+        match self.commit_record(&record, stamp, meta.artwork.as_ref()) {
             Ok(()) if existing.is_some() => Outcome::Updated,
             Ok(()) => Outcome::Added,
             Err(_) => Outcome::Failed,
         }
     }
 
-    /// Upserts the row and its file state in one transaction, so a failure leaves neither behind.
-    fn commit_record(&self, record: &TrackRecord, stamp: FileStamp) -> Result<()> {
+    /// Upserts the row, its file state and its cover in one transaction, so a failure leaves none
+    /// of them behind. A cover over [`MAX_ARTWORK_BYTES`] is skipped, and any cover stored from an
+    /// earlier read is removed, since the file no longer matches it.
+    fn commit_record(
+        &self,
+        record: &TrackRecord,
+        stamp: FileStamp,
+        artwork: Option<&Artwork>,
+    ) -> Result<()> {
         let tx = Transaction::begin(self.library.database())?;
         let id = self.library.tracks().upsert_by_path(record)?;
         self.library
             .track_files()
             .set(id, stamp.mtime_ms, stamp.size_bytes)?;
+        self.store_artwork(id, &record.path, artwork)?;
         tx.commit()
+    }
+
+    fn store_artwork(&self, id: i64, path: &str, artwork: Option<&Artwork>) -> Result<()> {
+        let dao = self.library.artwork();
+        let Some(art) = artwork else {
+            return dao.delete(id);
+        };
+        if art.data.len() > MAX_ARTWORK_BYTES {
+            tracing::debug!(
+                path,
+                bytes = art.data.len(),
+                limit = MAX_ARTWORK_BYTES,
+                "cover art too large to store; skipped"
+            );
+            return dao.delete(id);
+        }
+        dao.set(
+            id,
+            &ArtworkRecord::new(art.mime_type.clone(), art.data.clone()),
+        )
     }
 
     /// Flags tracks under `folder` that were not seen in this pass. A partial pass (stopped, or a

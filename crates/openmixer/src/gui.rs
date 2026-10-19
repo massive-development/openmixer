@@ -10,7 +10,7 @@
 use om_audio::LatencyStats;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, MidiPage};
-use om_ui::theme::{default_user_directory, ThemeRegistry};
+use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
 use om_ui_gpui::library::{HubLibrary, LibraryHub};
@@ -22,6 +22,7 @@ use openmixer::audio_settings::{
 use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
+use openmixer::AppError;
 use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -35,9 +36,19 @@ pub fn main(args: &[String]) -> ExitCode {
     let mock = args.iter().any(|a| a == "--mock-device");
     let smoke = args.iter().any(|a| a == "--smoke");
     let debug = args.iter().any(|a| a == "--debug-panel");
+    // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
+    // window stays open; used by tools/screenshots.sh.
+    let demo = args.iter().any(|a| a == "--demo-library");
+    let start_tab = match openmixer::flags::settings_tab(args) {
+        Ok(tab) => tab,
+        Err(message) => {
+            eprintln!("openmixer: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // The smoke run gets its own library in a temporary folder, never the user's.
-    let smoke_root = smoke.then(library_smoke::scratch_dir);
+    let smoke_root = (smoke || demo).then(library_smoke::scratch_dir);
     let mut composition = AppComposition::with_defaults();
     let library_path = smoke_root.as_ref().map(|root| root.join("library.db"));
     if let Err(error) = composition.attach_library(library_path) {
@@ -104,8 +115,8 @@ pub fn main(args: &[String]) -> ExitCode {
 
     // The library: ingest the smoke tracks and load the first one into deck A, or share the
     // services the composition opened. The window and the smoke check use the same hub.
-    let mut smoke_error: Option<String> = None;
-    let library = composition.hooks.library.take().map(|mut services| {
+    let mut smoke_error: Option<AppError> = None;
+    let library = composition.services.library.take().map(|mut services| {
         if let Some(root) = &smoke_root {
             if let Err(error) = library_smoke::ingest_generated(&mut services, root) {
                 smoke_error = Some(error);
@@ -113,7 +124,7 @@ pub fn main(args: &[String]) -> ExitCode {
         }
         LibraryHub::shared(services, engine.num_decks())
     });
-    if let (Some(hub), true, None) = (&library, smoke, &smoke_error) {
+    if let (Some(hub), true, None) = (&library, smoke || demo, &smoke_error) {
         let mut hub = hub.borrow_mut();
         let hub = &mut *hub;
         if let Err(error) =
@@ -125,15 +136,31 @@ pub fn main(args: &[String]) -> ExitCode {
     let rows_out = Arc::new(AtomicUsize::new(0));
 
     let midi_page: Option<Arc<dyn MidiPage>> = composition
+        .services
         .midi
         .clone()
         .map(|service| service as Arc<dyn MidiPage>);
     let composition = Rc::new(RefCell::new(composition));
     let status_output = output.clone();
     let status: DeviceStatusFn = Arc::new(move || device_status(&status_output.lock()));
+    // The window starts on OPENMIXER_THEME, else the saved theme, else the default.
+    let mut themes = load_themes(user_themes.as_deref());
+    let saved_theme = composition.borrow().prefs.theme.clone();
+    let env_theme = std::env::var(openmixer::composition::THEME_ENV).ok();
+    for id in [
+        session_theme_override(env_theme.as_deref()),
+        Some(saved_theme.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if themes.select(id) {
+            break;
+        }
+    }
     let settings = SettingsOptions {
         prefs: composition.borrow().prefs.clone(),
-        themes: load_themes(user_themes.as_deref()),
+        themes,
         audio: Some(Box::new(output.clone()) as Box<dyn AudioSettingsModel>),
         audio_stats: {
             let readout = output.clone();
@@ -152,6 +179,7 @@ pub fn main(args: &[String]) -> ExitCode {
         library: library
             .clone()
             .map(|hub| Box::new(HubLibrary(hub)) as Box<dyn LibraryControl>),
+        start_tab: start_tab.map(str::to_owned),
         plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
         sync_themes: {
             let composition = Rc::clone(&composition);
@@ -167,6 +195,9 @@ pub fn main(args: &[String]) -> ExitCode {
         settings: Some(settings),
         library: library.clone(),
         library_rows_out: smoke.then(|| Arc::clone(&rows_out)),
+        // The demo's tracks are sine tones with no tempo: give deck A a fixed grid once its
+        // analysis lands, so screenshots show beat ticks.
+        demo_grid_bpm: demo.then_some(120.0),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();
@@ -180,9 +211,12 @@ pub fn main(args: &[String]) -> ExitCode {
             && engine.deck(0).is_loaded();
         if smoke_error.is_none() {
             if !loaded {
-                smoke_error = Some("deck A is not loaded".to_owned());
+                smoke_error = Some(AppError::Smoke("deck A is not loaded"));
             } else if rows != TRACKS {
-                smoke_error = Some(format!("the table shows {rows} rows, not {TRACKS}"));
+                smoke_error = Some(AppError::SmokeRows {
+                    rows,
+                    expected: TRACKS,
+                });
             }
         }
         {

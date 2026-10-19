@@ -7,6 +7,7 @@ use crate::app_targets::{PluginLoad, PluginSink, PluginTheme};
 use crate::composition::AppComposition;
 use gain_plugin::GainPlugin;
 use om_plugins::{Plugin, PluginRegistry};
+use om_ui::settings::SettingsError;
 use om_ui::settings::{PluginHost, SettingsResult};
 use om_ui::theme::{Source, ThemeRegistry};
 use std::cell::RefCell;
@@ -137,17 +138,17 @@ impl PluginHost for AppComposition {
         let builtin = builtin_catalog()
             .into_iter()
             .find(|b| b.id == id)
-            .ok_or_else(|| format!("no built-in plugin '{id}'"))?;
+            .ok_or_else(|| SettingsError::NoBuiltinPlugin { id: id.to_owned() })?;
         self.plugins
             .add_plugin(builtin.create())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| SettingsError::Plugin(Box::new(e)))?;
         self.refresh_plugin_themes();
         Ok(())
     }
 
     fn unload(&mut self, id: &str) -> SettingsResult<()> {
         if !self.plugins.unload(id) {
-            return Err(format!("plugin '{id}' is not loaded"));
+            return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
         }
         self.refresh_plugin_themes();
         Ok(())
@@ -235,7 +236,15 @@ mod tests {
         );
         app.attach_midi(Box::new(MockBackend::new()));
         app.apply_plugin_midi_map("demo.map").expect("applies");
-        assert_eq!(app.midi.as_ref().expect("midi").mapper().num_mappings(), 1);
+        assert_eq!(
+            app.services
+                .midi
+                .as_ref()
+                .expect("midi")
+                .mapper()
+                .num_mappings(),
+            1
+        );
 
         app.detach_plugin_stage(InsertAt::Master, 0);
         app.plugins.unload(ID);

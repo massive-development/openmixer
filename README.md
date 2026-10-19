@@ -2,6 +2,13 @@
 
 A free, open-source DJ application: Linux first, with Windows and macOS support to follow.
 
+## Screenshots
+
+Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for known visual defects).
+
+- Main window, dark theme: ![Main window, dark](docs/screenshots/main-dark.png)
+- Main window, daylight theme: ![Main window, daylight](docs/screenshots/main-daylight.png)
+
 ## Mission
 
 OpenMixer is a clean-room, legally original implementation of professional DJ software features. Our goal is to provide djay-Pro-class capability—multi-deck mixing, effects, sync, BPM/key analysis, stem separation, Automix, and controller support—without copying any copyrighted expression from existing applications.
@@ -79,6 +86,11 @@ cargo test -p openmixer --test ui_gate -- --ignored --nocapture
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
+
+# GPUI crate (outside the workspace; non-blocking in CI)
+cargo fmt --manifest-path crates/om-ui-gpui/Cargo.toml --check
+cargo clippy --manifest-path crates/om-ui-gpui/Cargo.toml --all-targets -- -D warnings
+cargo deny --manifest-path crates/om-ui-gpui/Cargo.toml --config crates/om-ui-gpui/deny.toml check
 ```
 
 ### Running on WSL
@@ -136,7 +148,7 @@ A Cargo workspace. Dependency arrows point toward `om-core`, which has no I/O.
 
 ```
 crates/
-├── om-core/      # Control surface, parameter routing and lock-free frame transport; no I/O
+├── om-core/      # Typed control surface (ParamId, Command), pulled engine snapshot, job queue, routing; no I/O
 ├── om-dsp/       # Filters, EQ, sweep filter, meters and crossfader curves
 ├── om-engine/    # Audio-thread engine: decks, mixer, FX racks, sync, quantizer and loops
 ├── om-audio/     # Device layer over cpal, a headless mock device, the output router
@@ -154,7 +166,7 @@ fixtures/                       # Small test inputs: controller maps and traces,
 resources/themes/               # Built-in theme JSON
 ```
 
-Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. UI and MIDI send commands to the engine; the engine publishes state snapshots back.
+Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `agents.md` lists what each crate owns and how to add a control id.
 
 ## Implementation Waves
 
@@ -202,7 +214,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: later. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
-- Design tokens and LookAndFeel (25): the tokens exist, the LookAndFeel does not; the debug panel's load/play (26a) is not wired
+- LookAndFeel (25): `om_ui::style` derives every control style from the tokens and the gpui controls draw from it; scroll bars, tables and toggles are not restyled yet, and the window has not been checked by eye. See "Styling a control" in `agents.md`. The debug panel's per-deck load and play (26a) is wired
 - FFmpeg decode backend (Todo 8b, optional, open)
 - Library: artwork is not stored (no artwork table); FTS is not used (LIKE only); there is no play-history table (only a `play_count` column)
 - Saving engine hotcues back to the library is not confirmed

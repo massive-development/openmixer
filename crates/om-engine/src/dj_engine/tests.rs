@@ -5,7 +5,7 @@ use super::DjEngine;
 use crate::callback::AudioCallback;
 use crate::mixer::ChannelInput;
 use crate::ProcessStage;
-use om_core::ParameterTarget;
+use om_core::{ParamId, ParameterRouter, ParameterTarget};
 use std::sync::{Arc, Mutex};
 
 const RATE: f64 = 44_100.0;
@@ -147,4 +147,217 @@ fn echo_repeat_lands_on_the_beat_grid_at_48_khz() {
         (peak as i64 - 24_000).abs() <= 500,
         "echo repeat at frame {peak}, expected about 24000"
     );
+}
+
+/// Ids the engine applies, with a value each. Driven once through the string façade and once
+/// through `ParameterRouter::dispatch` on a parsed `ParamId`; the engine state must match.
+const SAME_EFFECT: &[(&str, f64)] = &[
+    ("deck.0.rate", 1.05),
+    ("deck.0.play", 1.0),
+    ("deck.0.slip", 1.0),
+    ("deck.0.quantize", 0.0),
+    ("sync.leader", 1.0),
+    ("deck.0.sync.master", 1.0),
+    ("sync.1.sync", 1.0),
+    ("mixer.ch1.fader", 0.25),
+    ("mixer.crossfader", 0.9),
+    ("fx.ch1.fx2.enable", 1.0),
+    ("fx.ch1.fx2.mix", 0.4),
+];
+
+/// Ids the grammar rejects: both paths must report `false` and count them as unknown.
+const REJECTED: &[&str] = &[
+    "deck.0.nope",
+    "deck.9.play",
+    "deck.0.loop.quantized.0",
+    "mixer.ch9.fader",
+    "fx.ch0000.fx0.mix",
+    "sync.x.sync",
+];
+
+/// Ids that parse, but the two-deck engine does not have the target: `false` on both paths.
+const ENGINE_REJECTS: &[&str] = &[
+    "deck.3.play",
+    "mixer.ch3.fader",
+    "fx.ch3.fx0.mix",
+    "deck.0.loop.quantized.2",
+];
+
+#[derive(Debug, PartialEq)]
+struct Observed {
+    rate: f64,
+    playing: bool,
+    fader: f32,
+    crossfader: f32,
+    fx_mix: f32,
+    fx_enabled: bool,
+    leader: Option<usize>,
+    sync_on: bool,
+    slip: bool,
+    quantize: bool,
+}
+
+fn observe(engine: &DjEngine) -> Observed {
+    let unit = engine
+        .fx()
+        .channel_rack(1)
+        .and_then(|rack| rack.unit(2))
+        .expect("channel 1, unit 2");
+    Observed {
+        rate: engine.deck(0).rate(),
+        playing: engine.deck(0).is_playing(),
+        fader: engine.mixer().fader(1),
+        crossfader: engine.mixer().crossfader(),
+        fx_mix: unit.mix(),
+        fx_enabled: unit.is_enabled(),
+        leader: engine.sync().leader(),
+        sync_on: engine.sync().is_enabled(1),
+        slip: engine.deck_control(0).is_slipping(),
+        quantize: engine.deck_control(0).is_quantize(),
+    }
+}
+
+#[test]
+fn typed_dispatch_has_the_same_effect_as_the_string_path() {
+    let (by_string, _string_audio) = DjEngine::new(2);
+    let (by_typed, _typed_audio) = DjEngine::new(2);
+    let string_router = ParameterRouter::new();
+    let typed_router = ParameterRouter::new();
+    by_string.register(&string_router);
+    by_typed.register(&typed_router);
+
+    for &(id, value) in SAME_EFFECT {
+        let parsed: ParamId = id.parse().expect(id);
+        assert!(string_router.set_parameter(id, value), "{id} via string");
+        assert!(typed_router.dispatch(&parsed, value), "{id} via dispatch");
+    }
+    assert_eq!(observe(&by_string), observe(&by_typed));
+    assert!(observe(&by_typed).playing && observe(&by_typed).slip);
+    assert_eq!(observe(&by_typed).leader, Some(0));
+    assert_eq!(string_router.unknown_count(), 0);
+    assert_eq!(typed_router.unknown_count(), 0);
+}
+
+#[test]
+fn rejected_ids_are_refused_and_counted_on_both_paths() {
+    let (engine, _audio) = DjEngine::new(2);
+    let router = ParameterRouter::new();
+    engine.register(&router);
+
+    for id in REJECTED {
+        assert!(id.parse::<ParamId>().is_err(), "{id} should not parse");
+        assert!(!router.set_parameter(id, 1.0), "{id}");
+    }
+    for id in ENGINE_REJECTS {
+        let parsed: ParamId = id.parse().expect(id);
+        assert!(!router.dispatch(&parsed, 1.0), "{id} via dispatch");
+        assert!(!router.set_parameter(id, 1.0), "{id} via string");
+    }
+    assert_eq!(
+        router.unknown_count(),
+        REJECTED.len() + 2 * ENGINE_REJECTS.len()
+    );
+}
+
+/// A playing deck with a loop, a cue, key-lock, slip and sync, next to a second deck, read two ways:
+/// through the getters and through one snapshot taken with the audio side idle. The two must agree.
+#[test]
+fn snapshot_matches_the_getters_of_a_playing_engine() {
+    use om_core::{EngineSnapshot, StateId};
+    use om_testing::fs::TempDir;
+    use om_testing::signals::stereo_sine;
+    use om_testing::wait::{wait_until, DEFAULT_POLL};
+    use om_testing::wav::write_float_wav;
+    use std::time::Duration;
+
+    let dir = TempDir::new("openmixer_snapshot_test");
+    let file = dir.file("sine.wav");
+    write_float_wav(&file, 2, 44_100, &stereo_sine(440.0, 0.5, RATE, 44_100));
+
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    engine.deck(0).load(&file).expect("load");
+    assert!(wait_until(Duration::from_secs(3), DEFAULT_POLL, || {
+        let _ = run(&mut audio, 4, 256);
+        engine.deck(0).buffered_frames() > 4096
+    }));
+    engine.deck(0).play();
+    for _ in 0..8 {
+        let _ = run(&mut audio, 4, 256);
+    }
+    engine.deck(0).set_loop(crate::quantizer::Loop {
+        start: 1_000,
+        end: 9_000,
+    });
+    engine.deck(0).set_hotcue(2, 4_321);
+    engine.deck(0).set_keylock(true);
+    engine.deck_control(0).set_slip(true);
+    engine.sync().set_enabled(1, true);
+    engine.sync().set_leader(Some(0));
+    engine.mixer().set_fader(1, 0.4);
+    engine.mixer().set_pfl(1, true);
+    engine.mixer().set_crossfader(-0.25);
+    engine.mixer().set_master_gain(0.7);
+    engine.update_control(0.02);
+
+    let snap: EngineSnapshot = engine.snapshot();
+    assert_eq!(snap.ticks, 1, "one control tick so far");
+    assert_eq!(snap.built, 1, "first snapshot of this engine");
+    assert_eq!(snap.decks.len(), 2);
+    let deck = engine.deck(0);
+    let d = &snap.decks[0];
+    assert!(d.playing && d.loaded && d.keylock && d.looping && d.slip);
+    assert!(d.sync_master && !snap.decks[1].sync_master);
+    assert!(snap.decks[1].sync);
+    assert_eq!(d.position_frames, deck.position_frames());
+    assert_eq!(d.length_frames, deck.length_frames());
+    assert_eq!(d.file_sample_rate, deck.file_sample_rate());
+    assert_eq!(d.rate, deck.rate());
+    assert_eq!((d.loop_start, d.loop_end), (1_000, 9_000));
+    assert_eq!(d.hotcues[2], deck.hotcue(2));
+    assert_eq!(d.hotcues[0], None);
+    assert_eq!(Some(snap.decks[0]), engine.deck_snapshot(0));
+    assert_eq!(snap.mixer.channels[1].fader, engine.mixer().fader(1));
+    assert!(snap.mixer.channels[1].pfl);
+    assert_eq!(snap.mixer.crossfader, engine.mixer().crossfader());
+    assert_eq!(snap.mixer.master_gain, engine.mixer().master_gain());
+    assert_eq!(
+        snap.mixer.channels[0].peak_left,
+        engine.mixer().channel_peak_left(0)
+    );
+
+    // The id path reads the same numbers as the typed fields.
+    let read = |id: &str| snap.read(&id.parse::<StateId>().expect(id));
+    assert_eq!(read("deck.0.loop"), Some(1.0));
+    assert_eq!(read("deck.0.cue"), Some(0.0));
+    assert_eq!(read("deck.1.sync.master"), Some(0.0));
+    assert_eq!(read("deck.0.hotcue2.set"), Some(1.0));
+    assert_eq!(
+        read("mixer.ch1.fader"),
+        Some(f64::from(engine.mixer().fader(1)))
+    );
+    assert_eq!(read("deck.9.play"), None);
+}
+
+/// Asking for a deck the engine lacks answers `None`; it does not panic.
+#[test]
+fn deck_snapshot_of_a_missing_deck_is_none() {
+    let (engine, _audio) = DjEngine::new(2);
+    assert!(engine.deck_snapshot(1).is_some());
+    assert_eq!(engine.deck_snapshot(2), None);
+    assert_eq!(engine.deck_snapshot(usize::MAX), None);
+}
+
+/// `sync.<d>.sync` for a deck the engine lacks is unhandled, as `deck.<d>.*` ids are.
+#[test]
+fn sync_enable_for_a_missing_deck_is_unhandled() {
+    let (engine, _audio) = DjEngine::new(2);
+    let router = ParameterRouter::new();
+    engine.register(&router);
+    assert!(router.set_parameter("sync.1.sync", 1.0));
+    assert!(engine.sync().is_enabled(1));
+    assert!(!router.set_parameter("sync.3.sync", 1.0));
+    assert!(!router.set_parameter("sync.3.sync", 0.0));
+    assert!(!router.set_parameter("deck.3.play", 1.0));
+    assert_eq!(router.unknown_count(), 3);
 }

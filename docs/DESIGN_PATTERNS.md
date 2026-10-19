@@ -64,11 +64,16 @@ pub trait AudioCallback: Send {
 - **Reuse when:** every new area (analysis, library, midi, ui).
 - **Notes:** dependencies point toward `om-core` (see `agents.md`). Library crates never depend on the `openmixer` binary.
 
-### Command enum (control surface)
-- **Where:** `om-core` (planned: typed command enum and snapshot types; today the control surface is the string-id `ParameterTarget` trait and `ParameterRouter`, and the insert ring carries a private `Command` in `om-engine/src/stage.rs`)
-- **Why:** MIDI, UI and tests drive the engine through one typed API; the control thread sends commands and the engine applies them on the audio thread.
-- **Reuse when:** adding any user-controllable engine unit: add a variant, handle it in the engine, and send it through the command channel.
-- **Notes:** planned. Commands would cross the control/audio boundary by value through an `rtrb` ring, and parsing text ids (for example MIDI map targets such as `ch0.fader`) would happen on the control thread, returning `Err` for unknown ids. Until then, `ParameterTarget::set_parameter` returns `false` for unknown ids and widgets and MIDI both use that path.
+### Typed control surface (ParamId, Command, typed targets, string façade)
+- **Where:** `om-core` (`param_id/` `ParamId` and `ParamError`; `command.rs` `Command`, `CommandSink`, `CommandError`; `parameter.rs` `ParamTarget`, and the string `ParameterTarget` façade; `router.rs` `ParameterRouter`). Typed targets: `om-engine` (`deck.rs`, `deck_control.rs`, `sync.rs`, `mixer/control.rs`, `fx_routing.rs`).
+- **Why:** an id string is parsed once, on the control thread, into a `ParamId`. Engine targets match on the enum, so a malformed id fails at parse time and no engine object carries its own string parser.
+- **Reuse when:** adding any user-controllable parameter (a MIDI map target, a UI control, a test driver). Add the grammar and variant in `ParamId`, then match it in the owning target. The steps are in `agents.md`, "How to add a control id".
+- **Notes:**
+  - `ParamId` is the canonical form: `FromStr` parses and `Display` prints the canonical id (`hotcue01` prints `hotcue1`). The namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler` and `automix` are reserved: a malformed id in them is an error. Any other prefix parses to `ParamId::Ext`, which plugins own.
+  - `ParameterRouter::dispatch(&ParamId, f64)` routes each typed id to the `ParamTarget` registered for its `Namespace` (`register_typed`). A target's `set_param` returns `false` for variants it does not own.
+  - `Command::Param { id, value }` is the one variant the router wires today. The production UI sends it through `CommandSink::send` (`DeckBinding::typed`, `MixerBinding::typed`). MIDI mappings and plugins do not: they use the string façade below. Tests use either path. `CommandSink::send` returns `CommandError::Rejected` when no target takes the id. `LoadStems`, `SamplerAssign` and `Automix` are placeholders that return `Rejected` until their features land (Todos 19, 30, 38, 40); their engine-side sink is added with those features.
+  - The string façade is `ParameterTarget::set_parameter(&str, f64) -> bool` on the router. It parses the id once and dispatches typed ids the same way. Ids the grammar rejects, and `Ext` ids, go to the prefix registry (`register_target`, longest prefix wins). Engine namespaces cannot be registered as string prefixes.
+  - Dispatch is serialised by a reentrant gate, so a target may route a follow-up id on the same thread. Parsing and sending are control-thread operations; never call them from the audio thread.
 
 ### Small units composed by a coordinator (struct composition)
 - **Where:** `om-engine` (`mixer/channel.rs` and `mixer/control.rs`: the channel strip composed from `ThreeBandEq`, `SweepFilter`, inserts and `Crossfader` gains); shared filter maths in `om-dsp`.
@@ -108,10 +113,20 @@ pub trait AudioCallback: Send {
 - **Reuse when:** any realtime jump target that can be predicted (hotcues, saved loops, sampler pads).
 - **Notes:** two preallocated slots with atomic state. The decoder fills the slot the audio thread is not holding; the audio thread marks a slot in use and re-checks the published index with `SeqCst`. Ring-move requests carry the epoch so stale requests are dropped.
 
-### Snapshot publication with `arc-swap` (replaces the seqlock)
-- **Where:** planned for `om-core` snapshot types published from `om-engine`. Not yet adopted: `om-engine/src/deck/loop_state.rs` still uses a seqlock, and `arc-swap` is not in `Cargo.lock`.
-- **Why:** audio and decoder threads need a consistent {start, end, enabled} without locks.
-- **Reuse when:** a few fields change rarely from control threads and must be read together in realtime or by the UI.
+### Pull-based engine snapshot (EngineSnapshot and StateId)
+- **Where:** `om-core` (`snapshot.rs` `EngineSnapshot`, `DeckSnapshot`, `MixerSnapshot`; `state_id.rs` `StateId`; `state.rs` `StateReader`). Built by `om-engine` `DjEngine::snapshot()`. Read by the UI and by `openmixer/src/engine_state.rs` (`EngineStateReader`, the `StateReader` for controller feedback).
+- **Why:** readers (widgets, meters, MIDI feedback) need several engine values together, without an engine lock and without touching the audio thread.
+- **Reuse when:** any reader needs engine state. Add a field to the snapshot and fill it in `DjEngine::snapshot()`; do not add a new getter that the UI calls on the engine.
+- **Notes:**
+  - Pull-based: the caller asks and the engine answers from its atomics and control-side getters. Nothing is published, and no audio lock is taken.
+  - Approximate by design: fields are read one at a time, not as one frame, so a snapshot can mix two audio blocks (a playhead and a loop bound, say). Peaks are decaying meter values. Nothing in a snapshot is an audio-thread value; it is for display and feedback only.
+  - `StateId` parses the read-only ids (`deck.<d>.play`, `deck.<d>.hotcue<k>.set`, `mixer.ch<c>.level`, and the rest of the grammar in `state_id.rs`). They stay out of `ParamId` because they have no setter. `EngineSnapshot::read(&StateId)` returns `None` for an id that names nothing in this engine (an index out of range, or a channel the mixer lacks).
+  - Stems, sampler and automix have empty placeholder snapshot types until Todos 19, 30, 38 and 40 land.
+
+### Immutable snapshot publication with `arc-swap` (deferred)
+- **Where:** not adopted. The engine snapshot is pulled (see "Pull-based engine snapshot"), so nothing publishes it. `om-engine/src/deck/loop_state.rs` still uses a seqlock, and `arc-swap` is not in `Cargo.lock`.
+- **Why:** if a few fields change rarely on a control thread and must be read together in realtime, an immutable snapshot swap replaces the seqlock's retry loop.
+- **Reuse when:** a value must be published to realtime readers rather than pulled. Check first whether a pulled snapshot is enough.
 - **Notes:** the writer builds a new immutable snapshot and calls `ArcSwap::store`; readers call `load()` and keep the guard for the block. No retry loop is needed. Confirm the reader path does not allocate with `assert_no_alloc` in tests.
 
 ### Effect template method + generic wrapper (FX rack)
@@ -131,11 +146,17 @@ pub trait AudioCallback: Send {
 - **Reuse when:** shipping starting points for any parameterised unit (EQ curves, mapping defaults).
 - **Notes:** built-in presets are a static table. Loading user preset files from disk is not built yet.
 
+### Generic worker pool (FIFO job queue + job handle)
+- **Where:** `om-core` (`jobs.rs` `WorkerPool<J>`, `JobHandle`, `JobCtx`); `om-analysis` `AnalysisService` is built on it.
+- **Why:** one place for the queue, the N worker threads, progress, cancel, wait, panic containment and join-on-drop, so a feature supplies only a job type and a handler.
+- **Reuse when:** a set of independent jobs runs in the background, served FIFO by a fixed number of threads, and callers want status, progress, cancel or a completion callback. Do not use it for timers or periodic scans (WatchFolders stays a dedicated thread) or for work that is already persisted and paced by its own owner (PrepQueue feeds the pool-backed `AnalysisService`).
+- **Notes:** `new(workers, name, handler)`; `submit(job)` returns a `JobHandle` (id, status Queued/Running/Done/Failed/Cancelled, progress 0..1, `cancel()`, `wait(timeout)`). The handler gets a `&JobCtx` and must poll `is_cancelled()`; a running job is never killed. A panic fails only its job (`Failed` with the message) and the worker carries on. `submit_with_listener` runs a panic-guarded callback on the worker once the job is final. `cancel_all()`, `queued_len()`, and `Drop` (cancel queued and running, then join) complete the API. Waiting is condvar-based; no polling loops in the pool.
+
 ### Background job service (worker threads + shared job handle)
 - **Where:** `om-analysis` (`service.rs` `AnalysisService`, `job.rs` `AnalysisJob`, `job_runner.rs` the job body)
 - **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
 - **Reuse when:** any long-running background task (library scan, stem precompute, export).
-- **Notes:** `submit()` returns `Arc<AnalysisJob>`, shared by caller and worker. Cancellation is an `AtomicBool` polled by the job. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
+- **Notes:** runs on the generic `WorkerPool` (see above); status, progress and cancellation come from its `JobHandle`, and `AnalysisJob` adds the results. `submit()` returns `Arc<AnalysisJob>`. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
 
 ### Content-addressed result cache
 - **Where:** `om-analysis` cache (`result_cache.rs` `ResultCache` trait, `sqlite_cache.rs` `SqliteResultCache`)
@@ -232,10 +253,10 @@ pub trait AudioCallback: Send {
 - **Reuse when:** a view needs track rows (implement a row-source trait with `count()` and `fetch(offset, limit)`), a new sidebar node, or another load gesture (send a load command).
 - **Notes:** the UI thread owns the library connection and the prep queue (a timer calls `pump()`). Watch folders have their own thread and connection and only bump an atomic counter. Widgets never open databases.
 
-### Widgets send commands only (replaces DeckBinding)
+### Widgets send commands only (DeckBinding, MixerBinding)
 - **Where:** `om-ui` `widgets/` and `binding.rs`; drawn by `om-ui-gpui`
-- **Why:** every control sends a parameter id through the control surface (`ParameterTarget`), the same path MIDI mappings use; reads come from published snapshots.
-- **Reuse when:** any new control surface. Tests send commands through a recording sink and assert both the command and the engine's resulting state.
+- **Why:** in the production window every control sends a `Command::Param` (a `ParamId` built from the typed enums, never a string) through the router's `CommandSink`. Reads come from a pulled `EngineSnapshot`. MIDI mappings use the string façade for the same ids.
+- **Reuse when:** any new control surface. Tests build the binding with `new` (the string recording rig) or with a recording `CommandSink` in `sink`, and assert both the write and the engine's resulting state.
 - **Notes:** toggles send the opposite of the engine state and mirror it back when the snapshot changes.
 
 ### Preferences model + applier
@@ -256,6 +277,24 @@ pub trait AudioCallback: Send {
 - **Reuse when:** a new panel needs end-to-end coverage: add its actions to the scripted scenario and count them, so the gate fails if an area is never exercised.
 - **Notes:** the gate uses the same composition root as the binary, so window wiring is never duplicated in the rig. Runs: `cargo test -p openmixer --test ui_gate` (about 8 s), `-- --ignored` (10 minutes), and `openmixer --smoke` for the window.
 
+### Typed error enums per crate, AppError at the composition root
+- **Where:** each crate's error type, next to the code that fails: `om-core` (`ParamError`, `CommandError`), `om-audio` (`AudioError`), `om-midi` (`MidiError`, `TraceError`), `om-library` (`LibraryError`, `ImportError`), `om-analysis` (`RegistryError`, `CacheError`), `om-engine` (`SourceError`), `om-stretch` (`StretchError`), `om-stems` (`ManifestError`, `WeightError`), `om-plugins` (`PluginError`), `om-ui` (`SettingsError`, `LoadError`, `LayoutError`, `PreferencesError`, `ThemeError`), and `openmixer/src/error.rs` (`AppError`).
+- **Why:** callers match on causes instead of strings, and status lines show the `Display` text of the enum. A `String` error loses the cause and cannot be matched.
+- **Reuse when:** a function can fail. Return a `thiserror` enum from the crate, never `Result<_, String>`. The composition root converts subsystem errors into `AppError` with `#[from]`, so `?` works across the composition.
+- **Notes:** subsystem variants use `#[error(transparent)]`, so their text reaches the status line unchanged. `AppError` also carries composition-only failures (for example no audio device open, or a device restore that failed). The binary does not use `anyhow`. A failed lookup is an error, never a "not found" default (see the importer entry).
+
+### Poison-recovering locks (LockExt)
+- **Where:** `om-core` (`sync.rs`, the `LockExt::lock_unpoisoned` trait), used by `router.rs` and `jobs.rs`.
+- **Why:** a panic while holding a `Mutex` poisons it. The values these locks guard stay structurally valid across such a panic, so callers take the guard instead of turning one panic into a second.
+- **Reuse when:** any control-thread `Mutex` in this workspace. Use `lock_unpoisoned()` rather than `lock().unwrap()`.
+- **Notes:** the panicking thread still fails its own work. Only the lock is recovered. The audio path takes no locks at all, so this trait is not for it.
+
+### Services container and MidiHost (typed optional services)
+- **Where:** `openmixer/src/composition.rs` (`Services`, with typed `Option<..>` fields for the library and MIDI services; `Services::midi_host()` returns `Option<&dyn MidiHost>`). `om-ui/src/settings/midi.rs` (the `MidiHost` trait). `openmixer/src/midi.rs` (`MidiService`, which implements `MidiHost`).
+- **Why:** the settings page, the preferences applier and the composition reach a service through one `&self` trait. A typed `Option` shows which services are attached, so there is no string-keyed hook and no second copy of the MIDI control path.
+- **Reuse when:** a settings page or a preference section must drive a service. Add a method to the owning host trait (take `&self` and lock inside the service), and an `Option<Arc<..>>` field in `Services` when the service attaches on demand.
+- **Notes:** methods take `&self` because the MIDI threads share the service. Preference targets must be idempotent, since the applier may push a section twice.
+
 ## Idioms and their Rust equivalents
 
 What the code uses in place of common object-oriented patterns.
@@ -265,9 +304,9 @@ What the code uses in place of common object-oriented patterns.
 - **RAII wrappers around handles:** `Drop` impls on the wrapping struct (for native handles, transactions and threads).
 - **`std::atomic` with explicit memory orders:** `std::sync::atomic` types with the same orderings, used in the same few places.
 - **Templates:** generics with trait bounds.
-- **Seqlock and retry-on-contention snapshots:** planned `arc-swap` immutable snapshots. `LoopState` still uses a seqlock; see "Snapshot publication".
-- **String-id `ParameterRouter` and prefix registry:** still in use. Control ids are strings on the `ParameterTarget` surface, and the typed command enum (see "Command enum") is planned, not built.
+- **Seqlock and retry-on-contention snapshots:** the engine snapshot is a plain copy taken on request (see "Pull-based engine snapshot"). `LoopState` still uses a seqlock; see "Immutable snapshot publication".
+- **String-id `ParameterRouter` and prefix registry:** kept as the string façade for plugins and fixtures. Ids are parsed once into `ParamId` at the control boundary, and `Command` is the typed form (see "Typed control surface").
 - **Pimpl:** a private module inside the crate.
-- **Framework result types and logger:** `Result<T, E>` with `thiserror` enums, and `tracing` for logging.
+- **Framework result types and logger:** `Result<T, E>` with `thiserror` enums per crate (see "Typed error enums"), and `tracing` for logging.
 - **Leak detector macros:** no equivalent needed; ownership makes leaks rare and `assert_no_alloc` covers the audio thread.
 - **Message-thread-only checks and `VBlankAttachment`:** the GPUI frame loop; state that is UI-only lives on the UI thread by construction.

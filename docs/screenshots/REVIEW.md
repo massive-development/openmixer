@@ -1,0 +1,34 @@
+# Screenshot review
+
+Captured with `tools/screenshots.sh` (debug build, X11 on WSLg, llvmpipe-class software GL, 1280x800, `--mock-device`, demo library of 3 generated 2 s sine WAVs, deck A loaded). Looked at by eye on 2026-10-19. The window renders (not blank/black). Scenes: `main-dark`, `main-daylight`, `debug-panel`, `settings-audio`, `settings-appearance`, `settings-midi`, `settings-library`.
+
+## Fixed while capturing
+- Theme was not applied at start-up: `OPENMIXER_THEME` and the saved theme never reached the window (it always used `openmixer.dark`). Now the window starts on the env theme, else the saved one.
+
+## Defects: before and after (second pass, 2026-10-19)
+
+The first review listed 13 defects. A fix pass followed with `tools/screenshots.sh` as the loop (the PNGs here are the "after"). Root cause of 1, 2, 5 and 13: the deck rows and the slider thumbs were children of an already positioned box but were given card-absolute rectangles, so their offset was applied twice and they landed below the card (over the library band) or off the track.
+
+| # | Defect | Status | What changed / why not |
+|---|---|---|---|
+| 1 | Library sidebar overlapped deck A's button row | fixed | Rows now sit inside their deck card; cards clip their content. `main_layout` test: no overlap, all rects inside the window, deck parts inside the card, library band below the decks, at 1280x800, 1024x640, 1920x1080, 900x600. |
+| 2 | Deck buttons detached below the library table | fixed | Same cause and fix as 1. Hotcue pads, loop row and transport are now inside the card. |
+| 3 | Settings overlay hid the window; Appearance page empty | fixed | Scrim is black at the theme's `dimAlpha` (0.55) so the window shows through. Appearance lists each theme with its id and a "current" marker, and its card is shortened to fit. |
+| 4 | Audio "Master output" heading with no options | fixed | With no stereo pairs the two headings are replaced by one note. |
+| 5 | Deck header text overlap | fixed | Title and time on the first line, artist and key/BPM on the second, clipped to the header. |
+| 6 | Knob labels overdrawn / low contrast | fixed | Value fill is translucent (45%) and drawn first; label and readout use the primary text colour above it. Bipolar knobs get a centre line. A narrow knob (debug layout) drops the " dB" unit so it stays on one line. |
+| 7 | Daylight: near-invisible controls | fixed | Daylight tokens: darker border (`#77839B`), dark highlight (playhead, thumb edge), darker muted text and meter colours, `disabledAlpha` 0.85; meter wells get a border. New test: every control edge, fader thumb, disabled label and meter colour is >= 3:1 (daylight) / >= 1.2:1 (dark, visually fine, not tightened). |
+| 8 | Waveform: no grid or cues | partially | Beat and bar lines are drawn in the zoomed view; the demo puts a 120 BPM grid on deck A (header shows "120.0 BPM"). Hotcue markers were already drawn but the demo sets no cues, so none show. The waveform shape is still a flat comb (sine tones). |
+| 9 | Meters stuck at zero | not fixed | Silent mock device: nothing to show. Out of scope. |
+| 10 | Search hint style; empty Artist/Genre/BPM | partially | Hint is dim and italic-styled (the UI font may not render italics, it is only dimmer). Demo WAVs carry artist/genre/title RIFF INFO tags that the ingest reads, so Artist and Genre columns fill. BPM stays "--" in the table: sine tones have no tempo, and the library table only shows analysed BPM. Rating "0" unchanged. |
+| 11 | Debug panel clipping and squeeze | partially | The parameter list scrolls with the wheel and a "scroll the list for more" footer marks the clip; column narrowed 340 to 300 px. Decks and mixer are still narrower than in a normal run. |
+| 12 | Banner / header | fixed | Banner is taller, has padding, primary text colour and a bottom border; the header strip has an "OpenMixer" title and a border. |
+| 13 | Crossfader / cue bars had no handle | fixed | Thumb from `LookAndFeel` fader is drawn on the track (its offset was doubled before, which put it off the bar). |
+
+## Remaining observations
+- Settings Library page: the watch-folder path runs right up to its Remove button.
+- Settings cards other than Appearance keep a fixed 540 px height with some empty space at the bottom.
+- Waveforms are only as detailed as the 2 s sine demo tracks allow.
+
+## Not captured
+Settings Plugins tab; anything with real audio or hardware (never used).

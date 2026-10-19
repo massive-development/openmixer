@@ -18,7 +18,7 @@
     ["10a Plugin API", "done"],
     ["32 MIDI map", "done"],
     ["33 Trace harness", "done"],
-    ["26a Debug panel", "partial"],
+    ["26a Debug panel", "done"],
     ["13a Soak (short)", "done"],
     ["9 Key-lock", "done"],
     ["12 Sync", "done"],
@@ -44,13 +44,17 @@
     ["21 Ingest", "done"],
     ["22 Import", "done"],
     ["23 Search", "done"],
-    ["24 Prep queue", "done"]
+    ["23 FTS5", "done"],
+    ["24 Prep queue", "done"],
+    ["20 Play history", "done"],
+    ["20 Hotcue save-back", "done"],
+    ["21 Artwork", "done"]
    ]
   },
   {
    "name": "5 UI",
    "items": [
-    ["25 Tokens", "todo"],
+    ["25 Tokens", "partial"],
     ["25a Theme loader", "done"],
     ["26 Decks", "partial"],
     ["27 Mixer UI", "partial"],
@@ -71,6 +75,7 @@
   {
    "name": "7 Intelligence",
    "items": [
+    ["F Foundation", "done"],
     ["37 Stem DSP", "todo"],
     ["38 Automix", "todo"],
     ["39 Stem transitions", "todo"],

@@ -11,8 +11,8 @@ use std::rc::Rc;
 use library_common::*;
 use om_library::{PrepStatus, TrackRecord};
 use om_ui::library::{
-    describe_track_drag, parse_track_drag, LibraryBrowser, LibraryEvent, LibraryServices, Options,
-    TrackSource, TrackTableModel, PAGE_SIZE,
+    describe_track_drag, parse_track_drag, LibraryBrowser, LibraryEvent, LibraryServices,
+    LoadError, Options, TrackSource, TrackTableModel, PAGE_SIZE,
 };
 use om_ui::sidebar::{build_sidebar, SidebarKind};
 
@@ -385,7 +385,7 @@ fn load_buttons_and_activation_request_the_right_deck() {
 #[test]
 fn failed_loads_show_the_reason_in_the_status_line() {
     let mut rig = BrowserRig::new();
-    rig.browser.on_load_requested = Some(Box::new(|_, _| Err("file is missing".to_owned())));
+    rig.browser.on_load_requested = Some(Box::new(|_, _| Err(LoadError::FileMissing)));
     rig.browser.select_row(0);
     rig.browser.click_load(0);
     let alpha = rig.row(0);
@@ -483,7 +483,7 @@ fn watch_folders_with_the_same_leaf_name_get_distinct_labels() {
     lib.watch_folders().add("/a/music").unwrap();
     lib.watch_folders().add("/b/music").unwrap();
     lib.watch_folders().add("/c/other").unwrap();
-    let nodes = build_sidebar(lib);
+    let nodes = build_sidebar(lib).nodes;
     let kids = &nodes[2].children;
     assert_eq!(kids.len(), 3);
     assert_ne!(kids[0].label, kids[1].label);
@@ -589,7 +589,7 @@ fn file_library_scans_watch_folders_and_notifies_the_owner() {
         changes > 0
     }));
     assert_eq!(services.library().tracks().count().unwrap(), 1);
-    assert_eq!(build_sidebar(services.library())[2].children.len(), 1);
+    assert_eq!(build_sidebar(services.library()).nodes[2].children.len(), 1);
 }
 
 #[test]
@@ -611,7 +611,7 @@ fn default_options_honour_the_library_db_environment_variable() {
 fn unopenable_database_reports_an_error() {
     let options = Options::for_path("/proc/does/not/exist/library.db");
     let error = LibraryServices::create(options).err();
-    assert!(error.is_some_and(|e| !e.is_empty()));
+    assert!(error.is_some_and(|e| !e.to_string().is_empty()));
 }
 
 #[test]
@@ -644,4 +644,23 @@ fn scan_thread_errors_are_delivered_on_the_owner_thread() {
     assert!(first.1, "delivered on the owner thread");
     assert!(first.0.contains("newer"));
     drop(services);
+}
+
+#[test]
+fn an_unreadable_watch_folder_list_is_shown_in_the_status_line() {
+    let mut rig = BrowserRig::new();
+    rig.services
+        .library()
+        .database()
+        .connection()
+        .execute_batch("ALTER TABLE watch_folders RENAME TO watch_folders_gone;")
+        .unwrap();
+    rig.browser.refresh(&rig.services);
+    assert!(rig.browser.status_is_error(), "{}", rig.browser.status());
+    assert!(
+        rig.browser.status().starts_with("Sidebar unavailable: "),
+        "{}",
+        rig.browser.status()
+    );
+    assert!(rig.browser.sidebar_nodes()[2].children.is_empty());
 }
