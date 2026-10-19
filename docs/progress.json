@@ -40,7 +40,7 @@
   {
    "name": "4 Library",
    "items": [
-    ["20 Schema", "todo"],
+    ["20 Schema", "done"],
     ["21 Ingest", "todo"],
     ["22 Import", "todo"],
     ["23 Search", "todo"],
