@@ -44,7 +44,12 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
 - **`om-ui-gpui`** (own workspace, behind the `gui` feature): GPUI drawing and events over `om-ui` models.
 - **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
 
-Rules: widgets and MIDI send `Command`s and never write engine state; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
+Control paths, and what is live today:
+- **UI (production window):** `DeckBinding::typed` and `MixerBinding::typed` send `Command::Param { id, value }` through the router's `CommandSink`, with no string formatting or parsing. The binding constructors without a sink (`new`) write through the string façade; the widget test rig uses them.
+- **MIDI mappings and plugins:** the string façade, `ParameterTarget::set_parameter(&str, f64)` on the router. It parses the id once there and dispatches typed ids the same way.
+- **Typed entry point:** `Command` and `CommandSink` are used by tests, by automix and by the Wave 7 features. The router's sink accepts only `Command::Param` today; `LoadStems`, `SamplerAssign` and `Automix` return `CommandError::Rejected` until their engine sinks land.
+
+Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
 
 ### How to add a control id
 

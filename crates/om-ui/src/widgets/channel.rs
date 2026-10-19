@@ -101,8 +101,7 @@ impl ChannelStrip {
     }
 
     fn send(&self, p: ChannelParam, value: f64) {
-        self.binding
-            .send(MixerBinding::channel(self.channel, p), value);
+        self.binding.send_channel(self.channel, p, value);
     }
 
     pub fn trim_changed(&mut self, value: f64) -> f64 {
