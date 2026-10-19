@@ -152,7 +152,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 19:** Stems precompute (Demucs ONNX) (partial)
   - Done in `om-stems`: `StemSeparator` trait, `MockSeparator`, JSON model manifest, licence-gated download with size and SHA-256 checks, licence digest remembered
   - Downloads: `file://`, `http://` and `https://` (ureq with rustls; the webpki root bundle is CDLA-Permissive-2.0, allowed in `deny.toml` with a comment). Tests stay offline
-  - ONNX Runtime backend (`ort`) not yet built (open): the mock stands in for it
+  - Wave 7 S1 (partial): stereo `StemSet` and a streamed `StemSeparator` v2 (`separate_to`); the htdemucs pipeline (resample to 44.1 kHz, 7.8 s segments with 25% triangular overlap-add, per-segment normalisation, Rust STFT/iSTFT) over a `StemInference` trait, tested with fakes; `OrtInference` (`ort` 2.0.0-rc.13, feature `onnx`, off by default) passing a toy-ONNX integration test; `tools/export_htdemucs.py` and the licence text
+  - Open: the real htdemucs model has not been exported, loaded or listened to (the exporter and the I/O contract are unverified against Meta's code), the hosted manifest, `StemService` on `WorkerPool` (S2), stem cache and schema (S3), licence dialog (S4)
 
 ## Wave 4: Library & Data
 

@@ -492,3 +492,17 @@ fn file_stereo_source_decodes_a_wav_in_chunks() {
     assert_eq!(total, 1000);
     assert!(last > 0.4, "ramp reached {last}");
 }
+
+#[test]
+fn htdemucs_manifest_carries_the_licence_caveat_and_round_trips() {
+    let m = ModelManifest::htdemucs(
+        "https://example.invalid/htdemucs.onnx",
+        &"AB".repeat(32),
+        123,
+    );
+    assert!(m.license_text.contains("MUSDB18-HQ"));
+    assert!(m.license_text.contains("MIT"));
+    let parsed = ModelManifest::from_json(&m.to_json()).expect("valid");
+    assert_eq!(parsed.sha256, "ab".repeat(32));
+    assert_eq!(parsed.contract_or_default(), ModelContract::htdemucs());
+}
