@@ -1,5 +1,5 @@
 //! Shared helpers for the om-audio test binaries: WAV fixtures in a per-process temp directory,
-//! bounded polling, and level measures matching JUCE's `getMagnitude` / `getRMSLevel`.
+//! bounded polling, and level measures (peak and RMS).
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
@@ -83,12 +83,12 @@ pub fn wait_until(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
     true
 }
 
-/// Largest absolute sample (JUCE `getMagnitude`).
+/// Largest absolute sample.
 pub fn magnitude(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0_f32, |m, s| m.max(s.abs()))
 }
 
-/// Root mean square (JUCE `getRMSLevel`).
+/// Root mean square.
 pub fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;

@@ -1,8 +1,8 @@
 //! Scripted DJ for the soak: moves mixer controls and deck rates, and drives loops, hotcues,
-//! key-lock, FX and seeks. Control thread only. Port of `tools/soak/Scenario.h`.
+//! key-lock, FX and seeks. Control thread only.
 //!
 //! Gapless actions (loop wraps and exits, key-lock on) are not excused from the underrun budget.
-//! Every parameter goes through the router, as the C++ `setParameter` calls do, and a rejected id
+//! Every parameter goes through the router, and a rejected id
 //! fails the run rather than being ignored.
 
 use super::tone::Rng;

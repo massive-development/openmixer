@@ -1,4 +1,4 @@
-//! Port of tests/unit/AudioDeviceTest.cpp: mock device lifecycle, capture, latency instrumentation
+//! Mock device lifecycle, capture, latency instrumentation
 //! and the paced realtime thread. Nothing here opens a real device.
 
 mod common;
