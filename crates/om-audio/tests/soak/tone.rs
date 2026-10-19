@@ -1,8 +1,8 @@
 //! Test-track generation and the soak's random source. Tracks are sine plus light noise, written as 32-bit float WAV: the soak feeds them to the engine
 //! and never to a device.
 
+use om_testing::signals::sine_amp;
 use om_testing::wav::write_float_wav;
-use std::f64::consts::PI;
 use std::path::Path;
 
 /// Deterministic SplitMix64, so a soak run is repeatable (seeded with 1234).
@@ -40,12 +40,11 @@ impl Rng {
 pub fn write_tone(path: &Path, hz: f64, seconds: u32, rate: u32) {
     let frames = rate as usize * seconds as usize;
     let mut noise = Rng::new(7);
+    let tone = sine_amp(hz, 0.4, f64::from(rate), frames);
     let mut samples = Vec::with_capacity(frames * 2);
-    for i in 0..frames {
-        let phase = 2.0 * PI * hz * i as f64 / f64::from(rate);
-        let tone = 0.4 * phase.sin();
+    for t in tone {
         for _ in 0..2 {
-            samples.push((tone + 0.1 * (noise.next_unit() - 0.5)) as f32);
+            samples.push((f64::from(t) + 0.1 * (noise.next_unit() - 0.5)) as f32);
         }
     }
     write_float_wav(path, 2, rate, &samples);
