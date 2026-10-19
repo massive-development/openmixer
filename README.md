@@ -2,6 +2,13 @@
 
 A free, open-source DJ application: Linux first, with Windows and macOS support to follow.
 
+## Screenshots
+
+Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for known visual defects).
+
+- Main window, dark theme: ![Main window, dark](docs/screenshots/main-dark.png)
+- Main window, daylight theme: ![Main window, daylight](docs/screenshots/main-daylight.png)
+
 ## Mission
 
 OpenMixer is a clean-room, legally original implementation of professional DJ software features. Our goal is to provide djay-Pro-class capability—multi-deck mixing, effects, sync, BPM/key analysis, stem separation, Automix, and controller support—without copying any copyrighted expression from existing applications.
