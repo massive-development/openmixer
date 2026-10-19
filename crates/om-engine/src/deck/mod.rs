@@ -21,6 +21,7 @@ use loop_state::LoopSnapshot;
 use om_core::{spsc, ParameterTarget};
 use playback::Playback;
 use shared::Shared;
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::atomic::Ordering::{Relaxed, Release};
 use std::sync::Arc;
@@ -67,9 +68,24 @@ impl Deck {
         let (producer, consumer) = spsc::<f32>(ring_frames.max(1) * 2);
         let shared = Arc::new(Shared::new(prefetch_frames));
         let worker = DecoderWorker::new(Arc::clone(&shared), producer);
+        let failed = Arc::clone(&shared);
         let decoder = std::thread::Builder::new()
             .name("openmixer-deck-decoder".into())
-            .spawn(move || worker.run())
+            .spawn(move || {
+                // A panic must not unwind out of the thread unobserved: the deck records it and
+                // stays silent from then on.
+                let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| worker.run()));
+                if let Err(payload) = outcome {
+                    let message = payload
+                        .downcast_ref::<&str>()
+                        .map(|s| (*s).to_owned())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "unknown panic".to_owned());
+                    tracing::error!(error = %message, "deck decoder thread failed; deck is silenced");
+                    failed.errored.store(true, Release);
+                    failed.playing.store(false, Relaxed);
+                }
+            })
             .expect("spawn deck decoder thread");
         let audio = DeckAudio {
             shared: Arc::clone(&shared),
@@ -230,6 +246,12 @@ impl Deck {
 
     pub fn is_playing(&self) -> bool {
         self.shared.playing.load(Relaxed)
+    }
+
+    /// True once the decoder thread has panicked. The deck then renders silence for good: a new
+    /// `Deck` is needed to play again.
+    pub fn is_errored(&self) -> bool {
+        self.shared.errored.load(Relaxed)
     }
 
     pub fn has_finished(&self) -> bool {
