@@ -281,12 +281,12 @@ fn quantized_loop_bounds_come_from_the_grid() {
     );
     w.engine.set_grid(0, grid(120.0));
     assert!(w.router.set_parameter("deck.0.loop.quantized.2", 1.0));
-    let loop_ = w.engine.deck(0).get_loop();
+    let loop_ = w.engine.deck(0).loop_state();
     assert_eq!(loop_.start, 22_050);
     assert_eq!(loop_.end, 22_050 + 44_100);
 
     assert!(w.router.set_parameter("deck.0.loop.quantized.0.5", 1.0));
-    let loop_ = w.engine.deck(0).get_loop();
+    let loop_ = w.engine.deck(0).loop_state();
     assert_eq!(loop_.end - loop_.start, 11_025, "half-beat loop");
 }
 
@@ -301,7 +301,7 @@ fn quantize_off_starts_the_loop_exactly_at_the_playhead() {
     assert!(w.router.set_parameter("deck.0.quantize", 0.0));
     assert!(!w.engine.deck_control(0).is_quantize());
     assert!(w.router.set_parameter("deck.0.loop.quantized.1", 1.0));
-    assert_eq!(w.engine.deck(0).get_loop().start, 30_000);
+    assert_eq!(w.engine.deck(0).loop_state().start, 30_000);
 
     assert!(w.router.set_parameter("deck.0.quantize", 1.0));
     assert!(w.engine.deck_control(0).is_quantize());

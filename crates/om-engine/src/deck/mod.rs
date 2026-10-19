@@ -159,7 +159,7 @@ impl Deck {
     /// Jumps to `source_frame` (clamped to zero from below) and clears the finished flag. Jumping
     /// outside an active loop exits it.
     pub fn seek(&self, source_frame: i64) {
-        let loop_ = self.get_loop();
+        let loop_ = self.loop_state();
         if self.is_looping() && (source_frame < loop_.start || source_frame >= loop_.end) {
             self.exit_loop();
         }
@@ -213,7 +213,7 @@ impl Deck {
     }
 
     /// Current loop bounds; the default (`0..0`) when none is set.
-    pub fn get_loop(&self) -> Loop {
+    pub fn loop_state(&self) -> Loop {
         let mut snap = LoopSnapshot::default();
         if self.shared.loop_state.load(&mut snap) {
             Loop {

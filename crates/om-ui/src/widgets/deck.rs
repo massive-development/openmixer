@@ -235,7 +235,7 @@ impl ZoomWaveform {
 
     fn snapshot(&self) -> ZoomShown {
         let deck = self.binding.deck();
-        let lp = deck.get_loop();
+        let lp = deck.loop_state();
         ZoomShown {
             position: deck.position_frames(),
             loop_start: lp.start,
@@ -290,7 +290,7 @@ impl ZoomWaveform {
 
     /// Loop span in pixels, when a loop is set.
     pub fn loop_span(&self, view: &View) -> Option<(f64, f64, bool)> {
-        let lp = self.binding.deck().get_loop();
+        let lp = self.binding.deck().loop_state();
         lp.valid().then(|| {
             (
                 view.x_of_frame(lp.start),

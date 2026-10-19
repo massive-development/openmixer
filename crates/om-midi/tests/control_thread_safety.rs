@@ -29,7 +29,7 @@ fn map_reload_while_messages_stream() {
                     + mapper.handle_message(&control_change(1, 8, 1));
                 fired.fetch_add(n, Ordering::Relaxed);
                 v = v.wrapping_add(1);
-                mapper.get_value("a");
+                mapper.value("a");
                 std::thread::sleep(Duration::from_micros(20));
             }
         });

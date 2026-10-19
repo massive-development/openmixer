@@ -47,7 +47,7 @@ impl Fixture {
     fn learn(&self, r: LearnRequest, hex: &str) -> Mapping {
         self.m.arm_learn(r);
         replay_trace(&trace_of(&[hex]), &self.m);
-        self.m.get_bindings().last().cloned().unwrap_or_default()
+        self.m.bindings().last().cloned().unwrap_or_default()
     }
 
     fn replay(&self, hex: &[&str]) -> usize {
@@ -101,7 +101,7 @@ fn note_becomes_button_or_toggle_and_ignores_note_off() {
     f.replay(&["80 24 00"]); // a release alone cannot bind
     assert!(f.m.is_learning());
     f.replay(&["90 24 64"]);
-    let bindings = f.m.get_bindings();
+    let bindings = f.m.bindings();
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].mode, MapMode::Button);
 
@@ -147,7 +147,7 @@ fn offset_encoder_decodes_around_sixty_four() {
     f.replay(&["B0 15 41", "B0 15 42", "B0 15 3F"]); // +1, +2, -1 steps of 0.5
                                                      // The learned initial is 0 (the request default), so the three steps leave 0 + 0.5 + 1.0 - 0.5.
                                                      // (The expression assumed an initial of -48 and was looser than the arithmetic by 0.5.)
-    assert_near(f.m.get_value("mixer.ch0.eq.low"), 1.0);
+    assert_near(f.m.value("mixer.ch0.eq.low"), 1.0);
     let changes = f.t.changes();
     assert_eq!(changes.len(), 3);
     assert_near(changes[1].value - changes[0].value, 1.0);
@@ -197,7 +197,7 @@ fn fourteen_bit_accepts_the_lsb_first_and_refuses_out_of_range_controllers() {
     f.replay(&["B0 40 10"]); // cc 64 has no pair
     assert!(f.m.is_learning());
     f.replay(&["B0 22 10"]); // LSB of cc 2
-    let bindings = f.m.get_bindings();
+    let bindings = f.m.bindings();
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].number, 2);
 }
@@ -209,7 +209,7 @@ fn relearn_replaces_the_previous_bindings_of_target_and_control() {
     f.learn(LearnRequest::new("b"), "B0 08 00");
     f.learn(LearnRequest::new("a"), "B0 09 00"); // a moves to cc 9
     f.learn(LearnRequest::new("c"), "B0 08 00"); // cc 8 now drives c, not b
-    let list = f.m.get_bindings();
+    let list = f.m.bindings();
     assert_eq!(list.len(), 2);
     assert_eq!(list[0].target, "a");
     assert_eq!(list[0].number, 9);
@@ -309,8 +309,8 @@ fn save_load_round_trip_keeps_everything_at_schema_v2() {
     let loaded = MidiMapper::new();
     loaded.load_from_file(&file).unwrap();
     assert_eq!(loaded.name(), "Round trip");
-    assert_eq!(loaded.get_bindings(), f.m.get_bindings());
-    assert_eq!(loaded.get_outputs(), outputs);
+    assert_eq!(loaded.bindings(), f.m.bindings());
+    assert_eq!(loaded.outputs(), outputs);
     assert_eq!(loaded.to_json(), f.m.to_json());
 }
 
