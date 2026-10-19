@@ -512,11 +512,18 @@ fn compiled_count_and_page_args_are_bound_in_order() {
 // ---- free text over the FTS5 index ----
 
 /// A library in a temporary file, with the given `(title, artist, genre)` rows.
-fn library_with(rows: &[(&str, &str, &str)], migrations: &[om_library::Migration]) -> (TempDir, Library) {
+fn library_with(
+    rows: &[(&str, &str, &str)],
+    migrations: &[om_library::Migration],
+) -> (TempDir, Library) {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("library.db");
-    let lib = Library::open(path.to_str().expect("utf-8 path"), OpenMode::ReadWrite, migrations)
-        .expect("open library");
+    let lib = Library::open(
+        path.to_str().expect("utf-8 path"),
+        OpenMode::ReadWrite,
+        migrations,
+    )
+    .expect("open library");
     for (i, (title, artist, genre)) in rows.iter().enumerate() {
         let track = TrackRecord {
             path: format!("/f/{i}.wav"),
@@ -544,16 +551,33 @@ fn titles_of(engine: &SearchEngine<&om_library::Database>, q: &str) -> Vec<Strin
 #[test]
 fn free_text_folds_diacritics_and_matches_token_prefixes() {
     let (_dir, lib) = library_with(
-        &[("Émile Hymne", "Daft", "House"), ("Love Song", "Moby", "Techno")],
+        &[
+            ("Émile Hymne", "Daft", "House"),
+            ("Love Song", "Moby", "Techno"),
+        ],
         core_migrations(),
     );
     let engine = SearchEngine::new(lib.database());
-    assert!(engine.capabilities.fts5, "a fresh library has the FTS5 index");
+    assert!(
+        engine.capabilities.fts5,
+        "a fresh library has the FTS5 index"
+    );
     assert_eq!(titles_of(&engine, "emile"), ["Émile Hymne"]);
     assert_eq!(titles_of(&engine, "ÉMILE"), ["Émile Hymne"]);
-    assert_eq!(titles_of(&engine, "hym"), ["Émile Hymne"], "a prefix of a token");
-    assert!(titles_of(&engine, "ymne").is_empty(), "a token suffix is not a match");
-    assert_eq!(titles_of(&engine, "love mo"), ["Love Song"], "each term may match any column");
+    assert_eq!(
+        titles_of(&engine, "hym"),
+        ["Émile Hymne"],
+        "a prefix of a token"
+    );
+    assert!(
+        titles_of(&engine, "ymne").is_empty(),
+        "a token suffix is not a match"
+    );
+    assert_eq!(
+        titles_of(&engine, "love mo"),
+        ["Love Song"],
+        "each term may match any column"
+    );
 }
 
 #[test]
@@ -569,21 +593,52 @@ fn quoted_phrase_matches_adjacent_tokens_only() {
     let engine = SearchEngine::new(lib.database());
     assert_eq!(titles_of(&engine, "\"deep house\""), ["A"]);
     assert_eq!(titles_of(&engine, "deep"), ["A", "B", "C"]);
-    assert_eq!(titles_of(&engine, "house deep"), ["A", "B", "C"], "separate terms AND together");
+    assert_eq!(
+        titles_of(&engine, "house deep"),
+        ["A", "B", "C"],
+        "separate terms AND together"
+    );
     assert_eq!(titles_of(&engine, "-deep"), Vec::<String>::new());
 }
 
 #[test]
 fn hostile_free_text_is_plain_text_and_never_errors() {
     let (_dir, lib) = library_with(
-        &[("House Mix", "NEAR Band", "Ambient"), ("Plain", "Quiet", "Ambient")],
+        &[
+            ("House Mix", "NEAR Band", "Ambient"),
+            ("Plain", "Quiet", "Ambient"),
+        ],
         core_migrations(),
     );
     let engine = SearchEngine::new(lib.database());
     let hostile = [
-        "\"", "\"\"", "\"unbalanced", "*", "**", "^", "NEAR", "NEAR(", "NEAR/2", "OR", "AND",
-        "NOT", "a OR b", ")(", "()", "x)(y", "%", "_", "\\", "'; DROP TABLE tracks; --",
-        "\"x\" * NEAR OR \"", "title:\"", "-", "-\"", "{a}", "+x", ":",
+        "\"",
+        "\"\"",
+        "\"unbalanced",
+        "*",
+        "**",
+        "^",
+        "NEAR",
+        "NEAR(",
+        "NEAR/2",
+        "OR",
+        "AND",
+        "NOT",
+        "a OR b",
+        ")(",
+        "()",
+        "x)(y",
+        "%",
+        "_",
+        "\\",
+        "'; DROP TABLE tracks; --",
+        "\"x\" * NEAR OR \"",
+        "title:\"",
+        "-",
+        "-\"",
+        "{a}",
+        "+x",
+        ":",
     ];
     for h in hostile {
         engine
@@ -604,7 +659,11 @@ fn hostile_free_text_is_plain_text_and_never_errors() {
 fn index_follows_insert_update_and_delete_and_rescan() {
     let (_dir, lib) = library_with(&[("Alpha", "Daft", "House")], core_migrations());
     let tracks = lib.tracks();
-    let id = tracks.find_by_path("/f/0.wav").expect("find").expect("row").id;
+    let id = tracks
+        .find_by_path("/f/0.wav")
+        .expect("find")
+        .expect("row")
+        .id;
     {
         let engine = SearchEngine::new(lib.database());
         assert_eq!(titles_of(&engine, "alpha"), ["Alpha"]);
@@ -660,13 +719,21 @@ fn free_text_falls_back_to_like_when_the_fts_index_is_missing_at_run_time() {
         .exec("DROP TABLE tracks_fts;")
         .expect("drop index");
     assert_eq!(titles_of(&engine, "moby"), ["Alpha"]);
-    assert_eq!(titles_of(&engine, "echno"), ["Bravo"], "LIKE substring again");
+    assert_eq!(
+        titles_of(&engine, "echno"),
+        ["Bravo"],
+        "LIKE substring again"
+    );
 }
 
 #[test]
 fn free_text_uses_like_when_fts5_is_disabled_and_both_paths_agree() {
     let (_dir, lib) = library_with(
-        &[("Alpha", "Moby", "House"), ("Bravo", "Daft", "Techno"), ("Charlie", "Moby", "House")],
+        &[
+            ("Alpha", "Moby", "House"),
+            ("Bravo", "Daft", "Techno"),
+            ("Charlie", "Moby", "House"),
+        ],
         core_migrations(),
     );
     let fts = SearchEngine::new(lib.database());
@@ -697,16 +764,26 @@ fn library_without_the_index_detects_no_fts5_and_searches_with_like() {
     }
     let lib = Library::open(path, OpenMode::ReadWrite, core_migrations()).expect("upgrade");
     let v6 = Library::open(path, OpenMode::ReadOnly, core_migrations()).expect("read-only");
-    assert!(LibraryCapabilities::detect(v6.database()).fts5, "read-only sees the migrated index");
+    assert!(
+        LibraryCapabilities::detect(v6.database()).fts5,
+        "read-only sees the migrated index"
+    );
     let engine = SearchEngine::new(lib.database());
-    assert!(titles_of(&engine, "oby").is_empty(), "token prefix, not substring");
+    assert!(
+        titles_of(&engine, "oby").is_empty(),
+        "token prefix, not substring"
+    );
     assert_eq!(titles_of(&engine, "moby"), ["Moby Dick"]);
 
     let (_d2, old) = {
         let d = TempDir::new().expect("temp dir");
         let p = d.path().join("old.db");
-        let l = Library::open(p.to_str().expect("path"), OpenMode::ReadWrite, &core_migrations()[..6])
-            .expect("v6");
+        let l = Library::open(
+            p.to_str().expect("path"),
+            OpenMode::ReadWrite,
+            &core_migrations()[..6],
+        )
+        .expect("v6");
         l.tracks()
             .insert(&TrackRecord {
                 path: "/old.wav".into(),
@@ -716,9 +793,16 @@ fn library_without_the_index_detects_no_fts5_and_searches_with_like() {
             .expect("insert");
         (d, l)
     };
-    assert!(!LibraryCapabilities::detect(old.database()).fts5, "no tracks_fts table");
+    assert!(
+        !LibraryCapabilities::detect(old.database()).fts5,
+        "no tracks_fts table"
+    );
     let old_engine = SearchEngine::new(old.database());
-    assert_eq!(titles_of(&old_engine, "oby"), ["Moby Dick"], "LIKE substring");
+    assert_eq!(
+        titles_of(&old_engine, "oby"),
+        ["Moby Dick"],
+        "LIKE substring"
+    );
 }
 
 #[test]
@@ -754,5 +838,10 @@ fn free_text_on_twenty_thousand_tracks_answers_quickly() {
         "free-text search took {elapsed:?} over 20k tracks"
     );
     // Artist 7, 307, ... : 67 of the 20 000 rows.
-    assert_eq!(engine.count(&engine.parse("artist:\"=Artist 7\"").query).expect("count"), 67);
+    assert_eq!(
+        engine
+            .count(&engine.parse("artist:\"=Artist 7\"").query)
+            .expect("count"),
+        67
+    );
 }

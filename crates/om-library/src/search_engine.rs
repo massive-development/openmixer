@@ -96,10 +96,7 @@ impl<D: Borrow<Database>> SearchEngine<D> {
         let compiled = compile_search(query, &self.fields, &ctx)?;
         match exec(&compiled) {
             Err(e) if ctx.fts5 && is_missing_fts(&e) => {
-                let ctx = CompileContext {
-                    fts5: false,
-                    ..ctx
-                };
+                let ctx = CompileContext { fts5: false, ..ctx };
                 exec(&compile_search(query, &self.fields, &ctx)?)
             }
             result => result,
