@@ -15,7 +15,7 @@
     ["7 Device layer", "done"],
     ["8 Deck", "done"],
     ["10 Mixer", "done"],
-    ["10a Plugin API", "todo"],
+    ["10a Plugin API", "done"],
     ["32 MIDI map", "done"],
     ["33 Trace harness", "done"],
     ["26a Debug panel", "partial"],
@@ -34,7 +34,7 @@
     ["16 Key", "done"],
     ["17 Waveform", "done"],
     ["18 Structure", "done"],
-    ["19 Stems", "todo"]
+    ["19 Stems", "partial"]
    ]
   },
   {

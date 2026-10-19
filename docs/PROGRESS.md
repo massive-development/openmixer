@@ -55,7 +55,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 7 Audio device layer | Device abstraction over `cpal` with latency/xrun instrumentation and a headless mock device for CI | — | All |
 | 8 Deck engine | Streaming decode (`symphonia`), lock-free buffer, play/pause/seek/rate | — | All |
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | — | All |
-| 10a Plugin API | Versioned plugin interfaces, runtime loader, registry; hooks for audio pre/post-processing, FX, MIDI maps. Deferred; CLAP-first if needed | — | All |
+| 10a Plugin API | In-process plugin API (`om-plugins`): plugin and host traits; registry with the id, prefix and collision rules and unload order; stage catalog over the engine insert chains; MIDI maps, parameter targets and themes installed through the composition; plugins settings page model; example plugin (`examples/plugins/gain-plugin`) | Shared-library loading (open decision, see `docs/spikes/DECISIONS.md`); the window's Plugins page still shows the placeholder text |
 | 32 MIDI input + mapping | `midir` input → JSON map → engine parameters | Event, map JSON with typed feedback rules, mapper with hot reload, learn, trace replay, LED feedback, MIDI input and output routing over a device backend (ALSA sequencer on Linux, mock for tests), wired into the composition (`om-midi`, `openmixer::midi`) | midir backend for macOS and Windows (plugs in behind `system_backend`); the window's MIDI settings page does not call the learn and map controls yet (Todo 36 and the GPUI page) |
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | Trace read/write and replay through the mapper (`om-midi`) | — |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | — | All; removed once Todo 28 lands |
@@ -78,7 +78,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 16 Key detection | Chroma-based key with Camelot mapping and harmonic compatibility; synthetic cadences in 8 keys detected | All; tuning-offset estimation (assumes A440); key changes within a track |
 | 17 Waveform model | Multi-resolution overview and zoom data; low/mid/high band data for colouring; coarser levels rebuilt on load | All; stereo/per-stem waveforms; rendering (Wave 5); progressive results while analysing |
 | 18 Structure features | Onset picking, energy curve, section boundaries with intro/main/breakdown/outro labels, mix-in/out points (feeds Automix) | All; bar-aligned boundaries; timbre/repetition features; real-music evaluation |
-| 19 Stems precompute | Demucs-class separation via ONNX Runtime, weights downloaded on first use with the licence shown, SHA-256 verified | All; ONNX Runtime backend (`ort`); model export and hosted manifest; chunked overlap-add inference; stem storage keyed by content hash and separator version; UI licence dialog |
+| 19 Stems precompute | Partial (`om-stems`): separator trait, mock separator, JSON model manifest, licence-gated download of `file://` and plain `http://` URLs, SHA-256 and size verified, licence digest remembered | ONNX Runtime backend (`ort`); HTTPS downloads (a TLS backend needs a licence decision); model export and hosted manifest; chunked overlap-add inference; stem storage keyed by content hash and separator version; UI licence dialog |
 
 ---
 
