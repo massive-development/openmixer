@@ -1,12 +1,11 @@
 //! Builds [`WaveformData`] from a clip: splits it into three bands with biquad crossovers, then
 //! reduces blocks of `samples_per_point` samples to one point. Stateless and thread-safe.
-//! [`WaveformAnalyzer`] wraps it for the job service (id "waveform"). Port of
-//! `src/analysis/WaveformBuilder.{h,cpp}`.
+//! [`WaveformAnalyzer`] wraps it for the job service (id "waveform").
 
 use crate::{AnalysisContext, Analyzer, AudioClip, WaveformData, WaveformLevel, WaveformPoint};
 use om_dsp::{design_high_pass, design_low_pass, Biquad, BiquadCoeffs};
 
-// C++ literal, kept verbatim so the crossover coefficients match the C++ build.
+// Literal kept verbatim so the crossover coefficients stay bit-identical.
 #[allow(clippy::approx_constant)]
 const BUTTERWORTH_Q: f32 = 0.7071;
 

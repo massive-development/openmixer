@@ -1,6 +1,6 @@
 //! Data-driven arrangement of the main window: rows of cells, each a deck or a named slot (mixer,
 //! library, or anything a plugin registers). Pure geometry, so adding decks later is a data change.
-//! Port of `src/ui/MainLayout.cpp`. JSON form:
+//! JSON form:
 //!
 //! ```json
 //! {"rows":[{"height":0.66,"cells":[{"deck":0},{"slot":"mixer","weight":0.4},{"deck":1}]},
@@ -249,7 +249,7 @@ fn cell_json(cell: &CellSpec) -> Value {
 }
 
 /// Splits `length` by weights with `gap` between parts. The last part absorbs rounding. Returns
-/// `(position, size)` per part. Single precision, as the C++ layout.
+/// `(position, size)` per part. Single precision.
 fn split(length: i32, weights: &[f32], gap: i32) -> Vec<(i32, i32)> {
     let total: f32 = weights.iter().sum();
     let n = weights.len();

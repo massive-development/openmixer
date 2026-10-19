@@ -1,5 +1,5 @@
-//! Port of tests/unit/LibraryIngestTest.cpp, IngestTest group, plus WatchFolderDaoTest and
-//! LibraryMigrationV2Test (watch folders and the file-state cascade).
+//! Ingest tests, plus the watch folder DAO and migration v2 cases
+//! (watch folders and the file-state cascade).
 
 mod common;
 
@@ -138,7 +138,7 @@ fn vanished_file_is_marked_missing_and_restored_when_it_returns() {
     let id = f.id_of(&gone);
     f.lib.tracks().set_rating(id, 4).unwrap();
 
-    // Outside the scanned folder, as the C++ getSiblingFile places it.
+    // Outside the scanned folder.
     let backup = f.tmp.path().parent().unwrap().join(format!(
         "om_backup_{}.wav",
         f.tmp.path().file_name().unwrap().to_string_lossy()

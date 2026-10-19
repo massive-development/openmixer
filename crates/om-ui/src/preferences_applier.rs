@@ -1,10 +1,10 @@
 //! Pushes preferences into the subsystems that consume them, at start-up and on every change.
-//! Port of `src/ui/PreferencesApplier.cpp`. Subsystems sit behind [`PreferencesTargets`], so tests use
+//! Subsystems sit behind [`PreferencesTargets`], so tests use
 //! mocks and the app supplies the real glue (`openmixer::app_targets`). Only sections that differ
 //! from the last apply are pushed, in dependency order: plugins (they may provide themes), theme,
 //! audio, MIDI. Targets must be idempotent.
 //!
-//! Difference from the C++ class: the targets are passed to [`PreferencesApplier::apply`] instead of
+//! The targets are passed to [`PreferencesApplier::apply`] instead of
 //! being held by the applier, so the owner keeps one `&mut` to the targets.
 
 use crate::preferences::{AudioPrefs, MidiPrefs, Preferences};

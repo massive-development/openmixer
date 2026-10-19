@@ -1,6 +1,5 @@
 //! Global key estimation: clip chroma correlated against 24 rotated key templates (12 major, 12
 //! minor). Stateless and thread-safe. [`KeyAnalyzer`] wraps it for the job service (id "key").
-//! Port of `src/analysis/KeyEstimator.{h,cpp}`.
 
 use crate::chromagram::{compute_chroma, Chroma, ChromaOptions};
 use crate::musical_key::MusicalKey;
@@ -90,7 +89,7 @@ impl KeyResult {
     }
 }
 
-/// Mirrors JUCE's `static_cast<bool>(var)`: true, or a non-zero number.
+/// Truthy values: true, or a non-zero number.
 fn truthy(v: Option<&Value>) -> bool {
     match v {
         Some(Value::Bool(b)) => *b,

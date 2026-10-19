@@ -1,16 +1,18 @@
-//! Port of tests/unit/DeckLoopTest.cpp: gapless loop wrap, loop exit, long loops past the prefetch
-//! slot, resizing, seeking out of a loop and hotcues. Same numbers and tolerances as the C++.
+//! Gapless loop wrap, loop exit, long loops past the prefetch
+//! slot, resizing, seeking out of a loop and hotcues. Same numbers and tolerances as the original suite.
 
-use super::tests::{pump_until_buffered, wait_for, write_ramp, Fixture, FRAMES, RATE};
-use super::{Deck, DeckAudio};
+use super::{pump_until_buffered, write_ramp, FRAMES, RATE};
+use crate::deck::{Deck, DeckAudio};
 use crate::quantizer::Loop;
 use om_core::ParameterTarget;
+use om_testing::fs::TempDir;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 use std::path::PathBuf;
 use std::time::Duration;
 
 /// Loads the ramp fixture and pumps the decoder until 4096 frames sit in the ring at frame 0.
-fn start_at_zero(fixture: &Fixture) -> (Deck, DeckAudio, PathBuf) {
-    let wav = fixture.path("ramp.wav");
+fn start_at_zero(fixture: &TempDir) -> (Deck, DeckAudio, PathBuf) {
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, mut audio) = Deck::new(1 << 16);
     audio.prepare(RATE, 64);
@@ -57,8 +59,8 @@ fn expect_sequence(got: &[i64], expected: impl Fn(i64) -> i64, count: usize) {
 
 #[test]
 fn set_loop_validates_and_reports_state() {
-    let fixture = Fixture::new();
-    let wav = fixture.path("ramp.wav");
+    let fixture = TempDir::new("om_engine");
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, _audio) = Deck::new(1 << 16);
     deck.load(&wav).unwrap();
@@ -71,32 +73,30 @@ fn set_loop_validates_and_reports_state() {
         start: 100,
         end: FRAMES + 500
     }));
-    assert_eq!(deck.get_loop().end, FRAMES, "clamped to the track");
+    assert_eq!(deck.loop_state().end, FRAMES, "clamped to the track");
     assert!(deck.is_looping());
     deck.exit_loop();
     assert!(!deck.is_looping());
-    assert!(deck.get_loop().valid());
+    assert!(deck.loop_state().valid());
     deck.reloop();
     assert!(deck.is_looping());
     deck.load(&wav).unwrap();
     assert!(
-        !deck.get_loop().valid(),
+        !deck.loop_state().valid(),
         "a new track starts without a loop"
     );
 }
 
 #[test]
 fn loop_wraps_sample_accurate_without_underruns() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = start_at_zero(&fixture);
     assert!(deck.set_loop(Loop {
         start: 1000,
         end: 1500
     }));
-    assert!(wait_for(
-        || deck.is_loop_prefetched(),
-        Duration::from_secs(10)
-    ));
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || deck
+        .is_loop_prefetched()));
     deck.play();
     let got = render_indices(&mut audio, 60, |_| {});
     expect_sequence(
@@ -109,8 +109,8 @@ fn loop_wraps_sample_accurate_without_underruns() {
 
 #[test]
 fn loop_longer_than_the_prefetch_slot_falls_back_to_the_ring() {
-    let fixture = Fixture::new();
-    let wav = fixture.path("ramp.wav");
+    let fixture = TempDir::new("om_engine");
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, mut audio) = Deck::with_prefetch(1 << 16, 2048);
     audio.prepare(RATE, 64);
@@ -120,10 +120,8 @@ fn loop_longer_than_the_prefetch_slot_falls_back_to_the_ring() {
         start: 1000,
         end: 9000
     }));
-    assert!(wait_for(
-        || deck.is_loop_prefetched(),
-        Duration::from_secs(10)
-    ));
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || deck
+        .is_loop_prefetched()));
     deck.play();
     let got = render_indices(&mut audio, 400, |_| {});
     expect_sequence(
@@ -142,16 +140,14 @@ fn loop_longer_than_the_prefetch_slot_falls_back_to_the_ring() {
 
 #[test]
 fn exiting_a_loop_continues_linearly() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = start_at_zero(&fixture);
     assert!(deck.set_loop(Loop {
         start: 1000,
         end: 1500
     }));
-    assert!(wait_for(
-        || deck.is_loop_prefetched(),
-        Duration::from_secs(10)
-    ));
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || deck
+        .is_loop_prefetched()));
     deck.play();
     let got = render_indices(&mut audio, 120, |block| {
         if block == 40 {
@@ -182,8 +178,8 @@ fn exiting_a_loop_continues_linearly() {
 
 #[test]
 fn hotcue_parameters_set_jump_and_clear() {
-    let fixture = Fixture::new();
-    let wav = fixture.path("ramp.wav");
+    let fixture = TempDir::new("om_engine");
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, _audio) = Deck::new(1 << 16);
     deck.load(&wav).unwrap();
@@ -204,8 +200,8 @@ fn hotcue_parameters_set_jump_and_clear() {
 
 #[test]
 fn seeking_outside_a_loop_exits_it() {
-    let fixture = Fixture::new();
-    let wav = fixture.path("ramp.wav");
+    let fixture = TempDir::new("om_engine");
+    let wav = fixture.file("ramp.wav");
     write_ramp(&wav, 2);
     let (deck, _audio) = Deck::new(1 << 16);
     deck.load(&wav).unwrap();
@@ -221,19 +217,16 @@ fn seeking_outside_a_loop_exits_it() {
 
 #[test]
 fn hotcue_jump_repositions_playback() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = start_at_zero(&fixture);
     deck.set_hotcue(0, 12_000);
     deck.trigger_hotcue(0);
     let mut l = [0.0_f32; 64];
     let mut r = [0.0_f32; 64];
-    assert!(wait_for(
-        || {
-            audio.render_stereo(&mut l, &mut r);
-            deck.position_frames() == 12_000 && deck.buffered_frames() > 256
-        },
-        Duration::from_secs(10)
-    ));
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
+        audio.render_stereo(&mut l, &mut r);
+        deck.position_frames() == 12_000 && deck.buffered_frames() > 256
+    }));
     deck.play();
     audio.render_stereo(&mut l, &mut r);
     assert_eq!(frame_index(l[0]), 12_000);
@@ -241,16 +234,14 @@ fn hotcue_jump_repositions_playback() {
 
 #[test]
 fn resizing_a_loop_while_looping_stays_continuous() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _) = start_at_zero(&fixture);
     assert!(deck.set_loop(Loop {
         start: 1000,
         end: 1800
     }));
-    assert!(wait_for(
-        || deck.is_loop_prefetched(),
-        Duration::from_secs(10)
-    ));
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || deck
+        .is_loop_prefetched()));
     deck.play();
     let got = render_indices(&mut audio, 100, |block| {
         if block == 50 {
@@ -285,8 +276,8 @@ fn toggling_the_loop_never_reverts_newer_bounds() {
         Ordering::{Acquire, Release},
     };
     use std::sync::Arc;
-    let fixture = crate::deck::tests::Fixture::new();
-    let wav = fixture.path("toggle.wav");
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("toggle.wav");
     crate::deck::tests::write_ramp(&wav, 2);
     let (deck, _audio) = Deck::new(1 << 12);
     deck.load(&wav).expect("fixture loads");
@@ -316,7 +307,7 @@ fn toggling_the_loop_never_reverts_newer_bounds() {
         done.store(true, Release);
         toggler.join().expect("toggler");
         assert_eq!(
-            deck.get_loop().start,
+            deck.loop_state().start,
             start_of(SETS - 1),
             "a toggle reverted the bounds"
         );

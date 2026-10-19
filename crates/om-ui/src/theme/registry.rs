@@ -1,8 +1,7 @@
 //! Theme registry: built-in, plugin-provided and user themes, with precedence and live switching.
-//! Port of `src/ui/ThemeRegistry.cpp`.
 //!
 //! Precedence for one id: User > Plugin > BuiltIn; within a source the latest add wins. Selecting a
-//! theme makes it the current theme. The C++ global `theme::current()` and its listener list are
+//! theme makes it the current theme. Global current-theme state and its listener list are
 //! replaced by an owned registry (one per app) and a [`ThemeRegistry::generation`] counter that
 //! the UI compares to notice a change.
 
@@ -239,7 +238,7 @@ fn json_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Default user theme directory, matching JUCE's `userApplicationDataDirectory` on Linux
+/// Default user theme directory, under the user application data directory on Linux
 /// (`$HOME/.config`) plus `OpenMixer/themes`. `None` when `HOME` is unset.
 pub fn default_user_directory(home: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
     home.map(|h| {

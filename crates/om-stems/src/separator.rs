@@ -1,5 +1,5 @@
 //! Stem separation extension point. A separator turns one clip into named stems (same length and rate
-//! as the input). Port of `src/stems/StemSeparator.cpp`. Backends (the planned Demucs ONNX one, or
+//! as the input). Backends (the planned Demucs ONNX one, or
 //! plugins) implement [`StemSeparator`]. Calls may run on analysis worker threads, so implementations
 //! are `Send + Sync`.
 

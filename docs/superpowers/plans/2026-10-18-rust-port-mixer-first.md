@@ -1,4 +1,6 @@
-# Rust Port, Mixer First — Implementation Plan
+# Rust Port, Mixer First — Implementation Plan (historical)
+
+> Historical record from the move to Rust (2026-10-18). Not maintained: current status is in `TODO.md` and `docs/PROGRESS.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Lean mode (user directive): the goal is a working mixer, not process. Gate per task = ported tests + `cargo fmt/clippy -D warnings/test --workspace` + CI; one review per phase, not per task.
 

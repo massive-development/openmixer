@@ -1,7 +1,7 @@
 //! Scans a folder tree for audio files and keeps the tracks table in step with it: new files are
 //! added, changed files (mtime or size) re-read, unchanged files skipped, vanished files flagged
 //! missing (rows and user data are kept, so a returning file restores its rating and cues).
-//! Port of `src/library/Ingestor.*`. Runs on the thread that owns the `Library` it is given.
+//! Runs on the thread that owns the `Library` it is given.
 
 use crate::database::Transaction;
 use crate::error::{LibraryError, Result};
@@ -85,7 +85,7 @@ impl<'a> Ingestor<'a> {
         let mut pending: Vec<PathBuf> = vec![base.clone()];
         while let Some(dir) = pending.pop() {
             let Ok(entries) = fs::read_dir(&dir) else {
-                continue; // unreadable subfolder: skipped, as the C++ iterator does
+                continue; // unreadable subfolder: skipped
             };
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -245,7 +245,7 @@ fn folder_prefix(folder: &Path) -> String {
 fn stamp_of(file: &Path) -> Option<FileStamp> {
     let meta = fs::metadata(file).ok()?;
     Some(FileStamp {
-        // why: a missing modification time counts as 0, as in the C++ ingest
+        // why: a missing modification time counts as 0
         mtime_ms: meta.modified().map_or(0, system_time_ms),
         size_bytes: i64::try_from(meta.len()).unwrap_or(i64::MAX),
     })

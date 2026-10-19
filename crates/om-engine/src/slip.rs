@@ -1,6 +1,5 @@
 //! Slip mode bookkeeping: while a loop, scratch or hold runs, a ghost playhead keeps moving at the
 //! underlying speed so playback can resume where the track would have been. Control thread only.
-//! Port of `src/engine/SlipTracker.h`.
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct SlipTracker {

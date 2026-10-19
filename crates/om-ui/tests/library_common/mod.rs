@@ -1,10 +1,13 @@
 //! Shared fixtures for the library UI tests: services over an in-memory library with instant fake
-//! analysers, seeded tracks, real WAV files and a pump helper. Port of `tests/unit/LibraryUiTestUtil.h`.
+//! analysers, seeded tracks, real WAV files and a pump helper.
 #![allow(dead_code)]
 
+use om_testing::signals::sine_amp;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use om_testing::wav::write_pcm16_wav;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use om_analysis::{
     AnalysisContext, Analyzer, AnalyzerRegistry, AudioClip, BeatGridModel, BpmResult, KeyResult,
@@ -187,33 +190,19 @@ pub fn seed_four(lib: &Library) -> Vec<i64> {
     ]
 }
 
-/// A 16-bit mono WAV with a sine tone, written under `path`'s parent directory as needed.
+/// A 16-bit mono WAV with a sine tone at half scale, written under `path`'s parent directory as
+/// needed.
 pub fn write_wav(path: &Path, seconds: f64, freq: f32) -> PathBuf {
     const RATE: u32 = 44_100;
-    let frames = (seconds * f64::from(RATE)) as u32;
-    let data_len = frames * 2;
-    let mut out = Vec::with_capacity(44 + data_len as usize);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // mono
-    out.extend_from_slice(&RATE.to_le_bytes());
-    out.extend_from_slice(&(RATE * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    for i in 0..frames {
-        let t = i as f32 / RATE as f32;
-        let v = (std::f32::consts::TAU * freq * t).sin() * 0.5 * 32767.0;
-        out.extend_from_slice(&(v as i16).to_le_bytes());
-    }
+    let frames = (seconds * f64::from(RATE)) as usize;
+    let pcm: Vec<i16> = sine_amp(f64::from(freq), 0.5, f64::from(RATE), frames)
+        .into_iter()
+        .map(|s| (s * 32767.0) as i16)
+        .collect();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("create test folder");
     }
-    std::fs::write(path, out).expect("write wav");
+    write_pcm16_wav(path, 1, RATE, &pcm);
     path.to_path_buf()
 }
 
@@ -222,13 +211,8 @@ pub fn pump_until(
     services: &mut LibraryServices,
     mut done: impl FnMut(&LibraryServices) -> bool,
 ) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while Instant::now() < deadline {
+    wait_until(Duration::from_secs(8), DEFAULT_POLL, || {
         services.pump();
-        if done(services) {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    false
+        done(services)
+    })
 }

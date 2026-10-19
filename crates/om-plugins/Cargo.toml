@@ -11,11 +11,11 @@ publish = false
 workspace = true
 
 [dependencies]
-om-core = { path = "../om-core" }
-om-engine = { path = "../om-engine" }
-om-midi = { path = "../om-midi" }
-serde_json = "1"
-thiserror = "2"
+om-core.workspace = true
+om-engine.workspace = true
+om-midi.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true

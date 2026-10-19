@@ -170,7 +170,7 @@ mod tests {
     use super::*;
     use crate::grid::FixedTempoGrid;
 
-    /// Port of FxTest `FxRack.TempoFromIdAndBeatGrid`.
+    /// Tempo from an id and a beat grid.
     #[test]
     fn tempo_from_id_and_beat_grid() {
         let rack = FxRack::default();

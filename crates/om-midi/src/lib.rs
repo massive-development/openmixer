@@ -24,7 +24,8 @@ mod output_rule;
 mod trace;
 mod writer;
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use om_core::sync::LockExt;
+use std::sync::{Mutex, MutexGuard};
 
 #[cfg(target_os = "linux")]
 pub use alsa_backend::AlsaBackend;
@@ -49,5 +50,5 @@ pub use trace::{parse_hex, replay_trace, MidiTrace, TimedMidi};
 /// Locks a control-thread mutex, recovering from poisoning: every guarded value here is left
 /// consistent by each critical section, so a panicked holder never leaves a half-written state.
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_unpoisoned()
 }

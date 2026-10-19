@@ -1,15 +1,16 @@
-//! Port of tests/unit/TrackLoaderTest.cpp: load-to-deck, metadata, cached or queued analysis. The
-//! header labels the C++ test reads are checked through the loader's track info, which the deck
+//! Load-to-deck, metadata, cached or queued analysis. The
+//! header labels are checked through the loader's track info, which the deck
 //! widget reads.
 
 mod library_common;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use library_common::*;
 use om_analysis::hash_file_content;
 use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::widgets::deck::format_key;
 
@@ -69,16 +70,11 @@ impl LoaderRig {
 
     /// Pumps the services and the loader until the deck has a waveform, or the timeout passes.
     fn wait_for_waveform(&mut self, deck: usize) -> bool {
-        let deadline = Instant::now() + Duration::from_secs(8);
-        while Instant::now() < deadline {
+        wait_until(Duration::from_secs(8), DEFAULT_POLL, || {
             self.services.pump();
             self.loader.pump(&self.engine, &self.services);
-            if self.loader.waveform(deck).is_some() {
-                return true;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        false
+            self.loader.waveform(deck).is_some()
+        })
     }
 
     fn prep_entries(&self) -> Vec<om_library::PrepEntry> {

@@ -5,6 +5,7 @@ use crate::backend::{
     MidiBackend, MidiCallback, MidiInputConnection, MidiOutputPort, MidiPortInfo, PortSnapshot,
 };
 use crate::error::MidiError;
+use om_core::sync::LockExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -63,7 +64,7 @@ impl MockBackend {
         let callback = self.lock().callbacks.get(id).cloned();
         match callback {
             Some(cb) => {
-                (cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner))(bytes);
+                (cb.lock_unpoisoned())(bytes);
                 true
             }
             None => false,
@@ -81,9 +82,7 @@ impl MockBackend {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Devices> {
-        self.devices
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.devices.lock_unpoisoned()
     }
 }
 
@@ -96,10 +95,7 @@ impl MidiInputConnection for MockInput {}
 
 impl Drop for MockInput {
     fn drop(&mut self) {
-        let mut d = self
-            .devices
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut d = self.devices.lock_unpoisoned();
         d.callbacks.remove(&self.id);
     }
 }
@@ -111,10 +107,7 @@ struct MockOutput {
 
 impl MidiOutputPort for MockOutput {
     fn send(&mut self, bytes: &[u8]) -> Result<(), MidiError> {
-        let mut d = self
-            .devices
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut d = self.devices.lock_unpoisoned();
         d.sent
             .entry(self.id.clone())
             .or_default()
@@ -171,10 +164,7 @@ impl MidiBackend for MockBackend {
             let d = self.lock();
             (d.inputs.clone(), d.outputs.clone())
         };
-        let mut snapshot = self
-            .snapshot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut snapshot = self.snapshot.lock_unpoisoned();
         Ok(snapshot.update(inputs, outputs))
     }
 }

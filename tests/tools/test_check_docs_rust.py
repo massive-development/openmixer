@@ -20,7 +20,7 @@ DOC_FILES = [
     "docs/PROGRESS.md",
     "docs/DESIGN_PATTERNS.md",
 ]
-README_OK = "AGPL clean-room Spotify cpp-final cargo\n"
+README_OK = "AGPL clean-room Spotify cargo\n"
 
 
 def clean_docs():
@@ -42,7 +42,7 @@ class CheckDocsRustTest(unittest.TestCase):
         self.assertTrue(any("ctest" in v for v in violations), violations)
 
     def test_each_forbidden_term_is_flagged(self):
-        terms = ["JUCE", "CMake", "cmake", "ctest", "g++", "clang-tidy",
+        terms = ["C++", "JUCE", "CMake", "cmake", "ctest", "g++", "clang-tidy",
                  ".cpp", ".hpp", "GoogleTest", "webkit"]
         for term in terms:
             with self.subTest(term=term):
@@ -102,13 +102,13 @@ class CheckDocsRustTest(unittest.TestCase):
         docs = clean_docs()
         docs["README.md"] = "AGPL and Spotify only\n"
         violations = cdr.find_violations(docs)
-        self.assertEqual(len(violations), 3, violations)
-        for term in ["clean-room", "cpp-final", "cargo"]:
+        self.assertEqual(len(violations), 2, violations)
+        for term in ["clean-room", "cargo"]:
             self.assertTrue(any(term in v for v in violations), (term, violations))
 
     def test_clean_room_match_is_case_insensitive(self):
         docs = clean_docs()
-        docs["README.md"] = "AGPL Clean-Room Spotify cpp-final cargo\n"
+        docs["README.md"] = "AGPL Clean-Room Spotify cargo\n"
         self.assertEqual(cdr.find_violations(docs), [])
 
     def test_required_terms_only_apply_to_readme(self):

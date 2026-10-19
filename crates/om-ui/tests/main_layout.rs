@@ -1,4 +1,4 @@
-//! Port of tests/unit/MainLayoutTest.cpp, plus the MainView placement rules from DeckWidgetTest.
+//! Main layout cases, plus the MainView placement rules.
 
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{

@@ -1,6 +1,5 @@
 //! Onset strength over time: positive log-spectral flux within frequency bands, then the local mean
-//! removed and half-wave rectified. Shared by tempo, downbeat and structure analysis. Port of
-//! `src/analysis/OnsetEnvelope.{h,cpp}`.
+//! removed and half-wave rectified. Shared by tempo, downbeat and structure analysis.
 
 use crate::{AnalysisContext, AudioClip, MagnitudeStft};
 

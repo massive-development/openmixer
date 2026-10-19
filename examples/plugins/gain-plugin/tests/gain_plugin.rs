@@ -1,4 +1,4 @@
-//! Port of `PluginLibraryTest.ExamplePluginLoadsFromASharedLibrary`, in-process: the same checks on
+//! Example plugin load from a shared library, checked in-process: the same checks on
 //! the same routing, with the plugin added to the registry instead of loaded from a library.
 
 use gain_plugin::{GainPlugin, MAP_NAME, PLUGIN_ID, STAGE_ID};

@@ -1,8 +1,6 @@
 //! Library database: SQLite schema and migrations, track/cue/playlist/watch-folder DAOs, and the
-//! track record and key helpers (Todo 20). Metadata readers, folder ingest and watch folders
-//! (Todo 21). Search and filter (Todo 23). Library import (iTunes, Rekordbox) (Todo 22) and the
-//! track prep queue (Todo 24).
-//! Port of `src/library/`.
+//! track record and key helpers. Metadata readers, folder ingest and watch folders, search and
+//! filter, library import (iTunes, Rekordbox), and the track prep queue.
 //!
 //! Threading: one writer per database file. A `Database` is used by one thread at a time; the UI
 //! opens its own read-only connection to the same file (WAL lets it read while the writer commits).
@@ -19,7 +17,7 @@ mod import_model;
 mod import_writer;
 mod ingest;
 mod itunes_importer;
-mod juce_text;
+mod lenient;
 mod library;
 mod library_import;
 mod library_importer;
@@ -58,7 +56,6 @@ pub use import_model::{
 pub use import_writer::ImportWriter;
 pub use ingest::{IngestSummary, Ingestor};
 pub use itunes_importer::ItunesImporter;
-pub use juce_text::{double_value, int_value, iso8601_ms};
 pub use library::Library;
 pub use library_import::import_library_file;
 pub use library_importer::{LibraryImporter, LibraryImporterRegistry};

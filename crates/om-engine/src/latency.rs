@@ -1,6 +1,6 @@
 //! Callback timing and device latency statistics. One writer (the audio thread), any readers.
 
-use crate::fx::math::AtomicF64;
+use om_core::atomic::AtomicF64;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

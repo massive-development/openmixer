@@ -12,9 +12,9 @@ publish = false
 workspace = true
 
 [dependencies]
-om-core = { path = "../../../crates/om-core" }
-om-engine = { path = "../../../crates/om-engine" }
-om-plugins = { path = "../../../crates/om-plugins" }
+om-core.workspace = true
+om-engine.workspace = true
+om-plugins.workspace = true
 
 [dev-dependencies]
-om-midi = { path = "../../../crates/om-midi" }
+om-midi.workspace = true

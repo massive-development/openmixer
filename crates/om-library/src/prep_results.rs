@@ -1,6 +1,6 @@
 //! Turns finished analysis payloads into track metadata. Runs on the caller's thread with the
 //! caller's `TrackDao`. The schema has no manual or locked flag for BPM or key, so analysis
-//! overwrites. Port of `src/library/PrepResults.*`.
+//! overwrites.
 
 use crate::error::{LibraryError, Result};
 use crate::track_dao::TrackDao;

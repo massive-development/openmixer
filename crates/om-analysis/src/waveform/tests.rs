@@ -1,4 +1,4 @@
-//! Port of `tests/unit/WaveformBuilderTest.cpp`: multi-resolution levels, peaks, band split and
+//! Multi-resolution levels, peaks, band split and
 //! serialisation.
 
 use super::*;

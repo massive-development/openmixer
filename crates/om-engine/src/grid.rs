@@ -1,6 +1,5 @@
-//! Beat grid seen by sync and quantize. Analysis supplies real grids (Wave 3); [`FixedTempoGrid`]
+//! Beat grid seen by sync and quantize. Analysis supplies real grids; [`FixedTempoGrid`]
 //! covers constant-tempo material and tests. Positions are source frames; beat 0 is a downbeat.
-//! Port of `src/engine/BeatGrid.h`.
 
 /// Maps source frames to beats and back. Implementations are shared between control threads.
 pub trait BeatGrid: Send + Sync {

@@ -1,16 +1,17 @@
 //! Pre-decoded audio from a loop start, so the audio thread can jump there without waiting on the
 //! decoder. The decoder thread fills and publishes; the audio thread acquires and releases through
-//! a hazard-slot protocol (sequentially consistent). Port of `src/engine/LoopPrefetch.*`.
+//! a hazard-slot protocol (sequentially consistent).
 //!
-//! Frames are stored as `AtomicU32` bit patterns so the protocol needs no `unsafe`; every access
-//! is a plain load or store on the audio thread.
+//! Frames are stored as `AtomicF32` cells so the protocol needs no `unsafe`; every access is a
+//! plain load or store on the audio thread.
 
+use om_core::atomic::AtomicF32;
 use std::sync::atomic::{AtomicI32, Ordering::Relaxed};
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering::SeqCst};
 
 /// One prefetched run of stereo frames starting at source frame `start`.
 pub struct PrefetchSlot {
-    frames: Box<[AtomicU32]>,
+    frames: Box<[AtomicF32]>,
     start: AtomicI64,
     length: AtomicI64,
     load_id: AtomicU32,
@@ -20,7 +21,7 @@ impl PrefetchSlot {
     fn new(frames_per_slot: usize) -> Self {
         Self {
             frames: (0..frames_per_slot * 2)
-                .map(|_| AtomicU32::new(0))
+                .map(|_| AtomicF32::new(0.0))
                 .collect(),
             start: AtomicI64::new(0),
             length: AtomicI64::new(0),
@@ -49,10 +50,7 @@ impl PrefetchSlot {
     /// Stereo frame at `offset` (counted from the slot start).
     pub fn frame(&self, offset: i64) -> [f32; 2] {
         let i = offset as usize * 2;
-        [
-            f32::from_bits(self.frames[i].load(Relaxed)),
-            f32::from_bits(self.frames[i + 1].load(Relaxed)),
-        ]
+        [self.frames[i].load(), self.frames[i + 1].load()]
     }
 }
 
@@ -103,8 +101,8 @@ impl LoopPrefetch {
     /// Decoder thread: writes one stereo frame into a slot being filled.
     pub fn write_frame(&self, index: usize, offset: usize, frame: [f32; 2]) {
         let frames = &self.slots[index].frames;
-        frames[offset * 2].store(frame[0].to_bits(), Relaxed);
-        frames[offset * 2 + 1].store(frame[1].to_bits(), Relaxed);
+        frames[offset * 2].store(frame[0]);
+        frames[offset * 2 + 1].store(frame[1]);
     }
 
     /// Decoder thread: records what the slot now holds.

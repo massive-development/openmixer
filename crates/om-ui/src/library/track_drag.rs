@@ -1,6 +1,6 @@
 //! Drag-and-drop payload for library tracks. The browser table describes a row with [`describe`];
 //! a deck widget accepts it with [`parse`]. A plain string, so plugin widgets can start or accept the
-//! same drag. Port of `src/ui/TrackDrag.h`.
+//! same drag.
 
 /// Prefix that marks a library-track drag.
 pub const PREFIX: &str = "openmixer.track:";
@@ -16,7 +16,7 @@ pub fn parse(description: &str) -> Option<i64> {
     if rest.is_empty() {
         return None;
     }
-    // JUCE's getLargeIntValue reads a leading integer and stops at the first non-digit.
+    // Lenient integer read: a leading integer, stopping at the first non-digit.
     let digits: String = rest
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '-')

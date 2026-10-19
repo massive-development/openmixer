@@ -1,4 +1,6 @@
-# OpenMixer Rust Rewrite — Design
+# OpenMixer Rust Rewrite — Design (historical)
+
+> Historical record from the move to Rust (2026-10-18). Not maintained: current status is in `TODO.md` and `docs/PROGRESS.md`.
 
 Status: draft for approval. Items marked **(call)** are the author's decisions, not yet agreed.
 

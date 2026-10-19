@@ -1,6 +1,5 @@
 //! Pitch-class profile of a clip: long-window STFT bins folded onto 12 semitone classes (A4 = 440 Hz),
-//! each frame normalised so loud passages do not dominate, then summed over the clip. Port of
-//! `src/analysis/Chromagram.{h,cpp}`.
+//! each frame normalised so loud passages do not dominate, then summed over the clip.
 
 use crate::{AnalysisContext, AudioClip, MagnitudeStft};
 

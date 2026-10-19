@@ -1,5 +1,5 @@
 //! The device-free half of the app: engine, parameter router, theme registry, preferences and the
-//! applier that pushes preferences into subsystems. Port of `src/app/AppComposition.cpp`. The
+//! applier that pushes preferences into subsystems. The
 //! device owner (the binary, or the UI gate) takes the audio side with [`AppComposition::take_audio`]
 //! and drives it, so headless and GUI runs share the same wiring.
 //!
@@ -7,7 +7,7 @@
 //! system one, or a mock). Plugins are owned by the composition ([`AppComposition::plugins`]): their
 //! parameter targets route through the router, their stages insert into the engine, their maps
 //! apply to the MIDI mapper and their themes reach the theme registry (see `crate::plugins`).
-//! The library (Todo 13) is attached on demand with [`AppComposition::attach_library`].
+//! The library is attached on demand with [`AppComposition::attach_library`].
 
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, MidiSink, PluginSink,
@@ -39,7 +39,7 @@ pub const THEME_ENV: &str = "OPENMIXER_THEME";
 pub struct ServiceHooks {
     /// The MIDI preference section, once [`AppComposition::attach_midi`] has run.
     pub midi: Option<Box<dyn MidiSink>>,
-    /// The library (Todo 13): browser services, analysis and watch folders. Opened by
+    /// The library: browser services, analysis and watch folders. Opened by
     /// [`AppComposition::attach_library`]; `None` until then.
     pub library: Option<LibraryServices>,
 }
@@ -140,7 +140,8 @@ impl AppComposition {
     /// Default composition: the preferences file from `OPENMIXER_PREFS` or the user config dir,
     /// and the user theme folder under the home directory.
     pub fn with_defaults() -> Self {
-        let themes = default_user_directory(std::env::var_os("HOME").as_deref());
+        let home = dirs::home_dir().map(std::path::PathBuf::into_os_string);
+        let themes = default_user_directory(home.as_deref());
         Self::new(&preferences::default_file(), themes)
     }
 

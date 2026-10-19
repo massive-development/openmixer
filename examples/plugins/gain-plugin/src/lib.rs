@@ -1,10 +1,9 @@
 #![forbid(unsafe_code)]
 
 //! Example plugin: a gain stage (`example.gain`), a parameter target (`example.gain` = the gain
-//! value), a MIDI map (`example.gain-knob`, CC 1 to the gain) and a theme. Port of
-//! `examples/plugins/GainPlugin.cpp`.
+//! value), a MIDI map (`example.gain-knob`, CC 1 to the gain) and a theme.
 //!
-//! The C++ example was a shared library dropped into a plugin folder. Dynamic loading is not
+//! The example was a shared library dropped into a plugin folder. Dynamic loading is not
 //! implemented (see `om_plugins::PluginLoader`), so this crate is linked into the application or
 //! loaded in-process by a test: `PluginRegistry::add_plugin(Box::new(GainPlugin::new()))`.
 

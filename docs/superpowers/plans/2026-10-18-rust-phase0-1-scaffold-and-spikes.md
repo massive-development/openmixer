@@ -1,4 +1,6 @@
-# Rust Rewrite Phases 0–1: Scaffolding, Docs, Spikes — Implementation Plan
+# Rust Rewrite Phases 0–1: Scaffolding, Docs, Spikes — Implementation Plan (historical)
+
+> Historical record from the move to Rust (2026-10-18). Not maintained: current status is in `TODO.md` and `docs/PROGRESS.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -2,10 +2,11 @@
 //! beat (or bar). `step` and `apply` run on a control timer (~20-50 Hz); setters may come from any
 //! non-audio thread (MIDI). Rates reach the audio thread through `Deck::set_rate`.
 //! Ids (`ParameterTarget`): `leader` (deck index, <0 or out of range for none), `mode` (0 beat,
-//! 1 bar), `<deck>.sync` (>= 0.5 on). Port of `src/engine/Sync.*`.
+//! 1 bar), `<deck>.sync` (>= 0.5 on).
 
 use crate::deck::Deck;
 use crate::grid::BeatGrid;
+use om_core::sync::LockExt;
 use om_core::ParameterTarget;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -70,7 +71,7 @@ impl Sync {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        self.state.lock_unpoisoned()
     }
 
     /// Grids are shared with the analysis side. `None` removes the grid, so the deck cannot sync.
@@ -232,8 +233,7 @@ fn follower_rate(
     base * (1.0 + nudge)
 }
 
-/// Parses the `<deck>.sync` and `leader` / `mode` ids. `<deck>` may be empty, which C++ reads as
-/// deck 0 (`containsOnly` is true for an empty string and `getIntValue` gives 0).
+/// Parses the `<deck>.sync` and `leader` / `mode` ids. `<deck>` may be empty, which reads as deck 0 (an empty string parses to 0).
 impl ParameterTarget for Sync {
     fn set_parameter(&self, id: &str, value: f64) -> bool {
         if id == "leader" {

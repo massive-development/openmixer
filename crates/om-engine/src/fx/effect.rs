@@ -2,14 +2,15 @@
 //! `set_param` family is called on the control thread; `prepare` before insertion; `reset`,
 //! `process` and `clear_some` on the audio thread (no allocation, locks or I/O).
 
-use super::math::{AtomicF32, Smoother};
+use om_core::atomic::AtomicF32;
+use om_dsp::Smoother;
 use std::sync::Arc;
 
 /// Tempo range the FX buffers are sized for; beat-synced times are clamped to it.
 pub const MIN_BPM: f64 = 50.0;
 pub const MAX_BPM: f64 = 250.0;
 
-/// Parameters per effect (C++ `Effect::kMaxParams`).
+/// Parameters per effect.
 pub const MAX_PARAMS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,7 +100,7 @@ impl ParamSet {
         self.len == 0
     }
 
-    /// Clamped like the C++ `getParamSpec`: out-of-range indices map to the nearest slot.
+    /// Clamped: out-of-range indices map to the nearest slot.
     pub fn spec(&self, index: usize) -> &ParamSpec {
         &self.specs[index.min(MAX_PARAMS - 1)]
     }

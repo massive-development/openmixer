@@ -1,4 +1,4 @@
-//! Analyser extension point. Port of the `Analyzer` interface in `src/analysis/Analyzer.h`. The
+//! Analyser extension point. The
 //! job service (a later step) runs these on worker threads, possibly concurrently, so implementations
 //! are stateless or internally synchronised.
 

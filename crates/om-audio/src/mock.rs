@@ -1,11 +1,12 @@
 //! Headless device for tests. Driven by [`MockAudioDevice::render_block`] on the caller's thread, or
 //! by a paced thread after [`MockAudioDevice::start_realtime`]. It renders into memory only and
-//! never opens a device, so nothing is audible. Port of `src/engine/MockAudioDevice.*`.
+//! never opens a device, so nothing is audible.
 //!
 //! The render state sits behind a mutex. That is fine for a test double; the real device path
 //! (`CpalAudioDevice`) takes no lock on its audio thread.
 
 use crate::device::{AudioDevice, AudioError};
+use om_core::sync::LockExt;
 use om_engine::{AudioCallback, LatencyMonitor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -31,7 +32,7 @@ struct Shared {
 
 impl Shared {
     fn lock(&self) -> MutexGuard<'_, Render> {
-        self.render.lock().unwrap_or_else(|p| p.into_inner())
+        self.render.lock_unpoisoned()
     }
 
     /// Runs one callback block. False when no callback is attached.

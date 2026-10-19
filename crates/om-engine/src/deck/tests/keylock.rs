@@ -1,10 +1,12 @@
-//! Port of tests/unit/DeckKeylockTest.cpp, one test per C++ case, same numbers and tolerances.
+//! Key-lock cases, one test per case, same numbers and tolerances as the original suite.
 //! Generated audio only; nothing here opens an audio device.
 
-use super::tests::{pump_until_buffered, write_float_wav, Fixture, RATE};
-use super::{Deck, DeckAudio};
+use super::{pump_until_buffered, RATE};
+use crate::deck::{Deck, DeckAudio};
 use om_core::ParameterTarget;
-use std::f64::consts::TAU;
+use om_testing::fs::TempDir;
+use om_testing::signals::stereo_sine;
+use om_testing::wav::write_float_wav;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -12,19 +14,13 @@ const TONE_HZ: f64 = 440.0;
 const TONE_FRAMES: usize = 66_150; // 1.5 s
 const BLOCK: usize = 256;
 
-/// Writes a stereo 440 Hz tone at half scale: the C++ `writeTone` fixture.
+/// Writes a stereo 440 Hz tone at half scale.
 fn write_tone(path: &Path) {
-    let mut samples = Vec::with_capacity(TONE_FRAMES * 2);
-    for i in 0..TONE_FRAMES {
-        let v = (0.5 * (TAU * TONE_HZ * i as f64 / RATE).sin()) as f32;
-        samples.push(v);
-        samples.push(v);
-    }
-    write_float_wav(path, 2, &samples);
+    let samples = stereo_sine(TONE_HZ, 0.5, RATE, TONE_FRAMES);
+    write_float_wav(path, 2, RATE as u32, &samples);
 }
 
-/// Renders `blocks` blocks of 256 frames (left channel), pausing 1 ms per block as the C++ test
-/// does so the decoder keeps up. `before_block` runs ahead of each block.
+/// Renders `blocks` blocks of 256 frames (left channel), pausing 1 ms per block so the decoder keeps up. `before_block` runs ahead of each block.
 fn render_left(
     deck: &Deck,
     audio: &mut DeckAudio,
@@ -68,9 +64,9 @@ fn longest_silent_run(x: &[f32], from: usize) -> usize {
     best
 }
 
-/// The C++ `KeylockFixture`: a deck prepared at 44.1 kHz with the tone loaded and buffered.
-fn keylock_fixture(fixture: &Fixture) -> (Deck, DeckAudio, PathBuf) {
-    let tone = fixture.path("tone.wav");
+/// The keylock fixture: a deck prepared at 44.1 kHz with the tone loaded and buffered.
+fn keylock_fixture(fixture: &TempDir) -> (Deck, DeckAudio, PathBuf) {
+    let tone = fixture.file("tone.wav");
     write_tone(&tone);
     let (deck, mut audio) = Deck::new(1 << 16);
     audio.prepare(RATE, 256);
@@ -81,7 +77,7 @@ fn keylock_fixture(fixture: &Fixture) -> (Deck, DeckAudio, PathBuf) {
 
 #[test]
 fn keylock_holds_pitch_when_rate_changes() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _tone) = keylock_fixture(&fixture);
     deck.set_keylock(true);
     deck.set_rate(1.25);
@@ -96,7 +92,7 @@ fn keylock_holds_pitch_when_rate_changes() {
 
 #[test]
 fn without_keylock_rate_shifts_pitch() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _tone) = keylock_fixture(&fixture);
     deck.set_rate(1.25);
     deck.play();
@@ -106,7 +102,7 @@ fn without_keylock_rate_shifts_pitch() {
 
 #[test]
 fn toggling_keylock_while_playing_stays_audible_and_finite() {
-    let fixture = Fixture::new();
+    let fixture = TempDir::new("om_engine");
     let (deck, mut audio, _tone) = keylock_fixture(&fixture);
     deck.set_rate(1.1);
     deck.play();
@@ -125,8 +121,8 @@ fn toggling_keylock_while_playing_stays_audible_and_finite() {
 
 #[test]
 fn keylock_compensates_a_device_rate_mismatch() {
-    let fixture = Fixture::new();
-    let tone = fixture.path("tone.wav");
+    let fixture = TempDir::new("om_engine");
+    let tone = fixture.file("tone.wav");
     write_tone(&tone);
     let (fast, mut audio) = Deck::new(1 << 16);
     audio.prepare(48_000.0, 256);

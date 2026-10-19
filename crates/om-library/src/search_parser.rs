@@ -1,5 +1,4 @@
 //! Query-string parser: `artist:foo bpm:120-128 key:~8A "deep house" -genre:techno sort:-bpm limit:50`.
-//! Port of `src/library/SearchParser.{h,cpp}`.
 
 use crate::search_fields::SearchFieldRegistry;
 use crate::search_query::{FilterTerm, SearchQuery};

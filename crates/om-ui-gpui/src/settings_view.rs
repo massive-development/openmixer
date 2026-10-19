@@ -1,6 +1,6 @@
-//! The settings overlay (Todo 29): a card with the five tabs over the window, opened by the Settings
-//! button in the header and closed by its Close button, Escape or a click on the scrim. Port of the
-//! drawing in `src/ui/SettingsPanel.cpp` and the pages. The logic (what each control does, what is
+//! The settings overlay: a card with the five tabs over the window, opened by the Settings
+//! button in the header and closed by its Close button, Escape or a click on the scrim. Draws the
+//! card and its pages. The logic (what each control does, what is
 //! stored, what the services are asked to do) lives in om-ui's `settings` module and in the methods
 //! of [`SettingsState`] here; this file draws it and forwards clicks.
 //!
@@ -46,7 +46,7 @@ pub type ThemeSync = Box<dyn Fn(&mut ThemeRegistry)>;
 pub struct SettingsOptions {
     pub prefs: Preferences,
     pub themes: ThemeRegistry,
-    /// `None` leaves the Audio tab out (the C++ panel does the same without a model).
+    /// `None` leaves the Audio tab out (the panel does the same without a model).
     pub audio: Option<Box<dyn AudioSettingsModel>>,
     pub audio_stats: Option<AudioStatsFn>,
     /// Called after every edit that changed something: save and apply the preferences.
@@ -1371,7 +1371,7 @@ mod tests {
         s.edit_audio(|page| page.set_sample_rate(44_100));
         s.edit_audio(|page| page.set_sample_rate(44_100));
         assert_eq!(*changes.borrow(), 1);
-        // The model is asked both times (as in C++); only the stored state decides the change.
+        // The model is asked both times; only the stored state decides the change.
         assert_eq!(
             *log.borrow(),
             vec!["rate 44100".to_owned(), "rate 44100".to_owned()]

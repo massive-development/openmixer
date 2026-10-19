@@ -1,5 +1,5 @@
 //! Crossfader slider with its curve selector (Linear / Power). Routes `mixer.crossfader` and
-//! `mixer.crossfader.curve`; the selector mirrors the engine. Port of `src/ui/CrossfaderSection.cpp`.
+//! `mixer.crossfader.curve`; the selector mirrors the engine.
 
 use super::{px, CAPTION_HEIGHT};
 use crate::binding::{curve_from_index, curve_index, MixerBinding};

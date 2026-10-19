@@ -1,11 +1,11 @@
-//! Synthetic test signals for analysis tests (no copyrighted audio). Port of
-//! `tests/unit/AnalysisTestSignals.h`, plus a float WAV writer and a temporary-file helper for the
-//! file-backed tests.
+//! Synthetic test signals for analysis tests (no copyrighted audio), plus a temporary-file helper
+//! for the file-backed tests.
 
 use crate::AudioClip;
+use om_testing::fs::TempDir;
+use om_testing::signals::sine_amp;
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const RATE: f64 = 44_100.0;
 
@@ -13,7 +13,7 @@ pub fn silence(seconds: f64, rate: f64) -> AudioClip {
     AudioClip::new(vec![0.0; (seconds * rate) as usize], rate)
 }
 
-/// Deterministic noise source standing in for `juce::Random`: same role, not the same sequence.
+/// Deterministic noise source; the sequence is not bit-compatible with any other generator.
 /// The tests that use it are tolerance-based, so the exact noise does not matter.
 pub struct TestRandom(u64);
 
@@ -93,7 +93,8 @@ pub fn add_tone(clip: &mut AudioClip, freq: f64, gain: f32) {
     add_tone_between(clip, freq, gain, 0.0, f64::INFINITY);
 }
 
-/// Sine tone between `from_seconds` and `to_seconds` (clipped to the clip).
+/// Sine tone between `from_seconds` and `to_seconds` (clipped to the clip). The phase is set by
+/// the absolute sample index, so adjacent tones join without a discontinuity.
 pub fn add_tone_between(
     clip: &mut AudioClip,
     freq: f64,
@@ -104,9 +105,9 @@ pub fn add_tone_between(
     let rate = clip.sample_rate;
     let from = (from_seconds * rate) as usize;
     let to = ((to_seconds * rate) as usize).min(clip.samples.len());
-    for i in from..to {
-        let phase = 2.0 * PI * freq * i as f64 / rate;
-        clip.samples[i] += gain * phase.sin() as f32;
+    let wave = sine_amp(freq, gain, rate, to);
+    for (s, w) in clip.samples[from..to].iter_mut().zip(&wave[from..to]) {
+        *s += w;
     }
 }
 
@@ -117,54 +118,20 @@ pub fn add_noise(clip: &mut AudioClip, gain: f32, seed: u64) {
     }
 }
 
-/// Writes interleaved 32-bit float PCM (WAVE format 3). Port of `test::writeWav`.
-pub fn write_float_wav(path: &Path, channels: u16, rate: u32, interleaved: &[f32]) {
-    let data_len = (interleaved.len() * 4) as u32;
-    let block_align = channels * 4;
-    let mut bytes = Vec::with_capacity(44 + data_len as usize);
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
-    bytes.extend_from_slice(b"WAVEfmt ");
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    bytes.extend_from_slice(&3u16.to_le_bytes());
-    bytes.extend_from_slice(&channels.to_le_bytes());
-    bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
-    bytes.extend_from_slice(&block_align.to_le_bytes());
-    bytes.extend_from_slice(&32u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_len.to_le_bytes());
-    for sample in interleaved {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
-    std::fs::write(path, bytes).expect("write test wav");
+/// A unique path inside a temporary directory, removed on drop. The file itself is not created.
+pub struct TempFile {
+    _dir: TempDir,
+    path: PathBuf,
 }
-
-/// A unique path in the system temp directory, removed on drop.
-pub struct TempFile(PathBuf);
 
 impl TempFile {
     pub fn new(extension: &str) -> Self {
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        let name = format!(
-            "om_analysis_{}_{}_{}.{extension}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed),
-            nanos
-        );
-        Self(std::env::temp_dir().join(name))
+        let dir = TempDir::new("om_analysis");
+        let path = dir.file(&format!("signal.{extension}"));
+        Self { _dir: dir, path }
     }
 
     pub fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        &self.path
     }
 }

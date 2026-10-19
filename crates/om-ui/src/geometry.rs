@@ -1,6 +1,6 @@
-//! Integer layout rectangles with JUCE's `Rectangle<int>` split semantics: `remove_*` takes a slice
+//! Integer layout rectangles: `remove_*` takes a slice
 //! off one edge and shrinks the rectangle, clamping to what is left. Pixels are whole numbers; the
-//! waveform code uses `f64` where JUCE used floats.
+//! waveform code uses `f64` rather than `f32`.
 
 /// A rectangle in whole pixels. `x`/`y` are relative to whatever owns the layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

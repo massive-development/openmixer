@@ -5,7 +5,7 @@
 //! Ids: `sync` (>= 0.5 follows the leader), `sync.master` (>= 0.5 makes this deck the leader, < 0.5
 //! releases it), `loop.quantized.<beats>` (>= 0.5 loops `<beats>` from the nearest grid step),
 //! `slip` (>= 0.5 on), `quantize` (>= 0.5 snaps quantized loop starts to the grid, the default;
-//! < 0.5 starts exactly at the playhead). Port of `src/engine/DeckControl.*`.
+//! < 0.5 starts exactly at the playhead).
 //!
 //! Threads: control threads only. Several may call it (MIDI, UI, timer); the slip mutex guards
 //! slip state and is never taken on the audio thread.
@@ -15,6 +15,7 @@ use crate::grid::BeatGrid;
 use crate::quantizer::make_quantized_loop;
 use crate::slip::SlipTracker;
 use crate::sync::Sync;
+use om_core::sync::LockExt;
 use om_core::ParameterTarget;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
@@ -111,7 +112,7 @@ impl DeckControl {
     }
 
     fn slip_lock(&self) -> std::sync::MutexGuard<'_, SlipTracker> {
-        self.slip.lock().unwrap_or_else(|p| p.into_inner())
+        self.slip.lock_unpoisoned()
     }
 
     fn set_leader(&self, on: bool) {

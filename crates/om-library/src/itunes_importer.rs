@@ -1,6 +1,6 @@
 //! iTunes / Apple Music `Library.xml` (property list): tracks, ratings, play counts, playlists
 //! and playlist folders. Cues do not exist in this format. Remote and file-less tracks are
-//! skipped. Port of `src/library/ItunesImporter.*`.
+//! skipped.
 
 use crate::file_url::file_url_to_path;
 use crate::import_model::{ImportReport, ImportedLibrary, ImportedPlaylist, ImportedTrack};

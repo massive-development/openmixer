@@ -1,5 +1,4 @@
-//! The engine as a [`StateReader`]: the ids a controller map's feedback rules can read. Port of
-//! `src/app/EngineStateReader.*`. Every read is a control-side getter (an atomic or a short
+//! The engine as a [`StateReader`]: the ids a controller map's feedback rules can read. Every read is a control-side getter (an atomic or a short
 //! uncontended lock), so nothing here touches the audio thread.
 //!
 //! ```text
@@ -124,7 +123,7 @@ impl EngineStateReader {
 mod tests {
     use super::*;
 
-    /// Port of EngineStateReaderTest.
+    /// Reads deck and mixer state by id and rejects unknown ids.
     #[test]
     fn reports_deck_and_mixer_state_by_id_and_rejects_unknown_ids() {
         let (engine, _audio) = DjEngine::new(2);

@@ -146,7 +146,7 @@ impl MidiMapper {
     }
 
     /// Last value produced for a target, or 0 when it has never been set.
-    pub fn get_value(&self, target_id: &str) -> f64 {
+    pub fn value(&self, target_id: &str) -> f64 {
         lock(&self.state)
             .values
             .get(target_id)
@@ -155,7 +155,7 @@ impl MidiMapper {
     }
 
     /// Snapshot of the bindings; indices refer to this order.
-    pub fn get_bindings(&self) -> Vec<Mapping> {
+    pub fn bindings(&self) -> Vec<Mapping> {
         lock(&self.state).map.mappings.clone()
     }
 
@@ -220,7 +220,7 @@ impl MidiMapper {
     }
 
     /// Feedback rules, in map order.
-    pub fn get_outputs(&self) -> Vec<OutputRule> {
+    pub fn outputs(&self) -> Vec<OutputRule> {
         lock(&self.state).map.outputs.clone()
     }
 

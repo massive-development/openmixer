@@ -6,7 +6,7 @@ use super::hotcues::HotcueBank;
 use super::loop_state::LoopState;
 use super::prefetch::LoopPrefetch;
 use super::source::SourceReader;
-use crate::fx::math::AtomicF64;
+use om_core::atomic::AtomicF64;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64};
 use std::sync::Mutex;
 
@@ -28,9 +28,6 @@ pub(super) struct Shared {
     pub keylock: AtomicBool,
     /// Set when the decoder thread panicked. The deck renders silence from then on.
     pub errored: AtomicBool,
-    /// Test hook: makes the decoder thread panic on its next chunk.
-    #[cfg(test)]
-    pub inject_decoder_panic: AtomicBool,
 
     pub rate: AtomicF64,
     pub device_sample_rate: AtomicF64,
@@ -69,7 +66,7 @@ pub(super) struct Shared {
 }
 
 impl Shared {
-    /// Initial state of an unloaded deck. Device and file rates match the C++ defaults (44.1 kHz).
+    /// Initial state of an unloaded deck. Device and file rates default to 44.1 kHz.
     pub fn new(prefetch_frames: i64) -> Self {
         Self {
             playing: AtomicBool::new(false),
@@ -79,8 +76,6 @@ impl Shared {
             stop: AtomicBool::new(false),
             keylock: AtomicBool::new(false),
             errored: AtomicBool::new(false),
-            #[cfg(test)]
-            inject_decoder_panic: AtomicBool::new(false),
             rate: AtomicF64::new(1.0),
             device_sample_rate: AtomicF64::new(44_100.0),
             file_sample_rate: AtomicF64::new(44_100.0),

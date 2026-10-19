@@ -3,45 +3,30 @@
 //! in-memory library and real WAV files. Nothing here opens a device: the engine's audio side is
 //! dropped, so the decks load and report, but never play.
 
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use om_engine::DjEngine;
 use om_library::TrackRecord;
+use om_testing::wav::write_pcm16_wav;
 use om_ui::library::{describe_track_drag, LibraryServices, Options};
 use om_ui::sidebar::SidebarKind;
 use om_ui_gpui::library::{KeyOutcome, LibraryHub, LibraryPanel, SharedHub};
+use tempfile::TempDir;
 
 /// A 16-bit mono WAV with a short tone, enough for the loader to decode.
 fn write_wav(path: &Path) {
     const RATE: u32 = 8_000;
-    let frames: u32 = RATE / 4;
-    let data_len = frames * 2;
-    let mut out = Vec::new();
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&RATE.to_le_bytes());
-    out.extend_from_slice(&(RATE * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    for n in 0..frames {
-        let sample = ((n as f32 * 0.3).sin() * 4000.0) as i16;
-        out.extend_from_slice(&sample.to_le_bytes());
-    }
-    fs::File::create(path).unwrap().write_all(&out).unwrap();
+    let frames = (RATE / 4) as usize;
+    let samples: Vec<i16> = (0..frames)
+        .map(|n| ((n as f32 * 0.3).sin() * 4000.0) as i16)
+        .collect();
+    write_pcm16_wav(path, 1, RATE, &samples);
 }
 
 struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
     hub: SharedHub,
 }
 
@@ -50,8 +35,10 @@ fn memory_services() -> LibraryServices {
 }
 
 fn fixture(name: &str) -> Fixture {
-    let dir = std::env::temp_dir().join(format!("om-library-panel-{name}-{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix(&format!("om-library-panel-{name}-"))
+        .tempdir()
+        .unwrap();
     let services = memory_services();
     let hub = LibraryHub::shared(services, 2);
     Fixture { dir, hub }
@@ -59,7 +46,7 @@ fn fixture(name: &str) -> Fixture {
 
 /// Inserts a track whose file exists (a real WAV), or a missing one when `real` is false.
 fn add(fx: &Fixture, title: &str, camelot: &str, real: bool) -> i64 {
-    let path = fx.dir.join(format!("{title}.wav"));
+    let path = fx.dir.path().join(format!("{title}.wav"));
     if real {
         write_wav(&path);
     }

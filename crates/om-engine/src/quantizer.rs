@@ -1,6 +1,5 @@
 //! Snaps positions to a beat grid for quantized cue and loop. Pure functions, any thread.
-//! Without a grid or with a division of 0 positions pass through unchanged. Port of
-//! `src/engine/Quantizer.*`.
+//! Without a grid or with a division of 0 positions pass through unchanged.
 
 use crate::grid::BeatGrid;
 

@@ -1,7 +1,6 @@
 //! Editable beat grid: tempo markers, each starting a constant-tempo segment. Positions are source
 //! frames at the track's own sample rate; beat 0 (and every multiple of `beats_per_bar`) is a
-//! downbeat. Edits mark the grid manual so re-analysis can leave user corrections alone. Port of
-//! `src/analysis/BeatGridModel.{h,cpp}` and `AnalysedBeatGrid.h`.
+//! downbeat. Edits mark the grid manual so re-analysis can leave user corrections alone.
 
 use om_engine::grid::BeatGrid;
 use serde_json::{json, Map, Value};
@@ -174,7 +173,7 @@ impl BeatGridModel {
         self.manual = is_manual;
     }
 
-    /// JSON form. Field names match the C++ `BeatGridModel::toVar`, so cached payloads stay readable.
+    /// JSON form. Field names are kept stable, so cached payloads stay readable.
     pub fn to_json(&self) -> Value {
         let markers: Vec<Value> = self
             .markers

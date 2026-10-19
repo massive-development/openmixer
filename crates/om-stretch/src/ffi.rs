@@ -11,7 +11,7 @@
 use rubberband_sys as sys;
 use std::ptr::NonNull;
 
-/// Real-time R3 ("finer") engine options, as `TimeStretch.cpp` uses them, plus
+/// Real-time R3 ("finer") engine options, plus
 /// `THREADING_NEVER`: the R3 engine has no threaded path, so the flag only forbids the R2 engine
 /// from spawning threads if it were ever selected.
 pub(crate) const REALTIME_R3_OPTIONS: sys::RubberBandOptions =

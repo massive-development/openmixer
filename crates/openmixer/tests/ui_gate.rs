@@ -1,5 +1,4 @@
-//! UI verification gate (Todo 31). Port of `tools/ui_gate.cpp` and `tools/ui_gate/UiRig.h`, `UiScenario.h`,
-//! at the logic layer: the real composition (engine, router, preferences) runs over a paced
+//! UI verification gate, at the logic layer: the real composition (engine, router, preferences) runs over a paced
 //! `MockAudioDevice` (silent, in memory only), and a scripted DJ operates the om-ui widget models
 //! (transport panel, bindings) through the same string-id router the window uses. No display needed.
 //!
@@ -8,6 +7,8 @@
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
 use om_core::ParameterTarget;
+use om_testing::signals::sine_amp;
+use om_testing::wav::write_pcm16_wav;
 use om_ui::binding::{DeckBinding, LevelSource, MixerBinding};
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 use openmixer::composition::{AppComposition, DECKS};
@@ -28,29 +29,14 @@ const LONG_SECONDS: u64 = 600;
 /// Writes a 16-bit stereo WAV of a sine tone, so the deck decoder has real audio to stream.
 fn write_tone(path: &Path, frequency: f64, seconds: f64) {
     let frames = (f64::from(RATE) * seconds) as usize;
-    let mut data = Vec::with_capacity(frames * 4);
-    for n in 0..frames {
-        let phase = 2.0 * std::f64::consts::PI * frequency * n as f64 / f64::from(RATE);
-        let sample = (phase.sin() * 0.5 * f64::from(i16::MAX)) as i16;
-        for _ in 0..2 {
-            data.extend_from_slice(&sample.to_le_bytes());
-        }
-    }
-    let mut wav = Vec::with_capacity(44 + data.len());
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    wav.extend_from_slice(&2u16.to_le_bytes()); // stereo
-    wav.extend_from_slice(&RATE.to_le_bytes());
-    wav.extend_from_slice(&(RATE * 4).to_le_bytes());
-    wav.extend_from_slice(&4u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    wav.extend_from_slice(&data);
-    fs::write(path, wav).expect("write tone");
+    let samples: Vec<i16> = sine_amp(frequency, 0.5, f64::from(RATE), frames)
+        .into_iter()
+        .flat_map(|s| {
+            let v = (s * f32::from(i16::MAX)) as i16;
+            [v, v]
+        })
+        .collect();
+    write_pcm16_wav(path, 2, RATE, &samples);
 }
 
 /// Scratch folder under cargo's per-target tmp dir, removed on drop.
@@ -124,11 +110,11 @@ fn run_gate(seconds: u64) -> Report {
     for (d, track) in tracks.iter().enumerate() {
         engine.deck(d).load(track).expect("load track");
     }
-    let loaded_by = Instant::now() + Duration::from_secs(5);
-    while !(engine.deck(0).is_loaded() && engine.deck(1).is_loaded()) {
-        assert!(Instant::now() < loaded_by, "decks did not load");
-        thread::sleep(TICK);
-    }
+    om_testing::assert_eventually!(
+        Duration::from_secs(5),
+        || engine.deck(0).is_loaded() && engine.deck(1).is_loaded(),
+        "decks did not load"
+    );
 
     // Faders up, then deck 0 plays (controls must reflect the press).
     mixer.send(&MixerBinding::channel_id(0, "fader"), 0.8);

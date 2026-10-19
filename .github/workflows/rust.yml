@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     # Linux-first (docs/spikes/DECISIONS.md, "CI status by platform"): only the Linux leg is required.
-    # macOS and Windows run for signal only until their porting phase; remove this when they are green.
+    # macOS and Windows run for signal only until Windows and macOS support lands; remove this when they are green.
     continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -76,7 +76,7 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
 
-  # Ported from the C++ ci.yml: the progress heatmap must match docs/progress.json (stdlib only).
+  # The progress heatmap must match docs/progress.json (stdlib only).
   progress-check:
     name: progress heatmap is current
     runs-on: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
       - name: Check heatmap is current
         run: python3 tools/progress_heatmap.py --check
 
-  # Ported from the C++ ci.yml: the ASIO SDK must never be committed (ADR 0001). Searches every tracked
+  # The ASIO SDK must never be committed (ADR 0001). Searches every tracked
   # file except the docs, the workflows, the markdown policy docs and NOTICE, which name the rule.
   # File names are checked too, so a committed SDK header or driver directory fails even with no text match.
   legal-guards:
@@ -133,6 +133,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ steps.tc.outputs.channel }}
+          components: rustfmt, clippy
 
       - name: Install GPUI system dependencies
         run: |
@@ -146,6 +147,14 @@ jobs:
       - name: cargo check (openmixer with the gui feature)
         run: cargo check -p openmixer --features gui
 
-      - name: cargo test (om-ui-gpui glue)
+      - name: cargo fmt (om-ui-gpui)
         working-directory: crates/om-ui-gpui
-        run: cargo test --lib
+        run: cargo fmt --check
+
+      - name: cargo clippy (om-ui-gpui)
+        working-directory: crates/om-ui-gpui
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test (om-ui-gpui, all targets)
+        working-directory: crates/om-ui-gpui
+        run: cargo test

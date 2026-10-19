@@ -1,8 +1,8 @@
-//! Glue between `PreferencesApplier` and the real subsystems. Port of `src/app/AppPreferencesTargets.cpp`:
+//! Glue between `PreferencesApplier` and the real subsystems., covering
 //! plugin loading (and forwarding plugin themes to the registry), theme selection, the audio device
 //! state and output pair routing, MIDI inputs and the map file.
 //!
-//! The C++ object lives as long as the app. Here the targets are built per call, so the state that
+//! Targets are built per call, so the state that
 //! must outlive one call (the wanted theme, the plugin folder, the last audio state) is passed in
 //! by the owner, or read back from the preferences (see [`crate::composition::AppComposition`]).
 //! Every call is idempotent.
@@ -29,7 +29,7 @@ impl AudioSink for OutputPairs {
     }
 }
 
-/// The open audio device, as the stored device state sees it (`AudioDeviceControl` in C++ terms).
+/// The open audio device, as the stored device state sees it.
 pub trait AudioDeviceControl {
     /// The restorable state of the open device; empty when none is open.
     fn current_state(&self) -> String;
@@ -37,7 +37,7 @@ pub trait AudioDeviceControl {
     fn initialise(&mut self, state: &str) -> Result<(), String>;
 }
 
-/// MIDI side (placeholder for `om-midi`, Todo 10). The map is loaded before inputs are changed.
+/// MIDI side, implemented by `MidiService` in `crate::midi` (which drives `om-midi`). The map is loaded before inputs are changed.
 pub trait MidiSink {
     fn load_map(&mut self, file: &Path) -> Result<(), String>;
     fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]);
@@ -65,7 +65,7 @@ pub trait PluginSink {
     fn load_folder(&mut self, folder: &Path) -> PluginLoad;
 }
 
-/// What the targets remember between calls, as the C++ object does for its lifetime. The owner
+/// What the targets remember between calls, for the lifetime of the app. The owner
 /// keeps one and passes it to every [`AppPreferencesTargets`].
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct AppTargetsState {
@@ -110,7 +110,7 @@ impl<'a, 'd> AppPreferencesTargets<'a, 'd> {
     }
 
     /// Records a device state the app has just opened itself at start-up, so applying the same
-    /// state later does not open the device a second time (C++ `noteAudioRequested`).
+    /// state later does not open the device a second time.
     pub fn note_audio_requested(&mut self, state: &str) {
         self.state.last_audio_state = state.to_owned();
     }
@@ -219,7 +219,7 @@ mod tests {
     use om_ui::preferences_applier::PreferencesApplier;
     use std::cell::RefCell;
 
-    /// The example plugin's theme id and owner, as the C++ test's example plugin reports them.
+    /// The example plugin's theme id and owner, as the example plugin reports them.
     const EXAMPLE_THEME: &str = "org.openmixer.example.theme";
     const EXAMPLE_OWNER: &str = "org.openmixer.example.gain";
 
@@ -237,7 +237,7 @@ mod tests {
         }
     }
 
-    /// Reports a fixed state and counts initialisations, like the C++ test's device control.
+    /// Reports a fixed state and counts initialisations.
     struct FakeDevice {
         state: String,
         inits: usize,

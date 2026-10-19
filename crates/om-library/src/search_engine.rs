@@ -1,4 +1,4 @@
-//! Runs searches against a library database. Port of `src/library/SearchEngine.{h,cpp}`.
+//! Runs searches against a library database.
 //! Threading: use on the thread that owns the `Database` (the UI gets its own read-only connection).
 
 use crate::database::Database;

@@ -1,5 +1,5 @@
-//! Port of tests/unit/DeckWidgetTest.cpp: routing, engine mirroring and the deck logic, headless.
-//! Cases that need a decoded track (the audio pump) are listed in the report, not here.
+//! Routing, engine mirroring and the deck logic, headless.
+//! Cases that need a decoded track (the audio pump) are not covered here.
 
 mod common;
 

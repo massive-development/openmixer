@@ -1,11 +1,12 @@
 //! Wraps the engine's audio callback and counts bad output samples (NaN, Inf, overflow) on the
-//! audio thread. Port of `tools/soak/OutputChecker.h`.
+//! audio thread.
 
 use om_audio::AudioCallback;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use om_core::atomic::AtomicF32;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// |sample| above this counts as overflow: far beyond any legal master level (C++ `kOverflowLimit`).
+/// |sample| above this counts as overflow: far beyond any legal master level.
 pub const OVERFLOW_LIMIT: f32 = 4.0;
 
 /// Totals shared between the audio thread (writer) and the control side (reader).
@@ -13,7 +14,7 @@ pub const OVERFLOW_LIMIT: f32 = 4.0;
 pub struct OutputStats {
     non_finite: AtomicU64,
     overflow: AtomicU64,
-    peak_bits: AtomicU32,
+    peak: AtomicF32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -28,7 +29,7 @@ impl OutputStats {
         OutputReport {
             non_finite: self.non_finite.load(Ordering::Relaxed),
             overflow: self.overflow.load(Ordering::Relaxed),
-            peak: f32::from_bits(self.peak_bits.load(Ordering::Relaxed)),
+            peak: self.peak.load(),
         }
     }
 
@@ -47,9 +48,8 @@ impl OutputStats {
         }
         self.non_finite.fetch_add(bad, Ordering::Relaxed);
         self.overflow.fetch_add(over, Ordering::Relaxed);
-        if block_peak > f32::from_bits(self.peak_bits.load(Ordering::Relaxed)) {
-            self.peak_bits
-                .store(block_peak.to_bits(), Ordering::Relaxed);
+        if block_peak > self.peak.load() {
+            self.peak.store(block_peak);
         }
     }
 }

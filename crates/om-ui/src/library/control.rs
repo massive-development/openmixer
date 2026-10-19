@@ -1,6 +1,5 @@
 //! The settings page's view of the library: [`LibraryControl`] implemented over the services, so
-//! the page's watch-folder edits reach the library and its subscribers. Port of the calls
-//! `LibrarySettingsPage.cpp` makes on `LibraryServices`.
+//! the page's watch-folder edits reach the library and its subscribers.
 
 use std::path::PathBuf;
 
