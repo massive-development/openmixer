@@ -85,7 +85,8 @@ jobs:
         run: python3 tools/progress_heatmap.py --check
 
   # Ported from the C++ ci.yml: the ASIO SDK must never be committed (ADR 0001). Searches every tracked
-  # file except the docs and the workflows, which name the rule.
+  # file except the docs, the workflows, the markdown policy docs and NOTICE, which name the rule.
+  # File names are checked too, so a committed SDK header or driver directory fails even with no text match.
   legal-guards:
     name: legal guards (no ASIO SDK)
     runs-on: ubuntu-latest
@@ -95,8 +96,15 @@ jobs:
 
       - name: No ASIO SDK in the tree
         run: |
-          if git grep -l -e 'asiodrv' -e 'ASIO SDK' -- . ':!docs' ':!.github'; then
+          if git grep -l -e 'asiodrv' -e 'ASIO SDK' -- . ':!docs' ':!.github' ':!*.md' ':!NOTICE'; then
             echo "ERROR: ASIO SDK reference found in a tracked file"
+            exit 1
+          fi
+
+      - name: No ASIO SDK file names in the tree
+        run: |
+          if git ls-files | grep -i -E '(^|/)(iasiodrv|asio(sdk|drivers))'; then
+            echo "ERROR: ASIO SDK file name found in the tracked tree"
             exit 1
           fi
 
