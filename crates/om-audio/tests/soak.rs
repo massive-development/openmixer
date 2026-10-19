@@ -12,8 +12,6 @@
 //! ever read by the engine. Run the short soak with `cargo test -p om-audio --test soak`, the
 //! 10-minute soak with `cargo test -p om-audio --test soak -- --ignored --nocapture`.
 
-mod common;
-
 #[path = "soak/checker.rs"]
 mod checker;
 #[path = "soak/scenario.rs"]
@@ -22,9 +20,9 @@ mod scenario;
 mod tone;
 
 use checker::{OutputChecker, OutputReport};
-use common::TempDir;
 use om_audio::{AudioDevice, DjEngine, LatencyStats, MockAudioDevice};
 use om_core::{ParameterRouter, ParameterTarget};
+use om_testing::fs::TempDir;
 use scenario::{ActionCounts, Scenario, CONTROL_PERIOD};
 use std::time::{Duration, Instant};
 

@@ -1,7 +1,7 @@
 //! Test-track generation and the soak's random source. Tracks are sine plus light noise, written as 32-bit float WAV: the soak feeds them to the engine
 //! and never to a device.
 
-use crate::common::write_float_wav;
+use om_testing::wav::write_float_wav;
 use std::f64::consts::PI;
 use std::path::Path;
 
