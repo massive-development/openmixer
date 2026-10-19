@@ -1,5 +1,5 @@
 //! The device-free half of the app: engine, parameter router, theme registry, preferences and the
-//! applier that pushes preferences into subsystems. Port of `src/app/AppComposition.cpp`. The
+//! applier that pushes preferences into subsystems. The
 //! device owner (the binary, or the UI gate) takes the audio side with [`AppComposition::take_audio`]
 //! and drives it, so headless and GUI runs share the same wiring.
 //!

@@ -1,5 +1,4 @@
-//! UI verification gate (Todo 31). Port of `tools/ui_gate.cpp` and `tools/ui_gate/UiRig.h`, `UiScenario.h`,
-//! at the logic layer: the real composition (engine, router, preferences) runs over a paced
+//! UI verification gate (Todo 31), at the logic layer: the real composition (engine, router, preferences) runs over a paced
 //! `MockAudioDevice` (silent, in memory only), and a scripted DJ operates the om-ui widget models
 //! (transport panel, bindings) through the same string-id router the window uses. No display needed.
 //!

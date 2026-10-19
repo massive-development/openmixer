@@ -1,7 +1,6 @@
 //! The MIDI side of the app, shared between the preferences, the MIDI settings page and a feedback
 //! thread. It owns the mapper (the one map), the input router over the device backend, the output
-//! router that lights controllers, and the feedback unit that decides what to send. Port of the
-//! MIDI wiring in `src/app/AppComposition.cpp` and `src/app/MainComponent.cpp`.
+//! router that lights controllers, and the feedback unit that decides what to send.
 //!
 //! Lock order, to keep the control threads deadlock-free: backend, then feedback, then the output
 //! ports. Input callbacks run on the device threads and take only the mapper's locks.

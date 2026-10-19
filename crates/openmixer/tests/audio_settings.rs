@@ -1,5 +1,5 @@
 //! The audio settings model over the mock backend. No real device is opened: `MockBackend` only.
-//! Covers the C++ `JuceAudioSettingsModel` behaviour: device types, devices, rates, buffers, the
+//! Covers the audio settings model behaviour: device types, devices, rates, buffers, the
 //! output pairs, restore of the stored state, and the device readout.
 
 use om_audio::AudioCallback;
