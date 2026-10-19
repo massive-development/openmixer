@@ -79,10 +79,12 @@ impl StageChain {
         (chain, insert)
     }
 
-    /// Control thread, before the chain runs. Prepares every stage already in a slot.
+    /// Control thread, before the chain runs. Applies queued swaps first, so stages queued before
+    /// this call land in their slots, then prepares every occupied slot at this rate and block.
     pub fn prepare(&mut self, sample_rate: f64, max_block_size: usize) {
         self.env.sample_rate.store(sample_rate);
         self.env.max_block.store(max_block_size, Ordering::Relaxed);
+        self.apply_commands();
         for stage in self.slots.iter_mut().flatten() {
             stage.prepare(sample_rate, max_block_size);
         }
