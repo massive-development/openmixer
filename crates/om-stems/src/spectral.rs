@@ -45,7 +45,12 @@ fn reflect_pad(x: &[f32], before: usize, after: usize) -> Vec<f32> {
 
 impl Spectral {
     pub fn new(n_fft: usize, hop: usize) -> Self {
-        assert!(n_fft.is_power_of_two() && hop > 0 && n_fft % hop == 0 && hop % 2 == 0);
+        assert!(
+            n_fft.is_power_of_two()
+                && hop > 0
+                && n_fft.is_multiple_of(hop)
+                && hop.is_multiple_of(2)
+        );
         let window = (0..n_fft)
             .map(|n| 0.5 - 0.5 * (2.0 * PI * n as f32 / n_fft as f32).cos())
             .collect();
@@ -206,7 +211,7 @@ mod tests {
     #[test]
     fn spectrum_is_linear_and_peaks_at_the_tone() {
         let s = Spectral::new(512, 128);
-        let l = tone(2048, 86.1328125 * 10.0); // bin 10 of a 512 FFT at 44.1 kHz
+        let l = tone(2048, 861.328_1); // bin 10 of a 512 FFT at 44.1 kHz
         let z = s.forward(&l, &vec![0.0; 2048]);
         let frames = s.frames(2048);
         let mag = |b: usize| {
