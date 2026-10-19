@@ -75,7 +75,9 @@ impl ModelContract {
             return Err("specInput and specOutput go together".into());
         }
         if self.spec_input.is_some()
-            && !(self.n_fft.is_power_of_two() && self.hop > 0 && self.n_fft % self.hop == 0)
+            && !(self.n_fft.is_power_of_two()
+                && self.hop > 0
+                && self.n_fft.is_multiple_of(self.hop))
         {
             return Err("nFft must be a power of two and a multiple of hop".into());
         }
