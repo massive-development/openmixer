@@ -75,6 +75,8 @@ pub struct ThemeTokens {
     pub popup: Colour,
     pub cap_top: Colour,
     pub cap_bottom: Colour,
+    /// Tint of a deck or pad a library track is dragged over.
+    pub drop_target: Colour,
     /// One per deck or channel; indices wrap. Never empty in a usable theme.
     pub accents: Vec<Colour>,
 
@@ -160,6 +162,17 @@ pub struct ThemeTokens {
     pub settings_button_width: f32,
     pub settings_dim_alpha: f32,
 
+    // Control chrome (px) and disabled-state strength (0..1 alpha), shared by every control kind.
+    pub border_width: f32,
+    pub focus_border_width: f32,
+    pub thumb_size: f32,
+    pub inset_small: f32,
+    pub inset_large: f32,
+    pub bar_radius: f32,
+    pub lamp_height: f32,
+    pub meter_headroom: f32,
+    pub disabled_alpha: f32,
+
     /// Scales the alpha of surface, raised and hover (glass strength).
     pub surface_opacity: f32,
     /// Default backdrop opacity before a window asks for less.
@@ -195,6 +208,7 @@ impl ThemeTokens {
             popup: Colour::from_argb(0xF014_1926),
             cap_top: Colour::from_argb(0xFF2C_3446),
             cap_bottom: Colour::from_argb(0xFF16_1B26),
+            drop_target: Colour::from_argb(0x402A_6F9E),
             accents: builtin_accents(),
 
             gap: 12,
@@ -272,6 +286,16 @@ impl ThemeTokens {
             settings_label_width: 150.0,
             settings_button_width: 96.0,
             settings_dim_alpha: 0.55,
+
+            border_width: 1.0,
+            focus_border_width: 2.0,
+            thumb_size: 12.0,
+            inset_small: 2.0,
+            inset_large: 4.0,
+            bar_radius: 2.0,
+            lamp_height: 8.0,
+            meter_headroom: 14.0,
+            disabled_alpha: 0.4,
 
             surface_opacity: 1.0,
             backdrop_opacity: 1.0,
