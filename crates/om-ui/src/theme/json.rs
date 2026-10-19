@@ -1,0 +1,551 @@
+//! Theme file parsing: JSON to [`ThemeTokens`] with validation. Port of `src/ui/ThemeJson.cpp`.
+//! Pure; no global state. Missing keys inherit the built-in dark theme; a malformed value rejects
+//! the whole theme; unknown keys are reported as warnings and ignored.
+
+use super::tokens::{Colour, ThemeTokens};
+use serde_json::{Map, Value};
+use std::path::Path;
+
+const MAX_ACCENTS: usize = 8;
+const MAX_SPACING: i64 = 64;
+const MIN_TYPE: f32 = 6.0;
+const MAX_TYPE: f32 = 64.0;
+const MAX_RADIUS: f32 = 48.0;
+const MAX_PX: f32 = 400.0;
+const MAX_WINDOW_PX: f32 = 4000.0;
+const HEX_HINT: &str = "expected \"#RRGGBB\" or \"#AARRGGBB\"";
+
+/// Identity of a theme: what the registry and the picker show.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeInfo {
+    pub id: String,
+    pub name: String,
+    pub author: String,
+}
+
+/// A successfully parsed theme. `warnings` lists ignored unknown keys.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedTheme {
+    pub info: ThemeInfo,
+    pub tokens: ThemeTokens,
+    pub warnings: Vec<String>,
+}
+
+/// Why a theme was rejected. Messages read `where: why`, as in the C++ loader.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ThemeError {
+    #[error("invalid JSON: {0}")]
+    Json(String),
+    #[error("theme must be a JSON object")]
+    NotObject,
+    #[error("{field}: {why}")]
+    Field { field: String, why: String },
+    #[error("not a file: {0}")]
+    NotAFile(String),
+    #[error("cannot read {path}: {why}")]
+    Read { path: String, why: String },
+}
+
+fn field(field: impl Into<String>, why: impl Into<String>) -> ThemeError {
+    ThemeError::Field {
+        field: field.into(),
+        why: why.into(),
+    }
+}
+
+/// Parses `#RRGGBB` or `#AARRGGBB` (case-insensitive). Anything else is `None`.
+pub fn parse_colour_hex(text: &str) -> Option<Colour> {
+    let digits = text.strip_prefix('#')?;
+    if (digits.len() != 6 && digits.len() != 8) || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u32::from_str_radix(digits, 16).ok()?;
+    Some(Colour::from_argb(if digits.len() == 6 {
+        0xFF00_0000 | value
+    } else {
+        value
+    }))
+}
+
+/// Float keys of one section, with the accepted range. Generates the key list, the setter and the range.
+macro_rules! float_keys {
+    ($( $key:literal => $field:ident : $lo:expr, $hi:expr ; )*) => {
+        pub(super) const KEYS: &[&str] = &[$($key),*];
+
+        /// Stores `value` if `key` is in this section; `false` for unknown keys.
+        pub(super) fn set(t: &mut ThemeTokens, key: &str, value: f32) -> bool {
+            match key {
+                $( $key => { t.$field = value; true } )*
+                _ => false,
+            }
+        }
+
+        pub(super) fn range(key: &str) -> (f32, f32) {
+            match key {
+                $( $key => ($lo, $hi), )*
+                _ => (0.0, 0.0),
+            }
+        }
+    };
+}
+
+mod radii_keys {
+    use super::*;
+    float_keys! {
+        "card" => card_radius: 0.0, MAX_RADIUS;
+        "control" => control_radius: 0.0, MAX_RADIUS;
+    }
+}
+
+mod type_keys {
+    use super::*;
+    float_keys! {
+        "small" => type_small: MIN_TYPE, MAX_TYPE;
+        "caption" => type_caption: MIN_TYPE, MAX_TYPE;
+        "body" => type_body: MIN_TYPE, MAX_TYPE;
+        "label" => type_label: MIN_TYPE, MAX_TYPE;
+        "title" => type_title: MIN_TYPE, MAX_TYPE;
+        "heading" => type_heading: MIN_TYPE, MAX_TYPE;
+        "mono" => type_mono: MIN_TYPE, MAX_TYPE;
+    }
+}
+
+mod translucency_keys {
+    use super::*;
+    float_keys! {
+        "surface" => surface_opacity: 0.0, 1.0;
+        "backdrop" => backdrop_opacity: 0.0, 1.0;
+    }
+}
+
+mod deck_keys {
+    use super::*;
+    float_keys! {
+        "headerHeight" => deck_header_height: 0.0, MAX_PX;
+        "overviewHeight" => deck_overview_height: 0.0, MAX_PX;
+        "transportHeight" => deck_transport_height: 0.0, MAX_PX;
+        "rowHeight" => deck_row_height: 0.0, MAX_PX;
+        "pitchWidth" => deck_pitch_width: 0.0, MAX_PX;
+        "minZoomHeight" => deck_min_zoom_height: 0.0, MAX_PX;
+        "readoutWidth" => deck_readout_width: 0.0, MAX_PX;
+        "rangeBoxHeight" => deck_range_box_height: 0.0, MAX_PX;
+        "playheadWidth" => playhead_width: 0.0, MAX_RADIUS;
+        "cueMarkerWidth" => cue_marker_width: 0.0, MAX_RADIUS;
+        "gridBarAlpha" => grid_bar_alpha: 0.0, 1.0;
+        "gridBeatAlpha" => grid_beat_alpha: 0.0, 1.0;
+        "loopActiveAlpha" => loop_active_alpha: 0.0, 1.0;
+        "loopIdleAlpha" => loop_idle_alpha: 0.0, 1.0;
+    }
+}
+
+mod mixer_keys {
+    use super::*;
+    float_keys! {
+        "knobHeight" => mixer_knob_height: 0.0, MAX_PX;
+        "buttonHeight" => mixer_button_height: 0.0, MAX_PX;
+        "meterWidth" => mixer_meter_width: 0.0, MAX_PX;
+        "masterWidth" => mixer_master_width: 0.0, MAX_PX;
+        "tabHeight" => mixer_tab_height: 0.0, MAX_PX;
+        "crossfaderHeight" => mixer_crossfader_height: 0.0, MAX_PX;
+        "cueHeight" => mixer_cue_height: 0.0, MAX_PX;
+        "meterFloorDb" => meter_floor_db: -96.0, -6.0;
+        "meterMidDb" => meter_mid_db: -96.0, 0.0;
+        "meterHighDb" => meter_high_db: -96.0, 0.0;
+        "meterClipLevel" => meter_clip_level: 0.1, 1.0;
+        "meterReleaseSeconds" => meter_release_seconds: 0.01, 10.0;
+        "meterHoldSeconds" => meter_hold_seconds: 0.0, 10.0;
+        "meterClipSeconds" => meter_clip_seconds: 0.0, 30.0;
+        "titleHeight" => mixer_title_height: 0.0, MAX_PX;
+        "faderWidth" => mixer_fader_width: 0.0, MAX_PX;
+        "curveWidth" => mixer_curve_width: 0.0, MAX_PX;
+        "fxBoxWidth" => mixer_fx_box_width: 0.0, MAX_PX;
+        "fxEnableWidth" => mixer_fx_enable_width: 0.0, MAX_PX;
+        "pageButtonWidth" => mixer_page_button_width: 0.0, MAX_PX;
+        "padX" => mixer_pad_x: 0.0, MAX_PX;
+        "padY" => mixer_pad_y: 0.0, MAX_PX;
+        "accentDot" => mixer_accent_dot: 0.0, MAX_PX;
+        "meterHoldTickHeight" => meter_hold_tick_height: 0.0, 20.0;
+        "meterSegment" => meter_segment: 1.0, 20.0;
+        "meterSegmentGap" => meter_segment_gap: 0.0, 10.0;
+    }
+}
+
+mod library_keys {
+    use super::*;
+    float_keys! {
+        "rowHeight" => library_row_height: 0.0, MAX_PX;
+        "headerHeight" => library_header_height: 0.0, MAX_PX;
+        "sidebarWidth" => library_sidebar_width: 0.0, MAX_PX;
+        "toolbarHeight" => library_toolbar_height: 0.0, MAX_PX;
+        "buttonWidth" => library_button_width: 0.0, MAX_PX;
+        "sidebarRowHeight" => library_sidebar_row_height: 0.0, MAX_PX;
+        "ratingDot" => library_rating_dot: 0.0, 20.0;
+        "searchMinWidth" => library_search_min_width: 0.0, MAX_PX;
+        "compatAlpha" => library_compat_alpha: 0.0, 1.0;
+        "stripeAlpha" => library_stripe_alpha: 0.0, 1.0;
+        "dropAlpha" => library_drop_alpha: 0.0, 1.0;
+    }
+}
+
+mod settings_keys {
+    use super::*;
+    float_keys! {
+        "panelWidth" => settings_panel_width: 0.0, MAX_WINDOW_PX;
+        "panelHeight" => settings_panel_height: 0.0, MAX_WINDOW_PX;
+        "tabHeight" => settings_tab_height: 0.0, MAX_PX;
+        "rowHeight" => settings_row_height: 0.0, MAX_PX;
+        "labelWidth" => settings_label_width: 0.0, MAX_PX;
+        "buttonWidth" => settings_button_width: 0.0, MAX_PX;
+        "dimAlpha" => settings_dim_alpha: 0.0, 1.0;
+    }
+}
+
+/// Colour keys of the `colours` section.
+macro_rules! colour_keys {
+    ($( $key:literal => $field:ident ; )*) => {
+        const COLOUR_KEYS: &[&str] = &[$($key),*];
+
+        fn set_colour(t: &mut ThemeTokens, key: &str, value: Colour) -> bool {
+            match key {
+                $( $key => { t.$field = value; true } )*
+                _ => false,
+            }
+        }
+    };
+}
+
+colour_keys! {
+    "backdropTop" => backdrop_top;
+    "backdropBottom" => backdrop_bottom;
+    "glowCool" => glow_cool;
+    "glowWarm" => glow_warm;
+    "surface" => surface;
+    "surfaceRaised" => surface_raised;
+    "surfaceHover" => surface_hover;
+    "well" => well;
+    "border" => border;
+    "highlight" => highlight;
+    "shadow" => shadow;
+    "textPrimary" => text_primary;
+    "textSecondary" => text_secondary;
+    "textMuted" => text_muted;
+    "onAccent" => on_accent;
+    "meterLow" => meter_low;
+    "meterMid" => meter_mid;
+    "meterHigh" => meter_high;
+    "master" => master;
+    "popup" => popup;
+    "capTop" => cap_top;
+    "capBottom" => cap_bottom;
+    "waveLow" => wave_low;
+    "waveMid" => wave_mid;
+    "waveHigh" => wave_high;
+}
+
+const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
+const ROOT_KEYS: [&str; 13] = [
+    "id",
+    "name",
+    "author",
+    "colours",
+    "accents",
+    "spacing",
+    "radii",
+    "type",
+    "translucency",
+    "deck",
+    "mixer",
+    "library",
+    "settings",
+];
+
+/// Parses a theme document. On error no tokens are returned, so a caller can never use a half-filled
+/// set; the caller keeps its current theme.
+pub fn parse_theme(json: &str) -> Result<ParsedTheme, ThemeError> {
+    let root: Value = serde_json::from_str(json).map_err(|e| ThemeError::Json(e.to_string()))?;
+    let Value::Object(root) = root else {
+        return Err(ThemeError::NotObject);
+    };
+    let mut out = ParsedTheme {
+        info: read_identity(&root)?,
+        tokens: ThemeTokens::builtin_dark(),
+        warnings: Vec::new(),
+    };
+    let w = &mut out.warnings;
+    let t = &mut out.tokens;
+    if let Some(s) = section(&root, "colours")? {
+        read_colours(s, t, w)?;
+    }
+    if let Some(s) = section(&root, "spacing")? {
+        read_spacing(s, t, w)?;
+    }
+    read_floats(
+        section(&root, "radii")?,
+        "radii",
+        w,
+        t,
+        radii_keys::KEYS,
+        radii_keys::set,
+        radii_keys::range,
+    )?;
+    read_floats(
+        section(&root, "type")?,
+        "type",
+        w,
+        t,
+        type_keys::KEYS,
+        type_keys::set,
+        type_keys::range,
+    )?;
+    read_floats(
+        section(&root, "translucency")?,
+        "translucency",
+        w,
+        t,
+        translucency_keys::KEYS,
+        translucency_keys::set,
+        translucency_keys::range,
+    )?;
+    read_floats(
+        section(&root, "deck")?,
+        "deck",
+        w,
+        t,
+        deck_keys::KEYS,
+        deck_keys::set,
+        deck_keys::range,
+    )?;
+    read_floats(
+        section(&root, "mixer")?,
+        "mixer",
+        w,
+        t,
+        mixer_keys::KEYS,
+        mixer_keys::set,
+        mixer_keys::range,
+    )?;
+    read_floats(
+        section(&root, "library")?,
+        "library",
+        w,
+        t,
+        library_keys::KEYS,
+        library_keys::set,
+        library_keys::range,
+    )?;
+    read_floats(
+        section(&root, "settings")?,
+        "settings",
+        w,
+        t,
+        settings_keys::KEYS,
+        settings_keys::set,
+        settings_keys::range,
+    )?;
+    if let Some(accents) = root.get("accents") {
+        t.accents = read_accents(accents)?;
+    }
+    warn_unknown(&root, &ROOT_KEYS, "", w);
+    Ok(out)
+}
+
+/// Reads and parses a theme file. A missing or unreadable file is an error for that file only.
+pub fn parse_theme_file(path: &Path) -> Result<ParsedTheme, ThemeError> {
+    if !path.is_file() {
+        return Err(ThemeError::NotAFile(path.display().to_string()));
+    }
+    let text = std::fs::read_to_string(path).map_err(|e| ThemeError::Read {
+        path: path.display().to_string(),
+        why: e.to_string(),
+    })?;
+    parse_theme(&text)
+}
+
+fn read_identity(root: &Map<String, Value>) -> Result<ThemeInfo, ThemeError> {
+    let id = root.get("id").and_then(Value::as_str).unwrap_or("");
+    if !is_theme_id(id) {
+        return Err(field(
+            "id",
+            "required, lowercase letters, digits, '.', '_' or '-'",
+        ));
+    }
+    let name = match root.get("name") {
+        None => id.to_owned(),
+        Some(Value::String(s)) => s.trim().to_owned(),
+        Some(_) => return Err(field("name", "must be a string")),
+    };
+    if name.is_empty() {
+        return Err(field("name", "must not be empty"));
+    }
+    let author = root
+        .get("author")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    Ok(ThemeInfo {
+        id: id.to_owned(),
+        name,
+        author,
+    })
+}
+
+fn is_theme_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        })
+}
+
+/// An optional object section. Present but not an object is an error.
+fn section<'a>(
+    root: &'a Map<String, Value>,
+    name: &str,
+) -> Result<Option<&'a Map<String, Value>>, ThemeError> {
+    match root.get(name) {
+        None => Ok(None),
+        Some(Value::Object(obj)) => Ok(Some(obj)),
+        Some(_) => Err(field(name, "must be an object")),
+    }
+}
+
+/// Reports keys the schema does not know (typos) without rejecting the theme.
+fn warn_unknown(
+    obj: &Map<String, Value>,
+    known: &[&str],
+    prefix: &str,
+    warnings: &mut Vec<String>,
+) {
+    for key in obj.keys() {
+        if !known.contains(&key.as_str()) {
+            warnings.push(format!("unknown key '{prefix}{key}' ignored"));
+        }
+    }
+}
+
+fn read_colours(
+    section: &Map<String, Value>,
+    t: &mut ThemeTokens,
+    warnings: &mut Vec<String>,
+) -> Result<(), ThemeError> {
+    for (key, value) in section {
+        if !COLOUR_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        let colour = value.as_str().and_then(parse_colour_hex);
+        match colour {
+            Some(c) => {
+                set_colour(t, key, c);
+            }
+            None => return Err(field(format!("colours.{key}"), HEX_HINT)),
+        }
+    }
+    warn_unknown(section, COLOUR_KEYS, "colours.", warnings);
+    Ok(())
+}
+
+fn read_accents(value: &Value) -> Result<Vec<Colour>, ThemeError> {
+    let items = match value {
+        Value::Array(items) if !items.is_empty() && items.len() <= MAX_ACCENTS => items,
+        _ => {
+            return Err(field(
+                "accents",
+                format!("expected 1-{MAX_ACCENTS} colours"),
+            ))
+        }
+    };
+    items
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .and_then(parse_colour_hex)
+                .ok_or_else(|| field("accents", HEX_HINT))
+        })
+        .collect()
+}
+
+fn read_spacing(
+    section: &Map<String, Value>,
+    t: &mut ThemeTokens,
+    warnings: &mut Vec<String>,
+) -> Result<(), ThemeError> {
+    for key in SPACING_KEYS {
+        let Some(value) = section.get(key) else {
+            continue;
+        };
+        let whole = value.as_i64().filter(|v| (0..=MAX_SPACING).contains(v));
+        let Some(v) = whole else {
+            return Err(field(
+                format!("spacing.{key}"),
+                format!("expected an integer 0-{MAX_SPACING}"),
+            ));
+        };
+        // Range-checked above, so the narrowing is lossless.
+        let v = v as i32;
+        match key {
+            "gap" => t.gap = v,
+            "pad" => t.pad = v,
+            _ => t.inner_gap = v,
+        }
+    }
+    warn_unknown(section, &SPACING_KEYS, "spacing.", warnings);
+    Ok(())
+}
+
+/// Reads one float section: every present key must be a number inside its range.
+fn read_floats(
+    section: Option<&Map<String, Value>>,
+    name: &str,
+    warnings: &mut Vec<String>,
+    t: &mut ThemeTokens,
+    keys: &[&str],
+    set: fn(&mut ThemeTokens, &str, f32) -> bool,
+    range: fn(&str) -> (f32, f32),
+) -> Result<(), ThemeError> {
+    let Some(section) = section else {
+        return Ok(());
+    };
+    for key in keys {
+        let Some(value) = section.get(*key) else {
+            continue;
+        };
+        let (lo, hi) = range(key);
+        let number = value
+            .as_f64()
+            .map(|v| v as f32)
+            .filter(|v| *v >= lo && *v <= hi);
+        match number {
+            Some(v) => {
+                set(t, key, v);
+            }
+            None => {
+                return Err(field(
+                    format!("{name}.{key}"),
+                    format!("expected a number {lo}-{hi}"),
+                ))
+            }
+        }
+    }
+    warn_unknown(section, keys, &format!("{name}."), warnings);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn colour_hex_is_strict() {
+        assert_eq!(
+            parse_colour_hex("#aAbBcC"),
+            Some(Colour::from_argb(0xFFAA_BBCC))
+        );
+        assert_eq!(
+            parse_colour_hex("#80112233"),
+            Some(Colour::from_argb(0x8011_2233))
+        );
+        assert_eq!(parse_colour_hex("112233"), None);
+        assert_eq!(parse_colour_hex("#1122"), None);
+        assert_eq!(parse_colour_hex(""), None);
+        assert_eq!(parse_colour_hex("#GG0000"), None);
+    }
+}

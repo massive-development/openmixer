@@ -1,0 +1,20 @@
+[package]
+name = "gain-plugin"
+description = "Example OpenMixer plugin: a gain stage, a parameter target, a MIDI map and a theme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+om-core = { path = "../../../crates/om-core" }
+om-engine = { path = "../../../crates/om-engine" }
+om-plugins = { path = "../../../crates/om-plugins" }
+
+[dev-dependencies]
+om-midi = { path = "../../../crates/om-midi" }

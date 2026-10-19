@@ -1,0 +1,17 @@
+# THROWAWAY SPIKE (Task 7). Own workspace: not built by the root workspace or Rust CI.
+[workspace]
+
+[package]
+name = "cpal-out-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cpal = "=0.18.2"
+rtrb = "=0.4.0"
+assert_no_alloc = "=1.1.2"
+
+[features]
+# Optional: cpal's native PulseAudio host (lets WSLg's PulseServer act as a real device on WSL2).
+pulse = ["cpal/pulseaudio"]

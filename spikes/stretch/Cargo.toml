@@ -1,0 +1,15 @@
+# THROWAWAY SPIKE (Task 8): time-stretch quality. Not part of the product build.
+[package]
+name = "stretch-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+hound = "3"
+timestretch = "0.15"
+wsola = "0.2"
+signalsmith-stretch = "0.1"
+rubberband = "0.1"

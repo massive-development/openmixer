@@ -1,0 +1,24 @@
+[package]
+name = "om-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+om-core = { path = "../om-core" }
+om-dsp = { path = "../om-dsp" }
+om-engine = { path = "../om-engine" }
+om-analysis = { path = "../om-analysis" }
+om-library = { path = "../om-library" }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"

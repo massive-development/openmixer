@@ -1,0 +1,23 @@
+[package]
+name = "om-stems"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+om-analysis = { path = "../om-analysis" }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+# HTTPS through rustls (the `tls` feature). The root bundle is webpki-roots, licensed
+# CDLA-Permissive-2.0, which deny.toml allows (see the comment there).
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[dev-dependencies]
+tempfile = "3"

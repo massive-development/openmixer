@@ -1,0 +1,31 @@
+[package]
+name = "openmixer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+om-core = { path = "../om-core" }
+om-engine = { path = "../om-engine" }
+om-audio = { path = "../om-audio" }
+om-midi = { path = "../om-midi" }
+om-plugins = { path = "../om-plugins" }
+om-ui = { path = "../om-ui" }
+serde_json = "1"
+# The example plugin, compiled in as a built-in the Plugins page can load and unload.
+gain-plugin = { path = "../../examples/plugins/gain-plugin" }
+# The GPUI window (not a workspace member; see the root Cargo.toml). Off by default.
+om-ui-gpui = { path = "../om-ui-gpui", optional = true }
+
+[features]
+default = []
+gui = ["dep:om-ui-gpui"]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3"
