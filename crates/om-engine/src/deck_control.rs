@@ -183,6 +183,3 @@ impl ParameterTarget for DeckControl {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

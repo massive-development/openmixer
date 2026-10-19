@@ -204,3 +204,95 @@ fn keylock_playback_does_not_allocate() {
         "every block should carry keylocked deck audio"
     );
 }
+
+#[test]
+fn dj_engine_process_does_not_allocate_with_two_decks_loop_fx_and_keylock() {
+    use crate::callback::AudioCallback;
+    use crate::dj_engine::DjEngine;
+    use crate::quantizer::Loop;
+    use om_core::ParameterTarget;
+
+    let fixture = crate::deck::tests::Fixture::new();
+    let wav = fixture.path("engine.wav");
+    // Keylock at rate 1.1 consumes more source than the output, so the track is longer than the run.
+    let frames = BLOCK * BLOCKS * 2 + 4096;
+    let mut samples = Vec::with_capacity(frames * 2);
+    for n in 0..frames {
+        let v = (n % 1000) as f32 / 1000.0;
+        samples.push(v);
+        samples.push(-v);
+    }
+    crate::deck::tests::write_float_wav(&wav, 2, &samples);
+
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, BLOCK);
+    for d in 0..2 {
+        engine.deck(d).load(&wav).expect("fixture loads");
+    }
+
+    // Unguarded pump: the decoders fill the rings and the loop prefetch before the guarded run.
+    let mut pump = [[0.0_f32; BLOCK]; 4];
+    let [p0, p1, p2, p3] = &mut pump;
+    let mut outs: [&mut [f32]; 4] = [p0, p1, p2, p3];
+    for d in 0..2 {
+        assert!(
+            crate::deck::tests::wait_for(
+                || {
+                    audio.process(&[], &mut outs);
+                    engine.deck(d).buffered_frames() >= BLOCK * 4
+                },
+                std::time::Duration::from_secs(10)
+            ),
+            "decoder {d} did not buffer in time"
+        );
+    }
+    assert!(engine.deck(0).set_loop(Loop {
+        start: 1024,
+        end: 5120
+    }));
+    assert!(
+        crate::deck::tests::wait_for(
+            || engine.deck(0).is_loop_prefetched(),
+            std::time::Duration::from_secs(10)
+        ),
+        "loop start was not prefetched"
+    );
+    engine.deck(0).set_keylock(true);
+    engine.deck(1).set_keylock(true);
+    engine.deck(1).set_rate(1.1);
+    // FX on master and both channels, faders up.
+    for id in ["master.fx0.mix", "ch0.fx1.mix", "ch1.fx2.mix"] {
+        assert!(engine.fx().set_parameter(id, 0.5));
+    }
+    for id in ["master.fx0.enable", "ch0.fx1.enable", "ch1.fx2.enable"] {
+        assert!(engine.fx().set_parameter(id, 1.0));
+    }
+    engine.mixer().set_fader(0, 1.0);
+    engine.mixer().set_fader(1, 1.0);
+    engine.deck(0).play();
+    engine.deck(1).play();
+
+    let mut audible_blocks = 0_usize;
+    for _ in 0..BLOCKS {
+        for d in 0..2 {
+            assert!(
+                crate::deck::tests::wait_for(
+                    || engine.deck(d).buffered_frames() >= BLOCK * 2,
+                    std::time::Duration::from_secs(10)
+                ),
+                "decoder {d} stalled"
+            );
+        }
+        let [a, b, c, d] = &mut pump;
+        let mut outs: [&mut [f32]; 4] = [a, b, c, d];
+        assert_no_alloc(|| audio.process(&[], &mut outs));
+        if outs[0].iter().any(|&v| v != 0.0) {
+            audible_blocks += 1;
+        }
+    }
+    assert!(engine.deck(0).is_looping());
+    assert_eq!(
+        audible_blocks, BLOCKS,
+        "every block should carry master audio"
+    );
+}
