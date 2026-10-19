@@ -15,6 +15,7 @@ om-analysis = { path = "../om-analysis" }
 rusqlite = { version = "0.35", features = ["bundled"] }
 lofty = "0.25"
 thiserror = "2"
+quick-xml = "0.41"
 
 [dev-dependencies]
 proptest = "1"

@@ -3987,6 +3987,7 @@ dependencies = [
  "lofty",
  "om-analysis",
  "proptest",
+ "quick-xml",
  "rusqlite",
  "tempfile",
  "thiserror 2.0.21",
