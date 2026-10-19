@@ -20,6 +20,9 @@ jobs:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Linux-first (docs/spikes/DECISIONS.md, "CI status by platform"): only the Linux leg is required.
+    # macOS and Windows run for signal only until their porting phase; remove this when they are green.
+    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

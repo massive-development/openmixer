@@ -85,24 +85,34 @@ fn native_separators(path: String) -> String {
 mod tests {
     use super::file_url_to_path;
 
+    // The function returns native separators (`\` on Windows), so expectations are written with `/`
+    // and converted the same way the production code does.
+    fn native(path: &str) -> String {
+        if cfg!(windows) {
+            path.replace('/', "\\")
+        } else {
+            path.to_owned()
+        }
+    }
+
     // Expectations from tests/unit/LibraryImportTest.cpp (ImportFileUrl.DecodesCommonForms).
     #[test]
     fn decodes_common_forms() {
         assert_eq!(
-            file_url_to_path("file:///music/a%20b.mp3").as_deref(),
-            Some("/music/a b.mp3")
+            file_url_to_path("file:///music/a%20b.mp3"),
+            Some(native("/music/a b.mp3"))
         );
         assert_eq!(
-            file_url_to_path("file://localhost/music/x.wav").as_deref(),
-            Some("/music/x.wav")
+            file_url_to_path("file://localhost/music/x.wav"),
+            Some(native("/music/x.wav"))
         );
         assert_eq!(
-            file_url_to_path("FILE://localhost/music/x.wav").as_deref(),
-            Some("/music/x.wav")
+            file_url_to_path("FILE://localhost/music/x.wav"),
+            Some(native("/music/x.wav"))
         );
         assert_eq!(
-            file_url_to_path("file:///music/Caf%C3%A9+Mix%25.wav").as_deref(),
-            Some("/music/Café+Mix%.wav")
+            file_url_to_path("file:///music/Caf%C3%A9+Mix%25.wav"),
+            Some(native("/music/Café+Mix%.wav"))
         );
     }
 
@@ -117,8 +127,8 @@ mod tests {
     #[test]
     fn broken_escapes_stay_literal() {
         // A truncated or non-hex escape is kept as typed (as the C++ test expects), not decoded.
-        assert_eq!(file_url_to_path("file:///a%2").as_deref(), Some("/a%2"));
-        assert_eq!(file_url_to_path("file:///a%zz").as_deref(), Some("/a%zz"));
+        assert_eq!(file_url_to_path("file:///a%2"), Some(native("/a%2")));
+        assert_eq!(file_url_to_path("file:///a%zz"), Some(native("/a%zz")));
     }
 
     #[test]
