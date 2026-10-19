@@ -137,6 +137,11 @@ impl Engine {
     /// Copies up to `min(available, shortest output slice)` frames into `output`. Returns the
     /// number written.
     pub(crate) fn retrieve(&mut self, output: &mut [&mut [f32]]) -> usize {
+        // Rubber Band writes one buffer per engine channel. Any other count would make it read
+        // pointers past `out_ptrs` or write past the caller's slices, so refuse the call.
+        if output.len() != self.channels {
+            return 0;
+        }
         let limit = output.iter().map(|c| c.len()).min().unwrap_or(0);
         let frames = limit.min(self.available());
         if frames == 0 {

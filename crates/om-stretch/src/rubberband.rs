@@ -141,6 +141,10 @@ impl Stretcher for RubberBandStretcher {
     }
 
     fn retrieve(&mut self, output: &mut [&mut [f32]]) -> usize {
+        // Same contract as `process`: one slice per prepared channel, anything else is refused.
+        if output.len() != self.channels {
+            return 0;
+        }
         match self.engine.as_mut() {
             Some(engine) => engine.retrieve(output),
             None => 0,
@@ -295,6 +299,26 @@ mod tests {
         let input = sine(st.max_feed() * 3 + 17);
         st.process(&[&input, &input]);
         assert!(st.available() > 0, "engine should produce output");
+    }
+
+    #[test]
+    fn retrieve_with_the_wrong_channel_count_returns_zero_and_keeps_output() {
+        let mut st = RubberBandStretcher::new();
+        st.prepare(SR, 2, BLOCK).expect("prepare");
+        let input = sine(st.max_feed() * 3 + 17);
+        st.process(&[&input, &input]);
+        let queued = st.available();
+        assert!(queued > 0, "engine should produce output");
+
+        // Three slices for a two-channel engine: must not write or read past the engine's buffers.
+        let mut a = vec![0.0_f32; queued];
+        let mut b = vec![0.0_f32; queued];
+        let mut c = vec![0.0_f32; queued];
+        assert_eq!(st.retrieve(&mut [&mut a, &mut b, &mut c]), 0);
+        assert!(a.iter().chain(&b).chain(&c).all(|&v| v == 0.0));
+        // One slice for a two-channel engine.
+        assert_eq!(st.retrieve(&mut [&mut a]), 0);
+        assert_eq!(st.available(), queued, "a rejected call consumes nothing");
     }
 
     #[test]
