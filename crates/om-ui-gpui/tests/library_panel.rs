@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -14,6 +14,7 @@ use om_library::TrackRecord;
 use om_ui::library::{describe_track_drag, LibraryServices, Options};
 use om_ui::sidebar::SidebarKind;
 use om_ui_gpui::library::{KeyOutcome, LibraryHub, LibraryPanel, SharedHub};
+use tempfile::TempDir;
 
 /// A 16-bit mono WAV with a short tone, enough for the loader to decode.
 fn write_wav(path: &Path) {
@@ -41,7 +42,7 @@ fn write_wav(path: &Path) {
 }
 
 struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
     hub: SharedHub,
 }
 
@@ -50,8 +51,10 @@ fn memory_services() -> LibraryServices {
 }
 
 fn fixture(name: &str) -> Fixture {
-    let dir = std::env::temp_dir().join(format!("om-library-panel-{name}-{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix(&format!("om-library-panel-{name}-"))
+        .tempdir()
+        .unwrap();
     let services = memory_services();
     let hub = LibraryHub::shared(services, 2);
     Fixture { dir, hub }
@@ -59,7 +62,7 @@ fn fixture(name: &str) -> Fixture {
 
 /// Inserts a track whose file exists (a real WAV), or a missing one when `real` is false.
 fn add(fx: &Fixture, title: &str, camelot: &str, real: bool) -> i64 {
-    let path = fx.dir.join(format!("{title}.wav"));
+    let path = fx.dir.path().join(format!("{title}.wav"));
     if real {
         write_wav(&path);
     }

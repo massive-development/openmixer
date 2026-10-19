@@ -4,35 +4,27 @@
 use super::{Deck, DeckAudio};
 use crate::callback::AudioCallback;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 pub(crate) const FRAMES: i64 = 20_000;
 pub(crate) const RATE: f64 = 44_100.0;
 
 /// Unique temporary directory per test, removed on drop.
 pub(crate) struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
 }
 
 impl Fixture {
     pub(crate) fn new() -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("openmixer-deck-test-{}-{id}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create fixture dir");
-        Self { dir }
+        Self {
+            dir: tempfile::tempdir().expect("create fixture dir"),
+        }
     }
 
     pub(crate) fn path(&self, name: &str) -> PathBuf {
-        self.dir.join(name)
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        self.dir.path().join(name)
     }
 }
 
