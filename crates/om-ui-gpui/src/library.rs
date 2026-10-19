@@ -15,8 +15,10 @@ use om_library::TrackRecord;
 use om_ui::library::{
     columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, TrackLoader,
 };
+use om_ui::settings::{LibraryControl, SettingsResult};
 use om_ui::sidebar::SidebarNode;
 use om_ui::widgets::deck::TrackInfo;
+use std::path::PathBuf;
 
 /// The services and the loader, shared by the browser's handler and the window.
 pub struct LibraryHub {
@@ -25,6 +27,36 @@ pub struct LibraryHub {
 }
 
 pub type SharedHub = Rc<RefCell<LibraryHub>>;
+
+/// The settings page's view of the library: the window's shared services, so the page's watch
+/// folders, rescan and import reach the same library the browser shows.
+pub struct HubLibrary(pub SharedHub);
+
+impl LibraryControl for HubLibrary {
+    fn available(&self) -> bool {
+        LibraryControl::available(&self.0.borrow().services)
+    }
+
+    fn folders(&self) -> Vec<PathBuf> {
+        LibraryControl::folders(&self.0.borrow().services)
+    }
+
+    fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
+        LibraryControl::add_watch_folder(&mut self.0.borrow_mut().services, folder)
+    }
+
+    fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
+        LibraryControl::remove_watch_folder(&mut self.0.borrow_mut().services, folder)
+    }
+
+    fn rescan(&mut self) -> SettingsResult<()> {
+        LibraryControl::rescan(&mut self.0.borrow_mut().services)
+    }
+
+    fn import_xml(&mut self, xml: PathBuf) -> SettingsResult<String> {
+        LibraryControl::import_xml(&mut self.0.borrow_mut().services, xml)
+    }
+}
 
 impl LibraryHub {
     /// Wraps the services with a loader for `num_decks` decks.

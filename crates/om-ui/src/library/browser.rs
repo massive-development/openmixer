@@ -9,6 +9,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use om_library::{ImportReport, PrepStatus, TrackRecord};
 
+use super::control::import_summary;
 use super::services::{LibraryEvent, LibraryServices};
 use super::track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
 use super::track_table::TrackTableModel;
@@ -241,14 +242,7 @@ impl LibraryBrowser {
     ) -> Result<ImportReport, String> {
         match services.import_file(xml) {
             Ok(report) => {
-                let mut text = format!(
-                    "Imported {} new, {} merged, {} playlists",
-                    report.tracks_added, report.tracks_merged, report.playlists_created
-                );
-                if report.errors > 0 {
-                    text.push_str(&format!(", {} problems", report.errors));
-                }
-                self.set_status(text, report.errors > 0);
+                self.set_status(import_summary(&report), report.errors > 0);
                 Ok(report)
             }
             Err(error) => {
