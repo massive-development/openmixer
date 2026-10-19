@@ -19,7 +19,7 @@ mod weights;
 pub use contract::ModelContract;
 pub use manifest::{ManifestError, ModelManifest};
 #[cfg(feature = "onnx")]
-pub use onnx::OrtInference;
+pub use onnx::{default_threads, OrtInference};
 pub use pipeline::{
     HtDemucsPipeline, HtDemucsSeparator, SegmentInput, SegmentOutput, StemInference, EMIT_CHUNK,
     MIN_STD,
