@@ -13,6 +13,7 @@ pub mod main_layout;
 pub mod meter;
 pub mod preferences;
 pub mod preferences_applier;
+pub mod settings;
 pub mod sidebar;
 pub mod theme;
 pub mod waveform;
