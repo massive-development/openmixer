@@ -31,7 +31,10 @@ impl XmlElement {
     }
 
     /// Child elements with this tag name, in document order.
-    pub fn children_named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a XmlElement> + 'a {
+    pub fn children_named<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a XmlElement> + 'a {
         self.children.iter().filter(move |c| c.name == name)
     }
 

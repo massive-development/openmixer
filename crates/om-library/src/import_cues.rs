@@ -95,7 +95,14 @@ pub fn import_cues(
     Ok(())
 }
 
-fn store(dao: &CueDao<'_>, track_id: i64, c: &ImportedCue, slot: i32, start: i64, end: i64) -> Result<()> {
+fn store(
+    dao: &CueDao<'_>,
+    track_id: i64,
+    c: &ImportedCue,
+    slot: i32,
+    start: i64,
+    end: i64,
+) -> Result<()> {
     if c.kind == CueKind::Loop {
         dao.set_loop(&SavedLoop {
             track_id,

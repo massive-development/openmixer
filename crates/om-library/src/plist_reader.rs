@@ -42,7 +42,9 @@ impl<'a> PlistDict<'a> {
     /// The `<integer>` value, or `fallback` when the key is absent or not an integer.
     pub fn integer(&self, key: &str, fallback: i64) -> i64 {
         match self.find(key) {
-            Some(e) if e.has_tag_name("integer") => crate::juce_text::int_value(e.all_text().trim()),
+            Some(e) if e.has_tag_name("integer") => {
+                crate::juce_text::int_value(e.all_text().trim())
+            }
             _ => fallback,
         }
     }
