@@ -72,8 +72,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Golden audio tests
   - Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`). Enable `GPL-2.0-or-later` in `deny.toml` when this lands
 
-- [ ] **Todo 12:** Beat-sync + quantized cue/loop/slip
-  - Engine side done (grid, sync, quantize, slip, gapless loops, hotcues); open until analysis (Todo 15) supplies beat grids
+- [x] **Todo 12:** Beat-sync + quantized cue/loop/slip
+  - Engine side done (grid, sync, quantize, slip, gapless loops, hotcues); analysed beat grids (Todo 15) drive sync and quantize through `DjEngine::set_grid` (test: `analysed_grid_drives_sync_and_quantize_through_the_engine`)
   - Beat phase alignment
   - Control ids: `deck.N.sync`, `sync.master`, `loop.quantized.<beats>`, `slip`
   - Gapless deck loop playback and hotcues
@@ -96,12 +96,12 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 3: Analysis Pipeline
 
-- [ ] **Todo 14:** Analysis service skeleton + SQLite cache
+- [x] **Todo 14:** Analysis service skeleton + SQLite cache
   - Background job runner with progress, cancel and wait
   - Analyzer registry (versioned extension point)
   - SQLite result cache keyed by file content hash, analyzer id and version
 
-- [ ] **Todo 15:** BPM + beat-grid detection
+- [x] **Todo 15:** BPM + beat-grid detection
   - Tempo estimation, beat grid with downbeat detection
   - Manual tempo markers and correction
 
