@@ -30,8 +30,10 @@ pub struct DjEngine {
     sync: Arc<Sync>,
     mixer: Arc<MixerControl>,
     fx: Arc<FxRouting>,
-    /// Control-timer ticks so far; stamps [`EngineSnapshot::seq`].
+    /// Control-timer ticks so far; stamps [`EngineSnapshot::ticks`].
     ticks: AtomicU64,
+    /// Snapshots built so far; stamps [`EngineSnapshot::built`].
+    builds: AtomicU64,
 }
 
 /// Audio side of the engine. Implements [`AudioCallback`].
@@ -94,6 +96,7 @@ impl DjEngine {
             mixer: Arc::new(mixer_control),
             fx,
             ticks: AtomicU64::new(0),
+            builds: AtomicU64::new(0),
         };
         let audio = DjEngineAudio {
             decks: deck_audio,
@@ -191,6 +194,12 @@ impl DjEngine {
         }
     }
 
+    /// How many snapshots this engine has built. A diagnostic hook: tests use it to count the
+    /// captures a read path takes.
+    pub fn snapshots_built(&self) -> u64 {
+        self.builds.load(Relaxed)
+    }
+
     /// The whole engine as plain values, for the UI and MIDI feedback. Control thread only.
     ///
     /// Pull-based: the caller asks, the engine answers from its atomics and control-side getters.
@@ -198,6 +207,7 @@ impl DjEngine {
     /// [`DeckSnapshot`]; the mixer side is atomics only). Approximate: fields are read one by one,
     /// so a snapshot can mix two audio blocks. Stems, sampler and automix are empty placeholders.
     pub fn snapshot(&self) -> EngineSnapshot {
+        let built = self.builds.fetch_add(1, Relaxed) + 1;
         let decks: Vec<DeckSnapshot> = (0..self.decks.len())
             .map(|index| self.deck_snapshot(index))
             .collect();
@@ -225,7 +235,8 @@ impl DjEngine {
             .map(|_| [StemSnapshot; STEMS_PER_DECK as usize])
             .collect();
         EngineSnapshot {
-            seq: self.ticks.load(Relaxed),
+            ticks: self.ticks.load(Relaxed),
+            built,
             decks,
             mixer,
             stems,

@@ -301,7 +301,8 @@ fn snapshot_matches_the_getters_of_a_playing_engine() {
     engine.update_control(0.02);
 
     let snap: EngineSnapshot = engine.snapshot();
-    assert_eq!(snap.seq, 1, "one control tick so far");
+    assert_eq!(snap.ticks, 1, "one control tick so far");
+    assert_eq!(snap.built, 1, "first snapshot of this engine");
     assert_eq!(snap.decks.len(), 2);
     let deck = engine.deck(0);
     let d = &snap.decks[0];

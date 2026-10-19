@@ -15,9 +15,13 @@ use crate::state_id::{ChannelState, DeckState, MixerState, StateId};
 /// One consistent-enough copy of the engine. See the module docs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EngineSnapshot {
-    /// Control-timer ticks when the snapshot was taken. Changes once per tick, so a reader can tell
-    /// a new snapshot from one it already has.
-    pub seq: u64,
+    /// Control-timer ticks (`DjEngine::update_control` calls) so far when the snapshot was taken.
+    /// It advances on the control timer, not on each engine change, so it measures elapsed control
+    /// time. It does not say whether any value moved; compare values for that.
+    pub ticks: u64,
+    /// Snapshots the engine has built, this one included: 1 for the first. Strictly increasing per
+    /// engine, so two snapshots from one engine with different `built` values are separate captures.
+    pub built: u64,
     pub decks: Vec<DeckSnapshot>,
     pub mixer: MixerSnapshot,
     pub stems: Vec<[StemSnapshot; STEMS_PER_DECK as usize]>,
