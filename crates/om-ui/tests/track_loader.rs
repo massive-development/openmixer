@@ -11,7 +11,7 @@ use om_analysis::hash_file_content;
 use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
 use om_testing::wait::{wait_until, DEFAULT_POLL};
-use om_ui::library::{LibraryServices, TrackLoader};
+use om_ui::library::{LibraryServices, LoadError, TrackLoader};
 use om_ui::widgets::deck::format_key;
 
 struct LoaderRig {
@@ -63,7 +63,7 @@ impl LoaderRig {
     }
 
     /// A normal load: refused while the deck is playing.
-    fn load(&mut self, deck: usize, track_id: i64) -> Result<(), String> {
+    fn load(&mut self, deck: usize, track_id: i64) -> Result<(), LoadError> {
         self.loader
             .load(&self.engine, &mut self.services, deck, track_id, false)
     }
@@ -165,7 +165,7 @@ fn missing_files_and_bad_decks_fail_without_touching_the_deck() {
     let mut rig = LoaderRig::new();
     let missing = rig.add_file("gone.wav", "8A", false);
     let error = rig.load(0, missing).expect_err("missing file fails");
-    assert!(error.contains("missing"), "{error}");
+    assert!(error.to_string().contains("missing"), "{error}");
     assert!(!rig.engine.deck(0).is_loaded());
 
     let ok = rig.add_file("ok.wav", "8A", true);
@@ -219,7 +219,7 @@ fn a_playing_deck_refuses_a_load_unless_forced() {
     assert!(rig.engine.deck(0).is_playing());
 
     let refused = rig.load(0, second).expect_err("a playing deck refuses");
-    assert_eq!(refused, "deck is playing");
+    assert_eq!(refused.to_string(), "deck is playing");
     assert!(rig.engine.deck(0).is_playing(), "the deck keeps playing");
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(first));
 

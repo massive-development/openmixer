@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use om_library::LibraryError;
+
 /// Folders deeper than this stop the walk (a corrupt file must not recurse forever).
 pub const MAX_DEPTH: usize = 16;
 
@@ -73,9 +75,17 @@ pub struct PlaylistRow {
 /// What the sidebar reads from the library.
 pub trait LibraryTree {
     /// Children of `parent` (`None` = top level). An error fails the whole playlist group.
-    fn playlist_children(&self, parent: Option<i64>) -> Result<Vec<PlaylistRow>, String>;
-    /// Watch folder paths, in the library's order.
-    fn watch_folders(&self) -> Vec<String>;
+    fn playlist_children(&self, parent: Option<i64>) -> Result<Vec<PlaylistRow>, LibraryError>;
+    /// Watch folder paths, in the library's order. An error leaves the watch group empty.
+    fn watch_folders(&self) -> Result<Vec<String>, LibraryError>;
+}
+
+/// The sidebar nodes, and the first library read that failed while building them. A failed group
+/// comes out empty, so `error` is what tells the user why it is empty.
+#[derive(Debug, Default)]
+pub struct Sidebar {
+    pub nodes: Vec<SidebarNode>,
+    pub error: Option<LibraryError>,
 }
 
 fn add_playlists(
@@ -83,9 +93,14 @@ fn add_playlists(
     parent: Option<i64>,
     out: &mut Vec<SidebarNode>,
     depth: usize,
+    error: &mut Option<LibraryError>,
 ) -> bool {
-    let Ok(items) = lib.playlist_children(parent) else {
-        return false;
+    let items = match lib.playlist_children(parent) {
+        Ok(items) => items,
+        Err(e) => {
+            error.get_or_insert(e);
+            return false;
+        }
     };
     if depth > MAX_DEPTH {
         return false;
@@ -98,7 +113,9 @@ fn add_playlists(
         };
         let mut node = SidebarNode::named(kind, &item.name);
         node.playlist_id = item.id;
-        if item.is_folder && !add_playlists(lib, Some(item.id), &mut node.children, depth + 1) {
+        if item.is_folder
+            && !add_playlists(lib, Some(item.id), &mut node.children, depth + 1, error)
+        {
             return false;
         }
         out.push(node);
@@ -133,18 +150,25 @@ fn watch_label(path: &str, all: &[String]) -> String {
 }
 
 /// Top-level nodes in display order. A failed playlist read yields an empty group, never a partial
-/// tree.
-pub fn build_sidebar(lib: &dyn LibraryTree) -> Vec<SidebarNode> {
+/// tree; a failed watch-folder read yields an empty watch group. Either failure is in the result.
+pub fn build_sidebar(lib: &dyn LibraryTree) -> Sidebar {
+    let mut error = None;
     let mut top = vec![SidebarNode::named(SidebarKind::AllTracks, "All tracks")];
 
     let mut playlists = SidebarNode::named(SidebarKind::PlaylistGroup, "Playlists");
-    if !add_playlists(lib, None, &mut playlists.children, 0) {
+    if !add_playlists(lib, None, &mut playlists.children, 0, &mut error) {
         playlists.children.clear();
     }
     top.push(playlists);
 
     let mut watch = SidebarNode::named(SidebarKind::WatchGroup, "Watch folders");
-    let paths = lib.watch_folders();
+    let paths = match lib.watch_folders() {
+        Ok(paths) => paths,
+        Err(e) => {
+            error.get_or_insert(e);
+            Vec::new()
+        }
+    };
     for path in &paths {
         let mut node = SidebarNode::named(SidebarKind::WatchFolder, &watch_label(path, &paths));
         node.path = path.clone();
@@ -153,7 +177,7 @@ pub fn build_sidebar(lib: &dyn LibraryTree) -> Vec<SidebarNode> {
     top.push(watch);
 
     top.push(SidebarNode::named(SidebarKind::PrepQueue, "Prep queue"));
-    top
+    Sidebar { nodes: top, error }
 }
 
 #[cfg(test)]
@@ -164,12 +188,13 @@ mod tests {
         playlists: Vec<(Option<i64>, PlaylistRow)>,
         watch: Vec<String>,
         broken_parent: Option<Option<i64>>,
+        broken_watch: bool,
     }
 
     impl LibraryTree for Tree {
-        fn playlist_children(&self, parent: Option<i64>) -> Result<Vec<PlaylistRow>, String> {
+        fn playlist_children(&self, parent: Option<i64>) -> Result<Vec<PlaylistRow>, LibraryError> {
             if self.broken_parent == Some(parent) {
-                return Err("read failed".into());
+                return Err(LibraryError::Setup("read failed".into()));
             }
             Ok(self
                 .playlists
@@ -179,8 +204,11 @@ mod tests {
                 .collect())
         }
 
-        fn watch_folders(&self) -> Vec<String> {
-            self.watch.clone()
+        fn watch_folders(&self) -> Result<Vec<String>, LibraryError> {
+            if self.broken_watch {
+                return Err(LibraryError::Setup("watch folders unreadable".into()));
+            }
+            Ok(self.watch.clone())
         }
     }
 
@@ -202,8 +230,9 @@ mod tests {
             ],
             watch: vec!["/music/a".into()],
             broken_parent: None,
+            broken_watch: false,
         };
-        let top = build_sidebar(&tree);
+        let top = build_sidebar(&tree).nodes;
         let labels: Vec<&str> = top.iter().map(|n| n.label.as_str()).collect();
         assert_eq!(
             labels,
@@ -223,9 +252,39 @@ mod tests {
             playlists: vec![(None, row(1, "Warmup", false))],
             watch: Vec::new(),
             broken_parent: Some(None),
+            broken_watch: false,
         };
-        let top = build_sidebar(&tree);
+        let top = build_sidebar(&tree).nodes;
         assert!(top[1].children.is_empty(), "no partial tree");
+    }
+
+    #[test]
+    fn a_failed_watch_folder_read_is_reported_not_silently_empty() {
+        let tree = Tree {
+            playlists: vec![(None, row(1, "Warmup", false))],
+            watch: vec!["/music/a".into()],
+            broken_parent: None,
+            broken_watch: true,
+        };
+        let sidebar = build_sidebar(&tree);
+        assert!(
+            sidebar.nodes[2].children.is_empty(),
+            "no watch folders shown"
+        );
+        assert_eq!(sidebar.nodes[1].children.len(), 1, "playlists still listed");
+        let error = sidebar.error.expect("the failure is reported");
+        assert_eq!(error.to_string(), "watch folders unreadable");
+    }
+
+    #[test]
+    fn a_healthy_tree_reports_no_error() {
+        let tree = Tree {
+            playlists: Vec::new(),
+            watch: vec!["/music/a".into()],
+            broken_parent: None,
+            broken_watch: false,
+        };
+        assert!(build_sidebar(&tree).error.is_none());
     }
 
     #[test]
@@ -237,8 +296,9 @@ mod tests {
             ],
             watch: Vec::new(),
             broken_parent: Some(Some(2)),
+            broken_watch: false,
         };
-        assert!(build_sidebar(&tree)[1].children.is_empty());
+        assert!(build_sidebar(&tree).nodes[1].children.is_empty());
     }
 
     #[test]
@@ -253,8 +313,9 @@ mod tests {
             playlists,
             watch: Vec::new(),
             broken_parent: None,
+            broken_watch: false,
         };
-        assert!(build_sidebar(&tree)[1].children.is_empty());
+        assert!(build_sidebar(&tree).nodes[1].children.is_empty());
     }
 
     #[test]
@@ -267,8 +328,9 @@ mod tests {
                 "/music/c/Techno".into(),
             ],
             broken_parent: None,
+            broken_watch: false,
         };
-        let top = build_sidebar(&tree);
+        let top = build_sidebar(&tree).nodes;
         let labels: Vec<&str> = top[2].children.iter().map(|n| n.label.as_str()).collect();
         assert_eq!(labels, ["House (/music/a)", "House (/music/b)", "Techno"]);
         assert_eq!(
@@ -283,8 +345,9 @@ mod tests {
             playlists: Vec::new(),
             watch: Vec::new(),
             broken_parent: None,
+            broken_watch: false,
         };
-        let top = build_sidebar(&tree);
+        let top = build_sidebar(&tree).nodes;
         assert!(top[0].scope_query().is_empty());
         assert!(top[3].scope_query().is_empty(), "prep queue has no query");
     }
