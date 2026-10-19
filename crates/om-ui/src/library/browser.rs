@@ -144,7 +144,12 @@ impl LibraryBrowser {
     }
 
     /// A column header was clicked: sort through the search engine.
-    pub fn header_sort(&mut self, services: &LibraryServices, column_id: i32, forwards: bool) -> bool {
+    pub fn header_sort(
+        &mut self,
+        services: &LibraryServices,
+        column_id: i32,
+        forwards: bool,
+    ) -> bool {
         match TrackTableModel::sort_order_changed(column_id, forwards) {
             Some((field, descending)) => {
                 self.sort_field = field.to_owned();

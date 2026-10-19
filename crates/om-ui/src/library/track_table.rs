@@ -29,14 +29,62 @@ pub struct Column {
 }
 
 const COLUMNS: [Column; 8] = [
-    Column { id: 1, title: "Title", sort_field: Some("title"), width: 260, numeric: false },
-    Column { id: 2, title: "Artist", sort_field: Some("artist"), width: 180, numeric: false },
-    Column { id: 3, title: "BPM", sort_field: Some("bpm"), width: 60, numeric: true },
-    Column { id: 4, title: "Key", sort_field: Some("key"), width: 52, numeric: true },
-    Column { id: 5, title: "Time", sort_field: Some("duration"), width: 56, numeric: true },
-    Column { id: 6, title: "Rating", sort_field: Some("rating"), width: 70, numeric: false },
-    Column { id: 7, title: "Genre", sort_field: Some("genre"), width: 110, numeric: false },
-    Column { id: 8, title: "Added", sort_field: Some("added"), width: 92, numeric: false },
+    Column {
+        id: 1,
+        title: "Title",
+        sort_field: Some("title"),
+        width: 260,
+        numeric: false,
+    },
+    Column {
+        id: 2,
+        title: "Artist",
+        sort_field: Some("artist"),
+        width: 180,
+        numeric: false,
+    },
+    Column {
+        id: 3,
+        title: "BPM",
+        sort_field: Some("bpm"),
+        width: 60,
+        numeric: true,
+    },
+    Column {
+        id: 4,
+        title: "Key",
+        sort_field: Some("key"),
+        width: 52,
+        numeric: true,
+    },
+    Column {
+        id: 5,
+        title: "Time",
+        sort_field: Some("duration"),
+        width: 56,
+        numeric: true,
+    },
+    Column {
+        id: 6,
+        title: "Rating",
+        sort_field: Some("rating"),
+        width: 70,
+        numeric: false,
+    },
+    Column {
+        id: 7,
+        title: "Genre",
+        sort_field: Some("genre"),
+        width: 110,
+        numeric: false,
+    },
+    Column {
+        id: 8,
+        title: "Added",
+        sort_field: Some("added"),
+        width: 92,
+        numeric: false,
+    },
 ];
 
 /// The browser's columns, in display order.
@@ -251,8 +299,14 @@ mod tests {
 
     #[test]
     fn header_clicks_sort_descending_on_a_forward_click() {
-        assert_eq!(TrackTableModel::sort_order_changed(3, false), Some(("bpm", true)));
-        assert_eq!(TrackTableModel::sort_order_changed(2, true), Some(("artist", false)));
+        assert_eq!(
+            TrackTableModel::sort_order_changed(3, false),
+            Some(("bpm", true))
+        );
+        assert_eq!(
+            TrackTableModel::sort_order_changed(2, true),
+            Some(("artist", false))
+        );
         assert_eq!(TrackTableModel::sort_order_changed(99, true), None);
     }
 

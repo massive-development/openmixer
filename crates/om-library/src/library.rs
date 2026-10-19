@@ -3,7 +3,6 @@
 //! writer to have opened and migrated the file first.
 
 use crate::cue_dao::CueDao;
-use std::sync::Arc;
 use crate::database::{Database, OpenMode};
 use crate::error::Result;
 use crate::migrations::{migrate, Migration};
@@ -12,6 +11,7 @@ use crate::prep_queue_dao::PrepQueueDao;
 use crate::track_dao::TrackDao;
 use crate::track_file_dao::TrackFileDao;
 use crate::watch_folder_dao::WatchFolderDao;
+use std::sync::Arc;
 
 /// An open library database. DAOs are cheap views created on demand.
 pub struct Library {
@@ -27,6 +27,9 @@ impl Library {
         if mode == OpenMode::ReadWrite {
             migrate(&db, migrations)?;
         }
+        // Shared only by handles on the owner thread (a Database is Send but not Sync, and Rc would
+        // make the Library itself non-Send).
+        #[allow(clippy::arc_with_non_send_sync)]
         Ok(Self { db: Arc::new(db) })
     }
 

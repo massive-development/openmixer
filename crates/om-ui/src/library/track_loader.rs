@@ -197,7 +197,13 @@ impl TrackLoader {
 
 /// Sets the deck's grid and per-deck metadata from an analysis result. An absent grid or waveform
 /// clears the old one, so a track with no analysis never shows the previous track's data.
-fn apply(engine: &DjEngine, slot: &mut Slot, deck: usize, track: &TrackRecord, found: &TrackAnalysis) {
+fn apply(
+    engine: &DjEngine,
+    slot: &mut Slot,
+    deck: usize,
+    track: &TrackRecord,
+    found: &TrackAnalysis,
+) {
     engine.set_grid(deck, found.grid.clone());
     slot.waveform = found.waveform.clone();
     slot.track = Some(track.clone());

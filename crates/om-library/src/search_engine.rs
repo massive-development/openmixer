@@ -2,7 +2,6 @@
 //! Threading: use on the thread that owns the `Database` (the UI gets its own read-only connection).
 
 use crate::database::Database;
-use std::borrow::Borrow;
 use crate::error::{LibraryError, Result};
 use crate::search_compiler::{compile_search, CompileContext};
 use crate::search_fields::SearchFieldRegistry;
@@ -12,6 +11,7 @@ use crate::track_dao::read_row;
 use crate::track_record::TrackRecord;
 use crate::watch_folders::Clock;
 use rusqlite::params_from_iter;
+use std::borrow::Borrow;
 use std::sync::Arc;
 
 pub struct SearchEngine<D: Borrow<Database>> {

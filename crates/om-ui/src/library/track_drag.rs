@@ -17,7 +17,10 @@ pub fn parse(description: &str) -> Option<i64> {
         return None;
     }
     // JUCE's getLargeIntValue reads a leading integer and stops at the first non-digit.
-    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+    let digits: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
     digits.parse().ok()
 }
 

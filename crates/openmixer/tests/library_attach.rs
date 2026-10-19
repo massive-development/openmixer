@@ -12,7 +12,13 @@ fn attaching_a_file_library_fills_the_library_hook() {
         .attach_library(Some(dir.path().join("db").join("library.db")))
         .expect("library opens");
     assert!(composition.hooks.library.is_some());
-    assert!(composition.hooks.library.as_ref().unwrap().watch_folders().is_some());
+    assert!(composition
+        .hooks
+        .library
+        .as_ref()
+        .unwrap()
+        .watch_folders()
+        .is_some());
 }
 
 #[test]

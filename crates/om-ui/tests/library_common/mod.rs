@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use om_analysis::{
-    Analyzer, AnalysisContext, AnalyzerRegistry, AudioClip, BeatGridModel, BpmResult, KeyResult,
+    AnalysisContext, Analyzer, AnalyzerRegistry, AudioClip, BeatGridModel, BpmResult, KeyResult,
     MusicalKey, WaveformData, WaveformLevel, WaveformPoint,
 };
 use om_library::{Library, TrackRecord};
@@ -136,10 +136,54 @@ pub fn add_track(lib: &Library, s: &Seed, path: Option<&str>) -> i64 {
 /// Alpha, Bravo, Charlie and an unanalysed Delta; returns their ids in that order.
 pub fn seed_four(lib: &Library) -> Vec<i64> {
     vec![
-        add_track(lib, &Seed { title: "Alpha", artist: "Zed", bpm: Some(120.0), camelot: "8A", genre: "House", rating: 5 }, None),
-        add_track(lib, &Seed { title: "Bravo", artist: "Yan", bpm: Some(128.0), camelot: "9A", genre: "Techno", rating: 3 }, None),
-        add_track(lib, &Seed { title: "Charlie", artist: "Xi", bpm: Some(124.0), camelot: "3B", genre: "House", rating: 1 }, None),
-        add_track(lib, &Seed { title: "Delta", artist: "Wu", bpm: None, camelot: "", genre: "", rating: 0 }, None),
+        add_track(
+            lib,
+            &Seed {
+                title: "Alpha",
+                artist: "Zed",
+                bpm: Some(120.0),
+                camelot: "8A",
+                genre: "House",
+                rating: 5,
+            },
+            None,
+        ),
+        add_track(
+            lib,
+            &Seed {
+                title: "Bravo",
+                artist: "Yan",
+                bpm: Some(128.0),
+                camelot: "9A",
+                genre: "Techno",
+                rating: 3,
+            },
+            None,
+        ),
+        add_track(
+            lib,
+            &Seed {
+                title: "Charlie",
+                artist: "Xi",
+                bpm: Some(124.0),
+                camelot: "3B",
+                genre: "House",
+                rating: 1,
+            },
+            None,
+        ),
+        add_track(
+            lib,
+            &Seed {
+                title: "Delta",
+                artist: "Wu",
+                bpm: None,
+                camelot: "",
+                genre: "",
+                rating: 0,
+            },
+            None,
+        ),
     ]
 }
 
@@ -174,7 +218,10 @@ pub fn write_wav(path: &Path, seconds: f64, freq: f32) -> PathBuf {
 }
 
 /// Pumps the services until `done` holds or the timeout passes.
-pub fn pump_until(services: &mut LibraryServices, mut done: impl FnMut(&LibraryServices) -> bool) -> bool {
+pub fn pump_until(
+    services: &mut LibraryServices,
+    mut done: impl FnMut(&LibraryServices) -> bool,
+) -> bool {
     let deadline = Instant::now() + Duration::from_secs(8);
     while Instant::now() < deadline {
         services.pump();

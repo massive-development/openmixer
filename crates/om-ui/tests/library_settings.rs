@@ -52,10 +52,16 @@ fn interval_is_clamped_and_scan_on_start_is_stored() {
         let mut page = LibrarySettingsPage::new(&mut prefs, &mut services);
         assert!(page.set_scan_interval(0));
         assert!(page.set_scan_on_start(false));
-        assert!(!page.set_scan_on_start(false), "unchanged value reports no change");
+        assert!(
+            !page.set_scan_on_start(false),
+            "unchanged value reports no change"
+        );
     }
     assert_eq!(prefs.library.scan_interval_minutes, 1);
     assert!(!prefs.library.scan_on_start);
     LibrarySettingsPage::new(&mut prefs, &mut services).set_scan_interval(99_999);
-    assert_eq!(prefs.library.scan_interval_minutes, LibrarySettingsPage::MAX_INTERVAL_MINUTES);
+    assert_eq!(
+        prefs.library.scan_interval_minutes,
+        LibrarySettingsPage::MAX_INTERVAL_MINUTES
+    );
 }
