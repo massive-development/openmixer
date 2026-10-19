@@ -274,7 +274,8 @@ fn serve_chunks(chunks: Vec<Vec<u8>>, pause: Duration) -> String {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut request = [0_u8; 4096];
             let _ = stream.read(&mut request);
-            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
+            let head =
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
             if stream.write_all(head.as_bytes()).is_err() {
                 return;
             }
@@ -300,7 +301,10 @@ fn serve_close_delimited(body: Vec<u8>, stall: Duration) -> String {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut request = [0_u8; 4096];
             let _ = stream.read(&mut request);
-            if stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n").is_err() {
+            if stream
+                .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+                .is_err()
+            {
                 return;
             }
             let _ = stream.write_all(&body);
@@ -316,12 +320,13 @@ fn a_slow_body_longer_than_the_overall_budget_still_downloads() {
     // Each gap is under the 300 ms read timeout, so the download must not be cut short.
     let f = Fixture::new();
     let body = std::fs::read(&f.source).expect("read source");
-    let chunks: Vec<Vec<u8>> = body.chunks(body.len() / 5 + 1).map(<[u8]>::to_vec).collect();
+    let chunks: Vec<Vec<u8>> = body
+        .chunks(body.len() / 5 + 1)
+        .map(<[u8]>::to_vec)
+        .collect();
     let url = serve_chunks(chunks, Duration::from_millis(120));
-    let downloader = UrlDownloader::with_timeouts(
-        Duration::from_millis(300),
-        Duration::from_millis(300),
-    );
+    let downloader =
+        UrlDownloader::with_timeouts(Duration::from_millis(300), Duration::from_millis(300));
     let dir = tempfile::tempdir().expect("dir");
     let target = dir.path().join("slow.part");
     let started = Instant::now();
@@ -337,10 +342,8 @@ fn a_stalled_connection_hits_the_read_timeout() {
     let url = serve_close_delimited(b"partial".to_vec(), Duration::from_millis(1500));
     let dir = tempfile::tempdir().expect("dir");
     let target = dir.path().join("stall.part");
-    let downloader = UrlDownloader::with_timeouts(
-        Duration::from_millis(200),
-        Duration::from_millis(200),
-    );
+    let downloader =
+        UrlDownloader::with_timeouts(Duration::from_millis(200), Duration::from_millis(200));
     let started = Instant::now();
     assert!(downloader
         .download(&url, &target, 0, &mut |_| true)

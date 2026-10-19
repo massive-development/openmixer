@@ -277,7 +277,11 @@ impl om_library::MetadataReader for PanickingReader {
         &["wav"]
     }
 
-    fn read(&self, _path: &std::path::Path, _out: &mut om_library::TrackMetadata) -> om_library::Result<()> {
+    fn read(
+        &self,
+        _path: &std::path::Path,
+        _out: &mut om_library::TrackMetadata,
+    ) -> om_library::Result<()> {
         panic!("decoder exploded");
     }
 }
@@ -298,14 +302,23 @@ fn a_panicking_scan_is_reported_and_later_rescans_still_run() {
     };
     let w = WatchFolders::create(&f.db(), readers, options).expect("create");
     w.add(&f.music).unwrap();
-    assert!(w.wait_for_scans(1, WAIT), "the panicking pass still counts as finished");
     assert!(
-        errors.lock().unwrap().iter().any(|m| m.contains("decoder exploded")),
+        w.wait_for_scans(1, WAIT),
+        "the panicking pass still counts as finished"
+    );
+    assert!(
+        errors
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| m.contains("decoder exploded")),
         "the panic is reported: {:?}",
         errors.lock().unwrap()
     );
 
     w.trigger_scan();
-    assert!(w.wait_for_scans(2, WAIT), "the scan thread keeps rescanning");
+    assert!(
+        w.wait_for_scans(2, WAIT),
+        "the scan thread keeps rescanning"
+    );
 }
-

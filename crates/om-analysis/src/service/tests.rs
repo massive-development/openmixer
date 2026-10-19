@@ -291,7 +291,11 @@ fn a_panicking_analyser_fails_its_job_and_the_single_worker_carries_on() {
     let first = service.submit(clip_source(0.1), ids(&["boom"]), Some(listener));
     assert!(first.wait_until_finished(WAIT), "the job must finish");
     assert_eq!(first.status(), JobStatus::Failed);
-    assert!(first.error().contains("analyser exploded"), "{}", first.error());
+    assert!(
+        first.error().contains("analyser exploded"),
+        "{}",
+        first.error()
+    );
     let (status, error) = rx.recv_timeout(WAIT).expect("listener still fires");
     assert_eq!(status, JobStatus::Failed);
     assert!(error.contains("analyser exploded"));
@@ -317,6 +321,8 @@ fn a_panicking_listener_does_not_stop_the_worker() {
     });
     let second = service.submit(clip_source(0.1), ids(&["count"]), Some(listener));
     assert!(second.wait_until_finished(WAIT));
-    assert_eq!(rx.recv_timeout(WAIT).expect("second listener fires"), JobStatus::Done);
+    assert_eq!(
+        rx.recv_timeout(WAIT).expect("second listener fires"),
+        JobStatus::Done
+    );
 }
-

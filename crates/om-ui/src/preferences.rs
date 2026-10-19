@@ -450,16 +450,25 @@ mod tests {
         fs::write(&file, bytes).unwrap();
         let error = Preferences::load(&file).unwrap_err();
         assert!(matches!(error, PreferencesError::Io(_)), "{error}");
-        assert!(!error.allows_replacing_file(), "a save would destroy the file");
+        assert!(
+            !error.allows_replacing_file(),
+            "a save would destroy the file"
+        );
         assert_eq!(fs::read(&file).unwrap(), bytes, "load leaves it alone");
 
         fs::write(&file, "{ broken").unwrap();
         let corrupt = Preferences::load(&file).unwrap_err();
-        assert!(corrupt.allows_replacing_file(), "kept as .bad, so replacing it loses nothing");
+        assert!(
+            corrupt.allows_replacing_file(),
+            "kept as .bad, so replacing it loses nothing"
+        );
 
         fs::write(&file, r#"{"version": 99}"#).unwrap();
         let newer = Preferences::load(&file).unwrap_err();
-        assert!(!newer.allows_replacing_file(), "a newer schema is not ours to overwrite");
+        assert!(
+            !newer.allows_replacing_file(),
+            "a newer schema is not ours to overwrite"
+        );
     }
 
     #[test]

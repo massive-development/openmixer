@@ -149,8 +149,10 @@ fn worker_loop(shared: &Shared) {
             );
         }));
         if let Err(payload) = run {
-            task.job
-                .fail(format!("analysis panicked: {}", panic_message(payload.as_ref())));
+            task.job.fail(format!(
+                "analysis panicked: {}",
+                panic_message(payload.as_ref())
+            ));
         }
         if let Some(listener) = task.listener.take() {
             // The job is already final; a listener that panics has nothing left to report to.

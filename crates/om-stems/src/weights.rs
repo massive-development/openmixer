@@ -106,10 +106,7 @@ impl Downloader for UrlDownloader {
                     .timeout_connect(self.connect_timeout)
                     .timeout_read(self.read_timeout)
                     .build();
-                let response = agent
-                    .get(url)
-                    .call()
-                    .map_err(|e| fail(e.to_string()))?;
+                let response = agent.get(url).call().map_err(|e| fail(e.to_string()))?;
                 let total = response
                     .header("Content-Length")
                     .and_then(|v| v.parse::<u64>().ok());

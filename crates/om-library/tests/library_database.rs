@@ -241,4 +241,3 @@ fn an_outermost_transaction_waits_for_the_write_lock_instead_of_failing_on_a_sta
     assert_eq!(seen, 1, "the reader sees the writer's committed row");
     assert_eq!(row_count(&writer, "SELECT count(*) FROM t;"), 2);
 }
-
