@@ -5,6 +5,7 @@
 //! (WSL, CI), the open test prints SKIP and passes. Listing devices opens nothing.
 
 use om_audio::{output_devices, AudioCallback, AudioDevice, CpalAudioDevice, OutputRequest};
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 use std::time::Duration;
 
 /// Writes digital silence. The device test never renders program audio.
@@ -53,7 +54,14 @@ fn device_opens_or_skips() {
         .start(Box::new(Silence))
         .expect("start on an open device");
     assert!(device.is_running());
-    std::thread::sleep(Duration::from_millis(300));
+    // Wait for the backend to run the callback at least once, instead of hoping 300 ms is enough.
+    assert!(
+        wait_until(Duration::from_secs(5), DEFAULT_POLL, || device
+            .latency_stats()
+            .callback_count
+            > 0),
+        "the backend should run the callback"
+    );
     device.stop();
     assert!(!device.is_running());
     assert!(

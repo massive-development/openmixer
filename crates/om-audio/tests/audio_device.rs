@@ -1,10 +1,9 @@
 //! Mock device lifecycle, capture, latency instrumentation
 //! and the paced realtime thread. Nothing here opens a real device.
 
-mod common;
-
 use om_audio::{AudioCallback, AudioDevice, AudioError, LatencyMonitor, MockAudioDevice};
 use om_core::atomic::AtomicF64;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,7 +62,7 @@ impl AudioCallback for GainCallback {
 }
 
 fn wait_for_calls(probe: &Probe, count: usize, timeout: Duration) -> bool {
-    common::wait_until(|| probe.calls.load(Relaxed) >= count, timeout)
+    wait_until(timeout, DEFAULT_POLL, || probe.calls.load(Relaxed) >= count)
 }
 
 #[test]

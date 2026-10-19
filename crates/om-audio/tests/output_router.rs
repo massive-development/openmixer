@@ -2,10 +2,12 @@
 //! the engine's own master and cue output, block for block. The rest of that suite is in
 //! `om-engine/tests/output_router.rs`.
 
-mod common;
-
-use common::{magnitude, sine_stereo, wait_until, write_float_wav, TempDir};
 use om_audio::{AudioCallback, DjEngine, OutputRouter};
+use om_testing::fs::TempDir;
+use om_testing::level::peak;
+use om_testing::signals::stereo_sine;
+use om_testing::wait::{wait_until, DEFAULT_POLL};
+use om_testing::wav::write_float_wav;
 use std::time::Duration;
 
 const RATE: f64 = 44_100.0;
@@ -37,7 +39,7 @@ fn expect_router_matches_engine(device_channels: usize) {
         &file,
         2,
         RATE as u32,
-        &sine_stereo(220.0, 0.3, 44_100 * 6, RATE),
+        &stereo_sine(220.0, 0.3, RATE, 44_100 * 6),
     );
 
     let (engine, mut audio) = DjEngine::new(2);
@@ -45,15 +47,12 @@ fn expect_router_matches_engine(device_channels: usize) {
     engine.deck(0).load(&file).expect("load");
     // Service the seek handshake and let the decoder run ahead before playing.
     let mut pump = [[0.0_f32; 64]; 4];
-    assert!(wait_until(
-        || {
-            let [a, b, c, d] = &mut pump;
-            let mut outs: [&mut [f32]; 4] = [a, b, c, d];
-            audio.process(&[], &mut outs);
-            engine.deck(0).buffered_frames() > 8192
-        },
-        Duration::from_secs(20)
-    ));
+    assert!(wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+        let [a, b, c, d] = &mut pump;
+        let mut outs: [&mut [f32]; 4] = [a, b, c, d];
+        audio.process(&[], &mut outs);
+        engine.deck(0).buffered_frames() > 8192
+    }));
     engine.deck(0).play();
 
     let mut router = OutputRouter::new().0;
@@ -64,12 +63,11 @@ fn expect_router_matches_engine(device_channels: usize) {
         captured: 0,
     };
     let mut device: Vec<Vec<f32>> = vec![vec![-9.0; BLOCK]; device_channels];
-    let mut peak = 0.0_f32;
+    let mut loudest = 0.0_f32;
     for block in 0..40 {
-        wait_until(
-            || engine.deck(0).buffered_frames() >= 2048,
-            Duration::from_secs(20),
-        );
+        wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
+            engine.deck(0).buffered_frames() >= 2048
+        });
         {
             let mut outs: Vec<&mut [f32]> = device.iter_mut().map(Vec::as_mut_slice).collect();
             router.process(&mut source, &mut outs, BLOCK);
@@ -82,9 +80,9 @@ fn expect_router_matches_engine(device_channels: usize) {
                 "{label} ch{c} block {block} differs from the engine"
             );
         }
-        peak = peak.max(magnitude(&device[0]));
+        loudest = loudest.max(peak(&device[0]));
     }
-    assert!(peak > 0.01, "the comparison must run on real audio");
+    assert!(loudest > 0.01, "the comparison must run on real audio");
 }
 
 #[test]
