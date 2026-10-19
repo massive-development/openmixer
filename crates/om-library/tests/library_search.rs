@@ -127,7 +127,7 @@ impl Fixture {
         }
     }
 
-    fn engine(&self) -> SearchEngine<'_> {
+    fn engine(&self) -> SearchEngine<&om_library::Database> {
         let mut engine = SearchEngine::new(self.lib.database());
         engine.clock = Arc::new(|| NOW_MS);
         engine
