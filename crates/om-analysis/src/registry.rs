@@ -1,5 +1,5 @@
 //! Id -> analyser map shared by the service and plugins. Thread-safe; a running job keeps its
-//! analyser alive (`Arc`) even if it is removed meanwhile. Port of `src/analysis/AnalyzerRegistry.*`.
+//! analyser alive (`Arc`) even if it is removed meanwhile.
 
 use crate::analyzer::INTERFACE_VERSION;
 use crate::{Analyzer, BpmAnalyzer, KeyAnalyzer, StructureAnalyzer, WaveformAnalyzer};
@@ -26,8 +26,7 @@ impl AnalyzerRegistry {
         Self::default()
     }
 
-    /// The built-in analysers: bpm (beat grid), key, waveform and structure. Port of
-    /// `builtInAnalyzers()` in `src/ui/LibraryServices.cpp`.
+    /// The built-in analysers: bpm (beat grid), key, waveform and structure.
     pub fn builtin() -> Self {
         let registry = Self::new();
         let builtins: [Arc<dyn Analyzer>; 4] = [

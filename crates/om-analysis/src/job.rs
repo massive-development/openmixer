@@ -1,5 +1,5 @@
 //! Shared state of one submitted analysis job. The service writes it from a worker thread; any
-//! thread may read it, cancel it or wait for it. Port of `src/analysis/AnalysisJob.{h,cpp}`.
+//! thread may read it, cancel it or wait for it.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

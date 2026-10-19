@@ -1,4 +1,4 @@
-//! Port of `tests/unit/AnalysisServiceTest.cpp` (real threads; the cases are fast on short clips).
+//! Service cases on real threads (the cases are fast on short clips).
 
 use super::*;
 use crate::test_signals::{silence, write_float_wav, TempFile, RATE};

@@ -1,4 +1,4 @@
-//! Port of the `ContentHash` cases in `tests/unit/AnalysisCacheTest.cpp`.
+//! `ContentHash` cases.
 
 use super::*;
 use crate::test_signals::{write_float_wav, TempFile};

@@ -1,6 +1,5 @@
 //! Runs one job to completion on the calling thread: hash, cache lookup, decode on a miss, analyse,
 //! store. Progress: 0-5% hash, 5-20% decode, 20-100% split across the analysers that must run.
-//! Port of `src/analysis/JobRunner.cpp`.
 
 use crate::{
     AnalysisContext, AnalysisJob, Analyzer, AnalyzerRegistry, AudioClip, ClipSource, JobStatus,

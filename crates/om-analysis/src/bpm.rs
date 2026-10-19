@@ -1,6 +1,6 @@
 //! Constant-tempo BPM and beat-grid estimation: full-band onset envelope, autocorrelation tempo,
 //! joint tempo/phase refinement, then a downbeat from the low (kick) band. Stateless and
-//! thread-safe. Port of `src/analysis/BpmEstimator.{h,cpp}`. The job service wiring (id "bpm") is
+//! thread-safe. The job service wiring (id "bpm") is
 //! exposed through [`BpmAnalyzer`].
 
 use crate::beat_grid::BeatGridModel;

@@ -1,8 +1,7 @@
 //! Multi-resolution waveform for overview and zoomed deck displays. Level 0 is the finest; each
 //! further level merges [`LEVEL_FACTOR`] points, down to roughly [`OVERVIEW_POINTS`]. Each point
 //! holds the full-band peak range and the RMS of three bands (low, mid, high) for colouring.
-//! Immutable after building. Port of `src/analysis/WaveformData.{h,cpp}`; the JSON payload is the
-//! same format as the C++ cache (base64 of 5 bytes per base-level point).
+//! Immutable after building. The JSON payload is base64 of 5 bytes per base-level point.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;

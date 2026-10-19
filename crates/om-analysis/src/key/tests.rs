@@ -1,4 +1,4 @@
-//! Port of `tests/unit/KeyEstimatorTest.cpp`: key detection on synthetic chord progressions,
+//! Key detection on synthetic chord progressions,
 //! Camelot mapping and harmonic compatibility.
 
 use super::*;

@@ -1,5 +1,5 @@
 //! Background analysis: a FIFO of jobs served by worker threads, with per-job progress and
-//! cancellation and a shared result cache. Port of `src/analysis/AnalysisService.{h,cpp}`.
+//! cancellation and a shared result cache.
 //! Listeners run on a worker thread after the job reaches its final status; keep them short and
 //! hop to the UI thread for UI work. `submit` and `cancel_all` may be called from any thread.
 

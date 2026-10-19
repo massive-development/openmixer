@@ -1,5 +1,5 @@
 //! Onset times from an onset envelope: local maxima above an adaptive (local mean) threshold and a
-//! global floor, at least `min_gap_seconds` apart. Port of `src/analysis/OnsetPicker.{h,cpp}`.
+//! global floor, at least `min_gap_seconds` apart.
 
 use crate::OnsetEnvelope;
 
