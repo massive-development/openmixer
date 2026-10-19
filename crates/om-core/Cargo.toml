@@ -11,6 +11,7 @@ publish = false
 thiserror.workspace = true
 
 [dev-dependencies]
+om-testing.workspace = true
 proptest = "1"
 
 [lints]

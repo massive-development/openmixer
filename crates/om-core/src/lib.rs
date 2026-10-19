@@ -6,6 +6,7 @@
 pub mod atomic;
 pub mod command;
 mod frame_ring;
+pub mod jobs;
 pub mod param_id;
 mod parameter;
 mod router;
