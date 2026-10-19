@@ -75,6 +75,8 @@ pub struct Shell {
     pub(crate) library: Option<LibraryPanel>,
     /// Focus for the library card: its keys (search, selection) go here. Made on the first draw.
     pub(crate) library_focus: Option<FocusHandle>,
+    /// Focus for the settings card: its keys (text fields, Escape) go here while it is open.
+    pub(crate) settings_focus: Option<FocusHandle>,
     /// What each deck card last showed, so the widgets only change on a real change.
     shown_info: Vec<TrackInfo>,
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
@@ -137,6 +139,7 @@ impl Shell {
             settings,
             library,
             library_focus: None,
+            settings_focus: None,
             shown_info: vec![TrackInfo::default(); deck_count],
             shown_waveform: vec![None; deck_count],
             options,
@@ -319,7 +322,7 @@ impl Render for Shell {
                 Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
             ));
         }
-        if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), cx) {
+        if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), window, cx) {
             root = root.child(overlay);
         }
         root

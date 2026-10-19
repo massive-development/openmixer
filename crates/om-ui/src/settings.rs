@@ -4,8 +4,7 @@
 //!
 //! Pages edit the shared [`Preferences`] and report whether an edit changed anything; the caller
 //! saves and applies (see `openmixer::composition`). The MIDI, library and plugin pages talk to
-//! placeholder traits until `om-midi`, `om-library` and `om-plugins` exist; the app supplies the
-//! real implementations later. Drawing lives in `om-ui-gpui`.
+//! traits that the app implements over `om-midi`, `om-library` and `om-plugins`. Drawing lives in `om-ui-gpui`.
 
 use crate::preferences::{AudioPrefs, Preferences};
 use crate::theme::ThemeRegistry;
@@ -161,7 +160,7 @@ pub trait MidiInputs {
     fn input_names(&self) -> Vec<String>;
 }
 
-/// MIDI page logic over the preferences. Placeholder for `om-midi` (Todo 10).
+/// MIDI page logic over the preferences.
 pub struct MidiSettingsPage<'a> {
     prefs: &'a mut Preferences,
     inputs: &'a dyn MidiInputs,
@@ -215,6 +214,34 @@ pub trait MidiControl {
     fn arm_learn(&self, target: &str);
     fn cancel_learn(&self);
     fn is_learning(&self) -> bool;
+    /// Counts the edits to the live map (loads and learned bindings). A learn that finished
+    /// shows as a change of this count.
+    fn map_generation(&self) -> u64 {
+        0
+    }
+}
+
+/// The running MIDI service as the MIDI page sees it: the device list and the map and learn
+/// controls. Blanket-implemented, so any type with both traits is a page host.
+pub trait MidiPage: MidiInputs + MidiControl {}
+
+impl<T: MidiInputs + MidiControl + ?Sized> MidiPage for T {}
+
+/// The parameter ids the MIDI page offers for MIDI learn: the decks' transport and rate, the
+/// channel faders and trims, the crossfader and the master. Ids are the router's full ids.
+pub fn learnable_targets(decks: usize) -> Vec<String> {
+    let mut ids = Vec::new();
+    for deck in 0..decks {
+        ids.push(format!("deck.{deck}.play"));
+        ids.push(format!("deck.{deck}.rate"));
+    }
+    for channel in 0..decks {
+        ids.push(format!("mixer.ch{channel}.fader"));
+        ids.push(format!("mixer.ch{channel}.trim"));
+    }
+    ids.push("mixer.crossfader".to_owned());
+    ids.push("mixer.master".to_owned());
+    ids
 }
 
 impl MidiSettingsPage<'_> {
@@ -243,6 +270,10 @@ pub trait LibraryControl {
     fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn rescan(&mut self) -> SettingsResult<()>;
+    /// Imports an iTunes or Rekordbox XML file; returns the one-line outcome for the page.
+    fn import_xml(&mut self, _xml: PathBuf) -> SettingsResult<String> {
+        Err("import is not available".to_owned())
+    }
 }
 
 /// Library page logic. Interval and scan-on-start are read when the library starts.
@@ -288,6 +319,12 @@ impl<'a> LibrarySettingsPage<'a> {
         self.library.rescan()
     }
 
+    /// Imports the iTunes or Rekordbox XML file at `xml` into the library.
+    pub fn import_xml(&mut self, xml: PathBuf) -> SettingsResult<String> {
+        self.require_available()?;
+        self.library.import_xml(xml)
+    }
+
     fn require_available(&self) -> SettingsResult<()> {
         if self.library.available() {
             Ok(())
@@ -330,6 +367,16 @@ impl<'a> AppearanceSettingsPage<'a> {
 pub trait PluginHost {
     fn loaded_plugins(&self) -> Vec<String>;
     fn reload(&mut self) -> SettingsResult<()>;
+    /// Built-in plugins that are not loaded now, as `(id, name)`.
+    fn builtins(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    fn load_builtin(&mut self, id: &str) -> SettingsResult<()> {
+        Err(format!("no built-in plugin '{id}'"))
+    }
+    fn unload(&mut self, id: &str) -> SettingsResult<()> {
+        Err(format!("plugin '{id}' is not loaded"))
+    }
 }
 
 /// Plugins page: shows the folder in use and the loaded plugins, and reloads on request.
@@ -353,6 +400,19 @@ impl<'a> PluginsSettingsPage<'a> {
 
     pub fn reload(&mut self) -> SettingsResult<()> {
         self.host.reload()
+    }
+
+    /// Built-in plugins that can be loaded, as `(id, name)`.
+    pub fn builtins(&self) -> Vec<(String, String)> {
+        self.host.builtins()
+    }
+
+    pub fn load_builtin(&mut self, id: &str) -> SettingsResult<()> {
+        self.host.load_builtin(id)
+    }
+
+    pub fn unload(&mut self, id: &str) -> SettingsResult<()> {
+        self.host.unload(id)
     }
 }
 
@@ -1049,5 +1109,61 @@ mod parity_tests {
             prefs.audio, before,
             "viewing never rewrites the stored pairs"
         );
+    }
+}
+
+#[cfg(test)]
+mod page_host_tests {
+    use super::*;
+
+    #[test]
+    fn learn_targets_are_full_router_ids_for_each_deck_and_the_mixer() {
+        let ids = learnable_targets(2);
+        assert_eq!(ids.len(), 4 * 2 + 2);
+        assert!(ids.contains(&"deck.1.play".to_owned()));
+        assert!(ids.contains(&"mixer.ch0.fader".to_owned()));
+        assert!(ids.contains(&"mixer.crossfader".to_owned()));
+        assert!(learnable_targets(0).len() == 2, "no decks: mixer only");
+    }
+
+    struct NoLibrary;
+
+    impl LibraryControl for NoLibrary {
+        fn available(&self) -> bool {
+            false
+        }
+        fn add_watch_folder(&mut self, _: PathBuf) -> SettingsResult<()> {
+            Ok(())
+        }
+        fn remove_watch_folder(&mut self, _: PathBuf) -> SettingsResult<()> {
+            Ok(())
+        }
+        fn rescan(&mut self) -> SettingsResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn import_without_a_library_is_refused_and_the_default_host_has_no_built_ins() {
+        let mut prefs = Preferences::default();
+        let mut library = NoLibrary;
+        let mut page = LibrarySettingsPage::new(&mut prefs, &mut library);
+        assert!(page.import_xml(PathBuf::from("/tmp/x.xml")).is_err());
+
+        struct Bare;
+        impl PluginHost for Bare {
+            fn loaded_plugins(&self) -> Vec<String> {
+                Vec::new()
+            }
+            fn reload(&mut self) -> SettingsResult<()> {
+                Ok(())
+            }
+        }
+        let prefs = Preferences::default();
+        let mut host = Bare;
+        let mut page = PluginsSettingsPage::new(&prefs, &mut host);
+        assert!(page.builtins().is_empty());
+        assert!(page.load_builtin("x").is_err());
+        assert!(page.unload("x").is_err());
     }
 }

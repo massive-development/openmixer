@@ -4129,6 +4129,7 @@ dependencies = [
 name = "openmixer"
 version = "0.1.0"
 dependencies = [
+ "gain-plugin",
  "om-audio",
  "om-core",
  "om-engine",

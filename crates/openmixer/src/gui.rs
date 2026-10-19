@@ -9,18 +9,19 @@
 
 use om_audio::LatencyStats;
 use om_ui::preferences::Preferences;
-use om_ui::settings::AudioSettingsModel;
-use om_ui::theme::default_user_directory;
+use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, MidiPage};
+use om_ui::theme::{default_user_directory, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
-use om_ui_gpui::library::LibraryHub;
+use om_ui_gpui::library::{HubLibrary, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::{
     CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
 };
-use openmixer::composition::{load_themes, AppComposition};
+use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
+use openmixer::plugins::{sync_plugin_themes, PluginsPage};
 use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -42,9 +43,12 @@ pub fn main(args: &[String]) -> ExitCode {
     if let Err(error) = composition.attach_library(library_path) {
         eprintln!("openmixer: library unavailable: {error}");
     }
-    // MIDI: the system backend on a real run; a mock under --smoke so the check never opens hardware.
-    if smoke {
-        composition.attach_midi(Box::new(om_midi::MockBackend::new()));
+    // MIDI: the system backend on a real run; a mock controller under --mock-device and --smoke, so
+    // neither run opens hardware.
+    if mock || smoke {
+        let midi = om_midi::MockBackend::new();
+        midi.add_input("Mock controller");
+        composition.attach_midi(Box::new(midi));
     } else {
         match om_midi::system_backend() {
             Ok(backend) => composition.attach_midi(backend),
@@ -119,6 +123,10 @@ pub fn main(args: &[String]) -> ExitCode {
     }
     let rows_out = Arc::new(AtomicUsize::new(0));
 
+    let midi_page: Option<Arc<dyn MidiPage>> = composition
+        .midi
+        .clone()
+        .map(|service| service as Arc<dyn MidiPage>);
     let composition = Rc::new(RefCell::new(composition));
     let status_output = output.clone();
     let status: DeviceStatusFn = Arc::new(move || device_status(&status_output.lock()));
@@ -137,6 +145,18 @@ pub fn main(args: &[String]) -> ExitCode {
             Box::new(move |prefs: &Preferences| {
                 apply_changes(&composition, &output, prefs, &prefs_file)
             })
+        },
+        midi: midi_page,
+        learn_targets: learnable_targets(DECKS),
+        library: library
+            .clone()
+            .map(|hub| Box::new(HubLibrary(hub)) as Box<dyn LibraryControl>),
+        plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
+        sync_themes: {
+            let composition = Rc::clone(&composition);
+            Some(Box::new(move |themes: &mut ThemeRegistry| {
+                sync_plugin_themes(themes, &composition.borrow().plugins)
+            }))
         },
     };
     let options = RunOptions {
@@ -163,6 +183,11 @@ pub fn main(args: &[String]) -> ExitCode {
             } else if rows != TRACKS {
                 smoke_error = Some(format!("the table shows {rows} rows, not {TRACKS}"));
             }
+        }
+        {
+            let composition = composition.borrow();
+            println!("openmixer gui MIDI: {}", composition.midi_status());
+            println!("openmixer gui plugins: {}", composition.plugins_status());
         }
         match &smoke_error {
             None => println!(

@@ -6,6 +6,19 @@ use std::path::PathBuf;
 
 use super::services::LibraryServices;
 use crate::settings::{LibraryControl, SettingsResult};
+use om_library::ImportReport;
+
+/// The one-line outcome of an import, as the library page and the browser show it.
+pub(super) fn import_summary(report: &ImportReport) -> String {
+    let mut text = format!(
+        "Imported {} new, {} merged, {} playlists",
+        report.tracks_added, report.tracks_merged, report.playlists_created
+    );
+    if report.errors > 0 {
+        text.push_str(&format!(", {} problems", report.errors));
+    }
+    text
+}
 
 impl LibraryControl for LibraryServices {
     fn available(&self) -> bool {
@@ -47,5 +60,10 @@ impl LibraryControl for LibraryServices {
             }
             None => Err("no watch folders available".to_owned()),
         }
+    }
+
+    fn import_xml(&mut self, xml: PathBuf) -> SettingsResult<String> {
+        let report = self.import_file(&xml)?;
+        Ok(import_summary(&report))
     }
 }

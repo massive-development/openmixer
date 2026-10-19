@@ -216,6 +216,10 @@ impl MidiControl for MidiService {
     fn is_learning(&self) -> bool {
         self.mapper.is_learning()
     }
+
+    fn map_generation(&self) -> u64 {
+        self.mapper.generation()
+    }
 }
 
 /// The MIDI settings page lists the input devices the host sees.

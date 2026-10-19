@@ -21,7 +21,8 @@ use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
-use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
+use om_ui::settings::PluginHost;
+use om_ui::theme::{default_user_directory, session_theme_override, Source, ThemeRegistry};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -227,6 +228,41 @@ impl AppComposition {
         self.plugins
             .apply_midi_map(map_name, service.mapper())
             .map_err(|e| e.to_string())
+    }
+
+    /// One line on MIDI for the smoke report: the open inputs, the mappings and the devices listed.
+    pub fn midi_status(&self) -> String {
+        match &self.midi {
+            Some(midi) => format!(
+                "{} input(s) open, {} mapping(s), {} device(s) listed",
+                midi.open_inputs().len(),
+                midi.mapper().num_mappings(),
+                midi.available_inputs().len()
+            ),
+            None => "not available".to_owned(),
+        }
+    }
+
+    /// One line on plugins for the smoke report: the loaded plugins, the built-ins not loaded and
+    /// the plugin themes.
+    pub fn plugins_status(&self) -> String {
+        let loaded = self.plugins.plugin_ids();
+        let names = if loaded.is_empty() {
+            "none".to_owned()
+        } else {
+            loaded.join(", ")
+        };
+        let available = PluginHost::builtins(self).len();
+        let themes = self
+            .themes
+            .themes()
+            .iter()
+            .filter(|e| e.source == Source::Plugin)
+            .count();
+        format!(
+            "{} loaded ({names}), {available} built-in not loaded, {themes} plugin theme(s)",
+            loaded.len()
+        )
     }
 
     /// Reloads the plugin folder applied last (the Plugins page's Reload button). Themes are

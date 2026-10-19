@@ -1,12 +1,92 @@
-//! Plugins in the app: how the preferences load them (the [`PluginSink`] the targets call) and what
-//! the Plugins settings page sees ([`om_ui::settings::PluginHost`]). The registry itself is
-//! [`om_plugins::PluginRegistry`], owned by [`crate::composition::AppComposition`].
+//! Plugins in the app: how the preferences load them (the [`PluginSink`] the targets call), the
+//! built-in plugins the Plugins page can load, and what that page sees
+//! ([`om_ui::settings::PluginHost`]). The registry itself is [`om_plugins::PluginRegistry`], owned
+//! by [`crate::composition::AppComposition`].
 
 use crate::app_targets::{PluginLoad, PluginSink, PluginTheme};
 use crate::composition::AppComposition;
-use om_plugins::PluginRegistry;
+use gain_plugin::GainPlugin;
+use om_plugins::{Plugin, PluginRegistry};
 use om_ui::settings::{PluginHost, SettingsResult};
+use om_ui::theme::{Source, ThemeRegistry};
+use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
+
+/// A plugin compiled into the app. It is not loaded at start-up: the Plugins page loads and
+/// unloads it.
+pub struct BuiltinPlugin {
+    pub id: String,
+    pub name: String,
+    make: fn() -> Box<dyn Plugin>,
+}
+
+impl BuiltinPlugin {
+    /// A new instance, ready for [`PluginRegistry::add_plugin`].
+    pub fn create(&self) -> Box<dyn Plugin> {
+        (self.make)()
+    }
+}
+
+/// Every built-in plugin, with the id and name it reports.
+pub fn builtin_catalog() -> Vec<BuiltinPlugin> {
+    let factories: [fn() -> Box<dyn Plugin>; 1] = [|| Box::new(GainPlugin::new())];
+    factories
+        .into_iter()
+        .map(|make| {
+            let info = make().info();
+            BuiltinPlugin {
+                id: info.id,
+                name: info.name,
+                make,
+            }
+        })
+        .collect()
+}
+
+/// Makes the registry's plugin themes the window's [`Source::Plugin`] themes, replacing the ones
+/// there. A theme the registry refuses is reported on stderr and skipped.
+pub fn sync_plugin_themes(themes: &mut ThemeRegistry, plugins: &PluginRegistry) {
+    themes.remove_source(Source::Plugin);
+    for theme in plugins.themes() {
+        if let Err(error) = themes.add_json(&theme.json, Source::Plugin, &theme.owner) {
+            eprintln!("openmixer: theme from {}: {error}", theme.owner);
+        }
+    }
+}
+
+impl AppComposition {
+    /// Forwards the registry's plugin themes to the composition's own theme registry.
+    pub fn refresh_plugin_themes(&mut self) {
+        sync_plugin_themes(&mut self.themes, &self.plugins);
+    }
+}
+
+/// The Plugins page's view of the composition. The window and the page share the composition,
+/// so the page's loads and unloads reach the plugins the rest of the app uses.
+pub struct PluginsPage(pub Rc<RefCell<AppComposition>>);
+
+impl PluginHost for PluginsPage {
+    fn loaded_plugins(&self) -> Vec<String> {
+        PluginHost::loaded_plugins(&*self.0.borrow())
+    }
+
+    fn reload(&mut self) -> SettingsResult<()> {
+        PluginHost::reload(&mut *self.0.borrow_mut())
+    }
+
+    fn builtins(&self) -> Vec<(String, String)> {
+        PluginHost::builtins(&*self.0.borrow())
+    }
+
+    fn load_builtin(&mut self, id: &str) -> SettingsResult<()> {
+        PluginHost::load_builtin(&mut *self.0.borrow_mut(), id)
+    }
+
+    fn unload(&mut self, id: &str) -> SettingsResult<()> {
+        PluginHost::unload(&mut *self.0.borrow_mut(), id)
+    }
+}
 
 impl PluginSink for PluginRegistry {
     fn unload_all(&mut self) {
@@ -41,6 +121,35 @@ impl PluginHost for AppComposition {
 
     fn reload(&mut self) -> SettingsResult<()> {
         self.reload_plugins();
+        Ok(())
+    }
+
+    fn builtins(&self) -> Vec<(String, String)> {
+        let loaded = self.plugins.plugin_ids();
+        builtin_catalog()
+            .into_iter()
+            .filter(|b| !loaded.contains(&b.id))
+            .map(|b| (b.id, b.name))
+            .collect()
+    }
+
+    fn load_builtin(&mut self, id: &str) -> SettingsResult<()> {
+        let builtin = builtin_catalog()
+            .into_iter()
+            .find(|b| b.id == id)
+            .ok_or_else(|| format!("no built-in plugin '{id}'"))?;
+        self.plugins
+            .add_plugin(builtin.create())
+            .map_err(|e| e.to_string())?;
+        self.refresh_plugin_themes();
+        Ok(())
+    }
+
+    fn unload(&mut self, id: &str) -> SettingsResult<()> {
+        if !self.plugins.unload(id) {
+            return Err(format!("plugin '{id}' is not loaded"));
+        }
+        self.refresh_plugin_themes();
         Ok(())
     }
 }
@@ -181,5 +290,32 @@ mod tests {
         PluginHost::reload(&mut app).expect("reload");
         // The folder was never applied, so the reload loads nothing and removes nothing.
         assert_eq!(PluginHost::loaded_plugins(&app), vec![ID.to_owned()]);
+    }
+
+    #[test]
+    fn a_built_in_plugin_loads_and_unloads_through_the_page_with_its_theme() {
+        let shared = Rc::new(RefCell::new(composition()));
+        let mut page = PluginsPage(Rc::clone(&shared));
+        let gain = "org.openmixer.example.gain";
+        assert!(PluginHost::builtins(&page).iter().any(|(id, _)| id == gain));
+
+        PluginHost::load_builtin(&mut page, gain).expect("loads");
+        assert_eq!(PluginHost::loaded_plugins(&page), vec![gain.to_owned()]);
+        assert!(!PluginHost::builtins(&page).iter().any(|(id, _)| id == gain));
+        assert!(shared
+            .borrow()
+            .themes
+            .find("org.openmixer.example.theme")
+            .is_some_and(|e| e.source == Source::Plugin));
+
+        PluginHost::unload(&mut page, gain).expect("unloads");
+        assert!(PluginHost::loaded_plugins(&page).is_empty());
+        assert!(shared
+            .borrow()
+            .themes
+            .find("org.openmixer.example.theme")
+            .is_none());
+        assert!(PluginHost::unload(&mut page, gain).is_err());
+        assert!(PluginHost::load_builtin(&mut page, "no.such").is_err());
     }
 }
