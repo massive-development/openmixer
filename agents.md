@@ -16,6 +16,7 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 │   ├── om-dsp/               # empty scaffold; filters, EQ, FX primitives, resampling helpers planned
 │   ├── om-engine/            # empty scaffold; decks, channel strips, crossfader, FX routing, sync, loops planned
 │   ├── om-audio/             # empty scaffold; cpal device layer, latency monitor planned
+│   ├── om-ui/                # UI logic without a window: themes, formats, widget view models (gpui front end in Todo 8b)
 │   └── openmixer/            # binary: currently supports --smoke and --version; composition root and preferences planned
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
@@ -31,7 +32,7 @@ The project is being rewritten from the C++ tree. The frozen baseline is the git
 └── deny.toml                 # Licence and ban policy (cargo deny)
 ```
 
-Planned crates, added in their phases: `om-stretch` (Phase 2, the only crate allowed `unsafe`), `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`, `om-ui`.
+Planned crates, added in their phases: `om-stretch` (Phase 2, the only crate allowed `unsafe`), `om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`.
 
 ## Current State (Rust rewrite, Phase 1 spikes run)
 

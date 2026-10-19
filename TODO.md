@@ -147,7 +147,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 5: UI
 
-- [ ] **Todo 25a:** Theme/skin loader
+- [x] **Todo 25a:** Theme/skin loader
   - JSON themes with built-in, user and plugin sources
   - Live theme switching; built-in themes embedded in the binary
 
