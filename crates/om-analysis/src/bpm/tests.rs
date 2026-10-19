@@ -1,10 +1,19 @@
 //! Port of `tests/unit/BpmEstimatorTest.cpp`: tempo, phase and downbeat on synthetic click tracks,
-//! plus grid model edits. The service-backed case (`BpmAnalyzerSlow`) follows with the job service.
+//! plus grid model edits, the service-backed case (`BpmAnalyzerSlow`) and the analysed grid
+//! driving the engine's sync and quantize (Todo 12).
 
 use super::*;
 use crate::test_signals::{add_noise, click_track, silence, RATE};
-use crate::{make_engine_grid, AnalysedBeatGrid, BeatGridModel, NullAnalysisContext};
+use crate::{
+    make_engine_grid, AnalysedBeatGrid, AnalysisJob, AnalysisService, AnalyzerRegistry,
+    BeatGridModel, JobStatus, MemoryClipSource, NullAnalysisContext,
+};
 use om_engine::grid::{BeatGrid, FixedTempoGrid};
+use om_engine::quantizer::snap_to_nearest;
+use om_engine::sync::SyncDeckState;
+use om_engine::DjEngine;
+use std::sync::Arc;
+use std::time::Duration;
 
 const BEAT_TOLERANCE_SECONDS: f64 = 0.003;
 
@@ -205,4 +214,60 @@ fn json_round_trip_and_validation() {
             .is_none()
     );
     assert!(parse(r#"{"version":9}"#).is_none());
+}
+
+/// Runs a clip through the job service with the `bpm` analyser, as the library does.
+fn analyse_through_service(clip: AudioClip) -> Arc<AnalysisJob> {
+    let registry = Arc::new(AnalyzerRegistry::new());
+    registry
+        .add(Arc::new(BpmAnalyzer::default()))
+        .expect("bpm registers");
+    let service = AnalysisService::new(registry, None, 1);
+    let source = Box::new(MemoryClipSource::new(clip, "clicks"));
+    let job = service.submit(Some(source), vec!["bpm".to_owned()], None);
+    assert!(job.wait_until_finished(Duration::from_secs(60)));
+    job
+}
+
+#[test]
+fn bpm_analyzer_slow_runs_through_service_and_feeds_engine_grid() {
+    let job = analyse_through_service(click_track(128.0, 20.0, 0.0, -1, 4, RATE));
+    assert_eq!(job.status(), JobStatus::Done);
+
+    let result = BpmResult::from_json(&job.results()["bpm"]).expect("payload parses");
+    let grid = make_engine_grid(&result.grid).expect("grid is valid");
+    let beat_frames = (RATE * 60.0 / 128.0) as i64;
+    let snapped = snap_to_nearest(Some(grid.as_ref()), 10 * beat_frames + 300, 1.0);
+    assert!((snapped - 10 * beat_frames).abs() as f64 <= RATE * 0.01);
+}
+
+#[test]
+fn analysed_grid_drives_sync_and_quantize_through_the_engine() {
+    let job = analyse_through_service(click_track(128.0, 20.0, 0.0, -1, 4, RATE));
+    let result = BpmResult::from_json(&job.results()["bpm"]).expect("payload parses");
+
+    let (engine, _audio) = DjEngine::new(2);
+    engine.set_grid(0, make_engine_grid(&result.grid));
+    engine.set_grid(1, Some(Arc::new(FixedTempoGrid::new(120.0, RATE, 0))));
+    let sync = engine.sync();
+    sync.set_leader(Some(0));
+    sync.set_enabled(1, true);
+
+    // Follower at 120 BPM against the analysed 128 BPM leader: it speeds up by the ratio.
+    let playing = SyncDeckState {
+        position: 0,
+        rate: 1.0,
+        playing: true,
+    };
+    let rate = sync.step(&[playing, playing])[1].expect("follower syncs to the analysed leader");
+    assert!((rate - 128.0 / 120.0).abs() < 0.01, "rate {rate}");
+
+    // Quantize on the analysed grid: a position a little past beat 10 snaps back onto it.
+    let grid = engine
+        .deck_control(0)
+        .grid()
+        .expect("deck 0 carries the analysed grid");
+    let beat_frames = (RATE * 60.0 / 128.0).round() as i64;
+    let snapped = snap_to_nearest(Some(grid.as_ref()), 10 * beat_frames + 300, 1.0);
+    assert!((snapped - 10 * beat_frames).abs() as f64 <= RATE * 0.01);
 }

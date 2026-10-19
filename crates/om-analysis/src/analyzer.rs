@@ -4,10 +4,13 @@
 
 use crate::{AnalysisContext, AudioClip};
 
+/// Interface version every analyser must report; the registry rejects other versions.
+pub const INTERFACE_VERSION: i32 = 1;
+
 pub trait Analyzer: Send + Sync {
     /// Bump when the wire format of the payload changes.
     fn interface_version(&self) -> i32 {
-        1
+        INTERFACE_VERSION
     }
 
     fn id(&self) -> &str;
