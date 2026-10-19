@@ -201,7 +201,12 @@ impl AppComposition {
             .clone()
             .ok_or_else(|| AppError::Stems("attach the library first".into()))?;
         let max_cache_bytes = u64::try_from(self.prefs.stems.max_cache_gb).unwrap_or(0) * GIB;
-        let mut host = StemsHost::new(mock, db, Some(max_cache_bytes));
+        let mut host = StemsHost::new(
+            mock,
+            db,
+            Some(max_cache_bytes),
+            self.prefs.stems.auto_prepare,
+        );
         self.services.stems = host.service_if_ready()?;
         self.stems_host = Some(host);
         Ok(())

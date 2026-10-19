@@ -58,8 +58,13 @@ impl<'a> StemsSettingsPage<'a> {
         self.prefs.stems.auto_prepare
     }
 
+    /// Stored, and pushed to the host so the analysis trigger sees it.
     pub fn set_auto_prepare(&mut self, on: bool) -> bool {
-        set_if_changed(&mut self.prefs.stems.auto_prepare, on)
+        let changed = set_if_changed(&mut self.prefs.stems.auto_prepare, on);
+        if changed {
+            self.host.set_auto_prepare(on);
+        }
+        changed
     }
 
     /// Bytes the cache holds now.
@@ -105,6 +110,7 @@ mod tests {
         downloads: usize,
         cleared: usize,
         state: Option<ModelState>,
+        auto: bool,
     }
 
     impl StemHost for Host {
@@ -131,6 +137,12 @@ mod tests {
         }
         fn set_max_cache_bytes(&mut self, bytes: u64) {
             self.cap = bytes;
+        }
+        fn auto_prepare(&self) -> bool {
+            self.auto
+        }
+        fn set_auto_prepare(&mut self, on: bool) {
+            self.auto = on;
         }
         fn submit(&mut self, _job: StemJob) -> SettingsResult<JobHandle> {
             unreachable!("the page never submits")
@@ -159,6 +171,8 @@ mod tests {
         assert!(page.set_auto_prepare(true));
         assert!(!page.set_auto_prepare(true));
         assert!(page.auto_prepare());
+        drop(page);
+        assert!(host.auto, "the host sees the preference");
     }
 
     #[test]
