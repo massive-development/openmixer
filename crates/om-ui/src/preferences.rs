@@ -13,7 +13,13 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Schema version written to disk. Files with a higher version are refused.
-pub const PREFERENCES_VERSION: i64 = 1;
+///
+/// History: 1 = audio, midi, library, plugins. 2 adds `stems` (cache cap and auto-prepare). The
+/// step from 1 is additive: a version-1 file has no `stems` section, so it reads with the defaults
+/// and is written back as version 2 on the next save.
+pub const PREFERENCES_VERSION: i64 = 2;
+/// Largest stem cache cap accepted, in GB.
+pub const MAX_STEM_CACHE_GB: i64 = 1000;
 /// Environment variable that overrides the preferences file location.
 pub const PREFS_ENV: &str = "OPENMIXER_PREFS";
 
@@ -76,6 +82,25 @@ impl Default for LibraryPrefs {
     }
 }
 
+/// Stem separation (Wave 7). Read when the stem service starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StemsPrefs {
+    /// Cap for the stem cache, in GB (1..=1000). Least recently used stems are removed above it.
+    pub max_cache_gb: i32,
+    /// Prepare stems for a track automatically. Off by default; loading a track never starts a
+    /// separation on its own, whatever this says.
+    pub auto_prepare: bool,
+}
+
+impl Default for StemsPrefs {
+    fn default() -> Self {
+        Self {
+            max_cache_gb: 20,
+            auto_prepare: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preferences {
     pub theme: String,
@@ -84,6 +109,7 @@ pub struct Preferences {
     pub library: LibraryPrefs,
     /// Empty = the default plugin folder.
     pub plugin_folder: String,
+    pub stems: StemsPrefs,
 }
 
 impl Default for Preferences {
@@ -94,6 +120,7 @@ impl Default for Preferences {
             midi: MidiPrefs::default(),
             library: LibraryPrefs::default(),
             plugin_folder: String::new(),
+            stems: StemsPrefs::default(),
         }
     }
 }
@@ -208,6 +235,10 @@ impl Preferences {
         root.insert("midi".into(), Value::Object(midi));
         root.insert("library".into(), Value::Object(library));
         root.insert("plugins".into(), Value::Object(plugins));
+        let mut stems = Map::new();
+        stems.insert("maxCacheGb".into(), self.stems.max_cache_gb.into());
+        stems.insert("autoPrepare".into(), self.stems.auto_prepare.into());
+        root.insert("stems".into(), Value::Object(stems));
         Value::Object(root).to_string()
     }
 
@@ -229,6 +260,7 @@ impl Preferences {
         read_midi(section(root, "midi"), &mut p.midi);
         read_library(section(root, "library"), &mut p.library);
         p.plugin_folder = string_or(section(root, "plugins").get("folder"), p.plugin_folder);
+        read_stems(section(root, "stems"), &mut p.stems);
         Ok(p)
     }
 
@@ -310,6 +342,16 @@ fn read_midi(s: &Map<String, Value>, m: &mut MidiPrefs) {
     }
 }
 
+fn read_stems(s: &Map<String, Value>, st: &mut StemsPrefs) {
+    st.max_cache_gb = int_or(
+        s.get("maxCacheGb"),
+        1,
+        MAX_STEM_CACHE_GB,
+        st.max_cache_gb.into(),
+    ) as i32;
+    st.auto_prepare = bool_or(s.get("autoPrepare"), st.auto_prepare);
+}
+
 fn read_library(s: &Map<String, Value>, l: &mut LibraryPrefs) {
     l.scan_on_start = bool_or(s.get("scanOnStart"), l.scan_on_start);
     l.scan_interval_minutes = int_or(
@@ -343,6 +385,10 @@ mod tests {
                 scan_interval_minutes: 15,
             },
             plugin_folder: "/opt/openmixer/plugins".into(),
+            stems: StemsPrefs {
+                max_cache_gb: 64,
+                auto_prepare: true,
+            },
         }
     }
 
@@ -361,6 +407,34 @@ mod tests {
         assert_eq!(p.library.scan_interval_minutes, 5);
         assert_eq!(p.effective_plugin_folder(), default_plugin_folder());
         assert_eq!(p.effective_map_file(), default_map_file());
+        assert_eq!(
+            p.stems,
+            StemsPrefs {
+                max_cache_gb: 20,
+                auto_prepare: false
+            }
+        );
+    }
+
+    #[test]
+    fn version_one_files_read_with_stem_defaults() {
+        let p = Preferences::from_json(
+            r#"{"version":1,"theme":"openmixer.dark","library":{"scanOnStart":false}}"#,
+        )
+        .unwrap();
+        assert!(!p.library.scan_on_start);
+        assert_eq!(p.stems, StemsPrefs::default());
+    }
+
+    #[test]
+    fn stem_fields_fall_back_when_out_of_range() {
+        let p =
+            Preferences::from_json(r#"{"version":2,"stems":{"maxCacheGb":0,"autoPrepare":"yes"}}"#)
+                .unwrap();
+        assert_eq!(p.stems.max_cache_gb, 20);
+        assert!(!p.stems.auto_prepare);
+        let p = Preferences::from_json(r#"{"version":2,"stems":{"maxCacheGb":5000}}"#).unwrap();
+        assert_eq!(p.stems.max_cache_gb, 20);
     }
 
     #[test]
@@ -406,7 +480,7 @@ mod tests {
             "[]",
             "{}",
             r#"{"version":0}"#,
-            r#"{"version":2}"#,
+            r#"{"version":3}"#,
             r#"{"version":"1"}"#,
         ] {
             assert!(Preferences::from_json(bad).is_err(), "{bad}");
