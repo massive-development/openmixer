@@ -41,7 +41,7 @@
    "name": "4 Library",
    "items": [
     ["20 Schema", "done"],
-    ["21 Ingest", "todo"],
+    ["21 Ingest", "done"],
     ["22 Import", "todo"],
     ["23 Search", "todo"],
     ["24 Prep queue", "todo"]

@@ -145,8 +145,8 @@ impl<'a> Ingestor<'a> {
         let Some(stamp) = stamp_of(file) else {
             return Outcome::Failed;
         };
-        let unchanged = state
-            .filter(|s| s.mtime_ms == stamp.mtime_ms && s.size_bytes == stamp.size_bytes);
+        let unchanged =
+            state.filter(|s| s.mtime_ms == stamp.mtime_ms && s.size_bytes == stamp.size_bytes);
         match (unchanged, existing) {
             (Some(state), Some(_)) if !state.missing => Outcome::Unchanged,
             (Some(_), Some(track)) => match trackfiles.set_missing(track.id, false) {
@@ -197,7 +197,12 @@ impl<'a> Ingestor<'a> {
 
     /// Flags tracks under `folder` that were not seen in this pass. A partial pass (stopped, or a
     /// failed listing) flags nothing. Returns how many rows were newly flagged.
-    fn mark_missing(&self, folder: &Path, seen: &HashSet<String>, should_stop: &dyn Fn() -> bool) -> usize {
+    fn mark_missing(
+        &self,
+        folder: &Path,
+        seen: &HashSet<String>,
+        should_stop: &dyn Fn() -> bool,
+    ) -> usize {
         let trackfiles = self.library.track_files();
         let Ok(entries) = trackfiles.under(&folder_prefix(folder)) else {
             return 0;

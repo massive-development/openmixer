@@ -1,5 +1,11 @@
 [advisories]
 version = 2
+# RUSTSEC-2024-0436: `paste` is unmaintained, not vulnerable. It is a build-time proc macro pulled
+# in by lofty_attr (every lofty release depends on it; the om-library tag reader needs lofty).
+# Remove this entry once lofty drops paste.
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste is a build-time proc macro, transitive via lofty; unmaintained, no vulnerability" },
+]
 
 [licenses]
 version = 2
