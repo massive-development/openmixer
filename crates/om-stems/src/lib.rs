@@ -6,6 +6,7 @@
 //! behind the off-by-default `onnx` feature; without it the pipeline runs on fakes and the
 //! [`MockSeparator`] stands in.
 
+mod cache;
 mod contract;
 mod manifest;
 #[cfg(feature = "onnx")]
@@ -14,8 +15,13 @@ mod pipeline;
 mod resample;
 mod separator;
 mod spectral;
+mod wav;
 mod weights;
 
+pub use cache::{
+    CacheError, StemCache, StemCacheSink, StemEntry, StemKey, StemMeta, StemReader,
+    FORMAT as CACHE_FORMAT,
+};
 pub use contract::ModelContract;
 pub use manifest::{ManifestError, ModelManifest, HTDEMUCS_LICENSE_NAME, HTDEMUCS_LICENSE_TEXT};
 #[cfg(feature = "onnx")]
