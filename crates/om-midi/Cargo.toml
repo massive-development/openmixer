@@ -1,0 +1,24 @@
+[package]
+name = "om-midi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+om-core = { path = "../om-core" }
+serde_json = "1"
+thiserror = "2"
+
+# Same version cpal links, so the build carries one `alsa`. Linux only: the sequencer backend.
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.11"
+
+[dev-dependencies]
+om-engine = { path = "../om-engine" }
+tempfile = "3"

@@ -2,258 +2,275 @@
 
 Registry for agents and contributors. Check here before starting a large implementation; add an entry when you introduce or adopt a pattern.
 
+Most entries below describe the Rust design. Where a pattern comes from the C++ tree, the entry says so and names its file in the frozen baseline (`cpp-final`). Entries marked **(planned)** were written as design before the Rust code existed, and the marker may lag the code (check the crate); **(deferred)** patterns wait for a later phase. Patterns that the Rust port replaces are listed under "Replaced in the Rust port" with what replaces them.
+
 ## Entry template
 
 - **Pattern:** name
-- **Where:** files/targets
+- **Where:** crate/module (and `cpp-final` path if ported from the C++ tree)
 - **Why:** problem it solves (one line)
 - **Reuse when:** situations that should use it
 - **Notes:** constraints (threading, ownership)
 
 ## Current patterns
 
-### Interface + mock (Strategy / Adapter)
-- **Where:** `src/engine/AudioDevice.h`, `JuceAudioDevice.h`, `MockAudioDevice.h`
+### Trait + mock implementation (Strategy / Adapter)
+- **Where:** `om-audio` (`AudioDevice` trait with a `cpal` backend and a mock device; MIDI uses `MidiBackend` in `om-midi`)
 - **Why:** swap hardware backends and run headless in CI.
 - **Reuse when:** wrapping any external I/O (MIDI input, file/network, HID) so tests need no hardware.
-- **Notes:** callers depend on the abstract interface only.
+- **Notes:** callers depend on the trait only. The C++ tree used an abstract device interface with a framework-backed class and a mock class.
 
-### Lock-free SPSC ring buffer
-- **Where:** `src/engine/RingBuffer.h`
+```rust
+pub trait AudioDevice: Send {
+    fn start(&mut self, callback: Box<dyn AudioCallback>) -> Result<(), AudioError>;
+    fn stop(&mut self) -> Option<Box<dyn AudioCallback>>;
+}
+```
+
+### Lock-free SPSC ring buffer (`rtrb`)
+- **Where:** `om-core` (`spsc`, a wrapper over `rtrb::RingBuffer`) and `om-engine` (`stage.rs`, the insert command and retired-stage rings; the C++ version was `RingBuffer.h` at `cpp-final`)
 - **Why:** pass audio between a worker thread and the audio callback without locks or allocation.
 - **Reuse when:** any realtime thread needs data from a non-realtime producer (decode, analysis results, MIDI events).
-- **Notes:** exactly one producer and one consumer thread.
+- **Notes:** `rtrb::RingBuffer::new(capacity)` returns a `(Producer, Consumer)` pair. Exactly one producer and one consumer thread, and the pair must be created before the audio thread starts.
 
 ### Epoch handshake (producer-owned reset)
-- **Where:** `src/engine/Deck.h`, `DeckDecoder.cpp`
+- **Where:** `om-engine` deck streaming (`deck/shared.rs`, `deck/decoder.rs`, `deck/playback.rs`; the C++ version was `Deck.h` and the `DeckDecoder` source at `cpp-final`)
 - **Why:** seek/load without the producer resetting a ring the consumer is reading.
 - **Reuse when:** a realtime consumer must discard queued data after a state change.
+- **Notes:** control bumps `request_epoch` and the decoder copies it to `ack_epoch` once it has reset its reader (both `AtomicU32`). The audio side reads both in `playback.rs` and does not consume ring data until they match; the stale buffered data is then skipped on the consumer side, so the producer never touches the ring's read side.
 
-### Callback interface (Observer-style)
-- **Where:** `AudioCallback` in `src/engine/AudioDevice.h`; `Deck` implements it.
+### Callback trait (Observer-style)
+- **Where:** `om-engine` (`AudioCallback` in `callback.rs`, the block processor a device drives; `ProcessStage` in `stage.rs` for insert stages; the C++ version was `AudioCallback` at `cpp-final`)
 - **Why:** engine units plug into any device, real or mock.
 - **Reuse when:** adding mixer/FX stages that process audio blocks.
+- **Notes:** use generics on the hot path; `Box<dyn Trait>` only at the composition root, where it is set up once. Insert stages implement `ProcessStage` and are swapped in through the command ring.
 
-### Lock-free metrics monitor
-- **Where:** `src/engine/LatencyMonitor.h`
+```rust
+pub trait AudioCallback: Send {
+    fn prepare(&mut self, _sample_rate: f64, _max_block_size: usize) {}
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]]);
+}
+```
+
+### Lock-free metrics monitor (atomics)
+- **Where:** `om-engine` latency monitor (`latency.rs`, `LatencyMonitor`) and the cpal xrun counters in `om-audio` (the C++ version was `LatencyMonitor.h` at `cpp-final`)
 - **Why:** expose realtime stats (latency, xruns) to UI/tests without locking the audio thread.
 - **Reuse when:** adding any realtime telemetry.
+- **Notes:** `AtomicU32`/`AtomicU64` counters written with `Relaxed` on the audio thread and read by the UI thread. Use `Acquire`/`Release` only if a counter must order other data.
 
-### Static library per area
-- **Where:** `openmixer_engine` in `CMakeLists.txt`
+### Crate per area (static library per area)
+- **Where:** each `crates/om-<area>` in the Cargo workspace (`Cargo.toml` `members`).
 - **Why:** shared, independently testable modules.
-- **Reuse when:** every new `src/<area>/` (controllers, analysis, library, ui).
+- **Reuse when:** every new area (analysis, library, midi, ui).
+- **Notes:** dependencies point toward `om-core` (see `agents.md`). Library crates never depend on the `openmixer` binary.
 
-### Parameter target (Command-style control surface)
-- **Where:** `src/core/ParameterTarget.h`; implemented by `Mixer` (`ch0.fader`, `crossfader`, ...) and `Deck` (`play`, `rate`, `seek`).
-- **Why:** MIDI, UI and tests drive the engine through one string-id API instead of bespoke setters.
-- **Reuse when:** adding any user-controllable engine unit; route by id prefix, return false for unknown ids.
-- **Trade-off:** string parsing is off the audio thread (control side only); typed setters remain for hot paths.
+### Command enum (control surface)
+- **Where:** `om-core` (planned: typed command enum and snapshot types; today the control surface is the string-id `ParameterTarget` trait and `ParameterRouter`, and the insert ring carries a private `Command` in `om-engine/src/stage.rs`)
+- **Why:** MIDI, UI and tests drive the engine through one typed API; the control thread sends commands and the engine applies them on the audio thread.
+- **Reuse when:** adding any user-controllable engine unit: add a variant, handle it in the engine, and send it through the command channel.
+- **Notes:** planned. Commands would cross the control/audio boundary by value through an `rtrb` ring, and parsing text ids (for example MIDI map targets such as `ch0.fader`) would happen on the control thread, returning `Err` for unknown ids. Until then, `ParameterTarget::set_parameter` returns `false` for unknown ids and widgets and MIDI both use that path. The C++ tree used string ids for every call.
 
-### Versioned process stage + stage chain (extension point)
-- **Where:** `src/engine/ProcessStage.h`, `StageChain.{h,cpp}`; `Mixer::setChannelInsert` / `setMasterInsert`.
-- **Why:** users/plugins can insert, replace or remove audio processors at runtime without core changes.
-- **Reuse when:** any per-deck/channel/master processing (FX rack, time-stretch, user plugins).
-- **Notes:** fixed slots of atomic non-owning pointers; `kInterfaceVersion` is checked on insert; replacing/removing waits for two audio passes (max 50 ms) so the old stage can then be destroyed. Caller owns the stage.
-
-### Small units composed by a coordinator
-- **Where:** `ThreeBandEq`, `SweepFilter`, `Crossfader`, `PeakMeter`, `ChannelStrip` composed by `Mixer`; shared filter maths in `src/dsp` (`openmixer_dsp`).
-- **Why:** one responsibility per file; DSP is reusable by FX and tests without the mixer.
+### Small units composed by a coordinator (struct composition)
+- **Where:** `om-engine` (`mixer/channel.rs` and `mixer/control.rs`: the channel strip composed from `ThreeBandEq`, `SweepFilter`, inserts and `Crossfader` gains); shared filter maths in `om-dsp`.
+- **Why:** one responsibility per module; DSP is reusable by FX and tests without the mixer.
+- **Reuse when:** a unit is made of smaller units with their own state. Store them as fields and give each a `process` method.
 
 ### Data-driven map + trace replay harness
-- **Where:** `src/controllers/MidiMap.{h,cpp}` (JSON schema in header), `MidiMapper`, `MidiTrace` (`replayTrace`), `RecordingTarget`.
-- **Why:** controller mappings are user JSON, not code; mappings are tested by replaying recorded MIDI with no hardware.
-- **Reuse when:** any user-editable config or hardware-driven feature (HID, OSC): parse into a plain struct, apply via `ParameterTarget`, test with recorded input.
+- **Where:** `om-midi` (`map.rs` JSON mapping, `mapper.rs`, `trace.rs` replay and `writer.rs` recording; the C++ version was `MidiMap.{h,cpp}` and `MidiTrace` at `cpp-final`)
+- **Why:** controller mappings are user files, not code; mappings are tested by replaying recorded MIDI with no hardware.
+- **Reuse when:** any user-editable config or hardware-driven feature (HID, OSC): parse into a plain struct, apply through the command enum, test with recorded input.
 
-### Prefix registry (ParameterRouter)
-- **Where:** `src/controllers/ParameterRouter.{h,cpp}`
-- **Why:** MIDI maps address `mixer.*`, `deck.N.*` or any user-registered prefix; plugins add targets without touching core. Longest prefix wins.
-- **Reuse when:** exposing a new controllable unit; register it, do not extend a switch.
-- **Notes:** the app registers `mixer`, `fx` (`FxRouting`), `sync` and `deck.<N>` (`DeckControl`, a decorator that handles sync/loop.quantized/slip and forwards the rest to `Deck`). Engine units cannot link `controllers`, so `DjEngine` exposes targets and the app does the registering.
-
-### Composition root for the signal path (DjEngine)
-- **Where:** `src/engine/DjEngine.{h,cpp}`
-- **Why:** one `AudioCallback` owns decks + mixer, so devices, tests and the UI share the same wiring; the UI links `openmixer_ui -> openmixer_engine` one-way.
-- **Reuse when:** adding units to the signal path (FX, sampler); extend DjEngine instead of wiring in the app.
-- **Notes:** FX racks, `Sync` and `DeckControl` live here; keep `DjEngine` thin by giving each its own file (`FxRouting`, `DeckControl`). `updateControl(dt)` is the one control-timer entry.
-
-### Grid interface with mock implementations (BeatGrid)
-- **Where:** `src/engine/BeatGrid.h`, consumed by `Sync` and `Quantizer`; `FixedTempoGrid` is the built-in implementation, tests use a mock.
-- **Why:** sync/quantize can be built and tested before Wave 3 analysis exists; analysis plugs in by implementing `BeatGrid`.
-- **Reuse when:** a feature depends on data another wave produces: define the minimal read-only interface first, test with a mock.
-- **Notes:** `Sync::step` is a pure function of deck states (control thread, ~20-50 Hz); only `apply` touches `Deck::setRate`. Grids are shared immutably (`shared_ptr<const BeatGrid>`).
+### Grid trait with mock implementations (BeatGrid)
+- **Where:** `om-engine` (`grid.rs`: the read-only `BeatGrid` trait and the `FixedTempoGrid` constant-tempo grid; `om-analysis` implements it for `AnalysedBeatGrid` in `beat_grid.rs`). The C++ version lived in the engine header at `cpp-final`.
+- **Why:** sync/quantize can be built and tested before analysis exists; analysis plugs in by implementing `BeatGrid`. Keeping the trait in `om-core` lets `om-analysis` implement it without depending on `om-engine`.
+- **Reuse when:** a feature depends on data another phase produces: define the minimal read-only trait first, test with a mock.
+- **Notes:** `Sync::step` is a pure function of deck states (control thread, ~20-50 Hz); only `apply` sends a rate command. Grids are shared immutably as `Arc<dyn BeatGrid>` (the trait requires `Send + Sync`). `om-analysis` depends on `om-engine` for this trait, so the trait has to stay in the engine crate.
 
 ### Checking decorator for headless runs (OutputChecker)
-- **Where:** `tools/soak/OutputChecker.h`, used by `tools/soak_mix.cpp`.
-- **Why:** wrap any `AudioCallback` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
+- **Where:** `crates/om-audio/tests/soak/checker.rs` (`OutputChecker<C: AudioCallback>`; the C++ version was `tools/soak/OutputChecker.h` at `cpp-final`)
+- **Why:** wrap any `AudioProcessor` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
 - **Reuse when:** long-running or fuzz-style runs (soak, golden-audio, plugin stress) need output assertions.
-- **Notes:** atomics only, no allocation in `process`.
+- **Notes:** a generic wrapper struct `OutputChecker<C: AudioCallback>` with atomic counters; no allocation in `process`.
 
-### Plugin registry / extension points (openmixer_plugins)
-- **Where:** `src/plugins/` (`PluginApi.h` public API, `PluginLoader`, `PluginRegistry`, `StageCatalog`); example in `examples/plugins/GainPlugin.cpp`.
-- **Why:** users add audio stages (pre/post-processing, FX), MIDI maps and parameter targets without touching core and without any signing or allow-list.
-- **Reuse when:** a new feature should be replaceable: add a `register...` method to `PluginHost` (bump `kPluginApiVersion` only on breaking changes), never a hardcoded path.
-- **How to extend:** build a shared library exporting `OPENMIXER_DEFINE_PLUGIN(MyPlugin)`; `onLoad(PluginHost&)` registers stages (`registerStage`), MIDI maps (JSON strings, validated) and `ParameterTarget`s (appear under the bound `ParameterRouter` prefix). The app calls `PluginRegistry::loadDirectory`/`loadLibrary`, then `attachStage` to a channel (0..N) or master (`StageCatalog::kMasterChannel`) slot; `unload` detaches everything the plugin registered first.
-- **Version note:** a plugin that calls a newly appended `PluginHost` hook (e.g. `registerTheme`) needs a host at least as new; hooks are appended with a safe default, so `kPluginApiVersion` stays 1 and older plugins keep loading.
-- **Notes:** control thread only; stages run on the audio thread via the existing `StageChain` (no allocation/locks in `process`). C++ types cross the boundary, so plugins must match the host's compiler and JUCE version (trade-off: small ergonomic API over a C ABI). Stage ids, map names and prefixes are unique; a second registration fails rather than overriding. Mixers/routers passed in must outlive the registry. Dependencies: plugins -> engine, controllers -> core. On Windows the loader suppresses the OS "Bad Image" dialog (`SEM_FAILCRITICALERRORS`) so a broken DLL returns an error instead of blocking headless runs.
+### Plugin registry / extension points (in-process; dynamic loading deferred)
+- **Where:** `om-plugins` (`api.rs` plugin and host traits, `registry.rs`, `catalog.rs`, `loader.rs` as a stub). The C++ version was `src/plugins` at `cpp-final`.
+- **Why:** users add audio stages, MIDI maps and parameter targets without touching core and without any signing or allow-list.
+- **Reuse when:** a new feature should be replaceable: add a registration method to the owning registry, never a hardcoded path.
+- **Notes:** the design picks CLAP-first if plugins are needed. Loading a dynamic library needs `unsafe`, so it belongs in the dedicated FFI crate, not in `om-plugins`. Until then the registry runs in-process only, and extension points stay as traits and registries inside their crates.
 
-### Runtime theme tokens + theme registry (extension point)
-- **Where:** `src/ui/ThemeTokens.h` (data), `Theme.{h,cpp}` (current theme + accessors), `ThemeJson`, `ThemeRegistry`, `GlassLookAndFeel`; built-in themes in `resources/themes/*.json` (embedded with `juce_add_binary_data`).
-- **Why:** widgets never hard-code colours/sizes; they read `theme::textPrimary()`, `theme::accentFor (i)`, `theme::gap()`, `theme::typeBody()` etc., so a theme (built-in, user JSON or plugin) can restyle everything live.
-- **Reuse when:** adding any widget. Paint with token accessors (read at paint time, so switches are free). Anything cached (fonts, per-deck accents, label colours) goes in an `applyTheme()` called from the constructor and `lookAndFeelChanged()`; `GlassLookAndFeel` calls `sendLookAndFeelChange()` on every top-level window after a switch, which re-runs both. Non-Component holders can implement `theme::ThemeListener`.
-- **How to extend:** drop a `*.json` in `<userApplicationData>/OpenMixer/themes` (schema in `ThemeJson.h`; missing keys inherit the dark theme; an invalid value rejects that file only), call `ThemeRegistry::add/addJson` from code, or ship JSON from a plugin with `PluginHost::registerTheme` and forward `PluginRegistry::getThemes()` to `ThemeRegistry::addJson (json, Source::Plugin, owner)` (`removeOwner (pluginId)` on unload). Precedence per id: User > Plugin > BuiltIn, latest add wins within a source. New token = field in `ThemeTokens`, a row in the key tables in `ThemeJson.cpp`, an accessor in `Theme.h`, and a value in both built-in JSON files.
-- **Notes:** message thread only (the current theme is a plain global, not atomic). `ThemeTokens::builtinDark()` is the compiled-in fallback and must stay equal to `openmixer-dark.json` (tested). Use one `ThemeRegistry` per app; the active theme falls back to `openmixer.dark` if it is removed. Dependency direction: plugins do not depend on ui, so the app forwards plugin themes.
+### Theme tokens + theme registry (extension point)
+- **Where:** `om-ui` `theme/` (`tokens.rs` `ThemeTokens`, `json.rs` loader, `registry.rs` `ThemeRegistry`, `builtin.rs`). The C++ version was `ThemeTokens.h` and `ThemeRegistry` at `cpp-final`.
+- **Why:** widgets never hard-code colours or sizes; they read tokens, so a theme (built-in, user file or plugin) can restyle everything live.
+- **Reuse when:** adding any widget. Read tokens at render time, so a theme switch needs no rebuild.
+- **Notes:** UI thread only. Precedence per id: User > Plugin > BuiltIn; a missing key inherits the built-in dark theme, and an invalid value rejects that file only. The built-in theme is compiled in and tested to match its shipped file.
 
-### Prefetched jump slot (hazard-slot double buffer)
-- **Where:** `src/engine/LoopPrefetch.{h,cpp}`, used by `Deck` (`DeckPlayback.cpp`) and `DeckDecoder`.
+### Prefetched jump slot (two-slot handoff)
+- **Where:** `om-engine` loop prefetch (`deck/prefetch.rs`; the C++ version was `LoopPrefetch.{h,cpp}` at `cpp-final`)
 - **Why:** the audio thread jumps (loop wrap) without waiting for the decoder to refill the ring.
 - **Reuse when:** any realtime jump target that can be predicted (hotcues, saved loops, sampler pads).
-- **Notes:** two slots; decoder unpublishes, then fills the slot the audio thread is not holding; audio publishes `inUse` then re-checks `published` (seq_cst). The audio thread also asks the decoder to move the ring to the slot end (`ringReq*`, tagged with the control epoch so stale requests are dropped).
+- **Notes:** two preallocated slots with atomic state. The decoder fills the slot the audio thread is not holding; the audio thread marks a slot in use and re-checks the published index with `SeqCst`. Ring-move requests carry the epoch so stale requests are dropped.
 
-### Seqlock snapshot for small multi-field state
-- **Where:** `src/engine/LoopState.h`.
+### Snapshot publication with `arc-swap` (replaces the seqlock)
+- **Where:** planned for `om-core` snapshot types published from `om-engine`. Not yet adopted: `om-engine/src/deck/loop_state.rs` is still a seqlock port of `LoopState.h` (the C++ version at `cpp-final`), and `arc-swap` is not in `Cargo.lock`.
 - **Why:** audio and decoder threads need a consistent {start, end, enabled} without locks.
-- **Reuse when:** a few fields change rarely from control threads and must be read together in realtime.
-- **Notes:** writers serialise on a mutex (control side only); readers retry a bounded number of times and keep their previous snapshot on contention.
+- **Reuse when:** a few fields change rarely from control threads and must be read together in realtime or by the UI.
+- **Notes:** the writer builds a new immutable snapshot and calls `ArcSwap::store`; readers call `load()` and keep the guard for the block. No retry loop is needed. Confirm the reader path does not allocate with `assert_no_alloc` in tests.
 
-### Effect template method + wrapping unit (FX rack)
-- **Where:** `src/engine/fx/` (`openmixer_fx`): `Effect` (non-virtual `prepare`/`process` call `prepareEffect`/`render`), `FxUnit`, `FxRack`.
-- **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in `FxUnit`, so new effects stay small.
-- **Reuse when:** adding an effect or any per-block processor that needs the same enable/mix/tail behaviour; subclass `Effect`, declare params as `FxParamSpec`s, call `tickParams()` per sample.
-- **Notes:** params are atomics written on the control thread and smoothed per sample (`smoothSeconds` 0 for step controls). `FxUnit` processes in fixed 64-sample chunks with member scratch arrays (no allocation); buffers are sized in `prepare` for `kMinBpm`. Tail effects (`hasTail`) stop receiving input on disable and go idle after `tailSilenceWindow` samples below -100 dBFS; others fade out over 10 ms. Idle units return immediately (bit-exact dry). `FxUnit` and `FxRack` are both `ProcessStage`s, so either inserts via `Mixer::setChannelInsert`/`setMasterInsert`.
+### Effect template method + generic wrapper (FX rack)
+- **Where:** `om-engine` `fx/` (the `Effect` trait in `effect.rs`, the `FxUnit` wrapper in `unit.rs`, `FxRack` in `rack.rs`). The C++ version was `src/engine/fx/` at `cpp-final`.
+- **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in the wrapper, so new effects stay small.
+- **Reuse when:** adding an effect or any per-block processor that needs the same enable/mix/tail behaviour: implement `Effect` and declare its parameters as data.
+- **Notes:** the trait's provided methods (`prepare`, `process`) call the required `render`. This is the Rust form of the C++ non-virtual template method. The wrapper is generic, so dispatch is static on the hot path. Buffers are sized in `prepare` (off the audio thread) and processed in fixed chunks with no allocation.
 
-### Name registry for effects (FxFactory)
-- **Where:** `src/engine/fx/FxFactory.{h,cpp}`; consumed by `FxRack (layout, factory)`.
-- **Why:** rack layouts are lists of names, so users/plugins add effects (`registerEffect`) without touching core; built-ins can't be silently overridden.
-- **Reuse when:** any user-extensible family of processors (sampler voices, analysis stages): register creators by name, build from data.
+### Name registry for effects
+- **Where:** `om-engine` FX factory (`fx/factory.rs`, `FxFactory`; the C++ version was `FxFactory` at `cpp-final`)
+- **Why:** rack layouts are lists of names, so effects are added by registering a constructor under a name without touching core; built-ins cannot be silently overridden.
+- **Reuse when:** any user-extensible family of processors (sampler voices, analysis stages): register constructors by name, build from data.
+- **Notes:** a `BTreeMap<String, Creator>` where `Creator` is a boxed closure returning `Box<dyn Effect>`; the eight built-ins are registered first. Built on the control thread; construction never happens on the audio thread.
 
 ### Data-driven presets
-- **Where:** `src/engine/fx/FxPresets.{h,cpp}` (`builtInPresets`, `applyPreset`).
-- **Why:** presets are plain data applied through the same parameter API, so they can later load from JSON; all values are original to OpenMixer.
+- **Where:** `om-engine` FX presets (`fx/presets.rs`: `builtin_presets`, `find_preset`, `apply_preset`; the C++ version was `FxPresets` at `cpp-final`)
+- **Why:** presets are plain data applied through the same command path, so they can load from files.
 - **Reuse when:** shipping starting points for any parameterised unit (EQ curves, mapping defaults).
+- **Notes:** built-in presets are a static table. Loading user preset files from disk is not built yet.
 
-### Background job service (worker pool + shared job handle)
-- **Where:** `src/analysis/AnalysisService.{h,cpp}`, `AnalysisJob`, `JobRunner`
+### Background job service (worker threads + shared job handle)
+- **Where:** `om-analysis` (`service.rs` `AnalysisService`, `job.rs` `AnalysisJob`, `job_runner.rs` the job body; the C++ version was `AnalysisService`, `AnalysisJob` and `JobRunner` at `cpp-final`)
 - **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
 - **Reuse when:** any long-running background task (library scan, stem precompute, export).
-- **Notes:** `submit()` returns `shared_ptr<AnalysisJob>` (shared by caller and worker); cancellation is a polled atomic flag; listeners run on the worker thread after the final status; the destructor cancels everything and joins. The job body is a free function (`runAnalysisJob`) so it is testable without threads.
+- **Notes:** `submit()` returns `Arc<AnalysisJob>`, shared by caller and worker. Cancellation is an `AtomicBool` polled by the job. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
 
 ### Content-addressed result cache
-- **Where:** `src/analysis/ResultCache.h` (interface), `SqliteResultCache.{h,cpp}`, hashing in `ClipSource.cpp`
-- **Why:** analysis is expensive; results key on SHA-256 of the audio bytes + producer id + producer version, so renames/moves keep results and bumping a version invalidates old rows.
+- **Where:** `om-analysis` cache (`result_cache.rs` `ResultCache` trait, `sqlite_cache.rs` `SqliteResultCache`; the C++ version was `ResultCache` and `SqliteResultCache` at `cpp-final`)
+- **Why:** analysis is expensive; results key on the SHA-256 of the audio bytes plus producer id and version, so renames and moves keep results and bumping a version invalidates old rows.
 - **Reuse when:** caching anything derived from file content (waveforms, stems, artwork thumbnails).
-- **Notes:** SQLite opened `FULLMUTEX` and statements serialised by a mutex; tests use `":memory:"`. Payloads are JSON strings owned by each analyser.
+- **Notes:** the cache is a trait with a `rusqlite` implementation. Tests use `Connection::open_in_memory()`. Payloads are JSON strings owned by each analyser.
 
 ### Estimator + analyser wrapper + engine adapter
-- **Where:** `src/analysis/BpmEstimator.{h,cpp}` (`BpmEstimator` pure, `BpmAnalyzer` JSON wrapper), `BeatGridModel` (editable value type), `AnalysedBeatGrid.h` (implements engine `BeatGrid`).
-- **Why:** algorithms stay testable without the service; the cached payload is plain JSON; the engine sees an immutable snapshot through its own interface, so analysis never links the engine.
-- **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator -> `Analyzer` wrapper with `toJson`/`fromJson` -> adapter for the consumer's interface.
-- **Notes:** `analysis` includes only header-only `engine/BeatGrid.h`; if more engine interfaces are needed, move them to `src/core` instead of linking `openmixer_engine`.
+- **Where:** `om-analysis` (pure estimator modules such as `bpm`, `key` and `structure`, the `Analyzer` implementations, and `AnalysedBeatGrid` in `beat_grid.rs`, which implements `om-engine`'s `BeatGrid`)
+- **Why:** algorithms stay testable without the service; the cached payload is plain data; the engine sees an immutable snapshot through its trait, so analysis never links the engine.
+- **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator, then the wrapper, then an adapter for the consumer's trait.
 
 ### Pyramid of levels (multi-resolution data)
-- **Where:** `src/analysis/WaveformData.{h,cpp}`
+- **Where:** `om-analysis` waveform data (`waveform_data.rs`, `WaveformData` with levels built by `merge_points`; the C++ version was `WaveformData` at `cpp-final`)
 - **Why:** zoomed and overview views read pre-reduced data instead of scanning samples per paint.
 - **Reuse when:** any per-time data drawn at many zooms (energy, stems, spectrogram).
-- **Notes:** only the finest level is persisted; coarser levels are derived on load. Merge rules must be associative (min/max, RMS via mean of squares).
+- **Notes:** coarser levels are built by merging the finer points: min and max, and RMS as the square root of the mean of squares. Keep merge rules associative.
 
 ### Licence-gated, verified download
-- **Where:** `src/stems/ModelManifest.{h,cpp}`, `WeightManager.{h,cpp}` (`Downloader` interface, `UrlDownloader`)
+- **Where:** `om-stems` (`manifest.rs` model manifest, `weights.rs` `Downloader` trait with the URL implementation; the C++ version was `ModelManifest`, `WeightManager` and `Downloader` at `cpp-final`)
 - **Why:** third-party weights/assets are fetched only after the user accepts their licence and only installed if the SHA-256 matches the manifest.
 - **Reuse when:** any large optional asset not shipped in the repo (models, sample packs, skins from a catalogue).
-- **Notes:** blocking, call off the UI thread; manifests are JSON so users can point at mirrors; tests use `file://` URLs, no network.
+- **Notes:** a `Downloader` trait with a URL implementation. Run it off the UI thread. Manifests are JSON so users can point at mirrors. Tests use `file://` URLs, no network.
 
 ### Analyzer registry (extension point)
-- **Where:** `src/analysis/Analyzer.h`, `AnalyzerRegistry.{h,cpp}`
-- **Why:** built-in and plugin analysers are looked up by id; `kInterfaceVersion` is checked on `add()`.
-- **Reuse when:** adding any analysis feature; register an `Analyzer`, do not special-case it in the service.
-- **Notes:** `analyze()` is `const` and may run concurrently; registry hands out `shared_ptr<const Analyzer>` so removal during a running job is safe.
+- **Where:** `om-analysis` (`analyzer.rs` `Analyzer` trait, `registry.rs` `AnalyzerRegistry`; the C++ version was `Analyzer.h` and `AnalyzerRegistry` at `cpp-final`)
+- **Why:** built-in and plugin analysers are looked up by id.
+- **Reuse when:** adding any analysis feature; register an analyser, do not special-case it in the service.
+- **Notes:** `analyze(&self)` may run concurrently. The registry hands out `Arc<dyn Analyzer + Send + Sync>`, so removal during a running job is safe.
 
-### Third-party DSP behind a pimpl wrapper
-- **Where:** `src/engine/TimeStretch.{h,cpp}` (Rubber Band), `cmake/RubberBand.cmake`.
-- **Why:** keeps the dependency's headers out of engine headers and states the RT contract in one place.
-- **Reuse when:** wrapping any external DSP/codec library (FFmpeg, ONNX Runtime).
-- **Notes:** `prepare()` allocates (control thread); all other calls are audio-thread, allocation-free. Vendored code builds as its own target with its warnings off and -O2 in Debug.
+### Safe wrapper over a native library (pimpl replacement)
+- **Where:** `om-stretch` (`rubberband.rs` `RubberBandStretcher` behind the `Stretcher` trait, FFI calls in `ffi.rs`; see `docs/spikes/DECISIONS.md`) (the C++ version was `TimeStretch.{h,cpp}` at `cpp-final`)
+- **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
+- **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
+- **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe`, each block with a `// SAFETY:` line.
 
+### Forward-only migration list
+- **Where:** `om-library` migrations (`migrations.rs`; the C++ version was `Migrations.{h,cpp}` at `cpp-final`)
+- **Why:** the schema evolves by appending numbered migrations; each runs in its own transaction and is recorded in `schema_version`.
+- **Reuse when:** any later subsystem needs library tables (search index, history, plugin tables): append a migration with the next version.
+- **Notes:** the Rust version starts a fresh database (no migration from the C++ schema, per the design). A database newer than the list is refused. Never edit a shipped migration.
 
-### Forward-only migration list (extension point)
-- **Where:** `src/library/Migrations.{h,cpp}`, `Library::open`.
-- **Why:** the schema evolves by appending numbered `Migration`s; each runs in its own transaction and is recorded in `schema_version`.
-- **Reuse when:** any later subsystem (search index, history, plugin tables) needs library tables; append a `Migration` with the next version and pass the list to `Library::open`. Never edit a shipped migration.
-- **Notes:** a database newer than the list is refused (no downgrades). Versions must be strictly increasing.
-
-### DAO per entity over an RAII database wrapper
-- **Where:** `src/library/Database.{h,cpp}`, `Statement`, `TrackDao`, `CueDao`, `PlaylistDao`, `OrderedList`.
-- **Why:** keeps SQL out of callers; `Transaction` nests via savepoints so DAO calls compose and roll back together.
-- **Reuse when:** adding a table; add a `*Dao` that borrows `Database&` and returns plain value records.
-- **Notes:** one writer thread; the UI reads through its own `OpenMode::ReadOnly` connection (WAL). `OrderedList` keeps dense `position` columns for any ordered child set.
+### DAO per entity over an RAII transaction
+- **Where:** `om-library` (`track_dao.rs` `TrackDao<'a>`, `cue_dao.rs` `CueDao<'a>`, `playlist_dao.rs`; the C++ version was `Database`, `Statement`, `TrackDao` and `CueDao` at `cpp-final`)
+- **Why:** keeps SQL out of callers; `rusqlite::Transaction` rolls back on drop, and `savepoint()` nests, so DAO calls compose and roll back together.
+- **Reuse when:** adding a table: add a DAO that borrows `&Connection` (or `&mut Transaction`) and returns plain value records.
+- **Notes:** one writer thread owns the write connection; the UI opens its own read-only connection (WAL). Dense `position` columns keep ordered child sets.
 
 ### Metadata reader registry (extension point)
-- **Where:** `src/library/MetadataReader.{h,cpp}`, `JuceMetadataReader`, `Ingestor`.
-- **Why:** tag formats vary; `Ingestor` asks the registry for the reader owning a file's extension, so new readers (TagLib, plugin-supplied) need no ingestor change.
-- **Reuse when:** adding a tag source or a new supported file type; implement `MetadataReader` and `registry.add()` it. Later registrations win per extension.
-- **Notes:** the registry decides which files are scanned at all. Ingest state (mtime, size, missing) lives in its own `track_files` table so `TrackRecord` stays a pure metadata value.
+- **Where:** `om-library` ingest (`metadata.rs` `MetadataReader` trait and `MetadataReaderRegistry`, with the built-in `lofty` reader; the C++ version was `MetadataReader` and `Ingestor` at `cpp-final`)
+- **Why:** tag formats vary; ingest asks the registry for the reader owning a file's extension, so new readers need no ingest change.
+- **Reuse when:** adding a tag source or a new supported file type: implement the `MetadataReader` trait and register it. Later registrations win per extension.
+- **Notes:** the registry decides which files are scanned at all. Ingest state (mtime, size, missing) lives in its own table, so the track record stays a pure value.
 
-### Background rescan with injectable clock (WatchFolders)
-- **Where:** `src/library/WatchFolders.{h,cpp}`.
-- **Why:** a worker thread owns its own DB connection and re-evaluates `clock()` on a short poll; tests drive time with a fake clock plus `poke()`/`triggerScan()`/`waitForScans()` instead of sleeping.
+### Background rescan with injectable clock
+- **Where:** `om-library` watch folders (`watch_folders.rs` `WatchFolders`; the C++ version was `WatchFolders` at `cpp-final`)
+- **Why:** a worker thread owns its own database connection and re-checks the folders on a short poll; tests drive time with a fake clock instead of sleeping.
 - **Reuse when:** any periodic background task over the library (import refresh, analysis queue feeding).
-- **Notes:** one connection per thread (WAL + busy timeout) rather than locking a shared one; the destructor aborts a scan between files.
+- **Notes:** `Clock` is a type alias for a closure returning the time in seconds (`Arc<dyn Fn() -> i64>`). The default is the system clock; tests inject a fixed one. The worker thread owns its own connection (WAL). `Drop` on the watcher signals the worker to stop and joins it.
 
 ### Search field registry + compile-to-SQL (extension point)
-- **Where:** `src/library/Search{Fields,Parser,Compiler,Terms,Engine}.{h,cpp}`.
-- **Why:** a query string parses to generic `FilterTerm`s; each registered `SearchField` (column + kind, or a Custom compile hook) turns its term into SQL text made of code-constant names and `?` placeholders, with user values only in the bound args.
-- **Reuse when:** adding a filterable/sortable attribute (e.g. a plugin tag); `engine.registry().add(field)`. Custom hooks must never splice user text into `SqlFragment::sql`.
-- **Notes:** reads report failure via the trailing `juce::Result*` (a bad field/value fails rather than returning "no results"). Text match is LIKE-contains with escaped wildcards (`=value` for exact); the SQLite build has no FTS5, so a future FTS index would be a new migration plus a Text-field compile swap.
+- **Where:** `om-library` search (`search_fields.rs` `SearchFieldRegistry`, `search_compiler.rs`, `search_parser.rs`; the C++ version was `Search{Fields,Parser,Compiler,Terms,Engine}` at `cpp-final`; `proptest` covers the parser)
+- **Why:** a query string parses to generic filter terms; each registered field turns its term into SQL text made of code-constant names and `?` placeholders, with user values only in the bound parameters.
+- **Reuse when:** adding a filterable or sortable attribute: register a field with the search engine.
+- **Notes:** functions return `Result<SqlFragment, SearchError>` (thiserror), so a bad field or value fails rather than returning "no results". Custom compile functions must never splice user text into the SQL string. Text match is LIKE-contains with escaped wildcards.
 
-### Library importer registry + parse/merge split (extension point)
-- **Where:** `src/library/LibraryImporter.{h,cpp}`, `ItunesImporter`, `RekordboxImporter`, `ImportModel.h`, `ImportWriter`, `ImportMerge`, `ImportCues`, `LibraryImport`.
-- **Why:** importers only turn a foreign XML document into the neutral `ImportedLibrary` (no database code, recognised by XML root since both formats are `.xml`); one `ImportWriter` merges any importer's output in a single `Transaction`, so every format gets the same dedupe-by-path and rollback behaviour.
-- **Reuse when:** adding another library format (`registry.add(...)`, later registration wins) or another bulk write that must be all-or-nothing and re-runnable.
-- **Notes:** merge policy (local data wins, imports fill gaps and default rating/play count) is documented in `ImportMerge.h`; re-import is idempotent; a failed lookup aborts the import rather than counting as "new".
+### Importer registry + parse/merge split (extension point)
+- **Where:** `om-library` import (`library_importer.rs` `LibraryImporterRegistry`, `itunes_importer.rs`, `rekordbox_importer.rs`, `import_merge.rs`, `import_writer.rs`; the C++ version was `LibraryImporter`, `ItunesImporter`, `RekordboxImporter` and `ImportWriter` at `cpp-final`)
+- **Why:** importers only turn a foreign XML document into a neutral `ImportedLibrary` (no database code); one writer merges any importer's output in a single transaction, so every format gets the same dedupe and rollback behaviour.
+- **Reuse when:** adding another library format (register an importer) or another bulk write that must be all-or-nothing and re-runnable.
+- **Notes:** merge policy (local data wins, imports fill gaps) is documented in the merge module. Re-import is idempotent. A failed lookup aborts the import rather than counting as "new".
 
 ### Owner-thread pump over a background service (PrepQueue)
-- **Where:** `src/library/PrepQueue.{h,cpp}`, `PrepQueueDao`, `PrepResults`.
-- **Why:** analysis workers must not touch the Library's sqlite connection, so their listener only copies the final job snapshot into a mutex-guarded inbox; the thread that owns the connection calls `pump()` to apply results, update rows, fire the observer and submit more. At most `maxInFlight` jobs sit in the service, so priority and order stay editable (the service itself is plain FIFO).
-- **Reuse when:** a persisted queue feeds `AnalysisService` or another worker pool and results must land in the database (stem precompute, export).
-- **Notes:** the inbox is a `shared_ptr` captured by listeners so late callbacks after destruction are safe; progress is read live from the job on `list()` rather than written to the DB; running rows are reset to queued on start. Library depends on analysis (same tier) for this.
+- **Where:** `om-library` prep queue (`prep_queue.rs` `PrepQueue` with `pump()`, `prep_queue_dao.rs`; the C++ version was `PrepQueue` at `cpp-final`)
+- **Why:** analysis workers must not touch the database connection, so their listeners only copy the final job snapshot into a mutex-guarded inbox (or send it over a channel); the thread that owns the connection calls `pump()` to apply results, update rows, notify observers and submit more.
+- **Reuse when:** a persisted queue feeds the analysis service or another worker pool and results must land in the database.
+- **Notes:** at most `max_in_flight` jobs sit in the service, so priority and order stay editable. Progress is read from the job on `list()` rather than written to the database. `rusqlite::Connection` is `Send` but not shared, so only the owner thread uses it.
 
 ### Data-driven main layout + named slots (extension point)
-- **Where:** `src/ui/MainLayout.{h,cpp}` (pure geometry + JSON), `MainView.{h,cpp}`.
-- **Why:** the window is `LayoutSpec` rows of cells, each a deck index or a named slot; `computeLayout` turns it into rectangles with no Components, so more decks or a different arrangement is a data change (`OPENMIXER_LAYOUT=<file.json>`).
-- **Reuse when:** adding a panel (mixer, library, a plugin's view): name a slot in the spec and call `MainView::setSlotContent (name, component)`; empty slots show a `SlotPlaceholder`.
-- **Notes:** decks the engine lacks are skipped. Slot content is owned by the view.
+- **Where:** `om-ui` layout (`main_layout.rs`, `compute_layout`; the C++ version was `MainLayout` at `cpp-final`)
+- **Why:** the window is a list of rows of cells, each a deck index or a named slot; `compute_layout` turns it into rectangles without any UI objects, so a different arrangement is a data change.
+- **Reuse when:** adding a panel (mixer, library, a plugin view): name a slot in the spec and fill it through the layout API. Empty slots show a placeholder.
+- **Notes:** the layout function is pure and unit-tested. Decks the engine lacks are skipped.
 
-### Mixer widgets: binding + descriptor-built FX controls (MixerBinding, FxPanel)
-- **Where:** `src/ui/MixerBinding.h`, `MixerPanel`, `ChannelStripWidget`, `FxPanel`, `MeterBallistics`.
-- **Why:** same router-id rule as decks (`mixer.<id>`, `fx.<scope>.fx<U>.<param>`); widgets mirror engine getters in `refresh (dt)` without echoing. `FxPanel` builds one `LabeledKnob` per `FxParamSpec`, so a plugin-registered effect in a rack gets controls with no UI code. `MeterBallistics` is drawing-free (peak, release, hold, clip latch, dt-based) so it is tested with synthetic levels; all metrics and thresholds are theme tokens (`mixer` JSON section).
+### Mixer widgets: binding + descriptor-built FX controls
+- **Where:** `om-ui` (`binding.rs`, `widgets/mixer.rs`, `widgets/fx_panel.rs`, `meter.rs`); drawn by `om-ui-gpui` (the C++ version was `MixerBinding`, `MixerPanel` and `FxPanel` at `cpp-final`)
+- **Why:** widgets read snapshots and send commands; they never write engine state directly. FX controls are built from parameter descriptors, so a new effect gets controls with no UI code.
 - **Reuse when:** adding a control surface for another engine object, or another meter.
+- **Notes:** the meter ballistics are a plain struct (peak, release, hold, clip latch, dt-based) with no drawing code, so tests use synthetic levels. Thresholds and colours are theme tokens.
 
-### Library composition: services unit, row sources, load callbacks (LibraryServices, TrackSource, TrackLoader)
-- **Where:** `src/ui/LibraryServices.{h,cpp}`, `TrackSource`, `TrackTableModel`, `SidebarModel`, `LibraryBrowser`, `TrackLoader`, `TrackDrag.h`.
-- **Why:** one place owns start-up/shutdown order (Library writer -> result cache -> analysis service -> prep queue -> watch folders; destroyed in reverse) and the thread rules: the message thread owns the Library connection and the PrepQueue (a Timer calls `pump()`), `WatchFolders` has its own thread + connections and only bumps an atomic counter that `pump()` turns into `libraryChanged()`. Widgets never open databases; they read `LibraryServices` and react to its `Listener`.
-- **Reuse when:** a view needs track rows (implement `TrackSource`: `count()` + `fetch (offset, limit)`; the table pages and caches them), a new sidebar node (add a `SidebarNode::Kind` and its `scopeQuery()`), or another "load" gesture (call `TrackLoader::load`; the browser only emits `onLoadRequested (deck, track)`, drops arrive as `trackdrag::describe/parse` strings on `DeckWidget::onTrackDropped`).
-- **Notes:** `LibraryServices::Options::analyzers` swaps the analyser registry (tests, plugins); `":memory:"` runs without watch folders. Preferences: add/remove folders with `getWatchFolders()->add/remove` then `notifyLibraryChanged()`. Library depends on analysis, ui depends on both; never the reverse. `OPENMIXER_LIBRARY_DB` overrides the path (screenshots/tests).
+### Library services composition
+- **Where:** `om-ui` `library/` (`services.rs` `LibraryServices`, `track_source.rs`, `track_loader.rs`; the C++ version was `LibraryServices`, `TrackSource` and `TrackLoader` at `cpp-final`)
+- **Why:** one place owns start-up and shutdown order (library writer, result cache, analysis service, prep queue, watch folders). Rust drops struct fields in declaration order (first declared, first dropped), so declare the fields in reverse start-up order to tear down in reverse. Local variables are the opposite (see the composition root entry).
+- **Reuse when:** a view needs track rows (implement a row-source trait with `count()` and `fetch(offset, limit)`), a new sidebar node, or another load gesture (send a load command).
+- **Notes:** the UI thread owns the library connection and the prep queue (a timer calls `pump()`). Watch folders have their own thread and connection and only bump an atomic counter. Widgets never open databases.
 
-### Widgets write through router ids only (DeckBinding)
-- **Where:** `src/ui/DeckBinding.h` and the deck components (`TransportPanel`, `PitchFader`, `HotcuePads`, `LoopControls`, `OverviewWaveform`).
-- **Why:** every control calls `binding.send ("<id>", value)` which becomes `deck.<N>.<id>` on the app's `ParameterRouter`, the same path MIDI maps use; reads (position, loop, hotcues, sync state) are the engine's existing atomic getters on the message thread. Toggles send the opposite of the engine state and mirror it back in `refresh()`.
-- **Reuse when:** any new control surface; tests pass a recording `ParameterTarget` that forwards to a real router to assert both id/value and engine effect.
-- **Notes:** the frame clock is a `juce::VBlankAttachment` in `DeckWidget`; each component's `refresh()` repaints only what changed (playhead strip, cue markers, or the zoom view when position/loop/cues moved).
+### Widgets send commands only (replaces DeckBinding)
+- **Where:** `om-ui` `widgets/` and `binding.rs`; drawn by `om-ui-gpui` (the C++ version was `DeckBinding` and the deck components at `cpp-final`)
+- **Why:** every control sends a parameter id through the control surface (`ParameterTarget`), the same path MIDI mappings use; reads come from published snapshots.
+- **Reuse when:** any new control surface. Tests send commands through a recording sink and assert both the command and the engine's resulting state.
+- **Notes:** toggles send the opposite of the engine state and mirror it back when the snapshot changes.
 
-### Preferences model + applier + settings pages (Preferences, PreferencesApplier, SettingsPanel)
-- **Where:** `src/ui/Preferences.{h,cpp}`, `PreferencesApplier`, `SettingsPanel` + `SettingsPage` and the `*SettingsPage` tabs, `AudioSettingsModel`; glue in `src/app/AppPreferencesTargets`; `src/engine/OutputRouter`.
-- **Why:** one plain, versioned JSON model (JSON over `juce::PropertiesFile` because the data is nested/versioned and hand-editable, like theme and layout files); subsystems sit behind `PreferencesTargets` so the applier is tested with mocks and pushes only the sections that changed (plugins -> theme -> audio -> MIDI); pages edit the model and call `changed`, the app saves and applies.
-- **Reuse when:** adding a setting (field in `Preferences` with a default, read/write in `Preferences.cpp`, a `PreferencesTargets` method if a subsystem must react) or a settings tab (derive `SettingsPage`, `SettingsPanel::addPage (title, page)`; a plugin can add one the same way). Targets must be idempotent.
-- **Notes:** the audio page talks to an `AudioSettingsModel` (real: `JuceAudioSettingsModel` over the `AudioDeviceManager`; tests: a fake, no device opened). All device outputs (up to 8) are opened and `OutputRouter` sends master/cue to chosen stereo pairs (audio-thread safe, atomics). Library scan interval/scan-on-start are read when `LibraryServices` is created (restart to change); watch folders live in the library DB, not in the preferences.
+### Preferences model + applier
+- **Where:** `om-ui` (`preferences.rs` model, `preferences_applier.rs` applier, `settings.rs` pages) and `openmixer` (`app_targets.rs` implements the targets; the C++ version was `Preferences`, `PreferencesApplier` and `SettingsPanel` at `cpp-final`)
+- **Why:** one plain, versioned, serde-loaded model; subsystems sit behind a targets trait so the applier is tested with mocks and pushes only the sections that changed.
+- **Reuse when:** adding a setting (a field with a default in the model, plus a target method if a subsystem must react) or a settings tab.
+- **Notes:** target methods must be idempotent. The audio section talks to a settings-model trait; tests use a fake that opens no device. Watch folders live in the library database, not in the preferences.
 
-### Device-free window composition (AppComposition)
-- **Where:** `src/app/AppComposition.{h,cpp}`; used by `MainComponent` (real devices) and `tools/ui_gate/UiRig.h` (mock device).
-- **Why:** engine, router, MIDI mapper, plugins, preferences, main view, library, track loader and settings overlay are wired once, so the UI gate tests the same wiring the app ships.
-- **Reuse when:** adding any window-level wiring (a panel, a callback, a drop target): put it in `AppComposition`; `MainComponent` only adds the audio/MIDI devices around it and `UiRig` only swaps in a mock device. Never wire a window part in just one caller.
-- **Notes:** message thread only; declare things the composition's widgets reference (e.g. the audio settings model) before it so they outlive its timers.
+### Device-free composition
+- **Where:** `crates/openmixer` (`composition.rs`, `AppComposition`, the composition root; the C++ version was `AppComposition` at `cpp-final`)
+- **Why:** engine, command routing, MIDI mapper, preferences, library and views are wired once, so the UI gate tests the same wiring the app ships.
+- **Reuse when:** adding any window-level wiring: put it in the composition function; the real binary and the test rig only swap in the audio device.
+- **Notes:** the composition root is the only place that holds concrete types and `Box<dyn ...>` objects. Local variables in the composition function drop in reverse declaration order, so declare objects that others reference before them; they then drop after those references (struct fields work the other way, see Library services composition).
 
-### UI gate: rig + scripted operator over widgets (UiRig, UiScenario)
-- **Where:** `tools/ui_gate.cpp`, `tools/ui_gate/UiRig.h` (main-window composition without the audio device), `tools/ui_gate/UiScenario.h` (scripted DJ), `tools/soak/ToneWriter.h` (shared track generator).
-- **Why:** the soak drives the engine directly; the gate proves the wiring by pressing the widgets' own paths (`Button::onClick`, `Slider::setValue (…, sendNotificationSync)`, browser search box and Load buttons, theme registry) and then asserting the widget and the engine agree (play text, toggle lights, hotcue pads, loop state, mixer/FX values). `OutputChecker` and `soak::UnderrunTracker` supply the audio budgets.
-- **Reuse when:** a new panel needs end-to-end coverage: add its actions to `UiScenario` (act, then `expect` the engine state) and count them in `GateCounts` so `coversEveryArea()` fails if the area is never exercised.
-- **Notes:** Both `MainComponent` and `UiRig` use `AppComposition`, so the gate exercises the real window wiring; add window wiring there, never in either caller. Leaks: the JUCE leak detector prints at exit without failing the process, so CTest uses `FAIL_REGULAR_EXPRESSION` on its report. Labels: `ui_gate` (short, default), `uigate_long` (10 min, `OPENMIXER_LONG_SOAK`), `smoke` (`openmixer --smoke`, exit 77 = no display = skipped).
+### UI gate: rig + scripted operator
+- **Where:** `crates/openmixer/tests/ui_gate.rs` (the C++ version was the `ui_gate` source and `UiRig.h` at `cpp-final`)
+- **Why:** the soak drives the engine directly; the gate proves the wiring by using the widgets' own paths and then asserting the widget and the engine agree.
+- **Reuse when:** a new panel needs end-to-end coverage: add its actions to the scripted scenario and count them, so the gate fails if an area is never exercised.
+- **Notes:** the gate uses the same composition root as the binary, so window wiring is never duplicated in the rig. Runs: `cargo test -p openmixer --test ui_gate` (about 8 s), `-- --ignored` (10 minutes), and `openmixer --smoke` for the window.
+
+## Replaced in the Rust port
+
+These C++ patterns have no direct Rust copy. What replaces each one is listed.
+
+- **Abstract base classes and virtual dispatch:** traits and generics. Use `dyn` only where a runtime choice is needed (composition root, registries).
+- **`std::unique_ptr` ownership and non-copyable macros:** `Box`, `Vec` and `Arc`; types are move-only unless they derive `Clone`.
+- **RAII wrappers around handles:** `Drop` impls on the wrapping struct (for native handles, transactions and threads).
+- **`std::atomic` with explicit memory orders:** `std::sync::atomic` types with the same orderings, used in the same few places.
+- **Templates:** generics with trait bounds.
+- **Seqlock and retry-on-contention snapshots:** planned `arc-swap` immutable snapshots. `LoopState` still uses a seqlock port; see "Snapshot publication".
+- **String-id `ParameterRouter` and prefix registry:** still in use. Control ids are strings on the `ParameterTarget` surface, and the typed command enum (see "Command enum") is planned, not built.
+- **Pimpl:** a private module inside the crate.
+- **Framework result types and logger:** `Result<T, E>` with `thiserror` enums, and `tracing` for logging.
+- **Leak detector macros:** no equivalent needed; ownership makes leaks rare and `assert_no_alloc` covers the audio thread.
+- **Message-thread-only checks and `VBlankAttachment`:** the GPUI frame loop; state that is UI-only lives on the UI thread by construction.
