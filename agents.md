@@ -70,7 +70,7 @@ Phase 0 complete; Phase 1 spikes run — Linux-first; GPUI gate closed on Linux,
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
 - **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
-- **MIDI:** `midir`; **Library:** `rusqlite` (bundled SQLite)
+- **MIDI:** ALSA sequencer (`alsa`, same version as cpal) on Linux; `midir` for macOS and Windows in the porting phase (see `docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
 - **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
 
 ## Pull Request Workflow (required)

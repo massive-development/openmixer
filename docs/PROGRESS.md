@@ -56,7 +56,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 8 Deck engine | Streaming decode (`symphonia`), lock-free buffer, play/pause/seek/rate | — | All |
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | — | All |
 | 10a Plugin API | Versioned plugin interfaces, runtime loader, registry; hooks for audio pre/post-processing, FX, MIDI maps. Deferred; CLAP-first if needed | — | All |
-| 32 MIDI input + mapping | `midir` input → JSON map → engine parameters | Event, map JSON, mapper with hot reload, learn (`om-midi`) | `midir` device layer (blocked by the ALSA/CoreMIDI pins); feedback/LED output (Wave 6) |
+| 32 MIDI input + mapping | `midir` input → JSON map → engine parameters | Event, map JSON with typed feedback rules, mapper with hot reload, learn, trace replay, LED feedback, MIDI input and output routing over a device backend (ALSA sequencer on Linux, mock for tests), wired into the composition (`om-midi`, `openmixer::midi`) | midir backend for macOS and Windows (plugs in behind `system_backend`); the window's MIDI settings page does not call the learn and map controls yet (Todo 36 and the GPUI page) |
 | 33 Controller trace harness | Replay recorded MIDI streams headlessly | Trace read/write and replay through the mapper (`om-midi`) | — |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | — | All; removed once Todo 28 lands |
 | 13a Short soak test | 30–60 s headless mix in CI, asserting zero xruns, no steady-state underruns, no NaN/Inf/overflow | — | All; soak mix tool to be carried over from `cpp-final` |
