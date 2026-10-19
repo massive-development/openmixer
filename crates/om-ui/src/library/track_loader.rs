@@ -6,7 +6,8 @@
 //! [`Self::track_info`]); the beat grid is set on the engine, which owns the clock. The loader holds
 //! a subscription to the services and must be pumped ([`Self::pump`]) after the services are.
 //!
-//! Each pump counts playing time for the play history ([`PlayTracker`]).
+//! A load also restores the track's saved hotcues into the deck, and each pump writes the hotcue
+//! edits back ([`CueSaver`]) and counts playing time for the play history ([`PlayTracker`]).
 
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -14,10 +15,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use om_analysis::WaveformData;
+use om_core::param_id::HOTCUES_PER_DECK;
 use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
 use om_library::{Library, LibraryError, PrepEntry, PrepStatus, TrackRecord};
 
+use super::cue_saver::{CueSaver, Cues};
 use super::play_tracker::PlayTracker;
 use super::services::{LibraryEvent, LibraryServices, TrackAnalysis};
 use crate::widgets::deck::TrackInfo;
@@ -57,6 +60,7 @@ pub struct TrackLoader {
     slots: Vec<Slot>,
     events: Receiver<LibraryEvent>,
     plays: Vec<PlayTracker>,
+    cues: CueSaver,
     /// When the previous pump ran; the playing time credited to the decks is measured from here.
     last_pump: Option<Instant>,
 }
@@ -68,6 +72,7 @@ impl TrackLoader {
             slots: (0..num_decks).map(|_| Slot::default()).collect(),
             events: services.subscribe(),
             plays: vec![PlayTracker::default(); num_decks],
+            cues: CueSaver::new(num_decks),
             last_pump: None,
         }
     }
@@ -114,6 +119,9 @@ impl TrackLoader {
         if !path.is_file() {
             return Err(LoadError::FileMissing);
         }
+        // Hotcue edits since the last pump belong to the outgoing track. Write them before the
+        // deck's bank is cleared by the load.
+        self.save_cue_edits(engine, services.library(), deck);
         let previous_grid = self.slots[deck].grid.take();
         engine.set_grid(deck, None);
         if engine.deck(deck).load(path).is_err() {
@@ -123,6 +131,8 @@ impl TrackLoader {
                 file: file_name(path),
             });
         }
+        let saved = restore_cues(engine, services.library(), deck, track.id);
+        self.cues.bind(deck, track.id, saved);
         self.plays[deck].reset(Some(track.id));
         let found = services.analysis_for(track);
         let slot = &mut self.slots[deck];
@@ -135,8 +145,8 @@ impl TrackLoader {
         Ok(())
     }
 
-    /// Applies analysis completions delivered since the last call, then counts playback for the
-    /// play history.
+    /// Applies analysis completions delivered since the last call, then does the control-side
+    /// bookkeeping for playback: plays, and hotcue edits to write back.
     pub fn pump(&mut self, engine: &DjEngine, services: &LibraryServices) {
         loop {
             match self.events.try_recv() {
@@ -156,8 +166,9 @@ impl TrackLoader {
     }
 
     /// One control tick of playback bookkeeping. `elapsed` is the wall time since the previous
-    /// tick. Each deck that has played its loaded track for 30 s gets one play recorded. [`Self::pump`]
-    /// calls this; it is public so a host with its own clock, and the tests, can drive it.
+    /// tick. Each deck that has played its loaded track for 30 s gets one play recorded, and each
+    /// deck's hotcue edits are written to its track. [`Self::pump`] calls this; it is public so a
+    /// host with its own clock, and the tests, can drive it.
     pub fn observe_playback(&mut self, engine: &DjEngine, library: &Library, elapsed: Duration) {
         for deck in 0..self.slots.len() {
             let Some(snapshot) = engine.deck_snapshot(deck) else {
@@ -170,6 +181,17 @@ impl TrackLoader {
                     eprintln!("library: could not record a play of track {track_id}: {error}");
                 }
             }
+            if let Err(error) = self.cues.save_changes(deck, snapshot.hotcues, library) {
+                eprintln!("library: could not save hotcues: {error}");
+            }
+        }
+    }
+
+    /// Writes the deck's hotcue edits to the track it holds (before the deck's bank changes).
+    fn save_cue_edits(&mut self, engine: &DjEngine, library: &Library, deck: usize) {
+        let cues = hotcues_of(engine, deck);
+        if let Err(error) = self.cues.save_changes(deck, cues, library) {
+            eprintln!("library: could not save hotcues: {error}");
         }
     }
 
@@ -277,6 +299,31 @@ fn apply(
     slot.grid = found.grid.clone();
     slot.waveform = found.waveform.clone();
     slot.track = Some(track.clone());
+}
+
+/// The deck's hotcue bank as the engine reports it; empty when the deck is unknown.
+fn hotcues_of(engine: &DjEngine, deck: usize) -> Cues {
+    engine
+        .deck_snapshot(deck)
+        .map_or([None; HOTCUES_PER_DECK as usize], |s| s.hotcues)
+}
+
+/// Puts the track's saved hotcues into the deck's bank and returns the bank that results. Slots
+/// outside the bank are skipped. An unreadable cue table loads the track without cues.
+fn restore_cues(engine: &DjEngine, library: &Library, deck: usize, track_id: i64) -> Cues {
+    let saved = library.cues().cues(track_id).unwrap_or_else(|error| {
+        eprintln!("library: could not read the saved hotcues: {error}");
+        Vec::new()
+    });
+    for cue in saved {
+        let Ok(index) = usize::try_from(cue.slot) else {
+            continue;
+        };
+        if index < HOTCUES_PER_DECK as usize && cue.position_frames >= 0 {
+            engine.deck(deck).set_hotcue(index, cue.position_frames);
+        }
+    }
+    hotcues_of(engine, deck)
 }
 
 /// Wall-clock time as Unix milliseconds, for the play history.

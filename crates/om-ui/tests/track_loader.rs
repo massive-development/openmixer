@@ -246,6 +246,65 @@ fn a_failed_load_leaves_the_loaded_track_and_its_grid_alone() {
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(keep));
 }
 
+fn saved_cues(rig: &LoaderRig, track_id: i64) -> Vec<(i32, i64)> {
+    rig.services
+        .library()
+        .cues()
+        .cues(track_id)
+        .expect("cues")
+        .into_iter()
+        .map(|c| (c.slot, c.position_frames))
+        .collect()
+}
+
+#[test]
+fn a_hotcue_set_on_the_deck_is_saved_and_a_clear_deletes_it() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("cue.wav", "8A", true);
+    assert!(rig.load(0, id).is_ok());
+
+    rig.engine.deck(0).set_hotcue(3, 44_100);
+    rig.loader.pump(&rig.engine, &rig.services);
+    assert_eq!(saved_cues(&rig, id), vec![(3, 44_100)]);
+
+    rig.engine.deck(0).clear_hotcue(3);
+    rig.loader.pump(&rig.engine, &rig.services);
+    assert!(saved_cues(&rig, id).is_empty());
+}
+
+#[test]
+fn saved_cues_are_applied_on_load_and_the_outgoing_track_keeps_its_edits() {
+    let mut rig = LoaderRig::new();
+    let a = rig.add_file("a.wav", "8A", true);
+    let b = rig.add_file("b.wav", "8A", true);
+    rig.services
+        .library()
+        .cues()
+        .set_cue(&om_library::CuePoint {
+            track_id: b,
+            slot: 5,
+            position_frames: 9_000,
+            ..Default::default()
+        })
+        .unwrap();
+
+    assert!(rig.load(0, a).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(5), None, "a has no cue 5");
+    rig.engine.deck(0).set_hotcue(1, 500);
+    // Loading b before any pump: a's edit is written first, then b's cues go in.
+    assert!(rig.load(0, b).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(5), Some(9_000));
+    assert_eq!(rig.engine.deck(0).hotcue(1), None, "the bank was cleared by the load");
+    assert_eq!(saved_cues(&rig, a), vec![(1, 500)]);
+
+    // And a's cue comes back when a is loaded again.
+    assert!(rig.load(0, a).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(1), Some(500));
+    rig.loader.pump(&rig.engine, &rig.services);
+    assert_eq!(saved_cues(&rig, a), vec![(1, 500)], "restored, not rewritten");
+    assert_eq!(saved_cues(&rig, b), vec![(5, 9_000)], "b untouched");
+}
+
 #[test]
 fn a_loaded_track_is_played_once_after_thirty_seconds_of_playing() {
     let mut rig = LoaderRig::new();
@@ -281,4 +340,42 @@ fn paused_decks_record_no_play() {
             .observe_playback(&rig.engine, rig.services.library(), Duration::from_secs(1));
     }
     assert!(rig.services.library().tracks().plays_for(id).unwrap().is_empty());
+}
+
+#[test]
+fn rekordbox_imported_hotcues_appear_on_load() {
+    let mut rig = LoaderRig::new();
+    let wav = rig.dir.path().join("imported.wav");
+    write_wav(&wav, 2.0, 220.0);
+    let xml = rig.dir.path().join("collection.xml");
+    let collection = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="test" Version="0" Company="none"/>
+  <COLLECTION Entries="1">
+    <TRACK TrackID="1" Name="Imported" Artist="Artist" TotalTime="2" SampleRate="44100"
+           Location="file://localhost{}">
+      <POSITION_MARK Name="Intro" Type="0" Start="1.000" Num="0"/>
+      <POSITION_MARK Name="Drop" Type="0" Start="1.500" Num="3"/>
+    </TRACK>
+  </COLLECTION>
+  <PLAYLISTS/>
+</DJ_PLAYLISTS>"#,
+        wav.display()
+    );
+    std::fs::write(&xml, collection).unwrap();
+    rig.services.import_file(&xml).expect("import");
+    let id = rig
+        .services
+        .library()
+        .tracks()
+        .find_by_path(&wav.to_string_lossy())
+        .unwrap()
+        .expect("imported row")
+        .id;
+
+    assert!(rig.load(0, id).is_ok());
+    assert_eq!(rig.engine.deck(0).hotcue(0), Some(44_100), "1.0 s at 44.1 kHz");
+    assert_eq!(rig.engine.deck(0).hotcue(3), Some(66_150), "1.5 s at 44.1 kHz");
+    assert_eq!(rig.engine.deck(0).hotcue(1), None);
 }
