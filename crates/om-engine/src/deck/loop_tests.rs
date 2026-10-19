@@ -280,7 +280,10 @@ fn resizing_a_loop_while_looping_stays_continuous() {
 /// round is repeated.
 #[test]
 fn toggling_the_loop_never_reverts_newer_bounds() {
-    use std::sync::atomic::{AtomicBool, Ordering::{Acquire, Release}};
+    use std::sync::atomic::{
+        AtomicBool,
+        Ordering::{Acquire, Release},
+    };
     use std::sync::Arc;
     let fixture = crate::deck::tests::Fixture::new();
     let wav = fixture.path("toggle.wav");

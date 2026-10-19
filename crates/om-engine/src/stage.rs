@@ -255,7 +255,10 @@ mod tests {
             !insert.set(0, Some(Box::new(Scale(1.0)))),
             "a command beyond the queue limit is refused"
         );
-        assert!(!insert.clear(1), "clearing is refused too while the queue is full");
+        assert!(
+            !insert.clear(1),
+            "clearing is refused too while the queue is full"
+        );
     }
 
     #[test]

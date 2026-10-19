@@ -372,7 +372,9 @@ fn a_decoder_fault_silences_the_deck_and_is_reported() {
     let (deck, mut audio, _) = deck_with_ramp(&fixture);
     assert!(pump_until_buffered(&deck, &mut audio, 512, 0));
     deck.play();
-    deck.shared.inject_decoder_panic.store(true, Ordering::SeqCst);
+    deck.shared
+        .inject_decoder_panic
+        .store(true, Ordering::SeqCst);
 
     let mut l = [0.0_f32; 256];
     let mut r = [0.0_f32; 256];
@@ -388,6 +390,9 @@ fn a_decoder_fault_silences_the_deck_and_is_reported() {
     assert!(!deck.is_playing(), "a faulted deck stops playing");
     for _ in 0..4 {
         audio.render_stereo(&mut l, &mut r);
-        assert!(l.iter().chain(r.iter()).all(|&v| v == 0.0), "faulted deck is silent");
+        assert!(
+            l.iter().chain(r.iter()).all(|&v| v == 0.0),
+            "faulted deck is silent"
+        );
     }
 }

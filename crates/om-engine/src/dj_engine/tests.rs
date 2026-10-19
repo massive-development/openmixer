@@ -66,7 +66,11 @@ struct Probe(PrepareLog);
 
 impl ProcessStage for Probe {
     fn prepare(&mut self, sample_rate: f64, max_block_size: usize) {
-        self.0 .0.lock().unwrap().push((sample_rate, max_block_size));
+        self.0
+             .0
+            .lock()
+            .unwrap()
+            .push((sample_rate, max_block_size));
     }
 
     fn process(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
@@ -82,7 +86,11 @@ fn stages_are_prepared_at_the_device_rate_and_block() {
             .mixer()
             .set_channel_insert(0, 1, Some(Box::new(Probe(queued.clone())))));
         audio.prepare(rate, 256);
-        assert_eq!(queued.last(), Some((rate, 256)), "rate {rate}: queued stage");
+        assert_eq!(
+            queued.last(),
+            Some((rate, 256)),
+            "rate {rate}: queued stage"
+        );
 
         // Queued after prepare: uses the rate and block the engine was prepared with.
         let late = PrepareLog::default();
