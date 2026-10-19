@@ -6,4 +6,6 @@
 pub mod app_targets;
 pub mod audio_settings;
 pub mod composition;
+pub mod engine_state;
 pub mod library_smoke;
+pub mod midi;

@@ -3,8 +3,8 @@
 //! port. An input runs a thread that polls its client and forwards each message's bytes; dropping
 //! the connection stops and joins that thread.
 //!
-//! Port ids are `alsa:<client name>/<port name>`. A replugged device keeps its id, so a saved
-//! preference still matches it.
+//! A port's id is its name (`Launchpad Mini MIDI 1`), the same string the user sees. A replugged
+//! device keeps its name, so a saved preference still matches it.
 
 use crate::backend::{
     MidiBackend, MidiCallback, MidiInputConnection, MidiOutputPort, MidiPortInfo, PortSnapshot,
@@ -26,7 +26,6 @@ const CLIENT_NAME: &str = "openmixer";
 const CLIENT: &CStr = c"openmixer";
 /// How long the input thread waits for events before it checks for a stop request.
 const POLL_MS: i32 = 100;
-const ID_PREFIX: &str = "alsa:";
 
 pub struct AlsaBackend {
     snapshot: PortSnapshot,
@@ -77,7 +76,7 @@ impl AlsaBackend {
                 let port_name = port.get_name().map_err(device_error)?.to_owned();
                 found.push((
                     MidiPortInfo {
-                        id: format!("{ID_PREFIX}{client_name}/{port_name}"),
+                        id: port_name.clone(),
                         name: port_name,
                     },
                     Endpoint {

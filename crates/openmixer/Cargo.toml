@@ -11,6 +11,7 @@ publish = false
 om-core = { path = "../om-core" }
 om-engine = { path = "../om-engine" }
 om-audio = { path = "../om-audio" }
+om-midi = { path = "../om-midi" }
 om-ui = { path = "../om-ui" }
 serde_json = "1"
 # The GPUI window (not a workspace member; see the root Cargo.toml). Off by default.

@@ -9,7 +9,7 @@
 
 use crate::preferences::{AudioPrefs, Preferences};
 use crate::theme::ThemeRegistry;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Error text from a setter, shown to the user.
 pub type SettingsResult<T = bool> = Result<T, String>;
@@ -203,6 +203,33 @@ impl<'a> MidiSettingsPage<'a> {
 
     pub fn input_names(&self) -> Vec<String> {
         self.inputs.input_names()
+    }
+}
+
+/// What the MIDI page drives on the running MIDI service: the controller map and MIDI learn.
+/// Methods take `&self`: the service is shared with the MIDI threads and locks internally.
+pub trait MidiControl {
+    /// Replaces the live map with the file's; a bad file changes nothing.
+    fn load_map(&self, file: &Path) -> Result<(), String>;
+    /// The next control that moves binds to `target`.
+    fn arm_learn(&self, target: &str);
+    fn cancel_learn(&self);
+    fn is_learning(&self) -> bool;
+}
+
+impl MidiSettingsPage<'_> {
+    /// Loads the effective map file (the preference, or the default one) into the running service.
+    pub fn load_map_now(&self, control: &dyn MidiControl) -> Result<(), String> {
+        control.load_map(&self.prefs.effective_map_file())
+    }
+
+    /// Starts MIDI learn for `target`; the page shows the learning state from [`MidiControl::is_learning`].
+    pub fn learn(&self, control: &dyn MidiControl, target: &str) {
+        control.arm_learn(target);
+    }
+
+    pub fn cancel_learn(&self, control: &dyn MidiControl) {
+        control.cancel_learn();
     }
 }
 
@@ -753,6 +780,60 @@ mod parity_tests {
         let inputs = Inputs(vec!["usb-1".into(), "usb-2".into()]);
         let page = MidiSettingsPage::new(&mut prefs, &inputs);
         assert_eq!(page.input_names(), vec!["usb-1", "usb-2"]);
+    }
+
+    #[derive(Default)]
+    struct FakeControl {
+        loaded: std::cell::RefCell<Vec<PathBuf>>,
+        learning: std::cell::RefCell<Option<String>>,
+    }
+    impl MidiControl for FakeControl {
+        fn load_map(&self, file: &Path) -> Result<(), String> {
+            if file.extension().and_then(|e| e.to_str()) != Some("json") {
+                return Err("not a map".into());
+            }
+            self.loaded.borrow_mut().push(file.to_path_buf());
+            Ok(())
+        }
+        fn arm_learn(&self, target: &str) {
+            *self.learning.borrow_mut() = Some(target.to_owned());
+        }
+        fn cancel_learn(&self) {
+            *self.learning.borrow_mut() = None;
+        }
+        fn is_learning(&self) -> bool {
+            self.learning.borrow().is_some()
+        }
+    }
+
+    #[test]
+    fn midi_page_loads_the_effective_map_and_drives_learn() {
+        struct NoInputs;
+        impl MidiInputs for NoInputs {
+            fn input_names(&self) -> Vec<String> {
+                Vec::new()
+            }
+        }
+        let mut prefs = Preferences::default();
+        prefs.midi.map_file = "/maps/pad.json".into();
+        let inputs = NoInputs;
+        let control = FakeControl::default();
+        let page = MidiSettingsPage::new(&mut prefs, &inputs);
+        page.load_map_now(&control).expect("loads");
+        assert_eq!(
+            control.loaded.borrow().as_slice(),
+            [PathBuf::from("/maps/pad.json")]
+        );
+
+        page.learn(&control, "deck.0.play");
+        assert!(control.is_learning());
+        page.cancel_learn(&control);
+        assert!(!control.is_learning());
+
+        let mut prefs = Preferences::default();
+        prefs.midi.map_file = "/maps/pad.txt".into();
+        let page = MidiSettingsPage::new(&mut prefs, &inputs);
+        assert!(page.load_map_now(&control).is_err());
     }
 
     #[test]

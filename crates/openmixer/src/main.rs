@@ -7,6 +7,7 @@
 mod gui;
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
+use om_midi::MockBackend;
 use openmixer::composition::{self, AppComposition};
 use std::process::ExitCode;
 
@@ -58,6 +59,10 @@ fn headless_smoke() -> Result<(), String> {
     let audio = composition
         .take_audio()
         .ok_or("the audio side was already taken")?;
+    // MIDI over a mock device: the check exercises the wiring and never opens hardware.
+    let midi = MockBackend::new();
+    midi.add_device("Smoke Controller");
+    composition.attach_midi(Box::new(midi));
     let mut device = MockAudioDevice::new(SMOKE_RATE, SMOKE_BLOCK, 0, 4);
     device.start(Box::new(audio)).map_err(|e| e.to_string())?;
 
@@ -75,6 +80,9 @@ fn headless_smoke() -> Result<(), String> {
     }
     if composition.router.unknown_count() != 0 {
         return Err("parameter registrations failed".to_owned());
+    }
+    if composition.midi.is_none() {
+        return Err("MIDI did not attach".to_owned());
     }
     let stats = device.latency_stats();
     if stats.xrun_count != 0 {

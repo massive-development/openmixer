@@ -4098,6 +4098,7 @@ dependencies = [
  "om-audio",
  "om-core",
  "om-engine",
+ "om-midi",
  "om-ui",
  "om-ui-gpui",
  "serde_json",
