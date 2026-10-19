@@ -1,4 +1,4 @@
-//! `--debug-panel` (Todo 26a): device, latency and CPU figures, the router's unknown-id count and a
+//! `--debug-panel`: device, latency and CPU figures, the router's unknown-id count and a
 //! raw list of the control surface's current values. The row builder is pure and tested headless;
 //! the window only draws the rows.
 

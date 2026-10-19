@@ -1,6 +1,6 @@
 //! Tempo, phase and downbeat on synthetic click tracks,
 //! plus grid model edits, the service-backed case (`BpmAnalyzerSlow`) and the analysed grid
-//! driving the engine's sync and quantize (Todo 12).
+//! driving the engine's sync and quantize.
 
 use super::*;
 use crate::test_signals::{add_noise, click_track, silence, RATE};

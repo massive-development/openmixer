@@ -37,7 +37,7 @@ pub trait AudioDeviceControl {
     fn initialise(&mut self, state: &str) -> Result<(), String>;
 }
 
-/// MIDI side (placeholder for `om-midi`, Todo 10). The map is loaded before inputs are changed.
+/// MIDI side, implemented by `MidiService` in `crate::midi` (which drives `om-midi`). The map is loaded before inputs are changed.
 pub trait MidiSink {
     fn load_map(&mut self, file: &Path) -> Result<(), String>;
     fn enable_inputs(&mut self, enable_all: bool, inputs: &[String]);

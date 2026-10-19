@@ -1,4 +1,4 @@
-//! The settings overlay (Todo 29): a card with the five tabs over the window, opened by the Settings
+//! The settings overlay: a card with the five tabs over the window, opened by the Settings
 //! button in the header and closed by its Close button, Escape or a click on the scrim. Draws the
 //! card and its pages. The logic (what each control does, what is
 //! stored, what the services are asked to do) lives in om-ui's `settings` module and in the methods
