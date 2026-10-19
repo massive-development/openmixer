@@ -200,6 +200,16 @@ impl ParamControl {
     pub fn set(&self, index: usize, value: f32) -> bool {
         store_clamped(&self.specs, self.len, &self.targets, index, value)
     }
+
+    /// Descriptor of parameter `index`; `None` past the end.
+    pub fn spec(&self, index: usize) -> Option<&ParamSpec> {
+        (index < self.len).then(|| &self.specs[index])
+    }
+
+    /// Target value the audio side is moving towards; `None` past the end.
+    pub fn target(&self, index: usize) -> Option<f32> {
+        (index < self.len).then(|| self.targets[index].load())
+    }
 }
 
 pub trait Effect: Send + Sync {
