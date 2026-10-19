@@ -19,5 +19,6 @@ thiserror.workspace = true
 quick-xml = "0.41"
 
 [dev-dependencies]
+om-testing.workspace = true
 proptest = "1"
 tempfile.workspace = true

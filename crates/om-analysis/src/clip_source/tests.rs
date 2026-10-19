@@ -1,8 +1,9 @@
 //! `ContentHash` cases.
 
 use super::*;
-use crate::test_signals::{write_float_wav, TempFile};
+use crate::test_signals::TempFile;
 use crate::NullAnalysisContext;
+use om_testing::wav::write_float_wav;
 
 fn ramp(n: usize, rate: f64) -> AudioClip {
     AudioClip::new((0..n).map(|i| i as f32 / n as f32).collect(), rate)

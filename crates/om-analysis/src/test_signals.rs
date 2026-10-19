@@ -1,10 +1,11 @@
-//! Synthetic test signals for analysis tests (no copyrighted audio)., plus a float WAV writer and a temporary-file helper for the
-//! file-backed tests.
+//! Synthetic test signals for analysis tests (no copyrighted audio), plus a temporary-file helper
+//! for the file-backed tests.
 
 use crate::AudioClip;
+use om_testing::fs::TempDir;
+use om_testing::signals::sine_amp;
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 
 pub const RATE: f64 = 44_100.0;
 
@@ -92,7 +93,8 @@ pub fn add_tone(clip: &mut AudioClip, freq: f64, gain: f32) {
     add_tone_between(clip, freq, gain, 0.0, f64::INFINITY);
 }
 
-/// Sine tone between `from_seconds` and `to_seconds` (clipped to the clip).
+/// Sine tone between `from_seconds` and `to_seconds` (clipped to the clip). The phase is set by
+/// the absolute sample index, so adjacent tones join without a discontinuity.
 pub fn add_tone_between(
     clip: &mut AudioClip,
     freq: f64,
@@ -103,9 +105,9 @@ pub fn add_tone_between(
     let rate = clip.sample_rate;
     let from = (from_seconds * rate) as usize;
     let to = ((to_seconds * rate) as usize).min(clip.samples.len());
-    for i in from..to {
-        let phase = 2.0 * PI * freq * i as f64 / rate;
-        clip.samples[i] += gain * phase.sin() as f32;
+    let wave = sine_amp(freq, gain, rate, to);
+    for (s, w) in clip.samples[from..to].iter_mut().zip(&wave[from..to]) {
+        *s += w;
     }
 }
 
@@ -116,29 +118,6 @@ pub fn add_noise(clip: &mut AudioClip, gain: f32, seed: u64) {
     }
 }
 
-/// Writes interleaved 32-bit float PCM (WAVE format 3).
-pub fn write_float_wav(path: &Path, channels: u16, rate: u32, interleaved: &[f32]) {
-    let data_len = (interleaved.len() * 4) as u32;
-    let block_align = channels * 4;
-    let mut bytes = Vec::with_capacity(44 + data_len as usize);
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
-    bytes.extend_from_slice(b"WAVEfmt ");
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    bytes.extend_from_slice(&3u16.to_le_bytes());
-    bytes.extend_from_slice(&channels.to_le_bytes());
-    bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
-    bytes.extend_from_slice(&block_align.to_le_bytes());
-    bytes.extend_from_slice(&32u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_len.to_le_bytes());
-    for sample in interleaved {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
-    std::fs::write(path, bytes).expect("write test wav");
-}
-
 /// A unique path inside a temporary directory, removed on drop. The file itself is not created.
 pub struct TempFile {
     _dir: TempDir,
@@ -147,8 +126,8 @@ pub struct TempFile {
 
 impl TempFile {
     pub fn new(extension: &str) -> Self {
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let path = dir.path().join(format!("signal.{extension}"));
+        let dir = TempDir::new("om_analysis");
+        let path = dir.file(&format!("signal.{extension}"));
         Self { _dir: dir, path }
     }
 
