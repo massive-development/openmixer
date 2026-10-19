@@ -626,6 +626,7 @@ dependencies = [
  "cpal",
  "om-core",
  "om-engine",
+ "rtrb",
  "thiserror 2.0.21",
  "tracing",
 ]
