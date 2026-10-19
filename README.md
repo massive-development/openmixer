@@ -77,6 +77,10 @@ cargo test -p om-audio --test soak
 # 10-minute soak (Wave 2 gate, not in CI): takes 10 minutes of wall time
 cargo test -p om-audio --test soak -- --ignored --nocapture
 
+# UI gate: scripted DJ over the composition on a paced mock device, no display (8 s; 10-minute run is --ignored)
+cargo test -p openmixer --test ui_gate
+cargo test -p openmixer --test ui_gate -- --ignored --nocapture
+
 # Format, lint and policy checks (same as CI)
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings

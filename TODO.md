@@ -169,13 +169,15 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 29:** Automix panel + settings
   - Audio/MIDI settings, preferences
+  - Partial: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`. Open: the settings overlay in om-ui-gpui (d), device-state restore on start-up, MIDI/library/plugin pages wait on Todos 10, 12, 14
   - Automix panel (Wave 7, needs Todo 38)
 
 - [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
   - Per-stem mute/volume
 
-- [ ] **Todo 31:** UI verification gate
+- [x] **Todo 31:** UI verification gate
   - Scripted 10-minute mix driven through the UI
+  - Done at the logic layer: `crates/openmixer/tests/ui_gate.rs` (8 s `#[test]`, 10-minute `#[ignore]`) drives the composition over a paced mock device with the om-ui transport and binding models. Not done: a window-driven pass (needs a display)
   - `--smoke` startup check (opens the window; skipped without a display)
 
 ## Wave 6: Hardware I/O
