@@ -82,12 +82,20 @@ pub(super) fn audio_page(t: &ThemeTokens, view: &AudioView, cx: &mut Context<She
     column = column.child(choice_row(t, "Output device", row_of(devices)));
     column = column.child(choice_row(t, "Sample rate", row_of(rates)));
     column = column.child(choice_row(t, "Buffer size", row_of(buffers)));
-    column = column.child(choice_row(t, "Master output", row_of(master)));
-    column = column.child(choice_row(t, "Headphone output", row_of(cue)));
-    column = column.child(note(
-        t,
-        "Master and headphone mixes go to the chosen stereo pairs of the output device.",
-    ));
+    if view.pairs.is_empty() {
+        // No pairs to choose from (a device with no stereo pairs): no headings without options.
+        column = column.child(note(
+            t,
+            "This device lists no stereo output pairs, so master and headphone outputs use its default.",
+        ));
+    } else {
+        column = column.child(choice_row(t, "Master output", row_of(master)));
+        column = column.child(choice_row(t, "Headphone output", row_of(cue)));
+        column = column.child(note(
+            t,
+            "Master and headphone mixes go to the chosen stereo pairs of the output device.",
+        ));
+    }
     column.child(
         div()
             .text_color(paint(t.text_secondary))

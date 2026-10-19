@@ -79,6 +79,7 @@ pub struct MeterStyle {
     pub high: Colour,
     pub lamp_on: Colour,
     pub lamp_off: Colour,
+    pub border: Colour,
     pub radius: f32,
     pub headroom: f32,
     pub lamp_height: f32,
@@ -239,6 +240,7 @@ impl LookAndFeel {
                 high: t.meter_high,
                 lamp_on: t.meter_high,
                 lamp_off: raised,
+                border: t.border,
                 radius: t.bar_radius,
                 headroom: t.meter_headroom,
                 lamp_height: t.lamp_height,
@@ -422,6 +424,81 @@ mod tests {
                 let ratio = worst_contrast(&style, &t);
                 assert!(ratio >= 4.5, "{id}: {name} body contrast {ratio:.2} < 4.5");
             }
+        }
+    }
+
+    /// Worst contrast of the visible edge of a control (its fill or its border, whichever stands
+    /// out more) against the card surface it sits on, over both ends of the backdrop gradient.
+    fn edge_contrast(fill: Colour, border: Colour, t: &ThemeTokens) -> f32 {
+        [t.backdrop_top, t.backdrop_bottom]
+            .into_iter()
+            .map(|b| {
+                let ground = over(t.surface_scaled(), b);
+                let body = over(fill, ground);
+                let edge = over(border, body);
+                contrast_ratio(body, ground).max(contrast_ratio(edge, ground))
+            })
+            .fold(f32::MAX, f32::min)
+    }
+
+    #[test]
+    fn every_control_is_distinguishable_from_its_background_in_both_themes() {
+        // The light theme is held to WCAG's 3:1 for non-text UI; the dark theme's subtle chrome is
+        // only required to stay visible (1.2:1), as its screenshots read well.
+        for (id, floor) in [("dark", 1.2_f32), ("daylight", 3.0)] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            let b = &look.button;
+            let mut found: Vec<String> = Vec::new();
+            let mut check = |name: &str, r: f32, min: f32| {
+                if r < min {
+                    found.push(format!("{name} {r:.2} < {min}"));
+                }
+            };
+            let controls = [
+                ("button.idle", b.idle.fill, b.idle.border),
+                ("button.hover", b.hover.fill, b.hover.border),
+                ("button.disabled", b.disabled.fill, b.disabled.border),
+                ("knob.body", look.knob.body.fill, look.knob.body.border),
+                (
+                    "fader.track",
+                    look.fader.track.fill,
+                    look.fader.track.border,
+                ),
+                ("meter.well", look.meter.well, look.meter.border),
+                (
+                    "text_field",
+                    look.text_field.idle.fill,
+                    look.text_field.idle.border,
+                ),
+            ];
+            for (name, fill, border) in controls {
+                check(name, edge_contrast(fill, border, &t), floor);
+            }
+            // The fader thumb stands out from its track.
+            for bd in [t.backdrop_top, t.backdrop_bottom] {
+                let ground = over(look.fader.track.fill, over(t.surface_scaled(), bd));
+                let cap = over(look.fader.thumb.fill, ground);
+                let edge = over(look.fader.thumb.border, cap);
+                let r = contrast_ratio(cap, ground).max(contrast_ratio(edge, ground));
+                check("fader.thumb", r, floor);
+            }
+            // A disabled label is still legible.
+            check(
+                "button.disabled text",
+                worst_contrast(&b.disabled, &t),
+                floor,
+            );
+            // Meter bars show up against their well.
+            for (name, c) in [
+                ("low", look.meter.low),
+                ("mid", look.meter.mid),
+                ("high", look.meter.high),
+            ] {
+                let ground = over(look.meter.well, over(t.surface_scaled(), t.backdrop_top));
+                check(&format!("meter.{name}"), contrast_ratio(c, ground), floor);
+            }
+            assert!(found.is_empty(), "{id}: {found:?}");
         }
     }
 

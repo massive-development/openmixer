@@ -10,22 +10,53 @@ pub(super) fn appearance_page(
 ) -> Div {
     let choices = AppearanceSettingsPage::new(&mut settings.prefs, &settings.themes).choices();
     let stored = settings.prefs.theme.clone();
-    let mut chips = Vec::new();
+    let mut list = div().flex().flex_col();
     for (id, name) in choices {
         let lit = id == stored;
-        chips.push(chip(t, &name, lit, cx, move |this| {
-            let id = id.clone();
-            this.settings_mut(|s| {
-                s.pick_theme(&id);
-            });
-            // The live switch: the window takes the new theme on the next frame.
-            this.refresh_theme();
-        }));
+        let pick = id.clone();
+        let theme_id = id.clone();
+        list = list.child(
+            div()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .w(px(180.))
+                        .child(chip(t, &name, lit, cx, move |this| {
+                            let id = pick.clone();
+                            this.settings_mut(|s| {
+                                s.pick_theme(&id);
+                            });
+                            // The live switch: the window takes the new theme on the next frame.
+                            this.refresh_theme();
+                        })),
+                )
+                .child(
+                    div()
+                        .w(px(200.))
+                        .text_color(paint(t.text_secondary))
+                        .text_size(px(t.type_caption))
+                        .child(theme_id),
+                )
+                .child(
+                    div()
+                        .text_color(paint(accent_of(t)))
+                        .text_size(px(t.type_caption))
+                        .child(if lit { "current" } else { "" }),
+                ),
+        );
     }
     div()
         .flex()
         .flex_col()
-        .child(choice_row(t, "Theme", row_of(chips)))
+        .child(
+            div()
+                .text_color(paint(t.text_secondary))
+                .text_size(px(t.type_caption))
+                .mb(px(4.))
+                .child("Theme"),
+        )
+        .child(list)
         .child(note(
             t,
             "The theme applies at once and is saved with the other preferences. Plugin themes are listed here while their plugin is loaded.",

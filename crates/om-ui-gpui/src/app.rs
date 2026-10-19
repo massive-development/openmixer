@@ -33,13 +33,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 /// Height of the banner strip shown above the layout (no audio device, and so on).
-const BANNER_HEIGHT: i32 = 24;
+const BANNER_HEIGHT: i32 = 28;
 
 /// Reads the device's figures for the debug panel. Called on the UI thread once per frame.
 pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
 
 /// Width of the `--debug-panel` column on the right.
-const DEBUG_WIDTH: i32 = 340;
+const DEBUG_WIDTH: i32 = 300;
 
 /// What the caller decides before the window opens.
 pub struct RunOptions {
@@ -56,6 +56,8 @@ pub struct RunOptions {
     pub library: Option<SharedHub>,
     /// Receives the number of rows in the library table after each frame (the `--smoke` check).
     pub library_rows_out: Option<Arc<AtomicUsize>>,
+    /// Demo only: a fixed-tempo beat grid (BPM) put on deck A each time its analysis lands.
+    pub demo_grid_bpm: Option<f64>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -196,6 +198,10 @@ impl Shell {
                 deck.zoom.set_waveform(wave.as_ref().map(|w| WaveformMeta {
                     sample_rate: w.sample_rate(),
                 }));
+                if let (Some(bpm), 0, Some(w)) = (self.options.demo_grid_bpm, index, &wave) {
+                    let grid = om_engine::grid::FixedTempoGrid::new(bpm, w.sample_rate(), 0);
+                    deck.set_grid(Some(Arc::new(grid)));
+                }
                 self.shown_waveform[index] = wave;
             }
         }
@@ -229,6 +235,9 @@ impl Shell {
         lines.push(("Parameters".to_owned(), String::new()));
         lines.extend(parameter_rows(&self.engine, self.router.unknown_count()));
         let mut body = div()
+            .id("debug-scroll")
+            .h(px((bounds.h - 12 - 14).max(0) as f32))
+            .overflow_y_scroll()
             .flex()
             .flex_col()
             .gap(px(2.))
@@ -257,6 +266,19 @@ impl Shell {
                 }
             }))
             .child(body)
+            .child(
+                div()
+                    .absolute()
+                    .bottom(px(0.))
+                    .left(px(0.))
+                    .w_full()
+                    .h(px(14.))
+                    .px(px(6.))
+                    .bg(paint(t.popup))
+                    .text_size(px(t.type_small))
+                    .text_color(paint(t.text_muted))
+                    .child("scroll the list for more  v"),
+            )
     }
 
     fn cell_view(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
@@ -336,8 +358,13 @@ impl Render for Shell {
             root = root.child(
                 place(Rect::new(0, 0, width, BANNER_HEIGHT))
                     .bg(paint(self.theme.popup))
-                    .text_color(paint(self.theme.text_secondary))
-                    .px(px(8.))
+                    .border_b_1()
+                    .border_color(paint(self.theme.border))
+                    .text_color(paint(self.theme.text_primary))
+                    .text_size(px(self.theme.type_caption))
+                    .flex()
+                    .items_center()
+                    .px(px(14.))
                     .child(text),
             );
         }

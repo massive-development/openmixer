@@ -4,7 +4,8 @@
 # Never opens an audio device or MIDI hardware: every scene runs with --mock-device. Needs the
 # `gui` feature's build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
 # (`import`, `convert`, `identify`) plus `xwininfo`. Run from anywhere:  tools/screenshots.sh [scene...]
-# Scenes: main-dark main-daylight debug-panel settings-audio settings-appearance (default: all).
+# Scenes: main-dark main-daylight debug-panel settings-audio settings-appearance settings-midi
+# settings-library (default: all).
 # main-dark also shows the library browser (the demo library is loaded in every scene).
 #
 # libxkbcommon-x11 link shim: if the linker cannot find -lxkbcommon-x11, the script makes a
@@ -94,8 +95,10 @@ declare -A scenes=(
   [debug-panel]="OPENMIXER_THEME=openmixer.dark -- --demo-library --debug-panel"
   [settings-audio]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=audio"
   [settings-appearance]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=appearance"
+  [settings-midi]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=midi"
+  [settings-library]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=library"
 )
-order=(main-dark main-daylight debug-panel settings-audio settings-appearance)
+order=(main-dark main-daylight debug-panel settings-audio settings-appearance settings-midi settings-library)
 (( $# )) && order=("$@")
 for name in "${order[@]}"; do
   [[ -n "${scenes[$name]:-}" ]] || { echo "unknown scene: $name"; exit 2; }

@@ -226,6 +226,9 @@ fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Conte
     let width = f64::from(area.w);
     let view: View = deck.zoom.view(width);
     let cues = deck.zoom.cue_xs(&view);
+    let grid = deck.zoom.grid_lines(&view);
+    let grid_colour = paint(t.text_secondary);
+    let (bar_alpha, beat_alpha) = (t.grid_bar_alpha, t.grid_beat_alpha);
     let loop_span = deck.zoom.loop_span(&view);
     let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
     let fpp = deck.zoom.frames_per_pixel();
@@ -277,6 +280,20 @@ fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Conte
                     }
                     x += 2.0;
                 }
+            }
+            for line in &grid {
+                let (alpha, width) = if line.bar {
+                    (bar_alpha, 2.0)
+                } else {
+                    (beat_alpha, 1.0)
+                };
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(bounds.origin.x + px(line.x as f32), bounds.origin.y),
+                        size(px(width), px(h)),
+                    ),
+                    accent_with_alpha(grid_colour, alpha),
+                ));
             }
             for x in cues.iter().flatten() {
                 window.paint_quad(fill(
