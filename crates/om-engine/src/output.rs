@@ -61,6 +61,15 @@ impl OutputRouter {
         (router, OutputPairs { cells })
     }
 
+    /// Router that reads its pair selection from `pairs`, so a device can be reopened without losing
+    /// the control handle's settings. Control thread.
+    pub fn with_pairs(pairs: &OutputPairs) -> Self {
+        Self {
+            cells: Arc::clone(&pairs.cells),
+            scratch: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+
     /// Control thread. Sizes the engine scratch for `max_block_size` frames per chunk.
     pub fn prepare(&mut self, max_block_size: usize) {
         for buffer in &mut self.scratch {
