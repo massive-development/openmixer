@@ -18,6 +18,8 @@ unsafe_code = "forbid"
 
 [dependencies]
 gpui = "=0.2.2"
+om-analysis = { path = "../om-analysis" }
 om-core = { path = "../om-core" }
 om-engine = { path = "../om-engine" }
+om-library = { path = "../om-library" }
 om-ui = { path = "../om-ui" }

@@ -6,13 +6,16 @@ use crate::controls::release_on;
 use crate::debug_panel::{device_rows, parameter_rows, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
+use crate::library::{LibraryPanel, SharedHub};
+use crate::library_view::library_card;
 use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds,
-    WindowOptions,
+    div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, Window,
+    WindowBounds, WindowOptions,
 };
+use om_analysis::WaveformData;
 use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
@@ -23,9 +26,9 @@ use om_ui::main_layout::{
 };
 use om_ui::meter::meter_params;
 use om_ui::theme::{ThemeRegistry, ThemeTokens};
-use om_ui::widgets::deck::DeckWidget;
+use om_ui::widgets::deck::{DeckWidget, TrackInfo, WaveformMeta};
 use om_ui::widgets::mixer::MixerPanel;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -48,6 +51,11 @@ pub struct RunOptions {
     pub debug: Option<DeviceStatusFn>,
     /// The settings overlay (Settings button in the header). `None` leaves the header out.
     pub settings: Option<SettingsOptions>,
+    /// The library (services and loader), shared with the caller. `None` shows a placeholder in
+    /// the library slot.
+    pub library: Option<SharedHub>,
+    /// Receives the number of rows in the library table after each frame (the `--smoke` check).
+    pub library_rows_out: Option<Arc<AtomicUsize>>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -63,6 +71,13 @@ pub struct Shell {
     pub(crate) drag: Option<Drag>,
     /// The settings overlay's state, when the window was given settings.
     pub(crate) settings: Option<SettingsState>,
+    /// The library browser, when the window was given the library.
+    pub(crate) library: Option<LibraryPanel>,
+    /// Focus for the library card: its keys (search, selection) go here. Made on the first draw.
+    pub(crate) library_focus: Option<FocusHandle>,
+    /// What each deck card last showed, so the widgets only change on a real change.
+    shown_info: Vec<TrackInfo>,
+    shown_waveform: Vec<Option<Arc<WaveformData>>>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -93,6 +108,11 @@ impl Shell {
         frames_out: Arc<AtomicU64>,
     ) -> Self {
         let settings = options.settings.take().map(SettingsState::new);
+        let library = options
+            .library
+            .take()
+            .map(|hub| LibraryPanel::new(hub, Arc::clone(&engine)));
+        let deck_count = engine.num_decks();
         let target: Arc<dyn ParameterTarget> = Arc::clone(&router) as Arc<dyn ParameterTarget>;
         let mixer = MixerPanel::new(
             MixerBinding::new(Arc::clone(&engine), Arc::clone(&target)),
@@ -115,6 +135,10 @@ impl Shell {
             mixer,
             drag: None,
             settings,
+            library,
+            library_focus: None,
+            shown_info: vec![TrackInfo::default(); deck_count],
+            shown_waveform: vec![None; deck_count],
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -136,12 +160,42 @@ impl Shell {
         self.engine.update_control(now - self.last_tick);
         self.last_tick = now;
         let dragging = self.dragging_channel_fader();
+        if let Some(panel) = self.library.as_mut() {
+            panel.tick();
+        }
+        // Each deck card follows the library loader: header metadata and the analysed waveform.
+        // Widgets are only changed when the loaded track or its analysis changed.
+        for (index, deck) in self.decks.iter_mut().enumerate() {
+            let Some(panel) = self.library.as_ref() else {
+                break;
+            };
+            let info = panel.track_info(index);
+            if self.shown_info[index] != info {
+                deck.header.set_track(info.clone());
+                self.shown_info[index] = info;
+            }
+            let wave = panel.waveform(index);
+            let changed = match (&wave, &self.shown_waveform[index]) {
+                (None, None) => false,
+                (Some(now), Some(shown)) => !Arc::ptr_eq(now, shown),
+                _ => true,
+            };
+            if changed {
+                deck.zoom.set_waveform(wave.as_ref().map(|w| WaveformMeta {
+                    sample_rate: w.sample_rate(),
+                }));
+                self.shown_waveform[index] = wave;
+            }
+        }
         for deck in &mut self.decks {
             deck.refresh(false);
         }
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
         self.frames += 1;
         self.frames_out.store(self.frames, Ordering::Relaxed);
+        if let (Some(out), Some(panel)) = (&self.options.library_rows_out, &self.library) {
+            out.store(panel.row_count(), Ordering::Relaxed);
+        }
     }
 
     /// The `--debug-panel` column: device figures, then the raw control-surface values.
@@ -174,21 +228,24 @@ impl Shell {
             .child(body)
     }
 
-    fn cell_view(&self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
+    fn cell_view(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
         let t = &self.theme;
         match &cell.kind {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
             CellKind::Slot(name) if name == MIXER_SLOT => mixer_card(self, cell.bounds, cx),
+            CellKind::Slot(name) if name == LIBRARY_SLOT && self.library.is_some() => {
+                library_card(self, cell.bounds, cx)
+            }
             CellKind::Slot(name) => {
-                let (title, accent) = if name == LIBRARY_SLOT {
-                    ("Library (analysis not built yet)".to_owned(), t.border)
+                let title = if name == LIBRARY_SLOT {
+                    "Library not available (see the terminal for the reason)".to_owned()
                 } else {
-                    (name.clone(), t.border)
+                    name.clone()
                 };
                 place(cell.bounds)
                     .bg(paint(t.surface))
                     .border_1()
-                    .border_color(paint(accent))
+                    .border_color(paint(t.border))
                     .rounded(px(t.control_radius))
                     .text_color(paint(t.text_primary))
                     .p(px(t.pad as f32))

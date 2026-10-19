@@ -7,6 +7,8 @@ pub mod controls;
 pub mod debug_panel;
 pub mod deck_view;
 pub mod drag;
+pub mod library;
+pub mod library_view;
 pub mod mixer_view;
 pub mod paint;
 pub mod settings_view;
