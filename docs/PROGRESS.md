@@ -56,8 +56,8 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 8 Deck engine | Streaming decode (`symphonia`), lock-free buffer, play/pause/seek/rate | — | All |
 | 10 Mixer | Channel gain, 3-band EQ, filter, crossfader (curves), PFL/cue bus, master + headphone out | — | All |
 | 10a Plugin API | Versioned plugin interfaces, runtime loader, registry; hooks for audio pre/post-processing, FX, MIDI maps. Deferred; CLAP-first if needed | — | All |
-| 32 MIDI input + mapping | `midir` input → JSON map → engine parameters | — | All; learn mode and feedback/LED output (Wave 6) |
-| 33 Controller trace harness | Replay recorded MIDI streams headlessly | — | All |
+| 32 MIDI input + mapping | `midir` input → JSON map → engine parameters | Event, map JSON, mapper with hot reload, learn (`om-midi`) | `midir` device layer (blocked by the ALSA/CoreMIDI pins); feedback/LED output (Wave 6) |
+| 33 Controller trace harness | Replay recorded MIDI streams headlessly | Trace read/write and replay through the mapper (`om-midi`) | — |
 | 26a Debug panel | Two decks, faders, EQ, meters on plain widgets | — | All; removed once Todo 28 lands |
 | 13a Short soak test | 30–60 s headless mix in CI, asserting zero xruns, no steady-state underruns, no NaN/Inf/overflow | — | All; soak mix tool to be carried over from `cpp-final` |
 | 9 Key-lock time-stretch | Tempo change without pitch change. Decided: Rubber Band R3 via FFI in `om-stretch`, behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`) | — | All |
@@ -129,7 +129,6 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 Tests from the C++ suite that are not ported yet, each with the Todo that owns it. A line is removed when its port lands.
 
-- `ControlThreadSafetyTest.MapReloadWhileMessagesStream` (`tests/unit/ControlThreadSafetyTest.cpp`): deferred to Todo 32 (MIDI input + mapping). It reloads a MIDI map while messages stream; the Rust map loader and router do not exist yet. <!-- cpp-history -->
 - `MeterBallisticsTest.DefaultsComeFromTheTheme` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 25 (design tokens + LookAndFeel). The meter defaults are read from the theme, which belongs to the widget layer. <!-- cpp-history -->
 - `MeterBallisticsTest.MeterBarFollowsUpdatesPaintsAndClearsClipOnClick` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It paints the bar and handles the clip click, so it needs the widget. <!-- cpp-history -->
 - `MeterBallisticsTest.StereoMeterFeedsEachSideSeparately` (`tests/unit/MeterBallisticsTest.cpp`): deferred to Todo 27 (mixer widgets + metering). It exercises the stereo meter widget. <!-- cpp-history -->

@@ -54,8 +54,9 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
   - `midir` input -> JSON map file -> mixer/deck parameters
   - Mapping editor UI stays in Wave 6 (Todo 36)
+  - Partial: `om-midi` has events, map JSON, mapper (hot reload), learn and trace replay. The `midir` device layer is not in yet: midir's ALSA and CoreMIDI versions conflict with the cpal and gpui pins
 
-- [ ] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
+- [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
 
 - [ ] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
