@@ -29,7 +29,8 @@ use om_analysis::AnalysisContext;
 use om_core::jobs::{JobCtx, JobHandle, WorkerPool};
 use om_core::sync::LockExt;
 use om_library::{core_migrations, Library, LibraryError, OpenMode, TrackStemsRecord};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -110,7 +111,8 @@ struct Inner {
     separator: Arc<dyn StemSeparator>,
     cache: StemCache,
     library_path: String,
-    max_cache_bytes: Option<u64>,
+    /// Cap in bytes; 0 = no cap. Changed by [`StemService::set_max_cache_bytes`].
+    max_cache_bytes: AtomicU64,
     gate: Option<ModelGate>,
 }
 
@@ -133,7 +135,8 @@ impl Inner {
             bytes: i64::try_from(entry.meta.bytes).unwrap_or(i64::MAX),
             created_ms: entry.meta.created_ms,
         })?;
-        if let Some(cap) = self.max_cache_bytes {
+        let cap = self.max_cache_bytes.load(Ordering::SeqCst);
+        if cap > 0 {
             for dir in self.cache.evict_lru(cap)? {
                 library.track_stems().delete_by_dir(&dir)?;
             }
@@ -193,7 +196,7 @@ impl StemService {
             separator: config.separator,
             cache: StemCache::open(config.cache_root)?,
             library_path: config.library_path,
-            max_cache_bytes: config.max_cache_bytes,
+            max_cache_bytes: AtomicU64::new(config.max_cache_bytes.unwrap_or(0)),
             gate: config.gate,
         });
         let worker = Arc::clone(&inner);
@@ -250,24 +253,17 @@ impl StemService {
         Ok(rows.len())
     }
 
-    /// Removes every committed stem set and every index row. Cancel the running jobs first; a
-    /// job still writing would be left with a directory it cannot commit. Returns the number of
-    /// directories removed.
+    /// Removes every committed stem set and every index row (see [`clear_stem_cache`]). Cancel the
+    /// running jobs first.
     pub fn clear_cache(&self) -> Result<usize, StemServiceError> {
-        let library = Library::open(
-            &self.inner.library_path,
-            OpenMode::ReadWrite,
-            core_migrations(),
-        )?;
-        let mut removed = 0;
-        for entry in self.inner.cache.entries()? {
-            self.inner.cache.remove(&entry.dir_name)?;
-            removed += 1;
-        }
-        for row in library.track_stems().list_all_bytes()? {
-            library.track_stems().delete_by_dir(&row.dir)?;
-        }
-        Ok(removed)
+        clear_stem_cache(self.inner.cache.root(), &self.inner.library_path)
+    }
+
+    /// Changes the cache cap; the next committed job enforces it. `None` (or 0) for no cap.
+    pub fn set_max_cache_bytes(&self, cap: Option<u64>) {
+        self.inner
+            .max_cache_bytes
+            .store(cap.unwrap_or(0), Ordering::SeqCst);
     }
 
     /// Bytes the committed stem sets take up on disk, as recorded in their `meta.json`.
@@ -298,4 +294,22 @@ impl StemService {
         }
         Ok(dropped)
     }
+}
+
+/// Removes every committed stem set under `root` and every `track_stems` row of the library at
+/// `library_path`, without a running service (the settings page can clear with no model). Returns
+/// the number of directories removed. Cancel running jobs first: a job still writing would be left
+/// with a directory it cannot commit.
+pub fn clear_stem_cache(root: &Path, library_path: &str) -> Result<usize, StemServiceError> {
+    let cache = StemCache::open(root)?;
+    let library = Library::open(library_path, OpenMode::ReadWrite, core_migrations())?;
+    let mut removed = 0;
+    for entry in cache.entries()? {
+        cache.remove(&entry.dir_name)?;
+        removed += 1;
+    }
+    for row in library.track_stems().list_all_bytes()? {
+        library.track_stems().delete_by_dir(&row.dir)?;
+    }
+    Ok(removed)
 }
