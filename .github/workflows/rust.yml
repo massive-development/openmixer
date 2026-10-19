@@ -73,6 +73,33 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
 
+  # Ported from the C++ ci.yml: the progress heatmap must match docs/progress.json (stdlib only).
+  progress-check:
+    name: progress heatmap is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check heatmap is current
+        run: python3 tools/progress_heatmap.py --check
+
+  # Ported from the C++ ci.yml: the ASIO SDK must never be committed (ADR 0001). Searches every tracked
+  # file except the docs and the workflows, which name the rule.
+  legal-guards:
+    name: legal guards (no ASIO SDK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No ASIO SDK in the tree
+        run: |
+          if git grep -l -e 'asiodrv' -e 'ASIO SDK' -- . ':!docs' ':!.github'; then
+            echo "ERROR: ASIO SDK reference found in a tracked file"
+            exit 1
+          fi
+
   # Non-blocking: the first runs reveal which system packages the GPUI window needs on a clean runner.
   # GPUI is not a workspace member (see docs/spikes/DECISIONS.md, "GPUI integration"), so its tests run
   # from its own directory. Remove `continue-on-error` once the package list is verified.
