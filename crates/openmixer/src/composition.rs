@@ -4,8 +4,9 @@
 //! and drives it, so headless and GUI runs share the same wiring.
 //!
 //! MIDI is attached on demand with [`AppComposition::attach_midi`], over a device backend (the
-//! system one, or a mock). Plugins (Todo 14, `om-plugins`) are still an optional hook in
-//! [`ServiceHooks`]; until they exist the plugin preference section is stored but not acted on.
+//! system one, or a mock). Plugins are owned by the composition ([`AppComposition::plugins`]): their
+//! parameter targets route through the router, their stages insert into the engine, their maps
+//! apply to the MIDI mapper and their themes reach the theme registry (see `crate::plugins`).
 //! The library (Todo 13) is attached on demand with [`AppComposition::attach_library`].
 
 use crate::app_targets::{
@@ -16,6 +17,7 @@ use crate::midi::{FeedbackThread, MidiService};
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::{ParameterRouter, StateReader};
 use om_midi::MidiBackend;
+use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
@@ -29,14 +31,12 @@ pub const DECKS: usize = 2;
 /// Environment variable that selects a theme for the session (wins over the saved preference).
 pub const THEME_ENV: &str = "OPENMIXER_THEME";
 
-/// Optional hooks for subsystems that are not ported yet. Each is called from the matching
+/// Optional hooks for subsystems that are attached on demand. Each is called from the matching
 /// preference section; `None` means nothing is attached and the section is only stored.
 #[derive(Default)]
 pub struct ServiceHooks {
     /// The MIDI preference section, once [`AppComposition::attach_midi`] has run.
     pub midi: Option<Box<dyn MidiSink>>,
-    /// Placeholder for `om-plugins` (Todo 14): loads the plugin folder.
-    pub plugins: Option<Box<dyn PluginSink>>,
     /// The library (Todo 13): browser services, analysis and watch folders. Opened by
     /// [`AppComposition::attach_library`]; `None` until then.
     pub library: Option<LibraryServices>,
@@ -56,12 +56,25 @@ pub fn load_themes(user_dir: Option<&std::path::Path>) -> ThemeRegistry {
     themes
 }
 
+/// Audio sink for plugin reloads, which never touch output routing.
+struct NoAudio;
+
+impl AudioSink for NoAudio {
+    fn set_master_pair(&self, _pair: i32) {}
+    fn set_cue_pair(&self, _pair: i32) {}
+}
+
+static NO_AUDIO: NoAudio = NoAudio;
+
 pub struct AppComposition {
     pub engine: Arc<DjEngine>,
     pub router: Arc<ParameterRouter>,
     pub themes: ThemeRegistry,
     pub prefs: Preferences,
     pub hooks: ServiceHooks,
+    /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
+    /// parameter targets are routed through [`AppComposition::router`].
+    pub plugins: PluginRegistry,
     /// The MIDI service, once attached: the settings page's controls and the input list.
     pub midi: Option<Arc<MidiService>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
@@ -80,6 +93,8 @@ impl AppComposition {
         let engine = Arc::new(engine);
         let router = Arc::new(ParameterRouter::new());
         engine.register(&router);
+        let mut plugins = PluginRegistry::new();
+        plugins.bind_router(Some(Arc::clone(&router)));
 
         let prefs = match Preferences::load(prefs_file) {
             Ok(p) => p,
@@ -97,6 +112,7 @@ impl AppComposition {
             themes,
             prefs,
             hooks: ServiceHooks::default(),
+            plugins,
             midi: None,
             midi_feedback: None,
             applier: PreferencesApplier::new(),
@@ -163,13 +179,14 @@ impl AppComposition {
         device: Option<&mut dyn AudioDeviceControl>,
         started_with: Option<&str>,
     ) -> usize {
+        let plugins: &mut dyn PluginSink = &mut self.plugins;
         let mut targets = AppPreferencesTargets::new(
             &mut self.targets,
             &mut self.themes,
             audio,
             device,
             self.hooks.midi.as_deref_mut(),
-            self.hooks.plugins.as_deref_mut(),
+            Some(plugins),
         );
         if let Some(state) = started_with {
             targets.note_audio_requested(state);
@@ -183,5 +200,46 @@ impl AppComposition {
             }
         }
         pushed
+    }
+
+    /// Creates the plugin stage `stage_id` and inserts it into the engine at `at`/`slot` (channel
+    /// or master). The stage stays until its plugin unloads or [`AppComposition::detach_plugin_stage`].
+    pub fn attach_plugin_stage(
+        &mut self,
+        stage_id: &str,
+        at: InsertAt,
+        slot: usize,
+    ) -> Result<(), PluginError> {
+        let point: Arc<dyn InsertPoint> = self.engine.mixer_handle();
+        self.plugins.attach_stage(stage_id, &point, at, slot)
+    }
+
+    /// Clears a slot a plugin stage was attached to.
+    pub fn detach_plugin_stage(&mut self, at: InsertAt, slot: usize) {
+        let point: Arc<dyn InsertPoint> = self.engine.mixer_handle();
+        self.plugins.detach_stage(&point, at, slot);
+    }
+
+    /// Applies a plugin's controller map to the MIDI mapper, replacing the live map. Fails when
+    /// MIDI is not attached.
+    pub fn apply_plugin_midi_map(&self, map_name: &str) -> Result<(), String> {
+        let service = self.midi.as_ref().ok_or("MIDI is not attached")?;
+        self.plugins
+            .apply_midi_map(map_name, service.mapper())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Reloads the plugin folder applied last (the Plugins page's Reload button). Themes are
+    /// re-forwarded, and the selection is restored when its plugin theme is back.
+    pub fn reload_plugins(&mut self) {
+        let mut targets = AppPreferencesTargets::new(
+            &mut self.targets,
+            &mut self.themes,
+            &NO_AUDIO,
+            None,
+            self.hooks.midi.as_deref_mut(),
+            Some(&mut self.plugins),
+        );
+        targets.reload_plugins();
     }
 }

@@ -326,7 +326,7 @@ impl<'a> AppearanceSettingsPage<'a> {
     }
 }
 
-/// What the plugins page needs. Placeholder for `om-plugins` (Todo 14).
+/// What the plugins page needs. The app implements it over `om-plugins` (`openmixer::plugins`).
 pub trait PluginHost {
     fn loaded_plugins(&self) -> Vec<String>;
     fn reload(&mut self) -> SettingsResult<()>;

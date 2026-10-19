@@ -58,7 +58,7 @@ pub struct PluginLoad {
     pub themes: Vec<PluginTheme>,
 }
 
-/// Plugin side (placeholder for `om-plugins`, Todo 14).
+/// Plugin side. `om_plugins::PluginRegistry` implements it (see `crate::plugins`).
 pub trait PluginSink {
     /// Unloads every plugin. Called before a folder is loaded.
     fn unload_all(&mut self);
