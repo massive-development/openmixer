@@ -14,5 +14,6 @@ workspace = true
 cpal = "0.18"
 om-core = { path = "../om-core" }
 om-engine = { path = "../om-engine" }
+rtrb = "0.4"
 thiserror = "2"
 tracing = "0.1"

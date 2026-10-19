@@ -98,3 +98,33 @@ fn works_on_a_two_channel_and_a_one_channel_device() {
         assert!(magnitude(&dev.last_output()[0][..256]) > 0.1, "outs={outs}");
     }
 }
+
+#[test]
+fn stop_hands_the_engine_back_and_a_restart_keeps_deck_and_mixer_state() {
+    let dir = TempDir::new("openmixer_engine_test");
+    let file = write_sine(&dir);
+    let (engine, audio) = DjEngine::new(2);
+    let mut dev = MockAudioDevice::new(RATE, 256, 0, 4);
+    engine.deck(0).load(&file).expect("load");
+    dev.start(Box::new(audio)).expect("start");
+    engine.mixer().set_fader(0, 0.5);
+    engine.mixer().set_crossfader(0.25);
+    engine.deck(0).play();
+    assert!(pump_until(&dev, || engine.deck(0).position_frames() > 2000));
+    let before = engine.deck(0).position_frames();
+
+    let engine_audio = dev.stop().expect("stop returns the callback it was driving");
+    assert!(!dev.is_running());
+    assert!(engine.deck(0).is_loaded(), "stop keeps the loaded track");
+    assert!(engine.deck(0).is_playing(), "stop does not pause the deck");
+
+    dev.start(engine_audio).expect("restart with the returned engine");
+    assert!(engine.deck(0).is_loaded());
+    assert!(
+        pump_until(&dev, || engine.deck(0).position_frames() > before + 2000),
+        "the deck keeps playing from its position after a restart"
+    );
+    assert_eq!(engine.mixer().fader(0), 0.5, "fader survives a restart");
+    assert_eq!(engine.mixer().crossfader(), 0.25, "crossfader survives a restart");
+    assert!(magnitude(&dev.last_output()[0][..256]) > 0.1);
+}

@@ -98,8 +98,9 @@ fn mock_device_lifecycle_and_block_rendering() {
     assert!((out[0][10] - 0.5).abs() < 1e-6);
     assert!((out[1][10] + 0.5).abs() < 1e-6);
 
-    dev.stop();
-    assert_eq!(probe.released.load(Relaxed), 1);
+    let returned = dev.stop();
+    assert!(returned.is_some(), "stop hands the callback back");
+    assert_eq!(probe.released.load(Relaxed), 0, "stop does not release it");
     assert!(!dev.is_running());
     assert!(!dev.render_block());
 }
