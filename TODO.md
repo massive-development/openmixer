@@ -133,7 +133,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Tags for MP3/FLAC/M4A via `lofty`; artwork
   - Recursive ingest and watch folders
 
-- [ ] **Todo 22:** Import (iTunes/Rekordbox XML)
+- [x] **Todo 22:** Import (iTunes/Rekordbox XML)
   - Importer registry (extension point)
   - iTunes and Rekordbox XML importers
   - One transaction per import, merge by path; file URL decoding
@@ -142,7 +142,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Field registry (extension point), query parser, parameterised SQL
   - Index migration; LIKE-based matching unless FTS5 is available
 
-- [ ] **Todo 24:** Track prep queue
+- [x] **Todo 24:** Track prep queue
   - Persisted queue with order, priority and status
   - Bounded in-flight analysis; results written back to the library
 

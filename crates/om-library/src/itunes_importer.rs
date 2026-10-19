@@ -154,7 +154,8 @@ fn assemble(
 ) -> Vec<ImportedPlaylist> {
     let mut out = Vec::new();
     for f in flat {
-        let orphan = parent_id.is_empty() && !f.parent_id.is_empty() && !known.contains(&f.parent_id);
+        let orphan =
+            parent_id.is_empty() && !f.parent_id.is_empty() && !known.contains(&f.parent_id);
         if f.parent_id != parent_id && !orphan {
             continue;
         }

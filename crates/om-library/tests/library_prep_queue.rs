@@ -5,12 +5,11 @@ mod common;
 
 use common::TempDir;
 use om_analysis::{
-    AnalysisContext, AnalysisService, AnalyzerRegistry, AudioClip, Analyzer, BpmResult,
-    BeatGridModel, ClipSource, KeyResult, MemoryClipSource, MusicalKey,
+    AnalysisContext, AnalysisService, Analyzer, AnalyzerRegistry, AudioClip, BeatGridModel,
+    BpmResult, ClipSource, KeyResult, MemoryClipSource, MusicalKey,
 };
 use om_library::{
-    core_migrations, Library, OpenMode, PrepEntry, PrepOptions, PrepQueue, PrepStatus,
-    TrackRecord,
+    core_migrations, Library, OpenMode, PrepEntry, PrepOptions, PrepQueue, PrepStatus, TrackRecord,
 };
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -200,7 +199,9 @@ impl Fixture {
                 events.lock().unwrap().push(e.clone());
                 threads.lock().unwrap().push(thread::current().id());
             })),
-            on_error: Some(Box::new(move |m: &str| errors.lock().unwrap().push(m.to_owned()))),
+            on_error: Some(Box::new(move |m: &str| {
+                errors.lock().unwrap().push(m.to_owned())
+            })),
             ..PrepOptions::default()
         }
     }
@@ -353,7 +354,12 @@ fn prep_queue_observer_fires_on_the_owner_thread_with_status_changes() {
 #[test]
 fn prep_queue_urgent_track_runs_before_earlier_queued_ones() {
     let mut f = Fixture::new(1);
-    let (a, b, c, d) = (f.add_track(None), f.add_track(None), f.add_track(None), f.add_track(None));
+    let (a, b, c, d) = (
+        f.add_track(None),
+        f.add_track(None),
+        f.add_track(None),
+        f.add_track(None),
+    );
     let mut q = PrepQueue::new(&f.lib, &f.service, f.options(1));
     q.enqueue(a, false).unwrap();
     q.enqueue(b, false).unwrap();
@@ -451,7 +457,14 @@ fn prep_queue_analyser_failure_marks_item_failed_and_queue_continues() {
     q.enqueue(a, false).unwrap();
     assert!(q.pump_until_idle(WAIT));
     assert_eq!(f.status_of(a), PrepStatus::Failed);
-    assert!(!f.lib.prep_queue().find(a).unwrap().unwrap().error.is_empty());
+    assert!(!f
+        .lib
+        .prep_queue()
+        .find(a)
+        .unwrap()
+        .unwrap()
+        .error
+        .is_empty());
 }
 
 #[test]
@@ -470,7 +483,10 @@ fn prep_queue_unreadable_file_fails_with_default_source_factory() {
 fn prep_queue_atonal_key_and_unusable_bpm_leave_stored_values_alone() {
     let mut f = Fixture::new(1);
     f.replace(Arc::new(FakeAnalyzer::new("bpm", "{}".into())));
-    f.replace(Arc::new(FakeAnalyzer::new("key", key_json(0, false, false))));
+    f.replace(Arc::new(FakeAnalyzer::new(
+        "key",
+        key_json(0, false, false),
+    )));
     let a = f.add_track(None);
     let mut t = f.lib.tracks().find_by_id(a).unwrap().unwrap();
     t.key = "Dm".into();
@@ -595,7 +611,16 @@ fn prep_queue_remove_then_reenqueue_while_running_runs_a_fresh_job() {
     q.pump();
     assert!(q.pump_until_idle(WAIT)); // old job's completion must not clobber the new row
     assert_eq!(f.status_of(a), PrepStatus::Done);
-    assert_eq!(f.lib.tracks().find_by_id(a).unwrap().unwrap().bpm.unwrap_or(0.0), 128.0);
+    assert_eq!(
+        f.lib
+            .tracks()
+            .find_by_id(a)
+            .unwrap()
+            .unwrap()
+            .bpm
+            .unwrap_or(0.0),
+        128.0
+    );
 }
 
 #[test]

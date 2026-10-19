@@ -9,7 +9,7 @@ use om_analysis::MusicalKey;
 use om_library::{
     core_migrations, import_cues, import_library_file, merge_track_record, normalise_key,
     read_xml_file, CueKind, ImportReport, ImportedCue, ImportedLibrary, ImportedTrack,
-    ItunesImporter, Ingestor, IngestSummary, Library, LibraryImporter, LibraryImporterRegistry,
+    IngestSummary, Ingestor, ItunesImporter, Library, LibraryImporter, LibraryImporterRegistry,
     MetadataReaderRegistry, OpenMode, Playlist, RekordboxImporter, SearchEngine, TrackRecord,
     ASSUMED_SAMPLE_RATE, FIRST_MEMORY_SLOT,
 };
@@ -28,7 +28,11 @@ fn memory_library() -> Library {
     Library::open(":memory:", OpenMode::ReadWrite, core_migrations()).expect("open :memory:")
 }
 
-fn parse_with(importer: &dyn LibraryImporter, name: &str, report: &mut ImportReport) -> ImportedLibrary {
+fn parse_with(
+    importer: &dyn LibraryImporter,
+    name: &str,
+    report: &mut ImportReport,
+) -> ImportedLibrary {
     let root = read_xml_file(&fixture(name)).expect("fixture parses");
     assert!(importer.recognises(&root));
     let mut data = ImportedLibrary::default();
@@ -189,7 +193,10 @@ fn rekordbox_unknown_sample_rate_assumes_44100() {
     run_import(&lib, "rekordbox_small.xml", &mut report).unwrap();
     #[cfg(not(windows))]
     {
-        let two = lib.tracks().find_by_path("C:/Users/dj/Music/Pulse Two.wav").unwrap();
+        let two = lib
+            .tracks()
+            .find_by_path("C:/Users/dj/Music/Pulse Two.wav")
+            .unwrap();
         assert_eq!(two.expect("Pulse Two imported").title, "Pulse Two");
     }
     let mut t = ImportedTrack::default();
@@ -247,8 +254,8 @@ fn merge_fills_gaps_and_local_data_wins() {
         path: PULSE_ONE.into(),
         content_hash: "abc".into(),
         title: "My Title".into(), // set locally: kept
-        rating: 0,               // default: import may fill
-        play_count: 9,           // set locally: kept
+        rating: 0,                // default: import may fill
+        play_count: 9,            // set locally: kept
         date_added_ms: 123,
         ..TrackRecord::default()
     };
@@ -341,7 +348,13 @@ fn unrecognised_and_unreadable_files_fail() {
     assert!(import_library_file(&lib, &registry, &other, &mut report).is_err());
     std::fs::write(&other, "<not closed").unwrap();
     assert!(import_library_file(&lib, &registry, &other, &mut report).is_err());
-    assert!(import_library_file(&lib, &registry, &dir.path().join("missing.xml"), &mut report).is_err());
+    assert!(import_library_file(
+        &lib,
+        &registry,
+        &dir.path().join("missing.xml"),
+        &mut report
+    )
+    .is_err());
     assert_eq!(lib.tracks().count().unwrap(), 0);
 }
 
@@ -372,7 +385,13 @@ fn later_registration_wins_and_names_are_listed() {
     registry.add(Arc::new(Fake));
     let lib = memory_library();
     let mut report = ImportReport::default();
-    import_library_file(&lib, &registry, &fixture("rekordbox_small.xml"), &mut report).unwrap();
+    import_library_file(
+        &lib,
+        &registry,
+        &fixture("rekordbox_small.xml"),
+        &mut report,
+    )
+    .unwrap();
     assert!(lib.tracks().find_by_path("/fake").unwrap().is_some());
     assert_eq!(lib.tracks().count().unwrap(), 1);
 }
@@ -447,7 +466,13 @@ fn analysis_and_imported_tags_survive_the_first_scan() {
     .unwrap();
     let lib = memory_library();
     let mut report = ImportReport::default();
-    import_library_file(&lib, &LibraryImporterRegistry::with_defaults(), &xml, &mut report).unwrap();
+    import_library_file(
+        &lib,
+        &LibraryImporterRegistry::with_defaults(),
+        &xml,
+        &mut report,
+    )
+    .unwrap();
 
     let readers = MetadataReaderRegistry::with_defaults();
     let ingestor = Ingestor::new(&lib, &readers);
@@ -457,7 +482,11 @@ fn analysis_and_imported_tags_survive_the_first_scan() {
         .unwrap();
     assert_eq!(summary.failed, 0);
 
-    let t = lib.tracks().find_by_path(&wav_str).unwrap().expect("track imported");
+    let t = lib
+        .tracks()
+        .find_by_path(&wav_str)
+        .unwrap()
+        .expect("track imported");
     assert_eq!(t.content_hash.len(), 64);
     assert_eq!(t.bpm, Some(128.0));
     assert_eq!(t.key, "Am");

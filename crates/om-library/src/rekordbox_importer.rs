@@ -4,7 +4,9 @@
 //! Times are seconds. Port of `src/library/RekordboxImporter.*`.
 
 use crate::file_url::file_url_to_path;
-use crate::import_model::{CueKind, ImportReport, ImportedCue, ImportedLibrary, ImportedPlaylist, ImportedTrack};
+use crate::import_model::{
+    CueKind, ImportReport, ImportedCue, ImportedLibrary, ImportedPlaylist, ImportedTrack,
+};
 use crate::juce_text::iso8601_ms;
 use crate::library_importer::LibraryImporter;
 use crate::track_key::normalise_key;
@@ -141,7 +143,10 @@ fn read_track(
     fill_record(e, &mut track.record);
     if track.record.path.is_empty() {
         report.tracks_skipped += 1;
-        report.note(format!("skipped track {}: no local file location", track.key));
+        report.note(format!(
+            "skipped track {}: no local file location",
+            track.key
+        ));
         return;
     }
     read_marks(e, &mut track);
@@ -150,7 +155,11 @@ fn read_track(
 }
 
 /// `KeyType` 0 refers to `TrackID`, 1 to the track's `Location`.
-fn resolve_key(reference: &XmlElement, by_location: bool, by_path: &BTreeMap<String, String>) -> String {
+fn resolve_key(
+    reference: &XmlElement,
+    by_location: bool,
+    by_path: &BTreeMap<String, String>,
+) -> String {
     let key = reference.string_attribute("Key");
     if !by_location {
         return key;
@@ -175,4 +184,3 @@ fn read_node(node: &XmlElement, by_path: &BTreeMap<String, String>) -> ImportedP
     }
     p
 }
-

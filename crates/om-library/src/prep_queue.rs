@@ -87,7 +87,11 @@ pub struct PrepQueue<'a> {
 impl<'a> PrepQueue<'a> {
     /// Library and service must outlive the queue. Entries left Running by a crash go back to
     /// Queued.
-    pub fn new(library: &'a Library, service: &'a AnalysisService, mut options: PrepOptions) -> Self {
+    pub fn new(
+        library: &'a Library,
+        service: &'a AnalysisService,
+        mut options: PrepOptions,
+    ) -> Self {
         options.max_in_flight = options.max_in_flight.max(1);
         let queue = Self {
             lib: library,
@@ -140,7 +144,11 @@ impl<'a> PrepQueue<'a> {
         match self.lib.prep_queue().find(track_id) {
             Err(e) => self.error(&e.to_string()),
             Ok(Some(entry)) if entry.status == PrepStatus::Queued => {
-                if let Err(e) = self.lib.prep_queue().set_status(track_id, PrepStatus::Cancelled, "") {
+                if let Err(e) =
+                    self.lib
+                        .prep_queue()
+                        .set_status(track_id, PrepStatus::Cancelled, "")
+                {
                     self.error(&e.to_string());
                 }
                 self.notify(track_id);
@@ -215,7 +223,11 @@ impl<'a> PrepQueue<'a> {
             // So a re-enqueue can start a fresh job at once.
             self.draining.push(job);
         }
-        if let Err(e) = self.lib.prep_queue().set_status(track_id, PrepStatus::Cancelled, "") {
+        if let Err(e) = self
+            .lib
+            .prep_queue()
+            .set_status(track_id, PrepStatus::Cancelled, "")
+        {
             self.error(&e.to_string());
         }
         self.notify(track_id);
@@ -223,7 +235,11 @@ impl<'a> PrepQueue<'a> {
 
     fn drain(&mut self) {
         let finished = {
-            let mut done = self.inbox.done.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut done = self
+                .inbox
+                .done
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             std::mem::take(&mut *done)
         };
         for f in finished {
@@ -249,7 +265,9 @@ impl<'a> PrepQueue<'a> {
         let dao = self.lib.prep_queue();
         match finished.status {
             JobStatus::Done => {
-                if let Err(e) = apply_prep_results(&self.lib.tracks(), finished.track_id, &finished.results) {
+                if let Err(e) =
+                    apply_prep_results(&self.lib.tracks(), finished.track_id, &finished.results)
+                {
                     return self.fail(finished.track_id, &e.to_string());
                 }
                 if let Err(e) = dao.set_status(finished.track_id, PrepStatus::Done, "") {
@@ -267,14 +285,20 @@ impl<'a> PrepQueue<'a> {
     }
 
     fn fail(&mut self, track_id: i64, message: &str) {
-        if let Err(e) = self.lib.prep_queue().set_status(track_id, PrepStatus::Failed, message) {
+        if let Err(e) = self
+            .lib
+            .prep_queue()
+            .set_status(track_id, PrepStatus::Failed, message)
+        {
             self.error(&e.to_string());
         }
         self.notify(track_id);
     }
 
     fn fill(&mut self) {
-        while self.in_flight.len() + self.draining.len() < self.opts.max_in_flight && self.submit_next() {}
+        while self.in_flight.len() + self.draining.len() < self.opts.max_in_flight
+            && self.submit_next()
+        {}
     }
 
     /// Submits the next queued track. False when there is nothing to submit (or the queue is
@@ -293,7 +317,11 @@ impl<'a> PrepQueue<'a> {
             Err(e) => self.fail(id, &e.to_string()),
             Ok(None) => self.fail(id, "track no longer exists"),
             Ok(Some(track)) => {
-                if let Err(e) = self.lib.prep_queue().set_status(id, PrepStatus::Running, "") {
+                if let Err(e) = self
+                    .lib
+                    .prep_queue()
+                    .set_status(id, PrepStatus::Running, "")
+                {
                     self.error(&e.to_string());
                     return false;
                 }
@@ -304,7 +332,9 @@ impl<'a> PrepQueue<'a> {
                 let job = self.service.submit(
                     Some(source),
                     self.opts.analyzer_ids.clone(),
-                    Some(Box::new(move |job: &AnalysisJob| post(&inbox, id, generation, job))),
+                    Some(Box::new(move |job: &AnalysisJob| {
+                        post(&inbox, id, generation, job)
+                    })),
                 );
                 self.in_flight.insert(
                     id,
@@ -368,7 +398,11 @@ impl<'a> PrepQueue<'a> {
     }
 
     fn wait_for_inbox(&self, timeout: Duration) {
-        let done = self.inbox.done.lock().unwrap_or_else(PoisonError::into_inner);
+        let done = self
+            .inbox
+            .done
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let _ = self
             .inbox
             .wake

@@ -17,9 +17,8 @@ pub fn import_library_file(
     xml_file: &Path,
     report: &mut ImportReport,
 ) -> Result<()> {
-    let root = read_xml_file(xml_file).map_err(|e| {
-        LibraryError::Import(format!("Cannot read {}: {e}", xml_file.display()))
-    })?;
+    let root = read_xml_file(xml_file)
+        .map_err(|e| LibraryError::Import(format!("Cannot read {}: {e}", xml_file.display())))?;
     let importer = importers.find(&root).ok_or_else(|| {
         LibraryError::Import(format!(
             "Unrecognised library format: {}",
