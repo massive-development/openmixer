@@ -50,6 +50,9 @@ pub enum SettingsError {
     PluginsUnavailable,
     #[error("stem separation is not available")]
     StemsUnavailable,
+    /// The stem cache or its index failed.
+    #[error("{0}")]
+    Stems(#[source] OpaqueError),
     /// The model is not ready; the text says why (it is shown in the Library page).
     #[error("{0}")]
     StemsNotReady(String),
