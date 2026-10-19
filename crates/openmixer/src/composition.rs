@@ -140,7 +140,8 @@ impl AppComposition {
     /// Default composition: the preferences file from `OPENMIXER_PREFS` or the user config dir,
     /// and the user theme folder under the home directory.
     pub fn with_defaults() -> Self {
-        let themes = default_user_directory(std::env::var_os("HOME").as_deref());
+        let home = dirs::home_dir().map(std::path::PathBuf::into_os_string);
+        let themes = default_user_directory(home.as_deref());
         Self::new(&preferences::default_file(), themes)
     }
 
