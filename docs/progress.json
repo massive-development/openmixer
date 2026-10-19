@@ -71,6 +71,7 @@
   {
    "name": "7 Intelligence",
    "items": [
+    ["F Foundation", "done"],
     ["37 Stem DSP", "todo"],
     ["38 Automix", "todo"],
     ["39 Stem transitions", "todo"],

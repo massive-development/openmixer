@@ -79,6 +79,11 @@ cargo test -p openmixer --test ui_gate -- --ignored --nocapture
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
+
+# GPUI crate (outside the workspace; non-blocking in CI)
+cargo fmt --manifest-path crates/om-ui-gpui/Cargo.toml --check
+cargo clippy --manifest-path crates/om-ui-gpui/Cargo.toml --all-targets -- -D warnings
+cargo deny --manifest-path crates/om-ui-gpui/Cargo.toml --config crates/om-ui-gpui/deny.toml check
 ```
 
 ### Running on WSL
@@ -136,7 +141,7 @@ A Cargo workspace. Dependency arrows point toward `om-core`, which has no I/O.
 
 ```
 crates/
-├── om-core/      # Control surface, parameter routing and lock-free frame transport; no I/O
+├── om-core/      # Typed control surface (ParamId, Command), pulled engine snapshot, job queue, routing; no I/O
 ├── om-dsp/       # Filters, EQ, sweep filter, meters and crossfader curves
 ├── om-engine/    # Audio-thread engine: decks, mixer, FX racks, sync, quantizer and loops
 ├── om-audio/     # Device layer over cpal, a headless mock device, the output router
@@ -154,7 +159,7 @@ fixtures/                       # Small test inputs: controller maps and traces,
 resources/themes/               # Built-in theme JSON
 ```
 
-Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. UI and MIDI send commands to the engine; the engine publishes state snapshots back.
+Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. UI and MIDI send typed `Command`s to the engine; readers pull an `EngineSnapshot` built from the engine's atomics. `agents.md` lists what each crate owns and how to add a control id.
 
 ## Implementation Waves
 
