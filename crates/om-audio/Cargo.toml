@@ -9,3 +9,9 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+om-core = { path = "../om-core" }
+om-engine = { path = "../om-engine" }
+thiserror = "2"
+tracing = "0.1"
