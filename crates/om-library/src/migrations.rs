@@ -128,6 +128,16 @@ CREATE TABLE play_history (
 CREATE INDEX idx_play_history_track ON play_history (track_id, played_ms);
 "#;
 
+const SCHEMA_V6: &str = r#"
+CREATE TABLE artwork (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks (id) ON DELETE CASCADE,
+  mime TEXT NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  data BLOB NOT NULL
+);
+"#;
+
 const CORE_MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -153,6 +163,11 @@ const CORE_MIGRATIONS: &[Migration] = &[
         version: 5,
         name: "play history",
         sql: SCHEMA_V5,
+    },
+    Migration {
+        version: 6,
+        name: "track artwork",
+        sql: SCHEMA_V6,
     },
 ];
 

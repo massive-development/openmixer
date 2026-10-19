@@ -2,6 +2,7 @@
 //! Threading: a read-write `Library` belongs to one thread. A read-only open (for the UI) needs a
 //! writer to have opened and migrated the file first.
 
+use crate::artwork_dao::ArtworkDao;
 use crate::cue_dao::CueDao;
 use crate::database::{Database, OpenMode};
 use crate::error::Result;
@@ -49,6 +50,10 @@ impl Library {
 
     pub fn cues(&self) -> CueDao<'_> {
         CueDao::new(&self.db)
+    }
+
+    pub fn artwork(&self) -> ArtworkDao<'_> {
+        ArtworkDao::new(&self.db)
     }
 
     pub fn playlists(&self) -> PlaylistDao<'_> {

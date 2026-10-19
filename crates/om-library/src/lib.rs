@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+mod artwork_dao;
 mod cue_dao;
 mod database;
 mod error;
@@ -44,6 +45,7 @@ mod watch_folder_dao;
 mod watch_folders;
 mod xml;
 
+pub use artwork_dao::{image_size, ArtworkDao, ArtworkRecord, MAX_ARTWORK_BYTES};
 pub use cue_dao::{CueDao, CuePoint, SavedLoop};
 pub use database::{Database, OpenMode, Transaction};
 pub use error::{ImportError, LibraryError, Result};
