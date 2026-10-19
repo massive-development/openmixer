@@ -4,6 +4,8 @@ use om_library::{
     core_migrations, current_schema_version, migrate, Database, Library, Migration, OpenMode,
     TrackRecord, Transaction,
 };
+use std::sync::mpsc;
+use std::time::Duration;
 
 const TABLE_A: Migration = Migration {
     version: 1,
@@ -197,3 +199,46 @@ mod library_database {
         assert!(timeout > 0);
     }
 }
+
+#[test]
+fn an_outermost_transaction_waits_for_the_write_lock_instead_of_failing_on_a_stale_snapshot() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = path_str(&dir, "contended.db");
+    Database::open(&path, OpenMode::ReadWrite)
+        .unwrap()
+        .exec("CREATE TABLE t (x INTEGER);")
+        .unwrap();
+
+    // The writer holds the write lock for a moment.
+    let writer = Database::open(&path, OpenMode::ReadWrite).unwrap();
+    let held = Transaction::begin(&writer).unwrap();
+    writer.exec("INSERT INTO t VALUES (1);").unwrap();
+
+    // The reader reads, then writes. Begun as a deferred savepoint, its read would pin a snapshot
+    // before the writer commits, and its write would fail at once with SQLITE_BUSY_SNAPSHOT. Begun
+    // with BEGIN IMMEDIATE, it waits for the lock (busy timeout) and reads after the commit.
+    let (read_tx, read_rx) = mpsc::channel();
+    let reader_path = path.clone();
+    let reader = std::thread::spawn(move || -> om_library::Result<i64> {
+        let db = Database::open(&reader_path, OpenMode::ReadWrite)?;
+        let tx = Transaction::begin(&db)?;
+        let seen: i64 = db
+            .query_rows("SELECT count(*) FROM t;", [], |row| row.get(0))?
+            .remove(0);
+        let _ = read_tx.send(());
+        db.exec("INSERT INTO t VALUES (2);")?;
+        tx.commit()?;
+        Ok(seen)
+    });
+    // Commit once the reader has had its chance to start, or after half a second if it is waiting.
+    let _ = read_rx.recv_timeout(Duration::from_millis(500));
+    held.commit().unwrap();
+
+    let seen = reader
+        .join()
+        .expect("reader thread")
+        .expect("the reader waits for the lock and then writes");
+    assert_eq!(seen, 1, "the reader sees the writer's committed row");
+    assert_eq!(row_count(&writer, "SELECT count(*) FROM t;"), 2);
+}
+
