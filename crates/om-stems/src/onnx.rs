@@ -7,7 +7,7 @@ use crate::pipeline::{SegmentInput, SegmentOutput, StemInference};
 use crate::separator::StemError;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
-use ort::value::TensorRef;
+use ort::value::{TensorElementType, TensorRef, ValueType};
 use std::path::Path;
 
 pub struct OrtInference {
@@ -45,8 +45,107 @@ impl OrtInference {
             .map_err(ort_err)?
             .commit_from_file(model)
             .map_err(ort_err)?;
+        check_io(&session, &contract)?;
         Ok(Self { session, contract })
     }
+}
+
+/// Checks the session's declared inputs and outputs against the contract, so a wrong name or shape
+/// in the manifest is a precise load error rather than a failed or panicking run. Dimensions the
+/// model leaves dynamic (`-1`) match anything; the mix input must be the only other input.
+fn check_io(session: &Session, c: &ModelContract) -> Result<(), StemError> {
+    let bins = c.n_fft / 2;
+    let mut want_inputs: Vec<(&str, Vec<Option<usize>>)> = vec![(
+        c.mix_input.as_str(),
+        vec![Some(1), Some(2), Some(c.segment_samples)],
+    )];
+    if let Some(name) = &c.spec_input {
+        want_inputs.push((name.as_str(), vec![Some(1), Some(4), Some(bins), None]));
+    }
+    let names = |outlets: &[ort::value::Outlet]| {
+        outlets
+            .iter()
+            .map(|o| o.name().to_owned())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for outlet in session.inputs() {
+        if !want_inputs.iter().any(|(n, _)| *n == outlet.name()) {
+            let wanted: Vec<&str> = want_inputs.iter().map(|(n, _)| *n).collect();
+            return Err(StemError::Invalid(format!(
+                "model input {:?} is not in the contract, which wants {wanted:?}",
+                outlet.name(),
+            )));
+        }
+    }
+    for (name, want) in &want_inputs {
+        let outlet = session
+            .inputs()
+            .iter()
+            .find(|o| o.name() == *name)
+            .ok_or_else(|| {
+                StemError::Invalid(format!(
+                    "model has no input {name:?} (inputs: {})",
+                    names(session.inputs())
+                ))
+            })?;
+        check_tensor("input", outlet, want)?;
+    }
+
+    let mut want_outputs: Vec<(&str, Vec<Option<usize>>)> = vec![(
+        c.stems_output.as_str(),
+        vec![Some(1), Some(4), Some(2), Some(c.segment_samples)],
+    )];
+    if let Some(name) = &c.spec_output {
+        want_outputs.push((
+            name.as_str(),
+            vec![Some(1), Some(4), Some(4), Some(bins), None],
+        ));
+    }
+    for (name, want) in &want_outputs {
+        let outlet = session
+            .outputs()
+            .iter()
+            .find(|o| o.name() == *name)
+            .ok_or_else(|| {
+                StemError::Invalid(format!(
+                    "model has no output {name:?} (outputs: {})",
+                    names(session.outputs())
+                ))
+            })?;
+        check_tensor("output", outlet, want)?;
+    }
+    Ok(())
+}
+
+fn check_tensor(
+    kind: &str,
+    outlet: &ort::value::Outlet,
+    want: &[Option<usize>],
+) -> Result<(), StemError> {
+    let name = outlet.name();
+    let ValueType::Tensor { ty, shape, .. } = outlet.dtype() else {
+        return Err(StemError::Invalid(format!(
+            "model {kind} {name:?} is not a tensor"
+        )));
+    };
+    if *ty != TensorElementType::Float32 {
+        return Err(StemError::Invalid(format!(
+            "model {kind} {name:?} is {ty:?}, the contract needs float32"
+        )));
+    }
+    let dims_ok = shape.len() == want.len()
+        && shape.iter().zip(want).all(|(&actual, w)| match w {
+            Some(w) => actual < 0 || usize::try_from(actual).is_ok_and(|a| a == *w),
+            None => true,
+        });
+    if !dims_ok {
+        let shape_text: Vec<i64> = shape.iter().copied().collect();
+        return Err(StemError::Invalid(format!(
+            "model {kind} {name:?} has shape {shape_text:?}, the contract needs {want:?} (None is any)"
+        )));
+    }
+    Ok(())
 }
 
 impl StemInference for OrtInference {
@@ -72,14 +171,21 @@ impl StemInference for OrtInference {
         }
         .map_err(ort_err)?;
 
-        let (_, stems) = outputs[self.contract.stems_output.as_str()]
+        let stems_name = self.contract.stems_output.as_str();
+        let (_, stems) = outputs
+            .get(stems_name)
+            .ok_or_else(|| StemError::Invalid(format!("model produced no output {stems_name:?}")))?
             .try_extract_tensor::<f32>()
             .map_err(ort_err)?;
         output.stems.clear();
         output.stems.extend_from_slice(stems);
         output.spec = match &self.contract.spec_output {
             Some(name) => {
-                let (_, spec) = outputs[name.as_str()]
+                let (_, spec) = outputs
+                    .get(name.as_str())
+                    .ok_or_else(|| {
+                        StemError::Invalid(format!("model produced no output {name:?}"))
+                    })?
                     .try_extract_tensor::<f32>()
                     .map_err(ort_err)?;
                 let mut v = output.spec.take().unwrap_or_default();
