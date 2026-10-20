@@ -20,8 +20,9 @@ use om_ui::geometry::Rect;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
-    LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage, PageKind,
-    PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel, SettingsResult,
+    AutomixControl, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage,
+    MidiSettingsPage, PageKind, PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel,
+    SettingsResult,
 };
 use om_ui::stems::StemHost;
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
@@ -30,6 +31,7 @@ use std::sync::Arc;
 
 mod appearance;
 mod audio;
+mod automix;
 mod chips;
 mod library;
 mod midi;
@@ -70,6 +72,9 @@ pub struct SettingsOptions {
     pub stems: Option<Box<dyn StemHost>>,
     /// The plugins, behind the Plugins page. `None` leaves the page out of use.
     pub plugins: Option<Box<dyn PluginHost>>,
+    /// The automix service, behind the Automix page. `None` leaves the page without a service: its
+    /// settings are still stored and the page says automix is idle.
+    pub automix: Option<Box<dyn AutomixControl>>,
     /// Makes this window's theme registry hold the plugins' themes. Called on start-up, when the
     /// overlay opens and after a plugin or preference change.
     pub sync_themes: Option<ThemeSync>,
@@ -107,6 +112,8 @@ pub struct PageLists {
     pub loaded_plugins: Vec<String>,
     /// Built-in plugins that are not loaded, as `(id, name)`.
     pub builtins: Vec<(String, String)>,
+    /// Playlists the automix queue can play, as `(id, label)`.
+    pub playlists: Vec<(i64, String)>,
 }
 
 /// What the last action on a page did, shown under the tabs.
@@ -145,6 +152,7 @@ pub struct SettingsState {
     /// The Clear-cache confirmation is showing.
     pub stems_confirm_clear: bool,
     plugins: Option<Box<dyn PluginHost>>,
+    automix: Option<Box<dyn AutomixControl>>,
     sync_themes: Option<ThemeSync>,
 }
 
@@ -172,6 +180,7 @@ impl SettingsState {
             stems_bytes: 0,
             stems_confirm_clear: false,
             plugins: options.plugins,
+            automix: options.automix,
             sync_themes: options.sync_themes,
         };
         if let Some(title) = options.start_tab.as_deref() {
@@ -224,6 +233,18 @@ impl SettingsState {
             self.lists.loaded_plugins = plugins.loaded_plugins();
             self.lists.builtins = plugins.builtins();
         }
+        if let Some(automix) = &self.automix {
+            match automix.playlists() {
+                Ok(playlists) => self.lists.playlists = playlists,
+                Err(error) => {
+                    self.lists.playlists.clear();
+                    self.notice = Notice {
+                        text: format!("Could not read playlists: {error}"),
+                        error: true,
+                    };
+                }
+            }
+        }
     }
 
     fn set_notice(&mut self, text: impl Into<String>, error: bool) {
@@ -263,6 +284,7 @@ mod fixtures {
             library: None,
             stems: None,
             plugins: None,
+            automix: None,
             sync_themes: None,
             start_tab: None,
         })
@@ -289,6 +311,7 @@ mod fixtures {
             library,
             stems: None,
             plugins,
+            automix: None,
             sync_themes: Some(Box::new(move |_| syncs.set(syncs.get() + 1))),
             start_tab: None,
         }

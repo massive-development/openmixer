@@ -2,6 +2,7 @@
 
 use super::appearance::*;
 use super::audio::*;
+use super::automix::*;
 use super::chips::*;
 use super::library::*;
 use super::midi::*;
@@ -134,6 +135,7 @@ impl Shell {
             Some(PageKind::Appearance) => appearance_page(&t, settings, cx),
             Some(PageKind::Midi) => midi_page(&t, settings, cx),
             Some(PageKind::Library) => library_page(&t, settings, cx),
+            Some(PageKind::Automix) => automix_page(&t, settings, cx),
             Some(PageKind::Plugins) => plugins_page(&t, settings, cx),
             None => note(&t, "This page is added by a plugin."),
         };

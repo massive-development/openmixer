@@ -15,7 +15,7 @@ use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
 use om_ui::library::{
     columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, LoadError,
-    TrackLoader, STEMS_COLUMN,
+    SearchFeed, TrackLoader, STEMS_COLUMN,
 };
 use om_ui::settings::{LibraryControl, SettingsError, SettingsResult};
 use om_ui::sidebar::SidebarNode;
@@ -45,6 +45,8 @@ pub struct LibraryHub {
     pub loader: TrackLoader,
     pub stems: StemQueue,
     pub stem_host: Option<Box<dyn StemHost>>,
+    /// The browser's search text, published for the automix queue's current-search source.
+    pub search_feed: SearchFeed,
 }
 
 pub type SharedHub = Rc<RefCell<LibraryHub>>;
@@ -172,6 +174,7 @@ impl LibraryHub {
             services,
             loader,
             stems,
+            search_feed: SearchFeed::default(),
             stem_host: None,
         }))
     }
@@ -239,6 +242,7 @@ impl LibraryPanel {
             let mut h = hub.borrow_mut();
             LibraryBrowser::new(&mut h.services, num_decks)
         };
+        browser.search_feed = Some(Arc::clone(&hub.borrow().search_feed));
         let load_hub = Rc::clone(&hub);
         let load_engine = Arc::clone(&engine);
         browser.on_load_requested = Some(Box::new(move |deck, track| {

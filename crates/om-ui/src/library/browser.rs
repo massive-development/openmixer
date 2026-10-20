@@ -27,8 +27,14 @@ pub const SEARCH_PLACEHOLDER: &str =
 /// the status line.
 pub type LoadHandler = Box<dyn FnMut(usize, &TrackRecord) -> Result<(), LoadError>>;
 
+/// The browser's current search text, published for other readers (the automix queue's "current
+/// search" source). Written on every change, so it is the text the user sees, not the last query run.
+pub type SearchFeed = std::sync::Arc<std::sync::Mutex<String>>;
+
 pub struct LibraryBrowser {
     pub model: TrackTableModel,
+    /// Receives the search text as it changes. `None` publishes nothing.
+    pub search_feed: Option<SearchFeed>,
     /// Where a double-click loads. Returns the deck index; defaults to deck 0.
     pub default_deck: Option<Box<dyn Fn() -> usize>>,
     /// Camelot code of the reference key, polled on each tick.
@@ -72,6 +78,7 @@ impl LibraryBrowser {
         });
         let mut browser = Self {
             model: TrackTableModel::new(),
+            search_feed: None,
             default_deck: None,
             reference_key: None,
             on_load_requested: None,
@@ -113,6 +120,14 @@ impl LibraryBrowser {
         &self.search_text
     }
 
+    fn publish_search(&self) {
+        if let Some(feed) = &self.search_feed {
+            let mut text = feed.lock().unwrap_or_else(|e| e.into_inner());
+            text.clear();
+            text.push_str(&self.search_text);
+        }
+    }
+
     pub fn status(&self) -> &str {
         &self.status
     }
@@ -124,6 +139,7 @@ impl LibraryBrowser {
     /// Replaces the search text and applies it now.
     pub fn set_search_text(&mut self, services: &LibraryServices, text: &str) {
         self.search_text = text.to_owned();
+        self.publish_search();
         self.search_pending = false;
         self.apply_query(services);
     }
@@ -131,6 +147,7 @@ impl LibraryBrowser {
     /// The user typed. The query runs on the next [`Self::flush_pending`], not per keystroke.
     pub fn type_search(&mut self, text: &str) {
         self.search_text = text.to_owned();
+        self.publish_search();
         self.search_pending = true;
     }
 

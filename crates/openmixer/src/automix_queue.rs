@@ -12,8 +12,9 @@ use om_automix::queue::{
     select_next, AutomixQueue, Order, QueueConfig, QueueRng, QueueTrack, SkipReason, SplitMix64,
 };
 use om_library::{Library, SearchEngine, TrackRecord};
+use om_ui::library::SearchFeed;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Where the next track comes from.
@@ -21,9 +22,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum QueueSource {
     /// Play a playlist (or crate) in its order, wrapping at the end.
     Playlist(i64),
-    /// Shuffle the results of a library search (the current filter).
+    /// Shuffle the results of a fixed library search.
     Search(String),
+    /// Shuffle the results of the library browser's search as it is now: the browser publishes its
+    /// text to the queue's search feed, and each pick reads it.
+    CurrentSearch,
 }
+
+/// The settings the window changes while automix runs. The host reads them before each pick, so
+/// a change in the Automix page applies to the next track without a restart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueSettings {
+    pub source: QueueSource,
+    /// Prefer key-compatible, tempo-close tracks (shuffled sources only).
+    pub smart: bool,
+}
+
+pub type SharedQueueSettings = Arc<Mutex<QueueSettings>>;
 
 type GridCheck = Box<dyn Fn(&TrackRecord) -> bool>;
 type Clock = Box<dyn Fn() -> i64>;
@@ -35,6 +50,8 @@ pub struct LibraryQueue {
     rng: Box<dyn QueueRng>,
     clock: Clock,
     grid_check: GridCheck,
+    /// The browser's search text, read by [`QueueSource::CurrentSearch`]. Empty when unset.
+    search_feed: SearchFeed,
     /// Position in the playlist of the last pick.
     cursor: usize,
     skips: Vec<(i64, SkipReason)>,
@@ -62,6 +79,7 @@ impl LibraryQueue {
             rng: Box::new(SplitMix64(seed)),
             clock: Box::new(system_now_ms),
             grid_check: Box::new(|t| t.bpm.is_some()),
+            search_feed: SearchFeed::default(),
             cursor: 0,
             skips: Vec::new(),
             last_error: None,
@@ -83,9 +101,31 @@ impl LibraryQueue {
         self
     }
 
+    /// Reads [`QueueSource::CurrentSearch`] from `feed` (the library browser publishes there).
+    pub fn with_search_feed(mut self, feed: SearchFeed) -> Self {
+        self.search_feed = feed;
+        self
+    }
+
     pub fn set_source(&mut self, source: QueueSource) {
-        self.source = source;
-        self.cursor = 0;
+        if self.source != source {
+            self.source = source;
+            self.cursor = 0;
+        }
+    }
+
+    pub fn set_smart(&mut self, smart: bool) {
+        self.cfg.smart = smart;
+    }
+
+    /// Takes the window's queue settings (source and smart picks) for the next pick.
+    pub fn apply(&mut self, settings: &QueueSettings) {
+        self.set_source(settings.source.clone());
+        self.set_smart(settings.smart);
+    }
+
+    pub fn source(&self) -> &QueueSource {
+        &self.source
     }
 
     /// The database error of the last call, if it failed.
@@ -117,6 +157,16 @@ impl LibraryQueue {
             QueueSource::Search(text) => SearchEngine::new(self.library.database())
                 .search_text(text)
                 .map_err(|e| e.to_string()),
+            QueueSource::CurrentSearch => {
+                let text = self
+                    .search_feed
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                SearchEngine::new(self.library.database())
+                    .search_text(&text)
+                    .map_err(|e| e.to_string())
+            }
         }
     }
 
