@@ -47,7 +47,7 @@ mod tests;
 use cancel::{involves, CancelReason};
 pub use host::{AutomixConfig, AutomixControl, AutomixHost, LoadPoll, NextTrack};
 
-use crate::plan::{PlanOptions, Style, TransitionPlan};
+use crate::plan::{PlanOptions, Route, Style, TransitionPlan};
 use crate::planner::{DefaultPlanner, TransitionPlanner};
 use crate::readback::read_param;
 use crate::stem_fade::StemFadeRunner;
@@ -55,7 +55,7 @@ use crate::types::DeckInfo;
 use om_core::param_id::{ChannelParam, DeckParam, MixerParam};
 use om_core::{
     AutomixSnapshot, AutomixState, Command, CommandError, CommandSink, DeckSnapshot,
-    EngineSnapshot, ParamId,
+    EngineSnapshot, ParamId, XfaderAssign,
 };
 use std::sync::Arc;
 
@@ -78,6 +78,8 @@ struct Run {
     inc_info: Option<DeckInfo>,
     title: String,
     plan: Option<TransitionPlan>,
+    /// The crossfader routing the plan was made for.
+    route: Route,
     stems: Option<StemFadeRunner>,
     watches: Vec<Watch>,
     out_len: i64,
@@ -319,16 +321,81 @@ fn playing_deck(snap: &EngineSnapshot) -> Option<u8> {
     playing.next().is_none().then(|| u8::try_from(first).ok())?
 }
 
-/// The deck the next track goes to: the other half of the pair when it is free, else any free deck.
-fn partner_deck(snap: &EngineSnapshot, out: u8) -> Option<u8> {
-    let free = |i: usize| i != usize::from(out) && !snap.decks[i].playing;
-    let pair = usize::from(out ^ 1);
-    let pick = if pair < snap.decks.len() && free(pair) {
-        Some(pair)
-    } else {
-        (0..snap.decks.len()).find(|i| free(*i))
+/// The refusal when the two decks cannot be put on opposite crossfader sides.
+const NOT_OPPOSITE: &str = "decks are not on opposite crossfader sides";
+
+/// The side a crossfader assignment routes to: `Some(true)` left, `Some(false)` right, `None` thru.
+fn assigned_left(assign: XfaderAssign) -> Option<bool> {
+    match assign {
+        XfaderAssign::Left => Some(true),
+        XfaderAssign::Right => Some(false),
+        XfaderAssign::Thru => None,
+    }
+}
+
+/// Whether the outgoing deck is on the left. A deck on thru is treated as left: the transition
+/// routes it there.
+fn out_on_left(snap: &EngineSnapshot, out: u8) -> bool {
+    snap.mixer
+        .channels
+        .get(usize::from(out))
+        .and_then(|c| assigned_left(c.assign))
+        .unwrap_or(true)
+}
+
+/// How the pair sits on the crossfader for a transition, from the channel assignments in the
+/// snapshot. Opposite sides need nothing changed. Otherwise the outgoing deck goes to its own side
+/// (left when it is on thru) and the incoming deck to the other one; only the assignments that
+/// differ are changed. Refused when either deck has no channel to route.
+fn crossfader_route(snap: &EngineSnapshot, out: u8, inc: u8) -> Result<Route, &'static str> {
+    let assign = |deck: u8| {
+        snap.mixer
+            .channels
+            .get(usize::from(deck))
+            .map(|c| c.assign)
+            .ok_or(NOT_OPPOSITE)
     };
-    pick.and_then(|i| u8::try_from(i).ok())
+    let (a_out, a_in) = (assign(out)?, assign(inc)?);
+    if let (Some(left_out), Some(left_in)) = (assigned_left(a_out), assigned_left(a_in)) {
+        if left_out != left_in {
+            return Ok(Route {
+                out_left: left_out,
+                reassign: Vec::new(),
+            });
+        }
+    }
+    let out_left = out_on_left(snap, out);
+    let mut reassign = Vec::new();
+    for (deck, current, left) in [(out, a_out, out_left), (inc, a_in, !out_left)] {
+        let target = if left {
+            XfaderAssign::Left
+        } else {
+            XfaderAssign::Right
+        };
+        if current != target {
+            reassign.push((deck, f64::from(current.index()), f64::from(target.index())));
+        }
+    }
+    Ok(Route { out_left, reassign })
+}
+
+/// The deck the next track goes to. A free deck (not playing) on the crossfader side opposite the
+/// outgoing deck's wins; then a loaded one, then the other half of the pair.
+fn partner_deck(snap: &EngineSnapshot, out: u8) -> Option<u8> {
+    let pair = usize::from(out ^ 1);
+    let out_left = out_on_left(snap, out);
+    (0..snap.decks.len())
+        .filter(|i| *i != usize::from(out) && !snap.decks[*i].playing)
+        .min_by_key(|i| {
+            let opposite = snap
+                .mixer
+                .channels
+                .get(*i)
+                .and_then(|c| assigned_left(c.assign))
+                == Some(!out_left);
+            (!opposite, !snap.decks[*i].loaded, *i != pair)
+        })
+        .and_then(|i| u8::try_from(i).ok())
 }
 
 /// The deck still holds the track it had (same length) and is in the expected play state.

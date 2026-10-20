@@ -1,6 +1,6 @@
 use super::*;
 use crate::fixtures::{info, LENGTH_BEATS};
-use crate::plan::{PlanOptions, Style, EQ_KILL_DB};
+use crate::plan::{PlanOptions, Route, Style, EQ_KILL_DB};
 use crate::readback::blank_snapshot;
 use om_core::param_id::{ChannelParam, DeckParam, EqBand, FxParam, FxRack, MixerParam};
 use om_core::ParamId;
@@ -126,7 +126,10 @@ fn crossfader_ramp_is_equal_power_and_exact_at_the_ends() {
 fn deck_on_the_right_fades_the_other_way() {
     let (out, inc) = pair();
     let opts = PlanOptions {
-        out_on_left: false,
+        route: Route {
+            out_left: false,
+            ..Route::default()
+        },
         ..PlanOptions::default()
     };
     let p = DefaultPlanner
@@ -503,7 +506,10 @@ proptest! {
         let opts = PlanOptions {
             out_position_beat: pos,
             length_beats: len,
-            out_on_left: left,
+            route: Route {
+                out_left: left,
+                ..Route::default()
+            },
             ..PlanOptions::default()
         };
         let style = Style::ALL[style];

@@ -20,7 +20,7 @@ use crate::sync::Sync;
 use om_core::param_id::Namespace;
 use om_core::{
     AutomixSnapshot, ChannelSnapshot, CommandSink, DeckSnapshot, EngineSnapshot, MixerSnapshot,
-    ParameterRouter, SampleId, StemSetRef, StemSnapshot,
+    ParameterRouter, SampleId, StemSetRef, StemSnapshot, XfaderAssign,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
@@ -300,6 +300,7 @@ impl DjEngine {
                     filter: self.mixer.filter(ch),
                     eq: std::array::from_fn(|band| self.mixer.eq(ch, band)),
                     pfl: self.mixer.pfl(ch),
+                    assign: xfader_assign(self.mixer.crossfader_assign(ch)),
                     peak_left: self.mixer.channel_peak_left(ch),
                     peak_right: self.mixer.channel_peak_right(ch),
                 })
@@ -402,3 +403,12 @@ impl AudioCallback for DjEngineAudio {
 
 #[cfg(test)]
 mod tests;
+
+/// The engine's crossfader assignment as the snapshot's value type.
+fn xfader_assign(assign: om_dsp::CrossfaderAssign) -> XfaderAssign {
+    match assign {
+        om_dsp::CrossfaderAssign::Thru => XfaderAssign::Thru,
+        om_dsp::CrossfaderAssign::Left => XfaderAssign::Left,
+        om_dsp::CrossfaderAssign::Right => XfaderAssign::Right,
+    }
+}

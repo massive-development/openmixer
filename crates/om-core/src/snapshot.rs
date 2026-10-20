@@ -121,8 +121,31 @@ pub struct ChannelSnapshot {
     /// Low, mid, high, in engine order.
     pub eq: [f32; 3],
     pub pfl: bool,
+    /// Where the channel sits on the crossfader.
+    pub assign: XfaderAssign,
     pub peak_left: f32,
     pub peak_right: f32,
+}
+
+/// A channel's crossfader assignment: bypassed (`Thru`), or routed to one side. The index
+/// (`Thru` 0, `Left` 1, `Right` 2) is the value `mixer.ch<N>.xfader` takes as a control.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum XfaderAssign {
+    #[default]
+    Thru,
+    Left,
+    Right,
+}
+
+impl XfaderAssign {
+    /// The control value of this assignment: `Thru` 0, `Left` 1, `Right` 2.
+    pub fn index(self) -> u8 {
+        match self {
+            Self::Thru => 0,
+            Self::Left => 1,
+            Self::Right => 2,
+        }
+    }
 }
 
 impl MixerSnapshot {
@@ -137,6 +160,7 @@ impl MixerSnapshot {
                     ChannelState::Trim => f64::from(channel.trim),
                     ChannelState::Filter => f64::from(channel.filter),
                     ChannelState::Level => f64::from(channel.peak_left.max(channel.peak_right)),
+                    ChannelState::Xfader => f64::from(channel.assign.index()),
                 })
             }
             MixerState::Crossfader => Some(f64::from(self.crossfader)),
