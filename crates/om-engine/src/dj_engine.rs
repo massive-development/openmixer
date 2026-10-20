@@ -14,12 +14,13 @@ use crate::deck_control::{DeckBank, DeckControl};
 use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
+use crate::sampler::{Sample, SampleRegistry, SamplerAudio, SamplerControl, SamplerError};
 use crate::stem_control::{snapshot_stems, EngineCommands, StemBank, StemSetRegistry};
 use crate::sync::Sync;
 use om_core::param_id::Namespace;
 use om_core::{
     AutomixSnapshot, ChannelSnapshot, CommandSink, DeckSnapshot, EngineSnapshot, MixerSnapshot,
-    ParameterRouter, SamplerSnapshot, StemSetRef, StemSnapshot,
+    ParameterRouter, SampleId, StemSetRef, StemSnapshot,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
@@ -40,6 +41,8 @@ pub struct DjEngine {
     mixer: Arc<MixerControl>,
     fx: Arc<FxRouting>,
     stem_sets: Arc<StemSetRegistry>,
+    sampler: Arc<SamplerControl>,
+    samples: Arc<SampleRegistry>,
     /// Control-timer ticks so far; stamps [`EngineSnapshot::ticks`].
     ticks: AtomicU64,
     /// Snapshots built so far; stamps [`EngineSnapshot::built`].
@@ -81,7 +84,9 @@ impl DjEngine {
     /// One deck per mixer channel. `num_decks` is clamped to the mixer's channel range. Control
     /// thread.
     pub fn new(num_decks: usize) -> (Self, DjEngineAudio) {
-        let (mixer, mixer_control) = Mixer::new(num_decks);
+        let (mut mixer, mixer_control) = Mixer::new(num_decks);
+        let (sampler_audio, sampler_control) = SamplerAudio::new();
+        mixer.attach_sampler(sampler_audio);
         let count = mixer.num_channels();
         let sync = Arc::new(Sync::new(count));
         let mut decks = Vec::with_capacity(count);
@@ -106,6 +111,8 @@ impl DjEngine {
             mixer: Arc::new(mixer_control),
             fx,
             stem_sets: Arc::new(StemSetRegistry::default()),
+            sampler: Arc::new(sampler_control),
+            samples: Arc::new(SampleRegistry::default()),
             ticks: AtomicU64::new(0),
             builds: AtomicU64::new(0),
         };
@@ -161,12 +168,32 @@ impl DjEngine {
         self.stem_sets.register(dir)
     }
 
+    /// The sampler's control side.
+    pub fn sampler(&self) -> &SamplerControl {
+        &self.sampler
+    }
+
+    /// Registers a decoded sample and returns the handle `Command::SamplerAssign` carries. Control
+    /// thread.
+    pub fn register_sample(&self, sample: Arc<Sample>) -> SampleId {
+        self.samples.register(sample)
+    }
+
+    /// Decodes `path` at the engine's sample rate (off the audio thread; call from a worker) and
+    /// registers it. The rate is the one the audio side was last prepared with.
+    pub fn load_sample(&self, path: &Path) -> Result<SampleId, SamplerError> {
+        let sample = Sample::load(path, self.sampler.engine_rate())?;
+        Ok(self.samples.register(Arc::new(sample)))
+    }
+
     /// A command sink that carries out `Command::LoadStems` against this engine's decks. Other
     /// commands go to `fallback` (for example the [`ParameterRouter`]) or are rejected.
     pub fn command_sink(&self, fallback: Option<Arc<dyn CommandSink>>) -> Arc<dyn CommandSink> {
         Arc::new(EngineCommands::new(
             self.decks.clone(),
             Arc::clone(&self.stem_sets),
+            Arc::clone(&self.sampler),
+            Arc::clone(&self.samples),
             fallback,
         ))
     }
@@ -182,6 +209,7 @@ impl DjEngine {
         router.register_typed(Namespace::Fx, self.fx.clone());
         router.register_typed(Namespace::Sync, self.sync.clone());
         router.register_typed(Namespace::Stem, Arc::new(StemBank::new(&self.decks)));
+        router.register_typed(Namespace::Sampler, self.sampler.clone());
     }
 
     /// Control-timer step (about 20-50 Hz, control thread): sync rates and phase, FX tempo, slip
@@ -246,7 +274,7 @@ impl DjEngine {
     /// Pull-based: the caller asks, the engine answers from its atomics and control-side getters.
     /// It never blocks the audio thread and takes no mixer or deck audio lock (the same rule as
     /// [`DeckSnapshot`]; the mixer side is atomics only). Approximate: fields are read one by one,
-    /// so a snapshot can mix two audio blocks. Sampler and automix are empty placeholders.
+    /// so a snapshot can mix two audio blocks. Automix is an empty placeholder.
     pub fn snapshot(&self) -> EngineSnapshot {
         let built = self.builds.fetch_add(1, Relaxed) + 1;
         let decks: Vec<DeckSnapshot> = self
@@ -286,7 +314,7 @@ impl DjEngine {
             decks,
             mixer,
             stems,
-            sampler: SamplerSnapshot,
+            sampler: self.sampler.snapshot(),
             automix: AutomixSnapshot,
         }
     }

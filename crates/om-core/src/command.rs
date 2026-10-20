@@ -12,7 +12,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StemSetRef(pub u64);
 
-/// Reference to a sampler sample (placeholder until the sampler lands).
+/// Reference to a decoded sampler sample; the engine's `SampleRegistry` maps it to the sample.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SampleId(pub u64);
 
