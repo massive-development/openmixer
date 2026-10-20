@@ -158,6 +158,9 @@ pub struct DeckInfo {
     pub length_beats: f64,
     /// Track tempo in BPM (at rate 1.0).
     pub bpm: f64,
+    /// The library id of the track on the deck; `None` when the host does not know it. Used to tell
+    /// a track automix loaded from one the user loaded over it.
+    pub loaded_track_id: Option<i64>,
 }
 
 impl std::fmt::Debug for DeckInfo {

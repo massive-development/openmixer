@@ -54,6 +54,7 @@ impl AutomixHost for FakeHost {
         self.starts.push((deck, track.id));
         let mut info = self.tracks.get(&track.id).cloned().ok_or("unknown track")?;
         info.deck = deck;
+        info.loaded_track_id = Some(track.id);
         self.infos.insert(deck, info);
         self.pending = Some((deck, 3));
         Ok(())
@@ -131,7 +132,9 @@ impl Sim {
             }; 4];
         }
         let mut host = FakeHost::default();
-        host.infos.insert(0, info(0, BPM, "8A", stems));
+        let mut outgoing = info(0, BPM, "8A", stems);
+        outgoing.loaded_track_id = Some(6);
+        host.infos.insert(0, outgoing);
         host.tracks.insert(7, next);
         host.queue.push(NextTrack {
             id: 7,
@@ -730,6 +733,36 @@ fn explicit_styles_ask_the_queue_for_a_tempo_window() {
         s.states.contains(&AutomixState::Cleanup)
     });
     assert_eq!(auto.host.gates.first(), Some(&None));
+}
+
+/// The user loads a different track of the same length on the stopped deck. The track id says it
+/// is theirs, so automix does not load over it, even though the length matches.
+#[test]
+fn a_same_length_track_the_user_loads_over_the_stopped_deck_is_not_loaded_over() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Third".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.tracks.insert(8, info(0, BPM, "8A", false));
+    let mut theirs = info(0, BPM, "8A", false);
+    theirs.loaded_track_id = Some(99);
+    sim.host.infos.insert(0, theirs);
+    sim.snap.decks[0].loaded = true;
+    sim.snap.decks[0].position_frames = 0;
+    sim.snap.decks[1].position_frames = beat(390.0);
+    sim.run(100);
+    assert!(
+        sim.host.starts.iter().all(|(deck, _)| *deck != 0),
+        "{:?}",
+        sim.host.starts
+    );
 }
 
 /// An explicit beat-matched style refuses a tempo gap it cannot take. The planner's rejection must

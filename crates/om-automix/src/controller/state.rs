@@ -30,7 +30,7 @@ impl AutomixController {
             self.remaining_beats = None;
             return;
         }
-        if self.stale_deck.is_some_and(|(d, _)| d == out) {
+        if self.stale_deck.is_some_and(|(d, _, _)| d == out) {
             self.stale_deck = None;
         }
         let Some(info) = self.out_info(out, out_len, host) else {
@@ -82,9 +82,7 @@ impl AutomixController {
             plan_tries: 0,
         };
         let partner = &snap.decks[usize::from(inc)];
-        let stale = self
-            .stale_deck
-            .is_some_and(|(d, len)| d == inc && partner.length_frames == len);
+        let stale = self.is_stale(inc, partner.length_frames, host);
         if partner.loaded && !stale {
             // The user cued a track on the free deck: mix into it as it is.
             run.title = host.deck_title(inc);
@@ -112,6 +110,24 @@ impl AutomixController {
                 self.state = AutomixState::Loading;
             }
             Err(error) => self.load_failed(&track.title, &error),
+        }
+    }
+
+    /// Whether `deck` still holds the track automix stopped on. The track id decides when both
+    /// sides know it; otherwise the length does.
+    fn is_stale(&self, deck: u8, len: i64, host: &mut dyn AutomixHost) -> bool {
+        let Some((d, stale_len, stale_id)) = self.stale_deck else {
+            return false;
+        };
+        if d != deck || stale_len != len {
+            return false;
+        }
+        match (
+            stale_id,
+            host.deck_info(deck).and_then(|i| i.loaded_track_id),
+        ) {
+            (Some(was), Some(now)) => was == now,
+            _ => true,
         }
     }
 

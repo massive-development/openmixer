@@ -113,9 +113,10 @@ pub struct AutomixController {
     /// The deck whose current track already got its turn (planned, cancelled or failed): automix
     /// does not retry it.
     suppressed: Option<(u8, i64)>,
-    /// A deck automix stopped, with the length of the track it stopped on. The deck is loaded over
-    /// only while it still holds that track; a different length means the user loaded it.
-    stale_deck: Option<(u8, i64)>,
+    /// A deck automix stopped, with the length and the track id it stopped on. The deck is loaded
+    /// over only while it still holds that track: a different id (or, without ids, a different
+    /// length) means the user loaded it.
+    stale_deck: Option<(u8, i64, Option<i64>)>,
     out_cache: Option<(u8, i64, DeckInfo)>,
     force_start: bool,
     pending_input: Option<String>,
