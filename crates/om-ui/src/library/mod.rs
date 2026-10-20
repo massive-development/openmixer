@@ -26,4 +26,4 @@ mod track_loader;
 pub use browser::{LibraryBrowser, LoadHandler, SEARCH_PLACEHOLDER};
 pub use cue_saver::{CueSaver, Cues};
 pub use play_tracker::{PlayTracker, MAX_STEP, PLAY_THRESHOLD};
-pub use track_loader::{LoadError, TrackLoader};
+pub use track_loader::{LoadError, StemSource, TrackLoader};
