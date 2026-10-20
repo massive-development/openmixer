@@ -346,6 +346,17 @@ impl StemCache {
     /// directory names removed, oldest first. Directories that are not valid entries are removed
     /// first and reported too.
     pub fn evict_lru(&self, max_bytes: u64) -> Result<Vec<String>, CacheError> {
+        self.evict_lru_keeping(max_bytes, None)
+    }
+
+    /// As [`StemCache::evict_lru`], but never removes `keep_dir`, the entry that was just produced.
+    /// Its bytes still count toward the total, so the other entries make room for it. When the
+    /// kept entry alone exceeds the cap, the cap cannot be met and a warning is printed.
+    pub fn evict_lru_keeping(
+        &self,
+        max_bytes: u64,
+        keep_dir: Option<&str>,
+    ) -> Result<Vec<String>, CacheError> {
         let mut found = self.scan_all()?;
         let mut removed = Vec::new();
         for junk in found.iter().filter(|s| s.entry.is_none()) {
@@ -358,9 +369,21 @@ impl StemCache {
             .iter()
             .filter_map(|s| s.entry.as_ref().map(|e| e.meta.bytes))
             .sum();
+        if let Some(kept) = keep_dir.and_then(|k| valid.iter().find(|s| s.dir_name == k)) {
+            let bytes = kept.entry.as_ref().map_or(0, |e| e.meta.bytes);
+            if bytes > max_bytes && max_bytes > 0 {
+                eprintln!(
+                    "warning: stem cache entry {} ({bytes} bytes) is larger than the cap ({max_bytes} bytes); keeping it",
+                    kept.dir_name
+                );
+            }
+        }
         for item in valid {
             if total <= max_bytes {
                 break;
+            }
+            if keep_dir == Some(item.dir_name.as_str()) {
+                continue;
             }
             total -= item.entry.as_ref().map_or(0, |e| e.meta.bytes);
             self.remove_dir(&item.dir_name)?;
