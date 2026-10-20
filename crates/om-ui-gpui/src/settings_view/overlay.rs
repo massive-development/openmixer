@@ -5,6 +5,7 @@ use super::audio::*;
 use super::automix::*;
 use super::chips::*;
 use super::library::*;
+use super::mapping::*;
 use super::midi::*;
 use super::plugins::*;
 use super::recording::*;
@@ -60,6 +61,10 @@ impl Shell {
 
     pub(crate) fn close_settings(&mut self) {
         if let Some(settings) = self.settings.as_mut() {
+            // Unsaved mapping edits ask first: the first close shows the confirm step.
+            if !settings.mapping_may_close() {
+                return;
+            }
             settings.open = false;
             settings.entry = None;
         }
@@ -75,9 +80,12 @@ impl Shell {
             return;
         }
         if let Some(entry) = settings.entry.as_mut() {
+            let kind = entry.kind;
             match apply_key(&mut entry.text, key, typed) {
                 EntryKey::Submit => settings.submit_entry(),
                 EntryKey::Cancel => settings.cancel_entry(),
+                // The mapping filter narrows the table as it is typed.
+                EntryKey::Edited if kind == EntryKind::MapFilter => settings.mapping_filter_live(),
                 EntryKey::Edited | EntryKey::Ignored => {}
             }
         } else if key == "escape" {
@@ -105,6 +113,7 @@ impl Shell {
             focus.focus(window);
         }
         settings.poll_learn();
+        settings.mapping_tick();
         let w = CARD_WIDTH.min(area.w - 2 * CARD_MARGIN).max(0);
         // The Appearance page is short: its card fits the content instead of showing empty space.
         let wanted =
@@ -139,6 +148,7 @@ impl Shell {
             Some(PageKind::Automix) => automix_page(&t, settings, cx),
             Some(PageKind::Plugins) => plugins_page(&t, settings, cx),
             Some(PageKind::Recording) => recording_page(&t, settings, cx),
+            Some(PageKind::Mapping) => mapping_page(&t, settings, cx),
             None => note(&t, "This page is added by a plugin."),
         };
         let status = status_line(&t, &settings.notice);
@@ -234,6 +244,15 @@ impl SettingsState {
         let Some(entry) = self.entry.take() else {
             return;
         };
+        if matches!(
+            entry.kind,
+            EntryKind::MapFilter
+                | EntryKind::MapImport
+                | EntryKind::MapExport
+                | EntryKind::MapField(_)
+        ) {
+            return self.mapping_submit(entry);
+        }
         let text = entry.text.trim().to_owned();
         if entry.kind == EntryKind::MaxCacheGb {
             self.stems_submit_max_cache(&text);
@@ -254,7 +273,12 @@ impl SettingsState {
             EntryKind::ImportXml => self.library_import(path),
             EntryKind::MapFile => self.midi_load_map(path),
             // Handled above, before the path is made.
-            EntryKind::MaxCacheGb | EntryKind::RecordFolder => {}
+            EntryKind::MaxCacheGb
+            | EntryKind::RecordFolder
+            | EntryKind::MapFilter
+            | EntryKind::MapImport
+            | EntryKind::MapExport
+            | EntryKind::MapField(_) => {}
         }
     }
 }

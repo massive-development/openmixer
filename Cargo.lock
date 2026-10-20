@@ -4154,6 +4154,7 @@ dependencies = [
  "om-core",
  "om-engine",
  "om-library",
+ "om-midi",
  "om-ui",
 ]
 
