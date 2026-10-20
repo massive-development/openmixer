@@ -19,7 +19,7 @@ pub use command::{Command, CommandError, CommandSink, SampleId, StemSetRef};
 pub use frame_ring::FrameRing;
 pub use param_id::{Namespace, ParamError, ParamId};
 pub use parameter::{ParamTarget, ParameterTarget};
-pub use router::ParameterRouter;
+pub use router::{AutomixSink, InputObserver, ParameterRouter};
 pub use snapshot::{
     AutomixSnapshot, AutomixState, AutomixStyle, ChannelSnapshot, DeckSnapshot, EngineSnapshot,
     MixerSnapshot, PadMode, PadSnapshot, SamplerSnapshot, StemSnapshot,

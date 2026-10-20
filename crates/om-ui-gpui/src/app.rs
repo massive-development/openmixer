@@ -65,6 +65,9 @@ pub struct RunOptions {
     /// The sample bank behind the sampler strip (loads and per-pad settings). `None` leaves loads
     /// refused; the pads still play what the engine holds.
     pub samples: Option<Arc<SampleBank>>,
+    /// Called once per rendered frame, on the window thread, after the shell's own upkeep. The app
+    /// steps what must run on this thread (automix, whose host reads the library).
+    pub on_frame: Option<Box<dyn FnMut()>>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -210,6 +213,9 @@ impl Shell {
     /// time. The engine's control clock runs on its own thread (see the composition), so it keeps
     /// going when no frames are drawn.
     fn tick(&mut self) {
+        if let Some(hook) = self.options.on_frame.as_mut() {
+            hook();
+        }
         let now = self.started.elapsed().as_secs_f64();
         let dt = (now - self.last_tick) as f32;
         self.last_tick = now;

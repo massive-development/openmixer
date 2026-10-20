@@ -22,6 +22,28 @@ pub struct ParameterRouter {
     typed: Mutex<BTreeMap<Namespace, Arc<dyn ParamTarget>>>,
     targets: Mutex<BTreeMap<String, Arc<dyn ParameterTarget>>>,
     unknown: AtomicUsize,
+    observer: Mutex<Option<InputObserver>>,
+}
+
+/// Called with the id of every change a user makes: control surfaces, the MIDI mapper and string
+/// targets. Automix's own writes go through [`AutomixSink`] and are not observed, so the observer
+/// can tell user input from automix's steps. Runs on the caller's thread, before the target.
+pub type InputObserver = Arc<dyn Fn(&ParamId) + Send + Sync>;
+
+/// The sink automix writes through. It routes exactly like the router's own [`CommandSink`] but
+/// does not notify the input observer, so automix never cancels itself.
+pub struct AutomixSink(Arc<ParameterRouter>);
+
+impl AutomixSink {
+    pub fn new(router: Arc<ParameterRouter>) -> Self {
+        Self(router)
+    }
+}
+
+impl CommandSink for AutomixSink {
+    fn send(&self, cmd: Command) -> Result<(), CommandError> {
+        self.0.send_unobserved(cmd)
+    }
 }
 
 impl ParameterRouter {
@@ -62,11 +84,52 @@ impl ParameterRouter {
         lock(&self.targets).remove(prefix);
     }
 
-    /// Routes an already-parsed id. Returns `false` when no target handles it (and counts it).
+    /// Sets the user-input observer (replacing any). `None` removes it.
+    pub fn set_input_observer(&self, observer: Option<InputObserver>) {
+        *lock(&self.observer) = observer;
+    }
+
+    /// Routes an already-parsed id from a user. The observer hears about it first. Returns `false`
+    /// when no target handles it (and counts it).
     pub fn dispatch(&self, id: &ParamId, value: f64) -> bool {
+        self.observe(id);
+        self.dispatch_unobserved(id, value)
+    }
+
+    fn dispatch_unobserved(&self, id: &ParamId, value: f64) -> bool {
         let _gate = self.gate.enter();
         let handled = self.route(id, value);
         self.count_if_unhandled(handled)
+    }
+
+    fn observe(&self, id: &ParamId) {
+        let observer = lock(&self.observer).clone();
+        if let Some(observer) = observer {
+            observer(id);
+        }
+    }
+
+    fn send_unobserved(&self, cmd: Command) -> Result<(), CommandError> {
+        match cmd {
+            Command::Param { id, value } => {
+                if self.dispatch_unobserved(&id, value) {
+                    Ok(())
+                } else {
+                    Err(CommandError::Rejected(format!("no target for {id}")))
+                }
+            }
+            Command::Automix(c) => {
+                let id = ParamId::Automix(c.p);
+                if self.dispatch_unobserved(&id, c.value) {
+                    Ok(())
+                } else {
+                    Err(CommandError::Rejected(format!("no target for {id}")))
+                }
+            }
+            _ => Err(CommandError::Rejected(
+                "command variant not wired to the engine yet".to_owned(),
+            )),
+        }
     }
 
     /// Number of ids that were not handled by any target.
@@ -117,8 +180,12 @@ impl ParameterTarget for ParameterRouter {
     /// Parses `id` once. Engine ids dispatch typed; plugin ids and ids the grammar rejects fall to
     /// the string registry, which handles any raw prefix it knows.
     fn set_parameter(&self, id: &str, value: f64) -> bool {
+        let parsed = id.parse::<ParamId>();
+        if let Ok(parsed) = &parsed {
+            self.observe(parsed);
+        }
         let _gate = self.gate.enter();
-        let handled = match id.parse::<ParamId>() {
+        let handled = match parsed {
             Ok(parsed) if parsed.namespace().is_some() => self.route(&parsed, value),
             _ => self.route_string(id, value),
         };
@@ -127,27 +194,12 @@ impl ParameterTarget for ParameterRouter {
 }
 
 impl CommandSink for ParameterRouter {
+    /// A user's command: observed, then routed.
     fn send(&self, cmd: Command) -> Result<(), CommandError> {
-        match cmd {
-            Command::Param { id, value } => {
-                if self.dispatch(&id, value) {
-                    Ok(())
-                } else {
-                    Err(CommandError::Rejected(format!("no target for {id}")))
-                }
-            }
-            Command::Automix(c) => {
-                let id = ParamId::Automix(c.p);
-                if self.dispatch(&id, c.value) {
-                    Ok(())
-                } else {
-                    Err(CommandError::Rejected(format!("no target for {id}")))
-                }
-            }
-            _ => Err(CommandError::Rejected(
-                "command variant not wired to the engine yet".to_owned(),
-            )),
+        if let Command::Param { id, .. } = &cmd {
+            self.observe(id);
         }
+        self.send_unobserved(cmd)
     }
 }
 

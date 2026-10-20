@@ -1,15 +1,15 @@
 //! Automix wiring in the composition: the `automix.*` ids reach the controller through the router
-//! and the control thread publishes its state, with no UI and no audio device.
+//! and the runner publishes its state, with no UI and no audio device.
 
 use om_analysis::{is_harmonically_compatible, MusicalKey};
 use om_automix::{AutomixHost, Camelot, DeckInfo, LoadPoll, NextTrack};
 use om_core::command::AutomixCommand;
 use om_core::param_id::AutomixParam;
 use om_core::{AutomixStyle, Command, CommandSink, ParameterTarget};
+use openmixer::automix_service::AutomixRunner;
 use openmixer::composition::AppComposition;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 fn composition() -> (tempfile::TempDir, AppComposition) {
     let scratch = tempfile::tempdir().expect("tempdir");
@@ -20,18 +20,14 @@ fn composition() -> (tempfile::TempDir, AppComposition) {
 #[test]
 fn automix_ids_reach_the_controller_and_the_snapshot_follows() {
     let (_dir, c) = composition();
+    let mut runner = AutomixRunner::new(c.automix.clone(), c.automix_sink.clone());
     assert!(!c.automix.snapshot().enabled);
     assert!(c.router.set_parameter("automix.enable", 1.0));
     assert!(c.router.set_parameter("automix.style", 2.0));
-    om_testing::assert_eventually!(
-        Duration::from_secs(5),
-        || {
-            let s = c.automix.snapshot();
-            s.enabled && s.style == AutomixStyle::BassSwap
-        },
-        "snapshot {:?}",
-        c.automix.snapshot()
-    );
+    runner.step(&c.engine, 0.0);
+    let s = c.automix.snapshot();
+    assert!(s.enabled, "snapshot {s:?}");
+    assert_eq!(s.style, AutomixStyle::BassSwap);
     // The typed command path reaches the same target.
     c.router
         .send(Command::Automix(AutomixCommand {
@@ -39,18 +35,11 @@ fn automix_ids_reach_the_controller_and_the_snapshot_follows() {
             value: 4.0,
         }))
         .expect("sent");
-    om_testing::assert_eventually!(
-        Duration::from_secs(5),
-        || c.automix.snapshot().style == AutomixStyle::Cut,
-        "snapshot {:?}",
-        c.automix.snapshot()
-    );
+    runner.step(&c.engine, 0.1);
+    assert_eq!(c.automix.snapshot().style, AutomixStyle::Cut);
     assert!(c.router.set_parameter("automix.enable", 0.0));
-    om_testing::assert_eventually!(
-        Duration::from_secs(5),
-        || !c.automix.snapshot().enabled,
-        "still enabled"
-    );
+    runner.step(&c.engine, 0.2);
+    assert!(!c.automix.snapshot().enabled);
     assert_eq!(c.router.unknown_count(), 0);
 }
 
@@ -73,25 +62,16 @@ impl AutomixHost for CountingHost {
 }
 
 #[test]
-fn the_host_is_built_on_the_control_thread_and_idle_decks_cost_nothing() {
+fn idle_decks_cost_nothing_and_the_host_is_not_asked_for_tracks() {
     let (_dir, c) = composition();
     let calls = Arc::new(AtomicUsize::new(0));
-    let built = Arc::new(AtomicUsize::new(0));
-    let (counter, flag) = (Arc::clone(&calls), Arc::clone(&built));
-    let main_thread = std::thread::current().id();
-    c.automix.set_host_factory(Box::new(move || {
-        assert_ne!(std::thread::current().id(), main_thread);
-        flag.fetch_add(1, Ordering::SeqCst);
-        Box::new(CountingHost(counter))
-    }));
-    om_testing::assert_eventually!(
-        Duration::from_secs(5),
-        || built.load(Ordering::SeqCst) == 1,
-        "host never built"
-    );
+    let mut runner = AutomixRunner::new(c.automix.clone(), c.automix_sink.clone());
+    runner.set_host(Box::new(CountingHost(Arc::clone(&calls))));
     // No deck plays, so the host is never asked for a track, enabled or not.
     assert!(c.router.set_parameter("automix.enable", 1.0));
-    std::thread::sleep(Duration::from_millis(300));
+    for tick in 0..10 {
+        runner.step(&c.engine, f64::from(tick) * 0.033);
+    }
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(c.automix.snapshot().state, om_core::AutomixState::Idle);
 }

@@ -20,7 +20,7 @@ use crate::midi::{FeedbackThread, MidiService};
 use crate::stems_host::StemsHost;
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::param_id::Namespace;
-use om_core::{CommandSink, ParameterRouter, StateReader};
+use om_core::{AutomixSink, CommandSink, ParamId, ParameterRouter, StateReader};
 use om_midi::MidiBackend;
 use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
@@ -108,9 +108,11 @@ pub struct AppComposition {
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
     pub plugins: PluginRegistry,
-    /// Automix: the `automix.*` target is registered with the router; the control thread steps the
-    /// controller once a host is set ([`AutomixShared::set_host_factory`]).
+    /// Automix: the `automix.*` target is registered with the router. The window steps the
+    /// controller (an [`AutomixRunner`]) once it has a host.
     pub automix: Arc<AutomixShared>,
+    /// The sink automix's steps go through (no input observer), for [`AutomixRunner`].
+    pub automix_sink: Arc<dyn CommandSink>,
     /// The sample bank the control thread pumps once it is attached.
     sample_slot: Arc<OnceLock<Arc<SampleBank>>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
@@ -150,13 +152,15 @@ impl AppComposition {
         let sample_slot = Arc::new(OnceLock::new());
         let automix = AutomixShared::new();
         router.register_typed(Namespace::Automix, automix.control());
-        let automix_sink: Arc<dyn CommandSink> = router.clone();
-        let control_timer = match ControlTimer::start(
-            Arc::clone(&engine),
-            Arc::clone(&sample_slot),
-            Arc::clone(&automix),
-            automix_sink,
-        ) {
+        // User input (any control, MIDI, string targets) reaches the controller through the
+        // observer; automix's own steps go through `automix_sink`, which does not notify it.
+        let observed = Arc::clone(&automix);
+        router.set_input_observer(Some(Arc::new(move |id: &ParamId| {
+            observed.notify_user_input(id);
+        })));
+        let automix_sink: Arc<dyn CommandSink> = Arc::new(AutomixSink::new(Arc::clone(&router)));
+        let control_timer = match ControlTimer::start(Arc::clone(&engine), Arc::clone(&sample_slot))
+        {
             Ok(timer) => Some(timer),
             Err(error) => {
                 eprintln!("openmixer: control clock thread: {error}");
@@ -167,6 +171,7 @@ impl AppComposition {
         Self {
             _control_timer: control_timer,
             automix,
+            automix_sink,
             sample_slot,
             engine,
             router,
