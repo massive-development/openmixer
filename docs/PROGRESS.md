@@ -179,6 +179,10 @@ Not verified by ear: the mock device is silent, so every transition is checked t
 
 Cost of the mix (release build, `cargo test -p om-dsp --release stem_mix_cost -- --ignored --nocapture`): 2.9 microseconds per 256-frame block with all filters bypassed, 4.3 microseconds with four active sweep filters (under 0.1% of the 5.3 ms a 256-frame block lasts at 48 kHz). Four-file decoding is on the decoder thread; the soak showed no underruns. The ring is allocated at eight floats per frame for every deck (2 MiB at the default size) and the loop prefetch slots at eight floats too (4 MiB per deck); plain mode still buffers the same number of frames as before.
 
+### Automix respects the crossfader assignment (review item 9)
+
+The snapshot carries each channel's crossfader assignment (`mixer.ch<N>.xfader`). Automix routes the pair from it instead of deck parity: opposite sides ramp as planned, a thru or same-side pair is reassigned for the transition and put back on finish and on cancel, and a pair that cannot be routed is refused before loading. With three or more decks the partner prefers the opposite side. Tests: `crates/om-automix/src/controller/tests.rs` (routing, restore, refusal, partner choice) and `snapshot_reads_each_channels_crossfader_assignment` in `crates/om-engine/src/dj_engine/tests.rs`.
+
 ### Soak xrun budget: one retry (review item 9)
 
 `soak_short` and `soak_short_with_stems` (`crates/om-audio/tests/soak.rs`) allow the xrun budget (5 callbacks over the buffer's time budget) to be exceeded once: an over-budget run is repeated, and the test fails only when the repeat is over budget too. Shared runners stall for reasons the engine does not control, so one clean run out of two is the bar; two over-budget runs in a row still fail. Non-finite samples, overflow and steady-state underruns keep zero tolerance on both runs. Each run prints its xrun count and worst callback time, so a retry is visible in the log. The 10-minute soak keeps the single-run check.
