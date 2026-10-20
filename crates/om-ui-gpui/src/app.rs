@@ -73,6 +73,8 @@ pub struct RunOptions {
     pub on_frame: Option<Box<dyn FnMut()>>,
     /// The automix bar under the header: reads the automix snapshot. `None` leaves the bar out.
     pub automix: Option<crate::automix_bar::AutomixSnapshotFn>,
+    /// Shows the Record button in the header and the `r` key (the window sends `record.toggle`).
+    pub record: bool,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -207,6 +209,19 @@ impl Shell {
     }
 
     /// Frames rendered so far.
+    /// Where the Record button sits in the header strip; `None` when the window shows none.
+    pub(crate) fn record_rect(
+        &self,
+        width: i32,
+        top: i32,
+        reserve: i32,
+    ) -> Option<om_ui::geometry::Rect> {
+        if !self.options.record {
+            return None;
+        }
+        om_ui::record_bar::record_rect(width, top, HEADER_HEIGHT, reserve)
+    }
+
     pub fn frames(&self) -> u64 {
         self.frames
     }
@@ -383,11 +398,17 @@ impl Render for Shell {
         let banner = self.options.banner.clone();
         let banner_h = if banner.is_some() { BANNER_HEIGHT } else { 0 };
         // The header strip holds the automix bar (left) and the Settings button (right).
-        let header_h = if self.settings.is_some() || self.options.automix.is_some() {
-            HEADER_HEIGHT
+        let header_reserve = if self.settings.is_some() {
+            SETTINGS_BUTTON_RESERVE
         } else {
             0
         };
+        let header_h =
+            if self.settings.is_some() || self.options.automix.is_some() || self.options.record {
+                HEADER_HEIGHT
+            } else {
+                0
+            };
         let top = banner_h + header_h;
         let debug_w = if self.options.debug.is_some() {
             DEBUG_WIDTH
@@ -403,6 +424,19 @@ impl Render for Shell {
                 .relative()
                 .bg(paint(self.theme.backdrop_top))
                 .text_color(paint(self.theme.text_primary))
+                .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
+                    // `r` toggles recording unless a text field or the settings card takes the key.
+                    let keys = &ev.keystroke;
+                    if keys.key == "r"
+                        && !(keys.modifiers.control
+                            || keys.modifiers.platform
+                            || keys.modifiers.alt)
+                        && !this.typing()
+                    {
+                        this.press_record();
+                        cx.notify();
+                    }
+                }))
                 .on_mouse_move(cx.listener(|this, ev: &gpui::MouseMoveEvent, _, cx| {
                     this.drag_move(ev.position);
                     cx.notify();
@@ -425,14 +459,19 @@ impl Render for Shell {
             } else {
                 0
             };
+            let record_at = self.record_rect(width, banner_h, reserve);
+            let bar_width = match record_at {
+                Some(_) => om_ui::record_bar::automix_width(width, reserve),
+                None => (width - reserve).max(0),
+            };
             root = root.child(crate::automix_bar::automix_bar_view(
-                &t,
-                &snapshot,
-                &prefs,
-                (width - reserve).max(0),
-                banner_h,
-                cx,
+                &t, &snapshot, &prefs, bar_width, banner_h, cx,
             ));
+        }
+        if let Some(rect) = self.record_rect(width, banner_h, header_reserve) {
+            let snapshot = self.engine.recorder().snapshot();
+            let t = self.theme.clone();
+            root = root.child(crate::record_button::record_button(&t, &snapshot, rect, cx));
         }
         if let Some(text) = banner {
             root = root.child(

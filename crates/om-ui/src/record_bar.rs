@@ -19,6 +19,8 @@ pub struct RecordBar {
     pub failed: bool,
     /// `Record`, `00:00` style elapsed time while recording, or `Stopped` after a failure.
     pub label: String,
+    /// `12.3 MB` written so far (MB = 1 000 000 bytes), `0.0 MB` before the first block.
+    pub size: String,
     /// `12 frames dropped`; empty when none were.
     pub warning: String,
     /// Peaks, clamped to `0..=1`.
@@ -48,6 +50,7 @@ impl RecordBar {
             recording: snapshot.recording,
             failed: snapshot.failed,
             label,
+            size: size_text(snapshot.bytes),
             warning: dropped_text(snapshot.dropped_frames),
             peak_left: clamp(snapshot.peak_left),
             peak_right: clamp(snapshot.peak_right),
@@ -69,6 +72,11 @@ pub fn elapsed_text(seconds: f64) -> String {
     } else {
         format!("{m:02}:{s:02}")
     }
+}
+
+/// `12.3 MB`: bytes written, in decimal megabytes.
+pub fn size_text(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
 /// `1 frame dropped`, `12 frames dropped`, empty for zero.
@@ -146,6 +154,8 @@ mod tests {
             ("00:00", 0.0, 0.0)
         );
         assert_eq!(elapsed_text(3_661.0), "1:01:01");
+        assert_eq!(size_text(12_340_000), "12.3 MB");
+        assert_eq!(size_text(0), "0.0 MB");
         assert_eq!(dropped_text(1), "1 frame dropped");
     }
 
@@ -153,7 +163,7 @@ mod tests {
     /// window is tested at. The deck area starts below the header, so MainLayout is unaffected.
     #[test]
     fn the_button_fits_the_header_at_the_test_sizes() {
-        const SETTINGS_RESERVE: i32 = 120;
+        const SETTINGS_RESERVE: i32 = 96;
         for (w, h) in [(900, 600), (1024, 640), (1280, 800), (1920, 1080)] {
             let record = record_rect(w, 0, 32, SETTINGS_RESERVE).expect("fits");
             let automix = Rect::new(0, 0, automix_width(w, SETTINGS_RESERVE), 32);
@@ -167,6 +177,6 @@ mod tests {
             assert!(record.x + record.w <= w);
             assert!(automix.w > 300, "{w}x{h}: automix keeps room");
         }
-        assert!(record_rect(200, 0, 32, 120).is_none());
+        assert!(record_rect(200, 0, 32, 96).is_none());
     }
 }
