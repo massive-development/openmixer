@@ -86,6 +86,9 @@ pub struct AutomixConfig {
     /// mismatch counts as the user's seek. The decoder acknowledges seeks in wall time, so this is
     /// time, not ticks.
     pub cue_grace_s: f64,
+    /// Start the next track by itself when the playing one nears its end. Off: only `automix.start`
+    /// starts a transition.
+    pub autostart: bool,
 }
 
 impl Default for AutomixConfig {
@@ -105,6 +108,7 @@ impl Default for AutomixConfig {
             max_load_failures: 3,
             cleanup_ticks: 2,
             cue_grace_s: 0.2,
+            autostart: true,
         }
     }
 }
