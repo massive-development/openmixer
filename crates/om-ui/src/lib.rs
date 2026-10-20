@@ -15,6 +15,7 @@ pub mod meter;
 pub mod preferences;
 pub mod preferences_applier;
 pub mod sample_bank;
+pub mod sampler_binding;
 pub mod settings;
 pub mod sidebar;
 pub mod stem_binding;
