@@ -21,27 +21,27 @@ Already merged (verified with `gh pr view`):
 - #76 `chore/screenshots`: screenshots and the regeneration script.
 - #77 `fix/ui-layout`: layout and contrast fixes from the screenshot review.
 - There is no #78.
+- #79 to #89 were each merged into their base branch, not into `main`. All of that work now sits on `fix/ui-layout`: stems S1-S8, the stems review, sampler P1-P5, Automix A1-A6.
 
-Open stack, in merge order (bottom first):
+Open PRs:
 
-| PR | Branch | Base | Purpose |
-|---|---|---|---|
-| #79 | `feat/wave7-stems` | `fix/ui-layout` | Phase S1: ONNX stem separation pipeline |
-| #80 | `feat/wave7-stems-service` | `feat/wave7-stems` | S2, S3: stem service and cache |
-| #81 | `feat/wave7-stems-ui` | `feat/wave7-stems-service` | S4: stem model licence UI, Prepare-stems action |
-| #82 | `feat/wave7-stem-engine` | `feat/wave7-stems-ui` | S5: stem-aware deck playback, StemMixer |
-| #83 | `feat/wave7-stem-ui` | `feat/wave7-stem-engine` | S6, S7: stem pads UI, loader integration |
-| #84 | `feat/wave7-stem-fades` | `feat/wave7-stem-ui` | S8: stem transition ramps |
-| #85 | `fix/stems-review` | `feat/wave7-stem-fades` | Stems review findings |
-| #86 | `feat/wave7-sampler` | `fix/stems-review` | P1, P3: sampler engine and control surface |
-| #87 | `feat/wave7-sampler-ui` | `feat/wave7-sampler` | P2, P4, P5: sample bank, pad UI, soak scenario |
-| #88 | `feat/wave7-automix` | `feat/wave7-sampler-ui` | A1-A4: planner, controller, queue |
-| #89 | `feat/wave7-automix-ui` | `feat/wave7-automix` | A5, A6: Automix host, panel, safety tests |
-| #90 | `fix/sampler-review` | `feat/wave7-automix-ui` | Sampler review findings |
-| #91 | `fix/automix-review` | `fix/sampler-review` | Automix review findings (top of the stack) |
-| this | `docs/handoff` | `fix/automix-review` | This document |
+- **#95** `fix/ui-layout` into `main`: the accumulated stack (Phase F follow-ups, library, stems, sampler, Automix). Mergeable.
+- **#90** `fix/sampler-review`: base is `feat/wave7-automix-ui` (stale). It should be `fix/ui-layout`, but GitHub refuses the base change while the PR is part of a stack, so retarget it in the UI or after #91 and #92 are cleared. Its branch now contains `fix/ui-layout` (merge `ed5819f`), and it is mergeable. The tree is identical to the pre-merge review branch.
+- **#91** `fix/automix-review`: base `fix/sampler-review`. Merge `a96d5e9` brings in the sampler review.
+- **#92** `docs/handoff` (this document): base `fix/automix-review`.
 
-Merge advice: merge bottom-up. The wheels problem: `feat/wave7-stems` (#79) commits 26.4 MB of Python wheels under `onnx`, `numpy`, `ml_dtypes`, `protobuf` and `typing_extensions`. Commit `374fd2e` in #85 removes them and adds `*.whl` and `.venv` to `.gitignore`. Merging #79 through #85 as one squash avoids the wheels in `main` history. Merging them one at a time keeps them in history.
+PR stack, in merge order:
+
+| PR | Branch | Base now | Target after its predecessor merges | Purpose |
+|---|---|---|---|---|
+| #95 | `fix/ui-layout` | `main` | `main` | Accumulated stack: Phase F follow-ups, library, stems, sampler, Automix |
+| #90 | `fix/sampler-review` | `feat/wave7-automix-ui` (stale, should be `fix/ui-layout`) | `main` | Sampler review findings |
+| #91 | `fix/automix-review` | `fix/sampler-review` | `main` | Automix review findings |
+| #92 | `docs/handoff` | `fix/automix-review` | `main` | This document |
+
+Merge order: #95 first, then #90, #91 and #92. Retarget each to `main` once the PR it sits on has merged. Their branches already contain `fix/ui-layout`, so the content is not lost.
+
+Squash or not: a normal merge commit for #95 keeps the structure but leaves the wheels in `main` history. The wheels problem: `feat/wave7-stems` (#79) commits 26.4 MB of Python wheels under `onnx`, `numpy`, `ml_dtypes`, `protobuf` and `typing_extensions`. Commit `374fd2e` in #85 removes them and adds `*.whl` and `.venv` to `.gitignore`. Squash-merging #95 into `main` as one commit avoids the bloat. If the history must be kept, `git filter-repo` can strip the wheel paths before the merge. Either way, decide before merging #95.
 
 ## 3. Open work
 
