@@ -26,6 +26,9 @@ impl AutomixController {
         if self
             .suppressed
             .is_some_and(|(d, l)| d == out && l == out_len)
+            || self
+                .hold
+                .is_some_and(|(d, l, until)| d == out && l == out_len && now < until)
         {
             self.remaining_beats = None;
             return;
@@ -33,11 +36,13 @@ impl AutomixController {
         if self.stale_deck.is_some_and(|(d, _, _)| d == out) {
             self.stale_deck = None;
         }
-        let Some(info) = self.out_info(out, out_len, host) else {
+        let Some(info) = self.out_info(out, out_len, now, host) else {
+            self.no_analysis_yet(out, out_len);
             self.remaining_beats = None;
             return;
         };
         let Some(out_beat) = beat_of(&info, &snap.decks[usize::from(out)]) else {
+            self.no_analysis_yet(out, out_len);
             return;
         };
         let remaining = info.length_beats - out_beat;
@@ -131,10 +136,19 @@ impl AutomixController {
         }
     }
 
+    /// Reports a playing track with no analysis, once per track.
+    fn no_analysis_yet(&mut self, deck: u8, len: i64) {
+        if self.no_analysis_told != Some((deck, len)) {
+            self.no_analysis_told = Some((deck, len));
+            self.last_error = "no analysis for the playing track yet".to_owned();
+        }
+    }
+
     pub(super) fn out_info(
         &mut self,
         deck: u8,
         len: i64,
+        now: f64,
         host: &mut dyn AutomixHost,
     ) -> Option<DeckInfo> {
         if let Some((d, l, info)) = &self.out_cache {
@@ -142,13 +156,25 @@ impl AutomixController {
                 return Some(info.clone());
             }
         }
-        let info = host.deck_info(deck)?;
-        // Only an analysed deck is worth caching: a track loaded before its analysis finished has no
-        // grid yet, and the next tick must read it again rather than keep the grid-less copy.
-        if info.grid.is_some() {
-            self.out_cache = Some((deck, len, info.clone()));
+        if let Some((d, l, until)) = self.no_analysis {
+            if d == deck && l == len && now < until {
+                return None;
+            }
         }
-        Some(info)
+        let info = host.deck_info(deck).filter(|i| i.grid.is_some());
+        match info {
+            Some(info) => {
+                // Only an analysed deck is worth caching: a track loaded before its analysis
+                // finished has no grid yet, and it is read again once the lookup has expired.
+                self.out_cache = Some((deck, len, info.clone()));
+                self.no_analysis = None;
+                Some(info)
+            }
+            None => {
+                self.no_analysis = Some((deck, len, now + NO_ANALYSIS_TTL_S));
+                None
+            }
+        }
     }
 
     // ----- Loading -----
@@ -379,7 +405,9 @@ impl AutomixController {
             || cue_moved
             || !routed
         {
-            // The user took over one of the decks: step aside.
+            // The user took over one of the decks: step aside, and hold the outgoing track back for a
+            // while so the same pair is not armed again on the next tick.
+            self.hold = Some((run.out, run.out_len, now + RETRY_HOLD_S));
             self.next_title.clear();
             self.plan_style = None;
             self.state = AutomixState::Idle;
