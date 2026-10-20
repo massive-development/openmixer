@@ -29,7 +29,7 @@ pub struct SamplerStripLayout {
 
 /// Places the strip inside `bounds` (the card's cell).
 pub fn sampler_strip_layout(bounds: Rect, theme: &ThemeTokens) -> SamplerStripLayout {
-    let gap = theme.inner_gap.min(6).max(2);
+    let gap = theme.inner_gap.clamp(2, 6);
     let mut area = bounds.reduced(px(theme.pad as f32).max(2), px(theme.pad as f32).max(2));
     let caption_h = px(theme.type_caption * 1.5).min(area.h).max(0);
     let caption = area.remove_top(caption_h);
