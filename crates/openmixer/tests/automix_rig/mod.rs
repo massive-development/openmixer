@@ -152,6 +152,12 @@ impl Rig {
         let router = Arc::new(ParameterRouter::new());
         engine.register(&router);
         let automix = AutomixShared::new();
+        // Seeks land in wall time on the decoder thread; the simulated clock here runs faster, so
+        // the rig allows a second of simulated grace for a cue to show up.
+        automix.set_config(om_automix::AutomixConfig {
+            cue_grace_s: 1.0,
+            ..om_automix::AutomixConfig::default()
+        });
         router.register_typed(om_core::param_id::Namespace::Automix, automix.control());
         let observed = Arc::clone(&automix);
         router.set_input_observer(Some(Arc::new(move |id: &om_core::ParamId| {

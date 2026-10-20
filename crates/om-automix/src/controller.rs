@@ -106,7 +106,8 @@ struct Run {
     out_len: i64,
     inc_len: i64,
     cue_frame: i64,
-    armed_ticks: u32,
+    /// When the run was armed (control clock seconds); the cue grace is measured from here.
+    armed_at: f64,
     last_beat: f64,
     last_in_beat: Option<f64>,
     last_now: f64,
@@ -317,7 +318,7 @@ impl AutomixController {
             out_len,
             inc_len: 0,
             cue_frame: 0,
-            armed_ticks: 0,
+            armed_at: now,
             last_beat: out_beat,
             last_in_beat: None,
             last_now: now,
@@ -480,6 +481,7 @@ impl AutomixController {
         run.inc_len = inc_snap.length_frames;
         run.inc_info = Some(inc_info);
         run.last_now = now;
+        run.armed_at = now;
         self.plan_style = Some(plan.style);
         run.plan = Some(plan);
         self.load_failures = 0;
@@ -522,10 +524,9 @@ impl AutomixController {
             self.state = AutomixState::Idle;
             return;
         };
-        run.armed_ticks += 1;
         let out_snap = snap.decks[usize::from(run.out)];
         let inc_snap = snap.decks[usize::from(run.inc)];
-        let grace = run.armed_ticks <= self.cfg.cue_grace_ticks;
+        let grace = now - run.armed_at <= self.cfg.cue_grace_s;
         let cue_tolerance = (inc_snap.file_sample_rate.max(8000.0) * 0.25) as i64;
         let cue_moved = !grace && (inc_snap.position_frames - run.cue_frame).abs() > cue_tolerance;
         if !deck_ok(snap, run.out, run.out_len, true)
