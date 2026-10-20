@@ -646,19 +646,32 @@ fn an_empty_queue_is_reported_once_and_not_retried() {
 
 #[test]
 fn an_unplannable_pair_is_dropped_and_not_retried() {
-    // 140 vs 120 BPM with an explicit Crossfade: out of range.
-    let mut sim = Sim::with(
-        AutomixConfig::default(),
-        380.0,
-        false,
-        info(1, 140.0, "8A", false),
-    );
+    // No grid on the incoming track: no style, not even a cut, can be planned.
+    let mut next = info(1, BPM, "8A", false);
+    next.grid = None;
+    let mut sim = Sim::with(AutomixConfig::default(), 380.0, false, next);
     sim.run(600);
     assert_eq!(sim.state(), AutomixState::Idle);
     let error = sim.ctrl.snapshot().last_error;
     assert!(error.starts_with("no transition"), "{error}");
     assert_eq!(sim.host.starts.len(), 1, "the track had its turn");
     assert!(sim.sent("deck.1.play").is_empty());
+}
+
+/// An explicit beat-matched style refuses a tempo gap it cannot take. The planner's rejection must
+/// not leave dead air: a cut goes instead.
+#[test]
+fn a_rejected_style_falls_back_to_a_cut() {
+    let mut sim = Sim::with(
+        AutomixConfig::default(),
+        380.0,
+        false,
+        info(1, 140.0, "8A", false),
+    );
+    sim.run_until("cleanup", 3000, |s| s.states.contains(&AutomixState::Cleanup));
+    assert_eq!(sim.ctrl.snapshot().last_error, "");
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing);
 }
 
 #[test]

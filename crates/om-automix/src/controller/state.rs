@@ -1,4 +1,5 @@
 use super::*;
+use om_core::AutomixStyle;
 
 impl AutomixController {
     // ----- Idle -----
@@ -202,6 +203,21 @@ impl AutomixController {
             let opts = self.plan_options(snap, &run, &out_snap, out_beat, asap);
             self.planner
                 .plan(&run.out_info, &inc_info, self.control.style(), &opts)
+        };
+        // A style the pair cannot take falls back to a cut, so the outgoing deck does not run on
+        // into dead air. Only a pair that cannot be cut either is dropped.
+        let plan = match plan {
+            Err(error) if self.control.style() != AutomixStyle::Cut => {
+                let opts = self.plan_options(snap, &run, &out_snap, out_beat, asap);
+                match self
+                    .planner
+                    .plan(&run.out_info, &inc_info, AutomixStyle::Cut, &opts)
+                {
+                    Ok(plan) => Ok(plan),
+                    Err(_) => Err(error),
+                }
+            }
+            other => other,
         };
         let plan = match plan {
             Ok(plan) => plan,
