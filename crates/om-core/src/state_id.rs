@@ -19,7 +19,10 @@ use std::str::FromStr;
 /// A parsed read-only id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StateId {
-    Deck { deck: usize, p: DeckState },
+    Deck {
+        deck: usize,
+        p: DeckState,
+    },
     Mixer(MixerState),
     /// The control values of `stem.<d>.<s>.*`, read back.
     Stem {

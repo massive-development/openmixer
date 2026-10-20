@@ -6,8 +6,8 @@
 //! plain load or store on the audio thread.
 
 use om_core::atomic::AtomicF32;
-use std::sync::atomic::{AtomicI32, Ordering::Relaxed};
 use om_dsp::STEM_FRAME_FLOATS;
+use std::sync::atomic::{AtomicI32, Ordering::Relaxed};
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering::SeqCst};
 
 /// Floats reserved per frame: a slot holds stereo frames (2 used) or stem frames (all 8).
@@ -181,7 +181,10 @@ mod tests {
         assert_eq!(got, idx);
         assert!(pf.slot(got).contains(10));
         assert!(!pf.slot(got).contains(11));
-        assert_eq!(pf.slot(got).frame(0), [0.5, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(
+            pf.slot(got).frame(0),
+            [0.5, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
         // The filler must pick the other slot while the reader holds this one.
         assert_ne!(pf.begin_fill(), got);
         pf.release();

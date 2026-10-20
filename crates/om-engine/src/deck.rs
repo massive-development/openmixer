@@ -36,11 +36,11 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub use hotcues::NUM_CUES;
+use om_dsp::{StemMixerControl, STEM_FRAME_FLOATS};
 pub use prefetch::LoopPrefetch;
 pub use source::{SourceError, SourceReader, TrackInfo};
-pub use stems::{DeckError, LENGTH_TOLERANCE_FRAMES, STEM_FILES};
-use om_dsp::{StemMixerControl, STEM_FRAME_FLOATS};
 use stems::StemReaders;
+pub use stems::{DeckError, LENGTH_TOLERANCE_FRAMES, STEM_FILES};
 
 /// Default loop prefetch size in source frames.
 pub const DEFAULT_PREFETCH_FRAMES: i64 = 1 << 16;
@@ -369,6 +369,16 @@ impl Deck {
 
     pub fn underrun_count(&self) -> u32 {
         self.shared.underruns.load(Relaxed)
+    }
+
+    /// True once the decoder has acknowledged the latest control reposition and the audio thread
+    /// has drained the ring for it. Tests use it to know a seek or hand-over has really landed.
+    #[cfg(test)]
+    pub(crate) fn handshake_settled(&self) -> bool {
+        use std::sync::atomic::Ordering::Acquire;
+        let sh = &self.shared;
+        sh.ack_epoch.load(Acquire) == sh.request_epoch.load(Acquire)
+            && sh.drained_seq.load(Acquire) == sh.ack_seq.load(Acquire)
     }
 
     /// Stereo frames currently buffered in the ring, readable from any thread.

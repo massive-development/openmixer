@@ -134,7 +134,10 @@ impl DecoderWorker {
         self.publish_ack(target);
         self.shared.ack_load_id.store(self.reader_load_id, Relaxed);
         self.local_ack = epoch;
-        if self.hold_epoch.is_some_and(|h| epoch.wrapping_sub(h) < u32::MAX / 2) {
+        if self
+            .hold_epoch
+            .is_some_and(|h| epoch.wrapping_sub(h) < u32::MAX / 2)
+        {
             self.hold_epoch = None;
         }
         // After ack_seq: the audio thread reads the epoch first.
