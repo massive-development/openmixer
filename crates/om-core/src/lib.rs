@@ -15,14 +15,14 @@ mod state;
 pub mod state_id;
 pub mod sync;
 
-pub use command::{Command, CommandError, CommandSink, StemSetRef};
+pub use command::{Command, CommandError, CommandSink, SampleId, StemSetRef};
 pub use frame_ring::FrameRing;
 pub use param_id::{Namespace, ParamError, ParamId};
 pub use parameter::{ParamTarget, ParameterTarget};
 pub use router::ParameterRouter;
 pub use snapshot::{
-    AutomixSnapshot, ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot, SamplerSnapshot,
-    StemSnapshot,
+    AutomixSnapshot, ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot, PadMode,
+    PadSnapshot, SamplerSnapshot, StemSnapshot,
 };
 pub use state::{StateKey, StateReader};
 pub use state_id::StateId;

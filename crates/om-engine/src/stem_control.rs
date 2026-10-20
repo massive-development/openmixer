@@ -4,6 +4,7 @@
 //! [`StemMixerControl`] atomics.
 
 use crate::deck::Deck;
+use crate::sampler::{SampleRegistry, SamplerControl};
 use om_core::param_id::StemParam;
 use om_core::sync::LockExt;
 use om_core::{Command, CommandError, CommandSink, ParamId, ParamTarget, StemSetRef, StemSnapshot};
@@ -85,11 +86,13 @@ impl StemSetRegistry {
     }
 }
 
-/// Handles `Command::LoadStems`; every other command goes to `fallback` when there is one and is
+/// Handles `Command::LoadStems` and `Command::SamplerAssign`; every other command goes to `fallback` when there is one and is
 /// rejected otherwise.
 pub struct EngineCommands {
     decks: Vec<Arc<Deck>>,
     registry: Arc<StemSetRegistry>,
+    sampler: Arc<SamplerControl>,
+    samples: Arc<SampleRegistry>,
     fallback: Option<Arc<dyn CommandSink>>,
 }
 
@@ -97,11 +100,15 @@ impl EngineCommands {
     pub(crate) fn new(
         decks: Vec<Arc<Deck>>,
         registry: Arc<StemSetRegistry>,
+        sampler: Arc<SamplerControl>,
+        samples: Arc<SampleRegistry>,
         fallback: Option<Arc<dyn CommandSink>>,
     ) -> Self {
         Self {
             decks,
             registry,
+            sampler,
+            samples,
             fallback,
         }
     }
@@ -123,10 +130,18 @@ impl CommandSink for EngineCommands {
                     .load_stems(&dir)
                     .map_err(|e| CommandError::Rejected(e.to_string()))
             }
+            Command::SamplerAssign { pad, sample } => {
+                let found = self.samples.get(sample).ok_or_else(|| {
+                    CommandError::Rejected(format!("unknown sample {}", sample.0))
+                })?;
+                self.sampler
+                    .assign(pad, found)
+                    .map_err(|e| CommandError::Rejected(e.to_string()))
+            }
             other => match &self.fallback {
                 Some(sink) => sink.send(other),
                 None => Err(CommandError::Rejected(
-                    "only LoadStems is handled by the engine sink".to_owned(),
+                    "only LoadStems and SamplerAssign are handled by the engine sink".to_owned(),
                 )),
             },
         }
