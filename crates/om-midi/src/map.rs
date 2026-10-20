@@ -112,6 +112,8 @@ impl Mapping {
 pub struct MidiMap {
     pub version: u32,
     pub name: String,
+    /// Optional device hint (the controller this map is for). Empty when unset.
+    pub device: String,
     pub mappings: Vec<Mapping>,
     /// Feedback rules, validated on parse.
     pub outputs: Vec<OutputRule>,
@@ -122,6 +124,7 @@ impl Default for MidiMap {
         Self {
             version: MAP_VERSION,
             name: String::new(),
+            device: String::new(),
             mappings: Vec::new(),
             outputs: Vec::new(),
         }
@@ -166,6 +169,7 @@ impl MidiMap {
         Ok(Self {
             version: version as u32,
             name: text_of(root.get("name")),
+            device: text_of(root.get("device")),
             mappings,
             outputs,
         })

@@ -12,14 +12,25 @@ use crate::lock;
 use crate::map::{MapMode, Mapping, MidiMap};
 use crate::output_rule::OutputRule;
 use om_core::{ParameterTarget, StateReader};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 type LearnCallback = Arc<dyn Fn(&Mapping) + Send + Sync>;
 type ChannelKey = (MidiKind, i32, i32);
+
+/// How many received events the monitor keeps.
+pub const MONITOR_CAPACITY: usize = 50;
+
+/// One received normalised event and when it arrived (the MIDI thread's clock).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MonitorEntry {
+    pub event: MidiEvent,
+    pub at: Instant,
+}
 
 #[derive(Default)]
 struct State {
@@ -35,6 +46,8 @@ struct State {
     /// Reads the engine's live values. A toggle or relative message starts from the engine's value
     /// when this is installed, so the controller agrees with the UI and the engine.
     reader: Option<Arc<dyn StateReader>>,
+    /// The last [`MONITOR_CAPACITY`] events, oldest first.
+    monitor: VecDeque<MonitorEntry>,
 }
 
 #[derive(Default)]
@@ -112,6 +125,16 @@ impl MidiMapper {
     /// Feeds one normalised event through the map. While learn is armed the event is captured
     /// instead (and not forwarded).
     pub fn handle_event(&self, e: &MidiEvent) -> usize {
+        {
+            let mut s = lock(&self.state);
+            if s.monitor.len() == MONITOR_CAPACITY {
+                s.monitor.pop_front();
+            }
+            s.monitor.push_back(MonitorEntry {
+                event: *e,
+                at: Instant::now(),
+            });
+        }
         if self.learn.is_armed() && self.capture_learned(e) {
             return 0;
         }
@@ -152,6 +175,22 @@ impl MidiMapper {
             .get(target_id)
             .copied()
             .unwrap_or(0.0)
+    }
+
+    /// The events received lately, oldest first (at most [`MONITOR_CAPACITY`]).
+    pub fn recent_events(&self) -> Vec<MonitorEntry> {
+        lock(&self.state).monitor.iter().copied().collect()
+    }
+
+    /// A copy of the whole live map (bindings, outputs, metadata).
+    pub fn snapshot(&self) -> MidiMap {
+        lock(&self.state).map.clone()
+    }
+
+    /// Replaces the whole live map with `map` without parsing it, keeping the last value of every
+    /// target the new map still has. Used by the map editor for undo, redo and reset.
+    pub fn replace_map(&self, map: MidiMap) {
+        self.install(map);
     }
 
     /// Snapshot of the bindings; indices refer to this order.
