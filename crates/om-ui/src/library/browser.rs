@@ -8,13 +8,16 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use om_library::{ImportReport, LibraryError, PrepStatus, TrackRecord};
+use std::path::PathBuf;
 
 use super::control::import_summary;
 use super::services::{LibraryEvent, LibraryServices};
 use super::track_loader::LoadError;
 use super::track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
 use super::track_table::TrackTableModel;
+use crate::settings::SettingsResult;
 use crate::sidebar::{build_sidebar, SidebarKind, SidebarNode};
+use crate::stems::{StemHost, StemJob, StemQueue};
 
 /// Placeholder shown in the empty search box.
 pub const SEARCH_PLACEHOLDER: &str =
@@ -24,8 +27,14 @@ pub const SEARCH_PLACEHOLDER: &str =
 /// the status line.
 pub type LoadHandler = Box<dyn FnMut(usize, &TrackRecord) -> Result<(), LoadError>>;
 
+/// The browser's current search text, published for other readers (the automix queue's "current
+/// search" source). Written on every change, so it is the text the user sees, not the last query run.
+pub type SearchFeed = std::sync::Arc<std::sync::Mutex<String>>;
+
 pub struct LibraryBrowser {
     pub model: TrackTableModel,
+    /// Receives the search text as it changes. `None` publishes nothing.
+    pub search_feed: Option<SearchFeed>,
     /// Where a double-click loads. Returns the deck index; defaults to deck 0.
     pub default_deck: Option<Box<dyn Fn() -> usize>>,
     /// Camelot code of the reference key, polled on each tick.
@@ -49,6 +58,8 @@ pub struct LibraryBrowser {
     shown_page_error: String,
     selected_rows: BTreeSet<usize>,
     events: Receiver<LibraryEvent>,
+    /// Tracks whose analysis finished since the last [`LibraryBrowser::take_analysed`].
+    analysed: Vec<i64>,
 }
 
 impl LibraryBrowser {
@@ -67,6 +78,7 @@ impl LibraryBrowser {
         });
         let mut browser = Self {
             model: TrackTableModel::new(),
+            search_feed: None,
             default_deck: None,
             reference_key: None,
             on_load_requested: None,
@@ -86,6 +98,7 @@ impl LibraryBrowser {
             shown_page_error: String::new(),
             selected_rows: BTreeSet::new(),
             events,
+            analysed: Vec::new(),
         };
         browser.apply_query(services);
         browser
@@ -107,6 +120,14 @@ impl LibraryBrowser {
         &self.search_text
     }
 
+    fn publish_search(&self) {
+        if let Some(feed) = &self.search_feed {
+            let mut text = feed.lock().unwrap_or_else(|e| e.into_inner());
+            text.clear();
+            text.push_str(&self.search_text);
+        }
+    }
+
     pub fn status(&self) -> &str {
         &self.status
     }
@@ -118,6 +139,7 @@ impl LibraryBrowser {
     /// Replaces the search text and applies it now.
     pub fn set_search_text(&mut self, services: &LibraryServices, text: &str) {
         self.search_text = text.to_owned();
+        self.publish_search();
         self.search_pending = false;
         self.apply_query(services);
     }
@@ -125,6 +147,7 @@ impl LibraryBrowser {
     /// The user typed. The query runs on the next [`Self::flush_pending`], not per keystroke.
     pub fn type_search(&mut self, text: &str) {
         self.search_text = text.to_owned();
+        self.publish_search();
         self.search_pending = true;
     }
 
@@ -243,6 +266,64 @@ impl LibraryBrowser {
         queued
     }
 
+    /// Track ids whose analysis finished since the last call. The stem auto-prepare trigger reads
+    /// these on each tick.
+    pub fn take_analysed(&mut self) -> Vec<i64> {
+        std::mem::take(&mut self.analysed)
+    }
+
+    /// Queues stem separation for the selected rows (the ones not already ready or preparing).
+    /// When the model is not ready the error carries the status line, which the caller shows on the
+    /// Library page's licence section.
+    pub fn stems_selected(
+        &mut self,
+        services: &LibraryServices,
+        host: &mut dyn StemHost,
+        queue: &mut StemQueue,
+    ) -> SettingsResult<usize> {
+        let mut jobs: Vec<StemJob> = Vec::new();
+        for row in self.selected_rows() {
+            if let Some(track) = self.model.row_at(row as isize) {
+                jobs.push(StemJob {
+                    track_id: track.id,
+                    path: PathBuf::from(&track.path),
+                    content_hash: track.content_hash.clone(),
+                });
+            }
+        }
+        if jobs.is_empty() {
+            self.set_status("Select tracks to prepare stems first".to_owned(), true);
+            return Ok(0);
+        }
+        match queue.prepare(host, services.library(), &jobs) {
+            Ok(queued) => {
+                self.set_status(format!("Preparing stems for {queued} track(s)"), false);
+                Ok(queued)
+            }
+            Err(error) => {
+                self.set_status(error.to_string(), true);
+                Err(error)
+            }
+        }
+    }
+
+    /// Cancels the stem jobs of the selected rows.
+    pub fn cancel_stems_selected(&mut self, queue: &mut StemQueue) -> usize {
+        let mut ids: Vec<i64> = Vec::new();
+        for row in self.selected_rows() {
+            if let Some(track) = self.model.row_at(row as isize) {
+                ids.push(track.id);
+            }
+        }
+        for id in &ids {
+            queue.cancel(*id);
+        }
+        if !ids.is_empty() {
+            self.set_status(format!("Cancelled stems for {} track(s)", ids.len()), false);
+        }
+        ids.len()
+    }
+
     /// Imports an iTunes or Rekordbox XML file and reports the outcome in the status line.
     pub fn import_from(
         &mut self,
@@ -269,6 +350,9 @@ impl LibraryBrowser {
             match self.events.try_recv() {
                 Ok(LibraryEvent::LibraryChanged) => self.rebuild_sidebar = true,
                 Ok(LibraryEvent::PrepEntryChanged(entry)) => {
+                    if entry.status == PrepStatus::Done {
+                        self.analysed.push(entry.track_id);
+                    }
                     if self.on_queue() || entry.status == PrepStatus::Done {
                         self.stale = true;
                     }

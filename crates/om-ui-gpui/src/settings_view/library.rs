@@ -1,6 +1,7 @@
 //! The Library tab: watch folders, the scan timer, rescan and import.
 
 use super::chips::*;
+use super::stems::stems_section;
 use super::*;
 
 /// Minutes the Library page offers for the rescan timer.
@@ -109,6 +110,7 @@ pub(super) fn library_page(
             "Scan the folders on start",
             row_of(vec![on_start]),
         ));
+    column = column.child(stems_section(t, settings, cx));
     column = column.child(choice_row(
         t,
         "Import a library",

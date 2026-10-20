@@ -8,7 +8,7 @@ pub(super) fn accent_of(t: &ThemeTokens) -> om_ui::theme::Colour {
 }
 
 /// A flow-layout button: a labelled chip that runs `on_press` on the Shell when clicked.
-pub(super) fn chip(
+pub(crate) fn chip(
     t: &ThemeTokens,
     label: &str,
     lit: bool,

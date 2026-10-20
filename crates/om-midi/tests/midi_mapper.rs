@@ -253,3 +253,75 @@ fn toggle_and_relative_start_from_the_engine_value_and_keep_it_across_reloads() 
     f.m.handle_message(&control_change(0, 21, 65));
     assert_eq!(f.t.last("mixer.ch0.eq.low"), 12.0);
 }
+
+#[test]
+fn stem_pad_map_drives_each_stem_of_deck_zero_through_the_router() {
+    let (engine, _audio) = DjEngine::new(2);
+    let router = Arc::new(ParameterRouter::new());
+    engine.register(&router);
+    let m = MidiMapper::new();
+    m.set_target(router.clone());
+    m.load_from_file(&data_dir().join("stem_map.json")).unwrap();
+    assert_eq!(m.num_mappings(), 9);
+
+    // Mute toggles: the first press mutes drums, the second un-mutes it.
+    m.handle_message(&note_on(1, 44, 127));
+    assert!(engine.deck(0).stem_control().is_muted(0));
+    m.handle_message(&note_on(1, 44, 127));
+    assert!(!engine.deck(0).stem_control().is_muted(0));
+    m.handle_message(&note_on(1, 47, 127));
+    assert!(engine.deck(0).stem_control().is_muted(3));
+
+    // Volume: 0..127 maps onto 0..1.5 and filter onto -1..1.
+    m.handle_message(&control_change(1, 20, 127));
+    assert_near(f64::from(engine.deck(0).stem_control().gain(0)), 1.5);
+    m.handle_message(&control_change(1, 24, 0));
+    assert_near(f64::from(engine.deck(0).stem_control().filter(2)), -1.0);
+    assert_eq!(router.unknown_count(), 0);
+}
+
+#[test]
+fn sampler_pad_map_triggers_pads_with_velocity_and_gates_through_the_router() {
+    use om_engine::PadMode;
+    let (engine, mut audio) = DjEngine::new(2);
+    om_engine::AudioCallback::prepare(&mut audio, 48_000.0, 256);
+    let router = Arc::new(ParameterRouter::new());
+    engine.register(&router);
+    let m = MidiMapper::new();
+    m.set_target(router.clone());
+    m.load_from_file(&data_dir().join("sampler_map.json"))
+        .unwrap();
+    assert_eq!(m.num_mappings(), 11);
+
+    let sample =
+        Arc::new(om_engine::Sample::from_mono("pad", 48_000.0, &vec![0.5; 48_000]).unwrap());
+    engine.sampler().assign(0, Arc::clone(&sample)).unwrap();
+    engine.sampler().assign(3, sample).unwrap();
+    engine.sampler().set_mode(3, PadMode::Gate);
+
+    let mut out = [vec![0.0_f32; 256], vec![0.0; 256]];
+    let mut render = |audio: &mut om_engine::DjEngineAudio| {
+        let [l, r] = &mut out;
+        let mut bufs: [&mut [f32]; 2] = [l, r];
+        om_engine::AudioCallback::process(audio, &[], &mut bufs);
+        bufs[0][255]
+    };
+    // Note on at half velocity triggers pad 3; its release (note off) fades the gate pad out.
+    m.handle_message(&note_on(10, 39, 64));
+    render(&mut audio);
+    let level = render(&mut audio);
+    assert_near(f64::from(level), 0.5 * 64.0 / 127.0);
+    m.handle_message(&note_off(10, 39));
+    render(&mut audio);
+    render(&mut audio);
+    assert_eq!(render(&mut audio), 0.0);
+    assert_eq!(engine.sampler().snapshot().voices_active, 0);
+
+    // Volume and pitch CCs.
+    m.handle_message(&control_change(10, 20, 127));
+    m.handle_message(&control_change(10, 21, 127));
+    let pad = engine.sampler().snapshot().pads[0];
+    assert_near(f64::from(pad.gain), 1.5);
+    assert_near(f64::from(pad.pitch), 12.0);
+    assert_eq!(router.unknown_count(), 0);
+}

@@ -1,2 +1,3 @@
 asset,author,source,license
 ## Add assets as they are created
+"htdemucs 4-source stem separation model (ONNX export; not committed, user-exported and downloaded after a licence prompt)","Meta Platforms, Inc. and affiliates (Demucs)","https://github.com/facebookresearch/demucs","MIT code and weights. Caveat: the training data (MUSDB18-HQ and others) is not covered by MIT and MUSDB18-HQ is research-licensed; shown in the licence dialog (HTDEMUCS_LICENSE_TEXT in crates/om-stems/src/manifest.rs). Exact copyright line to be confirmed from the upstream LICENSE when the model is first exported"

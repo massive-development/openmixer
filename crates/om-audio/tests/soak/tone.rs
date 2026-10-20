@@ -49,3 +49,33 @@ pub fn write_tone(path: &Path, hz: f64, seconds: u32, rate: u32) {
     }
     write_float_wav(path, 2, rate, &samples);
 }
+
+/// Writes a four-stem set of `seconds` into `dir` (`drums.wav`, `bass.wav`, `vocals.wav`,
+/// `other.wav`, each a tone at a different multiple of `hz` plus light noise) and the file that is
+/// their sum, `main.wav`. Returns the path of the sum.
+pub fn write_stem_set(dir: &Path, hz: f64, seconds: u32, rate: u32) -> std::path::PathBuf {
+    let frames = rate as usize * seconds as usize;
+    let mut sum = vec![0.0_f32; frames * 2];
+    let mut noise = Rng::new(11);
+    for (name, mult) in [
+        ("drums", 0.25),
+        ("bass", 0.5),
+        ("vocals", 1.0),
+        ("other", 2.0),
+    ] {
+        let tone = sine_amp(hz * mult, 0.1, f64::from(rate), frames);
+        let mut samples = Vec::with_capacity(frames * 2);
+        for t in tone {
+            for _ in 0..2 {
+                samples.push((f64::from(t) + 0.02 * (noise.next_unit() - 0.5)) as f32);
+            }
+        }
+        for (acc, v) in sum.iter_mut().zip(&samples) {
+            *acc += v;
+        }
+        write_float_wav(&dir.join(format!("{name}.wav")), 2, rate, &samples);
+    }
+    let main = dir.join("main.wav");
+    write_float_wav(&main, 2, rate, &sum);
+    main
+}

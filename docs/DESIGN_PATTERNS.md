@@ -71,7 +71,7 @@ pub trait AudioCallback: Send {
 - **Notes:**
   - `ParamId` is the canonical form: `FromStr` parses and `Display` prints the canonical id (`hotcue01` prints `hotcue1`). The namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler` and `automix` are reserved: a malformed id in them is an error. Any other prefix parses to `ParamId::Ext`, which plugins own.
   - `ParameterRouter::dispatch(&ParamId, f64)` routes each typed id to the `ParamTarget` registered for its `Namespace` (`register_typed`). A target's `set_param` returns `false` for variants it does not own.
-  - `Command::Param { id, value }` is the one variant the router wires today. The production UI sends it through `CommandSink::send` (`DeckBinding::typed`, `MixerBinding::typed`). MIDI mappings and plugins do not: they use the string façade below. Tests use either path. `CommandSink::send` returns `CommandError::Rejected` when no target takes the id. `LoadStems`, `SamplerAssign` and `Automix` are placeholders that return `Rejected` until their features land (Todos 19, 30, 38, 40); their engine-side sink is added with those features.
+  - `Command::Param { id, value }` is the one variant the router wires today. The production UI sends it through `CommandSink::send` (`DeckBinding::typed`, `MixerBinding::typed`). MIDI mappings and plugins do not: they use the string façade below. Tests use either path. `CommandSink::send` returns `CommandError::Rejected` when no target takes the id. `LoadStems` is carried by the engine sink (`DjEngine::command_sink`), which the window and the loader use (Todo 30). `SamplerAssign` is carried by the engine sink; `Automix` is routed by the router's sink to the `automix` typed target (Todo 38).
   - The string façade is `ParameterTarget::set_parameter(&str, f64) -> bool` on the router. It parses the id once and dispatches typed ids the same way. Ids the grammar rejects, and `Ext` ids, go to the prefix registry (`register_target`, longest prefix wins). Engine namespaces cannot be registered as string prefixes.
   - Dispatch is serialised by a reentrant gate, so a target may route a follow-up id on the same thread. Parsing and sending are control-thread operations; never call them from the audio thread.
 
@@ -84,6 +84,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-midi` (`map.rs` JSON mapping, `mapper.rs`, `trace.rs` replay and `writer.rs` recording)
 - **Why:** controller mappings are user files, not code; mappings are tested by replaying recorded MIDI with no hardware.
 - **Reuse when:** any user-editable config or hardware-driven feature (HID, OSC): parse into a plain struct, apply through the command enum, test with recorded input.
+- **Stem ids (Wave 7):** a map may target `stem.<deck>.<stem>.volume` (gain 0..1.5), `stem.<deck>.<stem>.mute` (on from 0.5) and `stem.<deck>.<stem>.filter` (-1..1), with deck 0..3 and stem 0..3 (drums, bass, vocals, other). Example map: `fixtures/controllers/stem_map.json`. **Sampler ids (Wave 7):** `sampler.pad<0..7>.trigger` (velocity 0..1, 0 releases), `.gate` (on from 0.5, off releases), `.volume` (0..1.5), `.pitch` (-12..12); example `fixtures/controllers/sampler_map.json`. The learnable list offers the mute of every stem; solo and all-on are UI-only and are not MIDI targets.
 
 ### Grid trait with mock implementations (BeatGrid)
 - **Where:** `om-engine` (`grid.rs`: the read-only `BeatGrid` trait and the `FixedTempoGrid` constant-tempo grid; `om-analysis` implements it for `AnalysedBeatGrid` in `beat_grid.rs`). - **Why:** sync/quantize can be built and tested before analysis exists; analysis plugs in by implementing `BeatGrid`. Keeping the trait in `om-core` lets `om-analysis` implement it without depending on `om-engine`.
@@ -121,7 +122,7 @@ pub trait AudioCallback: Send {
   - Pull-based: the caller asks and the engine answers from its atomics and control-side getters. Nothing is published, and no audio lock is taken.
   - Approximate by design: fields are read one at a time, not as one frame, so a snapshot can mix two audio blocks (a playhead and a loop bound, say). Peaks are decaying meter values. Nothing in a snapshot is an audio-thread value; it is for display and feedback only.
   - `StateId` parses the read-only ids (`deck.<d>.play`, `deck.<d>.hotcue<k>.set`, `mixer.ch<c>.level`, and the rest of the grammar in `state_id.rs`). They stay out of `ParamId` because they have no setter. `EngineSnapshot::read(&StateId)` returns `None` for an id that names nothing in this engine (an index out of range, or a channel the mixer lacks).
-  - Stems, sampler and automix have empty placeholder snapshot types until Todos 19, 30, 38 and 40 land.
+  - Stems and sampler are filled by the engine. `AutomixSnapshot` is not engine state: the engine leaves it at its default and the app overlays the controller's (`AutomixShared::overlay`).
 
 ### Immutable snapshot publication with `arc-swap` (deferred)
 - **Where:** not adopted. The engine snapshot is pulled (see "Pull-based engine snapshot"), so nothing publishes it. `om-engine/src/deck/loop_state.rs` still uses a seqlock, and `arc-swap` is not in `Cargo.lock`.
@@ -156,6 +157,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-analysis` (`service.rs` `AnalysisService`, `job.rs` `AnalysisJob`, `job_runner.rs` the job body)
 - **Why:** run slow work (decode + analysis) off the UI/audio threads with progress, cancellation and waiting, without callers owning threads.
 - **Reuse when:** any long-running background task (library scan, stem precompute, export).
+- **Stem service:** `om-stems` `StemService` is a `WorkerPool<StemRequest>` with one worker. Each job opens its own library connection (WAL) and never shares the owner thread's `Library`. The model gate checks what is on disk and never downloads, so a refused job does no network I/O.
 - **Notes:** runs on the generic `WorkerPool` (see above); status, progress and cancellation come from its `JobHandle`, and `AnalysisJob` adds the results. `submit()` returns `Arc<AnalysisJob>`. Listeners run on the worker after the final status. `Drop` on the service cancels pending jobs and joins the worker threads. The job body is a plain function, so it is testable without threads.
 
 ### Content-addressed result cache
@@ -181,6 +183,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** any large optional asset not shipped in the repo (models, sample packs, skins from a catalogue).
 - **Notes:** a `Downloader` trait with a URL implementation. Run it off the UI thread. Manifests are JSON so users can point at mirrors. Tests use `file://` URLs, no network.
 
+### Streamed pipeline around a swappable network
+- **Where:** `om-stems` (`pipeline.rs` `HtDemucsPipeline` over the `StemInference` trait, `resample.rs`, `spectral.rs`; the ONNX network is `onnx.rs`, feature `onnx`)
+- **Why:** everything except the neural network (resampling, segmenting, overlap-add, normalisation, STFT) is plain Rust that tests drive with a fake network that splits the signal exactly; ONNX Runtime stays optional.
+- **Reuse when:** any model that works on fixed-size windows of a long signal (other separators, denoisers, beat or key networks).
+- **Notes:** a `StereoSource` is pulled and a `StemSink` is pushed in chunks, so memory is a few segments whatever the track length. Output length equals input length. Cancellation and progress go through `AnalysisContext`, checked once per segment. The model's tensor names and shapes are explicit data (`ModelContract`, carried in the manifest), not code. `om-stems` keeps `forbid(unsafe_code)`: `ort`'s API is safe.
+
 ### Analyzer registry (extension point)
 - **Where:** `om-analysis` (`analyzer.rs` `Analyzer` trait, `registry.rs` `AnalyzerRegistry`)
 - **Why:** built-in and plugin analysers are looked up by id.
@@ -192,6 +200,24 @@ pub trait AudioCallback: Send {
 - **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
 - **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
 - **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe`, each block with a `// SAFETY:` line.
+
+### Stem cache (atomic directory entries, LRU by mtime)
+- **Where:** `om-stems` (`cache.rs` `StemCache`, `StemCacheSink`, `StemKey`; `wav.rs` streaming 16-bit WAV). The index is `om-library` `track_stems` (migration 8, `TrackStemsDao`).
+- **Why:** a separation is large and slow. An entry is one directory `<hash>-<sep>-v<n>/` with four WAVs and `meta.json`. It is streamed into `.tmp-*` and renamed into place only when complete, so a cancel, an error or a crash leaves nothing a lookup can see (`open` removes `.tmp-*`). `Drop` of an unfinished sink removes its directory, which also covers panics.
+- **Reuse when:** any derived per-file artefact that is large and keyed by content: waveforms on disk, artwork thumbnails, analysis caches.
+- **Notes:** the directory is the source of truth; the library row is an index that `StemService` keeps in step (`forget_track`, `reconcile`, and the cap's eviction delete rows with their directories). Deleting a track must call `StemService::forget_track` first: SQLite cascades the rows but cannot remove directories. A hit touches `meta.json`, and `evict_lru` removes the least recently touched entries first. Key changes (content hash, separator id or version) are misses. Single process per cache root.
+
+### Model installer (licence answer gates the download)
+- **Where:** `om-stems` `ModelInstaller` (`model.rs`) over `WeightManager` (`weights.rs`); the app's `StemsHost` (`crates/openmixer/src/stems_host.rs`) and the `StemHost` trait in `om-ui` (`stems.rs`).
+- **Why:** a model download is the only network I/O in stems. The user's answer to the licence dialog is an argument to the install job, so a declined answer fails at the licence step before any byte is fetched.
+- **Reuse when:** any optional model or asset the app downloads on the user's behalf.
+- **Notes:** the worker owns the downloading `WeightManager`; state reads use a second manager with a refusing downloader, so polling the state cannot start a transfer. The UI never names `om-stems` types: it talks to `StemHost`, which the app implements. Tests count downloader calls.
+
+### Wider frame ring with a stride published by the producer
+- **Where:** `om-engine` deck decoder (`deck/decoder.rs`), `Playback` (`deck/playback.rs`), `LoopPrefetch` (`deck/prefetch.rs`), stems in `deck/stems.rs`.
+- **Why:** stem mode needs eight floats per source frame through the same SPSC ring that carries two in plain mode, without a second ring, a second interpolator or a second time-stretcher. The mix to stereo happens where frames are pulled, so everything downstream stays stereo.
+- **Reuse when:** a consumer must change its element width on a live stream (multichannel sources, per-stem or per-mic data).
+- **Notes:** the producer stores the stride before the ack sequence number and the consumer adopts it only when it drains the stale ring, so a ring never mixes strides. A hand-over that changes the sources bumps the epoch under the same lock that publishes them, and the producer holds production until it has acknowledged that epoch. The ring is allocated for the widest stride and the producer limits depth to the same frame count in both modes. Control values (gains, mutes, filters) are atomics read once per block; smoothers live on the audio side.
 
 ### Forward-only migration list
 - **Where:** `om-library` migrations (`migrations.rs`)
@@ -278,7 +304,7 @@ pub trait AudioCallback: Send {
 - **Notes:** the gate uses the same composition root as the binary, so window wiring is never duplicated in the rig. Runs: `cargo test -p openmixer --test ui_gate` (about 8 s), `-- --ignored` (10 minutes), and `openmixer --smoke` for the window.
 
 ### Typed error enums per crate, AppError at the composition root
-- **Where:** each crate's error type, next to the code that fails: `om-core` (`ParamError`, `CommandError`), `om-audio` (`AudioError`), `om-midi` (`MidiError`, `TraceError`), `om-library` (`LibraryError`, `ImportError`), `om-analysis` (`RegistryError`, `CacheError`), `om-engine` (`SourceError`), `om-stretch` (`StretchError`), `om-stems` (`ManifestError`, `WeightError`), `om-plugins` (`PluginError`), `om-ui` (`SettingsError`, `LoadError`, `LayoutError`, `PreferencesError`, `ThemeError`), and `openmixer/src/error.rs` (`AppError`).
+- **Where:** each crate's error type, next to the code that fails: `om-core` (`ParamError`, `CommandError`), `om-audio` (`AudioError`), `om-midi` (`MidiError`, `TraceError`), `om-library` (`LibraryError`, `ImportError`), `om-analysis` (`RegistryError`, `CacheError`), `om-engine` (`SourceError`), `om-stretch` (`StretchError`), `om-stems` (`ManifestError`, `WeightError`, `StemError`), `om-plugins` (`PluginError`), `om-ui` (`SettingsError`, `LoadError`, `LayoutError`, `PreferencesError`, `ThemeError`), and `openmixer/src/error.rs` (`AppError`).
 - **Why:** callers match on causes instead of strings, and status lines show the `Display` text of the enum. A `String` error loses the cause and cannot be matched.
 - **Reuse when:** a function can fail. Return a `thiserror` enum from the crate, never `Result<_, String>`. The composition root converts subsystem errors into `AppError` with `#[from]`, so `?` works across the composition.
 - **Notes:** subsystem variants use `#[error(transparent)]`, so their text reaches the status line unchanged. `AppError` also carries composition-only failures (for example no audio device open, or a device restore that failed). The binary does not use `anyhow`. A failed lookup is an error, never a "not found" default (see the importer entry).
@@ -294,6 +320,42 @@ pub trait AudioCallback: Send {
 - **Why:** the settings page, the preferences applier and the composition reach a service through one `&self` trait. A typed `Option` shows which services are attached, so there is no string-keyed hook and no second copy of the MIDI control path.
 - **Reuse when:** a settings page or a preference section must drive a service. Add a method to the owning host trait (take `&self` and lock inside the service), and an `Option<Arc<..>>` field in `Services` when the service attaches on demand.
 - **Notes:** methods take `&self` because the MIDI threads share the service. Preference targets must be idempotent, since the applier may push a section twice.
+
+### Pure ramp plan with a control-tick runner (stem transitions)
+- **Where:** `om-automix/src/stem_fade.rs`. `StemFade` and `StemFadePlan` are values; `StemFadeRunner` is the only part that sends.
+- **Why:** a transition is a function of the beat position. Values come from `value_at(beat)`, so repeating a tick sends the same numbers, and a fade always ends on exactly `to` (the end is tested with `>=`, not with a `t` that may round to 0.9999). Tests run the plan over simulated 30 Hz ticks with a mock sink, with no audio.
+- **Reuse when:** a control-side ramp must reach the engine as `Command::Param` (automix, macros, a fade-out on stop). Keep the curve and the window in the plan and pass only the beat to the runner; do not keep a timer in the ramp.
+- **Notes:** a `Mute` fade and any zero-length fade are steps. `restore_values` is the first `from` per id, and a cancel restores only the fades that started. A fade whose deck has no stems is reported once and then ignored. A backwards beat jump (seek) re-sends the overlapped fades at the new position.
+
+### Beat-driven plan with an idempotent control-tick controller (automix)
+- **Where:** `om-automix/src/plan.rs`, `planner.rs`, `moves.rs`, `controller.rs`. The app side is `openmixer/src/automix_service.rs`.
+- **Why:** a transition is a value (`TransitionPlan`: steps with `at_beat`, `length_beats`, `from`, `to`, `curve`) and the controller only asks it for `values_at(beat)`, sending what changed. A stalled control clock therefore jumps to the right value instead of replaying ticks, and the last tick lands every control exactly on `to`. The planner is deterministic and pure; the controller sees the engine only through `EngineSnapshot`, `CommandSink` and a small `AutomixHost` trait, so a fake host, a fake sink and simulated snapshots test every state and cancel path without audio.
+- **Reuse when:** something on the control side must move several controls over musical time (macros, scripted fades). Keep the schedule in the plan, take the position from the snapshot, and detect the user by comparing the snapshot with the value last sent (plus an explicit notice from the binding layer), never by owning the control.
+- **Notes:** the user always wins: a moved control cancels the plan and is never set back. The watch keeps the last two sent values, but forgives the older one for one tick only, so a user returning a control to its previous value is still seen. The host (library, track loader) is not `Send`, so the control thread builds it from a factory.
+
+### Settings page model with an apply callback (automix)
+- **Where:** `om-ui::settings::automix` (`AutomixSettingsPage` over `Preferences`, `AutomixControl` trait), implemented by `openmixer::automix_settings::AppAutomixSettings`
+- **Why:** each edit is stored, saved once and pushed into the running service, and the page's logic runs headless.
+- **Reuse when:** a settings page must change a running subsystem live.
+- **Notes:** the page returns `Ok(changed)`; a change calls `apply` once; a failed push keeps the stored value and reports the error. The window's start-up path calls the same `apply_automix_prefs`, so the two cannot disagree.
+
+### Config and queue settings handed to the runner (automix)
+- **Where:** `openmixer::automix_service` (`AutomixShared::update_config` writes a pending `AutomixConfig`, applied by `AutomixRunner::step`), `openmixer::automix_queue::SharedQueueSettings` (read by `AppAutomixHost::next_track` before each pick)
+- **Why:** the Automix page changes settings from the window thread while the runner owns the controller; no lock is held across a tick.
+- **Reuse when:** a setting must change a running controller or host without a restart.
+- **Notes:** the runner applies a pending config on its next step; a running plan keeps the length and gap it was planned with.
+
+### Published text feed (search publish)
+- **Where:** `om-ui::library::SearchFeed` (`Arc<Mutex<String>>`), written by `LibraryBrowser` on every search change, read by `LibraryQueue` for `QueueSource::CurrentSearch`
+- **Why:** one component publishes what the user sees; another reads it when it needs it, without the browser knowing about the queue.
+- **Reuse when:** a second view needs a value the first one owns, and a stale copy would be wrong.
+- **Notes:** the feed holds the typed text, which can run ahead of the query the browser has applied.
+
+### Plain-command ring with a retire ring (sampler)
+- **Where:** `om-engine/src/sampler/` (`SamplerControl`, `SamplerAudio`), the same shape as `StageInsert`/`StageChain`.
+- **Why:** the audio thread must not allocate, lock, block or drop. Control sends plain `SamplerCmd`s on an `rtrb` ring; the only heap thing that crosses is an `Arc<Sample>`, and what the audio thread releases (a replaced sample, a finished voice's clone) goes back on a second ring for the control side to drop. A full ring drops a trigger and counts it instead of blocking. Continuous values (gain, pitch, mode) are latest-wins atomics, not commands, so they cannot be lost.
+- **Reuse when:** the audio thread needs to own or release shared heap data. If the retire ring is full, hold the value and retry next block; stall the command queue (`peek`) rather than reorder it.
+- **Notes:** `Arc` clones on trigger are an atomic increment, not an allocation. Voices that must outlive a stolen or replaced slot get spare slots so a fade-out never needs the slot of the voice that replaces it.
 
 ## Idioms and their Rust equivalents
 

@@ -12,24 +12,37 @@
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, PluginSink,
 };
+use crate::automix_service::AutomixShared;
 use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
 use crate::error::AppError;
 use crate::midi::{FeedbackThread, MidiService};
+use crate::stems_host::StemsHost;
 use om_audio::{DjEngine, DjEngineAudio};
-use om_core::{ParameterRouter, StateReader};
+use om_core::param_id::Namespace;
+use om_core::{AutomixSink, CommandSink, ParamId, ParameterRouter, StateReader};
 use om_midi::MidiBackend;
 use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
+use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
+use om_ui::sample_bank::{self, SampleBank};
 use om_ui::settings::{MidiHost, PluginHost};
 use om_ui::theme::{default_user_directory, session_theme_override, Source, ThemeRegistry};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Number of decks the app starts with.
 pub const DECKS: usize = 2;
+
+/// Stem model manifest, in the `models` folder beside the library. Written by the model install
+/// step (S4); absent means stem separation stays off.
+pub const STEM_MANIFEST_FILE: &str = "htdemucs.manifest.json";
+/// The separator's id and version: part of every stem cache key.
+pub const STEM_SEPARATOR_ID: &str = "htdemucs";
+pub const STEM_SEPARATOR_VERSION: i32 = 1;
+const GIB: u64 = 1024 * 1024 * 1024;
 
 /// Environment variable that selects a theme for the session (wins over the saved preference).
 pub const THEME_ENV: &str = "OPENMIXER_THEME";
@@ -44,6 +57,12 @@ pub struct Services {
     /// The MIDI service, once [`AppComposition::attach_midi`] has run: the preferences, the
     /// settings page and the input list all reach it.
     pub midi: Option<Arc<MidiService>>,
+    /// The stem service, once [`AppComposition::attach_stems`] found a separator (an installed
+    /// model with the `onnx` feature, or the mock). Jobs only start when something submits them.
+    pub stems: Option<Arc<StemService>>,
+    /// The sample bank, once [`AppComposition::attach_samples`] has run. Its decodes are installed
+    /// by [`SampleBank::pump`], which the window calls from its control tick.
+    pub samples: Option<Arc<SampleBank>>,
 }
 
 impl Services {
@@ -89,6 +108,13 @@ pub struct AppComposition {
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
     pub plugins: PluginRegistry,
+    /// Automix: the `automix.*` target is registered with the router. The window steps the
+    /// controller (an [`AutomixRunner`]) once it has a host.
+    pub automix: Arc<AutomixShared>,
+    /// The sink automix's steps go through (no input observer), for [`AutomixRunner`].
+    pub automix_sink: Arc<dyn CommandSink>,
+    /// The sample bank the control thread pumps once it is attached.
+    sample_slot: Arc<OnceLock<Arc<SampleBank>>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
     midi_feedback: Option<FeedbackThread>,
     /// Drives the engine's control clock (sync, slip, FX tempo) from its own thread.
@@ -96,6 +122,10 @@ pub struct AppComposition {
     applier: PreferencesApplier,
     targets: AppTargetsState,
     audio: Option<DjEngineAudio>,
+    /// The library file path, once [`AppComposition::attach_library`] has opened it.
+    library_db: Option<String>,
+    /// The stems host, until the window takes it.
+    stems_host: Option<StemsHost>,
 }
 
 impl AppComposition {
@@ -119,7 +149,18 @@ impl AppComposition {
         };
 
         let themes = load_themes(user_themes.as_deref());
-        let control_timer = match ControlTimer::start(Arc::clone(&engine)) {
+        let sample_slot = Arc::new(OnceLock::new());
+        let automix = AutomixShared::new();
+        router.register_typed(Namespace::Automix, automix.control());
+        // User input (any control, MIDI, string targets) reaches the controller through the
+        // observer; automix's own steps go through `automix_sink`, which does not notify it.
+        let observed = Arc::clone(&automix);
+        router.set_input_observer(Some(Arc::new(move |id: &ParamId| {
+            observed.notify_user_input(id);
+        })));
+        let automix_sink: Arc<dyn CommandSink> = Arc::new(AutomixSink::new(Arc::clone(&router)));
+        let control_timer = match ControlTimer::start(Arc::clone(&engine), Arc::clone(&sample_slot))
+        {
             Ok(timer) => Some(timer),
             Err(error) => {
                 eprintln!("openmixer: control clock thread: {error}");
@@ -129,6 +170,9 @@ impl AppComposition {
 
         Self {
             _control_timer: control_timer,
+            automix,
+            automix_sink,
+            sample_slot,
             engine,
             router,
             themes,
@@ -140,6 +184,8 @@ impl AppComposition {
             applier: PreferencesApplier::new(),
             targets: AppTargetsState::default(),
             audio: Some(audio),
+            library_db: None,
+            stems_host: None,
         }
     }
 
@@ -166,8 +212,61 @@ impl AppComposition {
         options.on_error = Some(Box::new(|message| {
             eprintln!("openmixer: library: {message}")
         }));
+        self.library_db = Some(options.db_path.clone());
         self.services.library = Some(LibraryServices::create(options)?);
         Ok(())
+    }
+
+    /// Attaches the stems: the host (model state, licence, download, cache) and, when the model is
+    /// ready now, the stem service in `services.stems`. The cap comes from `stems.max_cache_gb`.
+    /// With `mock`, the mock separator stands in for an installed model. A model that is not
+    /// installed is not an error: the host says so and the service is created later, on the first
+    /// job after an install. The host goes to the window with [`AppComposition::take_stems_host`].
+    pub fn attach_stems(&mut self, mock: bool) -> Result<(), AppError> {
+        let db = self
+            .library_db
+            .clone()
+            .ok_or_else(|| AppError::Stems("attach the library first".into()))?;
+        let max_cache_bytes = u64::try_from(self.prefs.stems.max_cache_gb).unwrap_or(0) * GIB;
+        let mut host = StemsHost::new(
+            mock,
+            db,
+            Some(max_cache_bytes),
+            self.prefs.stems.auto_prepare,
+        );
+        self.services.stems = host.service_if_ready()?;
+        self.stems_host = Some(host);
+        Ok(())
+    }
+
+    /// The sink that carries `Command::LoadStems` to the engine and every other command to the
+    /// router. The window's loader sends stem loads through it.
+    pub fn stem_command_sink(&self) -> Arc<dyn om_core::CommandSink> {
+        let fallback: Arc<dyn om_core::CommandSink> = self.router.clone();
+        self.engine.command_sink(Some(fallback))
+    }
+
+    /// Opens the sample bank in `dir` (`None` means `<data dir>/samples`) and applies it: gain, pitch
+    /// and mode at once, each file that exists queued for decode. Notes (missing files, bad entries)
+    /// go to stderr. The bank is kept in `services.samples`.
+    pub fn attach_samples(&mut self, dir: Option<PathBuf>) {
+        let dir = dir.unwrap_or_else(sample_bank::default_dir);
+        let bank = Arc::new(SampleBank::open(
+            dir,
+            Arc::clone(&self.engine),
+            self.stem_command_sink(),
+        ));
+        bank.apply();
+        for note in bank.take_notes() {
+            eprintln!("openmixer: samples: {note}");
+        }
+        let _ = self.sample_slot.set(Arc::clone(&bank));
+        self.services.samples = Some(bank);
+    }
+
+    /// The stems host, once [`AppComposition::attach_stems`] has run. Taken by the window.
+    pub fn take_stems_host(&mut self) -> Option<StemsHost> {
+        self.stems_host.take()
     }
 
     pub fn take_audio(&mut self) -> Option<DjEngineAudio> {
@@ -301,4 +400,45 @@ impl AppComposition {
         );
         targets.reload_plugins();
     }
+}
+
+/// The htdemucs separator over ONNX Runtime, when the model is installed and the `onnx` feature is
+/// built in. `None` (with a line on stderr) otherwise.
+#[cfg(feature = "onnx")]
+pub(crate) fn installed_separator(
+    weights: &WeightManager,
+    manifest: &ModelManifest,
+) -> Result<Option<Arc<dyn StemSeparator>>, AppError> {
+    use om_stems::{default_threads, HtDemucsSeparator, OrtInference};
+    if !weights.is_installed(manifest) {
+        eprintln!(
+            "openmixer: stem model {} is not installed; stems are off",
+            manifest.id
+        );
+        return Ok(None);
+    }
+    let contract = manifest.contract_or_default();
+    let inference = OrtInference::load(
+        &weights.model_file(manifest),
+        contract.clone(),
+        Some(default_threads()),
+    )
+    .map_err(|e| AppError::Stems(e.to_string()))?;
+    let separator = HtDemucsSeparator::new(
+        STEM_SEPARATOR_ID,
+        STEM_SEPARATOR_VERSION,
+        inference,
+        contract,
+    )
+    .map_err(|e| AppError::Stems(e.to_string()))?;
+    Ok(Some(Arc::new(separator)))
+}
+
+#[cfg(not(feature = "onnx"))]
+pub(crate) fn installed_separator(
+    _weights: &WeightManager,
+    _manifest: &ModelManifest,
+) -> Result<Option<Arc<dyn StemSeparator>>, AppError> {
+    eprintln!("openmixer: built without the onnx feature; stem separation is off");
+    Ok(None)
 }

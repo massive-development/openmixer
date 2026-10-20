@@ -177,6 +177,22 @@ END;
 INSERT INTO tracks_fts (tracks_fts) VALUES ('rebuild');
 "#;
 
+/// Stem cache index (Wave 7 S3). One row per cached separation of a track; the audio lives in
+/// `<data>/stems/<dir>/` and is owned by `om-stems`. Cascade-deleted with the track; the directory
+/// is removed by the stem service, not by SQLite.
+const SCHEMA_V8: &str = r#"
+CREATE TABLE track_stems (
+  track_id INTEGER NOT NULL REFERENCES tracks (id) ON DELETE CASCADE,
+  sep_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  dir TEXT NOT NULL,
+  bytes INTEGER NOT NULL,
+  created_ms INTEGER NOT NULL,
+  PRIMARY KEY (track_id, sep_id, version)
+);
+CREATE INDEX idx_track_stems_dir ON track_stems (dir);
+"#;
+
 const CORE_MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -219,6 +235,12 @@ const CORE_MIGRATIONS: &[Migration] = &[
         name: "free-text search index (FTS5)",
         sql: SCHEMA_V7,
         needs_fts5: true,
+    },
+    Migration {
+        version: 8,
+        name: "track stem cache index",
+        sql: SCHEMA_V8,
+        needs_fts5: false,
     },
 ];
 

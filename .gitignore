@@ -16,3 +16,7 @@ spikes/stretch/out/
 /build-*/
 /_deps/
 /CMakeFiles/
+
+# Python wheels and virtualenvs (stray downloads; never commit)
+*.whl
+.venv/

@@ -9,11 +9,11 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 ### (A) Blockers for Wave 7
 
 - **Foundation (Phase F): done.** Typed control surface (`ParamId`, `Command`, typed engine targets, string façade), pulled `EngineSnapshot`, `WorkerPool`, typed error enums with `AppError`, and `Services`/`MidiHost`. It clears no item below by itself; the items build on it.
-- **Todo 19:** ONNX stems backend (`ort`) not built; `om-stems` has only `MockSeparator`, and nothing in the app calls the separator. L
-- **Todo 37:** stem-aware mixing DSP not started (needs stems from 19). L
-- **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
-- **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
-- **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
+- **Todo 19:** stem separation is built but unproven on real audio. `om-stems` has `OrtInference` (ONNX Runtime, feature `onnx`, tensor names and shapes checked at load), `HtDemucsPipeline` (segmenting, resampling, overlap-add), `StemService` (worker, cache, library index) and the app side `StemsHost` (model install, service created on first submit). The real htdemucs export (`tools/export_htdemucs.py`) has not been run or checked against the contract, the toy ONNX fixture is the only ONNX test, and nothing has been verified by ear. Open: the export and a real-model run, then a listening check. L
+- **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. Stem transitions (39) are still open. L
+- **Todo 30:** done at logic and view level (Wave 7 S6/S7): stem pads in the deck card, cached stems auto-load (`stems.autoLoad`), Load/Stems off, MIDI stem targets. Not checked by ear; mock device only. Transitions are Todo 39. L
+- **Todo 38:** done at logic and view level (Wave 7 A1-A6): the Automix settings page (Todo 29), the main-window bar, the `--demo-automix` scene and the A6 safety tests. Not verified by ear (mock device only). Skip is not offered; the queue skips tracks that are not analysed yet. L
+- **Todo 40:** 8-pad sampler: the engine (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`), the sample bank (P2: `<data>/samples/sampler.json`, off-thread import, start-up apply), the pad view-model and sampler strip (P4: `om-ui::sampler_binding`, `om-ui-gpui::sampler_view`) and the soak and UI gate scenarios (P5) are built, at logic and view level. Not heard, and the window was checked on screenshots only, not by eye. Open: the user's listening and by-eye check; a per-pad mode and gain on MIDI; learn for pad settings. M
 - **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Showing artwork in the UI is not built.
 - **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. Scroll bars, tables and toggles are not restyled, and the window is not checked by eye. M
 - **Todo 26a:** done: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding`. It is still removed once Wave 5 replaces it.
@@ -152,7 +152,11 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [ ] **Todo 19:** Stems precompute (Demucs ONNX) (partial)
   - Done in `om-stems`: `StemSeparator` trait, `MockSeparator`, JSON model manifest, licence-gated download with size and SHA-256 checks, licence digest remembered
   - Downloads: `file://`, `http://` and `https://` (ureq with rustls; the webpki root bundle is CDLA-Permissive-2.0, allowed in `deny.toml` with a comment). Tests stay offline
-  - ONNX Runtime backend (`ort`) not yet built (open): the mock stands in for it
+  - Wave 7 S1 (partial): stereo `StemSet` and a streamed `StemSeparator` v2 (`separate_to`); the htdemucs pipeline (resample to 44.1 kHz, 7.8 s segments with 25% triangular overlap-add, per-segment normalisation, Rust STFT/iSTFT) over a `StemInference` trait, tested with fakes; `OrtInference` (`ort` 2.0.0-rc.13, feature `onnx`, off by default) passing a toy-ONNX integration test; `tools/export_htdemucs.py` and the licence text
+  - Wave 7 S2 (done, mock-tested): `StemService` on `WorkerPool` (one worker, FIFO): cache hit re-records the row; the model gate checks on disk that the model is installed and its licence accepted (no download); decode, separate into the cache sink, commit, record `track_stems`, enforce the cap. `forget_track` and `reconcile` keep the index and the directories in step. Cancel leaves no partial directory; a panicking separator fails only its job. Composition: `Services.stems`, `AppComposition::attach_stems`, `--mock-stems` (or `OPENMIXER_MOCK_STEMS`); with `onnx` and an installed model (`htdemucs.manifest.json` beside the library) the htdemucs separator is used. Nothing submits a job yet: the "Prepare stems" action and `stems.auto_prepare` are wired in S7/S8 UI work.
+  - Wave 7 S3 (done): stem cache at `<library folder>/stems/<hash>-<sep>-v<n>/` (16-bit stereo WAV at the track's rate, `meta.json`), atomic `.tmp-*` writes, LRU by `meta.json` mtime, `stems.max_cache_gb` (default 20, preferences version 2); migration 8 `track_stems` and `TrackStemsDao`.
+  - Wave 7 S4 (done, mock-tested): the Library settings page has a stems section: model state (Not installed, Licence not accepted, Downloading n%, Installed vX, Error) with the manifest's licence text in a scrolling box (it carries the MUSDB18-HQ training-data caveat), "Accept licence and download" (the answer is recorded by the licence gate before any network I/O; a declined answer never reaches the downloader, tested with a counting downloader), cancel, cache usage against the cap, the cap as a text field (`stems.max_cache_gb`), auto-prepare (`stems.auto_prepare`, off by default; fires only for tracks analysed after the library opened, never on load), and Clear stem cache behind a confirm step. The browser has a Stems column (None, Preparing n%, Ready, Failed), Prepare stems (button and `p`) and Cancel stems. A stems action with no model opens the Library settings licence section with the reason. `--mock-stems` stands in for an installed model (MockSeparator, no download) so the whole flow runs without the real model
+  - Open: the real htdemucs model has not been exported, loaded or listened to (the exporter and the I/O contract are unverified against Meta's code), the hosted manifest (none is shipped: the app reads `models/htdemucs.manifest.json` beside the library), the window has not been viewed by eye, and the ort CPU share on real hardware
 
 ## Wave 4: Library & Data
 
@@ -205,14 +209,14 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: the logic is in `om-ui::library`; the window draws the browser (sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, "Load to deck" buttons, double-click and Enter into the suggested deck, row drag onto a deck card, which loads it). The binary opens the library from the preferences and scans watch folders; analysis of loaded tracks runs on background workers and the table and deck refresh when results arrive. `--smoke` (gui) ingests three generated tracks, loads one into deck A and asserts the deck and the 3 table rows. Not checked by eye (the window was only launched and inspected with xwininfo). The settings library page drives the library (Todo 29)
 
-- [ ] **Todo 29:** Automix panel + settings (partial: the Automix panel is Wave 7)
+- [ ] **Todo 29:** Automix panel + settings (the Automix tab and the main-window bar are in; the rest of this Todo is open)
   - Audio/MIDI settings, preferences
   - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
   - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
-  - Automix panel (Wave 7, needs Todo 38)
+  - Automix settings page and bar: done at logic and view level (Todo 38); the rest of the Todo 29 list stays open
 
-- [ ] **Todo 30:** Stem pads UI (open: waits on Wave 7 stem playback)
+- [x] **Todo 30:** Stem pads UI (logic and deck-card view done, not verified by ear; the mock device plays nothing)
   - Per-stem mute/volume
 
 - [x] **Todo 31:** UI verification gate (logic layer; window-driven pass open)
@@ -229,10 +233,10 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 7: Intelligence
 
-- [ ] **Todo 37:** Stem-aware mixing DSP
-- [ ] **Todo 38:** Automix transition engine
-- [ ] **Todo 39:** Stem transitions
-- [ ] **Todo 40:** 8-pad sampler
+- [x] **Todo 37:** Stem-aware mixing DSP (engine level, Wave 7 S5: `om-dsp` `StemMixer`, stem-mode decks, `stem.*` ids and `Command::LoadStems`; pads UI is Todo 30, transitions Todo 39)
+- [x] **Todo 38:** Automix transition engine: planner, controller, queue, loader host, settings page and bar done and tested without audio (Wave 7 A1-A6); not verified by ear
+- [ ] **Todo 39:** Stem transitions: done at helper level (Wave 7 S8: `om-automix` `stem_fade`, the `StemFade` plan with bass swap, vocals out, drums-only bridge and filter sweep, and a `StemFadeRunner` that sends `Command::Param` on the control tick and skips decks without stems). Driven by the automix planner (A4: `BassSwap` and `StemBridge` styles read the start gains from the snapshot and fall back to `Crossfade` without stems) but by no UI or real deck yet; not heard
+- [x] **Todo 40:** 8-pad sampler: engine, ids, snapshot and command (P1/P3); sample bank (P2); pad view-model and strip (P4); soak and UI gate scenarios (P5). Done at logic and view level; not heard, not seen by eye
 
 ## Wave 8: Pro Surface
 

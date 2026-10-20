@@ -5,20 +5,23 @@
 //! loads into this deck.
 
 use crate::app::Shell;
-use crate::controls::button as push_button;
+use crate::controls::{button as push_button, knob, slider};
 use crate::drag::Target;
 use crate::library_view::TrackDragPayload;
-use crate::paint::{paint, place};
+use crate::paint::{paint, place, skin};
 use gpui::{
     canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton,
     MouseDownEvent, Pixels, Window,
 };
 use om_analysis::{WaveformData, WaveformPoint};
 use om_ui::geometry::Rect;
+use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
+use om_ui::style::LookAndFeel;
 use om_ui::waveform::View;
 use om_ui::widgets::deck::{deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
+use om_ui::widgets::stem_pads::stem_pad_layout;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 use std::sync::Arc;
 
@@ -102,7 +105,133 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
     root = root.child(hotcues(shell, index, card, &l, cx));
     root = root.child(loops(shell, index, card, &l, cx));
     root = root.child(transport(shell, index, card, &l, cx));
+    for part in stems(shell, index, card, &l, cx) {
+        root = root.child(part);
+    }
     root
+}
+
+/// The stems row (S7): a load/off control with its caption, then one pad per stem. A pad is live
+/// only while the deck plays from stems; otherwise the row is greyed and the caption says how to
+/// get stems. Taps and drags write through the deck's `StemBinding`.
+fn stems(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    l: &DeckLayout,
+    cx: &mut Context<Shell>,
+) -> Vec<gpui::Div> {
+    let t = &shell.theme;
+    let look = LookAndFeel::from_tokens(t);
+    let pads = &shell.decks[index].stems;
+    if let Some(panel) = &shell.library {
+        pads.observe_track(panel.loaded_track_id(index));
+    }
+    let states = pads.stems();
+    let live = states[0].available;
+    let accent = t.accent_for(index as i32);
+    let layout = stem_pad_layout(l.stems, t);
+    let abs = |r: Rect| Rect::new(card.x + r.x, card.y + r.y, r.w, r.h);
+    let row_h = om_ui::widgets::px(t.deck_row_height);
+    let mut parts = Vec::new();
+
+    // Control column: load or switch the stems.
+    let ctl = layout.control;
+    let button_rect = Rect::new(ctl.x, ctl.y, ctl.w, row_h);
+    let label = if live { "Stems off" } else { "Load stems" };
+    parts.push(push_button(
+        t,
+        button_rect,
+        label,
+        live,
+        accent,
+        cx,
+        move |shell: &mut Shell| shell.toggle_deck_stems(index),
+    ));
+
+    if !live {
+        // Greyed: one box across the pads with the last message, or the prepare hint. No handlers.
+        let first = layout.pads[0].mute;
+        let last = layout.pads[layout.pads.len() - 1].solo;
+        let span = Rect::new(first.x, first.y, last.x + last.w - first.x, l.stems.h);
+        let message = shell.stem_errors[index]
+            .clone()
+            .or_else(|| {
+                shell
+                    .library
+                    .as_ref()
+                    .and_then(|panel| panel.stem_note(index))
+            })
+            .unwrap_or_else(|| "no stems \u{2014} Prepare stems".to_owned());
+        parts.push(
+            skin(place(span), &look.fader.track)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(paint(t.text_secondary))
+                .text_size(px(t.type_small))
+                .child(message),
+        );
+        return parts;
+    }
+
+    for (stem, state) in states.iter().enumerate() {
+        let pad = layout.pads[stem];
+        let name = STEM_NAMES[stem];
+        let audible = !state.muted;
+        let soloed = pads.soloed() == Some(stem);
+        parts.push(push_button(
+            t,
+            pad.mute,
+            name,
+            audible,
+            accent,
+            cx,
+            move |shell: &mut Shell| {
+                shell.decks[index].stems.toggle_mute(stem);
+            },
+        ));
+        // Activity glow: the pad's header fills in proportion to what the stem contributes.
+        let level = pads.level(stem);
+        if level > 0.0 {
+            let w = (pad.mute.w as f32 * level) as i32;
+            parts.push(
+                place(Rect::new(pad.mute.x, pad.mute.y, w, pad.mute.h))
+                    .bg(accent_with_alpha(paint(accent), 0.3))
+                    .rounded(gpui::px(t.control_radius)),
+            );
+        }
+        parts.push(push_button(
+            t,
+            pad.solo,
+            "S",
+            soloed,
+            accent,
+            cx,
+            move |shell: &mut Shell| {
+                shell.decks[index].stems.solo(stem);
+            },
+        ));
+        parts.push(slider(
+            t,
+            pad.volume,
+            (f64::from(state.gain), 0.0, MAX_VOLUME),
+            Target::StemVolume(index, stem),
+            abs(pad.volume),
+            cx,
+        ));
+        let filter_readout = format!("{:+.2}", state.filter);
+        parts.push(knob(
+            t,
+            pad.filter,
+            ("Filter", filter_readout.as_str()),
+            (f64::from(state.filter), -1.0, 1.0),
+            Target::StemFilter(index, stem),
+            abs(pad.filter),
+            cx,
+        ));
+    }
+    parts
 }
 
 fn overview(

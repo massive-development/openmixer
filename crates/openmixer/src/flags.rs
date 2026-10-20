@@ -25,6 +25,13 @@ pub fn settings_tab(args: &[String]) -> Result<Option<&'static str>, String> {
     Ok(None)
 }
 
+/// `--mock-stems` (or a non-empty `OPENMIXER_MOCK_STEMS`) attaches the stem service with the mock
+/// separator: no model, no runtime. For demos and tests.
+pub fn mock_stems(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--mock-stems")
+        || std::env::var_os("OPENMIXER_MOCK_STEMS").is_some_and(|v| !v.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,5 +53,11 @@ mod tests {
             Ok(Some("Appearance"))
         );
         assert!(settings_tab(&args(&["--settings=video"])).is_err());
+    }
+
+    #[test]
+    fn mock_stems_flag_is_recognised() {
+        assert!(mock_stems(&args(&["--mock-device", "--mock-stems"])));
+        assert!(!mock_stems(&args(&["--mock-device"])));
     }
 }
