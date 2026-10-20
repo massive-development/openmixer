@@ -40,6 +40,20 @@ pub fn demo_map(args: &[String]) -> bool {
     args.iter().any(|a| a == "--demo-map")
 }
 
+/// The `--demo-*` flags. Each points some state at a temporary folder (the map file, the library,
+/// the recording folder) and saves preferences there too, never into the user's preferences file.
+pub const DEMO_FLAGS: [&str; 4] = [
+    "--demo-map",
+    "--demo-library",
+    "--demo-automix",
+    "--demo-record",
+];
+
+/// True when any demo flag is on the command line.
+pub fn demo_run(args: &[String]) -> bool {
+    args.iter().any(|a| DEMO_FLAGS.contains(&a.as_str()))
+}
+
 /// `--mock-stems` (or a non-empty `OPENMIXER_MOCK_STEMS`) attaches the stem service with the mock
 /// separator: no model, no runtime. For demos and tests.
 pub fn mock_stems(args: &[String]) -> bool {
@@ -87,6 +101,9 @@ mod tests {
         assert!(demo_map(&args(&["--mock-device", "--demo-map"])));
         assert!(!demo_map(&args(&["--mock-device", "--settings=mapping"])));
         assert!(!demo_map(&args(&["--demo-map-extra"])));
+        assert!(demo_run(&args(&["--demo-record"])));
+        assert!(demo_run(&args(&["--demo-map"])));
+        assert!(!demo_run(&args(&["--demo-map-extra", "--mock-device"])));
     }
 
     #[test]

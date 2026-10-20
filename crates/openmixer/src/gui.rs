@@ -58,6 +58,8 @@ pub fn main(args: &[String]) -> ExitCode {
     // the header shows a live Record button (see docs/screenshots/REVIEW.md). Never the user's folder.
     let demo_record = args.iter().any(|a| a == "--demo-record");
     let demo = args.iter().any(|a| a == "--demo-library") || automix_demo || demo_record;
+    // Every demo flag saves preferences into the scratch folder, never the user's file.
+    let demo_run = openmixer::flags::demo_run(args);
     let start_tab = match openmixer::flags::settings_tab(args) {
         Ok(tab) => tab,
         Err(message) => {
@@ -109,7 +111,11 @@ pub fn main(args: &[String]) -> ExitCode {
         eprintln!("openmixer: the audio side was already taken");
         return ExitCode::FAILURE;
     };
-    let prefs_file = om_ui::preferences::default_file();
+    let prefs_file = openmixer::composition::prefs_save_target(
+        demo_run,
+        om_ui::preferences::default_file(),
+        &library_smoke::scratch_dir(),
+    );
     let home = dirs::home_dir().map(std::path::PathBuf::into_os_string);
     let user_themes = default_user_directory(home.as_deref());
 
