@@ -42,6 +42,8 @@ struct Outcome {
     counts: ActionCounts,
     /// Sampler commands dropped because the ring was full (reported, not budgeted).
     sampler_dropped: u64,
+    /// Frames written by the mid-run recordings, and frames the recorder dropped.
+    recorded: Option<(u64, u64)>,
 }
 
 impl Outcome {
@@ -94,6 +96,18 @@ impl Outcome {
                 checker::OVERFLOW_LIMIT
             ));
         }
+        if let Some((frames, dropped)) = self.recorded {
+            // Two windows of a quarter of the run each, at least; paced time varies a little.
+            let expected = u64::from(self.seconds) * u64::from(RATE) / 2;
+            if frames < expected * 8 / 10 {
+                failed.push(format!(
+                    "recorded {frames} frames, expected about {expected}"
+                ));
+            }
+            if dropped > 0 {
+                failed.push(format!("the recorder dropped {dropped} frames"));
+            }
+        }
         failed
     }
 
@@ -134,7 +148,7 @@ impl Outcome {
 
 /// Runs the scripted soak for `seconds` of paced (wall-clock) time and returns the outcome. With
 /// `stems`, deck 0 plays from a generated four-stem set and the scripted DJ works its stem controls.
-fn run_soak(seconds: u32, stems: bool) -> Outcome {
+fn run_soak(seconds: u32, stems: bool, record: bool) -> Outcome {
     let dir = TempDir::new("openmixer_soak");
     let (engine, audio) = DjEngine::new(2);
     let router = ParameterRouter::new();
@@ -169,12 +183,44 @@ fn run_soak(seconds: u32, stems: bool) -> Outcome {
     let start = Instant::now();
     let mut last_tick = Duration::ZERO;
     scenario.begin(0);
+    // With `record`, two recordings run mid-soak (a stop/start cycle) into a temp dir.
+    let rec_folder = dir.file("recordings");
+    let mut rec_settings = om_audio::RecordSettings::new(&rec_folder);
+    rec_settings.free_space = std::sync::Arc::new(|_| Some(u64::MAX));
+    let (mut recorded, mut dropped, mut started) = (0_u64, 0_u64, false);
+    let windows = [
+        (seconds / 4, seconds / 2),
+        (seconds * 5 / 8, seconds * 7 / 8),
+    ];
     while start.elapsed() < Duration::from_secs(u64::from(seconds)) {
         let elapsed = start.elapsed();
         engine.update_control((elapsed - last_tick).as_secs_f64());
         last_tick = elapsed;
         scenario.step(elapsed.as_millis() as u64, elapsed.as_secs_f64());
+        if record {
+            let t = elapsed.as_secs();
+            let inside = windows
+                .iter()
+                .any(|&(a, b)| t >= u64::from(a) && t < u64::from(b));
+            if inside && !started {
+                engine
+                    .recorder()
+                    .start(&rec_settings)
+                    .expect("soak: start recording");
+                started = true;
+            } else if !inside && started {
+                let summary = engine.recorder().stop().expect("soak: stop recording");
+                recorded += summary.frames;
+                dropped += summary.dropped_frames;
+                started = false;
+            }
+        }
         std::thread::sleep(CONTROL_PERIOD);
+    }
+    if started {
+        let summary = engine.recorder().stop().expect("soak: stop recording");
+        recorded += summary.frames;
+        dropped += summary.dropped_frames;
     }
 
     device.stop_realtime();
@@ -186,6 +232,7 @@ fn run_soak(seconds: u32, stems: bool) -> Outcome {
         steady_underruns: scenario.steady_underruns(),
         counts: scenario.counts(),
         sampler_dropped: engine.sampler().dropped_commands(),
+        recorded: record.then_some((recorded, dropped)),
     }
 }
 
@@ -203,11 +250,11 @@ fn xruns_pass(first: u64, retry: Option<u64>) -> bool {
 /// Runs the soak. Non-finite samples, overflow and steady-state underruns fail on the first run
 /// (zero tolerance). Over the xrun budget, the soak runs once more and fails only if that run is
 /// over the budget too. Each run prints its own xruns and worst callback time.
-fn check(seconds: u32, stems: bool) {
+fn check(seconds: u32, stems: bool, record: bool) {
     let _turn = ONE_SOAK_AT_A_TIME
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let first = run_soak(seconds, stems);
+    let first = run_soak(seconds, stems, record);
     if stems {
         assert!(
             first.counts.stem_changes > 0,
@@ -227,7 +274,7 @@ fn check(seconds: u32, stems: bool) {
     let mut failed = first.failures();
     if first.xrun_failure().is_some() {
         println!("soak: over the xrun budget on run 1; running once more");
-        let second = run_soak(seconds, stems);
+        let second = run_soak(seconds, stems, record);
         second.print("soak run 2");
         failed.extend(second.failures());
         if !xruns_pass(first.latency.xrun_count, Some(second.latency.xrun_count)) {
@@ -252,19 +299,26 @@ fn an_over_budget_first_run_passes_only_if_the_retry_is_within_budget() {
 /// 30 s of paced simulated mix. Roughly 30 s of wall time.
 #[test]
 fn soak_short() {
-    check(30, false);
+    check(30, false, false);
 }
 
 /// The same 30 s soak with deck 0 in stem mode and the scripted DJ moving stem volumes, filters
 /// and mutes. Same xrun and underrun budgets.
 #[test]
 fn soak_short_with_stems() {
-    check(30, true);
+    check(30, true, false);
+}
+
+/// The 30 s soak with two mix recordings started and stopped mid-run (into a temp dir). Same xrun
+/// and underrun budgets; the recorder must drop no frames.
+#[test]
+fn soak_short_with_recording_cycle() {
+    check(30, false, true);
 }
 
 /// The 10-minute paced-mix soak gate. Takes 10 minutes of wall time.
 #[test]
 #[ignore = "10-minute soak: cargo test -p om-audio --test soak -- --ignored --nocapture"]
 fn soak_10min() {
-    check(600, false);
+    check(600, false, false);
 }
