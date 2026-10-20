@@ -41,6 +41,9 @@ pub struct QueueSettings {
 pub type SharedQueueSettings = Arc<Mutex<QueueSettings>>;
 
 type GridCheck = Box<dyn Fn(&TrackRecord) -> bool>;
+
+/// Most beat-grid checks one shuffled pick may make (each check can hit the analysis cache).
+const GRID_CHECK_CAP: usize = 50;
 type Clock = Box<dyn Fn() -> i64>;
 
 pub struct LibraryQueue {
@@ -185,27 +188,59 @@ impl LibraryQueue {
     }
 
     fn queue_track(&self, t: &TrackRecord) -> QueueTrack {
-        QueueTrack {
-            id: t.id,
-            title: t.title.clone(),
-            artist: t.artist.clone(),
-            path: t.path.clone(),
-            bpm: t.bpm,
-            camelot: t.camelot.clone(),
-            has_grid: (self.grid_check)(t),
+        to_queue_track(t, (self.grid_check)(t))
+    }
+
+    /// Shuffles all records first, then asks for the beat grid lazily: the walk stops at the first
+    /// analysed candidate (or after [`GRID_CHECK_CAP`] checks). Smart picks keep checking up to the
+    /// cap so they have a pool to choose from. Recent tracks are never checked.
+    fn shuffled_candidates(
+        &mut self,
+        mut records: Vec<TrackRecord>,
+        current: Option<&QueueTrack>,
+        recent: &HashSet<i64>,
+        smart: bool,
+    ) -> Vec<QueueTrack> {
+        for i in (1..records.len()).rev() {
+            let j = (self.rng.next_u64() % (i as u64 + 1)) as usize;
+            records.swap(i, j);
         }
+        let mut out = Vec::with_capacity(records.len());
+        let mut checks = 0;
+        let mut found = false;
+        for t in &records {
+            let skipped = recent.contains(&t.id) || current.is_some_and(|c| c.id == t.id);
+            if skipped {
+                out.push(to_queue_track(t, false));
+                continue;
+            }
+            if checks == GRID_CHECK_CAP || (found && !smart) {
+                break;
+            }
+            checks += 1;
+            let qt = to_queue_track(t, (self.grid_check)(t));
+            found |= qt.analysed();
+            out.push(qt);
+        }
+        out
     }
 
     fn pick(&mut self, current: Option<&QueueTrack>) -> Result<Option<QueueTrack>, String> {
         let records = self.candidates()?;
         let recent = self.recent_ids()?;
-        let mut tracks: Vec<QueueTrack> = records.iter().map(|t| self.queue_track(t)).collect();
         let in_order = matches!(self.source, QueueSource::Playlist(_));
-        if in_order && !tracks.is_empty() {
-            // Start after the last pick and wrap.
-            let start = self.cursor % tracks.len();
-            tracks.rotate_left(start);
-        }
+        let tracks: Vec<QueueTrack> = if in_order {
+            let mut tracks: Vec<QueueTrack> = records.iter().map(|t| self.queue_track(t)).collect();
+            if !tracks.is_empty() {
+                // Start after the last pick and wrap.
+                let start = self.cursor % tracks.len();
+                tracks.rotate_left(start);
+            }
+            tracks
+        } else {
+            let smart = self.cfg.smart;
+            self.shuffled_candidates(records, current, &recent, smart)
+        };
         let cfg = QueueConfig {
             order: if in_order {
                 Order::InOrder
@@ -244,6 +279,18 @@ impl AutomixQueue for LibraryQueue {
 
     fn last_skips(&self) -> Vec<(i64, SkipReason)> {
         self.skips.clone()
+    }
+}
+
+fn to_queue_track(t: &TrackRecord, has_grid: bool) -> QueueTrack {
+    QueueTrack {
+        id: t.id,
+        title: t.title.clone(),
+        artist: t.artist.clone(),
+        path: t.path.clone(),
+        bpm: t.bpm,
+        camelot: t.camelot.clone(),
+        has_grid,
     }
 }
 
