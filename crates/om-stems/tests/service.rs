@@ -500,3 +500,57 @@ fn clear_cache_removes_every_stem_set_and_index_row() {
         .expect("rows")
         .is_empty());
 }
+
+#[test]
+fn forgetting_one_of_two_tracks_that_share_a_hash_keeps_the_shared_directory() {
+    let fx = fixture(1);
+    let svc = service(&fx, Arc::new(MockSeparator::new()), None, None);
+    assert_eq!(finish(&svc.submit(request(&fx, 0))), JobStatus::Done);
+    // A duplicate file: another track row with the same content hash and a path of its own.
+    let dup_path = fx.dir.path().join("duplicate.wav");
+    write_wav(&dup_path, 44_100, 8820);
+    let lib = Library::open(&fx.library, OpenMode::ReadWrite, core_migrations()).unwrap();
+    let dup_id = lib
+        .tracks()
+        .insert(&TrackRecord {
+            path: dup_path.to_string_lossy().into_owned(),
+            content_hash: fx.tracks[0].2.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+    let dup = StemRequest {
+        track_id: dup_id,
+        path: dup_path,
+        content_hash: fx.tracks[0].2.clone(),
+    };
+    assert_eq!(finish(&svc.submit(dup)), JobStatus::Done, "a cache hit");
+    assert_eq!(svc.cache().entries().unwrap().len(), 1);
+
+    assert_eq!(svc.forget_track(fx.tracks[0].0).unwrap(), 1);
+    assert_eq!(
+        svc.cache().entries().unwrap().len(),
+        1,
+        "the duplicate still uses the directory"
+    );
+    assert_eq!(lib.track_stems().for_track(dup_id).unwrap().len(), 1);
+
+    assert_eq!(svc.forget_track(dup_id).unwrap(), 1);
+    assert!(svc.cache().entries().unwrap().is_empty());
+}
+
+#[test]
+fn startup_removes_committed_directories_no_row_references() {
+    let fx = fixture(1);
+    {
+        let svc = service(&fx, Arc::new(MockSeparator::new()), None, None);
+        assert_eq!(finish(&svc.submit(request(&fx, 0))), JobStatus::Done);
+        // The row goes away without its directory (an index loss, or a removal done elsewhere).
+        let lib = Library::open(&fx.library, OpenMode::ReadWrite, core_migrations()).unwrap();
+        let rows = lib.track_stems().list_all_bytes().unwrap();
+        for row in rows {
+            lib.track_stems().delete_by_dir(&row.dir).unwrap();
+        }
+    }
+    let svc = service(&fx, Arc::new(MockSeparator::new()), None, None);
+    assert!(svc.cache().entries().unwrap().is_empty());
+}
