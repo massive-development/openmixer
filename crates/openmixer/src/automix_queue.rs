@@ -46,7 +46,11 @@ impl LibraryQueue {
     /// [`LibraryQueue::with_grid_check`] a track counts as having a grid when it has a BPM; the app
     /// asks the analysis cache instead, which is the rule that matters.
     pub fn new(library: Library, source: QueueSource, cfg: QueueConfig, seed: u64) -> Self {
-        Self::shared(Arc::new(library), source, cfg, seed)
+        // The queue stays on the window thread with the browser: the Arc is for sharing one
+        // connection on that thread, not across threads.
+        #[allow(clippy::arc_with_non_send_sync)]
+        let library = Arc::new(library);
+        Self::shared(library, source, cfg, seed)
     }
 
     /// A queue over a library the app shares with its browser (the same connection pool).

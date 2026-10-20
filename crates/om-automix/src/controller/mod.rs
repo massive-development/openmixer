@@ -288,7 +288,6 @@ fn play_id(deck: u8) -> ParamId {
 }
 
 /// The beat a deck is at on its own grid, when it has a track and a grid.
-
 fn beat_of(info: &DeckInfo, deck: &DeckSnapshot) -> Option<f64> {
     let grid = info.grid.as_ref()?;
     deck.loaded
