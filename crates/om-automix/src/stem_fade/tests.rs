@@ -51,7 +51,7 @@ fn engine(decks: usize, with_stems: &[usize]) -> EngineSnapshot {
         mixer: MixerSnapshot::default(),
         stems,
         sampler: SamplerSnapshot::default(),
-        automix: AutomixSnapshot,
+        automix: AutomixSnapshot::default(),
     }
 }
 
