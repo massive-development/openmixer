@@ -248,6 +248,7 @@ pub fn main(args: &[String]) -> ExitCode {
         // The demo's tracks are sine tones with no tempo: give deck A a fixed grid once its
         // analysis lands, so screenshots show beat ticks.
         demo_grid_bpm: demo.then_some(120.0),
+        samples: composition.services.samples.clone(),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();
