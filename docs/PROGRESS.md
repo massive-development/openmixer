@@ -5,7 +5,7 @@ Where the project stands against the goal: a clean-room, djay-Pro-class DJ appli
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: 2026-10-19. Update this file in the same PR that changes a task's status._
+_Last updated: 2026-10-20. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -123,9 +123,15 @@ Before Wave 7, the Foundation (typed control surface, pulled engine snapshot, ty
 
 | Wave | Contents | Status |
 |------|----------|--------|
-| 7 | Stem-aware mixing, Automix, stem transitions, 8-pad sampler | 🟡 (stem playback and `StemMixer` in the engine, S5; the rest not started) |
+| 7 | Stem-aware mixing, Automix, stem transitions, 8-pad sampler | 🟡 (stem playback and `StemMixer` in the engine, S5; sampler engine and control surface, P1/P3, not heard; the rest not started) |
 | 8 | Mix recording, broadcasting, DVS (timecode vinyl), video mixing | ⬜ |
 | 9 | Legal audit, trademark check, packaging, docs, v1.0.0 | ⬜ |
+
+### Wave 7 P1/P3: sampler engine and control surface (Todo 40, engine level)
+
+`om-engine::sampler` has 8 pads of 4 voices each, preallocated. Samples decode off the audio thread (`Sample::load`, capped at 60 s / 64 MiB) and reach the audio side over an `rtrb` command ring; replaced samples return on a second ring and are freed on the control side. It mixes into the master bus before the master gain and inserts. Control: `SamplerControl`, `sampler.pad<N>.trigger|gate|volume|pitch` ids, `StateId::Sampler` reads, `EngineSnapshot.sampler`, `Command::SamplerAssign` through `DjEngine::command_sink`, and `fixtures/controllers/sampler_map.json`. Verified headlessly (render tests, an `assert_no_alloc` run with decks and all pads, a MIDI map test); not listened to. Open: sample storage (P2), the pad UI (P4) and a soak scenario (P5).
+
+Cost (release build, `cargo test -p om-engine --release sampler_cost -- --ignored --nocapture`): per 256-frame block at 44.1 kHz, 12 microseconds with 8 voices, 47 microseconds with 32 voices, 69 microseconds with 32 voices at a fractional pitch (the block budget is 5.8 ms).
 
 ### Wave 7 S5: stem-aware deck playback (Todo 37, engine level)
 

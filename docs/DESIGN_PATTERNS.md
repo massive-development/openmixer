@@ -84,7 +84,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-midi` (`map.rs` JSON mapping, `mapper.rs`, `trace.rs` replay and `writer.rs` recording)
 - **Why:** controller mappings are user files, not code; mappings are tested by replaying recorded MIDI with no hardware.
 - **Reuse when:** any user-editable config or hardware-driven feature (HID, OSC): parse into a plain struct, apply through the command enum, test with recorded input.
-- **Stem ids (Wave 7):** a map may target `stem.<deck>.<stem>.volume` (gain 0..1.5), `stem.<deck>.<stem>.mute` (on from 0.5) and `stem.<deck>.<stem>.filter` (-1..1), with deck 0..3 and stem 0..3 (drums, bass, vocals, other). Example map: `fixtures/controllers/stem_map.json`. The learnable list offers the mute of every stem; solo and all-on are UI-only and are not MIDI targets.
+- **Stem ids (Wave 7):** a map may target `stem.<deck>.<stem>.volume` (gain 0..1.5), `stem.<deck>.<stem>.mute` (on from 0.5) and `stem.<deck>.<stem>.filter` (-1..1), with deck 0..3 and stem 0..3 (drums, bass, vocals, other). Example map: `fixtures/controllers/stem_map.json`. **Sampler ids (Wave 7):** `sampler.pad<0..7>.trigger` (velocity 0..1, 0 releases), `.gate` (on from 0.5, off releases), `.volume` (0..1.5), `.pitch` (-12..12); example `fixtures/controllers/sampler_map.json`. The learnable list offers the mute of every stem; solo and all-on are UI-only and are not MIDI targets.
 
 ### Grid trait with mock implementations (BeatGrid)
 - **Where:** `om-engine` (`grid.rs`: the read-only `BeatGrid` trait and the `FixedTempoGrid` constant-tempo grid; `om-analysis` implements it for `AnalysedBeatGrid` in `beat_grid.rs`). - **Why:** sync/quantize can be built and tested before analysis exists; analysis plugs in by implementing `BeatGrid`. Keeping the trait in `om-core` lets `om-analysis` implement it without depending on `om-engine`.
@@ -326,6 +326,12 @@ pub trait AudioCallback: Send {
 - **Why:** a transition is a function of the beat position. Values come from `value_at(beat)`, so repeating a tick sends the same numbers, and a fade always ends on exactly `to` (the end is tested with `>=`, not with a `t` that may round to 0.9999). Tests run the plan over simulated 30 Hz ticks with a mock sink, with no audio.
 - **Reuse when:** a control-side ramp must reach the engine as `Command::Param` (automix, macros, a fade-out on stop). Keep the curve and the window in the plan and pass only the beat to the runner; do not keep a timer in the ramp.
 - **Notes:** a `Mute` fade and any zero-length fade are steps. `restore_values` is the first `from` per id, and a cancel restores only the fades that started. A fade whose deck has no stems is reported once and then ignored. A backwards beat jump (seek) re-sends the overlapped fades at the new position.
+
+### Plain-command ring with a retire ring (sampler)
+- **Where:** `om-engine/src/sampler/` (`SamplerControl`, `SamplerAudio`), the same shape as `StageInsert`/`StageChain`.
+- **Why:** the audio thread must not allocate, lock, block or drop. Control sends plain `SamplerCmd`s on an `rtrb` ring; the only heap thing that crosses is an `Arc<Sample>`, and what the audio thread releases (a replaced sample, a finished voice's clone) goes back on a second ring for the control side to drop. A full ring drops a trigger and counts it instead of blocking. Continuous values (gain, pitch, mode) are latest-wins atomics, not commands, so they cannot be lost.
+- **Reuse when:** the audio thread needs to own or release shared heap data. If the retire ring is full, hold the value and retry next block; stall the command queue (`peek`) rather than reorder it.
+- **Notes:** `Arc` clones on trigger are an atomic increment, not an allocation. Voices that must outlive a stolen or replaced slot get spare slots so a fade-out never needs the slot of the voice that replaces it.
 
 ## Idioms and their Rust equivalents
 
