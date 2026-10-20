@@ -483,3 +483,17 @@ fn engine_sampler_is_silent_until_triggered_and_stops_cleanly() {
     run(&mut audio, 2, 512);
     assert!(run(&mut audio, 2, 256)[0].iter().all(|&v| v == 0.0));
 }
+
+#[test]
+fn update_control_reclaims_samples_the_audio_thread_let_go_of() {
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    let first = sampler_dc(100, 0.25);
+    engine.sampler().assign(0, Arc::clone(&first)).unwrap();
+    run(&mut audio, 2, 64);
+    engine.sampler().assign(0, sampler_dc(100, 0.5)).unwrap();
+    run(&mut audio, 2, 64);
+    assert_eq!(Arc::strong_count(&first), 2, "parked in the retire ring");
+    engine.update_control(1.0 / 30.0);
+    assert_eq!(Arc::strong_count(&first), 1, "freed by the control tick");
+}

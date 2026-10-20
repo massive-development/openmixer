@@ -128,8 +128,9 @@ impl SamplerControl {
         }
     }
 
-    /// Frees samples the audio thread has let go of. Called by `assign` and `clear`; call it from a
-    /// timer too if a pad can go a long time without either.
+    /// Frees samples the audio thread has let go of. Called by `assign` and `clear`, and by
+    /// [`crate::DjEngine::update_control`] on the control tick. The audio side keeps working
+    /// without it (finished voices stay reusable), but replaced samples are only freed here.
     pub fn reclaim(&self) {
         let mut retired = self.retired.lock_unpoisoned();
         while retired.pop().is_ok() {}
