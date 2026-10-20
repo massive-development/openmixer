@@ -634,3 +634,26 @@ fn a_corrupt_stem_file_leaves_the_deck_plain_with_a_status_note() {
         |note| note.starts_with("stems failed:") && note.ends_with("playing the plain track")
     ));
 }
+
+#[test]
+fn starting_cached_stems_marks_the_entry_as_recently_used() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    let root = cache_stems(&rig, track, false);
+    let entry = root.join(format!("cache-{track}-htdemucs-v1"));
+    let meta = entry.join("meta.json");
+    std::fs::write(&meta, "{}").unwrap();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+    std::fs::File::options()
+        .write(true)
+        .open(&meta)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    rig.loader.configure_stems(source(root), true, None);
+    rig.load(0, track).expect("loads");
+    assert!(rig.engine.deck(0).has_stems());
+    let mtime = std::fs::metadata(&meta).unwrap().modified().unwrap();
+    let age = std::time::SystemTime::now().duration_since(mtime).unwrap();
+    assert!(age < std::time::Duration::from_secs(600), "age {age:?}");
+}
