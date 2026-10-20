@@ -224,6 +224,10 @@ impl SettingsState {
             return;
         };
         let text = entry.text.trim().to_owned();
+        if entry.kind == EntryKind::MaxCacheGb {
+            self.stems_submit_max_cache(&text);
+            return;
+        }
         if text.is_empty() {
             self.entry = Some(entry);
             self.set_notice("Type a path first", true);
@@ -234,6 +238,8 @@ impl SettingsState {
             EntryKind::WatchFolder => self.library_add_folder(path),
             EntryKind::ImportXml => self.library_import(path),
             EntryKind::MapFile => self.midi_load_map(path),
+            // Handled above, before the path is made.
+            EntryKind::MaxCacheGb => {}
         }
     }
 }
