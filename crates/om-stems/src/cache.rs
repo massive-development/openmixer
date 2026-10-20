@@ -212,6 +212,13 @@ fn stem_file(kind: StemKind) -> String {
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// The on-disk stem cache at one root (see the module docs for the layout).
+///
+/// Eviction and [`StemCache::remove`] may delete an entry that a deck is playing. On POSIX that is
+/// safe: the deck's open file handles keep the data readable until the deck lets go. On Windows
+/// the directory cannot be removed while a file in it is open, so `remove_dir_all` fails there and
+/// the entry stays until the deck stops. A deck that asks for an entry which is already gone gets
+/// `Missing` from `load_stems` and keeps playing the plain track.
 pub struct StemCache {
     root: PathBuf,
 }
