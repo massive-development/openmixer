@@ -508,7 +508,7 @@ impl AutomixController {
             } else {
                 1.0
             },
-            out_on_left: run.out % 2 == 0,
+            out_on_left: run.out.is_multiple_of(2),
             echo_unit: self.cfg.echo_unit,
             snapshot: Some(snap),
         }
