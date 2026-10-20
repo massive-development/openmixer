@@ -288,7 +288,7 @@ impl Sim {
     }
 
     /// Runs until the transition is some way in.
-    fn into_transition(&mut self) {
+    fn run_into_transition(&mut self) {
         self.run_until("transitioning", 3000, |s| {
             s.state() == AutomixState::Transitioning
         });
@@ -370,7 +370,7 @@ fn the_snapshot_reports_progress_and_the_next_track() {
     assert!(s.remaining_beats.unwrap() <= 96.0);
     sim.run_until("armed", 100, |s| s.state() == AutomixState::Armed);
     assert_eq!(sim.ctrl.snapshot().plan_style, Some(Style::Crossfade));
-    sim.into_transition();
+    sim.run_into_transition();
     let s = sim.ctrl.snapshot();
     assert!(s.progress > 0.0 && s.progress < 1.0);
     assert_eq!(s.state, AutomixState::Transitioning);
@@ -400,7 +400,7 @@ fn nothing_is_sent_while_idle_or_far_from_the_end() {
 #[test]
 fn disabling_mid_transition_cancels_and_stays_quiet() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     sim.control.set_enabled(false);
     sim.tick();
     assert_eq!(sim.state(), AutomixState::Idle);
@@ -429,7 +429,7 @@ fn assert_cancelled(sim: &mut Sim, expect: &str) -> usize {
 #[test]
 fn a_manual_crossfader_move_cancels_without_snapping_back() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     sim.snap.mixer.crossfader = 0.9;
     let before = sim.cmds().len();
     assert_cancelled(&mut sim, "mixer.crossfader");
@@ -498,7 +498,7 @@ fn every_manual_input_on_the_pair_cancels() {
     ];
     for (name, poke, expect) in cases {
         let mut sim = Sim::new(380.0, false);
-        sim.into_transition();
+        sim.run_into_transition();
         poke(&mut sim);
         assert_cancelled(&mut sim, expect);
         eprintln!("ok: {name}");
@@ -508,14 +508,14 @@ fn every_manual_input_on_the_pair_cancels() {
 #[test]
 fn input_reported_by_the_binding_layer_cancels() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     sim.ctrl
         .notify_user_input(&ParamId::Mixer(MixerParam::Crossfader));
     assert_cancelled(&mut sim, "mixer.crossfader");
 
     // Input on an uninvolved channel or on automix itself is ignored.
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     sim.ctrl
         .notify_user_input(&ParamId::Mixer(MixerParam::Channel {
             ch: 3,
@@ -540,7 +540,7 @@ fn input_reported_by_the_binding_layer_cancels() {
 #[test]
 fn automix_cancel_stops_the_plan_and_skips_the_track() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     assert!(sim
         .control
         .set_param(&ParamId::Automix(AutomixParam::Cancel), 1.0));
@@ -551,7 +551,7 @@ fn automix_cancel_stops_the_plan_and_skips_the_track() {
 #[test]
 fn an_underrun_cancels_and_turns_automix_off() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     sim.host.underruns += 1;
     assert_cancelled(&mut sim, "underrun");
     assert!(!sim.control.is_enabled());
@@ -561,7 +561,7 @@ fn an_underrun_cancels_and_turns_automix_off() {
 #[test]
 fn a_closed_sink_cancels() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     sim.sink.closed.store(true, Ordering::Relaxed);
     sim.tick();
     assert_eq!(sim.state(), AutomixState::Idle);
@@ -576,7 +576,7 @@ fn cancel_leave_mode_keeps_stem_moves_and_restore_off_keeps_eq() {
         ..AutomixConfig::default()
     };
     let mut sim = Sim::with(cfg, 380.0, false, info(1, BPM, "8A", false));
-    sim.into_transition();
+    sim.run_into_transition();
     sim.snap.mixer.crossfader = 0.9;
     sim.tick();
     assert_eq!(
@@ -588,7 +588,7 @@ fn cancel_leave_mode_keeps_stem_moves_and_restore_off_keeps_eq() {
 #[test]
 fn a_cancel_before_the_midpoint_restores_the_killed_bass() {
     let mut sim = Sim::new(380.0, false);
-    sim.into_transition();
+    sim.run_into_transition();
     assert_eq!(
         sim.snap.mixer.channels[1].eq[0], -48.0,
         "incoming bass is cut at first"
