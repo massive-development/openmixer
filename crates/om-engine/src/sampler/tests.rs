@@ -105,9 +105,9 @@ fn pitch_plus_twelve_plays_at_double_speed() {
     control.set_pitch(0, 12.0);
     control.trigger(0, 1.0);
     let (l, _) = render(&mut audio, 600);
-    for i in 100..600 {
+    for (i, &got) in l.iter().enumerate().skip(100) {
         let want = (2 * i) as f32 / 4000.0;
-        assert!((l[i] - want).abs() < 1e-4, "frame {i}: {} vs {want}", l[i]);
+        assert!((got - want).abs() < 1e-4, "frame {i}: {got} vs {want}");
     }
     // And the sample ends after half the frames.
     let (l, _) = render(&mut audio, 2000);
@@ -171,8 +171,8 @@ fn loop_wraps_seamlessly_until_release() {
     control.set_mode(0, PadMode::Loop);
     control.trigger(0, 1.0);
     let (l, _) = render(&mut audio, 500);
-    for i in 40..500 {
-        assert_eq!(l[i], (i % 50) as f32, "frame {i}");
+    for (i, &got) in l.iter().enumerate().skip(40) {
+        assert_eq!(got, (i % 50) as f32, "frame {i}");
     }
     control.release(0);
     render(&mut audio, 400);
