@@ -36,7 +36,6 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 29:** MIDI hot-plug refresh: `midi.rs` reconciles ports about once a second, but the MIDI page list is read on open and on page change only. S
 - **Todo 10a:** plugin dynamic loading: open decision; `PluginLoader` reports every shared library as unsupported. S for the decision, L to implement
 - **Todo 35:** HID layer: not started. L
-- **Todo 36:** mapping editor: only learn start and cancel exist; no in-app editing of maps. M
 - **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
 - **Todo 8b:** FFmpeg decode backend: not started (optional). M
 - **Todo 24:** auto-enqueue after scan: the prep queue is fed only by a browser click and by track load (`browser.rs`, `track_loader.rs`); a scan does not enqueue. S
@@ -229,7 +228,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - Todos 32/33 moved to Wave 2
 - [ ] **Todo 34:** Plug-and-play controller maps (`fixtures/controllers` holds only test fixtures)
 - [ ] **Todo 35:** HID layer
-- [ ] **Todo 36:** Mapping editor UI
+- [x] **Todo 36:** Mapping editor UI (logic and view level: edit, undo, conflicts, learn, save and import in the Mapping tab; not verified with hardware)
 
 ## Wave 7: Intelligence
 
