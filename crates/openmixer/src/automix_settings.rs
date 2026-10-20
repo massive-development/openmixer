@@ -117,10 +117,12 @@ mod tests {
 
     #[test]
     fn the_config_is_derived_from_the_length_gap_and_autostart() {
-        let mut a = AutomixPrefs::default();
-        a.length_beats = 32;
-        a.min_bpm_gap_percent = 10;
-        a.autostart_at_end = false;
+        let a = AutomixPrefs {
+            length_beats: 32,
+            min_bpm_gap_percent: 10,
+            autostart_at_end: false,
+            ..Default::default()
+        };
         let cfg = automix_config(&a);
         assert_eq!(cfg.length_beats, Some(32.0));
         assert!((cfg.max_bpm_ratio - 0.10).abs() < 1e-9);
@@ -130,11 +132,13 @@ mod tests {
     #[test]
     fn applying_prefs_updates_the_queue_settings_the_host_reads() {
         let shared = AutomixShared::new();
-        let mut a = AutomixPrefs::default();
-        a.enabled = true;
-        a.style = 2;
-        a.smart = false;
-        a.queue_search = true;
+        let a = AutomixPrefs {
+            enabled: true,
+            style: 2,
+            smart: false,
+            queue_search: true,
+            ..Default::default()
+        };
         apply_automix_prefs(&shared, &a);
         let queue = shared.queue_settings();
         let settings = queue.lock().unwrap().clone();
