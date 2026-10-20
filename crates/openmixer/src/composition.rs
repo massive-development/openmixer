@@ -25,10 +25,11 @@ use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
+use om_ui::sample_bank::{self, SampleBank};
 use om_ui::settings::{MidiHost, PluginHost};
 use om_ui::theme::{default_user_directory, session_theme_override, Source, ThemeRegistry};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Number of decks the app starts with.
 pub const DECKS: usize = 2;
@@ -57,6 +58,9 @@ pub struct Services {
     /// The stem service, once [`AppComposition::attach_stems`] found a separator (an installed
     /// model with the `onnx` feature, or the mock). Jobs only start when something submits them.
     pub stems: Option<Arc<StemService>>,
+    /// The sample bank, once [`AppComposition::attach_samples`] has run. Its decodes are installed
+    /// by [`SampleBank::pump`], which the window calls from its control tick.
+    pub samples: Option<Arc<SampleBank>>,
 }
 
 impl Services {
@@ -102,6 +106,8 @@ pub struct AppComposition {
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
     pub plugins: PluginRegistry,
+    /// The sample bank the control thread pumps once it is attached.
+    sample_slot: Arc<OnceLock<Arc<SampleBank>>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
     midi_feedback: Option<FeedbackThread>,
     /// Drives the engine's control clock (sync, slip, FX tempo) from its own thread.
@@ -136,7 +142,9 @@ impl AppComposition {
         };
 
         let themes = load_themes(user_themes.as_deref());
-        let control_timer = match ControlTimer::start(Arc::clone(&engine)) {
+        let sample_slot = Arc::new(OnceLock::new());
+        let control_timer = match ControlTimer::start(Arc::clone(&engine), Arc::clone(&sample_slot))
+        {
             Ok(timer) => Some(timer),
             Err(error) => {
                 eprintln!("openmixer: control clock thread: {error}");
@@ -146,6 +154,7 @@ impl AppComposition {
 
         Self {
             _control_timer: control_timer,
+            sample_slot,
             engine,
             router,
             themes,
@@ -217,6 +226,24 @@ impl AppComposition {
     pub fn stem_command_sink(&self) -> Arc<dyn om_core::CommandSink> {
         let fallback: Arc<dyn om_core::CommandSink> = self.router.clone();
         self.engine.command_sink(Some(fallback))
+    }
+
+    /// Opens the sample bank in `dir` (`None` means `<data dir>/samples`) and applies it: gain, pitch
+    /// and mode at once, each file that exists queued for decode. Notes (missing files, bad entries)
+    /// go to stderr. The bank is kept in `services.samples`.
+    pub fn attach_samples(&mut self, dir: Option<PathBuf>) {
+        let dir = dir.unwrap_or_else(sample_bank::default_dir);
+        let bank = Arc::new(SampleBank::open(
+            dir,
+            Arc::clone(&self.engine),
+            self.stem_command_sink(),
+        ));
+        bank.apply();
+        for note in bank.take_notes() {
+            eprintln!("openmixer: samples: {note}");
+        }
+        let _ = self.sample_slot.set(Arc::clone(&bank));
+        self.services.samples = Some(bank);
     }
 
     /// The stems host, once [`AppComposition::attach_stems`] has run. Taken by the window.

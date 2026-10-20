@@ -179,6 +179,12 @@ impl DjEngine {
         self.samples.register(sample)
     }
 
+    /// Drops a sample handle once its `Command::SamplerAssign` has been sent. A pad that holds the
+    /// sample keeps it. Control thread.
+    pub fn forget_sample(&self, id: SampleId) {
+        self.samples.forget(id);
+    }
+
     /// Decodes `path` at the engine's sample rate (off the audio thread; call from a worker) and
     /// registers it. The rate is the one the audio side was last prepared with.
     pub fn load_sample(&self, path: &Path) -> Result<SampleId, SamplerError> {
