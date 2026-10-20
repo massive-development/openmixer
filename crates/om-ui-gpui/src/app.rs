@@ -10,6 +10,7 @@ use crate::library::{LibraryPanel, SharedHub};
 use crate::library_view::library_card;
 use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
+use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
     div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, KeyDownEvent,
@@ -17,14 +18,17 @@ use gpui::{
 };
 use om_analysis::WaveformData;
 use om_core::ParameterRouter;
+use om_core::{CommandSink, ParameterTarget};
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{
-    visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT,
+    visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT, SAMPLER_SLOT,
 };
 use om_ui::meter::meter_params;
+use om_ui::sample_bank::SampleBank;
+use om_ui::sampler_binding::SamplerBinding;
 use om_ui::theme::{ThemeRegistry, ThemeTokens};
 use om_ui::widgets::deck::{DeckWidget, TrackInfo, WaveformMeta};
 use om_ui::widgets::mixer::MixerPanel;
@@ -58,6 +62,9 @@ pub struct RunOptions {
     pub library_rows_out: Option<Arc<AtomicUsize>>,
     /// Demo only: a fixed-tempo beat grid (BPM) put on deck A each time its analysis lands.
     pub demo_grid_bpm: Option<f64>,
+    /// The sample bank behind the sampler strip (loads and per-pad settings). `None` leaves loads
+    /// refused; the pads still play what the engine holds.
+    pub samples: Option<Arc<SampleBank>>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -88,6 +95,16 @@ pub struct Shell {
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
     /// The last stems action's failure per deck, shown in the stems caption until the next action.
     pub(crate) stem_errors: Vec<Option<String>>,
+    /// The sampler strip's view-model: pads, selection, path fields and the sample bank.
+    pub(crate) sampler: SamplerBinding,
+    /// Focus for the sampler strip: its digit keys press pads while it has focus.
+    pub(crate) sampler_focus: Option<FocusHandle>,
+    /// True while the selected pad's path field takes typed keys.
+    pub(crate) sampler_editing: bool,
+    /// The last sampler action's outcome: its text, and whether it is an error.
+    pub(crate) sampler_status: Option<(String, bool)>,
+    /// The pad held down by a click or a digit key, released when that goes up.
+    pub(crate) sampler_held: Option<usize>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -127,6 +144,12 @@ impl Shell {
             .take()
             .map(|hub| LibraryPanel::new(hub, Arc::clone(&engine)));
         let deck_count = engine.num_decks();
+        let sampler = SamplerBinding::new(
+            Arc::clone(&engine),
+            Some(router.clone() as Arc<dyn CommandSink>),
+            router.clone() as Arc<dyn ParameterTarget>,
+            options.samples.clone(),
+        );
         let mixer = MixerPanel::new(
             MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router)),
             meter_params(&theme),
@@ -156,6 +179,11 @@ impl Shell {
             shown_info: vec![TrackInfo::default(); deck_count],
             shown_waveform: vec![None; deck_count],
             stem_errors: vec![None; deck_count],
+            sampler,
+            sampler_focus: None,
+            sampler_editing: false,
+            sampler_status: None,
+            sampler_held: None,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -221,6 +249,7 @@ impl Shell {
             deck.refresh(false);
         }
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
+        self.sampler.prune_pending();
         self.frames += 1;
         self.frames_out.store(self.frames, Ordering::Relaxed);
         if let (Some(out), Some(panel)) = (&self.options.library_rows_out, &self.library) {
@@ -298,6 +327,13 @@ impl Shell {
         match &cell.kind {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
             CellKind::Slot(name) if name == MIXER_SLOT => mixer_card(self, cell.bounds, cx),
+            CellKind::Slot(name) if name == SAMPLER_SLOT => {
+                let focus = self
+                    .sampler_focus
+                    .get_or_insert_with(|| cx.focus_handle())
+                    .clone();
+                sampler_card(self, cell.bounds, focus, cx)
+            }
             CellKind::Slot(name) if name == LIBRARY_SLOT && self.library.is_some() => {
                 library_card(self, cell.bounds, cx)
             }
