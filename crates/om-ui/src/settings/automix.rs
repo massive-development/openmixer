@@ -201,13 +201,23 @@ mod tests {
         assert!(!a.autostart_at_end);
     }
 
+    /// Code 5 is Stem bridge, listed by the page: it must be accepted, not refused.
+    #[test]
+    fn stem_bridge_is_a_valid_style() {
+        let mut prefs = Preferences::default();
+        let mut fake = Fake::default();
+        let mut page = AutomixSettingsPage::new(&mut prefs, &mut fake);
+        assert!(page.set_style(5).unwrap());
+        assert_eq!(page.settings().style, 5);
+    }
+
     #[test]
     fn style_out_of_range_is_refused_and_nothing_is_pushed() {
         let mut prefs = Preferences::default();
         let mut fake = Fake::default();
         let mut page = AutomixSettingsPage::new(&mut prefs, &mut fake);
         assert!(matches!(
-            page.set_style(5),
+            page.set_style(6),
             Err(SettingsError::InvalidValue { field: "style" })
         ));
         assert!(page.set_style(-1).is_err());

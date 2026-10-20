@@ -24,7 +24,7 @@ pub const PREFERENCES_VERSION: i64 = 3;
 pub struct AutomixPrefs {
     /// Automix runs. Off by default: nothing is ever mixed without the user turning it on.
     pub enabled: bool,
-    /// Style code (`AutomixStyle::as_u8`): 0 Auto, others per the style list. Clamped to 0..=4.
+    /// Style code (`AutomixStyle::as_u8`): 0 Auto, others per the style list. Clamped to 0..=5 (5 is Stem bridge).
     pub style: i32,
     /// Transition length in beats: 8, 16 or 32 (other values snap to the nearest).
     pub length_beats: i32,
@@ -41,7 +41,7 @@ pub struct AutomixPrefs {
     pub autostart_at_end: bool,
 }
 
-pub const MAX_AUTOMIX_STYLE: i64 = 4;
+pub const MAX_AUTOMIX_STYLE: i64 = 5;
 pub const MAX_BPM_GAP_PERCENT: i64 = 20;
 
 impl Default for AutomixPrefs {
@@ -540,6 +540,12 @@ mod tests {
         assert_eq!(p.automix, AutomixPrefs::default());
         assert!(!p.automix.enabled);
         assert_eq!(p.automix.length_beats, 16);
+    }
+
+    #[test]
+    fn stem_bridge_style_survives_a_reload() {
+        let p = Preferences::from_json(r#"{"version":3,"automix":{"style":5}}"#).unwrap();
+        assert_eq!(p.automix.style, 5);
     }
 
     #[test]
