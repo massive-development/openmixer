@@ -60,7 +60,16 @@ fn a_sample_plays_to_its_end_then_the_voice_is_free_and_silent() {
     control.assign(0, dc(100, 0.5)).unwrap();
     control.trigger(0, 1.0);
     let (l, _) = render(&mut audio, 300);
-    assert_eq!(l[99], 0.5);
+    assert_eq!(l[60], 0.5, "full level before the tail");
+    assert!(
+        l[99] > 0.0 && l[99] < 0.1,
+        "last frame is nearly faded: {}",
+        l[99]
+    );
+    assert!(
+        l[68..100].windows(2).all(|w| w[1] < w[0]),
+        "a 32 frame tail fade"
+    );
     assert!(l[100..].iter().all(|&v| v == 0.0));
     assert_eq!(control.snapshot().voices_active, 0);
     assert!(!control.snapshot().pads[0].playing);
@@ -547,4 +556,44 @@ fn voices_of_replaced_samples_stay_reusable_when_the_retire_ring_is_full() {
     render(&mut audio, 16);
     control.reclaim();
     assert_eq!(Arc::strong_count(&old), 1);
+}
+
+#[test]
+fn a_release_lost_to_a_full_command_ring_still_ends_the_gate() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(48_000, 1.0)).unwrap();
+    control.set_mode(0, PadMode::Gate);
+    control.trigger(0, 1.0);
+    let (l, _) = render(&mut audio, 500);
+    assert_eq!(l[499], 1.0);
+    for _ in 0..RING_CAPACITY {
+        control.release(1);
+    }
+    control.release(0); // the ring is full: this one is lost
+    assert_eq!(control.dropped_commands(), 1);
+    render(&mut audio, 500);
+    let (l, _) = render(&mut audio, 100);
+    assert!(
+        l.iter().all(|&v| v == 0.0),
+        "the held flag released the voice"
+    );
+    assert_eq!(control.snapshot().voices_active, 0);
+}
+
+#[test]
+fn trigger_and_release_in_one_block_is_a_short_audible_tap() {
+    for mode in [PadMode::Gate] {
+        let (mut audio, control) = setup();
+        control.assign(0, dc(48_000, 1.0)).unwrap();
+        control.set_mode(0, mode);
+        control.trigger(0, 1.0);
+        control.release(0);
+        let (l, _) = render(&mut audio, 1000);
+        let peak = l.iter().copied().fold(0.0_f32, f32::max);
+        assert!(peak > 0.99, "{mode:?} tap reaches full level: {peak}");
+        let sounding = l.iter().filter(|&&v| v > 0.0).count();
+        assert!(sounding >= 32, "at least a ramp long: {sounding}");
+        assert!(l[500..].iter().all(|&v| v == 0.0), "and then silent");
+        assert_eq!(control.snapshot().voices_active, 0);
+    }
 }

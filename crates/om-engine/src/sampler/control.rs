@@ -75,6 +75,8 @@ impl SamplerControl {
         if usize::from(pad) >= PADS || !velocity.is_finite() || velocity <= 0.0 {
             return;
         }
+        // Before the push, so the audio side never sees a voice whose press is not yet marked held.
+        self.shared.held[usize::from(pad)].store(true, Relaxed);
         self.send_or_count(SamplerCmd::Trigger {
             pad,
             velocity: velocity.min(1.0),
@@ -85,12 +87,16 @@ impl SamplerControl {
     /// Releases the pad's gate and loop voices; one-shots ignore it.
     pub fn release(&self, pad: u8) {
         if usize::from(pad) < PADS {
+            self.shared.held[usize::from(pad)].store(false, Relaxed);
             self.send_or_count(SamplerCmd::Release { pad });
         }
     }
 
     /// Fades out every voice.
     pub fn stop_all(&self) {
+        for held in &self.shared.held {
+            held.store(false, Relaxed);
+        }
         self.send_or_count(SamplerCmd::StopAll);
     }
 
