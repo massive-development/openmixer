@@ -29,7 +29,7 @@ impl AutomixController {
             self.remaining_beats = None;
             return;
         }
-        if self.stale_deck == Some(out) {
+        if self.stale_deck.is_some_and(|(d, _)| d == out) {
             self.stale_deck = None;
         }
         let Some(info) = self.out_info(out, out_len, host) else {
@@ -71,7 +71,10 @@ impl AutomixController {
             ticks: 0,
         };
         let partner = &snap.decks[usize::from(inc)];
-        if partner.loaded && self.stale_deck != Some(inc) {
+        let stale = self
+            .stale_deck
+            .is_some_and(|(d, len)| d == inc && partner.length_frames == len);
+        if partner.loaded && !stale {
             // The user cued a track on the free deck: mix into it as it is.
             run.title = host.deck_title(inc);
             self.next_title.clone_from(&run.title);
