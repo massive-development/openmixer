@@ -11,6 +11,7 @@ pub mod loops;
 pub mod master;
 pub mod mixer;
 pub mod pitch;
+pub mod sampler_strip;
 pub mod stem_pads;
 pub mod transport;
 
