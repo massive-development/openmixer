@@ -43,6 +43,11 @@ pub trait AutomixControl {
     fn playlists(&self) -> SettingsResult<Vec<(i64, String)>> {
         Ok(Vec::new())
     }
+    /// Pushes the running flag. An Enable press calls it even when the stored preference already
+    /// has that value, because the controller may have turned itself off since.
+    fn set_running(&mut self, _on: bool) -> SettingsResult<()> {
+        Ok(())
+    }
     /// Pushes the stored settings to the controller and the queue. Called after every change.
     fn apply(&mut self, prefs: &AutomixPrefs) -> SettingsResult<()>;
 }
@@ -82,7 +87,10 @@ impl<'a> AutomixSettingsPage<'a> {
         self.control.playlists()
     }
 
+    /// The Enable preference is the launch default; the running flag follows the controller, and
+    /// an explicit press sets it directly.
     pub fn set_enabled(&mut self, on: bool) -> SettingsResult<bool> {
+        self.control.set_running(on)?;
         self.edit(|a| set_if_changed(&mut a.enabled, on))
     }
 
@@ -145,6 +153,7 @@ mod tests {
     #[derive(Default)]
     struct Fake {
         applies: Vec<AutomixPrefs>,
+        running: Vec<bool>,
         playlists: Vec<(i64, String)>,
         fail: bool,
     }
@@ -152,6 +161,11 @@ mod tests {
         fn playlists(&self) -> SettingsResult<Vec<(i64, String)>> {
             Ok(self.playlists.clone())
         }
+        fn set_running(&mut self, on: bool) -> SettingsResult<()> {
+            self.running.push(on);
+            Ok(())
+        }
+
         fn apply(&mut self, prefs: &AutomixPrefs) -> SettingsResult<()> {
             self.applies.push(prefs.clone());
             if self.fail {
@@ -247,6 +261,21 @@ mod tests {
         let mut page = AutomixSettingsPage::new(&mut prefs, &mut fake);
         assert!(page.set_enabled(true).is_err());
         assert!(page.settings().enabled);
+    }
+
+    /// An Enable press sets the running flag even when the stored preference already has that value:
+    /// after the controller turned itself off, the preference still says On.
+    #[test]
+    fn an_enable_press_reaches_the_running_flag_even_when_the_preference_agrees() {
+        let mut prefs = Preferences::default();
+        prefs.automix.enabled = true;
+        let mut fake = Fake::default();
+        {
+            let mut page = AutomixSettingsPage::new(&mut prefs, &mut fake);
+            assert!(!page.set_enabled(true).unwrap(), "stored value unchanged");
+        }
+        assert_eq!(fake.running, vec![true]);
+        assert!(fake.applies.is_empty(), "nothing stored changed, nothing pushed");
     }
 
     #[test]
