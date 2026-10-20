@@ -361,3 +361,125 @@ fn sync_enable_for_a_missing_deck_is_unhandled() {
     assert!(!router.set_parameter("deck.3.play", 1.0));
     assert_eq!(router.unknown_count(), 3);
 }
+
+fn sampler_dc(frames: usize, value: f32) -> Arc<crate::sampler::Sample> {
+    Arc::new(crate::sampler::Sample::from_mono("dc", RATE, &vec![value; frames]).unwrap())
+}
+
+#[test]
+fn sampler_is_driven_by_the_router_and_fills_the_snapshot_and_state_reads() {
+    use om_core::{EngineSnapshot, PadMode, StateId};
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    let router = ParameterRouter::new();
+    engine.register(&router);
+    engine.sampler().assign(2, sampler_dc(5000, 0.25)).unwrap();
+    engine.sampler().set_mode(2, PadMode::Gate);
+    assert!(router.set_parameter("sampler.pad2.volume", 0.5));
+    assert!(router.set_parameter("sampler.pad2.pitch", -3.0));
+    assert!(router.set_parameter("sampler.pad2.trigger", 1.0));
+    let snap_before = engine.snapshot();
+    assert!(!snap_before.sampler.pads[2].playing, "nothing rendered yet");
+    run(&mut audio, 2, 256);
+    let snap: EngineSnapshot = engine.snapshot();
+    let pad = snap.sampler.pads[2];
+    assert!(pad.loaded && pad.playing);
+    assert_eq!((pad.gain, pad.pitch, pad.mode), (0.5, -3.0, PadMode::Gate));
+    assert_ne!(pad.name_hash, 0);
+    assert!(!snap.sampler.pads[3].loaded);
+    assert_eq!(snap.sampler.voices_active, 1);
+    let read = |id: &str| snap.read(&id.parse::<StateId>().unwrap());
+    assert_eq!(read("sampler.pad2.playing"), Some(1.0));
+    assert_eq!(read("sampler.pad2.loaded"), Some(1.0));
+    assert_eq!(read("sampler.pad2.volume"), Some(0.5));
+    assert_eq!(read("sampler.pad2.pitch"), Some(-3.0));
+    assert_eq!(read("sampler.pad2.mode"), Some(1.0));
+    assert_eq!(read("sampler.pad5.playing"), Some(0.0));
+    assert_eq!(read("sampler.pad9.playing"), None);
+    // Hostile values never reach the audio thread.
+    for bad in [f64::NAN, f64::INFINITY] {
+        assert!(!router.set_parameter("sampler.pad2.volume", bad));
+    }
+    assert!(!router.set_parameter("sampler.pad8.trigger", 1.0));
+}
+
+#[test]
+fn sampler_assign_command_resolves_the_sample_registry() {
+    use om_core::{Command, CommandError};
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    let sink = engine.command_sink(None);
+    let id = engine.register_sample(sampler_dc(1000, 0.5));
+    sink.send(Command::SamplerAssign { pad: 1, sample: id })
+        .unwrap();
+    assert!(engine.snapshot().sampler.pads[1].loaded);
+    let unknown = om_core::SampleId(999);
+    assert!(matches!(
+        sink.send(Command::SamplerAssign {
+            pad: 1,
+            sample: unknown
+        }),
+        Err(CommandError::Rejected(_))
+    ));
+    assert!(matches!(
+        sink.send(Command::SamplerAssign { pad: 8, sample: id }),
+        Err(CommandError::Rejected(_))
+    ));
+}
+
+#[test]
+fn sampler_mixes_before_the_master_gain_and_the_master_inserts() {
+    /// Stands in for a limiter on the master bus: clamps to +-1 and records the loudest input.
+    struct Clamp(Arc<Mutex<f32>>);
+    impl ProcessStage for Clamp {
+        fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+            for v in left.iter_mut().chain(right.iter_mut()) {
+                let mut seen = self.0.lock().unwrap();
+                *seen = seen.max(v.abs());
+                *v = v.clamp(-1.0, 1.0);
+            }
+        }
+    }
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    let seen = Arc::new(Mutex::new(0.0_f32));
+    assert!(engine
+        .mixer()
+        .set_master_insert(0, Some(Box::new(Clamp(Arc::clone(&seen))))));
+    engine.sampler().assign(0, sampler_dc(20_000, 1.0)).unwrap();
+    engine.sampler().assign(1, sampler_dc(20_000, 1.0)).unwrap();
+    engine.mixer().set_master_gain(0.5);
+    engine.sampler().trigger(0, 1.0);
+    engine.sampler().trigger(1, 1.0);
+    let out = run(&mut audio, 4, 512);
+    let peak = |buf: &[f32]| buf.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+    // Two unity pads sum to 2.0; the master fader halves it before the insert sees it.
+    assert!((*seen.lock().unwrap() - 1.0).abs() < 1e-5);
+    // Lower the fader's effect: raise the master and the insert clamps the sum.
+    engine.mixer().set_master_gain(1.0);
+    let out2 = run(&mut audio, 4, 512);
+    assert!(
+        (*seen.lock().unwrap() - 2.0).abs() < 1e-5,
+        "the insert sees the raw sum"
+    );
+    assert!(peak(&out2[0]) <= 1.0, "clamped by the insert, post sampler");
+    assert!((peak(&out[0]) - 1.0).abs() < 1e-5);
+    // The headphone cue (all-master mix) hears the sampler too.
+    engine.mixer().set_cue_mix(1.0);
+    engine.mixer().set_cue_level(1.0);
+    let out3 = run(&mut audio, 4, 512);
+    assert!(peak(&out3[2]) > 0.5);
+}
+
+#[test]
+fn engine_sampler_is_silent_until_triggered_and_stops_cleanly() {
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, 256);
+    engine.sampler().assign(0, sampler_dc(10_000, 0.5)).unwrap();
+    assert!(run(&mut audio, 2, 256)[0].iter().all(|&v| v == 0.0));
+    engine.sampler().trigger(0, 1.0);
+    assert!(run(&mut audio, 2, 256)[0].iter().any(|&v| v != 0.0));
+    engine.sampler().stop_all();
+    run(&mut audio, 2, 512);
+    assert!(run(&mut audio, 2, 256)[0].iter().all(|&v| v == 0.0));
+}
