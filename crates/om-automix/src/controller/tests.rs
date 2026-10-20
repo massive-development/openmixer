@@ -42,6 +42,8 @@ struct FakeHost {
     underruns: u64,
     /// The tempo gate each pick was asked with.
     gates: Vec<Option<f64>>,
+    /// How many times the controller asked for a deck's info.
+    info_calls: u32,
 }
 
 impl AutomixHost for FakeHost {
@@ -72,6 +74,7 @@ impl AutomixHost for FakeHost {
     }
 
     fn deck_info(&mut self, deck: u8) -> Option<DeckInfo> {
+        self.info_calls += 1;
         self.infos.get(&deck).cloned()
     }
 
@@ -763,6 +766,37 @@ fn a_same_length_track_the_user_loads_over_the_stopped_deck_is_not_loaded_over()
         "{:?}",
         sim.host.starts
     );
+}
+
+/// A playing deck whose track has no analysis yet says so once, and the lookup is not repeated on
+/// every tick (the host reads the database).
+#[test]
+fn a_playing_deck_without_analysis_says_so_once_and_is_not_looked_up_every_tick() {
+    let mut sim = Sim::new(100.0, false);
+    sim.host.infos.remove(&0);
+    sim.run(60);
+    assert_eq!(
+        sim.ctrl.snapshot().last_error,
+        "no analysis for the playing track yet"
+    );
+    assert!(
+        sim.host.info_calls <= 3,
+        "{} lookups in 2 s",
+        sim.host.info_calls
+    );
+}
+
+/// The user takes over a cued deck during the run (presses play on it). Once the run has stepped
+/// aside, automix does not re-arm the same pair at once.
+#[test]
+fn a_pair_the_user_takes_over_is_held_back_before_it_is_armed_again() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("armed", 600, |s| s.state() == AutomixState::Armed);
+    sim.snap.decks[1].playing = true;
+    sim.run_until("stepped aside", 10, |s| s.state() == AutomixState::Idle);
+    sim.snap.decks[1].playing = false;
+    sim.run(90);
+    assert_eq!(sim.state(), AutomixState::Idle, "held back for a while");
 }
 
 /// An explicit beat-matched style refuses a tempo gap it cannot take. The planner's rejection must

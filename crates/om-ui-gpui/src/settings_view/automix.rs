@@ -70,7 +70,7 @@ pub(super) fn automix_page(
         .map(|&beats| {
             chip(
                 t,
-                &format!("{beats} beats"),
+                &om_ui::settings::length_label(beats),
                 a.length_beats == beats,
                 cx,
                 move |this| this.settings_mut(|s| s.automix_set_length(i64::from(beats))),

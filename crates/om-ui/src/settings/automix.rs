@@ -18,8 +18,17 @@ pub const STYLE_LABELS: [&str; 6] = [
     "Stem bridge",
 ];
 
-/// Transition lengths the page offers, in beats.
-pub const LENGTH_CHOICES: [i32; 3] = [8, 16, 32];
+/// Transition lengths the page offers, in beats. 0 is "Auto": the planner picks.
+pub const LENGTH_CHOICES: [i32; 4] = [0, 8, 16, 32];
+
+/// The label of a transition length choice.
+pub fn length_label(beats: i32) -> String {
+    if beats == 0 {
+        "Auto".to_owned()
+    } else {
+        format!("{beats} beats")
+    }
+}
 
 /// Where the automix queue picks from.
 #[derive(Debug, Clone, PartialEq, Eq)]

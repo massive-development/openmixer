@@ -67,7 +67,7 @@ pub(crate) fn automix_bar_view(
     }));
     row = row.child(chip(
         t,
-        &format!("{length} beats"),
+        &om_ui::settings::length_label(length),
         false,
         cx,
         move |this| this.settings_mut(|s| s.automix_set_length(i64::from(next_length))),
