@@ -180,7 +180,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 4 | Library and data | 🟡 Done except play history, artwork persistence and FTS |
 | 5 | User interface | 🟡 Partial: design tokens (25) and stem pads (30) open; decks, mixer and settings partial |
 | 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); controller maps, HID and the mapping editor (34-36) are open |
-| 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; stem separation is unproven and Automix is not started |
+| 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; Automix is in (planner, controller, library queue, Automix settings page, main-window bar; not heard, mock device only); stem separation is unproven and stem transitions are open |
 | 8 | Pro features (recording, broadcast, DVS, video) | ⬜ Not started |
 | 9 | Release | ⬜ Not started |
 
@@ -208,7 +208,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 **Known gaps, honestly listed:**
 
-- Automix (Todo 38, Wave 7; the Automix panel waits on it) and the stem features (stem DSP, stem transitions, stem pads: Todos 37, 39, 30)
+- Automix is not verified by ear (mock device only); its queue skips tracks that are not analysed yet instead of waiting for them. Stem features still open: stem transitions (Todo 39) and the stem separation backend (Todo 19)
 - The stems ONNX Runtime backend (Todo 19); the separator interface and the licence-gated downloads are done
 - HID (Todo 35), the mapping editor UI (Todo 36) and plug-and-play controller maps (Todo 34)
 - Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`

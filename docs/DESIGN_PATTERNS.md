@@ -333,6 +333,24 @@ pub trait AudioCallback: Send {
 - **Reuse when:** something on the control side must move several controls over musical time (macros, scripted fades). Keep the schedule in the plan, take the position from the snapshot, and detect the user by comparing the snapshot with the value last sent (plus an explicit notice from the binding layer), never by owning the control.
 - **Notes:** the user always wins: a moved control cancels the plan and is never set back. The watch keeps the last two sent values, but forgives the older one for one tick only, so a user returning a control to its previous value is still seen. The host (library, track loader) is not `Send`, so the control thread builds it from a factory.
 
+### Settings page model with an apply callback (automix)
+- **Where:** `om-ui::settings::automix` (`AutomixSettingsPage` over `Preferences`, `AutomixControl` trait), implemented by `openmixer::automix_settings::AppAutomixSettings`
+- **Why:** each edit is stored, saved once and pushed into the running service, and the page's logic runs headless.
+- **Reuse when:** a settings page must change a running subsystem live.
+- **Notes:** the page returns `Ok(changed)`; a change calls `apply` once; a failed push keeps the stored value and reports the error. The window's start-up path calls the same `apply_automix_prefs`, so the two cannot disagree.
+
+### Config and queue settings handed to the runner (automix)
+- **Where:** `openmixer::automix_service` (`AutomixShared::update_config` writes a pending `AutomixConfig`, applied by `AutomixRunner::step`), `openmixer::automix_queue::SharedQueueSettings` (read by `AppAutomixHost::next_track` before each pick)
+- **Why:** the Automix page changes settings from the window thread while the runner owns the controller; no lock is held across a tick.
+- **Reuse when:** a setting must change a running controller or host without a restart.
+- **Notes:** the runner applies a pending config on its next step; a running plan keeps the length and gap it was planned with.
+
+### Published text feed (search publish)
+- **Where:** `om-ui::library::SearchFeed` (`Arc<Mutex<String>>`), written by `LibraryBrowser` on every search change, read by `LibraryQueue` for `QueueSource::CurrentSearch`
+- **Why:** one component publishes what the user sees; another reads it when it needs it, without the browser knowing about the queue.
+- **Reuse when:** a second view needs a value the first one owns, and a stale copy would be wrong.
+- **Notes:** the feed holds the typed text, which can run ahead of the query the browser has applied.
+
 ### Plain-command ring with a retire ring (sampler)
 - **Where:** `om-engine/src/sampler/` (`SamplerControl`, `SamplerAudio`), the same shape as `StageInsert`/`StageChain`.
 - **Why:** the audio thread must not allocate, lock, block or drop. Control sends plain `SamplerCmd`s on an `rtrb` ring; the only heap thing that crosses is an `Arc<Sample>`, and what the audio thread releases (a replaced sample, a finished voice's clone) goes back on a second ring for the control side to drop. A full ring drops a trigger and counts it instead of blocking. Continuous values (gain, pitch, mode) are latest-wins atomics, not commands, so they cannot be lost.
