@@ -214,10 +214,7 @@ impl AutomixController {
             self.abort(CancelReason::UserCancel, snap, sink);
         }
         if self.control.take_start()
-            && matches!(
-                self.state,
-                AutomixState::Idle | AutomixState::Loading | AutomixState::Armed
-            )
+            && self.state != AutomixState::Transitioning
         {
             self.force_start = true;
         }
