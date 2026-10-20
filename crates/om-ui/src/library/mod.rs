@@ -23,7 +23,7 @@ mod cue_saver;
 mod play_tracker;
 mod track_loader;
 
-pub use browser::{LibraryBrowser, LoadHandler, SEARCH_PLACEHOLDER};
+pub use browser::{LibraryBrowser, LoadHandler, SearchFeed, SEARCH_PLACEHOLDER};
 pub use cue_saver::{CueSaver, Cues};
 pub use play_tracker::{PlayTracker, MAX_STEP, PLAY_THRESHOLD};
 pub use track_loader::{LoadError, StemSource, TrackLoader};
