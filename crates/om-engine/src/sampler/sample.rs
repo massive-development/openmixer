@@ -21,6 +21,8 @@ pub enum SamplerError {
     Empty,
     #[error("the sample is too long or too large (limit 60 s / 64 MiB)")]
     TooLarge,
+    #[error("the file is truncated or corrupt: {0}")]
+    Corrupt(String),
     #[error("invalid sample rate {0}")]
     BadRate(f64),
     #[error("cannot read sample: {0}")]
@@ -92,28 +94,13 @@ impl Sample {
         let info = reader.info();
         let src_rate = info.sample_rate;
         let max_frames = ((MAX_SAMPLE_SECONDS * src_rate) as usize).min(MAX_SAMPLE_BYTES / 8);
-        if info.length_frames <= 0 {
-            return Err(SamplerError::Empty);
-        }
-        if info.length_frames as usize > max_frames {
+        // A container that does not state its length (or states 0, as some streamed or VBR files
+        // do) is decoded to the end under the size cap.
+        let declared = usize::try_from(info.length_frames).unwrap_or(0);
+        if declared > max_frames {
             return Err(SamplerError::TooLarge);
         }
-        let mut data: Vec<f32> = Vec::with_capacity(info.length_frames as usize * 2);
-        let mut chunk = vec![[0.0_f32; 2]; CHUNK_FRAMES];
-        let mut pos = 0_i64;
-        loop {
-            let got = reader.read_stereo(pos, &mut chunk);
-            for frame in &chunk[..got] {
-                data.extend_from_slice(frame);
-            }
-            pos += got as i64;
-            if data.len() / 2 > max_frames {
-                return Err(SamplerError::TooLarge);
-            }
-            if got < CHUNK_FRAMES {
-                break;
-            }
-        }
+        let mut data = decode_all(&mut reader, declared, max_frames)?;
         if data.is_empty() {
             return Err(SamplerError::Empty);
         }
@@ -144,6 +131,46 @@ impl Sample {
     pub fn name(&self) -> &str {
         &self.name
     }
+}
+
+/// Decodes `reader` to its end as interleaved stereo. `declared` is the frame count the container
+/// stated (0 when unknown, then only the size cap bounds the read). A decode failure or a file
+/// holding clearly less than it declared is an error, never a silently shorter sample.
+pub(super) fn decode_all(
+    reader: &mut SourceReader,
+    declared: usize,
+    max_frames: usize,
+) -> Result<Vec<f32>, SamplerError> {
+    let mut data: Vec<f32> = Vec::with_capacity(declared * 2);
+    let mut chunk = vec![[0.0_f32; 2]; CHUNK_FRAMES];
+    let mut pos = 0_i64;
+    loop {
+        let got = reader.read_stereo(pos, &mut chunk);
+        for frame in &chunk[..got] {
+            data.extend_from_slice(frame);
+        }
+        pos += got as i64;
+        if data.len() / 2 > max_frames {
+            return Err(SamplerError::TooLarge);
+        }
+        if got < CHUNK_FRAMES {
+            break;
+        }
+    }
+    if reader.damaged() {
+        return Err(SamplerError::Corrupt(format!(
+            "decoding failed after {} frames",
+            data.len() / 2
+        )));
+    }
+    // The header promised more audio than the file holds (a cut-off download).
+    if declared > 0 && (data.len() / 2) * 100 < declared * 99 {
+        return Err(SamplerError::Corrupt(format!(
+            "{} of {declared} frames present",
+            data.len() / 2
+        )));
+    }
+    Ok(data)
 }
 
 /// Windowed-sinc resampling of interleaved stereo (Blackman window, band-limited when
