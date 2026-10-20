@@ -180,7 +180,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 4 | Library and data | 🟡 Done except play history, artwork persistence and FTS |
 | 5 | User interface | 🟡 Partial: design tokens (25) and stem pads (30) open; decks, mixer and settings partial |
 | 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); controller maps, HID and the mapping editor (34-36) are open |
-| 7 | Intelligence (stems, Automix, sampler) | ⬜ Not started |
+| 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; stem separation is unproven and Automix is not started |
 | 8 | Pro features (recording, broadcast, DVS, video) | ⬜ Not started |
 | 9 | Release | ⬜ Not started |
 
