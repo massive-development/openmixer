@@ -76,6 +76,10 @@ pub(crate) struct Shared {
     pub pitch: [AtomicF32; PADS],
     pub mode: [AtomicU8; PADS],
     pub loaded: [AtomicBool; PADS],
+    /// Latest-wins "pad is held": set before a trigger is queued, cleared before a release is
+    /// queued. The audio side polls it each block, so a Release lost to a full ring still ends the
+    /// gate voices.
+    pub held: [AtomicBool; PADS],
     pub name_hash: [AtomicU64; PADS],
     /// Sounding voices per pad, written by the audio side after each block.
     pub playing: [AtomicU8; PADS],
@@ -93,6 +97,7 @@ impl Shared {
             pitch: std::array::from_fn(|_| AtomicF32::new(0.0)),
             mode: std::array::from_fn(|_| AtomicU8::new(PadMode::OneShot.as_u8())),
             loaded: std::array::from_fn(|_| AtomicBool::new(false)),
+            held: std::array::from_fn(|_| AtomicBool::new(false)),
             name_hash: std::array::from_fn(|_| AtomicU64::new(0)),
             playing: std::array::from_fn(|_| AtomicU8::new(0)),
             voices_active: AtomicU32::new(0),

@@ -13,6 +13,8 @@ use std::sync::Arc;
 /// Fade-in on every voice start, in output frames (linear, about 0.7 ms at 44.1 kHz). The envelope
 /// after `i` frames is `(i + 1) / START_RAMP_FRAMES`.
 pub(crate) const START_RAMP_FRAMES: f32 = 32.0;
+/// Output frames over which a non-looping sample fades out at its end (no hard cut click).
+const TAIL_FRAMES: f64 = 32.0;
 /// Fade-out on release, steal and stop.
 const FADE_SECONDS: f64 = 0.005;
 const TOTAL_VOICES: usize = PADS * SLOTS_PER_PAD;
@@ -33,6 +35,10 @@ struct Voice {
     velocity: f32,
     env: f32,
     env_delta: f32,
+    /// A release that arrived before the start ramp produced any signal (trigger and release in
+    /// the same block): the fade-out step to use once the ramp has finished, so the voice still
+    /// sounds a short tap instead of vanishing. 0 when none is pending.
+    pending_fade: f32,
     age: u64,
 }
 
@@ -48,6 +54,7 @@ impl Voice {
             velocity: 0.0,
             env: 0.0,
             env_delta: 0.0,
+            pending_fade: 0.0,
             age: 0,
         }
     }
@@ -63,11 +70,12 @@ impl Voice {
         self.velocity = velocity;
         self.env = 0.0;
         self.env_delta = 1.0 / START_RAMP_FRAMES;
+        self.pending_fade = 0.0;
         self.age = age;
     }
 
     fn sounding(&self) -> bool {
-        self.active && !self.releasing
+        self.active && !self.releasing && self.pending_fade == 0.0
     }
 }
 
@@ -169,6 +177,20 @@ impl SamplerAudio {
                 SamplerCmd::Release { pad } => self.release_pad(usize::from(pad), false),
                 SamplerCmd::StopAll => {
                     for v in &mut self.voices {
+                        begin_release(v, self.fade_delta);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Recovers a lost release: a pad whose gate flag is clear must not have gate voices sounding,
+    /// whatever happened to the Release command (it is dropped when the command ring is full).
+    fn poll_held(&mut self) {
+        for pad in 0..PADS {
+            if !self.shared.held[pad].load(Relaxed) {
+                for v in &mut self.voices[pad * SLOTS_PER_PAD..(pad + 1) * SLOTS_PER_PAD] {
+                    if v.mode == PadMode::Gate {
                         begin_release(v, self.fade_delta);
                     }
                 }
@@ -316,6 +338,7 @@ impl ProcessStage for SamplerAudio {
         // block, and after so a pad sample just replaced or cleared leaves at once.
         self.flush_retired();
         self.apply_commands();
+        self.poll_held();
         self.flush_retired();
         self.render(left, right);
     }
@@ -336,12 +359,15 @@ fn retire(ring: &mut rtrb::Producer<Arc<Sample>>, held: &mut Option<Arc<Sample>>
 /// Starts the fade-out from the current envelope. A voice that is already fading keeps going.
 fn begin_release(v: &mut Voice, fade_delta: f32) {
     if v.active && !v.releasing {
+        if v.env <= 0.0 {
+            // Not a sample of signal yet (trigger and release in one block): finish the start ramp,
+            // then fade, so a quick tap is a short audible blip rather than silence.
+            v.pending_fade = fade_delta;
+            return;
+        }
         v.releasing = true;
         // The envelope may still be on its way up: fade from where it is.
         v.env_delta = -fade_delta;
-        if v.env <= 0.0 {
-            v.active = false;
-        }
     }
 }
 
@@ -370,6 +396,8 @@ fn render_voice(
     let len = data.len() / 2;
     let looping = v.mode == PadMode::Loop;
     let step = ratio * sample.sample_rate() / engine_rate;
+    let tail_span = step * TAIL_FRAMES;
+    let tail_start = len as f64 - tail_span;
     let fetch = |idx: isize| -> (f32, f32) {
         let i = if looping {
             idx.rem_euclid(len as isize) as usize
@@ -389,6 +417,11 @@ fn render_voice(
                 if v.env >= 1.0 {
                     v.env = 1.0;
                     v.env_delta = 0.0;
+                    if v.pending_fade > 0.0 {
+                        v.releasing = true;
+                        v.env_delta = -v.pending_fade;
+                        v.pending_fade = 0.0;
+                    }
                 }
             } else if v.env <= 0.0 {
                 v.env = 0.0;
@@ -416,7 +449,13 @@ fn render_voice(
         } else {
             (cubic(l0, l1, l2, l3, t), cubic(r0, r1, r2, r3, t))
         };
-        let gain = (g0 + dg * (i as f32 + 1.0)) * v.env * v.velocity;
+        // A non-looping sample fades over its last TAIL_FRAMES output frames instead of cutting.
+        let tail = if !looping && v.pos > tail_start {
+            ((len as f64 - v.pos) / tail_span) as f32
+        } else {
+            1.0
+        };
+        let gain = (g0 + dg * (i as f32 + 1.0)) * v.env * v.velocity * tail;
         *l += sl * gain;
         *r += sr * gain;
         v.pos += step;
