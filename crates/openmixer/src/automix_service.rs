@@ -17,6 +17,7 @@
 //! Threads: `AutomixShared` is shared by any thread; `AutomixRunner` and its host live on the
 //! window thread.
 
+use crate::automix_queue::{QueueSettings, SharedQueueSettings};
 use om_automix::{AutomixConfig, AutomixControl, AutomixController, AutomixHost};
 use om_core::{AutomixSnapshot, CommandSink, EngineSnapshot, ParamId};
 use om_engine::DjEngine;
@@ -32,6 +33,9 @@ pub struct AutomixShared {
     snapshot: Mutex<AutomixSnapshot>,
     notices: Mutex<Vec<ParamId>>,
     config: Mutex<AutomixConfig>,
+    /// A config the Automix page changed; the runner gives it to the controller on its next step.
+    pending_config: Mutex<Option<AutomixConfig>>,
+    queue: SharedQueueSettings,
 }
 
 impl AutomixShared {
@@ -41,7 +45,17 @@ impl AutomixShared {
             snapshot: Mutex::new(AutomixSnapshot::default()),
             notices: Mutex::new(Vec::new()),
             config: Mutex::new(AutomixConfig::default()),
+            pending_config: Mutex::new(None),
+            queue: Arc::new(Mutex::new(QueueSettings {
+                source: crate::automix_queue::QueueSource::Search(String::new()),
+                smart: true,
+            })),
         })
+    }
+
+    /// The queue settings the automix host reads before each pick.
+    pub fn queue_settings(&self) -> SharedQueueSettings {
+        Arc::clone(&self.queue)
     }
 
     /// The `automix.*` target to register with the router.
@@ -62,6 +76,11 @@ impl AutomixShared {
     /// Settings for the controller; read when the runner is created.
     pub fn set_config(&self, config: AutomixConfig) {
         *lock(&self.config) = config;
+    }
+
+    /// Changes the controller's settings while it runs. The runner applies them on its next step.
+    pub fn update_config(&self, config: AutomixConfig) {
+        *lock(&self.pending_config) = Some(config);
     }
 
     /// Reports user input on `id`. If it touches the decks being mixed, the running plan is
@@ -125,6 +144,9 @@ impl AutomixRunner {
         self.last_step = Some(now);
         let busy = self.shared.control.is_enabled()
             || self.controller.state() != om_core::AutomixState::Idle;
+        if let Some(config) = lock(&self.shared.pending_config).take() {
+            self.controller.set_config(config);
+        }
         if busy {
             let notices: Vec<ParamId> = std::mem::take(&mut *lock(&self.shared.notices));
             for id in &notices {

@@ -24,8 +24,9 @@ use openmixer::audio_settings::{
     CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
 };
 use openmixer::automix_host::AppAutomixHost;
-use openmixer::automix_queue::{LibraryQueue, QueueSource};
+use openmixer::automix_queue::LibraryQueue;
 use openmixer::automix_service::AutomixRunner;
+use openmixer::automix_settings::{apply_automix_prefs, queue_source, AppAutomixSettings};
 use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
@@ -190,32 +191,24 @@ pub fn main(args: &[String]) -> ExitCode {
     // and the track loader, which live on this thread. The queue shuffles the whole library until
     // the Automix settings choose a playlist.
     let automix_prefs = composition.prefs.automix.clone();
-    composition.automix.set_config(om_automix::AutomixConfig {
-        length_beats: (automix_prefs.length_beats > 0)
-            .then_some(f64::from(automix_prefs.length_beats)),
-        max_bpm_ratio: f64::from(automix_prefs.min_bpm_gap_percent) / 100.0,
-        autostart: automix_prefs.autostart_at_end,
-        ..om_automix::AutomixConfig::default()
-    });
-    let automix_control = composition.automix.control();
-    automix_control.set_style(om_core::AutomixStyle::from_u8(automix_prefs.style as u8));
-    automix_control.set_enabled(automix_prefs.enabled);
+    apply_automix_prefs(&composition.automix, &automix_prefs);
     let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(
         composition.automix.clone(),
         composition.automix_sink.clone(),
     )));
     if let Some(hub) = &library {
-        let source = match automix_prefs.queue_playlist {
-            0 => QueueSource::Search(String::new()),
-            id => QueueSource::Playlist(id),
-        };
         let queue = LibraryQueue::shared(
             hub.borrow().services.library_handle(),
-            source,
-            QueueConfig::default(),
+            queue_source(&automix_prefs),
+            QueueConfig {
+                smart: automix_prefs.smart,
+                ..QueueConfig::default()
+            },
             automix_seed(),
-        );
-        let host = AppAutomixHost::new(Arc::clone(&engine), Rc::clone(hub), queue);
+        )
+        .with_search_feed(Arc::clone(&hub.borrow().search_feed));
+        let host = AppAutomixHost::new(Arc::clone(&engine), Rc::clone(hub), queue)
+            .with_shared_queue(composition.automix.queue_settings());
         automix_runner.borrow_mut().set_host(Box::new(host));
     }
     let automix_clock = Instant::now();
@@ -279,6 +272,12 @@ pub fn main(args: &[String]) -> ExitCode {
             .map(|hub| Box::new(HubStems(hub)) as Box<dyn StemHost>),
         start_tab: start_tab.map(str::to_owned),
         plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
+        automix: Some(Box::new(AppAutomixSettings::new(
+            composition.borrow().automix.clone(),
+            library
+                .as_ref()
+                .map(|hub| hub.borrow().services.library_handle()),
+        ))),
         sync_themes: {
             let composition = Rc::clone(&composition);
             Some(Box::new(move |themes: &mut ThemeRegistry| {

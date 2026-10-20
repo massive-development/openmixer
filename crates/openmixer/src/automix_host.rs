@@ -22,7 +22,7 @@ use om_engine::DjEngine;
 use om_library::TrackRecord;
 use om_ui::library::{LibraryServices, TrackLoader};
 
-use crate::automix_queue::LibraryQueue;
+use crate::automix_queue::{LibraryQueue, SharedQueueSettings};
 
 /// What the host needs from the window's library: the services and the loader, borrowed together.
 pub trait AutomixLibrary {
@@ -133,6 +133,8 @@ pub struct AppAutomixHost<L: AutomixLibrary + 'static> {
     engine: Arc<DjEngine>,
     library: Rc<RefCell<L>>,
     queue: LibraryQueue,
+    /// The Automix page's queue settings, read before each pick. `None` keeps the queue as built.
+    shared_queue: Option<SharedQueueSettings>,
     /// Why the last load failed, for the controller's `last_error` (the controller also says it).
     last_load_error: Option<String>,
 }
@@ -148,8 +150,15 @@ impl<L: AutomixLibrary + 'static> AppAutomixHost<L> {
             engine,
             library,
             queue,
+            shared_queue: None,
             last_load_error: None,
         }
+    }
+
+    /// Takes the queue settings from `settings` before every pick.
+    pub fn with_shared_queue(mut self, settings: SharedQueueSettings) -> Self {
+        self.shared_queue = Some(settings);
+        self
     }
 
     /// The queue, for changing its source or reading its skips.
@@ -165,6 +174,10 @@ impl<L: AutomixLibrary + 'static> AppAutomixHost<L> {
 
 impl<L: AutomixLibrary + 'static> AutomixHost for AppAutomixHost<L> {
     fn next_track(&mut self, playing_deck: u8) -> Option<NextTrack> {
+        if let Some(shared) = &self.shared_queue {
+            let settings = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            self.queue.apply(&settings);
+        }
         let current = {
             let library = self.library.borrow();
             library
