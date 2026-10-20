@@ -30,6 +30,7 @@ use openmixer::automix_settings::{apply_automix_prefs, queue_source, AppAutomixS
 use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
+use openmixer::record_service::AppRecordHost;
 use openmixer::AppError;
 use std::cell::RefCell;
 use std::process::ExitCode;
@@ -295,6 +296,8 @@ pub fn main(args: &[String]) -> ExitCode {
         stems: library
             .clone()
             .map(|hub| Box::new(HubStems(hub)) as Box<dyn StemHost>),
+        record: Some(Box::new(AppRecordHost(composition.borrow().record.clone()))
+            as Box<dyn om_ui::settings::RecordHost>),
         start_tab: start_tab.map(str::to_owned),
         plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
         automix: Some(Box::new(AppAutomixSettings::new(

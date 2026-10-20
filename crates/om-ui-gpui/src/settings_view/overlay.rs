@@ -7,6 +7,7 @@ use super::chips::*;
 use super::library::*;
 use super::midi::*;
 use super::plugins::*;
+use super::recording::*;
 use super::*;
 use crate::text_entry::{apply_key, EntryKey};
 
@@ -137,6 +138,7 @@ impl Shell {
             Some(PageKind::Library) => library_page(&t, settings, cx),
             Some(PageKind::Automix) => automix_page(&t, settings, cx),
             Some(PageKind::Plugins) => plugins_page(&t, settings, cx),
+            Some(PageKind::Recording) => recording_page(&t, settings, cx),
             None => note(&t, "This page is added by a plugin."),
         };
         let status = status_line(&t, &settings.notice);
@@ -237,6 +239,10 @@ impl SettingsState {
             self.stems_submit_max_cache(&text);
             return;
         }
+        if entry.kind == EntryKind::RecordFolder && !text.is_empty() {
+            self.record_set_folder(&text);
+            return;
+        }
         if text.is_empty() {
             self.entry = Some(entry);
             self.set_notice("Type a path first", true);
@@ -248,7 +254,7 @@ impl SettingsState {
             EntryKind::ImportXml => self.library_import(path),
             EntryKind::MapFile => self.midi_load_map(path),
             // Handled above, before the path is made.
-            EntryKind::MaxCacheGb => {}
+            EntryKind::MaxCacheGb | EntryKind::RecordFolder => {}
         }
     }
 }
