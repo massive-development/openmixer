@@ -154,6 +154,20 @@ Cost (release build, `cargo test -p om-engine --release sampler_cost -- --ignore
 | Queue (A3) | `select_next` and `LibraryQueue`: playlist in order, or shuffled search; recent plays (last N within H hours) and unanalysed tracks skipped with reasons; smart key (Camelot, relative) and BPM window preference; injected RNG and clock | 7 rule tests, 10 library tests with an in-memory library | The beat-grid check is "has a BPM" by default |
 | App wiring (`openmixer::automix_service`) | `automix.*` target registered; the control thread steps the runner only while automix is on or busy; the host is built on the control thread | 3 composition tests (ids, typed command, host factory, Camelot vs `om-analysis` for all 576 pairs) | The host over `TrackLoader`, the Automix panel (A5), the UI-gate safety scenario (A6) |
 
+### Wave 7 A5-A6: Automix settings, bar, demo and safety (Todo 38 and 29, view level)
+
+| Piece | Behaviour | Tests | Missing |
+|-------|-----------|-------|---------|
+| Settings page (`om-ui::settings::automix`, tab "Automix") | Enable, style, length (8/16/32), queue source (whole library, a playlist from the library, the browser's current search), smart picks, tempo gap (0 to 20 %), autostart; each edit saved once and applied live | 6 model tests with a fake control; 2 gpui tests (edits, one save per change, no service) | Not seen by eye |
+| Queue sources (`openmixer::automix_queue`) | `CurrentSearch` reads the browser's search text (`SearchFeed`, published on every change); `smart` and the source are read before each pick (`SharedQueueSettings`) | Settings apply test; queue rule tests from A3 | The queue skips unanalysed tracks instead of waiting for them |
+| Prefs v3 `automix.queueSearch` | Additive boolean; a file without it keeps its playlist source | Preferences tests | None |
+| Bar (`om-ui::automix_bar`, `om-ui-gpui::automix_bar`) | Header strip left part: Enable, style, length, state, next track with BPM and key, progress, beats left, Start now, Cancel, last error | 4 view-model tests; layout test: the bar fits the strip at the four sizes | Skip is not offered; narrow widths not checked by eye |
+| Controller fixes | A deck analysed after its load is read again (the grid-less copy was cached and never armed); next track BPM and key in the snapshot | `a_grid_that_lands_after_the_load_is_read_on_a_later_tick` | None |
+| Demo (`--demo-automix`, `main-automix`) | Three click tracks at 120, 122, 124 BPM; automix on in memory; deck A starts after every track has a grid. Captured Armed (14 s) and Transitioning (19 s) | Checked by eye, see `docs/screenshots/REVIEW.md` | Not heard |
+| A6 tick path | The controller tick names no lock and no engine type (source-level assertion) | `the_controller_tick_path_takes_no_engine_or_audio_locks` | A dynamic fake engine is not used; the runner's `DjEngine::snapshot` call is outside the controller |
+
+Not verified by ear: the mock device is silent, so every transition is checked through the engine, the controller tests and the screenshots only.
+
 ### Wave 7 S5: stem-aware deck playback (Todo 37, engine level)
 
 | Piece | Behaviour | Tests | Missing |
