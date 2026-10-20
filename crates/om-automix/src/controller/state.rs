@@ -111,7 +111,11 @@ impl AutomixController {
             }
         }
         let info = host.deck_info(deck)?;
-        self.out_cache = Some((deck, len, info.clone()));
+        // Only an analysed deck is worth caching: a track loaded before its analysis finished has no
+        // grid yet, and the next tick must read it again rather than keep the grid-less copy.
+        if info.grid.is_some() {
+            self.out_cache = Some((deck, len, info.clone()));
+        }
         Some(info)
     }
 
