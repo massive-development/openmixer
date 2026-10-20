@@ -40,10 +40,13 @@ struct FakeHost {
     fail: Option<String>,
     never_ready: bool,
     underruns: u64,
+    /// The tempo gate each pick was asked with.
+    gates: Vec<Option<f64>>,
 }
 
 impl AutomixHost for FakeHost {
-    fn next_track(&mut self, _playing: u8) -> Option<NextTrack> {
+    fn next_track(&mut self, _playing: u8, tempo_gate: Option<f64>) -> Option<NextTrack> {
+        self.gates.push(tempo_gate);
         (!self.queue.is_empty()).then(|| self.queue.remove(0))
     }
 
@@ -663,6 +666,70 @@ fn an_unplannable_pair_is_dropped_and_not_retried() {
     assert!(error.starts_with("no transition"), "{error}");
     assert_eq!(sim.host.starts.len(), 1, "the track had its turn");
     assert!(sim.sent("deck.1.play").is_empty());
+}
+
+fn ungridded(bpm: f64) -> DeckInfo {
+    let mut next = info(1, bpm, "8A", false);
+    next.grid = None;
+    next
+}
+
+/// The planner refuses the first pick (no grid). Automix re-picks and loads the next track
+/// instead of giving up on the pair.
+#[test]
+fn a_rejected_pair_is_retried_with_another_track() {
+    let mut sim = Sim::with(AutomixConfig::default(), 380.0, false, ungridded(BPM));
+    sim.host.tracks.insert(8, info(1, BPM, "8A", false));
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Good One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.host.starts, vec![(1, 7), (1, 8)]);
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing);
+}
+
+/// Three retries after the first refusal, then the pair is suppressed with the planner's error.
+#[test]
+fn a_pair_refused_four_times_is_suppressed_with_the_planner_error() {
+    let mut sim = Sim::with(AutomixConfig::default(), 380.0, false, ungridded(BPM));
+    for id in 8..12 {
+        sim.host.tracks.insert(id, ungridded(BPM));
+        sim.host.queue.push(NextTrack {
+            id,
+            title: format!("t{id}"),
+            bpm: None,
+            key: String::new(),
+        });
+    }
+    sim.run(900);
+    assert_eq!(sim.host.starts.len(), 4, "{:?}", sim.host.starts);
+    assert_eq!(sim.state(), AutomixState::Idle);
+    let error = sim.ctrl.snapshot().last_error;
+    assert!(error.starts_with("no transition"), "{error}");
+}
+
+/// The tempo gate goes to the queue for explicit beat-matched styles only.
+#[test]
+fn explicit_styles_ask_the_queue_for_a_tempo_window() {
+    let mut sim = Sim::new(380.0, false);
+    sim.control.set_style(AutomixStyle::Crossfade);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.host.gates.first(), Some(&Some(0.06)));
+
+    let mut auto = Sim::new(380.0, false);
+    auto.control.set_style(AutomixStyle::Auto);
+    auto.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(auto.host.gates.first(), Some(&None));
 }
 
 /// An explicit beat-matched style refuses a tempo gap it cannot take. The planner's rejection must

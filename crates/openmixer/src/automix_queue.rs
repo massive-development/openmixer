@@ -9,7 +9,8 @@
 //! Threads: the thread that creates it (a `Library` is not `Send`): build it on the control thread.
 
 use om_automix::queue::{
-    select_next, AutomixQueue, Order, QueueConfig, QueueRng, QueueTrack, SkipReason, SplitMix64,
+    in_tempo_gate, select_next, AutomixQueue, Order, QueueConfig, QueueRng, QueueTrack, SkipReason,
+    SplitMix64,
 };
 use om_library::{Library, SearchEngine, TrackRecord};
 use om_ui::library::SearchFeed;
@@ -117,6 +118,11 @@ impl LibraryQueue {
         }
     }
 
+    /// The tempo pre-filter for the next picks (see [`QueueConfig::tempo_gate`]).
+    pub fn set_tempo_gate(&mut self, gate: Option<f64>) {
+        self.cfg.tempo_gate = gate;
+    }
+
     pub fn set_smart(&mut self, smart: bool) {
         self.cfg.smart = smart;
     }
@@ -211,6 +217,7 @@ impl LibraryQueue {
         let mut out = Vec::with_capacity(records.len());
         let mut checks = 0;
         let mut found = false;
+        let gate = self.cfg.tempo_gate;
         for t in &records {
             let skipped = recent.contains(&t.id) || current.is_some_and(|c| c.id == t.id);
             if skipped {
@@ -224,7 +231,8 @@ impl LibraryQueue {
             }
             checks += 1;
             let qt = to_queue_track(t, (self.grid_check)(t));
-            found |= qt.analysed();
+            // A track outside the tempo window does not end the walk: the walk looks for one that fits.
+            found |= qt.analysed() && in_tempo_gate(current, &qt, gate);
             out.push(qt);
         }
         out

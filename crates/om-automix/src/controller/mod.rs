@@ -98,6 +98,10 @@ struct Run {
     sent: Vec<ParamId>,
     /// Ticks run in `Transitioning`.
     ticks: u64,
+    /// Automix loaded the incoming track itself (not the user's cue): only then may it re-pick.
+    auto_loaded: bool,
+    /// Re-picks made after the planner refused the pair.
+    plan_tries: u32,
 }
 
 pub struct AutomixController {
@@ -320,6 +324,9 @@ fn playing_deck(snap: &EngineSnapshot) -> Option<u8> {
     let first = playing.next()?;
     playing.next().is_none().then(|| u8::try_from(first).ok())?
 }
+
+/// Re-picks after the planner refuses a pair (on top of the first pick).
+const MAX_PLAN_RETRIES: u32 = 3;
 
 /// The refusal when the two decks cannot be put on opposite crossfader sides.
 const NOT_OPPOSITE: &str = "decks are not on opposite crossfader sides";
