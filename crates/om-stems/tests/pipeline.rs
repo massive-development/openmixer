@@ -472,7 +472,7 @@ fn a_panic_in_one_job_does_not_poison_the_separator_for_later_jobs() {
         run().is_err(),
         "the job that finds the poisoned lock fails once"
     );
-    assert_eq!(run().unwrap(), true, "later jobs run");
+    assert!(run().unwrap(), "later jobs run");
 }
 
 #[test]

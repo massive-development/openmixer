@@ -42,6 +42,9 @@ impl Default for SoloState {
     }
 }
 
+/// What [`StemBinding::observe_track`] compares: whether the deck plays from stems, and its track.
+type SeenKey = (bool, Option<i64>);
+
 /// Ends a solo that the engine no longer reflects: the deck left stem mode, or the stem mutes
 /// differ from the ones the solo wrote. Returns the state to keep.
 pub fn reconcile(state: &mut SoloState, stems: &[StemSnapshot; STEM_COUNT]) {
@@ -107,7 +110,7 @@ pub struct StemBinding {
     pub index: usize,
     solo: Arc<Mutex<SoloState>>,
     /// The `(has_stems, track)` last seen by [`StemBinding::observe_track`].
-    seen: Arc<Mutex<Option<(bool, Option<i64>)>>>,
+    seen: Arc<Mutex<Option<SeenKey>>>,
 }
 
 impl StemBinding {
