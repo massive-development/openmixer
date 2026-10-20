@@ -19,6 +19,8 @@ pub struct SamplerStripLayout {
     pub caption: Rect,
     pub grid: [Rect; PADS],
     pub mode: Rect,
+    /// Fades every voice out.
+    pub stop_all: Rect,
     pub load: Rect,
     pub clear: Rect,
     pub gain_down: Rect,
@@ -65,7 +67,15 @@ pub fn sampler_strip_layout(bounds: Rect, theme: &ThemeTokens) -> SamplerStripLa
         row
     };
     let mut rows_left = controls;
-    let mode = next_row(&mut rows_left);
+    let top_row = next_row(&mut rows_left);
+    let mode_w = ((top_row.w - gap) * 60 / 100).max(0);
+    let mode = Rect::new(top_row.x, top_row.y, mode_w, top_row.h);
+    let stop_all = Rect::new(
+        top_row.x + mode_w + gap,
+        top_row.y,
+        (top_row.w - mode_w - gap).max(0),
+        top_row.h,
+    );
     let load_row = next_row(&mut rows_left);
     let half = ((load_row.w - gap) / 2).max(0);
     let load = Rect::new(load_row.x, load_row.y, half, load_row.h);
@@ -90,6 +100,7 @@ pub fn sampler_strip_layout(bounds: Rect, theme: &ThemeTokens) -> SamplerStripLa
         caption,
         grid,
         mode,
+        stop_all,
         load,
         clear,
         gain_down,
@@ -117,6 +128,7 @@ mod tests {
         v.extend(l.grid);
         v.extend([
             l.mode,
+            l.stop_all,
             l.load,
             l.clear,
             l.gain_down,
@@ -145,6 +157,15 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_stop_all_button_sits_beside_mode_and_is_usable() {
+        let theme = ThemeTokens::builtin_dark();
+        let l = sampler_strip_layout(Rect::sized(306, 113), &theme);
+        assert!(l.stop_all.w > 10 && l.stop_all.h > 0);
+        assert_eq!(l.stop_all.y, l.mode.y);
+        assert!(l.stop_all.x >= l.mode.x + l.mode.w);
     }
 
     #[test]
