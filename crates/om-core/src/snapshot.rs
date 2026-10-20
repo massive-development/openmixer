@@ -6,11 +6,11 @@
 //! values from two audio blocks (a playhead and a loop bound, say). Peaks are decaying meter values.
 //! Nothing here is an audio-thread value; the snapshot is for display and feedback only.
 //!
-//! Sampler and automix have no engine state yet: their snapshot types are empty placeholders until
-//! those features land (Todos 38, 40).
+//! Automix has no engine state yet: its snapshot type is an empty placeholder until it lands
+//! (Todo 38).
 
-use crate::param_id::{StemParam, HOTCUES_PER_DECK, STEMS_PER_DECK};
-use crate::state_id::{ChannelState, DeckState, MixerState, StateId};
+use crate::param_id::{StemParam, HOTCUES_PER_DECK, SAMPLER_PADS, STEMS_PER_DECK};
+use crate::state_id::{ChannelState, DeckState, MixerState, PadState, StateId};
 
 /// One consistent-enough copy of the engine. See the module docs.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +41,7 @@ impl EngineSnapshot {
                 .get(*deck)
                 .and_then(|d| d.get(*stem))
                 .map(|s| s.read(p)),
+            StateId::Sampler { pad, p } => self.sampler.pads.get(*pad).map(|s| s.read(p)),
         }
     }
 }
@@ -181,9 +182,99 @@ impl StemSnapshot {
     }
 }
 
-/// Sampler pad state. Placeholder until the sampler lands (Todo 40).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct SamplerSnapshot;
+/// How a sampler pad treats its sample once triggered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PadMode {
+    /// Plays to the end; release is ignored.
+    #[default]
+    OneShot,
+    /// Plays while held; release fades it out.
+    Gate,
+    /// Loops until release or stop.
+    Loop,
+}
+
+impl PadMode {
+    /// Stable numeric form (0, 1, 2) used by atomics and `sampler.pad<N>.mode` reads.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::OneShot => 0,
+            Self::Gate => 1,
+            Self::Loop => 2,
+        }
+    }
+
+    /// Inverse of [`PadMode::as_u8`]; unknown values fall back to one-shot.
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Gate,
+            2 => Self::Loop,
+            _ => Self::OneShot,
+        }
+    }
+}
+
+/// One sampler pad.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PadSnapshot {
+    /// A sample is assigned.
+    pub loaded: bool,
+    /// At least one voice of the pad is sounding.
+    pub playing: bool,
+    /// Linear gain, 0 to 1.5.
+    pub gain: f32,
+    /// Varispeed in semitones, -24 to 24.
+    pub pitch: f32,
+    pub mode: PadMode,
+    /// Hash of the assigned sample's name (0 when empty); lets a UI notice a changed sample.
+    pub name_hash: u64,
+}
+
+impl Default for PadSnapshot {
+    fn default() -> Self {
+        Self {
+            loaded: false,
+            playing: false,
+            gain: 1.0,
+            pitch: 0.0,
+            mode: PadMode::OneShot,
+            name_hash: 0,
+        }
+    }
+}
+
+impl PadSnapshot {
+    /// Value of one pad state: flags as 1.0 or 0.0, gain, semitones, mode as 0/1/2.
+    pub fn read(&self, p: &PadState) -> f64 {
+        match p {
+            PadState::Loaded => flag(self.loaded),
+            PadState::Playing => flag(self.playing),
+            PadState::Volume => f64::from(self.gain),
+            PadState::Pitch => f64::from(self.pitch),
+            PadState::Mode => f64::from(self.mode.as_u8()),
+        }
+    }
+}
+
+/// The sampler: eight pads plus counters. Filled from atomics, no audio lock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SamplerSnapshot {
+    pub pads: [PadSnapshot; SAMPLER_PADS as usize],
+    /// Sounding voices over all pads.
+    pub voices_active: u32,
+    /// Commands the sampler dropped because its ring was full.
+    pub dropped_cmds: u64,
+}
+
+impl Default for SamplerSnapshot {
+    fn default() -> Self {
+        Self {
+            pads: [PadSnapshot::default(); SAMPLER_PADS as usize],
+            voices_active: 0,
+            dropped_cmds: 0,
+        }
+    }
+}
 
 /// Automix state. Placeholder until automix lands (Todo 38).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
