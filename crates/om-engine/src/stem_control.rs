@@ -6,9 +6,7 @@
 use crate::deck::Deck;
 use om_core::param_id::StemParam;
 use om_core::sync::LockExt;
-use om_core::{
-    Command, CommandError, CommandSink, ParamId, ParamTarget, StemSetRef, StemSnapshot,
-};
+use om_core::{Command, CommandError, CommandSink, ParamId, ParamTarget, StemSetRef, StemSnapshot};
 use om_dsp::{StemMixerControl, STEM_COUNT};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -14,8 +14,8 @@ use crate::deck_control::{DeckBank, DeckControl};
 use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
-use crate::sync::Sync;
 use crate::stem_control::{snapshot_stems, EngineCommands, StemBank, StemSetRegistry};
+use crate::sync::Sync;
 use om_core::param_id::Namespace;
 use om_core::{
     AutomixSnapshot, ChannelSnapshot, CommandSink, DeckSnapshot, EngineSnapshot, MixerSnapshot,
