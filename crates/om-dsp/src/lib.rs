@@ -8,6 +8,7 @@ mod crossfader;
 mod eq;
 mod meter;
 mod smoother;
+mod stem_mixer;
 mod sweep;
 
 pub use biquad::{
@@ -18,6 +19,7 @@ pub use crossfader::{Crossfader, CrossfaderAssign, CrossfaderCurve, CrossfaderGa
 pub use eq::ThreeBandEq;
 pub use meter::{MeterBallistics, MeterParams, PeakMeter};
 pub use smoother::Smoother;
+pub use stem_mixer::{StemMixer, StemMixerControl, MAX_STEM_GAIN, STEM_COUNT, STEM_FRAME_FLOATS};
 pub use sweep::SweepFilter;
 
 #[cfg(test)]
