@@ -190,6 +190,9 @@ impl StemQueue {
         let separator = host.separator();
         let mut queued = 0;
         for track in tracks {
+            if track.content_hash.is_empty() {
+                return Err(SettingsError::TrackNotHashed);
+            }
             match self.label(library, track.track_id, (&separator.0, separator.1)) {
                 StemLabel::Ready | StemLabel::Preparing(_) => continue,
                 StemLabel::None | StemLabel::Failed => {}
@@ -417,6 +420,26 @@ mod tests {
             .expect_err("not ready");
         assert!(error.to_string().starts_with("Licence not accepted"));
         assert!(host.submitted.is_empty());
+    }
+
+    #[test]
+    fn a_track_without_a_content_hash_says_to_wait_for_ingest() {
+        let library = memory_library();
+        let mut queue = StemQueue::default();
+        let mut host = FakeHost::new(ModelState::Installed(1));
+        let job = StemJob {
+            track_id: 1,
+            path: PathBuf::from("/music/a.wav"),
+            content_hash: String::new(),
+        };
+        let error = queue
+            .prepare(&mut host, &library, &[job])
+            .expect_err("no hash yet");
+        assert_eq!(
+            error.to_string(),
+            "track has no content hash yet — wait for ingest to finish"
+        );
+        assert!(host.submitted.is_empty(), "nothing is submitted for it");
     }
 
     #[test]
