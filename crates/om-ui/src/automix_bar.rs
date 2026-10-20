@@ -37,7 +37,9 @@ pub struct AutomixBar {
 
 impl AutomixBar {
     pub fn new(snapshot: &AutomixSnapshot, prefs: &AutomixPrefs) -> Self {
-        let enabled = prefs.enabled;
+        // The running flag, not the preference: the controller can turn itself off (an underrun,
+        // repeated load failures) and the bar says so with the reason in `error`.
+        let enabled = snapshot.enabled;
         let state = state_label(snapshot.state, enabled);
         let style = STYLE_LABELS
             .get(prefs.style.clamp(0, (STYLE_LABELS.len() - 1) as i32) as usize)
@@ -164,7 +166,9 @@ mod tests {
         let idle = AutomixBar::new(&snap(AutomixState::Idle), &prefs);
         assert!(idle.can_start, "start now works from Idle: it plans the next track");
         assert!(!idle.can_cancel);
-        let off = AutomixBar::new(&snap(AutomixState::Armed), &AutomixPrefs::default());
+        let mut off_snap = snap(AutomixState::Armed);
+        off_snap.enabled = false;
+        let off = AutomixBar::new(&off_snap, &prefs);
         assert_eq!(off.state, "Off");
         assert!(!off.can_start && !off.can_cancel);
     }
@@ -189,8 +193,27 @@ mod tests {
         let running = AutomixBar::new(&snap(AutomixState::Transitioning), &prefs);
         assert!(!running.can_start, "a transition is already running");
         assert!(running.can_cancel);
-        let off = AutomixBar::new(&snap(AutomixState::Idle), &AutomixPrefs::default());
+        let mut off_snap = snap(AutomixState::Idle);
+        off_snap.enabled = false;
+        let off = AutomixBar::new(&off_snap, &prefs);
         assert!(!off.can_start, "disabled: nothing starts");
+    }
+
+    /// The controller turns itself off after an underrun while the preference still says On: the
+    /// bar shows what runs (Off) and why, not the preference.
+    #[test]
+    fn bar_shows_the_running_flag_not_the_preference() {
+        let prefs = AutomixPrefs {
+            enabled: true,
+            ..Default::default()
+        };
+        let mut snapshot = snap(AutomixState::Idle);
+        snapshot.enabled = false;
+        snapshot.last_error = "cancelled: audio underrun, automix is off".into();
+        let bar = AutomixBar::new(&snapshot, &prefs);
+        assert!(!bar.enabled);
+        assert_eq!(bar.state, "Off");
+        assert!(bar.error.contains("underrun"), "{}", bar.error);
     }
 
     #[test]
