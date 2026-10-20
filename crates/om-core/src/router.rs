@@ -136,6 +136,14 @@ impl CommandSink for ParameterRouter {
                     Err(CommandError::Rejected(format!("no target for {id}")))
                 }
             }
+            Command::Automix(c) => {
+                let id = ParamId::Automix(c.p);
+                if self.dispatch(&id, c.value) {
+                    Ok(())
+                } else {
+                    Err(CommandError::Rejected(format!("no target for {id}")))
+                }
+            }
             _ => Err(CommandError::Rejected(
                 "command variant not wired to the engine yet".to_owned(),
             )),
