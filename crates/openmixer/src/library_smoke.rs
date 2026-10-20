@@ -229,10 +229,7 @@ fn watch_and_wait(
             return Ok(count);
         }
         if Instant::now() >= deadline {
-            return Err(AppError::SmokeTracks {
-                count,
-                expected: expected,
-            });
+            return Err(AppError::SmokeTracks { count, expected });
         }
         std::thread::sleep(Duration::from_millis(20));
     }
