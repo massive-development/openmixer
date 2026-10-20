@@ -253,3 +253,29 @@ fn toggle_and_relative_start_from_the_engine_value_and_keep_it_across_reloads() 
     f.m.handle_message(&control_change(0, 21, 65));
     assert_eq!(f.t.last("mixer.ch0.eq.low"), 12.0);
 }
+
+#[test]
+fn stem_pad_map_drives_each_stem_of_deck_zero_through_the_router() {
+    let (engine, _audio) = DjEngine::new(2);
+    let router = Arc::new(ParameterRouter::new());
+    engine.register(&router);
+    let m = MidiMapper::new();
+    m.set_target(router.clone());
+    m.load_from_file(&data_dir().join("stem_map.json")).unwrap();
+    assert_eq!(m.num_mappings(), 9);
+
+    // Mute toggles: the first press mutes drums, the second un-mutes it.
+    m.handle_message(&note_on(1, 44, 127));
+    assert!(engine.deck(0).stem_control().is_muted(0));
+    m.handle_message(&note_on(1, 44, 127));
+    assert!(!engine.deck(0).stem_control().is_muted(0));
+    m.handle_message(&note_on(1, 47, 127));
+    assert!(engine.deck(0).stem_control().is_muted(3));
+
+    // Volume: 0..127 maps onto 0..1.5 and filter onto -1..1.
+    m.handle_message(&control_change(1, 20, 127));
+    assert_near(f64::from(engine.deck(0).stem_control().gain(0)), 1.5);
+    m.handle_message(&control_change(1, 24, 0));
+    assert_near(f64::from(engine.deck(0).stem_control().filter(2)), -1.0);
+    assert_eq!(router.unknown_count(), 0);
+}

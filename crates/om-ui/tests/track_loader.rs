@@ -487,3 +487,150 @@ fn load_by_path_reports_missing_files_and_bad_decks() {
     assert_eq!(err.to_string(), "no such deck");
     assert!(!rig.engine.deck(0).is_loaded());
 }
+
+/// A complete four-stem set for `track_id` in the rig's cache, registered as the track's row.
+/// `corrupt` writes a garbage `vocals.wav` instead of a stereo file.
+fn cache_stems(rig: &LoaderRig, track_id: i64, corrupt: bool) -> std::path::PathBuf {
+    let dir_name = format!("cache-{track_id}-htdemucs-v1");
+    let dir = rig.dir.path().join("stems").join(&dir_name);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (i, name) in ["drums", "bass", "vocals", "other"].iter().enumerate() {
+        let file = dir.join(format!("{name}.wav"));
+        if corrupt && *name == "vocals" {
+            std::fs::write(&file, b"not a wav").unwrap();
+        } else {
+            stereo_stem(&file, 110.0 * (i + 1) as f64);
+        }
+    }
+    rig.services
+        .library()
+        .track_stems()
+        .set(&om_library::TrackStemsRecord {
+            track_id,
+            sep_id: "htdemucs".into(),
+            version: 1,
+            dir: dir_name,
+            bytes: 0,
+            created_ms: 0,
+        })
+        .unwrap();
+    rig.dir.path().join("stems")
+}
+
+/// A stereo file the length of `write_wav`'s two-second clip, so the stems match the main file.
+fn stereo_stem(path: &std::path::Path, freq: f64) {
+    let frames = 2 * 44_100;
+    let mono = om_testing::signals::sine_amp(freq, 0.25, 44_100.0, frames);
+    let samples: Vec<i16> = mono
+        .iter()
+        .flat_map(|s| {
+            let v = (s * 32767.0) as i16;
+            [v, v]
+        })
+        .collect();
+    om_testing::wav::write_pcm16_wav(path, 2, 44_100, &samples);
+}
+
+fn source(root: std::path::PathBuf) -> Option<om_ui::library::StemSource> {
+    Some(om_ui::library::StemSource {
+        root,
+        sep_id: "htdemucs".into(),
+        version: 1,
+    })
+}
+
+#[test]
+fn cached_stems_load_with_the_track_when_auto_load_is_on() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    let root = cache_stems(&rig, track, false);
+    rig.loader.configure_stems(source(root), true, None);
+    rig.load(0, track).expect("loads");
+    assert!(rig.engine.deck(0).has_stems());
+    assert_eq!(rig.loader.stem_note(0), None);
+}
+
+#[test]
+fn auto_load_off_leaves_the_track_plain_even_with_a_cache() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    let root = cache_stems(&rig, track, false);
+    rig.loader.configure_stems(source(root), false, None);
+    rig.load(0, track).expect("loads");
+    assert!(!rig.engine.deck(0).has_stems());
+}
+
+#[test]
+fn toggle_stems_loads_and_clears_while_stopped_and_refuses_while_playing() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    let root = cache_stems(&rig, track, false);
+    rig.loader.configure_stems(source(root), false, None);
+    rig.load(0, track).expect("loads");
+
+    let on = rig
+        .loader
+        .toggle_stems(&rig.engine, &rig.services, 0)
+        .expect("stopped deck loads stems");
+    assert!(on && rig.engine.deck(0).has_stems());
+
+    rig.engine.deck(0).play();
+    let refused = rig
+        .loader
+        .toggle_stems(&rig.engine, &rig.services, 0)
+        .expect_err("a playing deck does not switch mode");
+    assert_eq!(refused.to_string(), "stop the deck to switch stems");
+    assert!(rig.engine.deck(0).has_stems(), "the mode is unchanged");
+
+    rig.engine.deck(0).pause();
+    assert!(!rig
+        .loader
+        .toggle_stems(&rig.engine, &rig.services, 0)
+        .unwrap());
+    assert!(!rig.engine.deck(0).has_stems());
+}
+
+#[test]
+fn a_track_without_a_cached_set_has_no_stems_to_toggle() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    rig.loader
+        .configure_stems(source(rig.dir.path().join("stems")), true, None);
+    rig.load(0, track).expect("loads");
+    let err = rig
+        .loader
+        .toggle_stems(&rig.engine, &rig.services, 0)
+        .expect_err("no cache row");
+    assert_eq!(err.to_string(), "no stems \u{2014} Prepare stems");
+    assert!(!rig.engine.deck(0).has_stems());
+}
+
+#[test]
+fn a_cache_row_whose_files_are_gone_loads_plain_without_a_note() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    let root = cache_stems(&rig, track, false);
+    std::fs::remove_dir_all(root.join(format!("cache-{track}-htdemucs-v1"))).unwrap();
+    rig.loader.configure_stems(source(root), true, None);
+    rig.load(0, track).expect("the track still loads");
+    assert!(!rig.engine.deck(0).has_stems());
+    assert_eq!(
+        rig.loader.stem_note(0),
+        None,
+        "missing files are not an error"
+    );
+}
+
+#[test]
+fn a_corrupt_stem_file_leaves_the_deck_plain_with_a_status_note() {
+    let mut rig = LoaderRig::new();
+    let track = rig.add_file("song.wav", "8A", true);
+    let root = cache_stems(&rig, track, true);
+    rig.loader.configure_stems(source(root), true, None);
+    rig.load(0, track).expect("the track loads");
+    assert!(!rig.engine.deck(0).has_stems());
+    assert!(rig.engine.deck(0).is_loaded());
+    assert!(rig.loader.stem_note(0).is_some_and(
+        |note| note.starts_with("stems failed:") && note.ends_with("playing the plain track")
+    ));
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Stem pads test controller",
+  "mappings": [
+    { "type": "note", "channel": 1, "number": 44, "target": "stem.0.0.mute", "mode": "toggle" },
+    { "type": "note", "channel": 1, "number": 45, "target": "stem.0.1.mute", "mode": "toggle" },
+    { "type": "note", "channel": 1, "number": 46, "target": "stem.0.2.mute", "mode": "toggle" },
+    { "type": "note", "channel": 1, "number": 47, "target": "stem.0.3.mute", "mode": "toggle" },
+    { "type": "cc", "channel": 1, "number": 20, "target": "stem.0.0.volume", "min": 0, "max": 1.5 },
+    { "type": "cc", "channel": 1, "number": 21, "target": "stem.0.1.volume", "min": 0, "max": 1.5 },
+    { "type": "cc", "channel": 1, "number": 22, "target": "stem.0.2.volume", "min": 0, "max": 1.5 },
+    { "type": "cc", "channel": 1, "number": 23, "target": "stem.0.3.volume", "min": 0, "max": 1.5 },
+    { "type": "cc", "channel": 1, "number": 24, "target": "stem.0.2.filter", "min": -1, "max": 1 }
+  ]
+}
