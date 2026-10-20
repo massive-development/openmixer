@@ -49,6 +49,16 @@ const GIB: u64 = 1024 * 1024 * 1024;
 /// Environment variable that selects a theme for the session (wins over the saved preference).
 pub const THEME_ENV: &str = "OPENMIXER_THEME";
 
+/// Where the settings overlay saves preferences. A demo run (any `--demo-*` flag, see
+/// `flags::demo_run`) saves into `scratch` instead, so a demo never writes the user's file.
+pub fn prefs_save_target(demo: bool, user_file: PathBuf, scratch: &std::path::Path) -> PathBuf {
+    if demo {
+        scratch.join("preferences.json")
+    } else {
+        user_file
+    }
+}
+
 /// The subsystems attached on demand. Each preference section drives the matching service; `None`
 /// means nothing is attached and the section is only stored.
 #[derive(Default)]
