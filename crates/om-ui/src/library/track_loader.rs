@@ -510,7 +510,6 @@ fn touch_stem_entry(dir: &Path) {
 
 /// Sets the deck's grid and per-deck metadata from an analysis result. An absent grid or waveform
 /// clears the old one, so a track with no analysis never shows the previous track's data.
-
 fn apply(
     engine: &DjEngine,
     slot: &mut Slot,
