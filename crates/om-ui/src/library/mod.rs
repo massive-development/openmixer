@@ -14,7 +14,9 @@ pub use services::{
 };
 pub use track_drag::{describe as describe_track_drag, parse as parse_track_drag};
 pub use track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
-pub use track_table::{columns, Column, TrackTableModel, MAX_CACHED_PAGES, PAGE_SIZE};
+pub use track_table::{
+    columns, Column, TrackTableModel, MAX_CACHED_PAGES, PAGE_SIZE, STEMS_COLUMN,
+};
 mod browser;
 mod control;
 mod cue_saver;
