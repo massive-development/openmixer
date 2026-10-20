@@ -166,12 +166,13 @@ mod tests {
     fn auto_prepare_is_off_by_default_and_toggles() {
         let mut prefs = Preferences::default();
         let mut host = Host::default();
-        let mut page = StemsSettingsPage::new(&mut prefs, &mut host);
-        assert!(!page.auto_prepare());
-        assert!(page.set_auto_prepare(true));
-        assert!(!page.set_auto_prepare(true));
-        assert!(page.auto_prepare());
-        drop(page);
+        {
+            let mut page = StemsSettingsPage::new(&mut prefs, &mut host);
+            assert!(!page.auto_prepare());
+            assert!(page.set_auto_prepare(true));
+            assert!(!page.set_auto_prepare(true));
+            assert!(page.auto_prepare());
+        }
         assert!(host.auto, "the host sees the preference");
     }
 
