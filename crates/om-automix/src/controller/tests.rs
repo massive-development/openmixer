@@ -894,3 +894,43 @@ fn natural_end_of_the_outgoing_track_completes_the_transition() {
     assert!(sim.snap.decks[1].playing && sim.snap.decks[1].sync_master);
     assert!(!sim.snap.decks[0].playing);
 }
+
+/// `automix.start` pressed when nothing plays must not wait for the next deck to start playing and
+/// then fire a transition the user did not ask for.
+#[test]
+fn start_pressed_with_nothing_playing_does_not_fire_later() {
+    let mut sim = Sim::new(100.0, false);
+    sim.snap.decks[0].playing = false;
+    sim.control
+        .set_param(&ParamId::Automix(AutomixParam::Start), 1.0);
+    sim.run(5);
+    assert!(sim.host.starts.is_empty());
+    // Much later the user starts a track from its beginning.
+    sim.snap.decks[0].playing = true;
+    sim.snap.decks[0].position_frames = beat(10.0);
+    sim.run(200);
+    assert!(sim.host.starts.is_empty(), "{:?}", sim.host.starts);
+    assert_eq!(sim.state(), AutomixState::Idle);
+}
+
+/// A press during a transition is for that transition only: it must not start the track after it.
+#[test]
+fn start_pressed_during_a_transition_does_not_chain_into_the_next_one() {
+    let mut sim = Sim::new(380.0, false);
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Third".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.tracks.insert(8, info(0, BPM, "8A", false));
+    sim.run_into_transition();
+    sim.control
+        .set_param(&ParamId::Automix(AutomixParam::Start), 1.0);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    sim.run(200);
+    assert_eq!(sim.host.starts.len(), 1, "{:?}", sim.host.starts);
+}
