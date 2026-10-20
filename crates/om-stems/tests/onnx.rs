@@ -146,3 +146,31 @@ fn a_missing_model_file_is_an_error_not_a_panic() {
     );
     assert!(err.is_err());
 }
+
+#[test]
+fn a_wrong_tensor_name_or_shape_is_rejected_at_load_not_at_run() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("toy.onnx");
+    std::fs::write(&path, toy_model([0.1, 0.2, 0.3, 0.4])).expect("write model");
+    let base = ModelContract {
+        segment_samples: 4000,
+        ..ModelContract::htdemucs()
+    };
+    let wrong_output = ModelContract {
+        stems_output: "stemz".into(),
+        ..base.clone()
+    };
+    let wrong_input = ModelContract {
+        mix_input: "mx".into(),
+        ..base.clone()
+    };
+    for (contract, needle) in [(wrong_output, "stemz"), (wrong_input, "mx")] {
+        match OrtInference::load(&path, contract, Some(1)) {
+            Ok(_) => panic!("a contract naming {needle} must not load"),
+            Err(om_stems::StemError::Invalid(msg)) => {
+                assert!(msg.contains(needle), "{msg}");
+            }
+            Err(other) => panic!("expected an Invalid error, got {other}"),
+        }
+    }
+}
