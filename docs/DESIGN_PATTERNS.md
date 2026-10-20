@@ -206,6 +206,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** any derived per-file artefact that is large and keyed by content: waveforms on disk, artwork thumbnails, analysis caches.
 - **Notes:** the directory is the source of truth; the library row is an index that `StemService` keeps in step (`forget_track`, `reconcile`, and the cap's eviction delete rows with their directories). Deleting a track must call `StemService::forget_track` first: SQLite cascades the rows but cannot remove directories. A hit touches `meta.json`, and `evict_lru` removes the least recently touched entries first. Key changes (content hash, separator id or version) are misses. Single process per cache root.
 
+### Model installer (licence answer gates the download)
+- **Where:** `om-stems` `ModelInstaller` (`model.rs`) over `WeightManager` (`weights.rs`); the app's `StemsHost` (`crates/openmixer/src/stems_host.rs`) and the `StemHost` trait in `om-ui` (`stems.rs`).
+- **Why:** a model download is the only network I/O in stems. The user's answer to the licence dialog is an argument to the install job, so a declined answer fails at the licence step before any byte is fetched.
+- **Reuse when:** any optional model or asset the app downloads on the user's behalf.
+- **Notes:** the worker owns the downloading `WeightManager`; state reads use a second manager with a refusing downloader, so polling the state cannot start a transfer. The UI never names `om-stems` types: it talks to `StemHost`, which the app implements. Tests count downloader calls.
+
 ### Forward-only migration list
 - **Where:** `om-library` migrations (`migrations.rs`)
 - **Why:** the schema evolves by appending numbered migrations; each runs in its own transaction and is recorded in `schema_version`.
