@@ -214,9 +214,7 @@ impl AutomixController {
             self.force_start = false;
             self.abort(CancelReason::UserCancel, snap, sink);
         }
-        if self.control.take_start()
-            && self.state != AutomixState::Transitioning
-        {
+        if self.control.take_start() && self.state != AutomixState::Transitioning {
             self.force_start = true;
         }
         if !self.control.is_enabled() {

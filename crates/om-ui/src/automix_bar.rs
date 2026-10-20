@@ -164,7 +164,10 @@ mod tests {
         assert_eq!(armed.remaining, "12 beats left");
         assert_eq!(armed.style, "Auto");
         let idle = AutomixBar::new(&snap(AutomixState::Idle), &prefs);
-        assert!(idle.can_start, "start now works from Idle: it plans the next track");
+        assert!(
+            idle.can_start,
+            "start now works from Idle: it plans the next track"
+        );
         assert!(!idle.can_cancel);
         let mut off_snap = snap(AutomixState::Armed);
         off_snap.enabled = false;
