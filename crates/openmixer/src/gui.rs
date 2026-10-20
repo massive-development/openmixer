@@ -128,6 +128,7 @@ pub fn main(args: &[String]) -> ExitCode {
         }
     }
     composition.attach_samples(samples_dir);
+    let samples = composition.services.samples.clone();
 
     // The library: ingest the smoke tracks and load the first one into deck A, or share the
     // services the composition opened. The window and the smoke check use the same hub.
@@ -248,7 +249,7 @@ pub fn main(args: &[String]) -> ExitCode {
         // The demo's tracks are sine tones with no tempo: give deck A a fixed grid once its
         // analysis lands, so screenshots show beat ticks.
         demo_grid_bpm: demo.then_some(120.0),
-        samples: composition.services.samples.clone(),
+        samples,
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();

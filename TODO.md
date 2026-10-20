@@ -13,7 +13,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. Stem transitions (39) are still open. L
 - **Todo 30:** done at logic and view level (Wave 7 S6/S7): stem pads in the deck card, cached stems auto-load (`stems.autoLoad`), Load/Stems off, MIDI stem targets. Not checked by ear; mock device only. Transitions are Todo 39. L
 - **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
-- **Todo 40:** 8-pad sampler: the engine is done (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`); sample bank storage (P2), the pad UI (P4) and a soak scenario (P5) are not built; not heard. M
+- **Todo 40:** 8-pad sampler: the engine (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`), the sample bank (P2: `<data>/samples/sampler.json`, off-thread import, start-up apply), the pad view-model and sampler strip (P4: `om-ui::sampler_binding`, `om-ui-gpui::sampler_view`) and the soak and UI gate scenarios (P5) are built, at logic and view level. Not heard, and the window was checked on screenshots only, not by eye. Open: the user's listening and by-eye check; a per-pad mode and gain on MIDI; learn for pad settings. M
 - **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Showing artwork in the UI is not built.
 - **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. Scroll bars, tables and toggles are not restyled, and the window is not checked by eye. M
 - **Todo 26a:** done: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding`. It is still removed once Wave 5 replaces it.
@@ -236,7 +236,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 37:** Stem-aware mixing DSP (engine level, Wave 7 S5: `om-dsp` `StemMixer`, stem-mode decks, `stem.*` ids and `Command::LoadStems`; pads UI is Todo 30, transitions Todo 39)
 - [ ] **Todo 38:** Automix transition engine
 - [ ] **Todo 39:** Stem transitions: done at helper level (Wave 7 S8: `om-automix` `stem_fade`, the `StemFade` plan with bass swap, vocals out, drums-only bridge and filter sweep, and a `StemFadeRunner` that sends `Command::Param` on the control tick and skips decks without stems). Not yet driven by automix (Todo 38, A4) or any UI; not heard
-- [ ] **Todo 40:** 8-pad sampler: engine, ids, snapshot and command done (Wave 7 P1/P3); storage (P2), pad UI (P4) and soak scenario (P5) pending; not heard
+- [x] **Todo 40:** 8-pad sampler: engine, ids, snapshot and command (P1/P3); sample bank (P2); pad view-model and strip (P4); soak and UI gate scenarios (P5). Done at logic and view level; not heard, not seen by eye
 
 ## Wave 8: Pro Surface
 
