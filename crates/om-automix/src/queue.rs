@@ -107,7 +107,7 @@ pub struct Selection {
 }
 
 /// The host's queue: the next track to play, or `None` when nothing qualifies.
-pub trait AutomixQueue: Send {
+pub trait AutomixQueue {
     /// `current` is the track playing now, if known. The pick is consumed: the queue moves on.
     fn next_track(&mut self, current: Option<&QueueTrack>) -> Option<QueueTrack>;
 

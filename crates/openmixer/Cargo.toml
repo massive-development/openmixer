@@ -15,6 +15,7 @@ om-midi.workspace = true
 om-plugins.workspace = true
 om-library.workspace = true
 om-stems.workspace = true
+om-automix.workspace = true
 thiserror.workspace = true
 om-ui.workspace = true
 dirs.workspace = true
@@ -34,5 +35,6 @@ gui = ["dep:om-ui-gpui"]
 workspace = true
 
 [dev-dependencies]
+om-analysis.workspace = true
 om-testing.workspace = true
 tempfile.workspace = true
