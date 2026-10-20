@@ -50,6 +50,9 @@ pub struct SourceReader {
     cursor: usize,
     /// Set when the stream ended or failed; reads past this point return silence.
     exhausted: bool,
+    /// Sticky: a packet failed to read or decode, or the channel layout changed. Reads past such a
+    /// point are silence, so a caller that needs every frame must check this.
+    damaged: bool,
 }
 
 impl SourceReader {
@@ -106,6 +109,7 @@ impl SourceReader {
             buffered_frames: 0,
             cursor: 0,
             exhausted: false,
+            damaged: false,
         };
         reader.info.length_frames = match params.n_frames {
             Some(n) => i64::try_from(n).unwrap_or(i64::MAX),
@@ -117,6 +121,12 @@ impl SourceReader {
 
     pub fn info(&self) -> TrackInfo {
         self.info
+    }
+
+    /// True once a packet failed to read or decode (as opposed to the stream simply ending). A
+    /// plain end of file does not set it.
+    pub fn damaged(&self) -> bool {
+        self.damaged
     }
 
     /// Fills `dst` with stereo frames starting at source frame `from`. Mono files are duplicated
@@ -216,6 +226,7 @@ impl SourceReader {
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "deck source: packet read failed");
+                    self.damaged = true;
                     self.exhausted = true;
                     return false;
                 }
@@ -228,6 +239,7 @@ impl SourceReader {
                     let channels = decoded.spec().channels.count();
                     if channels != self.info.channels {
                         // Channel layout changed mid-stream: treat as end of usable audio.
+                        self.damaged = true;
                         self.exhausted = true;
                         return false;
                     }
@@ -250,8 +262,10 @@ impl SourceReader {
                 }
                 Err(SymError::DecodeError(msg)) => {
                     tracing::debug!(error = msg, "deck source: skipped undecodable packet");
+                    self.damaged = true;
                 }
                 Err(_) => {
+                    self.damaged = true;
                     self.exhausted = true;
                     return false;
                 }

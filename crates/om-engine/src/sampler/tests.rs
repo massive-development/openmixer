@@ -625,3 +625,37 @@ fn trigger_and_release_in_one_block_is_a_short_audible_tap() {
         assert_eq!(control.snapshot().voices_active, 0);
     }
 }
+
+fn tone_wav(dir: &om_testing::fs::TempDir, name: &str, frames: usize) -> std::path::PathBuf {
+    let path = dir.file(name);
+    let mono: Vec<f32> = (0..frames).map(|n| (n as f32 * 0.05).sin() * 0.5).collect();
+    om_testing::wav::write_float_wav(&path, 1, 8_000, &mono);
+    path
+}
+
+#[test]
+fn load_rejects_a_file_cut_off_mid_stream() {
+    let dir = om_testing::fs::TempDir::new("om_sampler_trunc");
+    let whole = tone_wav(&dir, "whole.wav", 8_000);
+    let bytes = std::fs::read(&whole).unwrap();
+    let cut = dir.file("cut.wav");
+    std::fs::write(&cut, &bytes[..44 + (bytes.len() - 44) / 2]).unwrap();
+    assert!(Sample::load(&whole, 8_000.0).is_ok());
+    let err = Sample::load(&cut, 8_000.0).expect_err("a half file must not load as a short sample");
+    assert!(matches!(err, SamplerError::Corrupt(_)), "{err:?}");
+}
+
+#[test]
+fn an_unknown_length_is_decoded_to_the_end_under_the_cap() {
+    use super::sample::decode_all;
+    let dir = om_testing::fs::TempDir::new("om_sampler_unknown");
+    let path = tone_wav(&dir, "stream.wav", 10_000);
+    let open = || crate::deck::SourceReader::open(&path).unwrap();
+    // declared 0: what a container without a frame count reports.
+    let data = decode_all(&mut open(), 0, 1_000_000).expect("decodes to the end");
+    assert_eq!(data.len() / 2, 10_000);
+    assert!(matches!(
+        decode_all(&mut open(), 0, 5_000),
+        Err(SamplerError::TooLarge)
+    ));
+}
