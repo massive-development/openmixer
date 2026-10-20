@@ -487,3 +487,64 @@ fn sampler_cost() {
         per_block_us(4, 3.3)
     );
 }
+
+fn audible(l: &[f32]) -> bool {
+    l.iter().any(|&v| v != 0.0)
+}
+
+#[test]
+fn two_hundred_one_shots_play_with_no_reclaim_at_all() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(50, 0.5)).unwrap();
+    render(&mut audio, 64);
+    for n in 0..200 {
+        control.trigger(0, 1.0);
+        let (l, _) = render(&mut audio, 128);
+        assert!(audible(&l), "trigger {n} was silent");
+    }
+    assert_eq!(control.dropped_commands(), 0);
+}
+
+#[test]
+fn one_shots_survive_a_slow_control_thread() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(50, 0.5)).unwrap();
+    control.assign(1, dc(50, 0.25)).unwrap();
+    render(&mut audio, 64);
+    for n in 0..200 {
+        control.trigger(0, 1.0);
+        control.trigger(1, 1.0);
+        let (l, _) = render(&mut audio, 128);
+        assert!(audible(&l), "trigger {n} was silent");
+        if n % 50 == 49 {
+            control.reclaim();
+        }
+    }
+    assert_eq!(control.dropped_commands(), 0);
+}
+
+#[test]
+fn voices_of_replaced_samples_stay_reusable_when_the_retire_ring_is_full() {
+    let (mut audio, control) = setup();
+    audio.fill_retire_ring_for_test();
+    let old = dc(50, 0.5);
+    control.assign(0, Arc::clone(&old)).unwrap();
+    for _ in 0..4 {
+        control.trigger(0, 1.0);
+    }
+    render(&mut audio, 16);
+    control.assign(0, dc(50, 0.25)).unwrap(); // `old` is now stale: ring full, nowhere to go
+    for n in 0..200 {
+        control.trigger(0, 1.0);
+        let (l, _) = render(&mut audio, 128);
+        assert!(audible(&l), "trigger {n} was silent");
+    }
+    assert_eq!(control.dropped_commands(), 0);
+    // Nothing was freed on the audio side: the references are parked, then handed back once the
+    // control side reclaims and the audio side retries.
+    assert!(Arc::strong_count(&old) > 1);
+    control.reclaim();
+    render(&mut audio, 16);
+    control.reclaim();
+    assert_eq!(Arc::strong_count(&old), 1);
+}

@@ -21,6 +21,10 @@ struct Voice {
     /// `Some` while the voice plays and, once it has finished, until the reference is handed back
     /// to the control side.
     sample: Option<Arc<Sample>>,
+    /// A finished voice's sample the retire ring had no room for. Parking it here frees the voice
+    /// for the next trigger; it is retried every block. Never overwritten or dropped on the audio
+    /// thread: `start` leaves it alone.
+    limbo: Option<Arc<Sample>>,
     active: bool,
     mode: PadMode,
     releasing: bool,
@@ -36,6 +40,7 @@ impl Voice {
     fn idle() -> Self {
         Self {
             sample: None,
+            limbo: None,
             active: false,
             mode: PadMode::OneShot,
             releasing: false,
@@ -45,6 +50,20 @@ impl Voice {
             env_delta: 0.0,
             age: 0,
         }
+    }
+
+    /// Starts playing `sample`. Field by field so `limbo` survives (a whole-struct assignment
+    /// would drop it on the audio thread). The caller guarantees `self.sample` is `None`.
+    fn start(&mut self, sample: Arc<Sample>, mode: PadMode, velocity: f32, age: u64) {
+        self.sample = Some(sample);
+        self.active = true;
+        self.mode = mode;
+        self.releasing = false;
+        self.pos = 0.0;
+        self.velocity = velocity;
+        self.env = 0.0;
+        self.env_delta = 1.0 / START_RAMP_FRAMES;
+        self.age = age;
     }
 
     fn sounding(&self) -> bool {
@@ -98,6 +117,18 @@ impl SamplerAudio {
             audio,
             super::SamplerControl::new(shared, command_tx, retired_rx),
         )
+    }
+
+    /// Test hook: stuffs the retire ring with throwaway samples, as a stalled control thread would.
+    #[cfg(test)]
+    pub(super) fn fill_retire_ring_for_test(&mut self) {
+        while self
+            .retired
+            .push(Arc::new(
+                Sample::from_mono("filler", 48_000.0, &[0.0]).expect("sample"),
+            ))
+            .is_ok()
+        {}
     }
 
     fn apply_commands(&mut self) {
@@ -174,17 +205,7 @@ impl SamplerAudio {
         };
         self.age += 1;
         let mode = mode.unwrap_or_else(|| PadMode::from_u8(self.shared.mode[pad].load(Relaxed)));
-        *free = Voice {
-            sample: Some(sample),
-            active: true,
-            mode,
-            releasing: false,
-            pos: 0.0,
-            velocity: velocity.clamp(0.0, 1.0),
-            env: 0.0,
-            env_delta: 1.0 / START_RAMP_FRAMES,
-            age: self.age,
-        };
+        free.start(sample, mode, velocity.clamp(0.0, 1.0), self.age);
     }
 
     /// Release (gate/loop voices fade out; one-shots ignore it). `all` releases every voice of the
@@ -198,12 +219,38 @@ impl SamplerAudio {
         }
     }
 
-    /// Hands finished voices' samples and replaced pad samples back to the control side. What does
-    /// not fit stays put and is retried next block.
+    /// Frees finished voices for reuse and hands their samples back, without ever dropping the last
+    /// reference on the audio thread. For a finished voice, in order:
+    ///
+    /// 1. the sample is still the pad's current one: the pad slot holds a reference that only this
+    ///    thread releases, so dropping the voice's is a plain decrement and frees nothing;
+    /// 2. otherwise it goes into the retire ring for the control side ([`super::SamplerControl::reclaim`]);
+    /// 3. ring full: it parks in the voice's `limbo` slot (the voice is reusable at once; `limbo`
+    ///    is retried every block);
+    /// 4. `limbo` taken too: the voice stays unusable until the control side reclaims. Only reachable
+    ///    with replaced samples and a control thread that never reclaims.
     fn flush_retired(&mut self) {
-        for v in &mut self.voices {
-            if !v.active && v.sample.is_some() {
+        for pad in 0..PADS {
+            let current = self.pads[pad].sample.as_ref();
+            for v in &mut self.voices[pad * SLOTS_PER_PAD..(pad + 1) * SLOTS_PER_PAD] {
+                if v.limbo.is_some() {
+                    retire(&mut self.retired, &mut v.limbo);
+                }
+                if v.active {
+                    continue;
+                }
+                let Some(held) = v.sample.as_ref() else {
+                    continue;
+                };
+                if current.is_some_and(|c| Arc::ptr_eq(c, held)) {
+                    // Not the last reference: the pad slot keeps one.
+                    v.sample = None;
+                    continue;
+                }
                 retire(&mut self.retired, &mut v.sample);
+                if v.sample.is_some() && v.limbo.is_none() {
+                    v.limbo = v.sample.take();
+                }
             }
         }
         for p in &mut self.pads {
