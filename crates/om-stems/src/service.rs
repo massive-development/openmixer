@@ -137,7 +137,8 @@ impl Inner {
         })?;
         let cap = self.max_cache_bytes.load(Ordering::SeqCst);
         if cap > 0 {
-            for dir in self.cache.evict_lru(cap)? {
+            // The entry just produced is never evicted, even when it alone exceeds the cap.
+            for dir in self.cache.evict_lru_keeping(cap, Some(&entry.dir_name))? {
                 library.track_stems().delete_by_dir(&dir)?;
             }
         }

@@ -304,3 +304,28 @@ fn service_open_sweeps_only_foreign_or_stale_tmp_dirs() {
     let _ = StemCache::open(&root).unwrap();
     assert_eq!(names(&root), vec![mine]);
 }
+
+#[test]
+fn eviction_keeping_the_new_entry_removes_others_even_when_it_is_the_oldest() {
+    let dir = TempDir::new().unwrap();
+    let cache = open(&dir);
+    let old = commit(&cache, &other_hash_key(1), 200);
+    let other = commit(&cache, &other_hash_key(2), 200);
+    set_mtime(
+        &old.path.join("meta.json"),
+        SystemTime::now() - Duration::from_secs(3600),
+    );
+    // The cap is smaller than one entry: the kept one stays, the rest go.
+    let removed = cache
+        .evict_lru_keeping(1, Some(&old.dir_name))
+        .expect("evict");
+    assert_eq!(removed, vec![other.dir_name.clone()]);
+    assert!(cache.lookup(&other_hash_key(1)).is_some());
+    assert!(cache.lookup(&other_hash_key(2)).is_none());
+    // Only the kept entry is left, though it exceeds the cap.
+    assert!(cache
+        .evict_lru_keeping(0, Some(&old.dir_name))
+        .unwrap()
+        .is_empty());
+    assert_eq!(cache.entries().unwrap().len(), 1);
+}
