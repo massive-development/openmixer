@@ -2,7 +2,7 @@
 
 use super::{set_if_changed, SettingsError};
 use crate::preferences::{default_user_map_file, Preferences};
-use om_core::param_id::{ChannelParam, DeckParam, MixerParam};
+use om_core::param_id::{ChannelParam, DeckParam, MixerParam, StemParam, STEMS_PER_DECK};
 use om_core::ParamId;
 use std::path::{Path, PathBuf};
 
@@ -84,8 +84,9 @@ pub trait MidiPage: MidiInputs + MidiHost {}
 
 impl<T: MidiInputs + MidiHost + ?Sized> MidiPage for T {}
 
-/// The parameter ids the MIDI page offers for MIDI learn: the decks' transport and rate, the
-/// channel faders and trims, the crossfader and the master. Ids are the router's full ids.
+/// The parameter ids the MIDI page offers for MIDI learn: the decks' transport and rate, each
+/// stem's mute on every deck, the channel faders and trims, the crossfader and the master. Ids are
+/// the router's full ids.
 pub fn learnable_targets(decks: usize) -> Vec<String> {
     let mut ids: Vec<ParamId> = Vec::new();
     for deck in 0..decks {
@@ -98,6 +99,13 @@ pub fn learnable_targets(decks: usize) -> Vec<String> {
             deck,
             p: DeckParam::Rate,
         });
+        for stem in 0..STEMS_PER_DECK {
+            ids.push(ParamId::Stem {
+                deck,
+                stem,
+                p: StemParam::Mute,
+            });
+        }
     }
     for channel in 0..decks {
         let ch = channel as u8;
@@ -307,8 +315,10 @@ mod tests {
     #[test]
     fn learn_targets_are_full_router_ids_for_each_deck_and_the_mixer() {
         let ids = learnable_targets(2);
-        assert_eq!(ids.len(), 4 * 2 + 2);
+        assert_eq!(ids.len(), 6 * 2 + 2 * 2 + 2);
         assert!(ids.contains(&"deck.1.play".to_owned()));
+        assert!(ids.contains(&"stem.1.3.mute".to_owned()));
+        assert!(!ids.contains(&"stem.1.3.volume".to_owned()));
         assert!(ids.contains(&"mixer.ch0.fader".to_owned()));
         assert!(ids.contains(&"mixer.crossfader".to_owned()));
         assert!(learnable_targets(0).len() == 2, "no decks: mixer only");

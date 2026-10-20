@@ -212,6 +212,13 @@ impl AppComposition {
         Ok(())
     }
 
+    /// The sink that carries `Command::LoadStems` to the engine and every other command to the
+    /// router. The window's loader sends stem loads through it.
+    pub fn stem_command_sink(&self) -> Arc<dyn om_core::CommandSink> {
+        let fallback: Arc<dyn om_core::CommandSink> = self.router.clone();
+        self.engine.command_sink(Some(fallback))
+    }
+
     /// The stems host, once [`AppComposition::attach_stems`] has run. Taken by the window.
     pub fn take_stems_host(&mut self) -> Option<StemsHost> {
         self.stems_host.take()

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 /// Delivers one id: a typed command when a sink is present, else the string target. An id that
 /// does not validate is never sent.
-fn deliver(
+pub(crate) fn deliver(
     sink: Option<&Arc<dyn CommandSink>>,
     target: &Arc<dyn ParameterTarget>,
     id: ParamId,

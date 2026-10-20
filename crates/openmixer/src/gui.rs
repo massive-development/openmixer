@@ -8,9 +8,11 @@
 //! `OPENMIXER_LIBRARY_DB`); its analysis runs on background workers.
 
 use om_audio::LatencyStats;
+use om_engine::DjEngine;
+use om_ui::library::StemSource;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, MidiPage};
-use om_ui::stems::StemHost;
+use om_ui::stems::{StemHost, StemJob, StemLabel};
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
@@ -131,7 +133,23 @@ pub fn main(args: &[String]) -> ExitCode {
     // The stems host (model, cache, prepare jobs) is shared by the browser and the settings page.
     if let Some(hub) = &library {
         if let Some(host) = composition.take_stems_host() {
-            hub.borrow_mut().stem_host = Some(Box::new(host));
+            // Cached stems load with their track when the preference says so; the sink is the
+            // same one the MIDI and UI controls use.
+            let source = host.cache_root().map(|root| {
+                let (sep_id, version) = StemHost::separator(&host);
+                StemSource {
+                    root,
+                    sep_id,
+                    version,
+                }
+            });
+            let mut hub = hub.borrow_mut();
+            hub.loader.configure_stems(
+                source,
+                composition.prefs.stems.auto_load,
+                Some(composition.stem_command_sink()),
+            );
+            hub.stem_host = Some(Box::new(host));
         }
     }
     if let (Some(hub), true, None) = (&library, smoke || demo, &smoke_error) {
@@ -141,6 +159,15 @@ pub fn main(args: &[String]) -> ExitCode {
             library_smoke::load_first_into_deck0(&mut hub.services, &mut hub.loader, &engine)
         {
             smoke_error = Some(error);
+        }
+    }
+    // `--demo-library --mock-stems`: separate deck A's track through the mock so its stem pads are
+    // live in the screenshots. Failures only say so on stderr; the demo runs without stems.
+    if demo && openmixer::flags::mock_stems(args) && smoke_error.is_none() {
+        if let Some(hub) = &library {
+            if let Err(error) = demo_stems(&mut hub.borrow_mut(), &engine) {
+                eprintln!("openmixer: demo stems: {error}");
+            }
         }
     }
     let rows_out = Arc::new(AtomicUsize::new(0));
@@ -327,4 +354,40 @@ fn device_status(settings: &OutputSettings) -> DeviceStatus {
             callbacks: 0,
         },
     }
+}
+
+/// Prepares the stems of deck A's track through the stem host (the mock separator under
+/// `--mock-stems`), waits for the job for a bounded time, and then loads the stems into deck 0.
+fn demo_stems(hub: &mut LibraryHub, engine: &DjEngine) -> Result<(), String> {
+    let track = hub
+        .loader
+        .loaded_track(0)
+        .cloned()
+        .ok_or("deck A has no track")?;
+    let job = StemJob {
+        track_id: track.id,
+        path: std::path::PathBuf::from(&track.path),
+        content_hash: track.content_hash.clone(),
+    };
+    let host = hub.stem_host.as_deref_mut().ok_or("no stems host")?;
+    let (sep_id, version) = host.separator();
+    hub.stems
+        .prepare(host, hub.services.library(), std::slice::from_ref(&job))
+        .map_err(|error| error.to_string())?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        match hub
+            .stems
+            .label(hub.services.library(), track.id, (&sep_id, version))
+        {
+            StemLabel::Ready => break,
+            StemLabel::Failed => return Err("separation failed".into()),
+            _ if std::time::Instant::now() > deadline => return Err("separation timed out".into()),
+            _ => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    hub.loader
+        .toggle_stems(engine, &hub.services, 0)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
