@@ -13,6 +13,8 @@ impl AutomixController {
         self.progress = 0.0;
         self.plan_style = None;
         self.next_title.clear();
+        self.next_bpm = None;
+        self.next_key.clear();
         let Some(out) = playing_deck(snap) else {
             self.remaining_beats = None;
             return;
@@ -86,6 +88,8 @@ impl AutomixController {
             Ok(()) => {
                 run.title = track.title.clone();
                 self.next_title = track.title;
+                self.next_bpm = track.bpm;
+                self.next_key = track.key;
                 self.last_error.clear();
                 self.run = Some(run);
                 self.force_start = force;

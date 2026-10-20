@@ -106,6 +106,8 @@ impl AutomixController {
         self.remaining_beats = None;
         self.cleanup_left = self.cfg.cleanup_ticks.max(1);
         self.next_title.clear();
+        self.next_bpm = None;
+        self.next_key.clear();
         self.state = AutomixState::Cleanup;
         self.run = None;
     }

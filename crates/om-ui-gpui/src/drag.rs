@@ -244,6 +244,7 @@ mod tests {
         engine.register(&router);
         let options = RunOptions {
             on_frame: None,
+            automix: None,
             smoke_frames: None,
             banner: None,
             debug: None,
