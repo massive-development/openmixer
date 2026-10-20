@@ -119,6 +119,16 @@ pub fn main(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // The sample bank starts after the device, so decodes use the rate the engine runs at. The
+    // demo writes its eight generated samples into the scratch folder first.
+    let samples_dir = smoke_root.as_ref().map(|root| root.join("samples"));
+    if let (true, Some(dir)) = (demo, &samples_dir) {
+        if let Err(error) = openmixer::sampler_demo::write_demo_bank(dir) {
+            eprintln!("openmixer: demo samples: {error}");
+        }
+    }
+    composition.attach_samples(samples_dir);
+
     // The library: ingest the smoke tracks and load the first one into deck A, or share the
     // services the composition opened. The window and the smoke check use the same hub.
     let mut smoke_error: Option<AppError> = None;
