@@ -15,6 +15,10 @@ use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, Mid
 use om_ui::stems::{StemHost, StemJob, StemLabel};
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
+use openmixer::automix_host::AppAutomixHost;
+use openmixer::automix_queue::{LibraryQueue, QueueSource};
+use openmixer::automix_service::AutomixRunner;
+use om_automix::queue::QueueConfig;
 use om_ui_gpui::debug_panel::DeviceStatus;
 use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
@@ -31,6 +35,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Frames rendered by `--smoke` before it exits.
 const SMOKE_FRAMES: u64 = 120;
@@ -181,6 +186,33 @@ pub fn main(args: &[String]) -> ExitCode {
             }
         }
     }
+    // Automix: the window steps the controller on each frame, because its host reads the library
+    // and the track loader, which live on this thread. The queue shuffles the whole library until
+    // the Automix settings choose a playlist.
+    let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(
+        composition.automix.clone(),
+        composition.automix_sink.clone(),
+    )));
+    if let Some(hub) = &library {
+        let queue = LibraryQueue::shared(
+            hub.borrow().services.library_handle(),
+            QueueSource::Search(String::new()),
+            QueueConfig::default(),
+            automix_seed(),
+        );
+        let host = AppAutomixHost::new(Arc::clone(&engine), Rc::clone(hub), queue);
+        automix_runner.borrow_mut().set_host(Box::new(host));
+    }
+    let automix_clock = Instant::now();
+    let automix_frame: Box<dyn FnMut()> = {
+        let runner = Rc::clone(&automix_runner);
+        let engine = Arc::clone(&engine);
+        Box::new(move || {
+            runner
+                .borrow_mut()
+                .step(&engine, automix_clock.elapsed().as_secs_f64());
+        })
+    };
     let rows_out = Arc::new(AtomicUsize::new(0));
 
     let midi_page: Option<Arc<dyn MidiPage>> = composition
@@ -250,6 +282,7 @@ pub fn main(args: &[String]) -> ExitCode {
         // analysis lands, so screenshots show beat ticks.
         demo_grid_bpm: demo.then_some(120.0),
         samples,
+        on_frame: Some(automix_frame),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();
@@ -402,4 +435,11 @@ fn demo_stems(hub: &mut LibraryHub, engine: &DjEngine) -> Result<(), String> {
         .toggle_stems(engine, &hub.services, 0)
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+/// A seed for the automix queue's shuffle: the wall clock's nanoseconds, so each run differs.
+fn automix_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.as_nanos() as u64)
 }
