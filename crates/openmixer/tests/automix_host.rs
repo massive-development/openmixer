@@ -114,3 +114,52 @@ fn the_queue_asks_the_cache_for_a_grid_not_for_a_bpm() {
     assert!(!picks.contains(&bare), "picked an unanalysed track: {picks:?}");
     assert!(picks.contains(&rig.tracks[0]), "the analysed track is picked: {picks:?}");
 }
+
+#[test]
+fn a_user_stem_mute_mid_transition_cancels_and_keeps_the_users_value() {
+    let mut rig = Rig::new(2, 64.0);
+    rig.load(0, 0);
+    rig.attach_host();
+    rig.set("deck.0.play", 1.0);
+    rig.set("automix.enable", 1.0);
+    let seen = run_until(&mut rig, 90 * 30, |r| {
+        r.automix.snapshot().state == AutomixState::Transitioning
+    });
+    assert_eq!(seen.last(), Some(&AutomixState::Transitioning), "states {seen:?}");
+
+    // The user mutes the incoming deck's first stem: a control automix's plan involves.
+    rig.set("stem.1.0.mute", 1.0);
+    rig.tick();
+    let snap = rig.automix.snapshot();
+    assert_eq!(snap.state, AutomixState::Idle, "the plan went on: {snap:?}");
+    assert!(
+        snap.last_error.contains("stem.1.0.mute"),
+        "no cancel reason: {:?}",
+        snap.last_error
+    );
+    // Automix's own writes never count as user input: the cancel above came from the user.
+    assert_eq!(rig.router.unknown_count(), 0);
+}
+
+#[test]
+fn reading_state_and_stepping_idle_automix_are_not_user_input() {
+    // The observer hears user writes only. Snapshot refreshes and idle automix steps must not
+    // reach it, or a view that echoes what it reads would cancel plans.
+    let mut rig = Rig::new(1, 64.0);
+    let heard = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = std::sync::Arc::clone(&heard);
+    rig.router
+        .set_input_observer(Some(std::sync::Arc::new(move |_id: &om_core::ParamId| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        })));
+    rig.attach_host();
+    for _ in 0..30 {
+        let _ = rig.engine.snapshot();
+        let _ = rig.router.unknown_count();
+        rig.tick();
+    }
+    assert_eq!(heard.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // A user write is heard once.
+    rig.set("deck.0.rate", 1.0);
+    assert_eq!(heard.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

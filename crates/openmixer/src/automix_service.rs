@@ -117,7 +117,8 @@ impl AutomixRunner {
     pub fn step(&mut self, engine: &DjEngine, now: f64) {
         if self
             .last_step
-            .is_some_and(|last| now - last < AUTOMIX_PERIOD)
+            // 10% slack: a clock that ticks exactly at the period must not lose a step to rounding.
+            .is_some_and(|last| now - last < AUTOMIX_PERIOD * 0.9)
         {
             return;
         }
