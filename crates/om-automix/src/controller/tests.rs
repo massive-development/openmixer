@@ -861,3 +861,36 @@ fn a_grid_that_lands_after_the_load_is_read_on_a_later_tick() {
     sim.host.infos.insert(0, info(0, BPM, "8A", false));
     sim.run_until("armed", 600, |s| s.state() == AutomixState::Armed);
 }
+
+/// The transition runs to the end of the outgoing track. The engine stops that deck at its last
+/// frame, which the controller must read as the end, not as the user pausing the deck.
+#[test]
+fn natural_end_of_the_outgoing_track_completes_the_transition() {
+    let cfg = AutomixConfig {
+        length_beats: Some(32.0),
+        ..AutomixConfig::default()
+    };
+    let mut sim = Sim::with(cfg, 380.0, false, info(1, BPM, "8A", false));
+    sim.host.infos.get_mut(&0).unwrap().length_beats = 432.0;
+    sim.snap.decks[0].length_frames = beat(432.0);
+    sim.run_until("transitioning", 3000, |s| {
+        s.state() == AutomixState::Transitioning
+    });
+    assert_eq!(sim.ctrl.plan().unwrap().end_beat(), 432.0);
+    sim.run_until("the track is at its last beat", 3000, |s| {
+        s.snap.decks[0].position_frames >= beat(431.5)
+    });
+    // The engine reaches the end of the track: the deck stops on its last frame.
+    sim.snap.decks[0].playing = false;
+    sim.snap.decks[0].position_frames = beat(432.0);
+    sim.run_until("cleanup", 10, |s| s.states.contains(&AutomixState::Cleanup));
+    assert!(
+        sim.ctrl.snapshot().last_error.is_empty(),
+        "{:?}",
+        sim.ctrl.snapshot().last_error
+    );
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    assert_eq!(sim.xfader(), 1.0, "the crossfader lands on the incoming deck");
+    assert!(sim.snap.decks[1].playing && sim.snap.decks[1].sync_master);
+    assert!(!sim.snap.decks[0].playing);
+}
