@@ -9,7 +9,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 ### (A) Blockers for Wave 7
 
 - **Foundation (Phase F): done.** Typed control surface (`ParamId`, `Command`, typed engine targets, string façade), pulled `EngineSnapshot`, `WorkerPool`, typed error enums with `AppError`, and `Services`/`MidiHost`. It clears no item below by itself; the items build on it.
-- **Todo 19:** ONNX stems backend (`ort`) not built; `om-stems` has only `MockSeparator`, and nothing in the app calls the separator. L
+- **Todo 19:** stem separation is built but unproven on real audio. `om-stems` has `OrtInference` (ONNX Runtime, feature `onnx`, tensor names and shapes checked at load), `HtDemucsPipeline` (segmenting, resampling, overlap-add), `StemService` (worker, cache, library index) and the app side `StemsHost` (model install, service created on first submit). The real htdemucs export (`tools/export_htdemucs.py`) has not been run or checked against the contract, the toy ONNX fixture is the only ONNX test, and nothing has been verified by ear. Open: the export and a real-model run, then a listening check. L
 - **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. Stem transitions (39) are still open. L
 - **Todo 30:** done at logic and view level (Wave 7 S6/S7): stem pads in the deck card, cached stems auto-load (`stems.autoLoad`), Load/Stems off, MIDI stem targets. Not checked by ear; mock device only. Transitions are Todo 39. L
 - **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
