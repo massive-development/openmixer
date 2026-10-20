@@ -301,7 +301,7 @@ impl StemService {
 /// the number of directories removed. Cancel running jobs first: a job still writing would be left
 /// with a directory it cannot commit.
 pub fn clear_stem_cache(root: &Path, library_path: &str) -> Result<usize, StemServiceError> {
-    let cache = StemCache::open(root)?;
+    let cache = StemCache::open_no_sweep(root)?;
     let library = Library::open(library_path, OpenMode::ReadWrite, core_migrations())?;
     let mut removed = 0;
     for entry in cache.entries()? {

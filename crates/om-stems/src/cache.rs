@@ -23,13 +23,22 @@ use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 /// Name of the metadata file inside an entry.
 pub const META_FILE: &str = "meta.json";
 /// Prefix of in-progress directories.
 pub const TMP_PREFIX: &str = ".tmp-";
+/// A temporary directory older than this is leftover from a dead writer, whatever its pid.
+pub const STALE_TMP_AGE: Duration = Duration::from_secs(6 * 3600);
+
+/// The owner pid encoded in a temporary directory name `.tmp-<dir>-<pid>-<n>`.
+fn tmp_owner_pid(name: &str) -> Option<u32> {
+    let mut parts = name.rsplitn(3, '-');
+    let _counter = parts.next()?;
+    parts.next()?.parse().ok()
+}
 /// Bump when the on-disk layout changes; entries with another format are misses.
 pub const FORMAT: &str = "pcm16-stereo-wav-v1";
 
@@ -209,16 +218,47 @@ pub struct StemCache {
 
 impl StemCache {
     /// Opens (creating if needed) the cache at `root` and removes leftover `.tmp-*` directories
-    /// from interrupted writes.
+    /// from interrupted writes that are not ours: a temporary directory is swept when its owner
+    /// pid is not this process, or when it is older than [`STALE_TMP_AGE`]. Use this only at
+    /// service creation; UI reads must use [`StemCache::open_no_sweep`], because a sweep would
+    /// delete the temporary directory of a separation that is still running.
     pub fn open(root: impl Into<PathBuf>) -> Result<Self, CacheError> {
+        let cache = Self::open_no_sweep(root)?;
+        cache.sweep_tmp(SystemTime::now())?;
+        Ok(cache)
+    }
+
+    /// Opens (creating if needed) the cache at `root` without touching `.tmp-*` directories.
+    /// Safe to call while separations are running.
+    pub fn open_no_sweep(root: impl Into<PathBuf>) -> Result<Self, CacheError> {
         let root = root.into();
         fs::create_dir_all(&root).map_err(io_at(&root))?;
-        for entry in fs::read_dir(&root).map_err(io_at(&root))?.flatten() {
-            if entry.file_name().to_string_lossy().starts_with(TMP_PREFIX) {
+        Ok(Self { root })
+    }
+
+    /// Removes `.tmp-*` directories that cannot belong to a live write in this process: those
+    /// whose owner pid is another process, or that are older than [`STALE_TMP_AGE`] at `now`.
+    fn sweep_tmp(&self, now: SystemTime) -> Result<(), CacheError> {
+        let me = std::process::id();
+        for entry in fs::read_dir(&self.root)
+            .map_err(io_at(&self.root))?
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.starts_with(TMP_PREFIX) {
+                continue;
+            }
+            let owner = tmp_owner_pid(&name);
+            let old = fs::metadata(entry.path())
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| now.duration_since(t).ok())
+                .is_some_and(|age| age > STALE_TMP_AGE);
+            if owner != Some(me) || old {
                 let _ = fs::remove_dir_all(entry.path());
             }
         }
-        Ok(Self { root })
+        Ok(())
     }
 
     pub fn root(&self) -> &Path {
