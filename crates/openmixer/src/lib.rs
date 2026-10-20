@@ -5,6 +5,8 @@
 
 pub mod app_targets;
 pub mod audio_settings;
+pub mod automix_queue;
+pub mod automix_service;
 pub mod error;
 pub mod flags;
 

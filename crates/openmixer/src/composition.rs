@@ -12,13 +12,15 @@
 use crate::app_targets::{
     AppPreferencesTargets, AppTargetsState, AudioDeviceControl, AudioSink, PluginSink,
 };
+use crate::automix_service::AutomixShared;
 use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
 use crate::error::AppError;
 use crate::midi::{FeedbackThread, MidiService};
 use crate::stems_host::StemsHost;
 use om_audio::{DjEngine, DjEngineAudio};
-use om_core::{ParameterRouter, StateReader};
+use om_core::param_id::Namespace;
+use om_core::{CommandSink, ParameterRouter, StateReader};
 use om_midi::MidiBackend;
 use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
@@ -106,6 +108,9 @@ pub struct AppComposition {
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
     pub plugins: PluginRegistry,
+    /// Automix: the `automix.*` target is registered with the router; the control thread steps the
+    /// controller once a host is set ([`AutomixShared::set_host_factory`]).
+    pub automix: Arc<AutomixShared>,
     /// The sample bank the control thread pumps once it is attached.
     sample_slot: Arc<OnceLock<Arc<SampleBank>>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
@@ -143,8 +148,15 @@ impl AppComposition {
 
         let themes = load_themes(user_themes.as_deref());
         let sample_slot = Arc::new(OnceLock::new());
-        let control_timer = match ControlTimer::start(Arc::clone(&engine), Arc::clone(&sample_slot))
-        {
+        let automix = AutomixShared::new();
+        router.register_typed(Namespace::Automix, automix.control());
+        let automix_sink: Arc<dyn CommandSink> = router.clone();
+        let control_timer = match ControlTimer::start(
+            Arc::clone(&engine),
+            Arc::clone(&sample_slot),
+            Arc::clone(&automix),
+            automix_sink,
+        ) {
             Ok(timer) => Some(timer),
             Err(error) => {
                 eprintln!("openmixer: control clock thread: {error}");
@@ -154,6 +166,7 @@ impl AppComposition {
 
         Self {
             _control_timer: control_timer,
+            automix,
             sample_slot,
             engine,
             router,
