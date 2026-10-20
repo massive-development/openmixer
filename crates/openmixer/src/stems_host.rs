@@ -12,9 +12,9 @@ use crate::composition::{
 use crate::error::AppError;
 use om_core::jobs::JobHandle;
 use om_stems::{
-    clear_stem_cache, InstallState, MockSeparator, ModelGate, ModelInstaller, ModelManifest,
-    StemCache, StemRequest, StemService, StemServiceConfig, UrlDownloader, WeightManager,
-    HTDEMUCS_LICENSE_NAME, HTDEMUCS_LICENSE_TEXT,
+    clear_stem_cache, InstallState, LazySeparator, MockSeparator, ModelGate, ModelInstaller,
+    ModelManifest, StemCache, StemError, StemRequest, StemSeparator, StemService,
+    StemServiceConfig, UrlDownloader, WeightManager, HTDEMUCS_LICENSE_NAME, HTDEMUCS_LICENSE_TEXT,
 };
 use om_ui::settings::{SettingsError, SettingsResult};
 use om_ui::stems::{ModelState, StemHost, StemJob};
@@ -103,7 +103,10 @@ impl StemsHost {
 
     /// The service, when the model is ready now (installed, or the mock). Creates it on first use.
     pub fn service_if_ready(&mut self) -> Result<Option<Arc<StemService>>, AppError> {
-        if !matches!(self.model_state(), ModelState::Installed(_)) {
+        if !matches!(
+            self.model_state(),
+            ModelState::Installed(_) | ModelState::Preparing
+        ) {
             return Ok(None);
         }
         self.ensure_service().map(Some)
@@ -119,7 +122,7 @@ impl StemsHost {
             .ok_or_else(|| AppError::Stems("the library is in memory".into()))?;
         let (separator, gate) = if self.mock {
             (
-                Arc::new(MockSeparator::new()) as Arc<dyn om_stems::StemSeparator>,
+                Arc::new(MockSeparator::new()) as Arc<dyn StemSeparator>,
                 None,
             )
         } else {
@@ -127,11 +130,28 @@ impl StemsHost {
                 .manifest
                 .clone()
                 .ok_or_else(|| AppError::Stems(self.problem.clone()))?;
+            // The ONNX session is large and slow to build, so it is built by the first job on the
+            // worker thread, not here on the UI thread. Until then the model reads as preparing.
+            let native_rate = f64::from(manifest.contract_or_default().sample_rate);
+            let model_dir = folder.join(MODEL_DIR);
+            let load_manifest = manifest.clone();
+            let lazy = LazySeparator::new(
+                STEM_SEPARATOR_ID,
+                STEM_SEPARATOR_VERSION,
+                native_rate,
+                Box::new(move || {
+                    let weights = WeightManager::new(model_dir, Box::new(UrlDownloader::default()));
+                    installed_separator(&weights, &load_manifest)
+                        .map_err(|e| StemError::Inference(e.to_string()))?
+                        .ok_or_else(|| StemError::Inference("the stem model is not ready".into()))
+                }),
+            );
             let weights =
                 WeightManager::new(folder.join(MODEL_DIR), Box::new(UrlDownloader::default()));
-            let separator = installed_separator(&weights, &manifest)?
-                .ok_or_else(|| AppError::Stems("the stem model is not ready".into()))?;
-            (separator, Some(ModelGate::new(manifest, weights)))
+            (
+                Arc::new(lazy) as Arc<dyn StemSeparator>,
+                Some(ModelGate::new(manifest, weights)),
+            )
         };
         let service = Arc::new(
             StemService::new(StemServiceConfig {
@@ -162,9 +182,10 @@ impl StemHost for StemsHost {
             return ModelState::NotInstalled(self.problem.clone());
         };
         match installer.state() {
-            InstallState::Installed if cfg!(feature = "onnx") => {
-                ModelState::Installed(STEM_SEPARATOR_VERSION)
-            }
+            InstallState::Installed if cfg!(feature = "onnx") => match &self.service {
+                Some(service) if !service.model_loaded() => ModelState::Preparing,
+                _ => ModelState::Installed(STEM_SEPARATOR_VERSION),
+            },
             InstallState::Installed => ModelState::NotInstalled(
                 "this build has no ONNX runtime (the onnx feature is off)".into(),
             ),
@@ -190,7 +211,7 @@ impl StemHost for StemsHost {
         }
         let state = self.model_state();
         match (&self.installer, state) {
-            (_, ModelState::Installed(_)) => Ok(()),
+            (_, ModelState::Installed(_) | ModelState::Preparing) => Ok(()),
             (Some(installer), _) if cfg!(feature = "onnx") => {
                 // The button is the acceptance: the installer's job asks the licence gate with it.
                 installer.install(true);
