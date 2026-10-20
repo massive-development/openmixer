@@ -108,7 +108,7 @@ impl DjEngine {
             deck_audio.push(audio);
         }
         let fx = Arc::new(FxRouting::new(&mixer_control));
-        let (recorder_tap, recorder) = Recorder::new();
+        let (recorder_tap, recorder) = Recorder::create();
         let engine = Self {
             decks,
             controls,

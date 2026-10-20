@@ -1,0 +1,10 @@
+{
+  "name": "Record button test controller",
+  "version": 2,
+  "mappings": [
+    {"type": "note", "channel": 1, "number": 60, "target": "record.toggle", "mode": "absolute", "min": 0, "max": 1}
+  ],
+  "outputs": [
+    {"source": "record.recording", "type": "note", "channel": 1, "number": 60, "on": 127, "off": 0}
+  ]
+}

@@ -19,7 +19,7 @@ fn settings(dir: &Path) -> RecordSettings {
 }
 
 fn prepared() -> (RecorderTap, RecorderControl) {
-    let (mut tap, control) = Recorder::new();
+    let (mut tap, control) = Recorder::create();
     tap.prepare(RATE);
     (tap, control)
 }
@@ -268,7 +268,7 @@ fn bad_folders_fail_and_leave_the_recorder_idle() {
 #[test]
 fn start_before_the_device_is_prepared_fails() {
     let dir = tempfile::tempdir().unwrap();
-    let (_tap, control) = Recorder::new();
+    let (_tap, control) = Recorder::create();
     assert!(matches!(
         control.start(&settings(dir.path())),
         Err(RecordError::NotPrepared)

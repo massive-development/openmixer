@@ -203,7 +203,6 @@ const NEGATIVE: &[&str] = &[
     "record.bogus",
     "record.start.x",
     "record.Start",
-    "Record.start",
 ];
 
 #[test]

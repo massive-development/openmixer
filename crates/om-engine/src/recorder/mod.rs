@@ -1,6 +1,6 @@
 //! Mix recording: a tap on the final master output, a lock-free ring, and a writer thread.
 //!
-//! [`Recorder::new`] returns the audio half ([`RecorderTap`], owned by `DjEngineAudio`) and the
+//! [`Recorder::create`] returns the audio half ([`RecorderTap`], owned by `DjEngineAudio`) and the
 //! control half ([`RecorderControl`]). The tap runs after master gain and the master inserts, so the
 //! file holds exactly what goes to the master outputs (not the cue mix). While recording is off the
 //! tap is one relaxed atomic load. While on, the audio thread only pushes interleaved `f32` frames
@@ -208,11 +208,11 @@ pub struct RecorderControl {
     inner: Mutex<Inner>,
 }
 
-/// Namespace for [`Recorder::new`].
+/// Namespace for [`Recorder::create`].
 pub struct Recorder;
 
 impl Recorder {
-    pub fn new() -> (RecorderTap, RecorderControl) {
+    pub fn create() -> (RecorderTap, RecorderControl) {
         let shared = Arc::new(Shared::default());
         let (tx, rx) = rtrb::RingBuffer::new(RING_SAMPLES);
         (

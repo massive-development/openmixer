@@ -78,6 +78,10 @@ Control paths, and what is live today:
 
 Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
 
+### Mix recording (Wave 8, Todo 41)
+
+- `om-engine::recorder` (`Recorder::new() -> (RecorderTap, RecorderControl)`; the tap is in `DjEngineAudio` and taps the final master output, the control is `DjEngine::recorder()`). Audio thread: `rtrb` push only, drops counted, no allocation (`alloc_guard` test). Control: `start(&RecordSettings)`, `stop() -> RecordSummary`, `status()`. Writer thread, streaming WAV, crash-safe header, split and low-disk rules are described in `docs/PROGRESS.md`. Ids `record.start|stop|toggle` are the reserved `Namespace::Record`, served by `openmixer::record_service::RecordService`; `StateId::Record*` reads come from `EngineSnapshot.record`. Prefs version 4 `record`. Recordings are a user-visible file output: tests only write to temp dirs.
+
 ### Automix (Wave 7 A1-A6, Todo 38; settings page and bar, Todo 29)
 
 - Crates: `om-automix` (planner, controller, queue rules, `AutomixControl` target; no engine or audio dependency, enforced by `openmixer/tests/automix_safety.rs`), `openmixer` (`automix_service` runner and shared handle, `automix_host` over the library and the track loader, `automix_queue` library queue, `automix_settings` page control and apply), `om-ui` (`settings/automix.rs` page model, `automix_bar.rs` view-model, `library::SearchFeed`), `om-ui-gpui` (`settings_view/automix.rs`, `automix_bar.rs`).
