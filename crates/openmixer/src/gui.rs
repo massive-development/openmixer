@@ -8,6 +8,7 @@
 //! `OPENMIXER_LIBRARY_DB`); its analysis runs on background workers.
 
 use om_audio::LatencyStats;
+use om_automix::queue::QueueConfig;
 use om_engine::DjEngine;
 use om_ui::library::StemSource;
 use om_ui::preferences::Preferences;
@@ -15,10 +16,6 @@ use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, Mid
 use om_ui::stems::{StemHost, StemJob, StemLabel};
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
-use openmixer::automix_host::AppAutomixHost;
-use openmixer::automix_queue::{LibraryQueue, QueueSource};
-use openmixer::automix_service::AutomixRunner;
-use om_automix::queue::QueueConfig;
 use om_ui_gpui::debug_panel::DeviceStatus;
 use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
@@ -26,6 +23,9 @@ use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::{
     CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
 };
+use openmixer::automix_host::AppAutomixHost;
+use openmixer::automix_queue::{LibraryQueue, QueueSource};
+use openmixer::automix_service::AutomixRunner;
 use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};

@@ -50,11 +50,7 @@ impl GridView for EngineGrid {
 
 /// `DeckInfo` for the track on a deck, from the library's cache and the engine's deck state.
 /// Returns `None` when the deck is empty.
-fn deck_info_for<L: AutomixLibrary>(
-    library: &L,
-    engine: &DjEngine,
-    deck: u8,
-) -> Option<DeckInfo> {
+fn deck_info_for<L: AutomixLibrary>(library: &L, engine: &DjEngine, deck: u8) -> Option<DeckInfo> {
     let (services, loader) = library.parts();
     let track = loader.loaded_track(usize::from(deck))?;
     let snap = engine.deck_snapshot(usize::from(deck))?;
@@ -67,9 +63,8 @@ fn deck_info_for<L: AutomixLibrary>(
     let structure = services
         .cached_analysis(track, "structure")
         .and_then(|json| StructureResult::from_json(&json));
-    let to_beat = |seconds: f64, grid: &dyn BeatGrid| {
-        grid.beat_at_frame((seconds * rate).round() as i64)
-    };
+    let to_beat =
+        |seconds: f64, grid: &dyn BeatGrid| grid.beat_at_frame((seconds * rate).round() as i64);
     let (bpm, length_beats, sections, mix_in, mix_out) = match &grid {
         Some(g) => {
             let sections = structure
@@ -147,13 +142,8 @@ impl<L: AutomixLibrary + 'static> AppAutomixHost<L> {
     /// the analysis cache's (a BPM alone does not count): this sets it.
     pub fn new(engine: Arc<DjEngine>, library: Rc<RefCell<L>>, mut queue: LibraryQueue) -> Self {
         let check_library = Rc::clone(&library);
-        queue = queue.with_grid_check(move |track| {
-            check_library
-                .borrow()
-                .parts()
-                .0
-                .has_beat_grid(track)
-        });
+        queue = queue
+            .with_grid_check(move |track| check_library.borrow().parts().0.has_beat_grid(track));
         Self {
             engine,
             library,

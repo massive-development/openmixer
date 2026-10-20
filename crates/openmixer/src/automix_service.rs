@@ -141,5 +141,4 @@ impl AutomixRunner {
             *published = latest;
         }
     }
-
 }

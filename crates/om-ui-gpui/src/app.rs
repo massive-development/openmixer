@@ -13,8 +13,8 @@ use crate::paint::{paint, place};
 use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
-    div, prelude::*, px, size, App, AsyncApp, Application, Bounds, Context, FocusHandle, KeyDownEvent,
-    Window, WindowBounds, WindowOptions,
+    div, prelude::*, px, size, App, Application, AsyncApp, Bounds, Context, FocusHandle,
+    KeyDownEvent, Window, WindowBounds, WindowOptions,
 };
 use om_analysis::WaveformData;
 use om_core::ParameterRouter;
