@@ -15,7 +15,7 @@ pub const MIXER_SLOT: &str = "mixer";
 /// Name of the library slot.
 pub const LIBRARY_SLOT: &str = "library";
 /// Share of the window height the deck rows take in the standard layout.
-pub const DECK_ROWS_SHARE: f32 = 0.68;
+pub const DECK_ROWS_SHARE: f32 = 0.79;
 /// Share of a row's width the mixer takes next to the decks.
 pub const MIXER_WEIGHT: f32 = 0.85;
 

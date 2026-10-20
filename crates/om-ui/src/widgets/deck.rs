@@ -2,11 +2,13 @@
 //! Models only; drawing and drag-and-drop are the gpui layer's job. State and geometry only.
 
 use super::{
-    hotcues::HotcuePads, loops::LoopControls, pitch::PitchFader, px, transport::TransportPanel,
+    hotcues::HotcuePads, loops::LoopControls, pitch::PitchFader, px, stem_pads,
+    transport::TransportPanel,
 };
 use crate::binding::DeckBinding;
 use crate::format;
 use crate::geometry::Rect;
+use crate::stem_binding::StemBinding;
 use crate::theme::ThemeTokens;
 use crate::waveform::{self, StripCache, StripPlan, View};
 use om_core::param_id::DeckParam;
@@ -344,6 +346,8 @@ pub struct DeckLayout {
     pub hotcues: Rect,
     pub loops: Rect,
     pub transport: Rect,
+    /// The stem pads row, full width under the pitch column and the loops.
+    pub stems: Rect,
 }
 
 /// Places the deck card's parts inside `bounds` (the card itself). Mirrors `DeckWidget::resized`.
@@ -353,6 +357,9 @@ pub fn deck_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
     let header = area.remove_top(px(theme.deck_header_height));
     let overview = area.remove_top(px(theme.deck_overview_height));
     area.remove_top(gap);
+    // The stems row spans the whole card, under the pitch column, so its pads have the width.
+    let stems = area.remove_bottom(stem_pads::stems_row_height(theme));
+    area.remove_bottom(gap);
     let pitch = area.remove_right(px(theme.deck_pitch_width));
     area.remove_right(gap);
     let row = px(theme.deck_row_height);
@@ -373,6 +380,7 @@ pub fn deck_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
         hotcues,
         loops,
         transport,
+        stems,
     }
 }
 
@@ -386,11 +394,13 @@ pub struct DeckWidget {
     pub pitch: PitchFader,
     pub hotcues: HotcuePads,
     pub loops: LoopControls,
+    pub stems: StemBinding,
 }
 
 impl DeckWidget {
     pub fn new(binding: DeckBinding) -> Self {
         Self {
+            stems: StemBinding::for_deck(&binding),
             header: TrackHeader::new(binding.clone()),
             overview: OverviewWaveform::new(binding.clone()),
             zoom: ZoomWaveform::new(binding.clone()),
