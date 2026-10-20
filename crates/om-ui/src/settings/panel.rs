@@ -9,6 +9,7 @@ pub enum PageKind {
     Automix,
     Appearance,
     Plugins,
+    Recording,
 }
 
 impl PageKind {
@@ -20,6 +21,7 @@ impl PageKind {
             PageKind::Automix => "Automix",
             PageKind::Appearance => "Appearance",
             PageKind::Plugins => "Plugins",
+            PageKind::Recording => "Recording",
         }
     }
 }
@@ -42,6 +44,7 @@ impl SettingsPanel {
             PageKind::Automix,
             PageKind::Appearance,
             PageKind::Plugins,
+            PageKind::Recording,
         ]
         .into_iter()
         .filter(|k| has_audio || *k != PageKind::Audio)
@@ -95,13 +98,21 @@ mod tests {
                 "Library",
                 "Automix",
                 "Appearance",
-                "Plugins"
+                "Plugins",
+                "Recording"
             ]
         );
         let mut without = SettingsPanel::new(false);
         assert_eq!(
             without.tabs(),
-            &["MIDI", "Library", "Automix", "Appearance", "Plugins"]
+            &[
+                "MIDI",
+                "Library",
+                "Automix",
+                "Appearance",
+                "Plugins",
+                "Recording"
+            ]
         );
         assert_eq!(without.page_kind(0), Some(PageKind::Midi));
         without.show(2);
@@ -109,7 +120,7 @@ mod tests {
         without.show(99);
         assert_eq!(without.current(), 2, "out of range is ignored");
         let plugin_tab = with.add_page("Extra");
-        assert_eq!(plugin_tab, 6);
+        assert_eq!(plugin_tab, 7);
         assert_eq!(with.page_kind(plugin_tab), None);
     }
 
@@ -117,7 +128,7 @@ mod tests {
     fn the_panel_adds_plugin_pages_after_the_standard_ones() {
         let mut panel = SettingsPanel::new(true);
         let index = panel.add_page("Example");
-        assert_eq!(index, 6);
+        assert_eq!(index, 7);
         assert_eq!(panel.tabs().last().map(String::as_str), Some("Example"));
         assert_eq!(
             panel.page_kind(index),
