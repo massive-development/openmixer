@@ -403,9 +403,17 @@ impl<I: StemInference> StemSeparator for HtDemucsSeparator<I> {
         sink: &mut dyn StemSink,
         ctx: &dyn AnalysisContext,
     ) -> Result<(), StemError> {
-        self.pipeline
-            .lock()
-            .map_err(|_| StemError::Inference("separator poisoned by an earlier panic".into()))?
-            .run(input, sink, ctx)
+        let mut pipeline = match self.pipeline.lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                // An earlier job panicked inside the network. Clear the poison so later jobs work;
+                // this one fails, and the next run starts from a fresh `run` on the same network.
+                self.pipeline.clear_poison();
+                return Err(StemError::Inference(
+                    "the separator recovered from a panic in an earlier job; retry".into(),
+                ));
+            }
+        };
+        pipeline.run(input, sink, ctx)
     }
 }
