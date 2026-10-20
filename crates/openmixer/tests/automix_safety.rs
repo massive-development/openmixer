@@ -120,8 +120,8 @@ struct Underruns {
 }
 
 impl AutomixHost for Underruns {
-    fn next_track(&mut self, deck: u8) -> Option<NextTrack> {
-        self.inner.next_track(deck)
+    fn next_track(&mut self, deck: u8, tempo_gate: Option<f64>) -> Option<NextTrack> {
+        self.inner.next_track(deck, tempo_gate)
     }
     fn start_load(&mut self, deck: u8, track: &NextTrack) -> Result<(), String> {
         self.inner.start_load(deck, track)

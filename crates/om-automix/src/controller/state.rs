@@ -78,6 +78,8 @@ impl AutomixController {
             unwatched: Vec::new(),
             sent: Vec::new(),
             ticks: 0,
+            auto_loaded: false,
+            plan_tries: 0,
         };
         let partner = &snap.decks[usize::from(inc)];
         let stale = self
@@ -92,12 +94,14 @@ impl AutomixController {
             self.tick_loading_ready(now, snap, sink, host, force);
             return;
         }
-        let Some(track) = host.next_track(out) else {
+        let gate = self.tempo_gate();
+        let Some(track) = host.next_track(out, gate) else {
             self.fail_run(out, out_len, "no track in the queue");
             return;
         };
         match host.start_load(inc, &track) {
             Ok(()) => {
+                run.auto_loaded = true;
                 run.title = track.title.clone();
                 self.next_title = track.title;
                 self.next_bpm = track.bpm;
@@ -239,6 +243,26 @@ impl AutomixController {
         let plan = match plan {
             Ok(plan) => plan,
             Err(error) => {
+                if run.auto_loaded && run.plan_tries < MAX_PLAN_RETRIES {
+                    run.plan_tries += 1;
+                    let gate = self.tempo_gate();
+                    if let Some(track) = host.next_track(run.out, gate) {
+                        if host.start_load(run.inc, &track).is_ok() {
+                            // Another track goes to the incoming deck; the load is polled next tick.
+                            run.title = track.title.clone();
+                            self.next_title.clone_from(&track.title);
+                            self.next_bpm = track.bpm;
+                            self.next_key = track.key;
+                            self.last_error =
+                                format!("no transition: {error}; trying another track");
+                            run.load_started = now;
+                            self.force_start = asap;
+                            self.run = Some(run);
+                            self.state = AutomixState::Loading;
+                            return;
+                        }
+                    }
+                }
                 self.last_error = format!("no transition: {error}");
                 self.suppressed = Some((run.out, run.out_len));
                 self.state = AutomixState::Idle;
@@ -277,6 +301,15 @@ impl AutomixController {
         self.last_error.clear();
         self.run = Some(run);
         self.state = AutomixState::Armed;
+    }
+
+    /// The tempo gate for the queue: an explicit beat-matched style needs its tempo window. `Auto`
+    /// picks any tempo (a wide gap becomes a cut) and a cut needs no tempo at all.
+    pub(super) fn tempo_gate(&self) -> Option<f64> {
+        match self.control.style() {
+            AutomixStyle::Auto | AutomixStyle::Cut => None,
+            _ => Some(self.cfg.max_bpm_ratio),
+        }
     }
 
     pub(super) fn plan_options<'a>(

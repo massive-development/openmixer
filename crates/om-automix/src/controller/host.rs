@@ -32,8 +32,10 @@ pub enum LoadPoll {
 /// then answer `poll_load` until it is ready.
 pub trait AutomixHost {
     /// Chooses and consumes the next track. `playing_deck` is the deck that plays now (the queue
-    /// uses its track for key and tempo preference). `None` when nothing qualifies.
-    fn next_track(&mut self, playing_deck: u8) -> Option<NextTrack>;
+    /// uses its track for key and tempo preference). `tempo_gate` is `Some(ratio)` for an explicit
+    /// beat-matched style: the pick must be within `ratio` of the playing track's tempo (no half or
+    /// double time). `None` when nothing qualifies.
+    fn next_track(&mut self, playing_deck: u8, tempo_gate: Option<f64>) -> Option<NextTrack>;
 
     /// Starts loading `track` on `deck`. An immediate failure is an `Err`.
     fn start_load(&mut self, deck: u8, track: &NextTrack) -> Result<(), String>;

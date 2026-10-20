@@ -173,7 +173,8 @@ impl<L: AutomixLibrary + 'static> AppAutomixHost<L> {
 }
 
 impl<L: AutomixLibrary + 'static> AutomixHost for AppAutomixHost<L> {
-    fn next_track(&mut self, playing_deck: u8) -> Option<NextTrack> {
+    fn next_track(&mut self, playing_deck: u8, tempo_gate: Option<f64>) -> Option<NextTrack> {
+        self.queue.set_tempo_gate(tempo_gate);
         if let Some(shared) = &self.shared_queue {
             let settings = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
             self.queue.apply(&settings);
