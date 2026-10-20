@@ -607,3 +607,66 @@ fn dj_engine_process_does_not_allocate_with_decks_and_a_busy_sampler() {
     assert_eq!(audible_blocks, BLOCKS);
     assert_eq!(engine.sampler().dropped_commands(), 0);
 }
+
+/// Recording on: `DjEngineAudio::process` pushes the master output into the recorder's ring for 200
+/// blocks (a sampler tone sounding) without allocating or freeing. The writer thread, files and
+/// start/stop are control-side and run outside the guard; the ring is large enough that nothing is
+/// dropped, and the test also covers the ring-full path with the writer stalled.
+#[test]
+fn dj_engine_process_does_not_allocate_while_recording() {
+    use crate::callback::AudioCallback;
+    use crate::dj_engine::DjEngine;
+    use crate::recorder::RecordSettings;
+    use crate::sampler::Sample;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, mut audio) = DjEngine::new(2);
+    audio.prepare(RATE, BLOCK);
+    let tone: Vec<f32> = (0..BLOCK * 300)
+        .flat_map(|n| {
+            let v = 0.4 * ((n as f32) * 0.03).sin();
+            [v, v]
+        })
+        .collect();
+    engine
+        .sampler()
+        .assign(
+            0,
+            Arc::new(Sample::from_interleaved("t", RATE, tone).unwrap()),
+        )
+        .unwrap();
+    engine.sampler().trigger(0, 1.0);
+
+    let stall = Arc::new(AtomicBool::new(false));
+    let mut settings = RecordSettings::new(dir.path().join("rec"));
+    settings.free_space = Arc::new(|_| Some(u64::MAX));
+    settings.stall = Some(Arc::clone(&stall));
+    engine
+        .recorder()
+        .start(&settings)
+        .expect("recording starts");
+
+    let mut pump = [[0.0_f32; BLOCK]; 4];
+    let mut sounded = 0;
+    for _ in 0..200 {
+        let [a, b, c, d] = &mut pump;
+        let mut outs: [&mut [f32]; 4] = [a, b, c, d];
+        assert_no_alloc(|| audio.process(&[], &mut outs));
+        if outs[0].iter().any(|&v| v != 0.0) {
+            sounded += 1;
+        }
+    }
+    assert!(sounded > 100, "the tone sounded");
+    // Writer stalled and the ring overfilled: drops, still no allocation.
+    stall.store(true, Ordering::Relaxed);
+    for _ in 0..1000 {
+        let [a, b, c, d] = &mut pump;
+        let mut outs: [&mut [f32]; 4] = [a, b, c, d];
+        assert_no_alloc(|| audio.process(&[], &mut outs));
+    }
+    stall.store(false, Ordering::Relaxed);
+    let summary = engine.recorder().stop().expect("stops");
+    assert!(summary.frames > 0);
+}
