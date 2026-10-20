@@ -218,12 +218,12 @@ impl<'a> Scenario<'a> {
     /// device has started (the sampler decodes at the engine rate it was prepared with).
     fn load_pads(&self) {
         let rate = self.engine.sampler().engine_rate();
-        for pad in 0..PADS {
+        for (pad, mode) in PAD_MODES.iter().enumerate() {
             self.engine
                 .sampler()
                 .assign(pad as u8, pad_sample(pad, rate))
                 .expect("soak: assign pad sample");
-            self.engine.sampler().set_mode(pad as u8, PAD_MODES[pad]);
+            self.engine.sampler().set_mode(pad as u8, *mode);
         }
     }
 
@@ -262,14 +262,15 @@ impl<'a> Scenario<'a> {
     /// Sampler: random one-shot and loop triggers, gate holds that release after a while, and a
     /// loop pad released now and then. Once, a new sample replaces pad 3 mid-run.
     fn maybe_pads(&mut self, now_ms: u64, seconds: f64) {
-        for pad in 0..PADS {
+        for (pad, mode) in PAD_MODES.iter().enumerate() {
             if self.gate_until[pad].is_some_and(|until| now_ms >= until) {
                 self.gate_until[pad] = None;
                 self.set(&format!("sampler.pad{pad}.gate"), 0.0);
-            } else if PAD_MODES[pad] == PadMode::Loop && self.gate_until[pad].is_none() {
-                if self.rng.below(120) == 0 {
-                    self.set(&format!("sampler.pad{pad}.trigger"), 0.0);
-                }
+            } else if *mode == PadMode::Loop
+                && self.gate_until[pad].is_none()
+                && self.rng.below(120) == 0
+            {
+                self.set(&format!("sampler.pad{pad}.trigger"), 0.0);
             }
         }
         if !self.replaced && seconds >= REPLACE_AT_SECONDS {
