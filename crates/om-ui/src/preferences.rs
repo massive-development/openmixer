@@ -15,9 +15,38 @@ use thiserror::Error;
 /// Schema version written to disk. Files with a higher version are refused.
 ///
 /// History: 1 = audio, midi, library, plugins. 2 adds `stems` (cache cap and auto-prepare). 3 adds
-/// `automix`. Each step is additive: an older file has no new section, so it reads with the
+/// `automix`. 4 adds `record` (mix recording). Each step is additive: an older file has no new section, so it reads with the
 /// defaults and is written back as the current version on the next save.
-pub const PREFERENCES_VERSION: i64 = 3;
+pub const PREFERENCES_VERSION: i64 = 4;
+
+/// Mix recording settings (Wave 8). The `format` is one of [`RECORD_FORMATS`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordPrefs {
+    /// Empty = `<music dir or home>/OpenMixer Recordings`.
+    pub folder: String,
+    /// `pcm16`, `pcm24` or `float32`.
+    pub format: String,
+    /// Stop a recording that runs the disk below 200 MB.
+    pub stop_on_low_disk: bool,
+}
+
+/// The sample formats a recording can use, as stored.
+pub const RECORD_FORMATS: [&str; 3] = ["pcm16", "pcm24", "float32"];
+
+impl Default for RecordPrefs {
+    fn default() -> Self {
+        Self {
+            folder: String::new(),
+            format: "pcm24".to_owned(),
+            stop_on_low_disk: true,
+        }
+    }
+}
+
+/// A format string if it is one of [`RECORD_FORMATS`], else `None`.
+pub fn valid_record_format(s: &str) -> Option<&'static str> {
+    RECORD_FORMATS.iter().copied().find(|f| *f == s)
+}
 
 /// Automix settings (Wave 7). Read when the window starts and when the Automix page changes them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +197,7 @@ pub struct Preferences {
     pub plugin_folder: String,
     pub stems: StemsPrefs,
     pub automix: AutomixPrefs,
+    pub record: RecordPrefs,
 }
 
 impl Default for Preferences {
@@ -180,6 +210,7 @@ impl Default for Preferences {
             plugin_folder: String::new(),
             stems: StemsPrefs::default(),
             automix: AutomixPrefs::default(),
+            record: RecordPrefs::default(),
         }
     }
 }
@@ -315,6 +346,11 @@ impl Preferences {
             self.automix.autostart_at_end.into(),
         );
         root.insert("automix".into(), Value::Object(automix));
+        let mut record = Map::new();
+        record.insert("folder".into(), self.record.folder.clone().into());
+        record.insert("format".into(), self.record.format.clone().into());
+        record.insert("stopOnLowDisk".into(), self.record.stop_on_low_disk.into());
+        root.insert("record".into(), Value::Object(record));
         Value::Object(root).to_string()
     }
 
@@ -338,6 +374,7 @@ impl Preferences {
         p.plugin_folder = string_or(section(root, "plugins").get("folder"), p.plugin_folder);
         read_stems(section(root, "stems"), &mut p.stems);
         read_automix(section(root, "automix"), &mut p.automix);
+        read_record(section(root, "record"), &mut p.record);
         Ok(p)
     }
 
@@ -430,6 +467,29 @@ fn read_stems(s: &Map<String, Value>, st: &mut StemsPrefs) {
     st.auto_load = bool_or(s.get("autoLoad"), st.auto_load);
 }
 
+/// Reads the record section. An unknown format falls back to the default, and a folder with a
+/// `..` component or a NUL is dropped (the default folder is used instead).
+fn read_record(s: &Map<String, Value>, r: &mut RecordPrefs) {
+    let format = string_or(s.get("format"), r.format.clone());
+    r.format = valid_record_format(&format).unwrap_or("pcm24").to_owned();
+    let folder = string_or(s.get("folder"), String::new());
+    r.folder = if safe_folder(&folder) {
+        folder
+    } else {
+        String::new()
+    };
+    r.stop_on_low_disk = bool_or(s.get("stopOnLowDisk"), r.stop_on_low_disk);
+}
+
+/// A stored recording folder that is short, has no NUL and no `..` component.
+pub fn safe_folder(folder: &str) -> bool {
+    folder.len() <= 4096
+        && !folder.contains('\0')
+        && !Path::new(folder)
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+}
+
 /// Reads the automix section. Every value is clamped or defaulted on its own, so a hostile file
 /// (negative, huge, wrong type) never reaches the controller unchecked.
 fn read_automix(s: &Map<String, Value>, a: &mut AutomixPrefs) {
@@ -501,7 +561,30 @@ mod tests {
                 min_bpm_gap_percent: 3,
                 autostart_at_end: false,
             },
+            record: RecordPrefs {
+                folder: "/srv/rec".into(),
+                format: "float32".into(),
+                stop_on_low_disk: false,
+            },
         }
+    }
+
+    #[test]
+    fn record_section_is_additive_and_hostile_values_fall_back() {
+        let p = Preferences::from_json(r#"{"version":3}"#).unwrap();
+        assert_eq!(p.record, RecordPrefs::default());
+        let p = Preferences::from_json(
+            r#"{"version":4,"record":{"folder":"/a/../../etc","format":"mp3","stopOnLowDisk":"no"}}"#,
+        )
+        .unwrap();
+        assert_eq!(p.record, RecordPrefs::default());
+        let p =
+            Preferences::from_json(r#"{"version":4,"record":{"format":"pcm16","folder":"/ok"}}"#)
+                .unwrap();
+        assert_eq!(
+            (p.record.format.as_str(), p.record.folder.as_str()),
+            ("pcm16", "/ok")
+        );
     }
 
     fn scratch() -> tempfile::TempDir {
@@ -636,7 +719,7 @@ mod tests {
             "[]",
             "{}",
             r#"{"version":0}"#,
-            r#"{"version":4}"#,
+            r#"{"version":5}"#,
             r#"{"version":"1"}"#,
         ] {
             assert!(Preferences::from_json(bad).is_err(), "{bad}");
