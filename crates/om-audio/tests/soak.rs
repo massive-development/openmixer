@@ -40,6 +40,8 @@ struct Outcome {
     output: OutputReport,
     steady_underruns: u32,
     counts: ActionCounts,
+    /// Sampler commands dropped because the ring was full (reported, not budgeted).
+    sampler_dropped: u64,
 }
 
 impl Outcome {
@@ -112,6 +114,10 @@ impl Outcome {
             c.stem_changes
         );
         println!(
+            "soak: sampler pad-triggers={} gate-holds={} pad-replaces={} dropped-cmds={}",
+            c.pad_triggers, c.gate_holds, c.pad_replaces, self.sampler_dropped
+        );
+        println!(
             "soak: {} callbacks, xruns={}, max callback {:.0} us (budget {:.0} us), avg cpu {:.1}%",
             s.callback_count,
             s.xrun_count,
@@ -179,6 +185,7 @@ fn run_soak(seconds: u32, stems: bool) -> Outcome {
         output: output.report(),
         steady_underruns: scenario.steady_underruns(),
         counts: scenario.counts(),
+        sampler_dropped: engine.sampler().dropped_commands(),
     }
 }
 
@@ -207,6 +214,15 @@ fn check(seconds: u32, stems: bool) {
             "the stem soak never touched a stem mute"
         );
     }
+    assert!(
+        first.counts.pad_triggers > 0 && first.counts.gate_holds > 0,
+        "the soak never played the sampler: {:?}",
+        first.counts
+    );
+    assert_eq!(
+        first.counts.pad_replaces, 1,
+        "the mid-run replace did not happen"
+    );
     first.print("soak run 1");
     let mut failed = first.failures();
     if first.xrun_failure().is_some() {
