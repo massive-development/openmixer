@@ -31,5 +31,6 @@ pub fn info(deck: u8, bpm: f64, camelot: &str, stems: bool) -> DeckInfo {
         has_stems: stems,
         length_beats: LENGTH_BEATS,
         bpm,
+        loaded_track_id: None,
     }
 }

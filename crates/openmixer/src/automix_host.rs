@@ -112,6 +112,7 @@ fn deck_info_for<L: AutomixLibrary>(library: &L, engine: &DjEngine, deck: u8) ->
         has_stems: engine.deck(usize::from(deck)).has_stems(),
         length_beats,
         bpm,
+        loaded_track_id: Some(track.id),
     })
 }
 

@@ -101,7 +101,7 @@ impl AutomixController {
                 self.last_error = format!("cleanup command failed: {error}");
             }
         }
-        self.stale_deck = Some((run.out, run.out_len));
+        self.stale_deck = Some((run.out, run.out_len, run.out_info.loaded_track_id));
         self.progress = 1.0;
         self.remaining_beats = None;
         self.cleanup_left = self.cfg.cleanup_ticks.max(1);
