@@ -48,7 +48,14 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
 Control paths, and what is live today:
 - **UI (production window):** `DeckBinding::typed` and `MixerBinding::typed` send `Command::Param { id, value }` through the router's `CommandSink`, with no string formatting or parsing. The binding constructors without a sink (`new`) write through the string façade; the widget test rig uses them.
 - **MIDI mappings and plugins:** the string façade, `ParameterTarget::set_parameter(&str, f64)` on the router. It parses the id once there and dispatches typed ids the same way.
-- **Typed entry point:** `Command` and `CommandSink` are used by tests, by automix and by the Wave 7 features. The router's sink accepts only `Command::Param` today; `LoadStems`, `SamplerAssign` and `Automix` return `CommandError::Rejected` until their engine sinks land.
+- **Typed entry point:** `Command` and `CommandSink` are used by tests, by automix and by the Wave 7 features. The router's sink accepts only `Command::Param` today; `SamplerAssign` and `Automix` return `CommandError::Rejected` until their engine sinks land. `LoadStems` is handled by `DjEngine::command_sink(fallback)` (`EngineCommands`): `DjEngine::register_stem_set(dir)` turns a stem directory into the `StemSetRef` handle the command carries, and the router's sink still rejects it.
+
+### Stem mode in the engine (Wave 7 S5)
+
+- A deck plays from stems after `Deck::load_stems(dir)` (`dir/{drums,bass,vocals,other}.wav`, the `om-stems` cache layout, same rate as the track, length within 16 frames). The main file stays loaded for metadata and length; `clear_stems()` returns to it; `load` of another track also leaves stem mode and resets the mixer.
+- The decoder thread reads the four files in lockstep into the one frame ring, 8 floats per frame (L/R of drums, bass, vocals, other). The ring stride (2 or 8) travels with the decoder's ack, so the audio thread adopts it exactly when it drains the stale ring; prefetch slots carry a stride too and are only used when it matches. A hand-over bumps the load id and the decoder produces nothing from new sources until it has acknowledged the epoch that names them.
+- The 8-to-2 mix (`om_dsp::StemMixer`) runs in `Playback::pull_frame`, before the interpolator and before key-lock: still exactly one interpolator and one stretcher per deck. All position logic is frame-index based and unchanged.
+- Control: `Deck::stem_control() -> Arc<StemMixerControl>` (atomics), ids `stem.<deck>.<0..3>.volume|mute|filter` (stem order: drums, bass, vocals, other), read back through `EngineSnapshot.stems` and `StateId::Stem`. Stem state belongs to the deck's `Shared`, so it resets on `load` and persists across `load_stems` and `clear_stems`.
 
 Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
 

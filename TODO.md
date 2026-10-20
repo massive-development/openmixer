@@ -10,8 +10,8 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 - **Foundation (Phase F): done.** Typed control surface (`ParamId`, `Command`, typed engine targets, string façade), pulled `EngineSnapshot`, `WorkerPool`, typed error enums with `AppError`, and `Services`/`MidiHost`. It clears no item below by itself; the items build on it.
 - **Todo 19:** ONNX stems backend (`ort`) not built; `om-stems` has only `MockSeparator`, and nothing in the app calls the separator. L
-- **Todo 37:** stem-aware mixing DSP not started (needs stems from 19). L
-- **Todo 30 (with 39):** stem playback in the engine and the stem pads UI do not exist (no per-stem mute or volume anywhere in `om-engine` or `om-ui-gpui`). L
+- **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. The stem pads UI (30) and stem transitions (39) are still open; nothing in the app calls `load_stems` yet. L
+- **Todo 30 (with 39):** stem playback exists in the engine (S5: `Deck::load_stems`, `stem.<d>.<s>.*` ids, `LoadStems` command); the stem pads UI and the app wiring that loads a prepared set into a deck do not exist. L
 - **Todo 38:** Automix transition engine not started. Its inputs exist (tempo and grid 15, structure and mix-in/out 18, key 16). L
 - **Todo 40:** 8-pad sampler: no sample engine, no pad UI. M
 - **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Showing artwork in the UI is not built.
@@ -233,7 +233,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 7: Intelligence
 
-- [ ] **Todo 37:** Stem-aware mixing DSP
+- [x] **Todo 37:** Stem-aware mixing DSP (engine level, Wave 7 S5: `om-dsp` `StemMixer`, stem-mode decks, `stem.*` ids and `Command::LoadStems`; pads UI is Todo 30, transitions Todo 39)
 - [ ] **Todo 38:** Automix transition engine
 - [ ] **Todo 39:** Stem transitions
 - [ ] **Todo 40:** 8-pad sampler
