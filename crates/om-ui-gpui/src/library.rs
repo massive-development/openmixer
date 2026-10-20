@@ -290,6 +290,11 @@ impl LibraryPanel {
     }
 
     /// Rows in the table.
+    /// True while the search field takes typed keys.
+    pub fn is_typing(&self) -> bool {
+        self.search_active
+    }
+
     pub fn row_count(&self) -> usize {
         self.browser.model.num_rows()
     }

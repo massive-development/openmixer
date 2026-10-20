@@ -415,6 +415,8 @@ pub struct RecordSnapshot {
     /// The writer stopped itself with an error.
     pub failed: bool,
     pub elapsed_s: f64,
+    /// Bytes written so far, all parts of the recording.
+    pub bytes: u64,
     pub dropped_frames: u64,
     pub peak_left: f32,
     pub peak_right: f32,

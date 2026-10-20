@@ -331,6 +331,7 @@ pub fn main(args: &[String]) -> ExitCode {
         samples,
         on_frame: Some(automix_frame),
         automix: Some(automix_read),
+        record: true,
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();
