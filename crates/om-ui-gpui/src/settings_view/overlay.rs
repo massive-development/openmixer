@@ -160,7 +160,14 @@ impl Shell {
                     .child("Settings"),
             )
             .child(tabs)
-            .child(div().flex_1().overflow_hidden().child(body))
+            // The page scrolls: the Library page with the stems section is taller than the card.
+            .child(
+                div()
+                    .id("settings-page")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .child(body),
+            )
             .child(status)
             .child(div().flex().justify_end().child(close))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
