@@ -86,6 +86,8 @@ pub struct Shell {
     /// What each deck card last showed, so the widgets only change on a real change.
     shown_info: Vec<TrackInfo>,
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
+    /// The last stems action's failure per deck, shown in the stems caption until the next action.
+    pub(crate) stem_errors: Vec<Option<String>>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -153,12 +155,22 @@ impl Shell {
             deck_controls: DeckControls::new(deck_count),
             shown_info: vec![TrackInfo::default(); deck_count],
             shown_waveform: vec![None; deck_count],
+            stem_errors: vec![None; deck_count],
             options,
             started: Instant::now(),
             last_tick: 0.0,
             frames: 0,
             frames_out,
         }
+    }
+
+    /// The deck's 'Load stems' / 'Stems off' action. A failure is kept for the stems caption.
+    pub(crate) fn toggle_deck_stems(&mut self, deck: usize) {
+        let result = match self.library.as_mut() {
+            Some(panel) => panel.toggle_stems(deck),
+            None => Err(om_ui::library::LoadError::Unavailable),
+        };
+        self.stem_errors[deck] = result.err().map(|error| error.to_string());
     }
 
     /// Frames rendered so far.
