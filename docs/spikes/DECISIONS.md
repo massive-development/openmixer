@@ -154,7 +154,7 @@ Date: 2026-10-19. The Rust workspace is the whole project. The C++ sources, CMak
 
 ## CI status by platform
 
-Date: 2026-10-19. Run 39296306022 on PR #66. Linux is the required signal; macOS and Windows legs are `continue-on-error` in `rust.yml` until Windows and macOS support lands.
+Date: 2026-10-19. Run 39296306022 on PR #66. Linux is the required signal; macOS and Windows legs are `continue-on-error` in `rust.yml` until Windows and macOS support lands. Update 2026-10-20: the `check` matrix in `rust.yml` is now Linux-only; the macOS and Windows legs were removed and return in the porting phase.
 
 - **ubuntu-latest:** green (fmt, clippy, test, `cargo deny`, legal guards, progress heatmap).
 - **windows-latest:** `om-library` `file_url` tests asserted `/` separators, but `native_separators` returns `\` on Windows by design. Fixed in the test (expectations go through a platform helper); the fix is not yet confirmed by a CI run. fmt, clippy and the other test binaries already passed on this leg, so no other Windows work is known.
