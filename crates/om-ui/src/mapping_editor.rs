@@ -590,6 +590,21 @@ mod tests {
     }
 
     #[test]
+    fn a_learn_captured_while_nothing_draws_is_recorded_by_the_pump_tick() {
+        let (mut page, mapper) = page();
+        mapper.add_binding(cc(1, 7, "mixer.ch0.fader")).unwrap();
+        page.select(Some(0));
+        page.learn_selected().unwrap();
+        // The overlay is closed: only the UI pump ticks the page while the control moves.
+        mapper.handle_message(&om_midi::control_change(2, 21, 64));
+        let learned = page.tick().expect("the pump records the learn");
+        assert_eq!(learned.number, 21);
+        assert!(!page.is_learning());
+        assert!(page.editor().bindings().iter().any(|m| m.number == 21));
+        assert!(page.tick().is_none(), "a learn is recorded once");
+    }
+
+    #[test]
     fn dirty_state_drives_the_save_prompt() {
         let dir = tempfile::tempdir().unwrap();
         let mapper = Arc::new(MidiMapper::new());
