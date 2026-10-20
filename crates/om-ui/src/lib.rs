@@ -12,6 +12,7 @@ pub mod format;
 pub mod geometry;
 pub mod library;
 pub mod main_layout;
+pub mod mapping_editor;
 pub mod meter;
 pub mod preferences;
 pub mod preferences_applier;

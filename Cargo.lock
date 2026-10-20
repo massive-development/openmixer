@@ -4138,6 +4138,7 @@ dependencies = [
  "om-dsp",
  "om-engine",
  "om-library",
+ "om-midi",
  "om-testing",
  "serde_json",
  "tempfile",
