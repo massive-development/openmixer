@@ -88,6 +88,7 @@ mod tests {
             plugin_folder: "/opt/openmixer/plugins".into(),
             stems: Default::default(),
             automix: Default::default(),
+            record: Default::default(),
         }
     }
 

@@ -17,6 +17,7 @@ use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
 use crate::error::AppError;
 use crate::midi::{FeedbackThread, MidiService};
+use crate::record_service::RecordService;
 use crate::stems_host::StemsHost;
 use om_audio::{DjEngine, DjEngineAudio};
 use om_core::param_id::Namespace;
@@ -113,6 +114,8 @@ pub struct AppComposition {
     pub automix: Arc<AutomixShared>,
     /// The sink automix's steps go through (no input observer), for [`AutomixRunner`].
     pub automix_sink: Arc<dyn CommandSink>,
+    /// Mix recording: the `record.*` target is registered with the router.
+    pub record: Arc<RecordService>,
     /// The sample bank the control thread pumps once it is attached.
     sample_slot: Arc<OnceLock<Arc<SampleBank>>>,
     /// Keeps the feedback thread running for as long as the MIDI service is attached.
@@ -150,6 +153,8 @@ impl AppComposition {
 
         let themes = load_themes(user_themes.as_deref());
         let sample_slot = Arc::new(OnceLock::new());
+        let record = RecordService::new(engine.recorder_handle(), &prefs.record);
+        router.register_typed(Namespace::Record, record.clone());
         let automix = AutomixShared::new();
         router.register_typed(Namespace::Automix, automix.control());
         // User input (any control, MIDI, string targets) reaches the controller through the
@@ -172,6 +177,7 @@ impl AppComposition {
             _control_timer: control_timer,
             automix,
             automix_sink,
+            record,
             sample_slot,
             engine,
             router,
