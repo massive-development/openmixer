@@ -8,6 +8,7 @@
 
 mod cache;
 mod contract;
+mod lazy;
 mod manifest;
 mod model;
 #[cfg(feature = "onnx")]
@@ -25,6 +26,7 @@ pub use cache::{
     FORMAT as CACHE_FORMAT,
 };
 pub use contract::ModelContract;
+pub use lazy::{LazySeparator, SeparatorFactory};
 pub use manifest::{ManifestError, ModelManifest, HTDEMUCS_LICENSE_NAME, HTDEMUCS_LICENSE_TEXT};
 pub use model::{InstallState, ModelInstaller};
 #[cfg(feature = "onnx")]

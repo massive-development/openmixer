@@ -554,3 +554,38 @@ fn startup_removes_committed_directories_no_row_references() {
     let svc = service(&fx, Arc::new(MockSeparator::new()), None, None);
     assert!(svc.cache().entries().unwrap().is_empty());
 }
+
+#[test]
+fn the_model_loads_inside_the_first_job_not_when_the_service_is_created() {
+    let fx = fixture(1);
+    let loads = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&loads);
+    let lazy = om_stems::LazySeparator::new(
+        "lazy-test",
+        1,
+        44_100.0,
+        Box::new(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            // A slow load, as an ONNX session is.
+            std::thread::sleep(Duration::from_millis(400));
+            Ok(Arc::new(MockSeparator::new()) as Arc<dyn StemSeparator>)
+        }),
+    );
+    let started = std::time::Instant::now();
+    let svc = service(&fx, Arc::new(lazy), None, None);
+    let first = svc.submit(request(&fx, 0));
+    let second = svc.submit(request(&fx, 0));
+    assert!(
+        started.elapsed() < Duration::from_millis(300),
+        "creating the service and submitting must not wait for the model"
+    );
+    assert!(!svc.model_loaded(), "nothing has loaded yet");
+    assert_eq!(finish(&first), JobStatus::Done);
+    assert_eq!(finish(&second), JobStatus::Done);
+    assert!(svc.model_loaded());
+    assert_eq!(
+        loads.load(Ordering::SeqCst),
+        1,
+        "loaded once, by the first job"
+    );
+}

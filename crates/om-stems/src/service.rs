@@ -310,6 +310,12 @@ impl StemService {
     }
 
     /// Bytes the committed stem sets take up on disk, as recorded in their `meta.json`.
+    /// Whether the separator's model is loaded, so a job would start at once. A lazily loaded
+    /// model reads `false` until its first job has loaded it.
+    pub fn model_loaded(&self) -> bool {
+        self.inner.separator.is_ready()
+    }
+
     pub fn cache_bytes(&self) -> Result<u64, StemServiceError> {
         Ok(self.inner.cache.total_bytes()?)
     }
