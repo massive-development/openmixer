@@ -285,7 +285,10 @@ mod tests {
             assert!(!page.set_enabled(true).unwrap(), "stored value unchanged");
         }
         assert_eq!(fake.running, vec![true]);
-        assert!(fake.applies.is_empty(), "nothing stored changed, nothing pushed");
+        assert!(
+            fake.applies.is_empty(),
+            "nothing stored changed, nothing pushed"
+        );
     }
 
     #[test]

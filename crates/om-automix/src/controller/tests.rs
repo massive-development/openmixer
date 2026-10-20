@@ -668,7 +668,9 @@ fn a_rejected_style_falls_back_to_a_cut() {
         false,
         info(1, 140.0, "8A", false),
     );
-    sim.run_until("cleanup", 3000, |s| s.states.contains(&AutomixState::Cleanup));
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
     assert_eq!(sim.ctrl.snapshot().last_error, "");
     assert_eq!(sim.xfader(), 1.0);
     assert!(sim.snap.decks[1].playing);
@@ -903,7 +905,11 @@ fn natural_end_of_the_outgoing_track_completes_the_transition() {
         sim.ctrl.snapshot().last_error
     );
     sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
-    assert_eq!(sim.xfader(), 1.0, "the crossfader lands on the incoming deck");
+    assert_eq!(
+        sim.xfader(),
+        1.0,
+        "the crossfader lands on the incoming deck"
+    );
     assert!(sim.snap.decks[1].playing && sim.snap.decks[1].sync_master);
     assert!(!sim.snap.decks[0].playing);
 }
