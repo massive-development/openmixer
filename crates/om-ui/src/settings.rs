@@ -56,6 +56,10 @@ pub enum SettingsError {
     /// The model is not ready; the text says why (it is shown in the Library page).
     #[error("{0}")]
     StemsNotReady(String),
+    /// The track's content hash is still empty (ingest has not finished), so its stems cannot be
+    /// keyed in the cache.
+    #[error("track has no content hash yet — wait for ingest to finish")]
+    TrackNotHashed,
     /// A stored value does not fit the field it is written to.
     #[error("{field} is out of range")]
     InvalidValue { field: &'static str },
