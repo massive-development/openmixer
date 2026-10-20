@@ -340,7 +340,7 @@ impl Plugin for Squatter {
     fn on_load(&mut self, host: &mut dyn PluginHost) {
         let target: Arc<dyn ParameterTarget> = Arc::new(Recorder::default());
         for prefix in [
-            "deck", "deck.0", "mixer", "fx", "sync", "stem", "sampler", "automix",
+            "deck", "deck.0", "mixer", "fx", "sync", "stem", "sampler", "automix", "record",
         ] {
             let outcome = host.register_parameter_target(prefix, Arc::clone(&target));
             if let Err(PluginError::Rejected(_)) = outcome {
@@ -360,7 +360,7 @@ fn plugins_cannot_register_engine_namespaces() {
     .expect("loads");
     assert_eq!(
         *refused.lock().unwrap(),
-        ["deck", "deck.0", "mixer", "fx", "sync", "stem", "sampler", "automix"]
+        ["deck", "deck.0", "mixer", "fx", "sync", "stem", "sampler", "automix", "record"]
     );
     let router = Arc::new(ParameterRouter::new());
     reg.bind_router(Some(Arc::clone(&router)));

@@ -1,7 +1,7 @@
 use super::{
     AutomixParam, ChannelParam, DeckParam, EqBand, FxParam, FxRack, FxRackParam, MixerParam,
-    ParamError, ParamId, SamplerParam, StemParam, SyncParam, HOTCUES_PER_DECK, MAX_CHANNELS,
-    MAX_DECKS, MAX_FX_UNIT, MAX_LOOP_BEATS, SAMPLER_PADS, STEMS_PER_DECK,
+    ParamError, ParamId, RecordParam, SamplerParam, StemParam, SyncParam, HOTCUES_PER_DECK,
+    MAX_CHANNELS, MAX_DECKS, MAX_FX_UNIT, MAX_LOOP_BEATS, SAMPLER_PADS, STEMS_PER_DECK,
 };
 use std::str::FromStr;
 
@@ -19,6 +19,7 @@ impl FromStr for ParamId {
             "stem" => parse_stem(id, rest),
             "sampler" => parse_sampler(id, rest),
             "automix" => parse_automix(id, rest),
+            "record" => parse_record(id, rest),
             _ => parse_ext(id, &parts),
         }
     }
@@ -302,6 +303,16 @@ fn parse_sampler(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
         }),
         _ => Err(unknown(id)),
     }
+}
+
+fn parse_record(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
+    let p = match rest {
+        ["start"] => RecordParam::Start,
+        ["stop"] => RecordParam::Stop,
+        ["toggle"] => RecordParam::Toggle,
+        _ => return Err(unknown(id)),
+    };
+    Ok(ParamId::Record(p))
 }
 
 fn parse_automix(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {

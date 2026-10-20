@@ -21,7 +21,7 @@ impl ParamId {
             Self::Sync(SyncParam::DeckEnabled(deck)) => {
                 index(self, u16::from(*deck), "deck", MAX_DECKS)
             }
-            Self::Sync(_) | Self::Automix(_) => Ok(()),
+            Self::Sync(_) | Self::Automix(_) | Self::Record(_) => Ok(()),
             Self::Stem { deck, stem, .. } => {
                 index(self, u16::from(*deck), "deck", MAX_DECKS)?;
                 index(self, u16::from(*stem), "stem", STEMS_PER_DECK)

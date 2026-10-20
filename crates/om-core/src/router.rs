@@ -577,6 +577,8 @@ mod typed_tests {
             "stem",
             "sampler",
             "automix",
+            "record",
+            "record.start",
         ] {
             assert_eq!(
                 router.register_target(prefix, plug.clone()),
