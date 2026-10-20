@@ -16,7 +16,9 @@ use gpui::{
     div, prelude::*, px, Context, Div, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent,
     Window,
 };
+use mapping::{MapField, MappingConfirm};
 use om_ui::geometry::Rect;
+use om_ui::mapping_editor::MappingEditorPage;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
@@ -34,6 +36,7 @@ mod audio;
 mod automix;
 pub(crate) mod chips;
 mod library;
+mod mapping;
 mod midi;
 mod overlay;
 mod plugins;
@@ -76,6 +79,8 @@ pub struct SettingsOptions {
     /// The automix service, behind the Automix page. `None` leaves the page without a service: its
     /// settings are still stored and the page says automix is idle.
     pub automix: Option<Box<dyn AutomixControl>>,
+    /// The mapping editor, behind the Mapping tab. `None` when MIDI is not attached.
+    pub mapping: Option<MappingEditorPage>,
     /// The recorder, behind the Recording tab. `None` leaves the tab storing settings only.
     pub record: Option<Box<dyn RecordHost>>,
     /// Makes this window's theme registry hold the plugins' themes. Called on start-up, when the
@@ -93,6 +98,14 @@ pub enum EntryKind {
     RecordFolder,
     /// A folder to add to the watch folders.
     WatchFolder,
+    /// The mapping table filter text (applied as it is typed).
+    MapFilter,
+    /// A controller map (JSON) to import into the mapping editor.
+    MapImport,
+    /// Where the mapping editor exports its map.
+    MapExport,
+    /// One field of the mapping edit form.
+    MapField(MapField),
     /// An iTunes or Rekordbox XML file to import.
     ImportXml,
     /// A controller map (JSON) to load into the MIDI service.
@@ -160,6 +173,10 @@ pub struct SettingsState {
     automix: Option<Box<dyn AutomixControl>>,
     record: Option<Box<dyn RecordHost>>,
     sync_themes: Option<ThemeSync>,
+    /// The mapping editor, when MIDI is attached.
+    pub mapping: Option<MappingEditorPage>,
+    /// The confirm step the Mapping tab is showing (Reset, or leaving with unsaved edits).
+    pub mapping_confirm: Option<MappingConfirm>,
 }
 
 impl SettingsState {
@@ -188,6 +205,8 @@ impl SettingsState {
             plugins: options.plugins,
             automix: options.automix,
             record: options.record,
+            mapping: options.mapping,
+            mapping_confirm: None,
             sync_themes: options.sync_themes,
         };
         if let Some(title) = options.start_tab.as_deref() {
@@ -293,6 +312,7 @@ mod fixtures {
             plugins: None,
             automix: None,
             record: None,
+            mapping: None,
             sync_themes: None,
             start_tab: None,
         })
@@ -321,6 +341,7 @@ mod fixtures {
             plugins,
             automix: None,
             record: None,
+            mapping: None,
             sync_themes: Some(Box::new(move |_| syncs.set(syncs.get() + 1))),
             start_tab: None,
         }

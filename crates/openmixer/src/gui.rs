@@ -325,6 +325,7 @@ pub fn main(args: &[String]) -> ExitCode {
         stems: library
             .clone()
             .map(|hub| Box::new(HubStems(hub)) as Box<dyn StemHost>),
+        mapping: composition.borrow().mapping_editor(),
         record: Some(Box::new(AppRecordHost(composition.borrow().record.clone()))
             as Box<dyn om_ui::settings::RecordHost>),
         start_tab: start_tab.map(str::to_owned),
