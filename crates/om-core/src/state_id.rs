@@ -9,6 +9,7 @@
 //! mixer.ch<c>.pfl | fader | trim | filter | level
 //! mixer.crossfader | mixer.master | mixer.master.level
 //! stem.<d>.<s>.volume | mute | filter     s: 0..3 (drums, bass, vocals, other)
+//! sampler.pad<n>.loaded | playing | volume | pitch | mode     mode reads 0 one-shot, 1 gate, 2 loop
 //! ```
 //! `<d>` and `<c>` are digits only; whether they name a real deck or channel is decided by the
 //! snapshot, which knows the engine's size.
@@ -30,6 +31,23 @@ pub enum StateId {
         stem: usize,
         p: StemParam,
     },
+    /// Sampler pad state, `sampler.pad<n>.*`.
+    Sampler {
+        pad: usize,
+        p: PadState,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadState {
+    /// A sample is assigned.
+    Loaded,
+    /// A voice of the pad is sounding.
+    Playing,
+    Volume,
+    Pitch,
+    /// 0 one-shot, 1 gate, 2 loop.
+    Mode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +108,18 @@ impl FromStr for StateId {
                 };
                 Some(Self::Stem { deck, stem, p })
             }),
+            ["sampler", pad, p] => pad
+                .strip_prefix("pad")
+                .and_then(digits)
+                .zip(match *p {
+                    "loaded" => Some(PadState::Loaded),
+                    "playing" => Some(PadState::Playing),
+                    "volume" => Some(PadState::Volume),
+                    "pitch" => Some(PadState::Pitch),
+                    "mode" => Some(PadState::Mode),
+                    _ => None,
+                })
+                .map(|(pad, p)| Self::Sampler { pad, p }),
             _ => None,
         };
         parsed.ok_or_else(|| ParamError::Unknown(id.to_owned()))
@@ -195,6 +225,20 @@ mod tests {
         assert!("stem.1.3".parse::<StateId>().is_err());
         assert!("stem.1.x.mute".parse::<StateId>().is_err());
         assert!("stem.1.2.bogus".parse::<StateId>().is_err());
+    }
+
+    #[test]
+    fn parses_sampler_read_ids() {
+        assert_eq!(
+            "sampler.pad3.playing".parse::<StateId>(),
+            Ok(StateId::Sampler {
+                pad: 3,
+                p: PadState::Playing
+            })
+        );
+        assert!("sampler.pad.playing".parse::<StateId>().is_err());
+        assert!("sampler.pad1.trigger".parse::<StateId>().is_err());
+        assert!("sampler.3.playing".parse::<StateId>().is_err());
     }
 
     #[test]
