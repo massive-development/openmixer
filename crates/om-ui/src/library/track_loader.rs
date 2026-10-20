@@ -179,6 +179,8 @@ impl TrackLoader {
 
     /// Loads the stem set in `dir` into `deck`, through the command sink when there is one.
     fn start_stems(&mut self, engine: &DjEngine, deck: usize, dir: &Path) -> Result<(), LoadError> {
+        // The entry is in use now: keep it from the LRU eviction that follows the next separation.
+        touch_stem_entry(dir);
         let Some(sink) = self.stem_sink.clone() else {
             return engine
                 .deck(deck)
@@ -495,8 +497,20 @@ impl TrackLoader {
     }
 }
 
+/// Marks a stem cache entry as used now, for the LRU order. Mirrors `om_stems::StemCache::touch_entry`
+/// (om-ui does not depend on om-stems): the recency is the modification time of its `meta.json`.
+fn touch_stem_entry(dir: &Path) {
+    if let Ok(file) = std::fs::File::options()
+        .write(true)
+        .open(dir.join("meta.json"))
+    {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
+}
+
 /// Sets the deck's grid and per-deck metadata from an analysis result. An absent grid or waveform
 /// clears the old one, so a track with no analysis never shows the previous track's data.
+
 fn apply(
     engine: &DjEngine,
     slot: &mut Slot,

@@ -285,15 +285,21 @@ impl StemCache {
         {
             return None;
         }
-        // Recency for the LRU cap. Failure only costs eviction order, so it is ignored.
-        if let Ok(file) = File::options().write(true).open(&meta_path) {
-            let _ = file.set_modified(SystemTime::now());
-        }
+        Self::touch_entry(&dir);
         Some(StemEntry {
             dir_name: key.dir_name(),
             path: dir,
             meta,
         })
+    }
+
+    /// Marks the entry in `dir` as used now, for the LRU order: sets the modification time of its
+    /// `meta.json`. Called on every hit and whenever a deck starts playing the entry's stems.
+    /// Failure only costs eviction order, so it is ignored.
+    pub fn touch_entry(dir: &Path) {
+        if let Ok(file) = File::options().write(true).open(dir.join(META_FILE)) {
+            let _ = file.set_modified(SystemTime::now());
+        }
     }
 
     /// Opens the four stems of a hit for reading.
