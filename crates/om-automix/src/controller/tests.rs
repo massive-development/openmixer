@@ -133,6 +133,8 @@ impl Sim {
         host.queue.push(NextTrack {
             id: 7,
             title: "Next One".into(),
+            bpm: None,
+            key: String::new(),
         });
         Self {
             ctrl: AutomixController::new(cfg, Arc::clone(&control)),
@@ -607,6 +609,8 @@ fn a_failed_load_is_reported_and_retried_then_automix_gives_up() {
         sim.host.queue.push(NextTrack {
             id,
             title: format!("t{id}"),
+            bpm: None,
+            key: String::new(),
         });
     }
     sim.run_until("first failure", 600, |s| {
@@ -809,6 +813,8 @@ fn after_a_transition_the_stopped_deck_gets_the_next_track() {
     sim.host.queue.push(NextTrack {
         id: 8,
         title: "Third".into(),
+        bpm: None,
+        key: String::new(),
     });
     // The new leader (deck 1) nears its own end.
     sim.snap.decks[1].position_frames = beat(390.0);

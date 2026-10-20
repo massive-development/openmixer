@@ -3,6 +3,7 @@
 //! GPUI window layer for OpenMixer. Drawing and event glue only; UI logic lives in `om-ui`.
 
 pub mod app;
+pub mod automix_bar;
 pub mod controls;
 pub mod debug_panel;
 pub mod deck_view;
