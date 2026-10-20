@@ -6,7 +6,9 @@ use super::loop_state::LoopSnapshot;
 use super::prefetch::PrefetchSlot;
 use super::shared::Shared;
 use keylock::KeylockState;
+use om_dsp::{StemMixer, StemMixerControl, STEM_FRAME_FLOATS};
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+use std::sync::Arc;
 
 mod keylock;
 
@@ -34,11 +36,18 @@ pub(super) struct Playback {
     /// Load id of the track being played; prefetch slots from other tracks are unusable.
     playing_load_id: u32,
     keylock: KeylockState,
+    /// Floats per ring frame, adopted from the decoder's ack: 2 in plain mode, 8 in stem mode.
+    stride: usize,
+    /// Folds eight-float stem frames into stereo at pull time, ahead of the interpolator and the
+    /// key-lock stretcher, so a stem deck still has one of each.
+    mixer: StemMixer,
 }
 
 impl Playback {
-    pub(super) fn new(ring: rtrb::Consumer<f32>) -> Self {
+    pub(super) fn new(ring: rtrb::Consumer<f32>, stems: Arc<StemMixerControl>) -> Self {
         Self {
+            stride: 2,
+            mixer: StemMixer::new(stems),
             ring,
             primed: false,
             have_first: false,
@@ -72,6 +81,9 @@ impl Playback {
         if let Some(snap) = sh.loop_state.load() {
             self.loop_snap = snap;
         }
+        if self.stride > 2 {
+            self.mixer.update_targets();
+        }
         if sh.keylock.load(Relaxed) && self.keylock.stretch.is_some() {
             self.render_keylocked(sh, left, right);
             return;
@@ -96,6 +108,7 @@ impl Playback {
             let skipped = discard(&mut self.ring, stale);
             self.consume(sh, skipped);
             self.ring_idx = sh.ack_target.load(Relaxed);
+            self.stride = (sh.ack_stride.load(Relaxed) as usize).clamp(2, STEM_FRAME_FLOATS);
             sh.drained_seq.store(seq, Release);
         }
         if ack != self.last_control_ack {
@@ -116,6 +129,10 @@ impl Playback {
         self.phase = 0.0;
         self.keylock.on_playhead_reset();
         self.release_slot(sh);
+        if self.stride > 2 {
+            // Stem mode: start from the control state, at the file's rate, with quiet filters.
+            self.mixer.prepare(sh.file_sample_rate.load());
+        }
         sh.position_frames.store(self.ring_idx, Relaxed);
     }
 
@@ -129,7 +146,7 @@ impl Playback {
         if self.slot.is_none()
             && self.ring_idx == self.read_idx
             && sh.end_of_stream.load(Acquire)
-            && self.ring.slots() < 2
+            && self.ring.slots() < self.stride
         {
             sh.playing.store(false, Relaxed);
             sh.finished.store(true, Relaxed);
@@ -170,7 +187,9 @@ impl Playback {
     /// True when the held slot holds the playing track's loop start.
     fn slot_usable(&self, sh: &Shared) -> bool {
         self.current_slot(sh).is_some_and(|s| {
-            s.load_id() == self.playing_load_id && s.start() == self.loop_snap.start
+            s.load_id() == self.playing_load_id
+                && s.start() == self.loop_snap.start
+                && s.stride() == self.stride
         })
     }
 
@@ -197,7 +216,7 @@ impl Playback {
         self.request_ring(sh, next_ring_target);
     }
 
-    fn read_slot_frame(&mut self, sh: &Shared) -> Option<[f32; 2]> {
+    fn read_slot_frame(&mut self, sh: &Shared) -> Option<[f32; STEM_FRAME_FLOATS]> {
         let slot = self.current_slot(sh)?;
         if !slot.contains(self.read_idx) {
             self.release_slot(sh);
@@ -206,17 +225,17 @@ impl Playback {
         Some(slot.frame(self.read_idx - slot.start()))
     }
 
-    fn read_ring_frame(&mut self, sh: &Shared) -> Option<[f32; 2]> {
+    fn read_ring_frame(&mut self, sh: &Shared) -> Option<[f32; STEM_FRAME_FLOATS]> {
         if self.ring_idx != self.read_idx {
             self.request_ring(sh, self.read_idx);
             return None;
         }
-        let mut out = [0.0_f32; 2];
-        let (got, _) = self.ring.pop_partial_slice(&mut out);
-        if got.len() < 2 {
+        let mut out = [0.0_f32; STEM_FRAME_FLOATS];
+        let (got, _) = self.ring.pop_partial_slice(&mut out[..self.stride]);
+        if got.len() < self.stride {
             return None;
         }
-        self.consume(sh, 2);
+        self.consume(sh, self.stride);
         self.ring_idx += 1;
         // Reading moves the ring: a later request to an old target is new again.
         self.ring_wanted = self.ring_idx;
@@ -232,9 +251,14 @@ impl Playback {
             self.read_idx = loop_snap.start + (self.read_idx - loop_snap.start) % len;
             self.enter_loop_slot(sh);
         }
-        let frame = self
+        let raw = self
             .read_slot_frame(sh)
             .or_else(|| self.read_ring_frame(sh))?;
+        let frame = if self.stride > 2 {
+            self.mixer.mix_frame(&raw)
+        } else {
+            [raw[0], raw[1]]
+        };
         let index = self.read_idx;
         self.read_idx += 1;
         Some((index, frame))

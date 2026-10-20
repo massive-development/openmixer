@@ -4,6 +4,8 @@
 
 use super::shared::Shared;
 use super::source::SourceReader;
+use super::stems::StemReaders;
+use om_dsp::STEM_FRAME_FLOATS;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +17,14 @@ const IDLE_SLEEP: Duration = Duration::from_millis(3);
 pub(super) struct DecoderWorker {
     shared: Arc<Shared>,
     ring: rtrb::Producer<f32>,
+    /// The main file: metadata, length, and the frames in plain mode.
     reader: Option<SourceReader>,
+    /// Stem files, read in lockstep instead of `reader` while present.
+    stems: Option<StemReaders>,
+    /// Floats per ring frame: 2 in plain mode, 8 in stem mode.
+    stride: usize,
+    /// Epoch a hand-over must be acknowledged at before anything is produced from its sources.
+    hold_epoch: Option<u32>,
     read_pos: i64,
     local_ack: u32,
     local_seq: u32,
@@ -25,6 +34,7 @@ pub(super) struct DecoderWorker {
     /// Loop start the prefetch slot currently holds, or -1.
     prefetched_start: i64,
     chunk: Vec<[f32; 2]>,
+    stem_chunk: Vec<[f32; STEM_FRAME_FLOATS]>,
     /// Test-only hook run on the decoder thread before each chunk. A panic in it takes the same
     /// fault path as a decode failure, which is what the fault test exercises.
     #[cfg(test)]
@@ -37,6 +47,9 @@ impl DecoderWorker {
             shared,
             ring,
             reader: None,
+            stems: None,
+            stride: 2,
+            hold_epoch: None,
             read_pos: 0,
             local_ack: 0,
             local_seq: 0,
@@ -45,6 +58,7 @@ impl DecoderWorker {
             reader_load_id: 0,
             prefetched_start: -1,
             chunk: vec![[0.0; 2]; CHUNK_FRAMES],
+            stem_chunk: vec![[0.0; STEM_FRAME_FLOATS]; CHUNK_FRAMES],
             #[cfg(test)]
             before_chunk: None,
         }
@@ -74,10 +88,24 @@ impl DecoderWorker {
         let Ok(mut pending) = self.shared.pending.lock() else {
             return;
         };
+        let changed = pending.has || pending.has_stems;
         if pending.has {
             self.reader = pending.reader.take();
             self.reader_load_id = pending.load_id;
             pending.has = false;
+        }
+        if pending.has_stems {
+            self.stems = pending.stems.take();
+            self.stride = if self.stems.is_some() {
+                STEM_FRAME_FLOATS
+            } else {
+                2
+            };
+            pending.has_stems = false;
+        }
+        if changed {
+            self.reader_load_id = pending.load_id;
+            self.hold_epoch = Some(pending.min_epoch);
             self.shared.prefetch.withdraw();
             self.prefetched_start = -1;
         }
@@ -93,6 +121,7 @@ impl DecoderWorker {
         let len = self.length();
         self.read_pos = target.clamp(0, len);
         self.shared.ack_target.store(self.read_pos, Relaxed);
+        self.shared.ack_stride.store(self.stride as u32, Relaxed);
         self.shared
             .end_of_stream
             .store(self.reader.is_none() || self.read_pos >= len, Relaxed);
@@ -105,6 +134,9 @@ impl DecoderWorker {
         self.publish_ack(target);
         self.shared.ack_load_id.store(self.reader_load_id, Relaxed);
         self.local_ack = epoch;
+        if self.hold_epoch.is_some_and(|h| epoch.wrapping_sub(h) < u32::MAX / 2) {
+            self.hold_epoch = None;
+        }
         // After ack_seq: the audio thread reads the epoch first.
         self.shared.ack_epoch.store(epoch, Release);
     }
@@ -131,15 +163,22 @@ impl DecoderWorker {
         let mut done = 0;
         while done < len {
             let n = (len - done).min(CHUNK_FRAMES as i64) as usize;
-            if let Some(reader) = self.reader.as_mut() {
-                reader.read_stereo(start + done, &mut self.chunk[..n]);
-            }
-            for (i, frame) in self.chunk[..n].iter().enumerate() {
-                prefetch.write_frame(index, done as usize + i, *frame);
+            if let Some(stems) = self.stems.as_mut() {
+                stems.read_frames(start + done, &mut self.stem_chunk[..n]);
+                for (i, frame) in self.stem_chunk[..n].iter().enumerate() {
+                    prefetch.write_frame(index, done as usize + i, frame);
+                }
+            } else {
+                if let Some(reader) = self.reader.as_mut() {
+                    reader.read_stereo(start + done, &mut self.chunk[..n]);
+                }
+                for (i, frame) in self.chunk[..n].iter().enumerate() {
+                    prefetch.write_frame(index, done as usize + i, frame);
+                }
             }
             done += n as i64;
         }
-        prefetch.set_meta(index, start, len, self.reader_load_id);
+        prefetch.set_meta(index, start, len, self.reader_load_id, self.stride);
         prefetch.publish(index);
         self.prefetched_start = start;
     }
@@ -161,11 +200,19 @@ impl DecoderWorker {
     /// here: a reader can be taken in the same pass that the epoch naming it is bumped, and
     /// producing from that reader before its ack would hand the audio thread stale frames.
     fn can_produce(&self) -> bool {
+        // The ring holds `capacity` floats. Plain mode keeps the depth the ring always had
+        // (`capacity / 4` floats, two per frame); stem mode buffers the same number of frames
+        // at eight floats each, so `capacity * stride / 8` floats in either mode.
+        let capacity = self.ring.buffer().capacity();
+        let free = self.ring.slots();
+        let need = CHUNK_FRAMES * self.stride;
         self.reader.is_some()
+            && self.hold_epoch.is_none()
             && self.local_ack == self.shared.request_epoch.load(Acquire)
             && self.shared.drained_seq.load(Acquire) == self.local_seq
             && self.read_pos < self.length()
-            && self.ring.slots() >= CHUNK_FRAMES * 2
+            && free >= need
+            && capacity - free + need <= capacity * self.stride / STEM_FRAME_FLOATS
     }
 
     fn produce_chunk(&mut self) {
@@ -175,12 +222,20 @@ impl DecoderWorker {
         }
         let len = self.length();
         let n = (len - self.read_pos).min(CHUNK_FRAMES as i64) as usize;
-        let Some(reader) = self.reader.as_mut() else {
-            return;
+        let written = if let Some(stems) = self.stems.as_mut() {
+            stems.read_frames(self.read_pos, &mut self.stem_chunk[..n]);
+            let (written, _) = self
+                .ring
+                .push_partial_slice(self.stem_chunk[..n].as_flattened());
+            written.len()
+        } else {
+            let Some(reader) = self.reader.as_mut() else {
+                return;
+            };
+            reader.read_stereo(self.read_pos, &mut self.chunk[..n]);
+            let (written, _) = self.ring.push_partial_slice(self.chunk[..n].as_flattened());
+            written.len()
         };
-        reader.read_stereo(self.read_pos, &mut self.chunk[..n]);
-        let (written, _) = self.ring.push_partial_slice(self.chunk[..n].as_flattened());
-        let written = written.len();
         self.local_written += written as u64;
         self.shared
             .written_samples
