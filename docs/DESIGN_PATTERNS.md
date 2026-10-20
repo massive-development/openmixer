@@ -212,6 +212,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** any optional model or asset the app downloads on the user's behalf.
 - **Notes:** the worker owns the downloading `WeightManager`; state reads use a second manager with a refusing downloader, so polling the state cannot start a transfer. The UI never names `om-stems` types: it talks to `StemHost`, which the app implements. Tests count downloader calls.
 
+### Wider frame ring with a stride published by the producer
+- **Where:** `om-engine` deck decoder (`deck/decoder.rs`), `Playback` (`deck/playback.rs`), `LoopPrefetch` (`deck/prefetch.rs`), stems in `deck/stems.rs`.
+- **Why:** stem mode needs eight floats per source frame through the same SPSC ring that carries two in plain mode, without a second ring, a second interpolator or a second time-stretcher. The mix to stereo happens where frames are pulled, so everything downstream stays stereo.
+- **Reuse when:** a consumer must change its element width on a live stream (multichannel sources, per-stem or per-mic data).
+- **Notes:** the producer stores the stride before the ack sequence number and the consumer adopts it only when it drains the stale ring, so a ring never mixes strides. A hand-over that changes the sources bumps the epoch under the same lock that publishes them, and the producer holds production until it has acknowledged that epoch. The ring is allocated for the widest stride and the producer limits depth to the same frame count in both modes. Control values (gains, mutes, filters) are atomics read once per block; smoothers live on the audio side.
+
 ### Forward-only migration list
 - **Where:** `om-library` migrations (`migrations.rs`)
 - **Why:** the schema evolves by appending numbered migrations; each runs in its own transaction and is recorded in `schema_version`.
