@@ -156,6 +156,12 @@ impl AutomixController {
         self.state
     }
 
+    /// Replaces the settings. A running plan keeps the length and tempo gap it was planned with;
+    /// the next plan reads the new ones.
+    pub fn set_config(&mut self, cfg: AutomixConfig) {
+        self.cfg = cfg;
+    }
+
     /// The plan in flight or armed.
     pub fn plan(&self) -> Option<&TransitionPlan> {
         self.run.as_ref().and_then(|r| r.plan.as_ref())

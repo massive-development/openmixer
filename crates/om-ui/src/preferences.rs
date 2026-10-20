@@ -28,8 +28,11 @@ pub struct AutomixPrefs {
     pub style: i32,
     /// Transition length in beats: 8, 16 or 32 (other values snap to the nearest).
     pub length_beats: i32,
-    /// Queue source: a playlist id, or 0 for the whole library (the current search is not saved).
+    /// Queue source: a playlist id, or 0 for the whole library. Ignored while `queue_search` is set.
     pub queue_playlist: i64,
+    /// Queue source is the library browser's current search (live, not saved as text). Read as
+    /// false when missing, so version 3 files from before this field keep their playlist source.
+    pub queue_search: bool,
     /// Smart pick: prefer harmonic and tempo matches among the queue candidates.
     pub smart: bool,
     /// Largest tempo gap a beat-matched style accepts, in percent (0..=20).
@@ -48,6 +51,7 @@ impl Default for AutomixPrefs {
             style: 0,
             length_beats: 16,
             queue_playlist: 0,
+            queue_search: false,
             smart: true,
             min_bpm_gap_percent: 6,
             autostart_at_end: true,
@@ -295,6 +299,7 @@ impl Preferences {
         automix.insert("style".into(), self.automix.style.into());
         automix.insert("lengthBeats".into(), self.automix.length_beats.into());
         automix.insert("queuePlaylist".into(), self.automix.queue_playlist.into());
+        automix.insert("queueSearch".into(), self.automix.queue_search.into());
         automix.insert("smart".into(), self.automix.smart.into());
         automix.insert(
             "minBpmGapPercent".into(),
@@ -432,6 +437,7 @@ fn read_automix(s: &Map<String, Value>, a: &mut AutomixPrefs) {
         a.length_beats.into(),
     ));
     a.queue_playlist = int_or(s.get("queuePlaylist"), 0, i64::MAX, a.queue_playlist);
+    a.queue_search = bool_or(s.get("queueSearch"), a.queue_search);
     a.smart = bool_or(s.get("smart"), a.smart);
     a.min_bpm_gap_percent = int_or(
         s.get("minBpmGapPercent"),
@@ -485,6 +491,7 @@ mod tests {
                 style: 2,
                 length_beats: 32,
                 queue_playlist: 7,
+                queue_search: true,
                 smart: false,
                 min_bpm_gap_percent: 3,
                 autostart_at_end: false,

@@ -8,6 +8,7 @@ pub mod audio_settings;
 pub mod automix_host;
 pub mod automix_queue;
 pub mod automix_service;
+pub mod automix_settings;
 pub mod error;
 pub mod flags;
 

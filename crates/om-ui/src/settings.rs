@@ -8,6 +8,7 @@ use om_library::LibraryError;
 
 mod appearance;
 mod audio;
+mod automix;
 mod library;
 mod midi;
 mod panel;
@@ -16,6 +17,7 @@ mod stems;
 
 pub use appearance::AppearanceSettingsPage;
 pub use audio::{stats_text, AudioSettingsModel, AudioSettingsPage, AudioStats};
+pub use automix::{AutomixControl, AutomixSettingsPage, QueueChoice, LENGTH_CHOICES, STYLE_LABELS};
 pub use library::{LibraryControl, LibrarySettingsPage};
 pub use midi::{learnable_targets, MidiHost, MidiInputs, MidiPage, MidiSettingsPage};
 pub use panel::{PageKind, SettingsPanel};
