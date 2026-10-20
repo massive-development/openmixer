@@ -437,3 +437,40 @@ fn a_wrongly_sized_model_output_is_an_error() {
         .unwrap_err();
     assert!(matches!(err, StemError::Inference(_)));
 }
+
+#[test]
+fn a_panic_in_one_job_does_not_poison_the_separator_for_later_jobs() {
+    struct PanicOnce(Arc<AtomicUsize>);
+    impl StemInference for PanicOnce {
+        fn run(
+            &mut self,
+            input: &SegmentInput<'_>,
+            o: &mut SegmentOutput,
+        ) -> Result<(), StemError> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                panic!("network blew up");
+            }
+            o.stems = vec![0.25; 4 * 2 * input.frames];
+            Ok(())
+        }
+    }
+    let calls = Arc::new(AtomicUsize::new(0));
+    let sep = HtDemucsSeparator::new("htdemucs-test", 3, PanicOnce(calls), contract()).unwrap();
+    let x = tone(3000, 200.0, 44_100.0);
+    let mut run = || {
+        let mut sink = StemSetSink::new(44_100.0);
+        sep.separate_to(
+            &mut SliceSource::mono(&x, 44_100.0),
+            &mut sink,
+            &Ctx::default(),
+        )
+        .map(|()| sink.into_set().is_complete(3000))
+    };
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut run));
+    assert!(panicked.is_err(), "the first job panics");
+    assert!(
+        run().is_err(),
+        "the job that finds the poisoned lock fails once"
+    );
+    assert_eq!(run().unwrap(), true, "later jobs run");
+}
