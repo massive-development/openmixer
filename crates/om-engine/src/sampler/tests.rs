@@ -446,3 +446,44 @@ fn registry_maps_ids_to_samples() {
     reg.forget(id);
     assert!(reg.get(id).is_none());
 }
+
+/// Cost of a full sampler (every pad has all 4 voices looping, fractional pitch) per 256-frame
+/// block. Run with `cargo test -p om-engine --release sampler_cost -- --ignored --nocapture`.
+#[test]
+#[ignore = "timing measurement, not a correctness test"]
+fn sampler_cost() {
+    fn per_block_us(voices_per_pad: usize, pitch: f32) -> f64 {
+        let (mut audio, control) = setup();
+        for pad in 0..PADS as u8 {
+            control.assign(pad, ramp_sample(48_000)).unwrap();
+            control.set_mode(pad, PadMode::Loop);
+            control.set_pitch(pad, pitch);
+            for _ in 0..voices_per_pad {
+                control.trigger(pad, 0.7);
+            }
+        }
+        let (mut l, mut r) = (vec![0.0_f32; 256], vec![0.0_f32; 256]);
+        for _ in 0..8 {
+            audio.process(&mut l, &mut r);
+        }
+        let blocks = 20_000;
+        let start = std::time::Instant::now();
+        for _ in 0..blocks {
+            audio.process(std::hint::black_box(&mut l), &mut r);
+            std::hint::black_box((&l, &r));
+        }
+        start.elapsed().as_secs_f64() * 1e6 / f64::from(blocks)
+    }
+    println!(
+        "1 voice per pad, pitch 0:      {:.2} us / block",
+        per_block_us(1, 0.0)
+    );
+    println!(
+        "4 voices per pad, pitch 0:     {:.2} us / block",
+        per_block_us(4, 0.0)
+    );
+    println!(
+        "4 voices per pad, pitch +3.3:  {:.2} us / block",
+        per_block_us(4, 3.3)
+    );
+}

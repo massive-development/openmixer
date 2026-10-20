@@ -1,0 +1,35 @@
+{
+  "name": "Sampler pads test controller",
+  "version": 2,
+  "mappings": [
+    {"type": "note", "channel": 10, "number": 36, "target": "sampler.pad0.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 37, "target": "sampler.pad1.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 38, "target": "sampler.pad2.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 39, "target": "sampler.pad3.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 40, "target": "sampler.pad4.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 41, "target": "sampler.pad5.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 42, "target": "sampler.pad6.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 43, "target": "sampler.pad7.trigger", "mode": "absolute", "min": 0, "max": 1},
+    {"type": "note", "channel": 10, "number": 44, "target": "sampler.pad0.gate", "mode": "button"},
+    {"type": "cc", "channel": 10, "number": 20, "target": "sampler.pad0.volume", "min": 0, "max": 1.5},
+    {"type": "cc", "channel": 10, "number": 21, "target": "sampler.pad0.pitch", "min": -12, "max": 12}
+  ],
+  "outputs": [
+    {"source": "sampler.pad0.playing", "type": "note", "channel": 10, "number": 36, "on": 127, "off": 0},
+    {"source": "sampler.pad1.playing", "type": "note", "channel": 10, "number": 37, "on": 127, "off": 0},
+    {"source": "sampler.pad2.playing", "type": "note", "channel": 10, "number": 38, "on": 127, "off": 0},
+    {"source": "sampler.pad3.playing", "type": "note", "channel": 10, "number": 39, "on": 127, "off": 0},
+    {"source": "sampler.pad4.playing", "type": "note", "channel": 10, "number": 40, "on": 127, "off": 0},
+    {"source": "sampler.pad5.playing", "type": "note", "channel": 10, "number": 41, "on": 127, "off": 0},
+    {"source": "sampler.pad6.playing", "type": "note", "channel": 10, "number": 42, "on": 127, "off": 0},
+    {"source": "sampler.pad7.playing", "type": "note", "channel": 10, "number": 43, "on": 127, "off": 0},
+    {"source": "sampler.pad0.loaded", "type": "note", "channel": 10, "number": 52, "on": 127, "off": 0},
+    {"source": "sampler.pad1.loaded", "type": "note", "channel": 10, "number": 53, "on": 127, "off": 0},
+    {"source": "sampler.pad2.loaded", "type": "note", "channel": 10, "number": 54, "on": 127, "off": 0},
+    {"source": "sampler.pad3.loaded", "type": "note", "channel": 10, "number": 55, "on": 127, "off": 0},
+    {"source": "sampler.pad4.loaded", "type": "note", "channel": 10, "number": 56, "on": 127, "off": 0},
+    {"source": "sampler.pad5.loaded", "type": "note", "channel": 10, "number": 57, "on": 127, "off": 0},
+    {"source": "sampler.pad6.loaded", "type": "note", "channel": 10, "number": 58, "on": 127, "off": 0},
+    {"source": "sampler.pad7.loaded", "type": "note", "channel": 10, "number": 59, "on": 127, "off": 0}
+  ]
+}
