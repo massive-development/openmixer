@@ -82,12 +82,15 @@ impl fmt::Display for CancelReason {
     }
 }
 
-/// A control automix set, with the value before that, so one block of lag does not look like input.
+/// A control automix set, with the value before that, so one tick of lag (a sink that applies
+/// later) does not look like input.
 #[derive(Debug, Clone)]
 struct Watch {
     id: ParamId,
     cur: f64,
     prev: f64,
+    /// The run's tick count when `cur` was set.
+    set_at: u64,
 }
 
 /// The deck pair and the plan of one automix run.
@@ -113,6 +116,8 @@ struct Run {
     unwatched: Vec<(ParamId, f64)>,
     /// Every id automix has sent a plan value to.
     sent: Vec<ParamId>,
+    /// Ticks run in `Transitioning`.
+    ticks: u64,
 }
 
 pub struct AutomixController {
@@ -232,7 +237,13 @@ impl AutomixController {
                 self.abort(CancelReason::UserInput(id), snap, sink);
                 return;
             } else if matches!(self.state, AutomixState::Loading | AutomixState::Armed) {
+                // The user is handling the pair: this track gets no automatic transition.
+                if let Some(run) = &self.run {
+                    self.suppressed = Some((run.out, run.out_len));
+                }
+                self.last_error = format!("stepped aside: {id} moved");
                 self.drop_run(AutomixState::Idle);
+                return;
             }
         }
         match self.state {
@@ -314,6 +325,7 @@ impl AutomixController {
             underruns: 0,
             unwatched: Vec::new(),
             sent: Vec::new(),
+            ticks: 0,
         };
         let partner = &snap.decks[usize::from(inc)];
         if partner.loaded && self.stale_deck != Some(inc) {
@@ -588,6 +600,7 @@ impl AutomixController {
                     id,
                     cur: v,
                     prev: v,
+                    set_at: 0,
                 })
             })
             .collect();
@@ -616,6 +629,7 @@ impl AutomixController {
             self.state = AutomixState::Idle;
             return;
         };
+        run.ticks += 1;
         let out_snap = snap.decks[usize::from(run.out)];
         let Some(beat) = beat_of(&run.out_info, &out_snap) else {
             let reason = CancelReason::Unloaded(run.out);
@@ -727,7 +741,9 @@ impl AutomixController {
             let Some(v) = read_param(snap, &w.id) else {
                 continue;
             };
-            if (v - w.cur).abs() > self.cfg.eps && (v - w.prev).abs() > self.cfg.eps {
+            let lagging =
+                run.ticks.saturating_sub(w.set_at) <= 1 && (v - w.prev).abs() <= self.cfg.eps;
+            if (v - w.cur).abs() > self.cfg.eps && !lagging {
                 return Some(CancelReason::UserInput(w.id.to_string()));
             }
         }
@@ -847,6 +863,7 @@ impl Run {
         if let Some(w) = self.watches.iter_mut().find(|w| w.id == id) {
             w.prev = w.cur;
             w.cur = value;
+            w.set_at = self.ticks;
         } else {
             self.unwatched.retain(|(i, _)| i != &id);
             self.unwatched.push((id.clone(), value));
