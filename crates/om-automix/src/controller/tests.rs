@@ -934,3 +934,32 @@ fn start_pressed_during_a_transition_does_not_chain_into_the_next_one() {
     sim.run(200);
     assert_eq!(sim.host.starts.len(), 1, "{:?}", sim.host.starts);
 }
+
+/// After automix stops a deck, the user loads a different track on it. That track is theirs: it
+/// must not be loaded over, and it is mixed into as it is.
+#[test]
+fn a_track_the_user_loads_over_the_stopped_deck_is_not_loaded_over() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Third".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.tracks.insert(8, info(0, BPM, "8A", false));
+    // The user loads a shorter track on the stopped deck 0 and starts the deck 1 leader near its end.
+    sim.snap.decks[0].length_frames = beat(LENGTH_BEATS - 50.0);
+    sim.snap.decks[0].position_frames = 0;
+    sim.snap.decks[0].loaded = true;
+    sim.snap.decks[1].position_frames = beat(390.0);
+    sim.run(100);
+    assert!(
+        sim.host.starts.iter().all(|(deck, _)| *deck != 0),
+        "{:?}",
+        sim.host.starts
+    );
+}
