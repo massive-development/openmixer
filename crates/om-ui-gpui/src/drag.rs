@@ -26,6 +26,10 @@ pub enum Target {
     CueLevel,
     FxMix,
     FxParam(usize),
+    /// A stem's volume slider (deck, stem).
+    StemVolume(usize, usize),
+    /// A stem's filter knob (deck, stem).
+    StemFilter(usize, usize),
 }
 
 impl Target {
@@ -38,6 +42,7 @@ impl Target {
                 | Target::Eq(..)
                 | Target::FxMix
                 | Target::FxParam(_)
+                | Target::StemFilter(..)
         )
     }
 }
@@ -135,6 +140,8 @@ impl Shell {
             Target::CueLevel => self.mixer.cue.level.value(),
             Target::FxMix => self.mixer.fx.mix.value(),
             Target::FxParam(i) => self.mixer.fx.params[i].value(),
+            Target::StemVolume(d, s) => f64::from(self.decks[d].stems.stems()[s].gain),
+            Target::StemFilter(d, s) => f64::from(self.decks[d].stems.stems()[s].filter),
         }
     }
 
@@ -160,6 +167,8 @@ impl Shell {
             Target::CueLevel => (self.mixer.cue.level.min, self.mixer.cue.level.max),
             Target::FxMix => knob_range(&self.mixer.fx.mix),
             Target::FxParam(i) => knob_range(&self.mixer.fx.params[i]),
+            Target::StemVolume(..) => (0.0, om_ui::stem_binding::MAX_VOLUME),
+            Target::StemFilter(..) => (-1.0, 1.0),
         }
     }
 
@@ -197,6 +206,12 @@ impl Shell {
             }
             Target::FxParam(i) => {
                 self.mixer.fx.param_changed(i, value);
+            }
+            Target::StemVolume(d, s) => {
+                self.decks[d].stems.set_volume(s, value);
+            }
+            Target::StemFilter(d, s) => {
+                self.decks[d].stems.set_filter(s, value);
             }
         }
     }

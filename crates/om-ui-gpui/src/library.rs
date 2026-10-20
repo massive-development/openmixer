@@ -426,6 +426,19 @@ impl LibraryPanel {
         Some(self.load_track_id(deck, id))
     }
 
+    /// The explicit 'Load stems' / 'Stems off' action for the loaded track of `deck`. `Ok(true)`
+    /// when the deck now plays from stems.
+    pub fn toggle_stems(&mut self, deck: usize) -> Result<bool, LoadError> {
+        let mut hub = self.hub.borrow_mut();
+        let hub = &mut *hub;
+        hub.loader.toggle_stems(&self.engine, &hub.services, deck)
+    }
+
+    /// Why the stems of `deck` did not load with its last track, for the deck card's caption.
+    pub fn stem_note(&self, deck: usize) -> Option<String> {
+        self.hub.borrow().loader.stem_note(deck).map(str::to_owned)
+    }
+
     /// The stems indicator of a track: None, Preparing n%, Ready or Failed.
     pub fn stems_label(&self, track_id: i64) -> String {
         let h = self.hub.borrow();

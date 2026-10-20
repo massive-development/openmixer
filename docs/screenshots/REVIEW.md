@@ -1,6 +1,6 @@
 # Screenshot review
 
-Captured with `tools/screenshots.sh` (debug build, X11 on WSLg, llvmpipe-class software GL, 1280x800, `--mock-device`, demo library of 3 generated 2 s sine WAVs, deck A loaded). Looked at by eye on 2026-10-19. The window renders (not blank/black). Scenes: `main-dark`, `main-daylight`, `debug-panel`, `settings-audio`, `settings-appearance`, `settings-midi`, `settings-library`.
+Captured with `tools/screenshots.sh` (debug build, X11 on WSLg, llvmpipe-class software GL, 1280x800, `--mock-device`, demo library of 3 generated 2 s sine WAVs, deck A loaded). Looked at by eye on 2026-10-19. The window renders (not blank/black). Scenes: `main-dark`, `main-daylight`, `main-stems`, `debug-panel`, `settings-audio`, `settings-appearance`, `settings-midi`, `settings-library`.
 
 ## Fixed while capturing
 - Theme was not applied at start-up: `OPENMIXER_THEME` and the saved theme never reached the window (it always used `openmixer.dark`). Now the window starts on the env theme, else the saved one.
@@ -24,6 +24,21 @@ The first review listed 13 defects. A fix pass followed with `tools/screenshots.
 | 11 | Debug panel clipping and squeeze | partially | The parameter list scrolls with the wheel and a "scroll the list for more" footer marks the clip; column narrowed 340 to 300 px. Decks and mixer are still narrower than in a normal run. |
 | 12 | Banner / header | fixed | Banner is taller, has padding, primary text colour and a bottom border; the header strip has an "OpenMixer" title and a border. |
 | 13 | Crossfader / cue bars had no handle | fixed | Thumb from `LookAndFeel` fader is drawn on the track (its offset was doubled before, which put it off the bar). |
+
+## Wave 7 stem pads (`main-stems`, 2026-10-19)
+
+Scene: `tools/screenshots.sh main-stems` runs `--demo-library --mock-stems`: deck A's track is separated by the mock separator and its stems are loaded, so the pads are live. Deck B has no track. Three capture iterations; `main-dark` and `main-daylight` were recaptured because every deck card gained the stems row.
+
+| Found in the first capture | Status | What changed |
+|---|---|---|
+| Pads about 55 px wide: "Drums" and "Vocals" clipped, the solo button ate the name | fixed | The stems row spans the whole card width under the pitch column, so four pads get about 78 px each. |
+| Greyed deck B: "no stems - Prepare stems" wrapped to three lines in the control column | fixed | The greyed state is one caption across the pads; the control column holds only the Load stems button. |
+| Zoomed waveform hidden at 900x600 (the fixed rows left 8 px) | fixed | Deck rows take 0.79 of the window (was 0.68) and the stems row is 83 px. The `deck_card` test asserts the zoom is shown at 900x600, 1280x800, 1024x640 and 1920x1080. The library band is shorter at 900x600 as a result. |
+
+Remaining observations (not fixed):
+- The volume slider is about 45 px tall (the pad body). It is usable, but short; a taller stems row would need the zoom to shrink again.
+- The activity glow is a translucent fill over the mute header, subtle at low levels in the mock (sine tones at 0.25 amplitude).
+- Not verified by ear: the mock device plays nothing, so stem mixing is checked through the engine tests only.
 
 ## Remaining observations
 - Settings Library page: the watch-folder path runs right up to its Remove button.

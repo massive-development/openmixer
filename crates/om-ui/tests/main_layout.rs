@@ -173,3 +173,54 @@ fn library_band_is_below_decks_and_mixer_at_every_window_size() {
         }
     }
 }
+
+/// The deck card parts at the four window sizes the screenshots use. The main area is the window
+/// less a 48 px header; each deck card is the cell `compute_layout` gives it. Every part sits inside
+/// its card, no two parts overlap, and the stems row is present.
+#[test]
+fn deck_card_parts_fit_without_overlap_at_every_window_size() {
+    use om_ui::geometry::Rect as R;
+    use om_ui::main_layout::CellKind;
+    use om_ui::widgets::deck::deck_layout;
+    let theme = om_ui::theme::ThemeTokens::builtin_dark();
+    for (width, height) in [(900, 600), (1280, 800), (1024, 640), (1920, 1080)] {
+        let area = R::new(0, 48, width, height - 48);
+        let spec = LayoutSpec::standard(2);
+        for cell in compute_layout(&spec, area, 8) {
+            let CellKind::Deck(_) = cell.kind else {
+                continue;
+            };
+            let card = cell.bounds;
+            let l = deck_layout(R::sized(card.w, card.h), &theme);
+            assert!(l.stems.h > 0, "{width}x{height}: no stems row");
+            assert!(
+                l.zoom_visible,
+                "{width}x{height}: the zoomed waveform is hidden (zoom {:?})",
+                l.zoom
+            );
+            let mut parts = vec![
+                l.header,
+                l.overview,
+                l.pitch,
+                l.hotcues,
+                l.loops,
+                l.transport,
+                l.stems,
+            ];
+            if l.zoom_visible {
+                parts.push(l.zoom);
+            }
+            for part in &parts {
+                assert!(
+                    R::sized(card.w, card.h).contains(part),
+                    "{width}x{height}: {part:?} leaves the card"
+                );
+            }
+            for (i, a) in parts.iter().enumerate() {
+                for b in &parts[i + 1..] {
+                    assert!(!a.intersects(b), "{width}x{height}: {a:?} overlaps {b:?}");
+                }
+            }
+        }
+    }
+}
