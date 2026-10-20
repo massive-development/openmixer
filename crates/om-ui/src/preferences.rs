@@ -545,7 +545,10 @@ mod tests {
         let a = &p.automix;
         assert!(!a.enabled);
         assert_eq!(a.style, 0);
-        assert_eq!(a.length_beats, 16, "-4 is out of range and falls back to the default");
+        assert_eq!(
+            a.length_beats, 16,
+            "-4 is out of range and falls back to the default"
+        );
         assert_eq!(a.queue_playlist, 0);
         assert_eq!(a.min_bpm_gap_percent, 6);
         assert!(a.smart);

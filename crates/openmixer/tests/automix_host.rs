@@ -40,10 +40,7 @@ fn an_armed_transition_runs_to_the_end_on_the_mock_device() {
     });
 
     let snap = rig.engine.snapshot();
-    assert!(
-        seen.contains(&AutomixState::Armed),
-        "states seen: {seen:?}"
-    );
+    assert!(seen.contains(&AutomixState::Armed), "states seen: {seen:?}");
     assert!(
         seen.contains(&AutomixState::Transitioning),
         "states seen: {seen:?}"
@@ -62,7 +59,7 @@ fn an_armed_transition_runs_to_the_end_on_the_mock_device() {
     assert!(snap.decks[1].playing, "the incoming deck is not playing");
     // The crossfader ends on the incoming side (deck B: the far end of the fader from deck A).
     let cf = snap.mixer.crossfader;
-    assert!(cf > 0.95 || cf < 0.05, "crossfader ended at {cf}");
+    assert!(!(0.05..=0.95).contains(&cf), "crossfader ended at {cf}");
 }
 
 #[test]
@@ -70,16 +67,32 @@ fn the_host_describes_a_loaded_track_from_the_cache() {
     let mut rig = Rig::new(1, 64.0);
     rig.load(0, 0);
     let mut host = rig.host();
-    let info = host.deck_info(0).expect("a loaded, analysed track has a deck info");
+    let info = host
+        .deck_info(0)
+        .expect("a loaded, analysed track has a deck info");
     assert_eq!(info.deck, 0);
     assert_eq!(info.camelot, "8A");
     assert!((info.bpm - BPM).abs() < 0.5, "bpm {}", info.bpm);
-    assert!((info.length_beats - 128.0).abs() < 1.0, "length {}", info.length_beats);
-    assert!(info.grid.is_some(), "the grid comes from the analysis cache");
-    assert_eq!(info.sections.len(), 3, "intro, main and outro from the structure cache");
+    assert!(
+        (info.length_beats - 128.0).abs() < 1.0,
+        "length {}",
+        info.length_beats
+    );
+    assert!(
+        info.grid.is_some(),
+        "the grid comes from the analysis cache"
+    );
+    assert_eq!(
+        info.sections.len(),
+        3,
+        "intro, main and outro from the structure cache"
+    );
     let mix_in = info.mix_in.expect("mix-in point");
     let mix_out = info.mix_out.expect("mix-out point");
-    assert!(mix_in < mix_out, "mix-in {mix_in} must precede mix-out {mix_out}");
+    assert!(
+        mix_in < mix_out,
+        "mix-in {mix_in} must precede mix-out {mix_out}"
+    );
     assert!(!info.has_stems);
     assert!(host.deck_info(1).is_none(), "an empty deck has no info");
     assert_eq!(host.underruns(), 0);
@@ -111,8 +124,14 @@ fn the_queue_asks_the_cache_for_a_grid_not_for_a_bpm() {
             picks.push(next.id);
         }
     }
-    assert!(!picks.contains(&bare), "picked an unanalysed track: {picks:?}");
-    assert!(picks.contains(&rig.tracks[0]), "the analysed track is picked: {picks:?}");
+    assert!(
+        !picks.contains(&bare),
+        "picked an unanalysed track: {picks:?}"
+    );
+    assert!(
+        picks.contains(&rig.tracks[0]),
+        "the analysed track is picked: {picks:?}"
+    );
 }
 
 #[test]
@@ -125,7 +144,11 @@ fn a_user_stem_mute_mid_transition_cancels_and_keeps_the_users_value() {
     let seen = run_until(&mut rig, 90 * 30, |r| {
         r.automix.snapshot().state == AutomixState::Transitioning
     });
-    assert_eq!(seen.last(), Some(&AutomixState::Transitioning), "states {seen:?}");
+    assert_eq!(
+        seen.last(),
+        Some(&AutomixState::Transitioning),
+        "states {seen:?}"
+    );
 
     // The user mutes the incoming deck's first stem: a control automix's plan involves.
     rig.set("stem.1.0.mute", 1.0);

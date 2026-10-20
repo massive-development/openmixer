@@ -23,7 +23,10 @@ pub struct ControlTimer {
 
 impl ControlTimer {
     /// Starts the control thread for `engine` at [`CONTROL_PERIOD`].
-    pub fn start(engine: Arc<DjEngine>, samples: Arc<OnceLock<Arc<SampleBank>>>) -> io::Result<Self> {
+    pub fn start(
+        engine: Arc<DjEngine>,
+        samples: Arc<OnceLock<Arc<SampleBank>>>,
+    ) -> io::Result<Self> {
         Self::start_with_period(engine, samples, CONTROL_PERIOD)
     }
 
