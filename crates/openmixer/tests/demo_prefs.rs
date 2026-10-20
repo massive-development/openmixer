@@ -9,7 +9,9 @@ fn a_demo_run_saves_settings_away_from_the_user_file() {
     let home = tempfile::tempdir().expect("tempdir");
     let scratch = tempfile::tempdir().expect("tempdir");
     let real = home.path().join("OpenMixer").join("preferences.json");
-    Preferences::default().save(&real).expect("seed the user's file");
+    Preferences::default()
+        .save(&real)
+        .expect("seed the user's file");
     let before = std::fs::read(&real).expect("read seeded file");
 
     // The composition loads the user's file (read only), as the demo window does.
