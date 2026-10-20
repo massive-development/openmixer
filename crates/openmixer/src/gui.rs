@@ -285,6 +285,10 @@ pub fn main(args: &[String]) -> ExitCode {
             }))
         },
     };
+    // The automix bar reads the service's snapshot on the window thread.
+    let automix_shared = composition.borrow().automix.clone();
+    let automix_read: om_ui_gpui::automix_bar::AutomixSnapshotFn =
+        Arc::new(move || automix_shared.snapshot());
     let options = RunOptions {
         smoke_frames: smoke.then_some(SMOKE_FRAMES),
         banner,
@@ -297,6 +301,7 @@ pub fn main(args: &[String]) -> ExitCode {
         demo_grid_bpm: demo.then_some(120.0),
         samples,
         on_frame: Some(automix_frame),
+        automix: Some(automix_read),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();

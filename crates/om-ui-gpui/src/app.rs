@@ -38,6 +38,8 @@ use std::time::Instant;
 
 /// Height of the banner strip shown above the layout (no audio device, and so on).
 const BANNER_HEIGHT: i32 = 28;
+/// Width the Settings button takes at the right end of the header strip.
+const SETTINGS_BUTTON_RESERVE: i32 = 96;
 
 /// Reads the device's figures for the debug panel. Called on the UI thread once per frame.
 pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
@@ -69,6 +71,8 @@ pub struct RunOptions {
     /// rendering (a minimised or occluded window still ticks). The app steps what must run on this
     /// thread (automix, whose host reads the library).
     pub on_frame: Option<Box<dyn FnMut()>>,
+    /// The automix bar under the header: reads the automix snapshot. `None` leaves the bar out.
+    pub automix: Option<crate::automix_bar::AutomixSnapshotFn>,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -377,7 +381,8 @@ impl Render for Shell {
         let height = f32::from(viewport.height) as i32;
         let banner = self.options.banner.clone();
         let banner_h = if banner.is_some() { BANNER_HEIGHT } else { 0 };
-        let header_h = if self.settings.is_some() {
+        // The header strip holds the automix bar (left) and the Settings button (right).
+        let header_h = if self.settings.is_some() || self.options.automix.is_some() {
             HEADER_HEIGHT
         } else {
             0
@@ -405,6 +410,28 @@ impl Render for Shell {
         );
         if let Some(header) = self.header(banner_h, width, cx) {
             root = root.child(header);
+        }
+        if let Some(read) = self.options.automix.clone() {
+            let snapshot = read();
+            let prefs = self
+                .settings
+                .as_ref()
+                .map(|s| s.prefs.automix.clone())
+                .unwrap_or_default();
+            let t = self.theme.clone();
+            let reserve = if self.settings.is_some() {
+                SETTINGS_BUTTON_RESERVE
+            } else {
+                0
+            };
+            root = root.child(crate::automix_bar::automix_bar_view(
+                &t,
+                &snapshot,
+                &prefs,
+                (width - reserve).max(0),
+                banner_h,
+                cx,
+            ));
         }
         if let Some(text) = banner {
             root = root.child(

@@ -12,6 +12,10 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 pub struct NextTrack {
     pub id: i64,
     pub title: String,
+    /// Tempo, when the track is analysed (shown on the automix bar).
+    pub bpm: Option<f64>,
+    /// Camelot key; empty when unknown.
+    pub key: String,
 }
 
 /// How a started load is going.
