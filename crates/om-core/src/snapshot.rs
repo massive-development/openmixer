@@ -6,10 +6,10 @@
 //! values from two audio blocks (a playhead and a loop bound, say). Peaks are decaying meter values.
 //! Nothing here is an audio-thread value; the snapshot is for display and feedback only.
 //!
-//! Stems, sampler and automix have no engine state yet: their snapshot types are empty placeholders
-//! until those features land (Todos 19, 30, 38, 40).
+//! Sampler and automix have no engine state yet: their snapshot types are empty placeholders until
+//! those features land (Todos 38, 40).
 
-use crate::param_id::{HOTCUES_PER_DECK, STEMS_PER_DECK};
+use crate::param_id::{StemParam, HOTCUES_PER_DECK, STEMS_PER_DECK};
 use crate::state_id::{ChannelState, DeckState, MixerState, StateId};
 
 /// One consistent-enough copy of the engine. See the module docs.
@@ -36,6 +36,11 @@ impl EngineSnapshot {
         match id {
             StateId::Deck { deck, p } => self.decks.get(*deck).map(|d| d.read(p)),
             StateId::Mixer(p) => self.mixer.read(p),
+            StateId::Stem { deck, stem, p } => self
+                .stems
+                .get(*deck)
+                .and_then(|d| d.get(*stem))
+                .map(|s| s.read(p)),
         }
     }
 }
@@ -142,9 +147,39 @@ impl MixerSnapshot {
     }
 }
 
-/// Stem state for one stem of a deck. Placeholder until stems land (Todo 19).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct StemSnapshot;
+/// State of one stem of a deck.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StemSnapshot {
+    /// The deck plays from stems (`Deck::load_stems`); otherwise the other fields are idle values.
+    pub available: bool,
+    pub muted: bool,
+    /// Linear gain, 0 to 1.5.
+    pub gain: f32,
+    /// Sweep filter, -1 low-pass to +1 high-pass, 0 off.
+    pub filter: f32,
+}
+
+impl Default for StemSnapshot {
+    fn default() -> Self {
+        Self {
+            available: false,
+            muted: false,
+            gain: 1.0,
+            filter: 0.0,
+        }
+    }
+}
+
+impl StemSnapshot {
+    /// Value of one stem state, in the units its control id takes: gain, mute as 1.0 or 0.0, filter.
+    pub fn read(&self, p: &StemParam) -> f64 {
+        match p {
+            StemParam::Volume => f64::from(self.gain),
+            StemParam::Mute => flag(self.muted),
+            StemParam::Filter => f64::from(self.filter),
+        }
+    }
+}
 
 /// Sampler pad state. Placeholder until the sampler lands (Todo 40).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

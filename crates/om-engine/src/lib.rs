@@ -20,10 +20,12 @@ pub mod output;
 pub mod quantizer;
 pub mod slip;
 mod stage;
+pub mod stem_control;
 pub mod sync;
 
 pub use callback::AudioCallback;
 pub use deck_control::DeckControl;
+pub use stem_control::{EngineCommands, StemSetRegistry};
 pub use dj_engine::{DjEngine, DjEngineAudio};
 pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
