@@ -230,3 +230,58 @@ fn an_unknown_playlist_gives_nothing() {
     let mut q = queue(lib, QueueSource::Playlist(12345), QueueConfig::default(), 1);
     assert!(q.next_track(None).is_none());
 }
+
+#[test]
+fn has_grid_is_checked_lazily_and_stops_at_the_first_qualifying_track() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let lib = library();
+    for n in 1..=200 {
+        add(&lib, n, Some(124.0), "8A");
+    }
+    let checks = Rc::new(Cell::new(0_usize));
+    let counter = checks.clone();
+    let mut q = queue(
+        lib,
+        QueueSource::Search(String::new()),
+        QueueConfig {
+            smart: false,
+            ..QueueConfig::default()
+        },
+        5,
+    )
+    .with_grid_check(move |_| {
+        counter.set(counter.get() + 1);
+        true
+    });
+    assert!(q.next_track(None).is_some());
+    assert_eq!(
+        checks.get(),
+        1,
+        "a pick needs one grid check, not one per track"
+    );
+}
+
+#[test]
+fn grid_checks_are_capped_at_fifty_candidates() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let lib = library();
+    for n in 1..=200 {
+        add(&lib, n, Some(124.0), "8A");
+    }
+    let checks = Rc::new(Cell::new(0_usize));
+    let counter = checks.clone();
+    let mut q = queue(
+        lib,
+        QueueSource::Search(String::new()),
+        QueueConfig::default(),
+        9,
+    )
+    .with_grid_check(move |_| {
+        counter.set(counter.get() + 1);
+        false
+    });
+    assert!(q.next_track(None).is_none(), "no track has a grid");
+    assert!(checks.get() <= 50, "checked {} candidates", checks.get());
+}
