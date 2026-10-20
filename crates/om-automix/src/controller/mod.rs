@@ -213,7 +213,12 @@ impl AutomixController {
             self.force_start = false;
             self.abort(CancelReason::UserCancel, snap, sink);
         }
-        if self.control.take_start() {
+        if self.control.take_start()
+            && matches!(
+                self.state,
+                AutomixState::Idle | AutomixState::Loading | AutomixState::Armed
+            )
+        {
             self.force_start = true;
         }
         if !self.control.is_enabled() {
