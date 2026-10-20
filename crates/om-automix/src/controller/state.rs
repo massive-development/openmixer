@@ -49,6 +49,13 @@ impl AutomixController {
             self.fail_run(out, out_len, "no free deck for the next track");
             return;
         };
+        let route = match crossfader_route(snap, out, inc) {
+            Ok(route) => route,
+            Err(error) => {
+                self.fail_run(out, out_len, error);
+                return;
+            }
+        };
         let mut run = Run {
             out,
             inc,
@@ -56,6 +63,7 @@ impl AutomixController {
             inc_info: None,
             title: String::new(),
             plan: None,
+            route,
             stems: None,
             watches: Vec::new(),
             out_len,
@@ -183,6 +191,15 @@ impl AutomixController {
         let Some(mut run) = self.run.take() else {
             return;
         };
+        // The routing is made again now: the user may have moved an assignment while loading.
+        match crossfader_route(snap, run.out, run.inc) {
+            Ok(route) => run.route = route,
+            Err(error) => {
+                self.fail_run(run.out, run.out_len, error);
+                self.drop_run(AutomixState::Idle);
+                return;
+            }
+        }
         let inc_snap = snap.decks[usize::from(run.inc)];
         let Some(mut inc_info) = host.deck_info(run.inc).filter(|_| inc_snap.loaded) else {
             let title = run.title.clone();
@@ -282,7 +299,7 @@ impl AutomixController {
             } else {
                 1.0
             },
-            out_on_left: run.out.is_multiple_of(2),
+            route: run.route.clone(),
             echo_unit: self.cfg.echo_unit,
             snapshot: Some(snap),
         }
@@ -306,9 +323,12 @@ impl AutomixController {
         let grace = now - run.armed_at <= self.cfg.cue_grace_s;
         let cue_tolerance = (inc_snap.file_sample_rate.max(8000.0) * 0.25) as i64;
         let cue_moved = !grace && (inc_snap.position_frames - run.cue_frame).abs() > cue_tolerance;
+        // The routing the plan was made for must still hold: a moved assignment is user input.
+        let routed = crossfader_route(snap, run.out, run.inc).ok().as_ref() == Some(&run.route);
         if !deck_ok(snap, run.out, run.out_len, true)
             || !deck_ok(snap, run.inc, run.inc_len, false)
             || cue_moved
+            || !routed
         {
             // The user took over one of the decks: step aside.
             self.next_title.clear();

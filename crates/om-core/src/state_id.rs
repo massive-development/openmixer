@@ -6,7 +6,7 @@
 //! ```text
 //! deck.<d>.play | loaded | keylock | loop | cue | sync | sync.master | slip | quantize | rate | position
 //! deck.<d>.hotcue<k>.set          k: any index; past the bank (8) reads as unset
-//! mixer.ch<c>.pfl | fader | trim | filter | level
+//! mixer.ch<c>.pfl | fader | trim | filter | level | xfader   (xfader: 0 thru, 1 left, 2 right)
 //! mixer.crossfader | mixer.master | mixer.master.level
 //! stem.<d>.<s>.volume | mute | filter     s: 0..3 (drums, bass, vocals, other)
 //! sampler.pad<n>.loaded | playing | volume | pitch | mode     mode reads 0 one-shot, 1 gate, 2 loop
@@ -84,6 +84,8 @@ pub enum ChannelState {
     Filter,
     /// Decaying peak, louder side.
     Level,
+    /// Crossfader assignment: 0 thru, 1 left, 2 right.
+    Xfader,
 }
 
 impl FromStr for StateId {
@@ -165,6 +167,7 @@ fn mixer_state(rest: &[&str]) -> Option<MixerState> {
                 "trim" => ChannelState::Trim,
                 "filter" => ChannelState::Filter,
                 "level" => ChannelState::Level,
+                "xfader" => ChannelState::Xfader,
                 _ => return None,
             },
         },
@@ -198,6 +201,13 @@ mod tests {
                 deck: 0,
                 p: DeckState::Hotcue(12)
             })
+        );
+        assert_eq!(
+            "mixer.ch2.xfader".parse::<StateId>(),
+            Ok(StateId::Mixer(MixerState::Channel {
+                ch: 2,
+                p: ChannelState::Xfader
+            }))
         );
         assert_eq!(
             "mixer.ch3.level".parse::<StateId>(),

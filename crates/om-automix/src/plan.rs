@@ -111,6 +111,9 @@ pub struct TransitionPlan {
     /// What a cancel puts back: EQ, filter and FX that the plan moved, to the value they had at
     /// plan time. Never the crossfader, a fader, play or seek (the user owns those).
     pub restore_on_cancel: Vec<(ParamId, f64)>,
+    /// The channel crossfader assignments the transition changed, with the values they had. Put
+    /// back on finish and on every cancel, whatever `restore_on_cancel` says.
+    pub route_restore: Vec<(ParamId, f64)>,
 }
 
 impl TransitionPlan {
@@ -164,6 +167,28 @@ pub enum PlanError {
     SameDeck,
 }
 
+/// How the outgoing and incoming decks sit on the crossfader for one transition. The controller
+/// builds it from the snapshot's channel assignments: the decks go to opposite sides, and when they
+/// do not already, the assignments the transition needs are changed and put back afterwards.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Route {
+    /// The outgoing deck is routed to the left side (crossfader position 0), after any reassignment.
+    pub out_left: bool,
+    /// Assignments the transition changes: `(deck, value before, value for the transition)`, in
+    /// `mixer.ch<N>.xfader` values (0 thru, 1 left, 2 right).
+    pub reassign: Vec<(u8, f64, f64)>,
+}
+
+impl Default for Route {
+    /// The outgoing deck on the left and nothing reassigned.
+    fn default() -> Self {
+        Self {
+            out_left: true,
+            reassign: Vec::new(),
+        }
+    }
+}
+
 /// Knobs of one planning call. `Default` gives the app's settings.
 #[derive(Debug, Clone)]
 pub struct PlanOptions<'a> {
@@ -181,8 +206,8 @@ pub struct PlanOptions<'a> {
     pub start_asap: bool,
     /// The outgoing deck's playback rate now (for the tempo plan).
     pub out_rate: f64,
-    /// The outgoing deck sits on the crossfader's left (position 0) side.
-    pub out_on_left: bool,
+    /// Where the two decks sit on the crossfader for this transition, decided from the snapshot.
+    pub route: Route,
     /// FX unit index of the echo on the outgoing channel's rack.
     pub echo_unit: u16,
     /// The engine now. Start values (crossfader, EQ, filter, stem gains and mutes) are read from
@@ -200,7 +225,7 @@ impl Default for PlanOptions<'_> {
             lead_beats: 4.0,
             start_asap: false,
             out_rate: 1.0,
-            out_on_left: true,
+            route: Route::default(),
             echo_unit: 0,
             snapshot: None,
         }

@@ -91,23 +91,10 @@ impl AutomixController {
             let _ = stems.cancel(self.cfg.stem_cancel, sink);
         }
         if self.cfg.restore_on_cancel {
-            let trigger = match &reason {
-                CancelReason::UserInput(id) => Some(id.as_str()),
-                _ => None,
-            };
-            for (id, value) in &plan.restore_on_cancel {
-                if !run.was_sent(id) || trigger == Some(id.to_string().as_str()) {
-                    continue;
-                }
-                // A control the user has moved keeps the user's value.
-                let moved = run.watches.iter().find(|w| &w.id == id).is_some_and(|w| {
-                    read_param(snap, id).is_some_and(|v| (v - w.cur).abs() > self.cfg.eps)
-                });
-                if !moved {
-                    let _ = send(sink, id, *value);
-                }
-            }
+            self.put_back(run, &plan.restore_on_cancel, &reason, snap, sink);
         }
+        // The crossfader routing is not a musical move: it goes back whatever `restore_on_cancel` says.
+        self.put_back(run, &plan.route_restore, &reason, snap, sink);
         self.last_error = reason.to_string();
         self.suppressed = Some((run.out, run.out_len));
         self.progress = 0.0;
@@ -118,6 +105,33 @@ impl AutomixController {
     }
 
     // ----- helpers -----
+
+    /// Sends each `(id, value)` the transition changed back to its value before. The control that
+    /// caused the cancel and any control the user has moved keep what the user set.
+    fn put_back(
+        &self,
+        run: &Run,
+        restore: &[(ParamId, f64)],
+        reason: &CancelReason,
+        snap: &EngineSnapshot,
+        sink: &dyn CommandSink,
+    ) {
+        let trigger = match reason {
+            CancelReason::UserInput(id) => Some(id.as_str()),
+            _ => None,
+        };
+        for (id, value) in restore {
+            if !run.was_sent(id) || trigger == Some(id.to_string().as_str()) {
+                continue;
+            }
+            let moved = run.watches.iter().find(|w| &w.id == id).is_some_and(|w| {
+                read_param(snap, id).is_some_and(|v| (v - w.cur).abs() > self.cfg.eps)
+            });
+            if !moved {
+                let _ = send(sink, id, *value);
+            }
+        }
+    }
 
     /// Drops whatever is in flight without sending anything and goes to `state`.
     pub(super) fn drop_run(&mut self, state: AutomixState) {
