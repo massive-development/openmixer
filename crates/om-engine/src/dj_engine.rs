@@ -15,11 +15,13 @@ use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
 use crate::sync::Sync;
-use om_core::param_id::{Namespace, STEMS_PER_DECK};
+use crate::stem_control::{snapshot_stems, EngineCommands, StemBank, StemSetRegistry};
+use om_core::param_id::Namespace;
 use om_core::{
-    AutomixSnapshot, ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot, ParameterRouter,
-    SamplerSnapshot, StemSnapshot,
+    AutomixSnapshot, ChannelSnapshot, CommandSink, DeckSnapshot, EngineSnapshot, MixerSnapshot,
+    ParameterRouter, SamplerSnapshot, StemSetRef,
 };
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::Arc;
 
@@ -37,6 +39,7 @@ pub struct DjEngine {
     sync: Arc<Sync>,
     mixer: Arc<MixerControl>,
     fx: Arc<FxRouting>,
+    stem_sets: Arc<StemSetRegistry>,
     /// Control-timer ticks so far; stamps [`EngineSnapshot::ticks`].
     ticks: AtomicU64,
     /// Snapshots built so far; stamps [`EngineSnapshot::built`].
@@ -102,6 +105,7 @@ impl DjEngine {
             sync,
             mixer: Arc::new(mixer_control),
             fx,
+            stem_sets: Arc::new(StemSetRegistry::default()),
             ticks: AtomicU64::new(0),
             builds: AtomicU64::new(0),
         };
@@ -151,7 +155,24 @@ impl DjEngine {
         self.controls[deck].set_grid(grid);
     }
 
-    /// Registers the control surface with `router`: the `deck`, `mixer`, `fx` and `sync` namespaces.
+    /// Registers a stem directory and returns the handle `Command::LoadStems` carries. Control
+    /// thread.
+    pub fn register_stem_set(&self, dir: &Path) -> StemSetRef {
+        self.stem_sets.register(dir)
+    }
+
+    /// A command sink that carries out `Command::LoadStems` against this engine's decks. Other
+    /// commands go to `fallback` (for example the [`ParameterRouter`]) or are rejected.
+    pub fn command_sink(&self, fallback: Option<Arc<dyn CommandSink>>) -> Arc<dyn CommandSink> {
+        Arc::new(EngineCommands::new(
+            self.decks.clone(),
+            Arc::clone(&self.stem_sets),
+            fallback,
+        ))
+    }
+
+    /// Registers the control surface with `router`: the `deck`, `mixer`, `fx`, `sync` and `stem`
+    /// namespaces.
     pub fn register(&self, router: &ParameterRouter) {
         router.register_typed(
             Namespace::Deck,
@@ -160,6 +181,7 @@ impl DjEngine {
         router.register_typed(Namespace::Mixer, self.mixer.clone());
         router.register_typed(Namespace::Fx, self.fx.clone());
         router.register_typed(Namespace::Sync, self.sync.clone());
+        router.register_typed(Namespace::Stem, Arc::new(StemBank::new(&self.decks)));
     }
 
     /// Control-timer step (about 20-50 Hz, control thread): sync rates and phase, FX tempo, slip
@@ -217,7 +239,7 @@ impl DjEngine {
     /// Pull-based: the caller asks, the engine answers from its atomics and control-side getters.
     /// It never blocks the audio thread and takes no mixer or deck audio lock (the same rule as
     /// [`DeckSnapshot`]; the mixer side is atomics only). Approximate: fields are read one by one,
-    /// so a snapshot can mix two audio blocks. Stems, sampler and automix are empty placeholders.
+    /// so a snapshot can mix two audio blocks. Sampler and automix are empty placeholders.
     pub fn snapshot(&self) -> EngineSnapshot {
         let built = self.builds.fetch_add(1, Relaxed) + 1;
         let decks: Vec<DeckSnapshot> = self
@@ -246,9 +268,10 @@ impl DjEngine {
             master_peak_left: self.mixer.master_peak_left(),
             master_peak_right: self.mixer.master_peak_right(),
         };
-        let stems = decks
+        let stems = self
+            .decks
             .iter()
-            .map(|_| [StemSnapshot; STEMS_PER_DECK as usize])
+            .map(|deck| snapshot_stems(&deck.stem_control()))
             .collect();
         EngineSnapshot {
             ticks: self.ticks.load(Relaxed),
