@@ -21,8 +21,8 @@ pub use param_id::{Namespace, ParamError, ParamId};
 pub use parameter::{ParamTarget, ParameterTarget};
 pub use router::ParameterRouter;
 pub use snapshot::{
-    AutomixSnapshot, ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot, PadMode,
-    PadSnapshot, SamplerSnapshot, StemSnapshot,
+    AutomixSnapshot, AutomixState, AutomixStyle, ChannelSnapshot, DeckSnapshot, EngineSnapshot,
+    MixerSnapshot, PadMode, PadSnapshot, SamplerSnapshot, StemSnapshot,
 };
 pub use state::{StateKey, StateReader};
 pub use state_id::StateId;

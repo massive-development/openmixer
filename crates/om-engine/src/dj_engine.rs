@@ -280,7 +280,7 @@ impl DjEngine {
     /// Pull-based: the caller asks, the engine answers from its atomics and control-side getters.
     /// It never blocks the audio thread and takes no mixer or deck audio lock (the same rule as
     /// [`DeckSnapshot`]; the mixer side is atomics only). Approximate: fields are read one by one,
-    /// so a snapshot can mix two audio blocks. Automix is an empty placeholder.
+    /// so a snapshot can mix two audio blocks. Automix is left at its default: the app overlays it.
     pub fn snapshot(&self) -> EngineSnapshot {
         let built = self.builds.fetch_add(1, Relaxed) + 1;
         let decks: Vec<DeckSnapshot> = self
@@ -321,7 +321,7 @@ impl DjEngine {
             mixer,
             stems,
             sampler: self.sampler.snapshot(),
-            automix: AutomixSnapshot,
+            automix: AutomixSnapshot::default(),
         }
     }
 }
