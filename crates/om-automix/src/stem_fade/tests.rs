@@ -50,7 +50,7 @@ fn engine(decks: usize, with_stems: &[usize]) -> EngineSnapshot {
         decks: Vec::new(),
         mixer: MixerSnapshot::default(),
         stems,
-        sampler: SamplerSnapshot,
+        sampler: SamplerSnapshot::default(),
         automix: AutomixSnapshot,
     }
 }

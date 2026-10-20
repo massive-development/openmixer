@@ -48,7 +48,7 @@ impl Sample {
         if !(sample_rate.is_finite() && sample_rate >= 1.0) {
             return Err(SamplerError::BadRate(sample_rate));
         }
-        if data.len() % 2 != 0 {
+        if !data.len().is_multiple_of(2) {
             data.pop();
         }
         if data.is_empty() {
