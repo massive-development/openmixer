@@ -15,6 +15,7 @@ pub mod main_layout;
 pub mod meter;
 pub mod preferences;
 pub mod preferences_applier;
+pub mod record_bar;
 pub mod sample_bank;
 pub mod sampler_binding;
 pub mod settings;
