@@ -8,11 +8,12 @@
 //! deck.<d>.hotcue<k>.set          k: any index; past the bank (8) reads as unset
 //! mixer.ch<c>.pfl | fader | trim | filter | level
 //! mixer.crossfader | mixer.master | mixer.master.level
+//! stem.<d>.<s>.volume | mute | filter     s: 0..3 (drums, bass, vocals, other)
 //! ```
 //! `<d>` and `<c>` are digits only; whether they name a real deck or channel is decided by the
 //! snapshot, which knows the engine's size.
 
-use crate::param_id::ParamError;
+use crate::param_id::{ParamError, StemParam};
 use std::str::FromStr;
 
 /// A parsed read-only id.
@@ -20,6 +21,12 @@ use std::str::FromStr;
 pub enum StateId {
     Deck { deck: usize, p: DeckState },
     Mixer(MixerState),
+    /// The control values of `stem.<d>.<s>.*`, read back.
+    Stem {
+        deck: usize,
+        stem: usize,
+        p: StemParam,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +78,15 @@ impl FromStr for StateId {
                 .zip(deck_state(rest))
                 .map(|(deck, p)| Self::Deck { deck, p }),
             ["mixer", rest @ ..] => mixer_state(rest).map(Self::Mixer),
+            ["stem", deck, stem, p] => digits(deck).zip(digits(stem)).and_then(|(deck, stem)| {
+                let p = match *p {
+                    "volume" => StemParam::Volume,
+                    "mute" => StemParam::Mute,
+                    "filter" => StemParam::Filter,
+                    _ => return None,
+                };
+                Some(Self::Stem { deck, stem, p })
+            }),
             _ => None,
         };
         parsed.ok_or_else(|| ParamError::Unknown(id.to_owned()))
@@ -161,6 +177,21 @@ mod tests {
             "mixer.master.level".parse::<StateId>(),
             Ok(StateId::Mixer(MixerState::MasterLevel))
         );
+    }
+
+    #[test]
+    fn parses_stem_read_ids() {
+        assert_eq!(
+            "stem.1.3.mute".parse::<StateId>(),
+            Ok(StateId::Stem {
+                deck: 1,
+                stem: 3,
+                p: StemParam::Mute
+            })
+        );
+        assert!("stem.1.3".parse::<StateId>().is_err());
+        assert!("stem.1.x.mute".parse::<StateId>().is_err());
+        assert!("stem.1.2.bogus".parse::<StateId>().is_err());
     }
 
     #[test]
