@@ -86,6 +86,8 @@ mod tests {
                 scan_interval_minutes: 15,
             },
             plugin_folder: "/opt/openmixer/plugins".into(),
+            stems: Default::default(),
+            automix: Default::default(),
         }
     }
 

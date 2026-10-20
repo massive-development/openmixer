@@ -7,9 +7,13 @@
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
 use om_core::param_id::ChannelParam;
+use om_core::{CommandSink, ParameterTarget};
+use om_engine::sampler::PadMode;
 use om_testing::signals::sine_amp;
 use om_testing::wav::write_pcm16_wav;
 use om_ui::binding::{DeckBinding, LevelSource, MixerBinding};
+use om_ui::sample_bank::SampleBank;
+use om_ui::sampler_binding::SamplerBinding;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 use openmixer::composition::{AppComposition, DECKS};
 use std::fs;
@@ -67,6 +71,8 @@ struct Report {
     peak_master: f32,
     peak_channel: f32,
     mismatches: u32,
+    /// Presses sent through the sampler pad view-model (one-shot clicks and a gate hold).
+    pad_presses: u32,
 }
 
 /// Runs the scripted session for `seconds` of paced audio and returns what it observed. Panics on
@@ -99,9 +105,33 @@ fn run_gate(seconds: u64) -> Report {
         .collect();
     let mixer = MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router));
 
+    // The sampler pads, through the same view-model the window uses: a bank in the scratch folder,
+    // a one-shot kick on pad 1 and a gate on pad 4.
+    let bank = Arc::new(SampleBank::open(
+        scratch.0.join("samples"),
+        Arc::clone(&engine),
+        composition.stem_command_sink(),
+    ));
+    let pads = SamplerBinding::new(
+        Arc::clone(&engine),
+        Some(router.clone() as Arc<dyn CommandSink>),
+        router.clone() as Arc<dyn ParameterTarget>,
+        Some(Arc::clone(&bank)),
+    );
+    let kick = scratch.0.join("kick.wav");
+    let hold = scratch.0.join("hold.wav");
+    write_tone(&kick, 80.0, 0.5);
+    write_tone(&hold, 440.0, 1.0);
+    pads.load(0, &kick).expect("load kick");
+    pads.load(3, &hold).expect("load hold");
+    bank.settle(Duration::from_secs(10));
+    pads.set_mode(3, PadMode::Gate).expect("gate mode");
+
     let mut report = Report::default();
-    let expect = |report: &mut Report, ok: bool| {
+    // Counts a failed check and names the line it came from, so a mismatch is found from the log.
+    let expect = |report: &mut Report, ok: bool, line: u32| {
         if !ok {
+            eprintln!("ui_gate: mismatch at line {line}");
             report.mismatches += 1;
         }
     };
@@ -119,14 +149,25 @@ fn run_gate(seconds: u64) -> Report {
     // Faders up, then deck 0 plays (controls must reflect the press).
     mixer.send_channel(0, ChannelParam::Fader, 0.8);
     mixer.send_channel(1, ChannelParam::Fader, 0.8);
-    expect(&mut report, (engine.mixer().fader(0) - 0.8).abs() < 1e-3);
+    expect(
+        &mut report,
+        (engine.mixer().fader(0) - 0.8).abs() < 1e-3,
+        line!(),
+    );
     transports[0].press(TransportButton::Play);
-    expect(&mut report, transports[0].state(TransportButton::Play));
-    expect(&mut report, engine.deck(0).is_playing());
+    expect(
+        &mut report,
+        transports[0].state(TransportButton::Play),
+        line!(),
+    );
+    expect(&mut report, engine.deck(0).is_playing(), line!());
 
     let started = Instant::now();
     let total = Duration::from_secs(seconds);
     let mut deck1_started = false;
+    let mut last_press_second = u32::MAX;
+    // The gate is pressed once at 3 s and released once at 3.5 s.
+    let mut gate_phase = 0_u8;
     let mut next_sample = Instant::now();
     while started.elapsed() < total {
         let t = started.elapsed();
@@ -137,6 +178,22 @@ fn run_gate(seconds: u64) -> Report {
         }
         if t >= Duration::from_secs(4) {
             engine.mixer().set_pfl(1, true);
+        }
+        // A kick press every second; the gate pad is held from 3 s to 3.5 s.
+        let whole = t.as_millis() / 1000;
+        if whole as u32 != last_press_second {
+            last_press_second = whole as u32;
+            expect(&mut report, pads.press(0, 0.8), line!());
+            report.pad_presses += 1;
+        }
+        if t >= Duration::from_secs(3) && gate_phase == 0 {
+            expect(&mut report, pads.press(3, 1.0), line!());
+            gate_phase = 1;
+            report.pad_presses += 1;
+        }
+        if t >= Duration::from_millis(3500) && gate_phase == 1 {
+            expect(&mut report, pads.release(3), line!());
+            gate_phase = 2;
         }
         let sweep = (t.as_secs_f32() / total.as_secs_f32().max(1.0)).min(1.0);
         engine.mixer().set_crossfader(sweep);
@@ -159,13 +216,33 @@ fn run_gate(seconds: u64) -> Report {
     expect(
         &mut report,
         transports[0].state(TransportButton::Play) == engine.deck(0).is_playing(),
+        line!(),
     );
     expect(
         &mut report,
         transports[1].state(TransportButton::Play) == engine.deck(1).is_playing(),
+        line!(),
     );
-    expect(&mut report, deck1_started && engine.deck(1).is_playing());
-    expect(&mut report, (engine.mixer().fader(0) - 0.8).abs() < 1e-3);
+    expect(
+        &mut report,
+        deck1_started && engine.deck(1).is_playing(),
+        line!(),
+    );
+    expect(
+        &mut report,
+        (engine.mixer().fader(0) - 0.8).abs() < 1e-3,
+        line!(),
+    );
+    // The pads show what the bank loaded, and no sampler command was dropped.
+    let view = pads.pads();
+    expect(&mut report, view[0].loaded && view[3].loaded, line!());
+    expect(&mut report, view[3].mode == PadMode::Gate, line!());
+    expect(
+        &mut report,
+        engine.sampler().dropped_commands() == 0,
+        line!(),
+    );
+    bank.pump();
 
     device.stop_realtime();
     let stats = device.latency_stats();
@@ -189,6 +266,10 @@ fn check(report: &Report) {
         "the channel meter never moved"
     );
     assert_eq!(report.mismatches, 0, "controls and engine state disagree");
+    assert!(
+        report.pad_presses > 0,
+        "the sampler pads were never pressed"
+    );
 }
 
 #[test]

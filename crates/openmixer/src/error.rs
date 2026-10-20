@@ -34,6 +34,9 @@ pub enum AppError {
     UnreadableAudioState,
     #[error("MIDI is not attached")]
     MidiNotAttached,
+    /// The stem service could not start (cache folder, model manifest, runtime).
+    #[error("stems: {0}")]
+    Stems(String),
     /// A smoke check that does not carry numbers.
     #[error("{0}")]
     Smoke(&'static str),

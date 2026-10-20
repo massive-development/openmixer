@@ -12,12 +12,24 @@ workspace = true
 
 [dependencies]
 om-analysis.workspace = true
+om-core.workspace = true
+om-engine.workspace = true
+om-library.workspace = true
+realfft = "3.5"
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 # HTTPS through rustls (the `tls` feature). The root bundle is webpki-roots, licensed
 # CDLA-Permissive-2.0, which deny.toml allows (see the comment there).
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# ONNX Runtime binding, only with the `onnx` feature. Pinned: 2.0.0-rc.15 (the latest) needs rustc 1.92
+# and the workspace is on 1.91. `download-binaries` fetches the prebuilt runtime at build time
+# (Open Decision 3: `load-dynamic` is the packaging-time alternative); TLS for that download is rustls.
+ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+
+[features]
+# Off by default: the default build has no ONNX Runtime and needs no network.
+onnx = ["dep:ort"]
 
 [dev-dependencies]
 tempfile.workspace = true

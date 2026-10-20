@@ -14,8 +14,12 @@ use serde_json::{json, Map, Value};
 pub const MIXER_SLOT: &str = "mixer";
 /// Name of the library slot.
 pub const LIBRARY_SLOT: &str = "library";
+/// Name of the sampler strip: eight pads beside the library, in the same band.
+pub const SAMPLER_SLOT: &str = "sampler";
+/// Share of the library band's width the sampler strip takes.
+pub const SAMPLER_WEIGHT: f32 = 0.34;
 /// Share of the window height the deck rows take in the standard layout.
-pub const DECK_ROWS_SHARE: f32 = 0.68;
+pub const DECK_ROWS_SHARE: f32 = 0.79;
 /// Share of a row's width the mixer takes next to the decks.
 pub const MIXER_WEIGHT: f32 = 0.85;
 
@@ -90,8 +94,8 @@ pub struct PlacedCell {
 }
 
 impl LayoutSpec {
-    /// Decks flank the mixer on the first row (any further decks get a row below), library at the
-    /// bottom.
+    /// Decks flank the mixer on the first row (any further decks get a row below); the library and
+    /// the sampler strip share the bottom band.
     pub fn standard(num_decks: usize) -> Self {
         let mut top = RowSpec {
             height: DECK_ROWS_SHARE,
@@ -113,7 +117,10 @@ impl LayoutSpec {
         }
         rows.push(RowSpec {
             height: 1.0 - DECK_ROWS_SHARE,
-            cells: vec![CellSpec::slot(LIBRARY_SLOT, 1.0)],
+            cells: vec![
+                CellSpec::slot(LIBRARY_SLOT, 1.0 - SAMPLER_WEIGHT),
+                CellSpec::slot(SAMPLER_SLOT, SAMPLER_WEIGHT),
+            ],
         });
         Self { rows }
     }

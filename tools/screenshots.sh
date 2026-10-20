@@ -4,8 +4,10 @@
 # Never opens an audio device or MIDI hardware: every scene runs with --mock-device. Needs the
 # `gui` feature's build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
 # (`import`, `convert`, `identify`) plus `xwininfo`. Run from anywhere:  tools/screenshots.sh [scene...]
-# Scenes: main-dark main-daylight debug-panel settings-audio settings-appearance settings-midi
-# settings-library (default: all).
+# Scenes: main-dark main-daylight main-stems debug-panel settings-audio settings-appearance
+# settings-midi settings-library main-automix (default: all). main-automix runs the automix demo
+# (--demo-automix: click tracks, automix on, deck A playing) and is captured after a delay. main-stems loads deck A's track with its stems
+# (the mock separator, --mock-stems) so the stem pads are live.
 # main-dark also shows the library browser (the demo library is loaded in every scene).
 #
 # libxkbcommon-x11 link shim: if the linker cannot find -lxkbcommon-x11, the script makes a
@@ -71,6 +73,8 @@ capture() {
     sleep 0.5
   done
   [[ -n "$win" ]] || { echo "$name: no window after 30 s"; return 1; }
+  # A scene that needs time to pass (the automix demo's transition) waits SHOT_DELAY seconds first.
+  sleep "${SHOT_DELAY:-0}"
   # Settle: two captures in a row with the same size and a non-black picture (up to 15 s).
   local prev="" cur ok=""
   for ((i = 0; i < 30; i++)); do
@@ -92,16 +96,22 @@ capture() {
 declare -A scenes=(
   [main-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-library"
   [main-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-library"
+  [main-stems]="OPENMIXER_THEME=openmixer.dark -- --demo-library --mock-stems"
   [debug-panel]="OPENMIXER_THEME=openmixer.dark -- --demo-library --debug-panel"
   [settings-audio]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=audio"
   [settings-appearance]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=appearance"
   [settings-midi]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=midi"
   [settings-library]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=library"
+  [main-automix]="OPENMIXER_THEME=openmixer.dark -- --demo-automix"
 )
-order=(main-dark main-daylight debug-panel settings-audio settings-appearance settings-midi settings-library)
+# Seconds to wait before a scene is captured (the automix demo deck plays from the start).
+declare -A delays=(
+  [main-automix]=19
+)
+order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix)
 (( $# )) && order=("$@")
 for name in "${order[@]}"; do
   [[ -n "${scenes[$name]:-}" ]] || { echo "unknown scene: $name"; exit 2; }
   # shellcheck disable=SC2086
-  capture "$name" ${scenes[$name]}
+  SHOT_DELAY="${delays[$name]:-0}" capture "$name" ${scenes[$name]}
 done

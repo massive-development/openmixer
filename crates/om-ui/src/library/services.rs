@@ -316,11 +316,7 @@ impl LibraryServices {
     /// What the cache holds for `track`, decoded for the deck: waveform, grid and whether both are
     /// present.
     pub fn analysis_for(&self, track: &TrackRecord) -> TrackAnalysis {
-        let hash = if track.content_hash.is_empty() {
-            hash_file_content(Path::new(&track.path)).unwrap_or_default()
-        } else {
-            track.content_hash.clone()
-        };
+        let hash = track_hash(track);
         let wave = self.cached(&hash, "waveform");
         let bpm = self.cached(&hash, "bpm");
         let mut out = TrackAnalysis {
@@ -378,6 +374,21 @@ impl LibraryServices {
         worked
     }
 
+    /// Whether the cache holds a usable beat grid for `track` (the BPM analysis wrote one). This is
+    /// the check the automix queue uses; a BPM alone does not count.
+    pub fn has_beat_grid(&self, track: &TrackRecord) -> bool {
+        self.cached_analysis(track, "bpm")
+            .and_then(|json| BpmResult::from_json(&json))
+            .and_then(|result| make_engine_grid(&result.grid))
+            .is_some()
+    }
+
+    /// The cached JSON of analyser `id` (`"bpm"`, `"waveform"`, `"key"`, `"structure"`) for
+    /// `track`, when the analysis finished with the analyser version that is registered now.
+    pub fn cached_analysis(&self, track: &TrackRecord, id: &str) -> Option<String> {
+        self.cached(&track_hash(track), id)
+    }
+
     fn cached(&self, hash: &str, id: &str) -> Option<String> {
         let cache = self.cache.as_ref()?;
         if hash.is_empty() {
@@ -404,6 +415,15 @@ impl Drop for LibraryServices {
         // Errors still queued when the services die are dropped, not delivered.
         self.outbox.borrow_mut().errors.clear();
         self.on_error = None;
+    }
+}
+
+/// The content hash the analysis cache keys on: the stored one, or the file's when none is stored.
+fn track_hash(track: &TrackRecord) -> String {
+    if track.content_hash.is_empty() {
+        hash_file_content(Path::new(&track.path)).unwrap_or_default()
+    } else {
+        track.content_hash.clone()
     }
 }
 

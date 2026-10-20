@@ -3,10 +3,29 @@
 //! never committed to the repository; manifests are plain JSON so users and plugins can point at other
 //! models or mirrors.
 
+use crate::contract::ModelContract;
 use serde_json::{json, Value};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Licence name for the htdemucs weights.
+pub const HTDEMUCS_LICENSE_NAME: &str = "MIT (Demucs code and weights); training data not covered";
+
+/// Shown in the licence dialog before htdemucs is downloaded (S4 wires the UI). Keep in step with
+/// `LICENSE_TEXT` in `tools/export_htdemucs.py` and the row in `docs/legal/asset-provenance.csv`.
+pub const HTDEMUCS_LICENSE_TEXT: &str = "\
+htdemucs is Demucs by Meta Platforms, Inc. and affiliates. The Demucs code and the released \
+weights are published under the MIT licence (see the LICENSE file of the Demucs repository), which \
+permits use, copying, modification and distribution of the software and the weights, provided the \
+copyright and permission notice is kept.
+
+Important: the MIT licence covers the code and the weights as published. It does not grant any \
+rights in the data the model was trained on. The training set includes MUSDB18-HQ, which is \
+distributed for research and academic use under its own terms. Those terms are not changed by the \
+MIT licence of the weights. If you intend to use separated stems commercially, check that your use \
+is acceptable for yourself. OpenMixer downloads the model to your computer only after you accept \
+this notice, and never uploads your music.";
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelManifest {
     /// Also the file name in the model folder. Letters, digits, `.`, `_` and `-`; no leading dot.
     pub id: String,
@@ -19,6 +38,8 @@ pub struct ModelManifest {
     pub license_name: String,
     /// Shown to the user before downloading.
     pub license_text: String,
+    /// How the pipeline talks to the model; `None` means [`ModelContract::htdemucs`].
+    pub contract: Option<ModelContract>,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -35,6 +56,8 @@ pub enum ManifestError {
     InvalidSha256,
     #[error("licence name and text are required")]
     MissingLicence,
+    #[error("invalid model contract: {0}")]
+    InvalidContract(String),
 }
 
 fn is_safe_id(id: &str) -> bool {
@@ -70,6 +93,12 @@ impl ModelManifest {
             size_bytes: value["sizeBytes"].as_u64().unwrap_or(0),
             license_name: text_field(&value, "licenseName"),
             license_text: text_field(&value, "licenseText"),
+            contract: match value.get("contract").filter(|c| !c.is_null()) {
+                None => None,
+                Some(c) => {
+                    Some(ModelContract::from_json(c).map_err(ManifestError::InvalidContract)?)
+                }
+            },
         };
         if !is_safe_id(&manifest.id) {
             return Err(ManifestError::InvalidId);
@@ -86,15 +115,37 @@ impl ModelManifest {
         Ok(manifest)
     }
 
+    /// A manifest for an htdemucs ONNX exported by `tools/export_htdemucs.py`, with the licence text
+    /// the dialog shows. `url` and `sha256` come from the exporter's output.
+    pub fn htdemucs(url: &str, sha256: &str, size_bytes: u64) -> Self {
+        Self {
+            id: "htdemucs.onnx".into(),
+            url: url.into(),
+            sha256: sha256.to_ascii_lowercase(),
+            size_bytes,
+            license_name: HTDEMUCS_LICENSE_NAME.into(),
+            license_text: HTDEMUCS_LICENSE_TEXT.into(),
+            contract: Some(ModelContract::htdemucs()),
+        }
+    }
+
+    /// The contract to run the model with.
+    pub fn contract_or_default(&self) -> ModelContract {
+        self.contract.clone().unwrap_or_default()
+    }
+
     pub fn to_json(&self) -> String {
-        json!({
+        let mut value = json!({
             "id": self.id,
             "url": self.url,
             "sha256": self.sha256,
             "sizeBytes": self.size_bytes,
             "licenseName": self.license_name,
             "licenseText": self.license_text,
-        })
-        .to_string()
+        });
+        if let Some(contract) = &self.contract {
+            value["contract"] = contract.to_json();
+        }
+        value.to_string()
     }
 }
