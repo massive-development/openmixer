@@ -298,7 +298,7 @@ impl AutomixController {
         let remaining = info.length_beats - out_beat;
         self.remaining_beats = Some(remaining.max(0.0));
         let force = self.force_start;
-        if remaining > self.cfg.arm_beats && !force {
+        if (remaining > self.cfg.arm_beats || !self.cfg.autostart) && !force {
             return;
         }
         let Some(inc) = partner_deck(snap, out) else {

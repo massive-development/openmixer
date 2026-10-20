@@ -189,14 +189,29 @@ pub fn main(args: &[String]) -> ExitCode {
     // Automix: the window steps the controller on each frame, because its host reads the library
     // and the track loader, which live on this thread. The queue shuffles the whole library until
     // the Automix settings choose a playlist.
+    let automix_prefs = composition.prefs.automix.clone();
+    composition.automix.set_config(om_automix::AutomixConfig {
+        length_beats: (automix_prefs.length_beats > 0)
+            .then_some(f64::from(automix_prefs.length_beats)),
+        max_bpm_ratio: f64::from(automix_prefs.min_bpm_gap_percent) / 100.0,
+        autostart: automix_prefs.autostart_at_end,
+        ..om_automix::AutomixConfig::default()
+    });
+    let automix_control = composition.automix.control();
+    automix_control.set_style(om_core::AutomixStyle::from_u8(automix_prefs.style as u8));
+    automix_control.set_enabled(automix_prefs.enabled);
     let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(
         composition.automix.clone(),
         composition.automix_sink.clone(),
     )));
     if let Some(hub) = &library {
+        let source = match automix_prefs.queue_playlist {
+            0 => QueueSource::Search(String::new()),
+            id => QueueSource::Playlist(id),
+        };
         let queue = LibraryQueue::shared(
             hub.borrow().services.library_handle(),
-            QueueSource::Search(String::new()),
+            source,
             QueueConfig::default(),
             automix_seed(),
         );
