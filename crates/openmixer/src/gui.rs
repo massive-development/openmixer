@@ -46,6 +46,9 @@ pub fn main(args: &[String]) -> ExitCode {
     let mock = args.iter().any(|a| a == "--mock-device");
     let smoke = args.iter().any(|a| a == "--smoke");
     let debug = args.iter().any(|a| a == "--debug-panel");
+    // `--demo-map`: the merged fixture controller maps, loaded into a temporary map file on a mock
+    // MIDI backend, so the mapping editor is populated (see `openmixer::demo_map`).
+    let demo_map = openmixer::flags::demo_map(args);
     // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
     // window stays open; used by tools/screenshots.sh.
     // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
@@ -75,7 +78,7 @@ pub fn main(args: &[String]) -> ExitCode {
     }
     // MIDI: the system backend on a real run; a mock controller under --mock-device and --smoke, so
     // neither run opens hardware.
-    if mock || smoke {
+    if mock || smoke || demo_map {
         let midi = om_midi::MockBackend::new();
         midi.add_input("Mock controller");
         composition.attach_midi(Box::new(midi));
@@ -83,6 +86,21 @@ pub fn main(args: &[String]) -> ExitCode {
         match om_midi::system_backend() {
             Ok(backend) => composition.attach_midi(backend),
             Err(error) => eprintln!("openmixer: MIDI unavailable: {error}"),
+        }
+    }
+    if demo_map {
+        // Saves from the editor go to this temporary file, never the user's map.
+        let dir = library_smoke::scratch_dir().join("map");
+        match openmixer::demo_map::write_demo_map(&dir) {
+            Ok(path) => {
+                if let Some(service) = &composition.services.midi {
+                    if let Err(error) = service.load_map_file(&path) {
+                        eprintln!("openmixer: demo map: {error}");
+                    }
+                }
+                composition.prefs.midi.map_file = path.to_string_lossy().into_owned();
+            }
+            Err(error) => eprintln!("openmixer: demo map: {error}"),
         }
     }
     let engine = Arc::clone(&composition.engine);
