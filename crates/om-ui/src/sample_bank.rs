@@ -27,6 +27,7 @@ use serde_json::{Map, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
@@ -324,6 +325,8 @@ pub struct SampleBank {
     sink: Arc<dyn CommandSink>,
     pool: WorkerPool<Job>,
     finished: Arc<Mutex<Vec<Finished>>>,
+    /// Decodes queued or running: incremented on submit, decremented once the result is queued.
+    outstanding: Arc<AtomicUsize>,
     pads: Mutex<BankPads>,
     notes: Mutex<Vec<String>>,
     writable: bool,
@@ -369,9 +372,13 @@ impl SampleBank {
             }
         }
         let finished: Arc<Mutex<Vec<Finished>>> = Arc::new(Mutex::new(Vec::new()));
+        let outstanding = Arc::new(AtomicUsize::new(0));
         let sink_queue = Arc::clone(&finished);
+        let done_count = Arc::clone(&outstanding);
         let pool = WorkerPool::new(1, "sample-decode", move |_ctx, job: Job| {
-            sink_queue.lock_unpoisoned().push(run_job(&job));
+            let result = run_job(&job);
+            sink_queue.lock_unpoisoned().push(result);
+            done_count.fetch_sub(1, Ordering::AcqRel);
         });
         Self {
             dir,
@@ -379,6 +386,7 @@ impl SampleBank {
             sink,
             pool,
             finished,
+            outstanding,
             pads: Mutex::new(pads),
             notes: Mutex::new(notes),
             writable,
@@ -440,7 +448,7 @@ impl SampleBank {
                 ));
                 continue;
             }
-            self.pool.submit(Job::Load {
+            self.submit(Job::Load {
                 pad,
                 file: entry.file.clone(),
                 path,
@@ -467,7 +475,7 @@ impl SampleBank {
             dir: self.dir.clone(),
             rate: self.engine.sampler().engine_rate(),
         };
-        Ok(self.pool.submit(job))
+        Ok(self.submit(job))
     }
 
     /// Installs the decodes that have finished: each is registered and sent as
@@ -500,10 +508,9 @@ impl SampleBank {
     /// start-up code that can block; the UI calls [`SampleBank::pump`] instead.
     pub fn settle(&self, timeout: Duration) -> usize {
         let deadline = std::time::Instant::now() + timeout;
-        while self.pool.queued_len() > 0 && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(5));
+        while self.outstanding.load(Ordering::Acquire) > 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(2));
         }
-        std::thread::sleep(Duration::from_millis(5));
         self.pump()
     }
 
@@ -557,6 +564,11 @@ impl SampleBank {
         fs::write(&tmp, to_json(pads))?;
         fs::rename(&tmp, &path)?;
         Ok(())
+    }
+
+    fn submit(&self, job: Job) -> JobHandle {
+        self.outstanding.fetch_add(1, Ordering::AcqRel);
+        self.pool.submit(job)
     }
 
     fn apply_settings(&self, pad: usize, gain: f32, pitch: f32, mode: PadMode) {
