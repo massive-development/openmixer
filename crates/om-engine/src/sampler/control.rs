@@ -84,7 +84,8 @@ impl SamplerControl {
         });
     }
 
-    /// Releases the pad's gate and loop voices; one-shots ignore it.
+    /// Releases the pad's gate voices. Loop voices latch (a second trigger stops them) and one-shots
+    /// play out, so both ignore it.
     pub fn release(&self, pad: u8) {
         if usize::from(pad) < PADS {
             self.shared.held[usize::from(pad)].store(false, Relaxed);
@@ -190,7 +191,7 @@ fn name_hash(name: &str) -> u64 {
 }
 
 impl ParamTarget for SamplerControl {
-    /// `trigger`: the value is the velocity (0 to 1, above 1 clamps); 0 or less releases the pad.
+    /// `trigger`: the value is the velocity (0 to 1, above 1 clamps); 0 or less releases the pad (which only ends gate voices; a loop pad latches: trigger again to stop it).
     /// `gate`: 0.5 or more presses the pad as a gate (velocity 1, whatever the pad's mode), below
     /// 0.5 releases it; one id carries MIDI note on and note off. `volume`: linear gain 0 to 1.5.
     /// `pitch`: semitones, -12 to 12. Non-finite values are rejected.

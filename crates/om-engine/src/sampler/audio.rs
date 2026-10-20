@@ -206,6 +206,20 @@ impl SamplerAudio {
             return;
         };
         let range = pad * SLOTS_PER_PAD..(pad + 1) * SLOTS_PER_PAD;
+        let mode = mode.unwrap_or_else(|| PadMode::from_u8(self.shared.mode[pad].load(Relaxed)));
+        if mode == PadMode::Loop {
+            // Loop pads latch: a press while the loop sounds stops it (fade-out) and starts nothing.
+            let mut stopped = false;
+            for v in &mut self.voices[range.clone()] {
+                if v.sounding() && v.mode == PadMode::Loop {
+                    begin_release(v, self.fade_delta);
+                    stopped = true;
+                }
+            }
+            if stopped {
+                return;
+            }
+        }
         // Steal the oldest sounding voice when the pad is full: it fades out, the new one fades in.
         let sounding = self.voices[range.clone()]
             .iter()
@@ -226,16 +240,15 @@ impl SamplerAudio {
             return;
         };
         self.age += 1;
-        let mode = mode.unwrap_or_else(|| PadMode::from_u8(self.shared.mode[pad].load(Relaxed)));
         free.start(sample, mode, velocity.clamp(0.0, 1.0), self.age);
     }
 
-    /// Release (gate/loop voices fade out; one-shots ignore it). `all` releases every voice of the
-    /// pad whatever its mode.
+    /// Release: gate voices fade out; loop voices latch (only a second press, a clear or stop-all
+    /// ends them) and one-shots ignore it. `all` releases every voice of the pad whatever its mode.
     fn release_pad(&mut self, pad: usize, all: bool) {
         let range = pad * SLOTS_PER_PAD..(pad + 1) * SLOTS_PER_PAD;
         for v in &mut self.voices[range] {
-            if all || v.mode != PadMode::OneShot {
+            if all || v.mode == PadMode::Gate {
                 begin_release(v, self.fade_delta);
             }
         }

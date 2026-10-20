@@ -39,6 +39,15 @@ pub fn mode_label(mode: PadMode) -> &'static str {
     }
 }
 
+/// One line on how a pad of this mode behaves, shown next to the mode.
+pub fn mode_hint(mode: PadMode) -> &'static str {
+    match mode {
+        PadMode::OneShot => "plays to the end",
+        PadMode::Gate => "plays while held",
+        PadMode::Loop => "tap to start, tap again to stop",
+    }
+}
+
 /// The next mode in the pad's toggle order: one-shot, gate, loop, one-shot.
 pub fn next_mode(mode: PadMode) -> PadMode {
     match mode {
@@ -168,7 +177,8 @@ impl SamplerBinding {
         }
     }
 
-    /// Lets go of `pad`: ends a gate's hold and its loops. One-shots ignore it.
+    /// Lets go of `pad`: ends a gate's hold. Loops latch (press again to stop) and one-shots play
+    /// out, so both ignore it.
     pub fn release(&self, pad: usize) -> bool {
         let Ok(index) = u8::try_from(pad) else {
             return false;
