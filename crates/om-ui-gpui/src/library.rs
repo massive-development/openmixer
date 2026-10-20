@@ -595,6 +595,11 @@ impl LibraryPanel {
         self.hub.borrow().loader.loaded_track(deck).is_some()
     }
 
+    /// The library id of the track loaded into `deck`, if any (the stem pads watch it for changes).
+    pub fn loaded_track_id(&self, deck: usize) -> Option<i64> {
+        self.hub.borrow().loader.loaded_track(deck).map(|t| t.id)
+    }
+
     /// Hub for the window's own reads (the smoke check and tests).
     pub fn hub(&self) -> &SharedHub {
         &self.hub

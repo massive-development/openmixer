@@ -22,11 +22,14 @@ pub const STEM_NAMES: [&str; STEM_COUNT] = ["Drums", "Bass", "Vocals", "Other"];
 /// Upper end of the volume range (linear gain).
 pub const MAX_VOLUME: f64 = 1.5;
 
-/// The solo state of one deck: which stem is soloed, and the mutes to restore.
+/// The solo state of one deck: which stem is soloed, the mutes to restore, and the mutes the solo
+/// last wrote (`applied`). A solo is only live while the engine still shows `applied`; a stem load
+/// or unload, or a mute changed elsewhere (MIDI), ends it (see [`reconcile`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SoloState {
     pub stem: Option<usize>,
     pub saved_mutes: [bool; STEM_COUNT],
+    pub applied: [bool; STEM_COUNT],
 }
 
 impl Default for SoloState {
@@ -34,7 +37,20 @@ impl Default for SoloState {
         Self {
             stem: None,
             saved_mutes: [false; STEM_COUNT],
+            applied: [false; STEM_COUNT],
         }
+    }
+}
+
+/// Ends a solo that the engine no longer reflects: the deck left stem mode, or the stem mutes
+/// differ from the ones the solo wrote. Returns the state to keep.
+pub fn reconcile(state: &mut SoloState, stems: &[StemSnapshot; STEM_COUNT]) {
+    if state.stem.is_none() {
+        return;
+    }
+    let live = stems[0].available && stems.map(|s| s.muted) == state.applied;
+    if !live {
+        *state = SoloState::default();
     }
 }
 
@@ -47,6 +63,7 @@ impl SoloState {
             let restored = Self {
                 stem: None,
                 saved_mutes: self.saved_mutes,
+                applied: self.saved_mutes,
             };
             return (restored, self.saved_mutes);
         }
@@ -60,16 +77,20 @@ impl SoloState {
             Self {
                 stem: Some(stem),
                 saved_mutes,
+                applied: mutes,
             },
             mutes,
         )
     }
 
-    /// Records a mute the user chose during a solo, so the restore keeps it.
+    /// Records a mute the user chose during a solo, so the restore keeps it and the solo stays live.
     pub fn note_mute(&mut self, stem: usize, muted: bool) {
         if self.stem.is_some() {
-            if let Some(saved) = self.saved_mutes.get_mut(stem) {
+            if let (Some(saved), Some(applied)) =
+                (self.saved_mutes.get_mut(stem), self.applied.get_mut(stem))
+            {
                 *saved = muted;
+                *applied = muted;
             }
         }
     }
@@ -85,6 +106,8 @@ pub struct StemBinding {
     pub target: Arc<dyn ParameterTarget>,
     pub index: usize,
     solo: Arc<Mutex<SoloState>>,
+    /// The `(has_stems, track)` last seen by [`StemBinding::observe_track`].
+    seen: Arc<Mutex<Option<(bool, Option<i64>)>>>,
 }
 
 impl StemBinding {
@@ -96,6 +119,7 @@ impl StemBinding {
             target: Arc::clone(&deck.target),
             index: deck.index,
             solo: Arc::new(Mutex::new(SoloState::default())),
+            seen: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -107,6 +131,7 @@ impl StemBinding {
             target,
             index,
             solo: Arc::new(Mutex::new(SoloState::default())),
+            seen: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -118,6 +143,7 @@ impl StemBinding {
             target: router,
             index,
             solo: Arc::new(Mutex::new(SoloState::default())),
+            seen: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -134,9 +160,31 @@ impl StemBinding {
         self.stems()[0].available
     }
 
-    /// The soloed stem, if any.
+    /// Tells the pads which track the deck holds (its library id, `None` for a file outside the
+    /// library) and whether it plays from stems. A change of either ends the solo: the engine keeps
+    /// its mutes across stem loads, so the mute check alone cannot see a new track. Call once per
+    /// UI frame.
+    pub fn observe_track(&self, track: Option<i64>) {
+        let key = (self.has_stems(), track);
+        let mut seen = self.seen.lock_unpoisoned();
+        if *seen == Some(key) {
+            return;
+        }
+        let first = seen.is_none();
+        *seen = Some(key);
+        drop(seen);
+        if !first {
+            *self.solo.lock_unpoisoned() = SoloState::default();
+        }
+    }
+
+    /// The soloed stem, if any. A solo that the engine no longer reflects (stems unloaded, or a
+    /// mute changed outside the pads) is ended first and reads as `None`.
     pub fn soloed(&self) -> Option<usize> {
-        self.solo.lock_unpoisoned().stem
+        let stems = self.stems();
+        let mut state = self.solo.lock_unpoisoned();
+        reconcile(&mut state, &stems);
+        state.stem
     }
 
     /// The typed id of one stem parameter of this deck. Fails when the index or the stem does not
@@ -189,8 +237,10 @@ impl StemBinding {
         if stem >= STEMS_PER_DECK as usize {
             return false;
         }
-        let current = self.stems().map(|s| s.muted);
+        let stems = self.stems();
+        let current = stems.map(|s| s.muted);
         let mut state = self.solo.lock_unpoisoned();
+        reconcile(&mut state, &stems);
         let (next, mutes) = state.press(stem, current);
         *state = next;
         drop(state);
