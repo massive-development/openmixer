@@ -393,4 +393,38 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<StemMixerControl>();
     }
+
+    /// Cost of the 8-to-2 mix per 256-frame block. Run with
+    /// `cargo test -p om-dsp --release stem_mix_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing measurement, not a correctness test"]
+    fn stem_mix_cost() {
+        fn per_block_us(filters: bool) -> f64 {
+            let (mut m, c) = mixer();
+            if filters {
+                for stem in 0..4 {
+                    c.set_filter(stem, [-0.6, 0.5, -0.3, 0.7][stem]);
+                }
+            }
+            c.set_gain(1, 0.8);
+            m.update_targets();
+            let src = test_frames(256);
+            let (mut l, mut r) = (vec![0.0; 256], vec![0.0; 256]);
+            let blocks = 20_000;
+            let start = std::time::Instant::now();
+            for _ in 0..blocks {
+                m.mix_block(std::hint::black_box(&src), &mut l, &mut r);
+                std::hint::black_box((&l, &r));
+            }
+            start.elapsed().as_secs_f64() * 1e6 / f64::from(blocks)
+        }
+        println!(
+            "stem mix, no filters:  {:.2} us / 256-frame block",
+            per_block_us(false)
+        );
+        println!(
+            "stem mix, 4 filters:   {:.2} us / 256-frame block",
+            per_block_us(true)
+        );
+    }
 }

@@ -102,8 +102,9 @@ impl Outcome {
         let c = &self.counts;
         let s = &self.latency;
         println!(
-            "soak: actions loops={} loop-exits={} hotcue-jumps={} keylock-toggles={} fx-changes={} seeks={}",
-            c.loops, c.loop_exits, c.hotcue_jumps, c.keylock_toggles, c.fx_changes, c.seeks
+            "soak: actions loops={} loop-exits={} hotcue-jumps={} keylock-toggles={} fx-changes={} seeks={} stem-mute-flips={}",
+            c.loops, c.loop_exits, c.hotcue_jumps, c.keylock_toggles, c.fx_changes, c.seeks,
+            c.stem_changes
         );
         println!(
             "soak: {} callbacks, xruns={}, max callback {:.0} us (budget {:.0} us), avg cpu {:.1}%",
@@ -120,8 +121,9 @@ impl Outcome {
     }
 }
 
-/// Runs the scripted soak for `seconds` of paced (wall-clock) time and returns the outcome.
-fn run_soak(seconds: u32) -> Outcome {
+/// Runs the scripted soak for `seconds` of paced (wall-clock) time and returns the outcome. With
+/// `stems`, deck 0 plays from a generated four-stem set and the scripted DJ works its stem controls.
+fn run_soak(seconds: u32, stems: bool) -> Outcome {
     let dir = TempDir::new("openmixer_soak");
     let (engine, audio) = DjEngine::new(2);
     let router = ParameterRouter::new();
@@ -131,9 +133,20 @@ fn run_soak(seconds: u32) -> Outcome {
 
     for d in 0..engine.num_decks() {
         let hz = 220.0 * (d + 1) as f64;
-        let file = dir.file(&format!("tone{d}.wav"));
-        tone::write_tone(&file, hz, TONE_SECONDS, RATE);
-        engine.deck(d).load(&file).expect("soak: load tone");
+        if stems && d == 0 {
+            let stem_dir = dir.file("stems");
+            std::fs::create_dir_all(&stem_dir).expect("soak: stem dir");
+            let main = tone::write_stem_set(&stem_dir, hz, TONE_SECONDS, RATE);
+            engine.deck(d).load(&main).expect("soak: load stem mix");
+            engine
+                .deck(d)
+                .load_stems(&stem_dir)
+                .expect("soak: load stems");
+        } else {
+            let file = dir.file(&format!("tone{d}.wav"));
+            tone::write_tone(&file, hz, TONE_SECONDS, RATE);
+            engine.deck(d).load(&file).expect("soak: load tone");
+        }
         engine.deck(d).play();
         assert!(router.set_parameter(&format!("mixer.ch{d}.fader"), 0.8));
     }
@@ -141,7 +154,7 @@ fn run_soak(seconds: u32) -> Outcome {
     device.start(Box::new(checked)).expect("soak: start device");
     device.start_realtime();
 
-    let mut scenario = Scenario::new(&engine, &router);
+    let mut scenario = Scenario::new(&engine, &router, stems);
     let start = Instant::now();
     let mut last_tick = Duration::ZERO;
     scenario.begin(0);
@@ -164,8 +177,14 @@ fn run_soak(seconds: u32) -> Outcome {
     }
 }
 
-fn check(seconds: u32) {
-    let outcome = run_soak(seconds);
+fn check(seconds: u32, stems: bool) {
+    let outcome = run_soak(seconds, stems);
+    if stems {
+        assert!(
+            outcome.counts.stem_changes > 0,
+            "the stem soak never touched a stem mute"
+        );
+    }
     outcome.print();
     let failed = outcome.failures();
     assert!(failed.is_empty(), "soak failed:\n  {}", failed.join("\n  "));
@@ -174,12 +193,19 @@ fn check(seconds: u32) {
 /// 30 s of paced simulated mix. Roughly 30 s of wall time.
 #[test]
 fn soak_short() {
-    check(30);
+    check(30, false);
+}
+
+/// The same 30 s soak with deck 0 in stem mode and the scripted DJ moving stem volumes, filters
+/// and mutes. Same xrun and underrun budgets.
+#[test]
+fn soak_short_with_stems() {
+    check(30, true);
 }
 
 /// The 10-minute paced-mix soak gate. Takes 10 minutes of wall time.
 #[test]
 #[ignore = "10-minute soak: cargo test -p om-audio --test soak -- --ignored --nocapture"]
 fn soak_10min() {
-    check(600);
+    check(600, false);
 }

@@ -29,6 +29,7 @@ pub struct ActionCounts {
     pub keylock_toggles: u32,
     pub fx_changes: u32,
     pub seeks: u32,
+    pub stem_changes: u32,
 }
 
 #[derive(Default)]
@@ -60,11 +61,14 @@ pub struct Scenario<'a> {
     rng: Rng,
     underruns: UnderrunTracker,
     counts: ActionCounts,
+    /// Deck 0 plays from stems: toggle its stem mutes, gains and filters.
+    stems: bool,
 }
 
 impl<'a> Scenario<'a> {
-    pub fn new(engine: &'a DjEngine, router: &'a ParameterRouter) -> Self {
+    pub fn new(engine: &'a DjEngine, router: &'a ParameterRouter, stems: bool) -> Self {
         Self {
+            stems,
             engine,
             router,
             rng: Rng::new(SEED),
@@ -87,6 +91,7 @@ impl<'a> Scenario<'a> {
         self.maybe_toggle_keylock(now_ms);
         self.maybe_change_fx();
         self.maybe_seek(now_ms);
+        self.maybe_change_stems(seconds);
         self.restart_finished_decks(now_ms);
         self.underruns.tick(self.engine, now_ms);
     }
@@ -193,6 +198,24 @@ impl<'a> Scenario<'a> {
         let mix = 0.2 + 0.6 * self.rng.next_unit();
         self.set(&format!("{unit}.mix"), mix);
         self.counts.fx_changes += 1;
+    }
+
+    /// Stem mode only: every tick nudges stem volumes and filters; now and then a mute flips.
+    fn maybe_change_stems(&mut self, t: f64) {
+        if !self.stems {
+            return;
+        }
+        for stem in 0..4 {
+            let phase = t * (0.4 + 0.1 * stem as f64) + stem as f64;
+            self.set(&format!("stem.0.{stem}.volume"), 0.8 + 0.5 * phase.sin());
+            self.set(&format!("stem.0.{stem}.filter"), 0.8 * (phase * 0.6).cos());
+        }
+        if self.rng.below(6) == 0 {
+            let stem = self.rng.below(4);
+            let mute = if self.rng.coin() { 1.0 } else { 0.0 };
+            self.set(&format!("stem.0.{stem}.mute"), mute);
+            self.counts.stem_changes += 1;
+        }
     }
 
     fn maybe_seek(&mut self, now_ms: u64) {
