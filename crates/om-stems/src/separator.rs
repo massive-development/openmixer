@@ -141,6 +141,12 @@ pub trait StemSeparator: Send + Sync {
 
     fn id(&self) -> &str;
 
+    /// Whether the network is loaded and a job would start at once. Separators that load their
+    /// model on the first job (see [`LazySeparator`]) report `false` until then.
+    fn is_ready(&self) -> bool {
+        true
+    }
+
     /// Part of the cache key for stored stems: bump it when the output changes.
     fn version(&self) -> i32;
 

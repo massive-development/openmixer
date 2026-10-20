@@ -23,6 +23,9 @@ pub enum ModelState {
     Downloading(f32),
     /// Installed; the separator's version.
     Installed(i32),
+    /// Installed, and the model is being loaded for the first job. Jobs can be queued; the first
+    /// one waits for the load.
+    Preparing,
     /// The last install failed.
     Failed(String),
 }
@@ -30,7 +33,7 @@ pub enum ModelState {
 impl ModelState {
     /// Whether stems can be prepared now.
     pub fn ready(&self) -> bool {
-        matches!(self, ModelState::Installed(_))
+        matches!(self, ModelState::Installed(_) | ModelState::Preparing)
     }
 
     /// The status line shown under the model state.
@@ -49,6 +52,7 @@ impl ModelState {
                 )
             }
             ModelState::Installed(version) => format!("Installed v{version}"),
+            ModelState::Preparing => "Preparing model…".to_owned(),
             ModelState::Failed(message) => format!("Error: {message}"),
         }
     }
@@ -440,6 +444,12 @@ mod tests {
             "track has no content hash yet — wait for ingest to finish"
         );
         assert!(host.submitted.is_empty(), "nothing is submitted for it");
+    }
+
+    #[test]
+    fn a_model_being_loaded_is_ready_and_says_so() {
+        assert!(ModelState::Preparing.ready());
+        assert_eq!(ModelState::Preparing.line(), "Preparing model…");
     }
 
     #[test]
