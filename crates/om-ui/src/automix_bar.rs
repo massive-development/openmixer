@@ -60,8 +60,7 @@ impl AutomixBar {
                 .map(remaining_text)
                 .unwrap_or_default(),
             error: snapshot.last_error.clone(),
-            can_start: enabled
-                && matches!(snapshot.state, AutomixState::Loading | AutomixState::Armed),
+            can_start: enabled && snapshot.state != AutomixState::Transitioning,
             can_cancel: enabled && planned,
         }
     }
@@ -163,10 +162,35 @@ mod tests {
         assert_eq!(armed.remaining, "12 beats left");
         assert_eq!(armed.style, "Auto");
         let idle = AutomixBar::new(&snap(AutomixState::Idle), &prefs);
-        assert!(!idle.can_start && !idle.can_cancel);
+        assert!(idle.can_start, "start now works from Idle: it plans the next track");
+        assert!(!idle.can_cancel);
         let off = AutomixBar::new(&snap(AutomixState::Armed), &AutomixPrefs::default());
         assert_eq!(off.state, "Off");
         assert!(!off.can_start && !off.can_cancel);
+    }
+
+    #[test]
+    fn start_now_is_offered_in_every_state_but_a_running_transition() {
+        let prefs = AutomixPrefs {
+            enabled: true,
+            ..Default::default()
+        };
+        for state in [
+            AutomixState::Idle,
+            AutomixState::Loading,
+            AutomixState::Armed,
+            AutomixState::Cleanup,
+        ] {
+            assert!(
+                AutomixBar::new(&snap(state), &prefs).can_start,
+                "{state:?} accepts start"
+            );
+        }
+        let running = AutomixBar::new(&snap(AutomixState::Transitioning), &prefs);
+        assert!(!running.can_start, "a transition is already running");
+        assert!(running.can_cancel);
+        let off = AutomixBar::new(&snap(AutomixState::Idle), &AutomixPrefs::default());
+        assert!(!off.can_start, "disabled: nothing starts");
     }
 
     #[test]
