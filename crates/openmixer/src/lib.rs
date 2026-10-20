@@ -15,4 +15,5 @@ pub mod engine_state;
 pub mod library_smoke;
 pub mod midi;
 pub mod plugins;
+pub mod sampler_demo;
 pub mod stems_host;
