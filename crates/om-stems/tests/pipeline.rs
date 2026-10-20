@@ -474,3 +474,58 @@ fn a_panic_in_one_job_does_not_poison_the_separator_for_later_jobs() {
     );
     assert_eq!(run().unwrap(), true, "later jobs run");
 }
+
+#[test]
+fn a_non_finite_model_output_fails_the_job_before_quantising() {
+    struct Nan;
+    impl StemInference for Nan {
+        fn run(
+            &mut self,
+            input: &SegmentInput<'_>,
+            o: &mut SegmentOutput,
+        ) -> Result<(), StemError> {
+            o.stems = vec![0.1; 8 * input.frames];
+            o.stems[3] = f32::NAN;
+            Ok(())
+        }
+    }
+    let x = tone(3000, 200.0, 44_100.0);
+    let mut sink = StemSetSink::new(44_100.0);
+    let err = HtDemucsPipeline::new(Nan, contract())
+        .unwrap()
+        .run(
+            &mut SliceSource::mono(&x, 44_100.0),
+            &mut sink,
+            &Ctx::default(),
+        )
+        .unwrap_err();
+    match err {
+        StemError::Invalid(msg) => assert_eq!(msg, "non-finite model output"),
+        other => panic!("expected Invalid, got {other}"),
+    }
+}
+
+#[test]
+fn contract_upper_bounds_are_enforced_and_the_limits_themselves_pass() {
+    let ok = ModelContract {
+        segment_samples: 4_000_000,
+        sample_rate: 192_000,
+        ..ModelContract::htdemucs()
+    };
+    assert!(ok.validate().is_ok());
+    let too_long = ModelContract {
+        segment_samples: 4_000_001,
+        ..ModelContract::htdemucs()
+    };
+    assert!(too_long.validate().unwrap_err().contains("segmentSamples"));
+    let too_fast = ModelContract {
+        sample_rate: 192_001,
+        ..ModelContract::htdemucs()
+    };
+    assert!(too_fast.validate().unwrap_err().contains("sampleRate"));
+    let too_big_fft = ModelContract {
+        n_fft: 32_768,
+        ..ModelContract::htdemucs()
+    };
+    assert!(too_big_fft.validate().unwrap_err().contains("nFft"));
+}

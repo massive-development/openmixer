@@ -20,6 +20,12 @@
 use crate::separator::StemKind;
 use serde_json::{json, Value};
 
+/// Upper bounds the contract must stay within. They keep a manifest from asking for buffers that
+/// exhaust memory before any inference runs; the stem count is fixed by [`StemKind::ALL`].
+pub const MAX_SAMPLE_RATE: u32 = 192_000;
+pub const MAX_SEGMENT_SAMPLES: usize = 4_000_000;
+pub const MAX_N_FFT: usize = 16_384;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelContract {
     /// Rate the model works at (htdemucs: 44100).
@@ -67,6 +73,17 @@ impl ModelContract {
     pub fn validate(&self) -> Result<(), String> {
         if self.sample_rate == 0 || self.segment_samples < 2 {
             return Err("sampleRate and segmentSamples must be positive".into());
+        }
+        if self.sample_rate > MAX_SAMPLE_RATE {
+            return Err(format!("sampleRate must be at most {MAX_SAMPLE_RATE}"));
+        }
+        if self.segment_samples > MAX_SEGMENT_SAMPLES {
+            return Err(format!(
+                "segmentSamples must be at most {MAX_SEGMENT_SAMPLES}"
+            ));
+        }
+        if self.n_fft > MAX_N_FFT {
+            return Err(format!("nFft must be at most {MAX_N_FFT}"));
         }
         if !(0.0..0.9).contains(&self.overlap) {
             return Err("overlap must be in [0, 0.9)".into());

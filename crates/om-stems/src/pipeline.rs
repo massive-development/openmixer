@@ -294,6 +294,12 @@ impl<I: StemInference> HtDemucsPipeline<I> {
             if ctx.is_cancelled() {
                 return Err(StemError::Cancelled);
             }
+            // A NaN or infinite value would quantise to silence or a full-scale click; refuse the
+            // whole job instead.
+            let finite = |v: &[f32]| v.iter().all(|x| x.is_finite());
+            if !finite(&out.stems) || out.spec.as_deref().is_some_and(|z| !finite(z)) {
+                return Err(StemError::Invalid("non-finite model output".into()));
+            }
 
             // Denormalise and overlap-add.
             let spec_stem_len = self.spectral.as_ref().map_or(0, |s| s.spec_len(n));
