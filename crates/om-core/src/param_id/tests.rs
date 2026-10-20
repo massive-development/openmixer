@@ -112,6 +112,10 @@ const GOLDEN: &[&str] = &[
     "automix.start",
     "automix.cancel",
     "automix.style",
+    // Record
+    "record.start",
+    "record.stop",
+    "record.toggle",
     // Plugin and other prefixes
     "plugin.x",
     "test.knob",
@@ -195,6 +199,11 @@ const NEGATIVE: &[&str] = &[
     "automix",
     "automix.bogus",
     "automix.enable.x",
+    "record",
+    "record.bogus",
+    "record.start.x",
+    "record.Start",
+    "Record.start",
 ];
 
 #[test]
@@ -286,7 +295,7 @@ fn leading_zeros_parse_but_print_canonically() {
 
 fn grammar_like() -> impl Strategy<Value = String> {
     let head = prop::sample::select(vec![
-        "deck", "mixer", "fx", "sync", "stem", "sampler", "automix", "plugin",
+        "deck", "mixer", "fx", "sync", "stem", "sampler", "automix", "record", "plugin",
     ]);
     let segment = prop::sample::select(vec![
         "0",

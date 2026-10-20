@@ -10,7 +10,7 @@
 //! app overlays the controller's own snapshot (`om-automix`) before readers see it.
 
 use crate::param_id::{StemParam, HOTCUES_PER_DECK, SAMPLER_PADS, STEMS_PER_DECK};
-use crate::state_id::{ChannelState, DeckState, MixerState, PadState, StateId};
+use crate::state_id::{ChannelState, DeckState, MixerState, PadState, RecordState, StateId};
 
 /// One consistent-enough copy of the engine. See the module docs.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +27,7 @@ pub struct EngineSnapshot {
     pub stems: Vec<[StemSnapshot; STEMS_PER_DECK as usize]>,
     pub sampler: SamplerSnapshot,
     pub automix: AutomixSnapshot,
+    pub record: RecordSnapshot,
 }
 
 impl EngineSnapshot {
@@ -42,6 +43,7 @@ impl EngineSnapshot {
                 .and_then(|d| d.get(*stem))
                 .map(|s| s.read(p)),
             StateId::Sampler { pad, p } => self.sampler.pads.get(*pad).map(|s| s.read(p)),
+            StateId::Record(p) => Some(self.record.read(*p)),
         }
     }
 }
@@ -404,6 +406,30 @@ pub struct AutomixSnapshot {
     pub remaining_beats: Option<f64>,
     /// The last thing that went wrong or why a plan was dropped; empty when nothing did.
     pub last_error: String,
+}
+
+/// Mix recording as readers see it (filled by the engine from the recorder's atomics).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct RecordSnapshot {
+    pub recording: bool,
+    /// The writer stopped itself with an error.
+    pub failed: bool,
+    pub elapsed_s: f64,
+    pub dropped_frames: u64,
+    pub peak_left: f32,
+    pub peak_right: f32,
+}
+
+impl RecordSnapshot {
+    fn read(&self, p: RecordState) -> f64 {
+        match p {
+            RecordState::Recording => flag(self.recording),
+            RecordState::Elapsed => self.elapsed_s,
+            RecordState::Dropped => self.dropped_frames as f64,
+            RecordState::PeakLeft => f64::from(self.peak_left),
+            RecordState::PeakRight => f64::from(self.peak_right),
+        }
+    }
 }
 
 fn flag(on: bool) -> f64 {

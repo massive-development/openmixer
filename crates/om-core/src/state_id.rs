@@ -9,6 +9,7 @@
 //! mixer.ch<c>.pfl | fader | trim | filter | level | xfader   (xfader: 0 thru, 1 left, 2 right)
 //! mixer.crossfader | mixer.master | mixer.master.level
 //! stem.<d>.<s>.volume | mute | filter     s: 0..3 (drums, bass, vocals, other)
+//! record.recording | elapsed | dropped | peak.l | peak.r     elapsed in seconds
 //! sampler.pad<n>.loaded | playing | volume | pitch | mode     mode reads 0 one-shot, 1 gate, 2 loop
 //! ```
 //! `<d>` and `<c>` are digits only; whether they name a real deck or channel is decided by the
@@ -36,6 +37,20 @@ pub enum StateId {
         pad: usize,
         p: PadState,
     },
+    /// Mix recording state, `record.*`.
+    Record(RecordState),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordState {
+    /// 1 while recording.
+    Recording,
+    /// Seconds recorded.
+    Elapsed,
+    /// Frames the recorder dropped.
+    Dropped,
+    PeakLeft,
+    PeakRight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +137,17 @@ impl FromStr for StateId {
                     _ => None,
                 })
                 .map(|(pad, p)| Self::Sampler { pad, p }),
+            ["record", p] => match *p {
+                "recording" => Some(Self::Record(RecordState::Recording)),
+                "elapsed" => Some(Self::Record(RecordState::Elapsed)),
+                "dropped" => Some(Self::Record(RecordState::Dropped)),
+                _ => None,
+            },
+            ["record", "peak", side] => match *side {
+                "l" => Some(Self::Record(RecordState::PeakLeft)),
+                "r" => Some(Self::Record(RecordState::PeakRight)),
+                _ => None,
+            },
             _ => None,
         };
         parsed.ok_or_else(|| ParamError::Unknown(id.to_owned()))
@@ -269,6 +295,11 @@ mod tests {
             "mixer.ch0.bogus",
             "mixer.master.bogus",
             "nope.0.play",
+            "record",
+            "record.bogus",
+            "record.peak",
+            "record.peak.x",
+            "record.recording.x",
         ] {
             assert!(id.parse::<StateId>().is_err(), "{id}");
         }
