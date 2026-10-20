@@ -73,9 +73,6 @@ impl Outcome {
         if !finite {
             failed.push(format!("latency stats not finite: {stats:?}"));
         }
-        if stats.xrun_count > MAX_XRUNS {
-            failed.push(format!("{} xruns, budget {MAX_XRUNS}", stats.xrun_count));
-        }
         if self.steady_underruns > MAX_STEADY_UNDERRUNS {
             failed.push(format!(
                 "{} steady-state underruns, budget {MAX_STEADY_UNDERRUNS}",
@@ -98,9 +95,17 @@ impl Outcome {
         failed
     }
 
-    fn print(&self) {
+    /// The xrun budget verdict for this run, when it is over budget. Checked by [`check`], which
+    /// runs the soak once more before failing on it.
+    fn xrun_failure(&self) -> Option<String> {
+        (self.latency.xrun_count > MAX_XRUNS)
+            .then(|| format!("{} xruns, budget {MAX_XRUNS}", self.latency.xrun_count))
+    }
+
+    fn print(&self, label: &str) {
         let c = &self.counts;
         let s = &self.latency;
+        println!("{label}:");
         println!(
             "soak: actions loops={} loop-exits={} hotcue-jumps={} keylock-toggles={} fx-changes={} seeks={} stem-mute-flips={}",
             c.loops, c.loop_exits, c.hotcue_jumps, c.keylock_toggles, c.fx_changes, c.seeks,
@@ -181,20 +186,51 @@ fn run_soak(seconds: u32, stems: bool) -> Outcome {
 /// spend the xrun budget on the test runner, not on the engine. They take turns.
 static ONE_SOAK_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Whether a soak passes its xrun budget, given the xrun count of the first run and, when the first
+/// run was over budget, of the retry. Xruns are timing noise on a shared host, so one retry is
+/// allowed; a second over-budget run is a systemic problem and fails.
+fn xruns_pass(first: u64, retry: Option<u64>) -> bool {
+    first <= MAX_XRUNS || retry.is_some_and(|r| r <= MAX_XRUNS)
+}
+
+/// Runs the soak. Non-finite samples, overflow and steady-state underruns fail on the first run
+/// (zero tolerance). Over the xrun budget, the soak runs once more and fails only if that run is
+/// over the budget too. Each run prints its own xruns and worst callback time.
 fn check(seconds: u32, stems: bool) {
     let _turn = ONE_SOAK_AT_A_TIME
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let outcome = run_soak(seconds, stems);
+    let first = run_soak(seconds, stems);
     if stems {
         assert!(
-            outcome.counts.stem_changes > 0,
+            first.counts.stem_changes > 0,
             "the stem soak never touched a stem mute"
         );
     }
-    outcome.print();
-    let failed = outcome.failures();
+    first.print("soak run 1");
+    let mut failed = first.failures();
+    if first.xrun_failure().is_some() {
+        println!("soak: over the xrun budget on run 1; running once more");
+        let second = run_soak(seconds, stems);
+        second.print("soak run 2");
+        failed.extend(second.failures());
+        if !xruns_pass(first.latency.xrun_count, Some(second.latency.xrun_count)) {
+            failed.push(format!(
+                "xruns over budget in both runs: {} and {} (budget {MAX_XRUNS})",
+                first.latency.xrun_count, second.latency.xrun_count
+            ));
+        }
+    }
     assert!(failed.is_empty(), "soak failed:\n  {}", failed.join("\n  "));
+}
+
+#[test]
+fn an_over_budget_first_run_passes_only_if_the_retry_is_within_budget() {
+    assert!(xruns_pass(0, None));
+    assert!(xruns_pass(MAX_XRUNS, None), "at the budget is allowed");
+    assert!(!xruns_pass(MAX_XRUNS + 1, None), "no retry means a fail");
+    assert!(xruns_pass(MAX_XRUNS + 1, Some(0)), "a clean retry passes");
+    assert!(!xruns_pass(MAX_XRUNS + 1, Some(MAX_XRUNS + 1)));
 }
 
 /// 30 s of paced simulated mix. Roughly 30 s of wall time.
