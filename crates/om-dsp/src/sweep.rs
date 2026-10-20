@@ -10,6 +10,8 @@ const MIN_LOW_PASS_HZ: f32 = 40.0;
 const MIN_HIGH_PASS_HZ: f32 = 20.0;
 const MAX_HZ: f32 = 20_000.0;
 const FORCE_REFRESH: f32 = 1000.0;
+/// Added to every per-sample input so filter state never decays into subnormals (-400 dB).
+const ANTI_DENORMAL: f32 = 1.0e-20;
 
 #[derive(Debug, Clone)]
 pub struct SweepFilter {
@@ -56,6 +58,32 @@ impl SweepFilter {
         }
         self.filter.process(0, left);
         self.filter.process(1, right);
+    }
+
+    /// Applies a pending position change to the coefficients. Per-sample users call this once per
+    /// block, then [`Self::is_active`] and [`Self::process_sample`].
+    pub fn refresh(&mut self) {
+        self.refresh_coefficients();
+    }
+
+    /// True when the filter is outside its dead zone (as of the last refresh). Inactive means
+    /// [`Self::process_sample`] returns its input unchanged.
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    /// Clears the filter memory, so a filter that is switched on starts from silence.
+    pub fn reset(&mut self) {
+        self.filter.reset();
+    }
+
+    /// Filters one sample of `channel` (0 = left, 1 = right). Bit-exact pass-through while the
+    /// filter is inactive. Does not refresh coefficients; call [`Self::refresh`] first.
+    pub fn process_sample(&mut self, channel: usize, input: f32) -> f32 {
+        if !self.active {
+            return input;
+        }
+        self.filter.process_sample(channel, input + ANTI_DENORMAL)
     }
 
     fn refresh_coefficients(&mut self) {
