@@ -206,7 +206,40 @@ impl StemService {
                 ctx.fail(message);
             }
         });
-        Ok(Self { pool, inner })
+        let service = Self { pool, inner };
+        // Startup housekeeping, before any job can write: rows whose directory is gone are
+        // dropped, and committed directories that no row references (their track was forgotten
+        // while the app was closed, or the index was lost) are removed. A library that cannot be
+        // read is reported and skipped; the cache itself still works.
+        if let Err(error) = service.sweep_orphans() {
+            eprintln!("stems: startup cleanup skipped: {error}");
+        }
+        Ok(service)
+    }
+
+    /// Drops index rows whose directory is gone, then removes committed directories that no index
+    /// row references. Returns the number of directories removed.
+    pub fn sweep_orphans(&self) -> Result<usize, StemServiceError> {
+        self.reconcile()?;
+        let library = Library::open(
+            &self.inner.library_path,
+            OpenMode::ReadWrite,
+            core_migrations(),
+        )?;
+        let referenced: std::collections::HashSet<String> = library
+            .track_stems()
+            .list_all_bytes()?
+            .into_iter()
+            .map(|row| row.dir)
+            .collect();
+        let mut removed = 0;
+        for entry in self.inner.cache.entries()? {
+            if !referenced.contains(&entry.dir_name) {
+                self.inner.cache.remove(&entry.dir_name)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     /// Queues a separation behind the jobs already waiting. The handle reports progress, status
@@ -246,10 +279,19 @@ impl StemService {
         )?;
         let rows = library.track_stems().for_track(track_id)?;
         for row in &rows {
-            self.inner.cache.remove(&row.dir)?;
             library
                 .track_stems()
                 .delete(track_id, &row.sep_id, row.version)?;
+            // Duplicate files share a content hash, so they share a directory: it goes only when no
+            // other track's row still names it.
+            let still_used = library
+                .track_stems()
+                .list_all_bytes()?
+                .iter()
+                .any(|other| other.dir == row.dir);
+            if !still_used {
+                self.inner.cache.remove(&row.dir)?;
+            }
         }
         Ok(rows.len())
     }
