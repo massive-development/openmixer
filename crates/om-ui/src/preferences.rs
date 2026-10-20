@@ -13,7 +13,61 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Schema version written to disk. Files with a higher version are refused.
-pub const PREFERENCES_VERSION: i64 = 1;
+///
+/// History: 1 = audio, midi, library, plugins. 2 adds `stems` (cache cap and auto-prepare). 3 adds
+/// `automix`. Each step is additive: an older file has no new section, so it reads with the
+/// defaults and is written back as the current version on the next save.
+pub const PREFERENCES_VERSION: i64 = 3;
+
+/// Automix settings (Wave 7). Read when the window starts and when the Automix page changes them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutomixPrefs {
+    /// Automix runs. Off by default: nothing is ever mixed without the user turning it on.
+    pub enabled: bool,
+    /// Style code (`AutomixStyle::as_u8`): 0 Auto, others per the style list. Clamped to 0..=4.
+    pub style: i32,
+    /// Transition length in beats: 8, 16 or 32 (other values snap to the nearest).
+    pub length_beats: i32,
+    /// Queue source: a playlist id, or 0 for the whole library. Ignored while `queue_search` is set.
+    pub queue_playlist: i64,
+    /// Queue source is the library browser's current search (live, not saved as text). Read as
+    /// false when missing, so version 3 files from before this field keep their playlist source.
+    pub queue_search: bool,
+    /// Smart pick: prefer harmonic and tempo matches among the queue candidates.
+    pub smart: bool,
+    /// Largest tempo gap a beat-matched style accepts, in percent (0..=20).
+    pub min_bpm_gap_percent: i32,
+    /// Start the next track by itself when the playing one nears its end.
+    pub autostart_at_end: bool,
+}
+
+pub const MAX_AUTOMIX_STYLE: i64 = 4;
+pub const MAX_BPM_GAP_PERCENT: i64 = 20;
+
+impl Default for AutomixPrefs {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            style: 0,
+            length_beats: 16,
+            queue_playlist: 0,
+            queue_search: false,
+            smart: true,
+            min_bpm_gap_percent: 6,
+            autostart_at_end: true,
+        }
+    }
+}
+
+/// Snaps a requested transition length to 8, 16 or 32 beats (the nearest; ties go shorter).
+pub fn snap_length_beats(beats: i64) -> i32 {
+    [8i64, 16, 32]
+        .into_iter()
+        .min_by_key(|candidate| ((candidate - beats).abs(), *candidate))
+        .unwrap_or(16) as i32
+}
+/// Largest stem cache cap accepted, in GB.
+pub const MAX_STEM_CACHE_GB: i64 = 1000;
 /// Environment variable that overrides the preferences file location.
 pub const PREFS_ENV: &str = "OPENMIXER_PREFS";
 
@@ -76,6 +130,29 @@ impl Default for LibraryPrefs {
     }
 }
 
+/// Stem separation (Wave 7). Read when the stem service starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StemsPrefs {
+    /// Cap for the stem cache, in GB (1..=1000). Least recently used stems are removed above it.
+    pub max_cache_gb: i32,
+    /// Prepare stems for a track automatically. Off by default; loading a track never starts a
+    /// separation on its own, whatever this says.
+    pub auto_prepare: bool,
+    /// Load a track's cached stems into its deck after the track loads (when the deck is not
+    /// playing). On by default; a track without cached stems loads plain.
+    pub auto_load: bool,
+}
+
+impl Default for StemsPrefs {
+    fn default() -> Self {
+        Self {
+            max_cache_gb: 20,
+            auto_prepare: false,
+            auto_load: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preferences {
     pub theme: String,
@@ -84,6 +161,8 @@ pub struct Preferences {
     pub library: LibraryPrefs,
     /// Empty = the default plugin folder.
     pub plugin_folder: String,
+    pub stems: StemsPrefs,
+    pub automix: AutomixPrefs,
 }
 
 impl Default for Preferences {
@@ -94,6 +173,8 @@ impl Default for Preferences {
             midi: MidiPrefs::default(),
             library: LibraryPrefs::default(),
             plugin_folder: String::new(),
+            stems: StemsPrefs::default(),
+            automix: AutomixPrefs::default(),
         }
     }
 }
@@ -208,6 +289,27 @@ impl Preferences {
         root.insert("midi".into(), Value::Object(midi));
         root.insert("library".into(), Value::Object(library));
         root.insert("plugins".into(), Value::Object(plugins));
+        let mut stems = Map::new();
+        stems.insert("maxCacheGb".into(), self.stems.max_cache_gb.into());
+        stems.insert("autoPrepare".into(), self.stems.auto_prepare.into());
+        stems.insert("autoLoad".into(), self.stems.auto_load.into());
+        root.insert("stems".into(), Value::Object(stems));
+        let mut automix = Map::new();
+        automix.insert("enabled".into(), self.automix.enabled.into());
+        automix.insert("style".into(), self.automix.style.into());
+        automix.insert("lengthBeats".into(), self.automix.length_beats.into());
+        automix.insert("queuePlaylist".into(), self.automix.queue_playlist.into());
+        automix.insert("queueSearch".into(), self.automix.queue_search.into());
+        automix.insert("smart".into(), self.automix.smart.into());
+        automix.insert(
+            "minBpmGapPercent".into(),
+            self.automix.min_bpm_gap_percent.into(),
+        );
+        automix.insert(
+            "autostartAtEnd".into(),
+            self.automix.autostart_at_end.into(),
+        );
+        root.insert("automix".into(), Value::Object(automix));
         Value::Object(root).to_string()
     }
 
@@ -229,6 +331,8 @@ impl Preferences {
         read_midi(section(root, "midi"), &mut p.midi);
         read_library(section(root, "library"), &mut p.library);
         p.plugin_folder = string_or(section(root, "plugins").get("folder"), p.plugin_folder);
+        read_stems(section(root, "stems"), &mut p.stems);
+        read_automix(section(root, "automix"), &mut p.automix);
         Ok(p)
     }
 
@@ -310,6 +414,40 @@ fn read_midi(s: &Map<String, Value>, m: &mut MidiPrefs) {
     }
 }
 
+fn read_stems(s: &Map<String, Value>, st: &mut StemsPrefs) {
+    st.max_cache_gb = int_or(
+        s.get("maxCacheGb"),
+        1,
+        MAX_STEM_CACHE_GB,
+        st.max_cache_gb.into(),
+    ) as i32;
+    st.auto_prepare = bool_or(s.get("autoPrepare"), st.auto_prepare);
+    st.auto_load = bool_or(s.get("autoLoad"), st.auto_load);
+}
+
+/// Reads the automix section. Every value is clamped or defaulted on its own, so a hostile file
+/// (negative, huge, wrong type) never reaches the controller unchecked.
+fn read_automix(s: &Map<String, Value>, a: &mut AutomixPrefs) {
+    a.enabled = bool_or(s.get("enabled"), a.enabled);
+    a.style = int_or(s.get("style"), 0, MAX_AUTOMIX_STYLE, a.style.into()) as i32;
+    a.length_beats = snap_length_beats(int_or(
+        s.get("lengthBeats"),
+        1,
+        1_000,
+        a.length_beats.into(),
+    ));
+    a.queue_playlist = int_or(s.get("queuePlaylist"), 0, i64::MAX, a.queue_playlist);
+    a.queue_search = bool_or(s.get("queueSearch"), a.queue_search);
+    a.smart = bool_or(s.get("smart"), a.smart);
+    a.min_bpm_gap_percent = int_or(
+        s.get("minBpmGapPercent"),
+        0,
+        MAX_BPM_GAP_PERCENT,
+        a.min_bpm_gap_percent.into(),
+    ) as i32;
+    a.autostart_at_end = bool_or(s.get("autostartAtEnd"), a.autostart_at_end);
+}
+
 fn read_library(s: &Map<String, Value>, l: &mut LibraryPrefs) {
     l.scan_on_start = bool_or(s.get("scanOnStart"), l.scan_on_start);
     l.scan_interval_minutes = int_or(
@@ -343,6 +481,21 @@ mod tests {
                 scan_interval_minutes: 15,
             },
             plugin_folder: "/opt/openmixer/plugins".into(),
+            stems: StemsPrefs {
+                max_cache_gb: 64,
+                auto_prepare: true,
+                auto_load: false,
+            },
+            automix: AutomixPrefs {
+                enabled: true,
+                style: 2,
+                length_beats: 32,
+                queue_playlist: 7,
+                queue_search: true,
+                smart: false,
+                min_bpm_gap_percent: 3,
+                autostart_at_end: false,
+            },
         }
     }
 
@@ -361,6 +514,65 @@ mod tests {
         assert_eq!(p.library.scan_interval_minutes, 5);
         assert_eq!(p.effective_plugin_folder(), default_plugin_folder());
         assert_eq!(p.effective_map_file(), default_map_file());
+        assert_eq!(
+            p.stems,
+            StemsPrefs {
+                max_cache_gb: 20,
+                auto_prepare: false,
+                auto_load: true,
+            }
+        );
+    }
+
+    #[test]
+    fn version_one_files_read_with_stem_defaults() {
+        let p = Preferences::from_json(
+            r#"{"version":1,"theme":"openmixer.dark","library":{"scanOnStart":false}}"#,
+        )
+        .unwrap();
+        assert!(!p.library.scan_on_start);
+        assert_eq!(p.stems, StemsPrefs::default());
+    }
+
+    #[test]
+    fn version_two_files_read_with_automix_defaults() {
+        let p = Preferences::from_json(r#"{"version":2,"stems":{"autoLoad":false}}"#).unwrap();
+        assert_eq!(p.automix, AutomixPrefs::default());
+        assert!(!p.automix.enabled);
+        assert_eq!(p.automix.length_beats, 16);
+    }
+
+    #[test]
+    fn hostile_automix_values_fall_back_or_snap() {
+        let p = Preferences::from_json(
+            r#"{"version":3,"automix":{"enabled":"yes","style":99,"lengthBeats":-4,
+                "queuePlaylist":-1,"minBpmGapPercent":500,"smart":3}}"#,
+        )
+        .unwrap();
+        let a = &p.automix;
+        assert!(!a.enabled);
+        assert_eq!(a.style, 0);
+        assert_eq!(
+            a.length_beats, 16,
+            "-4 is out of range and falls back to the default"
+        );
+        assert_eq!(a.queue_playlist, 0);
+        assert_eq!(a.min_bpm_gap_percent, 6);
+        assert!(a.smart);
+        assert_eq!(snap_length_beats(20), 16);
+        assert_eq!(snap_length_beats(1_000), 32);
+    }
+
+    #[test]
+    fn stem_fields_fall_back_when_out_of_range() {
+        let p =
+            Preferences::from_json(r#"{"version":2,"stems":{"maxCacheGb":0,"autoPrepare":"yes"}}"#)
+                .unwrap();
+        assert_eq!(p.stems.max_cache_gb, 20);
+        assert!(!p.stems.auto_prepare);
+        assert!(p.stems.auto_load, "a missing key keeps the default");
+        let p = Preferences::from_json(r#"{"version":2,"stems":{"maxCacheGb":5000}}"#).unwrap();
+        assert_eq!(p.stems.max_cache_gb, 20);
     }
 
     #[test]
@@ -406,7 +618,7 @@ mod tests {
             "[]",
             "{}",
             r#"{"version":0}"#,
-            r#"{"version":2}"#,
+            r#"{"version":4}"#,
             r#"{"version":"1"}"#,
         ] {
             assert!(Preferences::from_json(bad).is_err(), "{bad}");

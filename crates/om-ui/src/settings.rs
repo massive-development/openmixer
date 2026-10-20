@@ -8,17 +8,21 @@ use om_library::LibraryError;
 
 mod appearance;
 mod audio;
+mod automix;
 mod library;
 mod midi;
 mod panel;
 mod plugins;
+mod stems;
 
 pub use appearance::AppearanceSettingsPage;
 pub use audio::{stats_text, AudioSettingsModel, AudioSettingsPage, AudioStats};
+pub use automix::{AutomixControl, AutomixSettingsPage, QueueChoice, LENGTH_CHOICES, STYLE_LABELS};
 pub use library::{LibraryControl, LibrarySettingsPage};
 pub use midi::{learnable_targets, MidiHost, MidiInputs, MidiPage, MidiSettingsPage};
 pub use panel::{PageKind, SettingsPanel};
 pub use plugins::{PluginHost, PluginsSettingsPage};
+pub use stems::{format_gib, StemsSettingsPage};
 
 /// An error from a layer the settings page does not name (the audio device, the MIDI service, the
 /// plugin host). The owning crate's error goes in boxed; its display text is shown as is.
@@ -46,6 +50,18 @@ pub enum SettingsError {
     ImportUnavailable,
     #[error("Plugins are not available")]
     PluginsUnavailable,
+    #[error("stem separation is not available")]
+    StemsUnavailable,
+    /// The stem cache or its index failed.
+    #[error("{0}")]
+    Stems(#[source] OpaqueError),
+    /// The model is not ready; the text says why (it is shown in the Library page).
+    #[error("{0}")]
+    StemsNotReady(String),
+    /// The track's content hash is still empty (ingest has not finished), so its stems cannot be
+    /// keyed in the cache.
+    #[error("track has no content hash yet — wait for ingest to finish")]
+    TrackNotHashed,
     /// A stored value does not fit the field it is written to.
     #[error("{field} is out of range")]
     InvalidValue { field: &'static str },

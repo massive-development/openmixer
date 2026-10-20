@@ -60,7 +60,7 @@
     ["27 Mixer UI", "partial"],
     ["28 Browser", "done"],
     ["29 Automix/settings", "partial"],
-    ["30 Stem pads", "todo"],
+    ["30 Stem pads", "done"],
     ["31 UI gate", "done"]
    ]
   },
@@ -76,10 +76,10 @@
    "name": "7 Intelligence",
    "items": [
     ["F Foundation", "done"],
-    ["37 Stem DSP", "todo"],
-    ["38 Automix", "todo"],
-    ["39 Stem transitions", "todo"],
-    ["40 Sampler", "todo"]
+    ["37 Stem DSP", "done"],
+    ["38 Automix", "done"],
+    ["39 Stem transitions", "partial"],
+    ["40 Sampler", "partial"]
    ]
   },
   {

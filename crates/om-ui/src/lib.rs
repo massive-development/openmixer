@@ -5,6 +5,7 @@
 //! engine and writes through the string-id control surface, so it can be driven and tested headless.
 //! The gpui front end renders these models.
 
+pub mod automix_bar;
 pub mod binding;
 pub mod control;
 pub mod format;
@@ -14,8 +15,12 @@ pub mod main_layout;
 pub mod meter;
 pub mod preferences;
 pub mod preferences_applier;
+pub mod sample_bank;
+pub mod sampler_binding;
 pub mod settings;
 pub mod sidebar;
+pub mod stem_binding;
+pub mod stems;
 pub mod style;
 pub mod theme;
 pub mod waveform;

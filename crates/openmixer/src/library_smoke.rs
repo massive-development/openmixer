@@ -18,6 +18,8 @@ pub const TRACKS: usize = 3;
 
 /// How long ingest may take before the smoke run fails.
 const INGEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long the automix demo waits for its tracks to be analysed.
+const ANALYSIS_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Length of each generated track, in seconds.
 const SECONDS: f64 = 2.0;
@@ -62,7 +64,46 @@ fn info_chunk(tags: &[(&str, &str)]) -> Vec<u8> {
 
 /// Like [`write_wav`], with INFO tags (artist, genre, title) the library ingest reads.
 pub fn write_wav_tagged(path: &Path, freq: f32, tags: &[(&str, &str)]) -> io::Result<()> {
-    let frames = (SECONDS * f64::from(RATE)) as u32;
+    write_pcm(path, SECONDS, tags, |n| {
+        let phase = f64::from(n) * f64::from(freq) * std::f64::consts::TAU / f64::from(RATE);
+        (phase.sin() * 0.25 * f64::from(i16::MAX)) as i16
+    })
+}
+
+/// A click track at `bpm`: a broadband percussive hit (deterministic noise over a 180 Hz body,
+/// 12 ms decay) on every beat. The BPM analysis needs transients like these to find a grid.
+/// Used by the automix demo, whose tracks must be analysed before automix can queue them.
+pub fn write_click_track(
+    path: &Path,
+    bpm: f64,
+    seconds: f64,
+    tags: &[(&str, &str)],
+) -> io::Result<()> {
+    let beat = f64::from(RATE) * 60.0 / bpm;
+    let rate = f64::from(RATE);
+    write_pcm(path, seconds, tags, move |n| {
+        let within = f64::from(n) % beat;
+        let t = within / rate;
+        if t >= 0.1 {
+            return 0;
+        }
+        // A hash of the sample index: the same noise every run, no RNG state.
+        let hash = u64::from(n).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40;
+        let noise = (hash as f64 / f64::from(1u32 << 24)) * 2.0 - 1.0;
+        let body = (f64::from(n) * 180.0 * std::f64::consts::TAU / rate).sin();
+        let envelope = (-t / 0.012).exp();
+        ((0.6 * noise + 0.4 * body) * envelope * 0.7 * f64::from(i16::MAX)) as i16
+    })
+}
+
+/// Writes a 16-bit mono PCM WAV of `seconds`, sample `n` being `sample(n)`, with optional INFO tags.
+fn write_pcm(
+    path: &Path,
+    seconds: f64,
+    tags: &[(&str, &str)],
+    sample: impl Fn(u32) -> i16,
+) -> io::Result<()> {
+    let frames = (seconds * f64::from(RATE)) as u32;
     let data_len = frames * 2;
     let info = if tags.is_empty() {
         Vec::new()
@@ -83,9 +124,7 @@ pub fn write_wav_tagged(path: &Path, freq: f32, tags: &[(&str, &str)]) -> io::Re
     out.extend_from_slice(b"data");
     out.extend_from_slice(&data_len.to_le_bytes());
     for n in 0..frames {
-        let phase = f64::from(n) * f64::from(freq) * std::f64::consts::TAU / f64::from(RATE);
-        let sample = (phase.sin() * 0.25 * f64::from(i16::MAX)) as i16;
-        out.extend_from_slice(&sample.to_le_bytes());
+        out.extend_from_slice(&sample(n).to_le_bytes());
     }
     out.extend_from_slice(&info);
     let mut file = fs::File::create(path)?;
@@ -110,24 +149,87 @@ pub fn ingest_generated(services: &mut LibraryServices, root: &Path) -> Result<u
             ],
         )?;
     }
+    watch_and_wait(services, &music, TRACKS)
+}
+
+/// Tempos of the automix demo's click tracks: close enough that the tempo gap allows every pick.
+pub const DEMO_AUTOMIX_BPM: [f64; 3] = [120.0, 122.0, 124.0];
+/// Length of each automix demo track: long enough to arm and transition on screen.
+pub const DEMO_AUTOMIX_SECONDS: f64 = 24.0;
+
+/// Writes [`DEMO_AUTOMIX_BPM`] click tracks under `root/music` and ingests them, like
+/// [`ingest_generated`]. The tracks are analysed in the background as usual.
+pub fn ingest_demo_automix(services: &mut LibraryServices, root: &Path) -> Result<usize, AppError> {
+    let music = root.join("music");
+    fs::create_dir_all(&music)?;
+    for (i, bpm) in DEMO_AUTOMIX_BPM.iter().enumerate() {
+        let (artist, genre) = DEMO_TAGS[i % DEMO_TAGS.len()];
+        write_click_track(
+            &music.join(format!("click_{i}.wav")),
+            *bpm,
+            DEMO_AUTOMIX_SECONDS,
+            &[
+                ("INAM", &format!("Click {bpm:.0}")),
+                ("IART", artist),
+                ("IGNR", genre),
+            ],
+        )?;
+    }
+    watch_and_wait(services, &music, DEMO_AUTOMIX_BPM.len())
+}
+
+/// Queues every track for analysis, as the browser's Analyse action does. Automix only queues
+/// tracks with a beat grid, so the demo needs the analysis to run.
+pub fn queue_all_for_analysis(services: &mut LibraryServices) -> Result<usize, AppError> {
+    let tracks = services.library().tracks().all()?;
+    let mut queued = 0;
+    for track in tracks {
+        if services.prep_queue_mut().enqueue(track.id, false).is_ok() {
+            queued += 1;
+        }
+    }
+    Ok(queued)
+}
+
+/// Pumps the library until every track has a beat grid (the automix queue picks only analysed
+/// tracks), or the time runs out. The demo starts its deck after this, so automix has candidates
+/// from the first tick.
+pub fn wait_for_analysis(services: &mut LibraryServices) -> Result<(), AppError> {
+    let deadline = Instant::now() + ANALYSIS_TIMEOUT;
+    loop {
+        services.pump();
+        let tracks = services.library().tracks().all()?;
+        if tracks.iter().all(|track| services.has_beat_grid(track)) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(AppError::Smoke("the demo tracks were not analysed in time"));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Watches `music` and pumps the library until it holds the tracks written there.
+fn watch_and_wait(
+    services: &mut LibraryServices,
+    music: &Path,
+    expected: usize,
+) -> Result<usize, AppError> {
     let folders = services
         .watch_folders()
         .ok_or(AppError::Smoke("the library has no watch folders"))?;
-    folders.add(&music)?;
+    folders.add(music)?;
 
     let deadline = Instant::now() + INGEST_TIMEOUT;
     loop {
         services.pump();
         let count = services.library().tracks().count()?;
         let count = usize::try_from(count).unwrap_or(0);
-        if count >= TRACKS {
+        if count >= expected {
             return Ok(count);
         }
         if Instant::now() >= deadline {
-            return Err(AppError::SmokeTracks {
-                count,
-                expected: TRACKS,
-            });
+            return Err(AppError::SmokeTracks { count, expected });
         }
         std::thread::sleep(Duration::from_millis(20));
     }

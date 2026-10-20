@@ -47,9 +47,9 @@
 <g><title>27 Mixer UI: Partial</title><rect x="508" y="244" width="118" height="44" rx="5" fill="#bf8700"/><text x="567.0" y="270.0" font-size="11" text-anchor="middle" fill="#ffffff">27 Mixer UI</text></g>
 <g><title>28 Browser: Done</title><rect x="632" y="244" width="118" height="44" rx="5" fill="#2da44e"/><text x="691.0" y="270.0" font-size="11" text-anchor="middle" fill="#ffffff">28 Browser</text></g>
 <g><title>29 Automix/settings: Partial</title><rect x="756" y="244" width="118" height="44" rx="5" fill="#bf8700"/><text x="815.0" y="270.0" font-size="11" text-anchor="middle" fill="#ffffff">29 Automix/settings</text></g>
-<g><title>30 Stem pads: Not started</title><rect x="880" y="244" width="118" height="44" rx="5" fill="#d0d7de"/><text x="939.0" y="270.0" font-size="11" text-anchor="middle" fill="#57606a">30 Stem pads</text></g>
+<g><title>30 Stem pads: Done</title><rect x="880" y="244" width="118" height="44" rx="5" fill="#2da44e"/><text x="939.0" y="270.0" font-size="11" text-anchor="middle" fill="#ffffff">30 Stem pads</text></g>
 <g><title>31 UI gate: Done</title><rect x="1004" y="244" width="118" height="44" rx="5" fill="#2da44e"/><text x="1063.0" y="270.0" font-size="11" text-anchor="middle" fill="#ffffff">31 UI gate</text></g>
-<text x="1624" y="270.0" font-size="12" fill="#57606a">62%</text>
+<text x="1624" y="270.0" font-size="12" fill="#57606a">75%</text>
 <text x="16" y="320.0" font-size="12" font-weight="600" fill="#1f2328">6 Hardware</text>
 <g><title>34 Controller maps: Not started</title><rect x="136" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">34 Controller maps</text></g>
 <g><title>35 HID: Not started</title><rect x="260" y="294" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="320.0" font-size="11" text-anchor="middle" fill="#57606a">35 HID</text></g>
@@ -57,11 +57,11 @@
 <text x="1624" y="320.0" font-size="12" fill="#57606a">0%</text>
 <text x="16" y="370.0" font-size="12" font-weight="600" fill="#1f2328">7 Intelligence</text>
 <g><title>F Foundation: Done</title><rect x="136" y="344" width="118" height="44" rx="5" fill="#2da44e"/><text x="195.0" y="370.0" font-size="11" text-anchor="middle" fill="#ffffff">F Foundation</text></g>
-<g><title>37 Stem DSP: Not started</title><rect x="260" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">37 Stem DSP</text></g>
-<g><title>38 Automix: Not started</title><rect x="384" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="443.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">38 Automix</text></g>
-<g><title>39 Stem transitions: Not started</title><rect x="508" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="567.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">39 Stem transitions</text></g>
-<g><title>40 Sampler: Not started</title><rect x="632" y="344" width="118" height="44" rx="5" fill="#d0d7de"/><text x="691.0" y="370.0" font-size="11" text-anchor="middle" fill="#57606a">40 Sampler</text></g>
-<text x="1624" y="370.0" font-size="12" fill="#57606a">20%</text>
+<g><title>37 Stem DSP: Done</title><rect x="260" y="344" width="118" height="44" rx="5" fill="#2da44e"/><text x="319.0" y="370.0" font-size="11" text-anchor="middle" fill="#ffffff">37 Stem DSP</text></g>
+<g><title>38 Automix: Done</title><rect x="384" y="344" width="118" height="44" rx="5" fill="#2da44e"/><text x="443.0" y="370.0" font-size="11" text-anchor="middle" fill="#ffffff">38 Automix</text></g>
+<g><title>39 Stem transitions: Partial</title><rect x="508" y="344" width="118" height="44" rx="5" fill="#bf8700"/><text x="567.0" y="370.0" font-size="11" text-anchor="middle" fill="#ffffff">39 Stem transitions</text></g>
+<g><title>40 Sampler: Partial</title><rect x="632" y="344" width="118" height="44" rx="5" fill="#bf8700"/><text x="691.0" y="370.0" font-size="11" text-anchor="middle" fill="#ffffff">40 Sampler</text></g>
+<text x="1624" y="370.0" font-size="12" fill="#57606a">80%</text>
 <text x="16" y="420.0" font-size="12" font-weight="600" fill="#1f2328">8 Pro surface</text>
 <g><title>41 Recording: Not started</title><rect x="136" y="394" width="118" height="44" rx="5" fill="#d0d7de"/><text x="195.0" y="420.0" font-size="11" text-anchor="middle" fill="#57606a">41 Recording</text></g>
 <g><title>42 Broadcast: Not started</title><rect x="260" y="394" width="118" height="44" rx="5" fill="#d0d7de"/><text x="319.0" y="420.0" font-size="11" text-anchor="middle" fill="#57606a">42 Broadcast</text></g>
@@ -79,5 +79,5 @@
 <rect x="256" y="506" width="14" height="14" rx="3" fill="#bf8700"/><text x="276" y="518" font-size="12" fill="#1f2328">Partial</text>
 <rect x="376" y="506" width="14" height="14" rx="3" fill="#fb8500"/><text x="396" y="518" font-size="12" fill="#1f2328">In progress</text>
 <rect x="496" y="506" width="14" height="14" rx="3" fill="#d0d7de"/><text x="516" y="518" font-size="12" fill="#1f2328">Not started</text>
-<text x="1680" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 65% (weighted)</text>
+<text x="1680" y="518" font-size="12" text-anchor="end" fill="#1f2328">Overall: 72% (weighted)</text>
 </svg>

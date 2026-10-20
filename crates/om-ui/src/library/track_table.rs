@@ -28,7 +28,7 @@ pub struct Column {
     pub numeric: bool,
 }
 
-const COLUMNS: [Column; 8] = [
+const COLUMNS: [Column; 9] = [
     Column {
         id: 1,
         title: "Title",
@@ -85,7 +85,18 @@ const COLUMNS: [Column; 8] = [
         width: 92,
         numeric: false,
     },
+    Column {
+        id: STEMS_COLUMN,
+        title: "Stems",
+        sort_field: None,
+        width: 96,
+        numeric: false,
+    },
 ];
+
+/// The stems indicator column. Its text comes from `StemQueue::label` (the table has no access to
+/// the stem jobs), so `cell_text` leaves it empty.
+pub const STEMS_COLUMN: i32 = 9;
 
 /// The browser's columns, in display order.
 pub fn columns() -> &'static [Column] {

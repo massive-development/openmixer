@@ -18,8 +18,10 @@ pub mod latency;
 pub mod mixer;
 pub mod output;
 pub mod quantizer;
+pub mod sampler;
 pub mod slip;
 mod stage;
+pub mod stem_control;
 pub mod sync;
 
 pub use callback::AudioCallback;
@@ -29,5 +31,7 @@ pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
 pub use mixer::{ChannelInput, Mixer, MixerControl};
 pub use output::{OutputPairs, OutputRouter, NO_PAIR};
+pub use sampler::{PadMode, Sample, SampleRegistry, SamplerAudio, SamplerControl, SamplerError};
 pub use stage::{ProcessStage, StageChain, StageInsert, INTERFACE_VERSION, MAX_STAGES};
+pub use stem_control::{EngineCommands, StemSetRegistry};
 pub use sync::{Sync, SyncMode};

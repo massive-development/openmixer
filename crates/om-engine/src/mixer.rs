@@ -9,7 +9,8 @@ mod channel;
 mod control;
 mod shared;
 
-use crate::stage::StageChain;
+use crate::sampler::SamplerAudio;
+use crate::stage::{ProcessStage, StageChain};
 use channel::{Bus, ChannelStrip};
 use om_dsp::{Crossfader, CrossfaderCurve};
 use shared::MixerShared;
@@ -37,6 +38,7 @@ pub struct Mixer {
     applied_crossfader: f32,
     applied_curve: CrossfaderCurve,
     master_inserts: StageChain,
+    sampler: Option<SamplerAudio>,
     sample_rate: f64,
     max_block: usize,
     prepared: bool,
@@ -63,6 +65,7 @@ impl Mixer {
             applied_curve: crossfader.curve(),
             crossfader,
             master_inserts,
+            sampler: None,
             sample_rate: DEFAULT_SAMPLE_RATE,
             max_block: 0,
             prepared: false,
@@ -73,6 +76,12 @@ impl Mixer {
 
     pub fn num_channels(&self) -> usize {
         self.channels.len()
+    }
+
+    /// Gives the mixer the sampler to mix into the master bus: after the channels are summed and
+    /// before the master gain, the master inserts and the meters. Control thread, before audio runs.
+    pub fn attach_sampler(&mut self, sampler: SamplerAudio) {
+        self.sampler = Some(sampler);
     }
 
     /// Control thread, before audio runs. Sizes every buffer for `max_block_size` frames.
@@ -88,6 +97,9 @@ impl Mixer {
         }
         self.master_inserts
             .prepare(self.sample_rate, self.max_block);
+        if let Some(sampler) = self.sampler.as_mut() {
+            sampler.prepare(self.sample_rate, self.max_block);
+        }
         self.shared.master_peak_left.reset();
         self.shared.master_peak_right.reset();
         self.prepared = true;
@@ -169,6 +181,9 @@ impl Mixer {
     }
 
     fn finish_master(&mut self, bus: &mut Bus<'_>, n: usize, decay: f32) {
+        if let Some(sampler) = self.sampler.as_mut() {
+            sampler.process(bus.master_l, bus.master_r);
+        }
         let gain = self.shared.master_gain.load();
         for i in 0..n {
             bus.master_l[i] *= gain;

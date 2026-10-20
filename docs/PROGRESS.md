@@ -5,7 +5,7 @@ Where the project stands against the goal: a clean-room, djay-Pro-class DJ appli
 
 Legend: ✅ done · 🟡 partial / in progress · ⬜ not started
 
-_Last updated: 2026-10-19. Update this file in the same PR that changes a task's status._
+_Last updated: 2026-10-20. Update this file in the same PR that changes a task's status._
 
 ## At a glance
 
@@ -17,15 +17,15 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|------|--------|
 | 1 | Foundation | ✅ Repo, Cargo workspace, CI, test harness |
 | 2 | Audio engine | 🟡 (debug panel 26a partial; 8b FFmpeg optional and open; 10-minute soak not in CI) |
-| 3 | Analysis | 🟡 (stems ONNX backend, 19, open) |
+| 3 | Analysis | 🟡 (htdemucs model export and app wiring, 19, open) |
 | 4 | Library | 🟡 (crates open) |
-| 5 | UI | 🟡 (LookAndFeel 25 partial, stem pads 30 open; decks, mixer and settings partial; not checked by eye) |
+| 5 | UI | 🟡 (LookAndFeel 25 partial; stem pads 30 done at logic and view level, not checked by ear; decks, mixer and settings partial; not checked by eye) |
 | 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 34-36 open) |
 | 7 | Intelligence | ⬜ |
 | 8 | Pro surface | ⬜ |
 | 9 | Release | ⬜ |
 
-**Current state:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock) on cpal or a mock device; analysis (BPM, key, waveform, structure); the library (ingest, import, search, prep queue); MIDI (ALSA sequencer on Linux, mapping and feedback); in-process plugins; the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel), stems (mock separator only), the hardware wave. The GPUI window has never been viewed by eye. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7. See `docs/spikes/DECISIONS.md`.
+**Current state:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock) on cpal or a mock device; analysis (BPM, key, waveform, structure); the library (ingest, import, search, prep queue); MIDI (ALSA sequencer on Linux, mapping and feedback); in-process plugins; the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel), stems (the cache, the service and the settings and browser UI run on the mock separator; the htdemucs model is not installed or listened to yet), the hardware wave. The GPUI window has never been viewed by eye. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7. See `docs/spikes/DECISIONS.md`.
 
 **What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test --workspace`), check startup with `cargo run -p openmixer -- --smoke`, and with the `gui` feature open the GPUI window (`cargo run -p openmixer --features gui -- --mock-device`). Audio, analysis, library, MIDI and the UI are implemented; the wave sections say what is partial.
 
@@ -78,7 +78,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 16 Key detection | Chroma-based key with Camelot mapping and harmonic compatibility; synthetic cadences in 8 keys detected | Chroma key estimation, Camelot mapping, harmonic compatibility | Tuning-offset estimation (assumes A440); key changes within a track |
 | 17 Waveform model | Multi-resolution overview and zoom data; low/mid/high band data for colouring; coarser levels rebuilt on load | `WaveformData` with levels and band data (`om-analysis`); drawn in the deck view from analysed peaks (blank until a track is analysed) | Stereo and per-stem waveforms; progressive results while analysing; not checked by eye |
 | 18 Structure features | Onset picking, energy curve, section boundaries with intro/main/breakdown/outro labels, mix-in/out points (feeds Automix) | Onset picking, energy, segmenter with intro, main, breakdown and outro labels, mix-in and mix-out points | Bar-aligned boundaries; timbre and repetition features; real-music evaluation |
-| 19 Stems precompute | Partial (`om-stems`): separator trait, mock separator, JSON model manifest, licence-gated download of `file://`, `http://` and `https://` URLs (rustls), SHA-256 and size verified, licence digest remembered | `StemSeparator` trait and `MockSeparator`; JSON manifest; `Downloader` with licence gate, SHA-256 and size checks, licence digest remembered | ONNX Runtime backend (`ort`, not in the build); model export and hosted manifest; chunked overlap-add inference; stem storage keyed by content hash and separator version; UI licence dialog |
+| 19 Stems precompute | Partial (`om-stems`): streamed separator trait, mock separator, htdemucs pipeline, ONNX backend (feature `onnx`), JSON model manifest, licence-gated download of `file://`, `http://` and `https://` URLs (rustls), SHA-256 and size verified, licence digest remembered | Stereo `StemSet`, streamed `StemSeparator` v2 and `MockSeparator`; `StemService` on `WorkerPool` (licence and installed-model gate, cancel, cap, forget) and the on-disk stem cache with migration 8 (S2, S3); model installer with the licence answer gating the download, and the stems UI (settings licence section, Prepare stems, Stems column, auto-prepare, cache clear) (S4); htdemucs pipeline (resampling, 7.8 s segments, overlap-add, normalisation, STFT/iSTFT) tested with fake networks; `OrtInference` behind the off-by-default `onnx` feature (`ort` 2.0.0-rc.13) with a toy ONNX model test; JSON manifest with a model contract; `Downloader` with licence gate, SHA-256 and size checks, licence digest remembered | The real htdemucs model: export script (`tools/export_htdemucs.py`) and I/O contract unverified, nothing listened to; real model unverified (export, load, listening); hosted manifest not shipped; stems UI unseen in the window; ONNX CI job unproven on a clean runner |
 
 ---
 
@@ -104,7 +104,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 27 Mixer widgets + metering | Channel strips (trim, filter, 3-band EQ with kill, PFL, FX shortcut, L/Mid/R assign, fader, stereo peak meter with hold and clip); crossfader with Linear/Power curves; master and cue sections; FX panel per rack with unit select, enable, mix and knobs | Channel strips, master, crossfader (linear and constant-power), cue and FX panel drawn in GPUI with drag; stereo peak meter ballistics in `om-ui` | RMS meters; FX tabs hiding the strips; not verified by eye |
 | 28 Library browser + wiring | Sidebar tree (all tracks, playlists, folders, watch folders, prep queue); search box with the query syntax and debounce; virtualised, paged, sortable table with a harmonic-compatibility tint against the playing deck; Load buttons, double-click, drag onto a deck; import via file chooser; track loader that fills waveform and grid from cache or from the prep queue; `OPENMIXER_LIBRARY_DB` override | Sidebar tree, search box on the query syntax, paged sortable table with the Camelot tint, row selection, Load buttons, double-click and drag onto a deck; track loader fills waveform and grid and refreshes when analysis lands; `--smoke` (gui) ingests generated tracks and loads one | Playlist editing; prep queue reorder and remove; auto-enqueue after a scan; import by file chooser (the settings page takes a typed path); window only launched and inspected, not checked by eye |
 | 29 Automix panel + settings | Settings overlay with tabs for audio (driver, device, rate, buffer, master and headphone outputs, live latency/xrun/CPU), MIDI (per-input toggles, map file, learn), library (watch folders, rescan, scan interval, XML import), appearance (theme picker, plugin themes), plugins (folder, loaded list, reload, built-in load and unload); versioned `preferences.json` applied at start-up and on change | Versioned preferences, applier and `AppComposition`; audio, MIDI, library, plugins and appearance pages; overlay in the header (Escape closes); audio device restored at start-up; `--mock-device --smoke` prints the MIDI and plugin status lines | Automix panel (Wave 7, needs Todo 38); `--settings` start flag; live scan-interval change; MIDI hot-plug refresh while open; dynamic plugin loading (open decision); overlay not checked by eye |
-| 30 Stem pads UI | Per-stem mute and volume | — | All; waits on Wave 7 stem playback |
+| 30 Stem pads UI | Per-stem mute, volume, filter, solo and load in the deck card | `om-ui` `StemBinding` (solo with restore, all-on, activity), `TrackLoader` auto-load of cached stems (`stems.autoLoad`, default on) and Load/Stems off toggle, `stem.<d>.<s>.*` MIDI targets and fixture; GPUI stem pads row with `--mock-stems` screenshot | Logic and view are tested; not verified by ear (no audio played, mock device only) |
 | 31 UI verification gate | Scripted DJ operates the full window only through widgets (search and load, transport, crossfader, EQ, hotcues, loops, FX, theme switch) on a paced mock device; after each action the widget and engine must agree; xrun, underrun, NaN and overflow budgets; 10-minute opt-in run; `--smoke` opens the window and exits 0 (skipped without a display) | `crates/openmixer/tests/ui_gate.rs`: 8 s test plus a 10-minute `#[ignore]` run, driving the same composition as the binary through the widget and binding models; `--smoke` with `gui` | Window-driven pass (needs a display); overview seek, settings and drag-and-drop not in the scenario; stem pads not covered |
 
 ---
@@ -117,15 +117,71 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 | 35 HID layer | Non-MIDI controllers | — | All |
 | 36 Mapping editor UI | In-app learn and edit | Learn start and cancel on the MIDI settings page | In-app editing of maps |
 
-## Waves 7–9 ⬜
+## Waves 7–9 🟡
 
 Before Wave 7, the Foundation (typed control surface, pulled engine snapshot, typed errors, job queue) is done. The Before-Wave-7 (A) list in `TODO.md` is what remains.
 
 | Wave | Contents | Status |
 |------|----------|--------|
-| 7 | Stem-aware mixing, Automix, stem transitions, 8-pad sampler | ⬜ |
+| 7 | Stem-aware mixing, Automix, stem transitions, 8-pad sampler | 🟡 (stem playback and `StemMixer` in the engine, S5; sampler engine and control surface, P1/P3, not heard; Automix planner, controller and queue at logic level, A1-A4, no UI or real deck; the rest not started) |
 | 8 | Mix recording, broadcasting, DVS (timecode vinyl), video mixing | ⬜ |
 | 9 | Legal audit, trademark check, packaging, docs, v1.0.0 | ⬜ |
+
+### Wave 7 P1/P3: sampler engine and control surface (Todo 40, engine level)
+
+`om-engine::sampler` has 8 pads of 4 voices each, preallocated. Samples decode off the audio thread (`Sample::load`, capped at 60 s / 64 MiB) and reach the audio side over an `rtrb` command ring; replaced samples return on a second ring and are freed on the control side. It mixes into the master bus before the master gain and inserts. Control: `SamplerControl`, `sampler.pad<N>.trigger|gate|volume|pitch` ids, `StateId::Sampler` reads, `EngineSnapshot.sampler`, `Command::SamplerAssign` through `DjEngine::command_sink`, and `fixtures/controllers/sampler_map.json`. Verified headlessly (render tests, an `assert_no_alloc` run with decks and all pads, a MIDI map test); not listened to. Storage, the pad UI and the soak scenario are in the next section.
+
+Cost (release build, `cargo test -p om-engine --release sampler_cost -- --ignored --nocapture`): per 256-frame block at 44.1 kHz, 12 microseconds with 8 voices, 47 microseconds with 32 voices, 69 microseconds with 32 voices at a fractional pitch (the block budget is 5.8 ms).
+
+### Wave 7 P2/P4/P5: sample bank, pad strip and soak (Todo 40, logic and view level)
+
+| Piece | Behaviour | Tests | Missing |
+|-------|-----------|-------|---------|
+| Sample bank (`om-ui::sample_bank`) | `<data>/samples/` with `sampler.json` (version 1, pad, file, name, gain, pitch, mode). Load keeps bad entries out with a note, a corrupt file goes to `.bad`, a newer version is refused and never overwritten. Saves are atomic. Decodes run on a worker; `pump` installs them through `Command::SamplerAssign` from the control timer. A failed decode keeps the pad's sample. A missing file leaves the pad empty with a note. Import copies into the folder with `-2`, `-3` suffixes on a clash | 11 integration tests (`crates/om-ui/tests/sample_bank.rs`): round trip, missing file, bad JSON, newer version, import copy, clash, decode failure, hostile pad numbers, clear | Pad settings are not on MIDI; a sample's name is its file stem |
+| Start-up and demo | `AppComposition::attach_samples` runs after the device starts, so decodes use the engine rate. `--demo-library` writes eight generated samples (kick, snare, hat, clap, two tones, click, bass loop) into its scratch folder | `openmixer::sampler_demo` test loads all eight files | |
+| Pad view-model (`om-ui::sampler_binding`) | Eight `PadView`s from `EngineSnapshot.sampler` and the bank (name, loaded, missing, loading, playing, gain, pitch, mode). Press and release are typed `Command::Param`s: one-shot and loop pads get `trigger` (velocity, then 0 to release), gate pads get `gate` 1.0 and 0 so a press holds. Gain, pitch and mode are stored by the bank. Keys 1 to 8 press pads while the strip has focus | 11 tests (`crates/om-ui/tests/sampler_binding.rs`) with a recording sink: trigger and gate command shapes, bad pads send nothing, the string path, mode cycle, clamps, the view, bank loads and persisted settings | Not heard |
+| Sampler strip (`om-ui-gpui::sampler_view`, `om-ui::widgets::sampler_strip`) | In the library band beside the library (34% of its width): a 4x2 grid of pads (lit while playing, filled when loaded, outlined when empty, accent border when selected, `!` when the file is missing), a caption, and Mode, Load and Clear, Gain -/+ and Pitch -/+ for the selected pad. Load opens a path field in the caption (typed text, Enter loads, Escape cancels). Style from `LookAndFeel` only (the style lint passes) | Layout: every part inside the strip and no overlap; the strip is at least 250 by 100 px in the library band at 900x600, 1024x640, 1280x800 and 1920x1080 (`main_layout` tests). Screenshots checked by eye (see `docs/screenshots/REVIEW.md`) | Load does not open a file picker; the caption carries the path. The lit (playing) state is not in a capture |
+| Soak and gate (P5) | The short and 10-minute soaks play random one-shot and loop pads, hold gates for 0.2 to 1.5 s, mix the three modes and replace pad 3's sample at 10 s, under the existing invariants and xrun retry. The UI gate presses a kick each second and holds a gate from 3 to 3.5 s through the view-model | `soak_short`, `soak_short_with_stems`, `scripted_dj_session_meets_the_gate` pass; the 10-minute variants are ignored and not run in this change | Not run for 10 minutes |
+
+### Wave 7 A1-A4: automix planner, controller and queue (Todo 38, logic level)
+
+| Piece | Behaviour | Tests | Missing |
+|-------|-----------|-------|---------|
+| Planner (`om-automix::planner`) | `DefaultPlanner` turns two `DeckInfo`s into a `TransitionPlan` (bar-aligned start on the outgoing grid, 8/16/32 beats, crossfader ramp, incoming sync and play, EQ bass swap, echo, stem moves) or a typed `PlanError`. `Auto` chooses by key, tempo gap, sections and stems | 22 planner tests: determinism, bar alignment, equal-power sums, steps ordered and inside the window, infeasible cases with reasons, key preference, a property test over positions, tempo gaps, styles and keys | Sections come from the host; a track without a grid cannot be planned |
+| Stem styles (A4) | `BassSwap` and `StemBridge` build `StemFadePlan`s with start gains and mutes read from the `EngineSnapshot`; both fall back to `Crossfade` unless both decks have stems; the outgoing deck's stems are put back after it stops | Planner and controller tests with and without stems | Not heard |
+| Controller (`AutomixController`) | Idle, Loading, Armed, Transitioning, Cleanup on the control tick; sends only changed values; lands the crossfader exactly; outgoing deck stops, incoming leads sync | 28 controller tests over simulated 30 Hz ticks with a fake host and sink: happy path, cue point, stalled clock (1.5 s ticks), every cancel trigger, load failure, timeout, empty queue, unplannable pair, a track cued by hand, `start` and `cancel` | Never run on a real deck |
+| Cancel rules | A moved watched control, a paused, unloaded or seeked deck, `notify_user_input`, `automix.cancel`, disable, or an underrun cancels; the user's value stays, EQ/FX/filter moves are put back | Included above | The binding layer (MIDI, UI) does not call `notify_user_input` yet; stem controls are only covered by it |
+| Queue (A3) | `select_next` and `LibraryQueue`: playlist in order, or shuffled search; recent plays (last N within H hours) and unanalysed tracks skipped with reasons; smart key (Camelot, relative) and BPM window preference; injected RNG and clock | 7 rule tests, 10 library tests with an in-memory library | The beat-grid check is "has a BPM" by default |
+| App wiring (`openmixer::automix_service`) | `automix.*` target registered; the control thread steps the runner only while automix is on or busy; the host is built on the control thread | 3 composition tests (ids, typed command, host factory, Camelot vs `om-analysis` for all 576 pairs) | The host over `TrackLoader`, the Automix panel (A5), the UI-gate safety scenario (A6) |
+
+### Wave 7 A5-A6: Automix settings, bar, demo and safety (Todo 38 and 29, view level)
+
+| Piece | Behaviour | Tests | Missing |
+|-------|-----------|-------|---------|
+| Settings page (`om-ui::settings::automix`, tab "Automix") | Enable, style, length (8/16/32), queue source (whole library, a playlist from the library, the browser's current search), smart picks, tempo gap (0 to 20 %), autostart; each edit saved once and applied live | 6 model tests with a fake control; 2 gpui tests (edits, one save per change, no service) | Not seen by eye |
+| Queue sources (`openmixer::automix_queue`) | `CurrentSearch` reads the browser's search text (`SearchFeed`, published on every change); `smart` and the source are read before each pick (`SharedQueueSettings`) | Settings apply test; queue rule tests from A3 | The queue skips unanalysed tracks instead of waiting for them |
+| Prefs v3 `automix.queueSearch` | Additive boolean; a file without it keeps its playlist source | Preferences tests | None |
+| Bar (`om-ui::automix_bar`, `om-ui-gpui::automix_bar`) | Header strip left part: Enable, style, length, state, next track with BPM and key, progress, beats left, Start now, Cancel, last error | 4 view-model tests; layout test: the bar fits the strip at the four sizes | Skip is not offered; narrow widths not checked by eye |
+| Controller fixes | A deck analysed after its load is read again (the grid-less copy was cached and never armed); next track BPM and key in the snapshot | `a_grid_that_lands_after_the_load_is_read_on_a_later_tick` | None |
+| Demo (`--demo-automix`, `main-automix`) | Three click tracks at 120, 122, 124 BPM; automix on in memory; deck A starts after every track has a grid. Captured Armed (14 s) and Transitioning (19 s) | Checked by eye, see `docs/screenshots/REVIEW.md` | Not heard |
+| A6 tick path | The controller tick names no lock and no engine type (source-level assertion) | `the_controller_tick_path_takes_no_engine_or_audio_locks` | A dynamic fake engine is not used; the runner's `DjEngine::snapshot` call is outside the controller |
+
+Not verified by ear: the mock device is silent, so every transition is checked through the engine, the controller tests and the screenshots only.
+
+### Wave 7 S5: stem-aware deck playback (Todo 37, engine level)
+
+| Piece | Behaviour | Tests | Missing |
+|-------|-----------|-------|---------|
+| `om-dsp` `StemMixer` / `StemMixerControl` | Four stems (L/R each) fold to stereo per source frame: gain 0 to 1.5 and mute through one-pole smoothers (10 ms, 8 ms), per-stem `SweepFilter` (-1 low-pass, 0 bit-exact bypass, +1 high-pass); control side is atomics, `Send + Sync` | Unity equals the plain sum (1e-6), mute fades without a click, bypass is bit-exact, gain step is monotonic, no subnormals | Filter position is applied per block, not smoothed |
+| `Deck::load_stems(dir)` / `clear_stems()` / `stem_control()` | `dir/{drums,bass,vocals,other}.wav` (16-bit or float stereo, same rate, length within 16 frames) are decoded in lockstep into the one frame ring, 8 floats per frame; loop prefetch slots are 8 floats wide; the 8-to-2 mix happens at source-frame pull, before interpolation and key-lock, so a stem deck still has one interpolator and one stretcher. Seek, loop, hotcue, slip, quantize, sync, rate and key-lock are frame-index logic and are untouched. Errors (`DeckError`) leave the deck as it was. `load` of a new track leaves stem mode and resets gains, mutes and filters | Unity stems equal plain render (1e-4), mute drums equals a mix without drums, seek/loop/hotcue land on the same frames, rate moving every block, key-lock (finite, same level), underrun, error cases, `clear_stems` resumes at the same position, PCM16 stems | Switching mode costs a seek-sized gap; a stem file that ends early reads as silence; mute and filter changes are heard after the key-lock look-ahead (up to about 12 ms), not instantly |
+| Engine surface | `stem.<d>.<s>.volume\|mute\|filter` typed target (volume is the linear gain, clamped 0 to 1.5; mute from 0.5; filter -1 to 1), `StateId::Stem` reads, `EngineSnapshot.stems`, `DjEngine::register_stem_set` + `command_sink` (`Command::LoadStems`, other commands go to a fallback sink or are rejected) | Router, snapshot, command sink and full-engine render tests | The app's router sink still rejects `LoadStems`; nothing wires a prepared set into a deck yet |
+| Real-time guards | `assert_no_alloc` over a full `DjEngine::process`: deck A in stem mode with a loop, key-lock on both decks, FX on, every stem parameter moving each block, 200 blocks; stem soak variant (`soak_short_with_stems`: stem mutes, volumes and filters moving for 30 s, 0 xruns, 0 underruns) | Both pass | Not run on a real device |
+
+Cost of the mix (release build, `cargo test -p om-dsp --release stem_mix_cost -- --ignored --nocapture`): 2.9 microseconds per 256-frame block with all filters bypassed, 4.3 microseconds with four active sweep filters (under 0.1% of the 5.3 ms a 256-frame block lasts at 48 kHz). Four-file decoding is on the decoder thread; the soak showed no underruns. The ring is allocated at eight floats per frame for every deck (2 MiB at the default size) and the loop prefetch slots at eight floats too (4 MiB per deck); plain mode still buffers the same number of frames as before.
+
+### Soak xrun budget: one retry (review item 9)
+
+`soak_short` and `soak_short_with_stems` (`crates/om-audio/tests/soak.rs`) allow the xrun budget (5 callbacks over the buffer's time budget) to be exceeded once: an over-budget run is repeated, and the test fails only when the repeat is over budget too. Shared runners stall for reasons the engine does not control, so one clean run out of two is the bar; two over-budget runs in a row still fail. Non-finite samples, overflow and steady-state underruns keep zero tolerance on both runs. Each run prints its xrun count and worst callback time, so a retry is visible in the log. The 10-minute soak keeps the single-run check.
 
 ## Not yet covered by tests
 

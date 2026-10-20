@@ -2,6 +2,7 @@
 
 use super::appearance::*;
 use super::audio::*;
+use super::automix::*;
 use super::chips::*;
 use super::library::*;
 use super::midi::*;
@@ -11,7 +12,7 @@ use crate::text_entry::{apply_key, EntryKey};
 
 impl Shell {
     /// Runs `f` on the settings when the window has them.
-    pub(super) fn settings_mut(&mut self, f: impl FnOnce(&mut SettingsState)) {
+    pub(crate) fn settings_mut(&mut self, f: impl FnOnce(&mut SettingsState)) {
         if let Some(settings) = self.settings.as_mut() {
             f(settings);
         }
@@ -134,6 +135,7 @@ impl Shell {
             Some(PageKind::Appearance) => appearance_page(&t, settings, cx),
             Some(PageKind::Midi) => midi_page(&t, settings, cx),
             Some(PageKind::Library) => library_page(&t, settings, cx),
+            Some(PageKind::Automix) => automix_page(&t, settings, cx),
             Some(PageKind::Plugins) => plugins_page(&t, settings, cx),
             None => note(&t, "This page is added by a plugin."),
         };
@@ -160,7 +162,14 @@ impl Shell {
                     .child("Settings"),
             )
             .child(tabs)
-            .child(div().flex_1().overflow_hidden().child(body))
+            // The page scrolls: the Library page with the stems section is taller than the card.
+            .child(
+                div()
+                    .id("settings-page")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .child(body),
+            )
             .child(status)
             .child(div().flex().justify_end().child(close))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
@@ -224,6 +233,10 @@ impl SettingsState {
             return;
         };
         let text = entry.text.trim().to_owned();
+        if entry.kind == EntryKind::MaxCacheGb {
+            self.stems_submit_max_cache(&text);
+            return;
+        }
         if text.is_empty() {
             self.entry = Some(entry);
             self.set_notice("Type a path first", true);
@@ -234,6 +247,8 @@ impl SettingsState {
             EntryKind::WatchFolder => self.library_add_folder(path),
             EntryKind::ImportXml => self.library_import(path),
             EntryKind::MapFile => self.midi_load_map(path),
+            // Handled above, before the path is made.
+            EntryKind::MaxCacheGb => {}
         }
     }
 }

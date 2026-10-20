@@ -14,14 +14,16 @@ pub use services::{
 };
 pub use track_drag::{describe as describe_track_drag, parse as parse_track_drag};
 pub use track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
-pub use track_table::{columns, Column, TrackTableModel, MAX_CACHED_PAGES, PAGE_SIZE};
+pub use track_table::{
+    columns, Column, TrackTableModel, MAX_CACHED_PAGES, PAGE_SIZE, STEMS_COLUMN,
+};
 mod browser;
 mod control;
 mod cue_saver;
 mod play_tracker;
 mod track_loader;
 
-pub use browser::{LibraryBrowser, LoadHandler, SEARCH_PLACEHOLDER};
+pub use browser::{LibraryBrowser, LoadHandler, SearchFeed, SEARCH_PLACEHOLDER};
 pub use cue_saver::{CueSaver, Cues};
 pub use play_tracker::{PlayTracker, MAX_STEP, PLAY_THRESHOLD};
-pub use track_loader::{LoadError, TrackLoader};
+pub use track_loader::{LoadError, StemSource, TrackLoader};
