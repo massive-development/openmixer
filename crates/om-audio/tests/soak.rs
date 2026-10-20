@@ -177,7 +177,14 @@ fn run_soak(seconds: u32, stems: bool) -> Outcome {
     }
 }
 
+/// The soaks are paced in real time, so two running side by side would starve each other and
+/// spend the xrun budget on the test runner, not on the engine. They take turns.
+static ONE_SOAK_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn check(seconds: u32, stems: bool) {
+    let _turn = ONE_SOAK_AT_A_TIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let outcome = run_soak(seconds, stems);
     if stems {
         assert!(
