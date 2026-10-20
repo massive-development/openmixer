@@ -20,9 +20,8 @@ use om_ui::geometry::Rect;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
-    AutomixControl, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage,
-    MidiSettingsPage, PageKind, PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel,
-    SettingsResult,
+    AutomixControl, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage,
+    PageKind, PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel, SettingsResult,
 };
 use om_ui::stems::StemHost;
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
@@ -32,7 +31,7 @@ use std::sync::Arc;
 mod appearance;
 mod audio;
 mod automix;
-mod chips;
+pub(crate) mod chips;
 mod library;
 mod midi;
 mod overlay;

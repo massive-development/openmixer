@@ -190,6 +190,8 @@ impl<L: AutomixLibrary + 'static> AutomixHost for AppAutomixHost<L> {
         Some(NextTrack {
             id: pick.id,
             title: pick.title,
+            bpm: pick.bpm,
+            key: pick.camelot,
         })
     }
 

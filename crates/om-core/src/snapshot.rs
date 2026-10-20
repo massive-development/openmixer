@@ -371,6 +371,10 @@ pub struct AutomixSnapshot {
     pub progress: f64,
     /// Title of the track loaded or loading as the next one; empty when none.
     pub next_track_title: String,
+    /// Tempo of that track, when it is analysed.
+    pub next_track_bpm: Option<f64>,
+    /// Camelot key of that track; empty when unknown.
+    pub next_track_key: String,
     /// Beats of the outgoing deck left until its end; `None` when no deck leads.
     pub remaining_beats: Option<f64>,
     /// The last thing that went wrong or why a plan was dropped; empty when nothing did.

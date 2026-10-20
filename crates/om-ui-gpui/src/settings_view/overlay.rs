@@ -12,7 +12,7 @@ use crate::text_entry::{apply_key, EntryKey};
 
 impl Shell {
     /// Runs `f` on the settings when the window has them.
-    pub(super) fn settings_mut(&mut self, f: impl FnOnce(&mut SettingsState)) {
+    pub(crate) fn settings_mut(&mut self, f: impl FnOnce(&mut SettingsState)) {
         if let Some(settings) = self.settings.as_mut() {
             f(settings);
         }
