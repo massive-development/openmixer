@@ -9,13 +9,16 @@
 //! A load also restores the track's saved hotcues into the deck, and each pump writes the hotcue
 //! edits back ([`CueSaver`]) and counts playing time for the play history ([`PlayTracker`]).
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use om_analysis::WaveformData;
 use om_core::param_id::HOTCUES_PER_DECK;
+use om_core::{Command, CommandSink, StemSetRef};
+use om_engine::deck::STEM_FILES;
 use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
 use om_library::{Library, LibraryError, PrepEntry, PrepStatus, TrackRecord};
@@ -42,8 +45,26 @@ pub enum LoadError {
     FileMissing,
     #[error("cannot decode {file}")]
     Decode { file: String },
+    /// The track has no complete cached stem set for the separator. The status line says so.
+    #[error("no stems \u{2014} Prepare stems")]
+    NoStems,
+    /// Stems switch only while the deck is stopped.
+    #[error("stop the deck to switch stems")]
+    StemsWhilePlaying,
+    /// The stem files would not load. The deck keeps its plain track.
+    #[error("stems failed: {0}")]
+    Stems(String),
     #[error(transparent)]
     Library(#[from] LibraryError),
+}
+
+/// Where the stem cache is, and which separator's output the loader looks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StemSource {
+    /// The cache root; a track's stem set is `root/<dir>` from its `track_stems` row.
+    pub root: PathBuf,
+    pub sep_id: String,
+    pub version: i32,
 }
 
 #[derive(Default)]
@@ -54,6 +75,8 @@ struct Slot {
     waveform: Option<Arc<WaveformData>>,
     /// The grid the deck was given for `track`; put back if a later load fails.
     grid: Option<Arc<dyn BeatGrid>>,
+    /// Why the track's stems did not load after the last load, for the status line.
+    stem_note: Option<String>,
 }
 
 pub struct TrackLoader {
@@ -63,6 +86,12 @@ pub struct TrackLoader {
     cues: CueSaver,
     /// When the previous pump ran; the playing time credited to the decks is measured from here.
     last_pump: Option<Instant>,
+    stem_source: Option<StemSource>,
+    stem_auto_load: bool,
+    /// Carries `Command::LoadStems`; `None` loads the deck directly.
+    stem_sink: Option<Arc<dyn CommandSink>>,
+    /// Stem directories registered with the engine, so each is registered once.
+    stem_sets: HashMap<PathBuf, StemSetRef>,
 }
 
 impl TrackLoader {
@@ -74,6 +103,125 @@ impl TrackLoader {
             plays: vec![PlayTracker::default(); num_decks],
             cues: CueSaver::new(num_decks),
             last_pump: None,
+            stem_source: None,
+            stem_auto_load: false,
+            stem_sink: None,
+            stem_sets: HashMap::new(),
+        }
+    }
+
+    /// Sets where cached stems are found, whether a track's stems load with it, and the sink
+    /// `Command::LoadStems` goes through (`None` loads the deck directly). Without a source no
+    /// track has cached stems. Control thread.
+    pub fn configure_stems(
+        &mut self,
+        source: Option<StemSource>,
+        auto_load: bool,
+        sink: Option<Arc<dyn CommandSink>>,
+    ) {
+        self.stem_source = source;
+        self.stem_auto_load = auto_load;
+        self.stem_sink = sink;
+    }
+
+    /// The stem directory of `track_id` when the cache holds every stem file for the configured
+    /// separator. A row whose files are gone does not count.
+    pub fn cached_stems(&self, library: &Library, track_id: i64) -> Option<PathBuf> {
+        let source = self.stem_source.as_ref()?;
+        let record = library
+            .track_stems()
+            .get(track_id, &source.sep_id, source.version)
+            .ok()??;
+        let dir = source.root.join(&record.dir);
+        STEM_FILES
+            .iter()
+            .all(|name| dir.join(name).is_file())
+            .then_some(dir)
+    }
+
+    /// Why the stems of `deck` did not load with its last track, when they did not.
+    pub fn stem_note(&self, deck: usize) -> Option<&str> {
+        self.slots.get(deck)?.stem_note.as_deref()
+    }
+
+    /// The explicit 'Load stems' / 'Stems off' action for the loaded track of `deck`. Returns true
+    /// when the deck now plays from stems. Refused while the deck plays, so a mode never changes
+    /// mid-play; a track without a complete cached set is `NoStems`, and a failed load leaves the
+    /// deck plain.
+    pub fn toggle_stems(
+        &mut self,
+        engine: &DjEngine,
+        services: &LibraryServices,
+        deck: usize,
+    ) -> Result<bool, LoadError> {
+        if deck >= self.slots.len() {
+            return Err(LoadError::NoSuchDeck);
+        }
+        if engine.deck(deck).is_playing() {
+            return Err(LoadError::StemsWhilePlaying);
+        }
+        self.slots[deck].stem_note = None;
+        if engine.deck(deck).has_stems() {
+            engine.deck(deck).clear_stems();
+            return Ok(false);
+        }
+        let track_id = self.slots[deck]
+            .track
+            .as_ref()
+            .map(|t| t.id)
+            .ok_or(LoadError::NoStems)?;
+        let dir = self
+            .cached_stems(services.library(), track_id)
+            .ok_or(LoadError::NoStems)?;
+        self.start_stems(engine, deck, &dir)?;
+        Ok(true)
+    }
+
+    /// Loads the stem set in `dir` into `deck`, through the command sink when there is one.
+    fn start_stems(&mut self, engine: &DjEngine, deck: usize, dir: &Path) -> Result<(), LoadError> {
+        let Some(sink) = self.stem_sink.clone() else {
+            return engine
+                .deck(deck)
+                .load_stems(dir)
+                .map_err(|error| LoadError::Stems(error.to_string()));
+        };
+        let set = match self.stem_sets.get(dir) {
+            Some(set) => *set,
+            None => {
+                let set = engine.register_stem_set(dir);
+                self.stem_sets.insert(dir.to_owned(), set);
+                set
+            }
+        };
+        let deck_number = u8::try_from(deck).map_err(|_| LoadError::NoSuchDeck)?;
+        sink.send(Command::LoadStems {
+            deck: deck_number,
+            set,
+        })
+        .map_err(|error| LoadError::Stems(error.to_string()))
+    }
+
+    /// The auto-load after a track loaded: its cached stems start, when the preference is on and
+    /// the deck is stopped. Any problem is kept as the deck's status note; the track stays loaded.
+    fn auto_load_stems(
+        &mut self,
+        engine: &DjEngine,
+        library: &Library,
+        deck: usize,
+        track_id: i64,
+    ) {
+        if !self.stem_auto_load {
+            return;
+        }
+        let Some(dir) = self.cached_stems(library, track_id) else {
+            return;
+        };
+        if engine.deck(deck).is_playing() {
+            self.slots[deck].stem_note = Some(LoadError::StemsWhilePlaying.to_string());
+            return;
+        }
+        if let Err(error) = self.start_stems(engine, deck, &dir) {
+            self.slots[deck].stem_note = Some(format!("{error}; playing the plain track"));
         }
     }
 
@@ -138,7 +286,9 @@ impl TrackLoader {
         let slot = &mut self.slots[deck];
         slot.track = Some(track.clone());
         slot.awaiting_analysis = !found.analysed;
+        slot.stem_note = None;
         apply(engine, slot, deck, track, &found);
+        self.auto_load_stems(engine, services.library(), deck, track.id);
         if !found.analysed {
             services.prep_queue_mut().enqueue(track.id, true)?;
         }

@@ -147,7 +147,8 @@ impl StemsHost {
         Ok(service)
     }
 
-    fn cache_root(&self) -> Option<PathBuf> {
+    /// The stem cache root beside the library file; `None` for an in-memory library.
+    pub fn cache_root(&self) -> Option<PathBuf> {
         self.folder.as_ref().map(|folder| folder.join(CACHE_DIR))
     }
 }

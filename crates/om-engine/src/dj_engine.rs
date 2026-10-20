@@ -19,7 +19,7 @@ use crate::sync::Sync;
 use om_core::param_id::Namespace;
 use om_core::{
     AutomixSnapshot, ChannelSnapshot, CommandSink, DeckSnapshot, EngineSnapshot, MixerSnapshot,
-    ParameterRouter, SamplerSnapshot, StemSetRef,
+    ParameterRouter, SamplerSnapshot, StemSetRef, StemSnapshot,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
@@ -226,6 +226,13 @@ impl DjEngine {
             loop_end: bounds.end,
             hotcues: std::array::from_fn(|cue| deck.hotcue(cue)),
         }
+    }
+
+    /// The four stems of one deck as plain values, without a whole-engine snapshot. `None` for an
+    /// unknown deck. Control thread only.
+    pub fn stem_snapshot(&self, index: usize) -> Option<[StemSnapshot; om_dsp::STEM_COUNT]> {
+        let deck = self.decks.get(index)?;
+        Some(snapshot_stems(&deck.stem_control()))
     }
 
     /// How many snapshots this engine has built. A diagnostic hook: tests use it to count the

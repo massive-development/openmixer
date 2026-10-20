@@ -90,6 +90,9 @@ pub struct StemsPrefs {
     /// Prepare stems for a track automatically. Off by default; loading a track never starts a
     /// separation on its own, whatever this says.
     pub auto_prepare: bool,
+    /// Load a track's cached stems into its deck after the track loads (when the deck is not
+    /// playing). On by default; a track without cached stems loads plain.
+    pub auto_load: bool,
 }
 
 impl Default for StemsPrefs {
@@ -97,6 +100,7 @@ impl Default for StemsPrefs {
         Self {
             max_cache_gb: 20,
             auto_prepare: false,
+            auto_load: true,
         }
     }
 }
@@ -238,6 +242,7 @@ impl Preferences {
         let mut stems = Map::new();
         stems.insert("maxCacheGb".into(), self.stems.max_cache_gb.into());
         stems.insert("autoPrepare".into(), self.stems.auto_prepare.into());
+        stems.insert("autoLoad".into(), self.stems.auto_load.into());
         root.insert("stems".into(), Value::Object(stems));
         Value::Object(root).to_string()
     }
@@ -350,6 +355,7 @@ fn read_stems(s: &Map<String, Value>, st: &mut StemsPrefs) {
         st.max_cache_gb.into(),
     ) as i32;
     st.auto_prepare = bool_or(s.get("autoPrepare"), st.auto_prepare);
+    st.auto_load = bool_or(s.get("autoLoad"), st.auto_load);
 }
 
 fn read_library(s: &Map<String, Value>, l: &mut LibraryPrefs) {
@@ -388,6 +394,7 @@ mod tests {
             stems: StemsPrefs {
                 max_cache_gb: 64,
                 auto_prepare: true,
+                auto_load: false,
             },
         }
     }
@@ -411,7 +418,8 @@ mod tests {
             p.stems,
             StemsPrefs {
                 max_cache_gb: 20,
-                auto_prepare: false
+                auto_prepare: false,
+                auto_load: true,
             }
         );
     }
@@ -433,6 +441,7 @@ mod tests {
                 .unwrap();
         assert_eq!(p.stems.max_cache_gb, 20);
         assert!(!p.stems.auto_prepare);
+        assert!(p.stems.auto_load, "a missing key keeps the default");
         let p = Preferences::from_json(r#"{"version":2,"stems":{"maxCacheGb":5000}}"#).unwrap();
         assert_eq!(p.stems.max_cache_gb, 20);
     }
