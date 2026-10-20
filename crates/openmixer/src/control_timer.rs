@@ -1,11 +1,15 @@
 //! The control clock. A thread calls [`DjEngine::update_control`] about every 33 ms (30 Hz), so
 //! sync phase and rate, FX tempo and slip keep running when nothing draws: a minimised or occluded
-//! window, or a headless run. The UI only reads the results. Stops and joins when dropped.
+//! window, or a headless run. The UI only reads the results. The same thread installs finished sample
+//! decodes (see [`SampleBank::pump`]) once a bank is attached. Automix is not stepped here: its host
+//! reads the library, which lives on the window thread (see [`crate::automix_service`]). Stops and
+//! joins when dropped.
 
 use om_engine::DjEngine;
+use om_ui::sample_bank::SampleBank;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -19,11 +23,18 @@ pub struct ControlTimer {
 
 impl ControlTimer {
     /// Starts the control thread for `engine` at [`CONTROL_PERIOD`].
-    pub fn start(engine: Arc<DjEngine>) -> io::Result<Self> {
-        Self::start_with_period(engine, CONTROL_PERIOD)
+    pub fn start(
+        engine: Arc<DjEngine>,
+        samples: Arc<OnceLock<Arc<SampleBank>>>,
+    ) -> io::Result<Self> {
+        Self::start_with_period(engine, samples, CONTROL_PERIOD)
     }
 
-    fn start_with_period(engine: Arc<DjEngine>, period: Duration) -> io::Result<Self> {
+    fn start_with_period(
+        engine: Arc<DjEngine>,
+        samples: Arc<OnceLock<Arc<SampleBank>>>,
+        period: Duration,
+    ) -> io::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
@@ -34,6 +45,9 @@ impl ControlTimer {
                     std::thread::sleep(period);
                     let now = Instant::now();
                     engine.update_control(now.duration_since(last).as_secs_f64());
+                    if let Some(bank) = samples.get() {
+                        bank.pump();
+                    }
                     last = now;
                 }
             })?;

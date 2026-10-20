@@ -6,6 +6,7 @@ pub enum PageKind {
     Audio,
     Midi,
     Library,
+    Automix,
     Appearance,
     Plugins,
 }
@@ -16,6 +17,7 @@ impl PageKind {
             PageKind::Audio => "Audio",
             PageKind::Midi => "MIDI",
             PageKind::Library => "Library",
+            PageKind::Automix => "Automix",
             PageKind::Appearance => "Appearance",
             PageKind::Plugins => "Plugins",
         }
@@ -37,6 +39,7 @@ impl SettingsPanel {
             PageKind::Audio,
             PageKind::Midi,
             PageKind::Library,
+            PageKind::Automix,
             PageKind::Appearance,
             PageKind::Plugins,
         ]
@@ -86,12 +89,19 @@ mod tests {
         let mut with = SettingsPanel::new(true);
         assert_eq!(
             with.tabs(),
-            &["Audio", "MIDI", "Library", "Appearance", "Plugins"]
+            &[
+                "Audio",
+                "MIDI",
+                "Library",
+                "Automix",
+                "Appearance",
+                "Plugins"
+            ]
         );
         let mut without = SettingsPanel::new(false);
         assert_eq!(
             without.tabs(),
-            &["MIDI", "Library", "Appearance", "Plugins"]
+            &["MIDI", "Library", "Automix", "Appearance", "Plugins"]
         );
         assert_eq!(without.page_kind(0), Some(PageKind::Midi));
         without.show(2);
@@ -99,7 +109,7 @@ mod tests {
         without.show(99);
         assert_eq!(without.current(), 2, "out of range is ignored");
         let plugin_tab = with.add_page("Extra");
-        assert_eq!(plugin_tab, 5);
+        assert_eq!(plugin_tab, 6);
         assert_eq!(with.page_kind(plugin_tab), None);
     }
 
@@ -107,7 +117,7 @@ mod tests {
     fn the_panel_adds_plugin_pages_after_the_standard_ones() {
         let mut panel = SettingsPanel::new(true);
         let index = panel.add_page("Example");
-        assert_eq!(index, 5);
+        assert_eq!(index, 6);
         assert_eq!(panel.tabs().last().map(String::as_str), Some("Example"));
         assert_eq!(
             panel.page_kind(index),

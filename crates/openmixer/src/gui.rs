@@ -8,17 +8,25 @@
 //! `OPENMIXER_LIBRARY_DB`); its analysis runs on background workers.
 
 use om_audio::LatencyStats;
+use om_automix::queue::QueueConfig;
+use om_engine::DjEngine;
+use om_ui::library::StemSource;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, MidiPage};
+use om_ui::stems::{StemHost, StemJob, StemLabel};
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
-use om_ui_gpui::library::{HubLibrary, LibraryHub};
+use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::{
     CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
 };
+use openmixer::automix_host::AppAutomixHost;
+use openmixer::automix_queue::LibraryQueue;
+use openmixer::automix_service::AutomixRunner;
+use openmixer::automix_settings::{apply_automix_prefs, queue_source, AppAutomixSettings};
 use openmixer::composition::{load_themes, AppComposition, DECKS};
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
@@ -28,6 +36,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Frames rendered by `--smoke` before it exits.
 const SMOKE_FRAMES: u64 = 120;
@@ -38,7 +47,10 @@ pub fn main(args: &[String]) -> ExitCode {
     let debug = args.iter().any(|a| a == "--debug-panel");
     // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
     // window stays open; used by tools/screenshots.sh.
-    let demo = args.iter().any(|a| a == "--demo-library");
+    // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
+    // automix bar shows the next track and its transition (see docs/screenshots/REVIEW.md).
+    let automix_demo = args.iter().any(|a| a == "--demo-automix");
+    let demo = args.iter().any(|a| a == "--demo-library") || automix_demo;
     let start_tab = match openmixer::flags::settings_tab(args) {
         Ok(tab) => tab,
         Err(message) => {
@@ -53,6 +65,9 @@ pub fn main(args: &[String]) -> ExitCode {
     let library_path = smoke_root.as_ref().map(|root| root.join("library.db"));
     if let Err(error) = composition.attach_library(library_path) {
         eprintln!("openmixer: library unavailable: {error}");
+    }
+    if let Err(error) = composition.attach_stems(openmixer::flags::mock_stems(args)) {
+        eprintln!("openmixer: stems unavailable: {error}");
     }
     // MIDI: the system backend on a real run; a mock controller under --mock-device and --smoke, so
     // neither run opens hardware.
@@ -113,17 +128,57 @@ pub fn main(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // The sample bank starts after the device, so decodes use the rate the engine runs at. The
+    // demo writes its eight generated samples into the scratch folder first.
+    let samples_dir = smoke_root.as_ref().map(|root| root.join("samples"));
+    if let (true, Some(dir)) = (demo, &samples_dir) {
+        if let Err(error) = openmixer::sampler_demo::write_demo_bank(dir) {
+            eprintln!("openmixer: demo samples: {error}");
+        }
+    }
+    composition.attach_samples(samples_dir);
+    let samples = composition.services.samples.clone();
+
     // The library: ingest the smoke tracks and load the first one into deck A, or share the
     // services the composition opened. The window and the smoke check use the same hub.
     let mut smoke_error: Option<AppError> = None;
     let library = composition.services.library.take().map(|mut services| {
         if let Some(root) = &smoke_root {
-            if let Err(error) = library_smoke::ingest_generated(&mut services, root) {
+            let ingest = if automix_demo {
+                library_smoke::ingest_demo_automix(&mut services, root).and_then(|count| {
+                    library_smoke::queue_all_for_analysis(&mut services).map(|_| count)
+                })
+            } else {
+                library_smoke::ingest_generated(&mut services, root)
+            };
+            if let Err(error) = ingest {
                 smoke_error = Some(error);
             }
         }
         LibraryHub::shared(services, engine.num_decks())
     });
+    // The stems host (model, cache, prepare jobs) is shared by the browser and the settings page.
+    if let Some(hub) = &library {
+        if let Some(host) = composition.take_stems_host() {
+            // Cached stems load with their track when the preference says so; the sink is the
+            // same one the MIDI and UI controls use.
+            let source = host.cache_root().map(|root| {
+                let (sep_id, version) = StemHost::separator(&host);
+                StemSource {
+                    root,
+                    sep_id,
+                    version,
+                }
+            });
+            let mut hub = hub.borrow_mut();
+            hub.loader.configure_stems(
+                source,
+                composition.prefs.stems.auto_load,
+                Some(composition.stem_command_sink()),
+            );
+            hub.stem_host = Some(Box::new(host));
+        }
+    }
     if let (Some(hub), true, None) = (&library, smoke || demo, &smoke_error) {
         let mut hub = hub.borrow_mut();
         let hub = &mut *hub;
@@ -133,6 +188,64 @@ pub fn main(args: &[String]) -> ExitCode {
             smoke_error = Some(error);
         }
     }
+    if automix_demo && smoke_error.is_none() {
+        // The tracks must be analysed before deck A plays, or automix finds no candidate on its
+        // first tick and drops the run.
+        if let Some(hub) = &library {
+            if let Err(error) = library_smoke::wait_for_analysis(&mut hub.borrow_mut().services) {
+                eprintln!("openmixer: demo analysis: {error}");
+            }
+        }
+        // Deck A plays on the mock device (silent); automix arms the next track near its end.
+        engine.deck(0).play();
+    }
+    // `--demo-library --mock-stems`: separate deck A's track through the mock so its stem pads are
+    // live in the screenshots. Failures only say so on stderr; the demo runs without stems.
+    if demo && openmixer::flags::mock_stems(args) && smoke_error.is_none() {
+        if let Some(hub) = &library {
+            if let Err(error) = demo_stems(&mut hub.borrow_mut(), &engine) {
+                eprintln!("openmixer: demo stems: {error}");
+            }
+        }
+    }
+    // Automix: the window steps the controller on each frame, because its host reads the library
+    // and the track loader, which live on this thread. The queue shuffles the whole library until
+    // the Automix settings choose a playlist.
+    if automix_demo {
+        // In memory only: the demo's preferences file is a temporary one.
+        composition.prefs.automix.enabled = true;
+    }
+    let automix_prefs = composition.prefs.automix.clone();
+    apply_automix_prefs(&composition.automix, &automix_prefs);
+    let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(
+        composition.automix.clone(),
+        composition.automix_sink.clone(),
+    )));
+    if let Some(hub) = &library {
+        let queue = LibraryQueue::shared(
+            hub.borrow().services.library_handle(),
+            queue_source(&automix_prefs),
+            QueueConfig {
+                smart: automix_prefs.smart,
+                ..QueueConfig::default()
+            },
+            automix_seed(),
+        )
+        .with_search_feed(Arc::clone(&hub.borrow().search_feed));
+        let host = AppAutomixHost::new(Arc::clone(&engine), Rc::clone(hub), queue)
+            .with_shared_queue(composition.automix.queue_settings());
+        automix_runner.borrow_mut().set_host(Box::new(host));
+    }
+    let automix_clock = Instant::now();
+    let automix_frame: Box<dyn FnMut()> = {
+        let runner = Rc::clone(&automix_runner);
+        let engine = Arc::clone(&engine);
+        Box::new(move || {
+            runner
+                .borrow_mut()
+                .step(&engine, automix_clock.elapsed().as_secs_f64());
+        })
+    };
     let rows_out = Arc::new(AtomicUsize::new(0));
 
     let midi_page: Option<Arc<dyn MidiPage>> = composition
@@ -179,8 +292,17 @@ pub fn main(args: &[String]) -> ExitCode {
         library: library
             .clone()
             .map(|hub| Box::new(HubLibrary(hub)) as Box<dyn LibraryControl>),
+        stems: library
+            .clone()
+            .map(|hub| Box::new(HubStems(hub)) as Box<dyn StemHost>),
         start_tab: start_tab.map(str::to_owned),
         plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
+        automix: Some(Box::new(AppAutomixSettings::new(
+            composition.borrow().automix.clone(),
+            library
+                .as_ref()
+                .map(|hub| hub.borrow().services.library_handle()),
+        ))),
         sync_themes: {
             let composition = Rc::clone(&composition);
             Some(Box::new(move |themes: &mut ThemeRegistry| {
@@ -188,6 +310,10 @@ pub fn main(args: &[String]) -> ExitCode {
             }))
         },
     };
+    // The automix bar reads the service's snapshot on the window thread.
+    let automix_shared = composition.borrow().automix.clone();
+    let automix_read: om_ui_gpui::automix_bar::AutomixSnapshotFn =
+        Arc::new(move || automix_shared.snapshot());
     let options = RunOptions {
         smoke_frames: smoke.then_some(SMOKE_FRAMES),
         banner,
@@ -198,6 +324,9 @@ pub fn main(args: &[String]) -> ExitCode {
         // The demo's tracks are sine tones with no tempo: give deck A a fixed grid once its
         // analysis lands, so screenshots show beat ticks.
         demo_grid_bpm: demo.then_some(120.0),
+        samples,
+        on_frame: Some(automix_frame),
+        automix: Some(automix_read),
     };
     let frames = run(Arc::clone(&engine), router, options);
     output.lock().stop();
@@ -314,4 +443,47 @@ fn device_status(settings: &OutputSettings) -> DeviceStatus {
             callbacks: 0,
         },
     }
+}
+
+/// Prepares the stems of deck A's track through the stem host (the mock separator under
+/// `--mock-stems`), waits for the job for a bounded time, and then loads the stems into deck 0.
+fn demo_stems(hub: &mut LibraryHub, engine: &DjEngine) -> Result<(), String> {
+    let track = hub
+        .loader
+        .loaded_track(0)
+        .cloned()
+        .ok_or("deck A has no track")?;
+    let job = StemJob {
+        track_id: track.id,
+        path: std::path::PathBuf::from(&track.path),
+        content_hash: track.content_hash.clone(),
+    };
+    let host = hub.stem_host.as_deref_mut().ok_or("no stems host")?;
+    let (sep_id, version) = host.separator();
+    hub.stems
+        .prepare(host, hub.services.library(), std::slice::from_ref(&job))
+        .map_err(|error| error.to_string())?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        match hub
+            .stems
+            .label(hub.services.library(), track.id, (&sep_id, version))
+        {
+            StemLabel::Ready => break,
+            StemLabel::Failed => return Err("separation failed".into()),
+            _ if std::time::Instant::now() > deadline => return Err("separation timed out".into()),
+            _ => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    hub.loader
+        .toggle_stems(engine, &hub.services, 0)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// A seed for the automix queue's shuffle: the wall clock's nanoseconds, so each run differs.
+fn automix_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.as_nanos() as u64)
 }

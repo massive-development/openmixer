@@ -1,9 +1,10 @@
 //! Model manifests, licence-gated verified downloads and stem
 //! types. Downloads use local files and a loopback HTTP server; nothing leaves the machine.
 
-use om_analysis::{hash_file_content, AnalysisContext, AudioClip, NullAnalysisContext};
+use om_analysis::{hash_file_content, AnalysisContext, NullAnalysisContext};
 use om_stems::{
-    Downloader, LicensePrompt, MockSeparator, ModelManifest, StemKind, StemSeparator, StemSet,
+    Downloader, LicensePrompt, ManifestError, MockSeparator, ModelContract, ModelManifest,
+    SliceSource, StemBuffer, StemError, StemKind, StemSeparator, StemSet, StemSetSink,
     UrlDownloader, WeightError, WeightManager,
 };
 use std::cell::Cell;
@@ -63,6 +64,7 @@ impl Fixture {
             size_bytes: std::fs::metadata(&source).expect("meta").len(),
             license_name: "MIT".into(),
             license_text: "Permission is hereby granted ...".into(),
+            contract: None,
         };
         Self {
             folder: folder_dir.path().join("models"),
@@ -367,34 +369,140 @@ fn a_body_over_the_manifest_size_is_cut_off_before_the_hash_check() {
 #[test]
 fn stem_set_completeness_and_names() {
     let mut set = StemSet::new(44_100.0);
+    let buffer = |n: usize| StemBuffer {
+        left: vec![0.0; n],
+        right: vec![0.0; n],
+    };
     for kind in [StemKind::Drums, StemKind::Bass, StemKind::Vocals] {
-        set.stems.insert(kind, vec![0.0; 10]);
+        set.stems.insert(kind, buffer(10));
     }
     assert!(!set.is_complete(10));
-    set.stems.insert(StemKind::Other, vec![0.0; 10]);
+    set.stems.insert(StemKind::Other, buffer(10));
     assert!(set.is_complete(10));
     assert!(!set.is_complete(11));
     assert_eq!(StemKind::Vocals.to_string(), "vocals");
 }
 
 #[test]
-fn mock_separator_splits_into_four_stems_that_sum_back_to_the_input() {
-    let clip = AudioClip::new(vec![0.4_f32; 64], 48_000.0);
-    let separator = MockSeparator::new();
-    let stems = separator
-        .separate(&clip, &NullAnalysisContext)
-        .expect("separates");
-    assert!(stems.is_complete(64));
-    assert_eq!(stems.sample_rate, 48_000.0);
-    let sum: f32 = StemKind::ALL.iter().map(|k| stems.stems[k][0]).sum();
-    assert!((sum - 0.4).abs() < 1.0e-6);
-    assert_eq!(separator.interface_version(), om_stems::INTERFACE_VERSION);
+fn from_mono_duplicates_the_channel() {
+    let set = StemSet::from_mono(44_100.0, [(StemKind::Bass, vec![0.5, 0.25])]);
+    let bass = &set.stems[&StemKind::Bass];
+    assert_eq!(bass.left, bass.right);
+    assert_eq!(bass.len(), 2);
 }
 
 #[test]
-fn mock_separator_gives_nothing_when_cancelled() {
-    let clip = AudioClip::new(vec![0.4_f32; 8], 48_000.0);
-    assert!(MockSeparator::new()
-        .separate(&clip, &CancelledContext)
-        .is_none());
+fn mock_separator_splits_into_four_stems_that_sum_back_to_the_input() {
+    let samples = vec![0.4_f32; 10_000];
+    let separator = MockSeparator::new();
+    let mut sink = StemSetSink::new(48_000.0);
+    separator
+        .separate_to(
+            &mut SliceSource::mono(&samples, 48_000.0),
+            &mut sink,
+            &NullAnalysisContext,
+        )
+        .expect("separates");
+    assert!(sink.max_chunk <= 4096, "streamed in chunks");
+    let stems = sink.into_set();
+    assert!(stems.is_complete(10_000));
+    assert_eq!(stems.sample_rate, 48_000.0);
+    let sum: f32 = StemKind::ALL
+        .iter()
+        .map(|k| stems.stems[k].left[9_999])
+        .sum();
+    assert!((sum - 0.4).abs() < 1.0e-6);
+    assert_eq!(separator.interface_version(), 2);
+}
+
+#[test]
+fn mock_separator_stops_when_cancelled() {
+    let samples = vec![0.4_f32; 8];
+    let mut sink = StemSetSink::new(48_000.0);
+    let result = MockSeparator::new().separate_to(
+        &mut SliceSource::mono(&samples, 48_000.0),
+        &mut sink,
+        &CancelledContext,
+    );
+    assert_eq!(result, Err(StemError::Cancelled));
+    assert!(sink.into_set().stems.is_empty());
+}
+
+#[test]
+fn manifest_contract_round_trips_and_defaults() {
+    let mut f = Fixture::new();
+    assert_eq!(f.manifest.contract_or_default(), ModelContract::htdemucs());
+    let mut contract = ModelContract::htdemucs();
+    contract.segment_samples = 1000;
+    contract.spec_input = Some("z".into());
+    contract.spec_output = Some("zout".into());
+    f.manifest.contract = Some(contract);
+    let parsed = ModelManifest::from_json(&f.manifest.to_json()).expect("parses");
+    assert_eq!(parsed, f.manifest);
+    let bad = f.manifest.to_json().replace("\"drums\"", "\"bass\"");
+    assert!(matches!(
+        ModelManifest::from_json(&bad),
+        Err(ManifestError::InvalidContract(_))
+    ));
+}
+
+#[test]
+fn file_stereo_source_decodes_a_wav_in_chunks() {
+    use om_stems::{FileStereoSource, StereoSource};
+    // 16-bit stereo PCM WAV, 1000 frames: left ramps up, right is silent.
+    let frames = 1000u32;
+    let mut data = Vec::new();
+    for i in 0..frames {
+        data.extend_from_slice(&((i as i16) * 16).to_le_bytes());
+        data.extend_from_slice(&0i16.to_le_bytes());
+    }
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&44_100u32.to_le_bytes());
+    wav.extend_from_slice(&(44_100u32 * 4).to_le_bytes());
+    wav.extend_from_slice(&4u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(&data);
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("ramp.wav");
+    std::fs::write(&path, wav).expect("write");
+
+    let mut source = FileStereoSource::open(&path).expect("opens");
+    assert_eq!(source.sample_rate(), 44_100.0);
+    assert_eq!(source.total_frames(), Some(1000));
+    let (mut l, mut r) = (vec![0.0f32; 400], vec![0.0f32; 400]);
+    let mut total = 0;
+    let mut last = 0.0;
+    loop {
+        let n = source.read(&mut l, &mut r).expect("reads");
+        if n == 0 {
+            break;
+        }
+        assert!(r[..n].iter().all(|&v| v == 0.0));
+        last = l[n - 1];
+        total += n;
+    }
+    assert_eq!(total, 1000);
+    assert!(last > 0.4, "ramp reached {last}");
+}
+
+#[test]
+fn htdemucs_manifest_carries_the_licence_caveat_and_round_trips() {
+    let m = ModelManifest::htdemucs(
+        "https://example.invalid/htdemucs.onnx",
+        &"AB".repeat(32),
+        123,
+    );
+    assert!(m.license_text.contains("MUSDB18-HQ"));
+    assert!(m.license_text.contains("MIT"));
+    let parsed = ModelManifest::from_json(&m.to_json()).expect("valid");
+    assert_eq!(parsed.sha256, "ab".repeat(32));
+    assert_eq!(parsed.contract_or_default(), ModelContract::htdemucs());
 }

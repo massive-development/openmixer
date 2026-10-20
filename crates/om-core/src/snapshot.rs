@@ -6,11 +6,11 @@
 //! values from two audio blocks (a playhead and a loop bound, say). Peaks are decaying meter values.
 //! Nothing here is an audio-thread value; the snapshot is for display and feedback only.
 //!
-//! Stems, sampler and automix have no engine state yet: their snapshot types are empty placeholders
-//! until those features land (Todos 19, 30, 38, 40).
+//! Automix state is not engine state: the engine leaves [`AutomixSnapshot`] at its default and the
+//! app overlays the controller's own snapshot (`om-automix`) before readers see it.
 
-use crate::param_id::{HOTCUES_PER_DECK, STEMS_PER_DECK};
-use crate::state_id::{ChannelState, DeckState, MixerState, StateId};
+use crate::param_id::{StemParam, HOTCUES_PER_DECK, SAMPLER_PADS, STEMS_PER_DECK};
+use crate::state_id::{ChannelState, DeckState, MixerState, PadState, StateId};
 
 /// One consistent-enough copy of the engine. See the module docs.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +36,12 @@ impl EngineSnapshot {
         match id {
             StateId::Deck { deck, p } => self.decks.get(*deck).map(|d| d.read(p)),
             StateId::Mixer(p) => self.mixer.read(p),
+            StateId::Stem { deck, stem, p } => self
+                .stems
+                .get(*deck)
+                .and_then(|d| d.get(*stem))
+                .map(|s| s.read(p)),
+            StateId::Sampler { pad, p } => self.sampler.pads.get(*pad).map(|s| s.read(p)),
         }
     }
 }
@@ -142,17 +148,238 @@ impl MixerSnapshot {
     }
 }
 
-/// Stem state for one stem of a deck. Placeholder until stems land (Todo 19).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct StemSnapshot;
+/// State of one stem of a deck.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StemSnapshot {
+    /// The deck plays from stems (`Deck::load_stems`); otherwise the other fields are idle values.
+    pub available: bool,
+    pub muted: bool,
+    /// Linear gain, 0 to 1.5.
+    pub gain: f32,
+    /// Sweep filter, -1 low-pass to +1 high-pass, 0 off.
+    pub filter: f32,
+}
 
-/// Sampler pad state. Placeholder until the sampler lands (Todo 40).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct SamplerSnapshot;
+impl Default for StemSnapshot {
+    fn default() -> Self {
+        Self {
+            available: false,
+            muted: false,
+            gain: 1.0,
+            filter: 0.0,
+        }
+    }
+}
 
-/// Automix state. Placeholder until automix lands (Todo 38).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct AutomixSnapshot;
+impl StemSnapshot {
+    /// Value of one stem state, in the units its control id takes: gain, mute as 1.0 or 0.0, filter.
+    pub fn read(&self, p: &StemParam) -> f64 {
+        match p {
+            StemParam::Volume => f64::from(self.gain),
+            StemParam::Mute => flag(self.muted),
+            StemParam::Filter => f64::from(self.filter),
+        }
+    }
+}
+
+/// How a sampler pad treats its sample once triggered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PadMode {
+    /// Plays to the end; release is ignored.
+    #[default]
+    OneShot,
+    /// Plays while held; release fades it out.
+    Gate,
+    /// Loops until release or stop.
+    Loop,
+}
+
+impl PadMode {
+    /// Stable numeric form (0, 1, 2) used by atomics and `sampler.pad<N>.mode` reads.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::OneShot => 0,
+            Self::Gate => 1,
+            Self::Loop => 2,
+        }
+    }
+
+    /// Inverse of [`PadMode::as_u8`]; unknown values fall back to one-shot.
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Gate,
+            2 => Self::Loop,
+            _ => Self::OneShot,
+        }
+    }
+}
+
+/// One sampler pad.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PadSnapshot {
+    /// A sample is assigned.
+    pub loaded: bool,
+    /// At least one voice of the pad is sounding.
+    pub playing: bool,
+    /// Linear gain, 0 to 1.5.
+    pub gain: f32,
+    /// Varispeed in semitones, -24 to 24.
+    pub pitch: f32,
+    pub mode: PadMode,
+    /// Hash of the assigned sample's name (0 when empty); lets a UI notice a changed sample.
+    pub name_hash: u64,
+}
+
+impl Default for PadSnapshot {
+    fn default() -> Self {
+        Self {
+            loaded: false,
+            playing: false,
+            gain: 1.0,
+            pitch: 0.0,
+            mode: PadMode::OneShot,
+            name_hash: 0,
+        }
+    }
+}
+
+impl PadSnapshot {
+    /// Value of one pad state: flags as 1.0 or 0.0, gain, semitones, mode as 0/1/2.
+    pub fn read(&self, p: &PadState) -> f64 {
+        match p {
+            PadState::Loaded => flag(self.loaded),
+            PadState::Playing => flag(self.playing),
+            PadState::Volume => f64::from(self.gain),
+            PadState::Pitch => f64::from(self.pitch),
+            PadState::Mode => f64::from(self.mode.as_u8()),
+        }
+    }
+}
+
+/// The sampler: eight pads plus counters. Filled from atomics, no audio lock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SamplerSnapshot {
+    pub pads: [PadSnapshot; SAMPLER_PADS as usize],
+    /// Sounding voices over all pads.
+    pub voices_active: u32,
+    /// Commands the sampler dropped because its ring was full.
+    pub dropped_cmds: u64,
+}
+
+impl Default for SamplerSnapshot {
+    fn default() -> Self {
+        Self {
+            pads: [PadSnapshot::default(); SAMPLER_PADS as usize],
+            voices_active: 0,
+            dropped_cmds: 0,
+        }
+    }
+}
+
+/// Where the automix controller is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AutomixState {
+    /// Nothing planned.
+    #[default]
+    Idle,
+    /// The next track is being loaded on the idle deck.
+    Loading,
+    /// The next track is loaded and cued; a plan waits for its start beat.
+    Armed,
+    /// The plan is running.
+    Transitioning,
+    /// The plan ended; end-of-transition moves are being applied.
+    Cleanup,
+}
+
+/// How a transition mixes the outgoing deck into the incoming one. `Auto` lets the planner pick.
+/// The numeric form is the value of the `automix.style` id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AutomixStyle {
+    #[default]
+    Auto,
+    Crossfade,
+    BassSwap,
+    EchoOut,
+    Cut,
+    /// Drums-only bridge on the outgoing deck (stems).
+    StemBridge,
+}
+
+impl AutomixStyle {
+    pub const ALL: [AutomixStyle; 6] = [
+        Self::Auto,
+        Self::Crossfade,
+        Self::BassSwap,
+        Self::EchoOut,
+        Self::Cut,
+        Self::StemBridge,
+    ];
+
+    /// Stable numeric form (the `automix.style` value).
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Auto => 0,
+            Self::Crossfade => 1,
+            Self::BassSwap => 2,
+            Self::EchoOut => 3,
+            Self::Cut => 4,
+            Self::StemBridge => 5,
+        }
+    }
+
+    /// Inverse of [`AutomixStyle::as_u8`]; unknown values fall back to `Auto`.
+    pub fn from_u8(v: u8) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|s| s.as_u8() == v)
+            .unwrap_or_default()
+    }
+
+    /// The style for an `automix.style` value: rounded, out-of-range reads as `Auto`.
+    pub fn from_value(value: f64) -> Self {
+        if value.is_finite() && (0.0..=255.0).contains(&value.round()) {
+            Self::from_u8(value.round() as u8)
+        } else {
+            Self::Auto
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "Auto",
+            Self::Crossfade => "Crossfade",
+            Self::BassSwap => "Bass swap",
+            Self::EchoOut => "Echo out",
+            Self::Cut => "Cut",
+            Self::StemBridge => "Stem bridge",
+        }
+    }
+}
+
+/// The automix controller as readers see it (filled by `om-automix`, not by the engine).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AutomixSnapshot {
+    /// `automix.enable`.
+    pub enabled: bool,
+    pub state: AutomixState,
+    /// The style asked for (`Auto` stays `Auto`).
+    pub style: AutomixStyle,
+    /// The style of the plan in flight or armed, when there is one.
+    pub plan_style: Option<AutomixStyle>,
+    /// 0 to 1 through the running transition; 0 when none runs.
+    pub progress: f64,
+    /// Title of the track loaded or loading as the next one; empty when none.
+    pub next_track_title: String,
+    /// Tempo of that track, when it is analysed.
+    pub next_track_bpm: Option<f64>,
+    /// Camelot key of that track; empty when unknown.
+    pub next_track_key: String,
+    /// Beats of the outgoing deck left until its end; `None` when no deck leads.
+    pub remaining_beats: Option<f64>,
+    /// The last thing that went wrong or why a plan was dropped; empty when nothing did.
+    pub last_error: String,
+}
 
 fn flag(on: bool) -> f64 {
     if on {
