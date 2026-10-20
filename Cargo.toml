@@ -39,6 +39,7 @@ om-library = { path = "crates/om-library" }
 om-midi = { path = "crates/om-midi" }
 om-plugins = { path = "crates/om-plugins" }
 om-stems = { path = "crates/om-stems" }
+om-automix = { path = "crates/om-automix" }
 om-stretch = { path = "crates/om-stretch" }
 om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }

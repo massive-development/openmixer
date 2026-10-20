@@ -4213,7 +4213,9 @@ version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
  "gain-plugin",
+ "om-analysis",
  "om-audio",
+ "om-automix",
  "om-core",
  "om-engine",
  "om-library",
