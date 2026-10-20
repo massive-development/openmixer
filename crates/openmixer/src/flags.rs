@@ -1,7 +1,15 @@
 //! Start-up flags that need parsing beyond a plain match: `--settings[=TAB]`.
 
 /// The tabs `--settings=TAB` accepts, as the overlay titles them.
-const TABS: [&str; 5] = ["Audio", "MIDI", "Library", "Appearance", "Plugins"];
+const TABS: [&str; 7] = [
+    "Audio",
+    "MIDI",
+    "Library",
+    "Automix",
+    "Appearance",
+    "Plugins",
+    "Recording",
+];
 
 /// `--settings` opens the overlay on the first tab, `--settings=midi` on the named one (case is
 /// ignored). `Ok(None)` when the flag is absent; `Err` names an unknown tab.
@@ -17,7 +25,7 @@ pub fn settings_tab(args: &[String]) -> Result<Option<&'static str>, String> {
                 .map(|t| Some(*t))
                 .ok_or_else(|| {
                     format!(
-                        "unknown settings tab {name:?} (audio, midi, library, appearance, plugins)"
+                        "unknown settings tab {name:?} (audio, midi, library, automix, appearance, plugins, recording)"
                     )
                 });
         }

@@ -70,3 +70,15 @@ Scene: `tools/screenshots.sh main-automix` runs `--demo-automix`: three generate
 
 ## Not captured
 Settings Plugins tab; anything with real audio or hardware (never used).
+
+## Recording (Wave 8, `main-record` and `settings-recording`, 2026-10-20)
+
+Scenes: `tools/screenshots.sh main-record` runs `--demo-record`: the demo library, then a recording started at once into a scratch folder (`--demo-library` scratch dir, never the music folder), on the mock device (silent). The capture waits 4 s. `settings-recording` opens the Recording tab (`--settings=recording`). Two captures, checked by eye.
+
+| Item | Status | Notes |
+|---|---|---|
+| Record button while recording (`main-record.png`) | fits, no overlap | Red outline and dot, `00:05`, `1.6 MB`, the L/R peak tracks, between the automix bar's Start now / Cancel chips and the Settings button. Peaks are flat because the mock device is silent. |
+| Record button while idle | not captured | Drawn as an outline with the label `Record`; the capture budget was spent on the recording state. |
+| Recording settings tab (`settings-recording.png`) | fits | Folder (Change folder / Use default, the path field opens below), the three format chips, the low-disk toggle and the status line. Nothing overlaps at 1280x800. |
+| Dropped-frames badge | not captured | Shown as `!N` in the button when frames were dropped; the mock device drops none. |
+| Narrow windows (900x600) | layout test only | The header strip and the cells are checked by `the_cells_clear_the_header_strip_and_each_other_at_the_test_sizes` (om-ui) and the button's rect test in `record_bar.rs`. Not looked at in a picture. |
