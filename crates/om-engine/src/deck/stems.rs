@@ -47,14 +47,19 @@ pub(super) struct StemReaders {
 
 impl StemReaders {
     /// Opens `dir/{drums,bass,vocals,other}.wav` and checks each against the loaded track.
-    pub(super) fn open(dir: &Path, track: TrackInfo, scratch_frames: usize) -> Result<Self, DeckError> {
+    pub(super) fn open(
+        dir: &Path,
+        track: TrackInfo,
+        scratch_frames: usize,
+    ) -> Result<Self, DeckError> {
         let mut opened = Vec::with_capacity(STEM_COUNT);
         for name in STEM_FILES {
             let path = dir.join(name);
             if !path.is_file() {
                 return Err(DeckError::Missing(path.display().to_string()));
             }
-            let reader = SourceReader::open(&path).map_err(|source| DeckError::Source { name, source })?;
+            let reader =
+                SourceReader::open(&path).map_err(|source| DeckError::Source { name, source })?;
             let info = reader.info();
             if (info.sample_rate - track.sample_rate).abs() > 0.5 {
                 return Err(DeckError::RateMismatch {
