@@ -13,6 +13,7 @@ use om_automix::queue::{
 };
 use om_library::{Library, SearchEngine, TrackRecord};
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Where the next track comes from.
@@ -28,7 +29,7 @@ type GridCheck = Box<dyn Fn(&TrackRecord) -> bool>;
 type Clock = Box<dyn Fn() -> i64>;
 
 pub struct LibraryQueue {
-    library: Library,
+    library: Arc<Library>,
     source: QueueSource,
     cfg: QueueConfig,
     rng: Box<dyn QueueRng>,
@@ -41,10 +42,15 @@ pub struct LibraryQueue {
 }
 
 impl LibraryQueue {
-    /// A queue over `library` with a seeded RNG and the wall clock. The beat grid counts as
-    /// available when the track has a BPM (the analysis writes both together); replace the test
-    /// with [`LibraryQueue::with_grid_check`] to ask the analysis cache.
+    /// A queue over `library` with a seeded RNG and the wall clock. Without
+    /// [`LibraryQueue::with_grid_check`] a track counts as having a grid when it has a BPM; the app
+    /// asks the analysis cache instead, which is the rule that matters.
     pub fn new(library: Library, source: QueueSource, cfg: QueueConfig, seed: u64) -> Self {
+        Self::shared(Arc::new(library), source, cfg, seed)
+    }
+
+    /// A queue over a library the app shares with its browser (the same connection pool).
+    pub fn shared(library: Arc<Library>, source: QueueSource, cfg: QueueConfig, seed: u64) -> Self {
         Self {
             library,
             source,
