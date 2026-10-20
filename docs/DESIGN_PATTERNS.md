@@ -321,6 +321,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** a settings page or a preference section must drive a service. Add a method to the owning host trait (take `&self` and lock inside the service), and an `Option<Arc<..>>` field in `Services` when the service attaches on demand.
 - **Notes:** methods take `&self` because the MIDI threads share the service. Preference targets must be idempotent, since the applier may push a section twice.
 
+### Pure ramp plan with a control-tick runner (stem transitions)
+- **Where:** `om-automix/src/stem_fade.rs`. `StemFade` and `StemFadePlan` are values; `StemFadeRunner` is the only part that sends.
+- **Why:** a transition is a function of the beat position. Values come from `value_at(beat)`, so repeating a tick sends the same numbers, and a fade always ends on exactly `to` (the end is tested with `>=`, not with a `t` that may round to 0.9999). Tests run the plan over simulated 30 Hz ticks with a mock sink, with no audio.
+- **Reuse when:** a control-side ramp must reach the engine as `Command::Param` (automix, macros, a fade-out on stop). Keep the curve and the window in the plan and pass only the beat to the runner; do not keep a timer in the ramp.
+- **Notes:** a `Mute` fade and any zero-length fade are steps. `restore_values` is the first `from` per id, and a cancel restores only the fades that started. A fade whose deck has no stems is reported once and then ignored. A backwards beat jump (seek) re-sends the overlapped fades at the new position.
+
 ## Idioms and their Rust equivalents
 
 What the code uses in place of common object-oriented patterns.
