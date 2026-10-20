@@ -6,15 +6,23 @@ use super::hotcues::HotcueBank;
 use super::loop_state::LoopState;
 use super::prefetch::LoopPrefetch;
 use super::source::SourceReader;
+use super::stems::StemReaders;
 use om_core::atomic::AtomicF64;
+use om_dsp::StemMixerControl;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-/// Control-to-decoder hand-over. `has` distinguishes "no change" from "unload" (`reader: None`).
+/// Control-to-decoder hand-over. `has` distinguishes "no change" from "unload" (`reader: None`);
+/// `has_stems` likewise for the stem set (`stems: None` leaves stem mode).
 #[derive(Default)]
 pub(super) struct Pending {
     pub has: bool,
     pub reader: Option<SourceReader>,
+    pub has_stems: bool,
+    pub stems: Option<StemReaders>,
+    /// Epoch of the control reposition that goes with this hand-over. The decoder produces
+    /// nothing from the new sources until it has acknowledged at least this epoch.
+    pub min_epoch: u32,
     pub load_id: u32,
     pub load_counter: u32,
 }
@@ -44,6 +52,9 @@ pub(super) struct Shared {
     pub drained_seq: AtomicU32,
     pub seek_target: AtomicI64,
     pub ack_target: AtomicI64,
+    /// Floats per ring frame (2, or 8 in stem mode) as of the last ack; published before
+    /// `ack_seq`, so the audio thread adopts it exactly when it drains the stale ring.
+    pub ack_stride: AtomicU32,
 
     /// Audio-thread ring repositions (loops, later): based on a control ack so stale ones drop.
     pub ring_req_epoch: AtomicU32,
@@ -63,6 +74,8 @@ pub(super) struct Shared {
 
     pub pending: Mutex<Pending>,
     pub hotcues: HotcueBank,
+    /// Stem gains, mutes and filters: written by control, read by the audio-side mixer.
+    pub stems: Arc<StemMixerControl>,
 }
 
 impl Shared {
@@ -88,6 +101,7 @@ impl Shared {
             drained_seq: AtomicU32::new(0),
             seek_target: AtomicI64::new(0),
             ack_target: AtomicI64::new(0),
+            ack_stride: AtomicU32::new(2),
             ring_req_epoch: AtomicU32::new(0),
             ring_req_base: AtomicU32::new(0),
             ring_req_target: AtomicI64::new(0),
@@ -98,6 +112,7 @@ impl Shared {
             read_samples: AtomicU64::new(0),
             pending: Mutex::new(Pending::default()),
             hotcues: HotcueBank::default(),
+            stems: Arc::new(StemMixerControl::new()),
         }
     }
 }

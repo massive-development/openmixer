@@ -5,6 +5,11 @@
 //! from any non-audio thread. `prepare` and the [`AudioCallback`] methods belong to the audio side.
 //! Loops wrap on the audio thread into a decoder-prefetched slot, so loop jumps are gapless.
 //! Key-lock renders through a [`om_stretch::Stretcher`] (see `playback/keylock.rs`).
+//!
+//! Stem mode (`load_stems`): the decoder reads `drums/bass/vocals/other.wav` in lockstep into the
+//! same ring, eight floats per frame instead of two. The audio thread folds each pulled frame to
+//! stereo with the deck's [`StemMixer`](om_dsp::StemMixer) before interpolation and key-lock, so
+//! positions, loops, hotcues and rate are frame indexes exactly as in plain mode.
 
 mod decoder;
 mod hotcues;
@@ -13,6 +18,7 @@ mod playback;
 mod prefetch;
 mod shared;
 mod source;
+mod stems;
 
 use crate::callback::AudioCallback;
 use crate::quantizer::Loop;
@@ -32,6 +38,9 @@ use std::thread::JoinHandle;
 pub use hotcues::NUM_CUES;
 pub use prefetch::LoopPrefetch;
 pub use source::{SourceError, SourceReader, TrackInfo};
+pub use stems::{DeckError, LENGTH_TOLERANCE_FRAMES, STEM_FILES};
+use om_dsp::{StemMixerControl, STEM_FRAME_FLOATS};
+use stems::StemReaders;
 
 /// Default loop prefetch size in source frames.
 pub const DEFAULT_PREFETCH_FRAMES: i64 = 1 << 16;
@@ -90,7 +99,9 @@ impl Deck {
         // Plain rtrb ring. The om-core wrapper only carried `Copy` items, and the stage and device
         // rings hold boxed payloads, so there is one SPSC primitive: rtrb. Capacity is rounded up
         // to a power of two (minimum 2), as the wrapper did.
-        let capacity = (ring_frames.max(1) * 2).max(2).next_power_of_two();
+        // Room for eight floats per frame (stem mode); plain mode limits its depth to the old
+        // two floats per frame in the decoder.
+        let capacity = (ring_frames.max(1) * STEM_FRAME_FLOATS).next_power_of_two();
         let (producer, consumer) = rtrb::RingBuffer::<f32>::new(capacity);
         let shared = Arc::new(Shared::new(prefetch_frames));
         let mut worker = DecoderWorker::new(Arc::clone(&shared), producer);
@@ -116,7 +127,7 @@ impl Deck {
             .expect("spawn deck decoder thread");
         let audio = DeckAudio {
             shared: Arc::clone(&shared),
-            playback: Playback::new(consumer),
+            playback: Playback::new(consumer, Arc::clone(&shared.stems)),
             mono_sink: vec![0.0; DEFAULT_MONO_SINK],
         };
         (
@@ -140,10 +151,53 @@ impl Deck {
         sh.length_frames.store(info.length_frames, Relaxed);
         sh.loop_state.store(LoopSnapshot::default());
         sh.hotcues.clear_all();
-        self.hand_over(Some(reader));
+        sh.stems.reset();
+        sh.stems.set_available(false);
+        self.hand_over(Some(Some(reader)), Some(None), 0);
         sh.loaded.store(true, Relaxed);
-        self.request_reposition(0);
         Ok(())
+    }
+
+    /// Switches the deck to stem playback from `dir/{drums,bass,vocals,other}.wav` (16-bit or float
+    /// stereo at the track's rate and length, within [`LENGTH_TOLERANCE_FRAMES`]). The main file
+    /// stays loaded for metadata and length. Playback restarts at the current position, which costs
+    /// the same short gap as a seek. Control thread. On error the deck is left untouched.
+    pub fn load_stems(&self, dir: &Path) -> Result<(), DeckError> {
+        let sh = &self.shared;
+        if !self.is_loaded() {
+            return Err(DeckError::NotLoaded);
+        }
+        let track = TrackInfo {
+            sample_rate: sh.file_sample_rate.load(),
+            length_frames: sh.length_frames.load(Relaxed),
+            channels: 2,
+        };
+        let readers = StemReaders::open(dir, track, decoder::CHUNK_FRAMES)?;
+        sh.stems.set_available(true);
+        self.hand_over(None, Some(Some(readers)), self.position_frames());
+        Ok(())
+    }
+
+    /// Leaves stem mode and plays the main file again from the current position. Stem gains, mutes
+    /// and filters keep their values for the next `load_stems`. Control thread.
+    pub fn clear_stems(&self) {
+        let sh = &self.shared;
+        if !sh.stems.is_available() {
+            return;
+        }
+        sh.stems.set_available(false);
+        self.hand_over(None, Some(None), self.position_frames());
+    }
+
+    /// True while the deck plays from stems.
+    pub fn has_stems(&self) -> bool {
+        self.shared.stems.is_available()
+    }
+
+    /// Control side of the stem mixer: gains, mutes and filters, readable and writable from any
+    /// control thread.
+    pub fn stem_control(&self) -> Arc<StemMixerControl> {
+        Arc::clone(&self.shared.stems)
     }
 
     /// Drops the current track. The decoder releases its reader.
@@ -154,18 +208,39 @@ impl Deck {
         sh.length_frames.store(0, Relaxed);
         sh.loop_state.store(LoopSnapshot::default());
         sh.hotcues.clear_all();
-        self.hand_over(None);
-        self.request_reposition(0);
+        sh.stems.reset();
+        sh.stems.set_available(false);
+        self.hand_over(Some(None), Some(None), 0);
     }
 
-    fn hand_over(&self, reader: Option<SourceReader>) {
-        let mut pending = self.shared.pending.lock_unpoisoned();
-        if reader.is_some() {
+    /// Publishes new sources to the decoder and repositions to `target` in one step. `reader` is
+    /// `Some(..)` to replace the main file (`Some(None)` unloads), `stems` likewise for the stem
+    /// set. The reposition is issued under the lock, so the decoder that sees the sources also sees
+    /// the epoch that names them and holds production until it has acknowledged it.
+    fn hand_over(
+        &self,
+        reader: Option<Option<SourceReader>>,
+        stems: Option<Option<StemReaders>>,
+        target: i64,
+    ) {
+        let sh = &self.shared;
+        let mut pending = sh.pending.lock_unpoisoned();
+        // A new id makes prefetch slots filled from the old sources unusable.
+        let new_id = matches!(reader, Some(Some(_))) || stems.is_some();
+        if new_id {
             pending.load_counter = pending.load_counter.wrapping_add(1);
             pending.load_id = pending.load_counter;
         }
-        pending.reader = reader;
-        pending.has = true;
+        if let Some(reader) = reader {
+            pending.reader = reader;
+            pending.has = true;
+        }
+        if let Some(stems) = stems {
+            pending.stems = stems;
+            pending.has_stems = true;
+        }
+        sh.seek_target.store(target.max(0), Relaxed);
+        pending.min_epoch = sh.request_epoch.fetch_add(1, Release).wrapping_add(1);
     }
 
     pub fn play(&self) {
@@ -300,7 +375,8 @@ impl Deck {
     pub fn buffered_frames(&self) -> usize {
         let written = self.shared.written_samples.load(Relaxed);
         let read = self.shared.read_samples.load(Relaxed);
-        (written.saturating_sub(read) / 2) as usize
+        let stride = u64::from(self.shared.ack_stride.load(Relaxed)).max(2);
+        (written.saturating_sub(read) / stride) as usize
     }
 
     /// Triggers hotcue `index`: sets an empty cue at the playhead, otherwise jumps to it.
