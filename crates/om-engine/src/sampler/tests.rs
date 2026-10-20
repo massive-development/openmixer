@@ -610,20 +610,18 @@ fn a_release_lost_to_a_full_command_ring_still_ends_the_gate() {
 
 #[test]
 fn trigger_and_release_in_one_block_is_a_short_audible_tap() {
-    for mode in [PadMode::Gate] {
-        let (mut audio, control) = setup();
-        control.assign(0, dc(48_000, 1.0)).unwrap();
-        control.set_mode(0, mode);
-        control.trigger(0, 1.0);
-        control.release(0);
-        let (l, _) = render(&mut audio, 1000);
-        let peak = l.iter().copied().fold(0.0_f32, f32::max);
-        assert!(peak > 0.99, "{mode:?} tap reaches full level: {peak}");
-        let sounding = l.iter().filter(|&&v| v > 0.0).count();
-        assert!(sounding >= 32, "at least a ramp long: {sounding}");
-        assert!(l[500..].iter().all(|&v| v == 0.0), "and then silent");
-        assert_eq!(control.snapshot().voices_active, 0);
-    }
+    let (mut audio, control) = setup();
+    control.assign(0, dc(48_000, 1.0)).unwrap();
+    control.set_mode(0, PadMode::Gate);
+    control.trigger(0, 1.0);
+    control.release(0);
+    let (l, _) = render(&mut audio, 1000);
+    let peak = l.iter().copied().fold(0.0_f32, f32::max);
+    assert!(peak > 0.99, "the tap reaches full level: {peak}");
+    let sounding = l.iter().filter(|&&v| v > 0.0).count();
+    assert!(sounding >= 32, "at least a ramp long: {sounding}");
+    assert!(l[500..].iter().all(|&v| v == 0.0), "and then silent");
+    assert_eq!(control.snapshot().voices_active, 0);
 }
 
 fn tone_wav(dir: &om_testing::fs::TempDir, name: &str, frames: usize) -> std::path::PathBuf {
