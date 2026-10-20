@@ -219,7 +219,7 @@ impl StemHost for StemsHost {
 
     fn cache_bytes(&self) -> u64 {
         self.cache_root()
-            .and_then(|root| StemCache::open(root).ok())
+            .and_then(|root| StemCache::open_no_sweep(root).ok())
             .and_then(|cache| cache.total_bytes().ok())
             .unwrap_or(0)
     }
