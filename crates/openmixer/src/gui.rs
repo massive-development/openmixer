@@ -10,10 +10,11 @@
 use om_audio::LatencyStats;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, MidiPage};
+use om_ui::stems::StemHost;
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
 use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
-use om_ui_gpui::library::{HubLibrary, LibraryHub};
+use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::{
@@ -127,6 +128,12 @@ pub fn main(args: &[String]) -> ExitCode {
         }
         LibraryHub::shared(services, engine.num_decks())
     });
+    // The stems host (model, cache, prepare jobs) is shared by the browser and the settings page.
+    if let Some(hub) = &library {
+        if let Some(host) = composition.take_stems_host() {
+            hub.borrow_mut().stem_host = Some(Box::new(host));
+        }
+    }
     if let (Some(hub), true, None) = (&library, smoke || demo, &smoke_error) {
         let mut hub = hub.borrow_mut();
         let hub = &mut *hub;
@@ -182,6 +189,9 @@ pub fn main(args: &[String]) -> ExitCode {
         library: library
             .clone()
             .map(|hub| Box::new(HubLibrary(hub)) as Box<dyn LibraryControl>),
+        stems: library
+            .clone()
+            .map(|hub| Box::new(HubStems(hub)) as Box<dyn StemHost>),
         start_tab: start_tab.map(str::to_owned),
         plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
         sync_themes: {

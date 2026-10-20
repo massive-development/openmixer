@@ -10,21 +10,41 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use om_analysis::WaveformData;
+use om_core::jobs::JobHandle;
 use om_engine::DjEngine;
-use om_library::TrackRecord;
+use om_library::{PrepStatus, TrackRecord};
 use om_ui::library::{
     columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, LoadError,
-    TrackLoader,
+    TrackLoader, STEMS_COLUMN,
 };
-use om_ui::settings::{LibraryControl, SettingsResult};
+use om_ui::settings::{LibraryControl, SettingsError, SettingsResult};
 use om_ui::sidebar::SidebarNode;
+use om_ui::stems::{ModelState, StemHost, StemJob, StemQueue};
 use om_ui::widgets::deck::TrackInfo;
 use std::path::PathBuf;
 
-/// The services and the loader, shared by the browser's handler and the window.
+/// Auto-prepare: the tracks whose analysis finished this tick are queued for stems when the
+/// preference is on (see `StemQueue::on_analysed`). Failures are logged, not shown.
+fn run_auto_prepare(analysed: Vec<i64>, hub: &mut LibraryHub) {
+    if let Some(host) = hub.stem_host.as_deref_mut() {
+        for track_id in analysed {
+            if let Err(error) =
+                hub.stems
+                    .on_analysed(host, hub.services.library(), track_id, PrepStatus::Done)
+            {
+                eprintln!("openmixer: stems: {error}");
+            }
+        }
+    }
+}
+
+/// The services and the loader, shared by the browser's handler and the window. The stems host
+/// is set by the app once the stems are attached (`None` before, or without a library file).
 pub struct LibraryHub {
     pub services: LibraryServices,
     pub loader: TrackLoader,
+    pub stems: StemQueue,
+    pub stem_host: Option<Box<dyn StemHost>>,
 }
 
 pub type SharedHub = Rc<RefCell<LibraryHub>>;
@@ -32,6 +52,90 @@ pub type SharedHub = Rc<RefCell<LibraryHub>>;
 /// The settings page's view of the library: the window's shared services, so the page's watch
 /// folders, rescan and import reach the same library the browser shows.
 pub struct HubLibrary(pub SharedHub);
+
+/// The stems page's view of the stems host in the hub, so the page and the browser act on the same
+/// host. Without a host every action says the stems are not available.
+pub struct HubStems(pub SharedHub);
+
+impl StemHost for HubStems {
+    fn model_state(&self) -> ModelState {
+        self.0.borrow().stem_host.as_deref().map_or_else(
+            || ModelState::NotInstalled("the library is not available".into()),
+            |host| host.model_state(),
+        )
+    }
+
+    fn licence(&self) -> Option<(String, String)> {
+        self.0
+            .borrow()
+            .stem_host
+            .as_deref()
+            .and_then(|h| h.licence())
+    }
+
+    fn accept_and_download(&mut self) -> SettingsResult<()> {
+        match self.0.borrow_mut().stem_host.as_deref_mut() {
+            Some(host) => host.accept_and_download(),
+            None => Err(SettingsError::StemsUnavailable),
+        }
+    }
+
+    fn cancel_download(&mut self) {
+        if let Some(host) = self.0.borrow_mut().stem_host.as_deref_mut() {
+            host.cancel_download();
+        }
+    }
+
+    fn separator(&self) -> (String, i32) {
+        self.0
+            .borrow()
+            .stem_host
+            .as_deref()
+            .map_or_else(|| ("none".to_owned(), 0), |h| h.separator())
+    }
+
+    fn cache_bytes(&self) -> u64 {
+        self.0
+            .borrow()
+            .stem_host
+            .as_deref()
+            .map_or(0, |h| h.cache_bytes())
+    }
+
+    fn clear_cache(&mut self) -> SettingsResult<usize> {
+        match self.0.borrow_mut().stem_host.as_deref_mut() {
+            Some(host) => host.clear_cache(),
+            None => Ok(0),
+        }
+    }
+
+    fn set_max_cache_bytes(&mut self, bytes: u64) {
+        if let Some(host) = self.0.borrow_mut().stem_host.as_deref_mut() {
+            host.set_max_cache_bytes(bytes);
+        }
+    }
+
+    fn auto_prepare(&self) -> bool {
+        self.0
+            .borrow()
+            .stem_host
+            .as_deref()
+            .is_some_and(|h| h.auto_prepare())
+    }
+
+    fn set_auto_prepare(&mut self, on: bool) {
+        if let Some(host) = self.0.borrow_mut().stem_host.as_deref_mut() {
+            host.set_auto_prepare(on);
+        }
+    }
+
+    fn submit(&mut self, job: StemJob) -> SettingsResult<JobHandle> {
+        match self.0.borrow_mut().stem_host.as_deref_mut() {
+            Some(host) => host.submit(job),
+            None => Err(SettingsError::StemsUnavailable),
+        }
+    }
+}
 
 impl LibraryControl for HubLibrary {
     fn available(&self) -> bool {
@@ -63,7 +167,13 @@ impl LibraryHub {
     /// Wraps the services with a loader for `num_decks` decks.
     pub fn shared(mut services: LibraryServices, num_decks: usize) -> SharedHub {
         let loader = TrackLoader::new(&mut services, num_decks);
-        Rc::new(RefCell::new(Self { services, loader }))
+        let stems = StemQueue::new(om_ui::stems::watermark_of(services.library()));
+        Rc::new(RefCell::new(Self {
+            services,
+            loader,
+            stems,
+            stem_host: None,
+        }))
     }
 }
 
@@ -109,6 +219,8 @@ pub struct LibraryPanel {
     pub browser: LibraryBrowser,
     /// Typing goes to the search box (set by a click on it or by `/`).
     pub search_active: bool,
+    /// Set when a stems action needs the model first: the window opens the Library settings page.
+    licence_request: bool,
     /// Column and direction of the last header click (`true` = ascending).
     sort: Option<(i32, bool)>,
     /// The first table row on screen.
@@ -131,7 +243,9 @@ impl LibraryPanel {
         let load_engine = Arc::clone(&engine);
         browser.on_load_requested = Some(Box::new(move |deck, track| {
             let mut h = load_hub.borrow_mut();
-            let LibraryHub { services, loader } = &mut *h;
+            let LibraryHub {
+                services, loader, ..
+            } = &mut *h;
             loader.load_track(&load_engine, services, deck, track, false)
         }));
         let suggest_hub = Rc::clone(&hub);
@@ -144,6 +258,7 @@ impl LibraryPanel {
             engine,
             browser,
             search_active: false,
+            licence_request: false,
             sort: None,
             table_top: 0,
             visible_rows: 10,
@@ -157,7 +272,10 @@ impl LibraryPanel {
         {
             let mut h = self.hub.borrow_mut();
             self.browser.flush_pending(&mut h.services);
-            let LibraryHub { services, loader } = &mut *h;
+            run_auto_prepare(self.browser.take_analysed(), &mut h);
+            let LibraryHub {
+                services, loader, ..
+            } = &mut *h;
             loader.pump(&self.engine, services);
         }
         let reference = self.hub.borrow().loader.reference_camelot(&self.engine);
@@ -175,9 +293,16 @@ impl LibraryPanel {
     /// The row at `row`, with its cells, tint and selection. `None` outside the list.
     pub fn row(&mut self, row: usize) -> Option<RowView> {
         let track: TrackRecord = self.browser.model.row_at(row as isize)?.clone();
+        let stems = self.stems_label(track.id);
         let cells = columns()
             .iter()
-            .map(|c| self.browser.model.cell_text(row as isize, c.id))
+            .map(|c| {
+                if c.id == STEMS_COLUMN {
+                    stems.clone()
+                } else {
+                    self.browser.model.cell_text(row as isize, c.id)
+                }
+            })
             .collect();
         Some(RowView {
             row,
@@ -284,7 +409,9 @@ impl LibraryPanel {
         force: bool,
     ) -> Result<(), LoadError> {
         let mut h = self.hub.borrow_mut();
-        let LibraryHub { services, loader } = &mut *h;
+        let LibraryHub {
+            services, loader, ..
+        } = &mut *h;
         loader.load_path(&self.engine, services, deck, path, force)
     }
 
@@ -297,6 +424,51 @@ impl LibraryPanel {
     ) -> Option<Result<(), LoadError>> {
         let id = parse_track_drag(description)?;
         Some(self.load_track_id(deck, id))
+    }
+
+    /// The stems indicator of a track: None, Preparing n%, Ready or Failed.
+    pub fn stems_label(&self, track_id: i64) -> String {
+        let h = self.hub.borrow();
+        match h.stem_host.as_deref() {
+            None => "None".to_owned(),
+            Some(host) => {
+                let (sep, version) = host.separator();
+                h.stems
+                    .label(h.services.library(), track_id, (&sep, version))
+                    .text()
+            }
+        }
+    }
+
+    /// Queues stem separation for the selected rows. The error (the model is not ready, or the
+    /// stems are not available) carries the status line the Library page shows.
+    pub fn stems_selected(&mut self) -> SettingsResult<usize> {
+        let mut h = self.hub.borrow_mut();
+        let hub = &mut *h;
+        let Some(host) = hub.stem_host.as_deref_mut() else {
+            return Err(SettingsError::StemsUnavailable);
+        };
+        self.browser
+            .stems_selected(&hub.services, host, &mut hub.stems)
+    }
+
+    /// The "Prepare stems" button and the `p` key. When the model is not ready, the browser's status
+    /// line says why and the window is asked to open the Library settings page.
+    pub fn prepare_stems(&mut self) {
+        if let Err(SettingsError::StemsNotReady(_)) = self.stems_selected() {
+            self.licence_request = true;
+        }
+    }
+
+    /// True once after a stems action needed the Library settings page; the window opens it.
+    pub fn take_licence_request(&mut self) -> bool {
+        std::mem::take(&mut self.licence_request)
+    }
+
+    /// Cancels the stem jobs of the selected rows.
+    pub fn cancel_stems_selected(&mut self) -> usize {
+        let mut h = self.hub.borrow_mut();
+        self.browser.cancel_stems_selected(&mut h.stems)
     }
 
     /// Queues the selected rows for analysis.
@@ -345,6 +517,10 @@ impl LibraryPanel {
         match key {
             "/" => {
                 self.search_active = true;
+                KeyOutcome::Edited
+            }
+            "p" => {
+                self.prepare_stems();
                 KeyOutcome::Edited
             }
             "up" | "down" => {
