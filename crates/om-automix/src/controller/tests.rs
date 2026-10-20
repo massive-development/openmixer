@@ -847,3 +847,17 @@ fn control_target_maps_the_automix_ids() {
     assert!(c.take_cancel() && !c.take_cancel());
     assert!(!c.set_param(&"deck.0.play".parse().unwrap(), 1.0));
 }
+
+/// A track loaded before its analysis finishes has no grid yet. The controller must not keep that
+/// grid-less copy: once the grid lands, the next ticks arm the transition.
+#[test]
+fn a_grid_that_lands_after_the_load_is_read_on_a_later_tick() {
+    let mut sim = Sim::new(380.0, false);
+    let mut analysing = sim.host.infos[&0].clone();
+    analysing.grid = None;
+    sim.host.infos.insert(0, analysing);
+    sim.run(20);
+    assert_eq!(sim.state(), AutomixState::Idle, "no grid, no transition");
+    sim.host.infos.insert(0, info(0, BPM, "8A", false));
+    sim.run_until("armed", 600, |s| s.state() == AutomixState::Armed);
+}

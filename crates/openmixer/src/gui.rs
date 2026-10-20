@@ -47,7 +47,10 @@ pub fn main(args: &[String]) -> ExitCode {
     let debug = args.iter().any(|a| a == "--debug-panel");
     // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
     // window stays open; used by tools/screenshots.sh.
-    let demo = args.iter().any(|a| a == "--demo-library");
+    // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
+    // automix bar shows the next track and its transition (see docs/screenshots/REVIEW.md).
+    let automix_demo = args.iter().any(|a| a == "--demo-automix");
+    let demo = args.iter().any(|a| a == "--demo-library") || automix_demo;
     let start_tab = match openmixer::flags::settings_tab(args) {
         Ok(tab) => tab,
         Err(message) => {
@@ -141,7 +144,14 @@ pub fn main(args: &[String]) -> ExitCode {
     let mut smoke_error: Option<AppError> = None;
     let library = composition.services.library.take().map(|mut services| {
         if let Some(root) = &smoke_root {
-            if let Err(error) = library_smoke::ingest_generated(&mut services, root) {
+            let ingest = if automix_demo {
+                library_smoke::ingest_demo_automix(&mut services, root).and_then(|count| {
+                    library_smoke::queue_all_for_analysis(&mut services).map(|_| count)
+                })
+            } else {
+                library_smoke::ingest_generated(&mut services, root)
+            };
+            if let Err(error) = ingest {
                 smoke_error = Some(error);
             }
         }
@@ -178,6 +188,17 @@ pub fn main(args: &[String]) -> ExitCode {
             smoke_error = Some(error);
         }
     }
+    if automix_demo && smoke_error.is_none() {
+        // The tracks must be analysed before deck A plays, or automix finds no candidate on its
+        // first tick and drops the run.
+        if let Some(hub) = &library {
+            if let Err(error) = library_smoke::wait_for_analysis(&mut hub.borrow_mut().services) {
+                eprintln!("openmixer: demo analysis: {error}");
+            }
+        }
+        // Deck A plays on the mock device (silent); automix arms the next track near its end.
+        engine.deck(0).play();
+    }
     // `--demo-library --mock-stems`: separate deck A's track through the mock so its stem pads are
     // live in the screenshots. Failures only say so on stderr; the demo runs without stems.
     if demo && openmixer::flags::mock_stems(args) && smoke_error.is_none() {
@@ -190,6 +211,10 @@ pub fn main(args: &[String]) -> ExitCode {
     // Automix: the window steps the controller on each frame, because its host reads the library
     // and the track loader, which live on this thread. The queue shuffles the whole library until
     // the Automix settings choose a playlist.
+    if automix_demo {
+        // In memory only: the demo's preferences file is a temporary one.
+        composition.prefs.automix.enabled = true;
+    }
     let automix_prefs = composition.prefs.automix.clone();
     apply_automix_prefs(&composition.automix, &automix_prefs);
     let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(

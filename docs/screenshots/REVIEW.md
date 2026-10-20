@@ -1,6 +1,6 @@
 # Screenshot review
 
-Captured with `tools/screenshots.sh` (debug build, X11 on WSLg, llvmpipe-class software GL, 1280x800, `--mock-device`, demo library of 3 generated 2 s sine WAVs, deck A loaded). Looked at by eye on 2026-10-19. The window renders (not blank/black). Scenes: `main-dark`, `main-daylight`, `main-stems`, `debug-panel`, `settings-audio`, `settings-appearance`, `settings-midi`, `settings-library`. The sampler strip (Wave 7 P4) appears in the main scenes from 2026-10-20 on; the PNGs of the earlier captures do not show it.
+Captured with `tools/screenshots.sh` (debug build, X11 on WSLg, llvmpipe-class software GL, 1280x800, `--mock-device`, demo library of 3 generated 2 s sine WAVs, deck A loaded). Looked at by eye on 2026-10-19. The window renders (not blank/black). Scenes: `main-dark`, `main-daylight`, `main-stems`, `debug-panel`, `settings-audio`, `settings-appearance`, `settings-midi`, `settings-library`, `main-automix` (see the Automix section below). The sampler strip (Wave 7 P4) appears in the main scenes from 2026-10-20 on; the PNGs of the earlier captures do not show it.
 
 ## Fixed while capturing
 - Theme was not applied at start-up: `OPENMIXER_THEME` and the saved theme never reached the window (it always used `openmixer.dark`). Now the window starts on the env theme, else the saved one.
@@ -49,6 +49,19 @@ The sampler strip sits in the library band, right of the library, in every main-
 | Overlaps or clipping in the strip | none seen | Both captures show every pad, the caption and all six controls inside the strip. The layout test checks the same at four window sizes. |
 | `main-dark` and `main-daylight` predate the strip | not recaptured | `tools/screenshots.sh` takes at least two captures per scene; regenerate those two scenes to refresh them. |
 | Lit (playing) pad and gate hold | not captured | A capture needs a pad pressed on screen; the press path is covered by the UI gate. |
+
+## Automix bar (Wave 7, `main-automix`, 2026-10-20)
+
+Scene: `tools/screenshots.sh main-automix` runs `--demo-automix`: three generated 24 s click tracks at 120, 122 and 124 BPM (broadband hits, so the BPM analysis finds a grid), all analysed before deck A starts playing on the mock device (silent). Automix is on in memory only (the demo's preferences file is temporary). The capture waits 19 s after the window opens (`delays` in the script). Two captures were checked by eye: 14 s (state Armed: "Next: Click 122 · 122.0 BPM · 1B", "18 beats left", Start now and Cancel lit) and 19 s (state Transitioning: progress bar about 40 %, "8 beats left", deck B playing, crossfader moving). `main-automix.png` is the 19 s capture.
+
+| Found | Status | What changed / why |
+|---|---|---|
+| Bar stayed "Idle" with no grid although the analysis had landed | fixed | A deck loaded before its analysis finished kept a grid-less `DeckInfo` in the controller's cache, so it never armed. The cache now keeps only analysed decks (`controller/state.rs`, test `a_grid_that_lands_after_the_load_is_read_on_a_later_tick`). |
+| "no track in the queue" error and the track dropped | fixed in the demo | The queue picked before the other tracks were analysed (`NotAnalysed`), so the run failed and that deck was suppressed. The demo now waits for every track to have a grid before deck A plays. The product gap is still there (see the agents.md notes). |
+| Bar and Settings button in one strip | by design | The bar takes the header strip left of the 96 px Settings button, so the deck rows keep their height (a separate strip took 36 px and failed the 900x600 deck-zoom test). |
+| Bar at narrow widths | not verified | The script captures 1280x800 only. At 900 px the "Next" text gets about 80 px and truncates; the fixed parts are covered by the layout test only, not by a picture. |
+| "Skip" button | not offered | The controller has start and cancel but no skip-to-next command. Cancel drops the plan and keeps the loaded track. |
+| Automix label and "Idle" text | low contrast | They use `text_muted` on the header surface. Readable in the capture; not tightened. |
 
 ## Remaining observations
 - Settings Library page: the watch-folder path runs right up to its Remove button.
