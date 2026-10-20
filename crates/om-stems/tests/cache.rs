@@ -270,3 +270,37 @@ fn mock_separator_output_round_trips_through_the_cache() {
         assert!((l[i] - input[i] * 0.25).abs() <= 0.5 / 32767.0 + 1e-6);
     }
 }
+
+#[test]
+fn reopening_without_sweep_keeps_a_live_write() {
+    let dir = TempDir::new().unwrap();
+    let cache = open(&dir);
+    let mut sink = cache.begin_write(&key(), 44_100.0).expect("begin");
+    let samples = vec![0.25f32; 16];
+    for kind in StemKind::ALL {
+        sink.write(kind, &samples, &samples).expect("write");
+    }
+    // UI reads (cache_bytes, clear) open the cache while a separation is running.
+    let _ui = StemCache::open_no_sweep(dir.path().join("stems")).expect("ui open");
+    assert!(_ui.total_bytes().is_ok());
+    let entry = sink.finish().expect("live write must survive a UI open");
+    assert_eq!(entry.meta.frames, 16);
+}
+
+#[test]
+fn service_open_sweeps_only_foreign_or_stale_tmp_dirs() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("stems");
+    fs::create_dir_all(&root).unwrap();
+    // A pid that cannot be this process (u32::MAX is never a live pid) and one from this process.
+    let foreign = format!(".tmp-{HASH}-htdemucs-v1-{}-0", u32::MAX);
+    let mine = format!(".tmp-{HASH}-htdemucs-v1-{}-0", std::process::id());
+    fs::create_dir_all(root.join(&foreign)).unwrap();
+    fs::create_dir_all(root.join(&mine)).unwrap();
+    let _ = StemCache::open_no_sweep(&root).unwrap();
+    let mut both = vec![foreign.clone(), mine.clone()];
+    both.sort();
+    assert_eq!(names(&root), both);
+    let _ = StemCache::open(&root).unwrap();
+    assert_eq!(names(&root), vec![mine]);
+}
