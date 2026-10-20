@@ -211,3 +211,46 @@ fn a_cancel_with_no_plan_is_harmless() {
     rig.tick();
     assert_eq!(rig.automix.snapshot().state, AutomixState::Idle);
 }
+
+/// Tick path (A6): the controller's `tick` gets a copied `EngineSnapshot`, a `CommandSink` and its
+/// host, and nothing else. So it cannot take an engine or audio lock: no engine type is in reach
+/// and no lock is named in its sources. The window's runner is the only part that reads the
+/// engine (through `DjEngine::snapshot`), and it sits outside the controller. This pins the
+/// source-level half of that rule; the behaviour tests above run the controller end to end.
+#[test]
+fn the_controller_tick_path_takes_no_engine_or_audio_locks() {
+    let dir = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../om-automix/src/controller"
+    ));
+    let banned = [
+        "Mutex",
+        "RwLock",
+        ".lock()",
+        "DjEngine",
+        "om_engine",
+        "om_audio",
+        "cpal",
+    ];
+    let mut checked = 0;
+    for entry in std::fs::read_dir(dir).expect("controller sources") {
+        let path = entry.expect("directory entry").path();
+        // The unit tests are not the tick path; the rest of the controller is.
+        if path.extension().is_none_or(|e| e != "rs") || path.ends_with("tests.rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("readable source");
+        for name in banned {
+            assert!(
+                !text.contains(name),
+                "{} names {name}: the controller tick path must take no lock and reach no engine",
+                path.display()
+            );
+        }
+        checked += 1;
+    }
+    assert!(
+        checked >= 4,
+        "the controller sources were not found ({checked} files)"
+    );
+}
