@@ -134,7 +134,7 @@ fn equal_power_sums_to_one_in_power() {
 
 #[test]
 fn bass_swap_crosses_at_midpoint() {
-    let plan = bass_swap(0, 1, 8.0, 8.0);
+    let plan = bass_swap(1.0, 0.0, 0, 1, 8.0, 8.0);
     let fades = plan.fades();
     assert_eq!(fades.len(), 2);
     assert!(fades
@@ -183,7 +183,7 @@ fn values_end_exactly_on_to() {
 
 #[test]
 fn steps_are_idempotent() {
-    let plan = bass_swap(0, 1, 8.0, 8.0);
+    let plan = bass_swap(1.0, 0.0, 0, 1, 8.0, 8.0);
     let a = plan.steps_at(8.0..9.0);
     let b = plan.steps_at(8.0..9.0);
     assert_eq!(a, b);
@@ -194,7 +194,7 @@ fn steps_are_idempotent() {
 
 #[test]
 fn restore_values_are_first_from_per_id() {
-    let plan = drums_only_bridge(0, 4.0, 8.0);
+    let plan = drums_only_bridge([false; 4], 0, 4.0, 8.0);
     let restore = plan.restore_values();
     assert_eq!(restore.len(), 3, "one entry per muted stem");
     assert!(restore.iter().all(|(_, v)| *v == 0.0));
@@ -218,7 +218,7 @@ fn restore_values_are_first_from_per_id() {
 
 #[test]
 fn drums_only_bridge_mutes_for_the_window() {
-    let plan = drums_only_bridge(0, 4.0, 8.0);
+    let plan = drums_only_bridge([false; 4], 0, 4.0, 8.0);
     assert_eq!(plan.fades().len(), 6);
     assert!(plan.fades().iter().all(|f| f.stem != DRUMS));
     let bass_mute = plan
@@ -237,7 +237,7 @@ fn drums_only_bridge_mutes_for_the_window() {
 
 #[test]
 fn builders_name_the_expected_params() {
-    let v = vocals_out(2, 0.0, 4.0);
+    let v = vocals_out(1.0, 2, 0.0, 4.0);
     assert_eq!(v.fades().len(), 1);
     assert_eq!(
         (v.fades()[0].stem, v.fades()[0].param),
@@ -267,7 +267,7 @@ fn beat_of_deck_reads_position() {
 
 #[test]
 fn cancel_restore_sends_from_values_once() {
-    let mut runner = StemFadeRunner::new(bass_swap(0, 1, 8.0, 8.0));
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 8.0, 8.0));
     let rec = Recorder::default();
     let eng = engine(2, &[0, 1]);
     runner.tick(0.0, &eng, &rec).unwrap();
@@ -296,7 +296,7 @@ fn cancel_restore_sends_from_values_once() {
 
 #[test]
 fn cancel_leave_sends_nothing() {
-    let mut runner = StemFadeRunner::new(bass_swap(0, 1, 8.0, 8.0));
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 8.0, 8.0));
     let rec = Recorder::default();
     let eng = engine(2, &[0, 1]);
     runner.tick(0.0, &eng, &rec).unwrap();
@@ -309,7 +309,7 @@ fn cancel_leave_sends_nothing() {
 #[test]
 fn simulated_30hz_ticks_land_on_the_end_values() {
     // 120 BPM is 2 beats per second; ticks run at 30 Hz for 12 s.
-    let mut runner = StemFadeRunner::new(bass_swap(0, 1, 8.0, 8.0));
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 8.0, 8.0));
     let rec = Recorder::default();
     let eng = engine(2, &[0, 1]);
     let mut total = TickReport::default();
@@ -331,11 +331,16 @@ fn simulated_30hz_ticks_land_on_the_end_values() {
 }
 
 #[test]
-fn skips_a_deck_without_stems_and_reports_once() {
-    let mut runner = StemFadeRunner::new(bass_swap(0, 1, 0.0, 8.0));
+fn skips_a_deck_without_stems_after_the_retry_window_and_reports_once() {
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 0.0, 8.0));
     let rec = Recorder::default();
     let eng = engine(2, &[0]); // deck 1 has no stems
-    let first = runner.tick(0.0, &eng, &rec).unwrap();
+                               // Each tick overlaps the window; deck 1 waits RETRY_TICKS ticks before it is given up.
+    for tick in 0..RETRY_TICKS {
+        let report = runner.tick(f64::from(tick) * 0.01, &eng, &rec).unwrap();
+        assert!(report.skipped.is_empty(), "still waiting on tick {tick}");
+    }
+    let first = runner.tick(0.5, &eng, &rec).unwrap();
     assert_eq!(first.skipped, vec![(1, SkipReason::NoStems)]);
     assert_eq!(first.sent, 1);
     let second = runner.tick(1.0, &eng, &rec).unwrap();
@@ -362,7 +367,7 @@ fn reports_an_invalid_id_and_skips_it() {
 
 #[test]
 fn backwards_jump_resends_at_the_new_position() {
-    let mut runner = StemFadeRunner::new(bass_swap(0, 1, 8.0, 8.0));
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 8.0, 8.0));
     let rec = Recorder::default();
     let eng = engine(2, &[0, 1]);
     runner.tick(12.0, &eng, &rec).unwrap();
@@ -375,7 +380,7 @@ fn backwards_jump_resends_at_the_new_position() {
 
 #[test]
 fn nan_beat_sends_nothing() {
-    let mut runner = StemFadeRunner::new(bass_swap(0, 1, 0.0, 8.0));
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 0.0, 8.0));
     let rec = Recorder::default();
     let r = runner.tick(f64::NAN, &engine(2, &[0, 1]), &rec).unwrap();
     assert_eq!(r, TickReport::default());
@@ -418,4 +423,86 @@ proptest! {
         let p = out.value_at(beat).powi(2) + inc.value_at(beat).powi(2);
         prop_assert!((p - 1.0).abs() < 1e-9);
     }
+}
+
+#[test]
+fn a_deck_whose_stems_arrive_within_the_retry_window_gets_its_fade() {
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 0.0, 8.0));
+    let rec = Recorder::default();
+    for tick in 0..3 {
+        let eng = engine(2, &[0]);
+        assert!(runner
+            .tick(f64::from(tick), &eng, &rec)
+            .unwrap()
+            .skipped
+            .is_empty());
+    }
+    let eng = engine(2, &[0, 1]);
+    let report = runner.tick(3.0, &eng, &rec).unwrap();
+    assert!(report.skipped.is_empty());
+    assert!(
+        !rec.values_for(&bass_id(1)).is_empty(),
+        "the late deck still fades"
+    );
+    assert!(!runner.is_finished(3.0));
+}
+
+#[test]
+fn zero_retry_ticks_skips_on_the_first_tick() {
+    let mut runner = StemFadeRunner::new(bass_swap(1.0, 0.0, 0, 1, 0.0, 8.0)).with_retry_ticks(0);
+    let rec = Recorder::default();
+    let report = runner.tick(0.0, &engine(2, &[0]), &rec).unwrap();
+    assert_eq!(report.skipped, vec![(1, SkipReason::NoStems)]);
+}
+
+#[test]
+fn a_bass_swap_starts_and_restores_from_the_snapshot_gains() {
+    let mut eng = engine(2, &[0, 1]);
+    eng.stems[0][usize::from(BASS)].gain = 0.5;
+    eng.stems[1][usize::from(BASS)].gain = 0.25;
+    let plan = bass_swap_from_snapshot(&eng, 0, 1, 8.0, 8.0);
+    assert!(
+        approx(plan.fades()[0].value_at(8.0), 0.5),
+        "no click at the start"
+    );
+    assert!(
+        approx(plan.fades()[1].value_at(8.0), 0.25),
+        "no click at the start"
+    );
+    let restore = plan.restore_values();
+    assert!(restore.contains(&(bass_id(0), 0.5)), "{restore:?}");
+    assert!(restore.contains(&(bass_id(1), 0.25)), "{restore:?}");
+}
+
+#[test]
+fn a_vocals_out_restores_the_current_vocal_gain() {
+    let mut eng = engine(1, &[0]);
+    eng.stems[0][usize::from(VOCALS)].gain = 0.5;
+    let plan = vocals_out_from_snapshot(&eng, 0, 0.0, 4.0);
+    let vocals = ParamId::Stem {
+        deck: 0,
+        stem: VOCALS,
+        p: StemParam::Volume,
+    };
+    assert_eq!(plan.restore_values(), vec![(vocals, 0.5)]);
+}
+
+#[test]
+fn a_drums_only_bridge_restores_the_mutes_the_user_had() {
+    let mut eng = engine(1, &[0]);
+    eng.stems[0][usize::from(VOCALS)].muted = true;
+    let plan = drums_only_bridge_from_snapshot(&eng, 0, 4.0, 8.0);
+    let vocals_mute = ParamId::Stem {
+        deck: 0,
+        stem: VOCALS,
+        p: StemParam::Mute,
+    };
+    let bass_mute = ParamId::Stem {
+        deck: 0,
+        stem: BASS,
+        p: StemParam::Mute,
+    };
+    let restore = plan.restore_values();
+    assert!(restore.contains(&(vocals_mute, 1.0)), "{restore:?}");
+    assert!(restore.contains(&(bass_mute, 0.0)), "{restore:?}");
 }

@@ -7,7 +7,8 @@
 //!
 //! [`StemFadeRunner`] applies a plan on the control thread. Each control tick it sends the
 //! `Command::Param` values for the fades that overlap the beats since the last tick. A fade whose
-//! deck has no stems is skipped and reported, once. The runner never blocks and never touches the
+//! deck has no stems for [`RETRY_TICKS`] overlapping ticks is skipped and reported, once. The runner
+//! never blocks and never touches the
 //! audio thread; it only calls [`CommandSink::send`].
 //!
 //! Stem indices follow `StemKind::ALL` (drums, bass, vocals, other), the order of the stem files in
@@ -201,18 +202,43 @@ fn stem_fade(
     }
 }
 
-/// Bass swap: the outgoing deck's bass fades out while the incoming deck's bass fades in over the
-/// same window. Equal power, so the two bass levels cross at the midpoint, where each is at
-/// 0.707 of unity. `from` for the incoming bass is 0 (it is brought in), so a cancel restores it
-/// to silence; see [`StemFadeRunner::cancel`].
-pub fn bass_swap(out_deck: u8, in_deck: u8, at_beat: f64, length_beats: f64) -> StemFadePlan {
+/// The gain of one stem as the engine reports it, when the deck and stem exist.
+fn stem_gain(engine: &EngineSnapshot, deck: u8, stem: u8) -> Option<f64> {
+    engine
+        .stems
+        .get(usize::from(deck))
+        .and_then(|stems| stems.get(usize::from(stem)))
+        .map(|s| f64::from(s.gain))
+}
+
+/// The mute of one stem as the engine reports it, when the deck and stem exist.
+fn stem_muted(engine: &EngineSnapshot, deck: u8, stem: u8) -> Option<bool> {
+    engine
+        .stems
+        .get(usize::from(deck))
+        .and_then(|stems| stems.get(usize::from(stem)))
+        .map(|s| s.muted)
+}
+
+/// Bass swap: the outgoing deck's bass fades from `out_from` to silence while the incoming deck's
+/// bass fades from `in_from` to unity, over the same window. Equal power. Pass the gains the basses
+/// have now (see [`bass_swap_from_snapshot`]): a cancel sends `from` back, so a `from` that is not
+/// the user's gain would click on restore and bring in or drop the bass at the wrong level.
+pub fn bass_swap(
+    out_from: f64,
+    in_from: f64,
+    out_deck: u8,
+    in_deck: u8,
+    at_beat: f64,
+    length_beats: f64,
+) -> StemFadePlan {
     let window = (at_beat, length_beats);
     StemFadePlan::new(vec![
         stem_fade(
             out_deck,
             BASS,
             StemParam::Volume,
-            (1.0, 0.0),
+            (out_from, 0.0),
             window,
             Curve::EqualPower,
         ),
@@ -220,35 +246,77 @@ pub fn bass_swap(out_deck: u8, in_deck: u8, at_beat: f64, length_beats: f64) -> 
             in_deck,
             BASS,
             StemParam::Volume,
-            (0.0, 1.0),
+            (in_from, 1.0),
             window,
             Curve::EqualPower,
         ),
     ])
 }
 
-/// Vocals out: the deck's vocals fade from unity to silence over the window.
-pub fn vocals_out(deck: u8, at_beat: f64, length_beats: f64) -> StemFadePlan {
+/// [`bass_swap`] with the start gains read from the engine snapshot. A stem missing from the
+/// snapshot starts at unity (outgoing) or silence (incoming), the values the swap used before.
+pub fn bass_swap_from_snapshot(
+    engine: &EngineSnapshot,
+    out_deck: u8,
+    in_deck: u8,
+    at_beat: f64,
+    length_beats: f64,
+) -> StemFadePlan {
+    bass_swap(
+        stem_gain(engine, out_deck, BASS).unwrap_or(1.0),
+        stem_gain(engine, in_deck, BASS).unwrap_or(0.0),
+        out_deck,
+        in_deck,
+        at_beat,
+        length_beats,
+    )
+}
+
+/// Vocals out: the deck's vocals fade from `from` to silence over the window. Pass the current
+/// vocal gain (see [`vocals_out_from_snapshot`]).
+pub fn vocals_out(from: f64, deck: u8, at_beat: f64, length_beats: f64) -> StemFadePlan {
     StemFadePlan::new(vec![stem_fade(
         deck,
         VOCALS,
         StemParam::Volume,
-        (1.0, 0.0),
+        (from, 0.0),
         (at_beat, length_beats),
         Curve::EqualPower,
     )])
 }
 
+/// [`vocals_out`] starting from the vocal gain in the engine snapshot (unity when absent).
+pub fn vocals_out_from_snapshot(
+    engine: &EngineSnapshot,
+    deck: u8,
+    at_beat: f64,
+    length_beats: f64,
+) -> StemFadePlan {
+    vocals_out(
+        stem_gain(engine, deck, VOCALS).unwrap_or(1.0),
+        deck,
+        at_beat,
+        length_beats,
+    )
+}
+
 /// Drums only for `length_beats`: bass, vocals and other are muted at `at_beat` and unmuted at
-/// `at_beat + length_beats`. Drums are left alone.
-pub fn drums_only_bridge(deck: u8, at_beat: f64, length_beats: f64) -> StemFadePlan {
+/// `at_beat + length_beats`. Drums are left alone. `muted[stem]` is each stem's mute now, indexed by
+/// stem; a cancel restores it, so a stem the user had muted stays muted.
+pub fn drums_only_bridge(
+    muted: [bool; 4],
+    deck: u8,
+    at_beat: f64,
+    length_beats: f64,
+) -> StemFadePlan {
     let mut fades = Vec::with_capacity(6);
     for stem in [BASS, VOCALS, OTHER] {
+        let now = if muted[usize::from(stem)] { 1.0 } else { 0.0 };
         fades.push(stem_fade(
             deck,
             stem,
             StemParam::Mute,
-            (0.0, 1.0),
+            (now, 1.0),
             (at_beat, 0.0),
             Curve::Linear,
         ));
@@ -262,6 +330,17 @@ pub fn drums_only_bridge(deck: u8, at_beat: f64, length_beats: f64) -> StemFadeP
         ));
     }
     StemFadePlan::new(fades)
+}
+
+/// [`drums_only_bridge`] with the mutes read from the engine snapshot (unmuted when absent).
+pub fn drums_only_bridge_from_snapshot(
+    engine: &EngineSnapshot,
+    deck: u8,
+    at_beat: f64,
+    length_beats: f64,
+) -> StemFadePlan {
+    let muted = std::array::from_fn(|s| stem_muted(engine, deck, s as u8).unwrap_or(false));
+    drums_only_bridge(muted, deck, at_beat, length_beats)
 }
 
 /// Filter sweep on one stem: the sweep position moves from `from` to `to` (-1 low-pass, 0 off,
@@ -317,6 +396,11 @@ pub struct TickReport {
     pub skipped: Vec<(usize, SkipReason)>,
 }
 
+/// How many overlapping ticks a fade waits for its deck's stems before it is skipped. Stems that
+/// are still loading (a deck just switched to stem mode) should not lose the transition: 15 ticks
+/// at 30 Hz is about half a second.
+pub const RETRY_TICKS: u32 = 15;
+
 /// Applies a [`StemFadePlan`] over control ticks. Control thread only.
 #[derive(Debug)]
 pub struct StemFadeRunner {
@@ -325,6 +409,9 @@ pub struct StemFadeRunner {
     skipped: Vec<Option<SkipReason>>,
     /// Per fade: whether a value has been sent for it (used by a restoring cancel).
     started: Vec<bool>,
+    /// Per fade: overlapping ticks so far on which the deck had no stems.
+    waiting: Vec<u32>,
+    retry_ticks: u32,
     last_beat: Option<f64>,
     cancelled: bool,
 }
@@ -336,9 +423,18 @@ impl StemFadeRunner {
             plan,
             skipped: vec![None; n],
             started: vec![false; n],
+            waiting: vec![0; n],
+            retry_ticks: RETRY_TICKS,
             last_beat: None,
             cancelled: false,
         }
+    }
+
+    /// Changes how many overlapping ticks a fade waits for stems (see [`RETRY_TICKS`]). `0` skips a
+    /// fade on the first tick its deck has no stems.
+    pub fn with_retry_ticks(mut self, ticks: u32) -> Self {
+        self.retry_ticks = ticks;
+        self
     }
 
     pub fn plan(&self) -> &StemFadePlan {
@@ -389,10 +485,15 @@ impl StemFadeRunner {
                 continue;
             }
             if !stems_available(engine, fade.deck, fade.stem) {
-                self.skipped[i] = Some(SkipReason::NoStems);
-                report.skipped.push((i, SkipReason::NoStems));
+                // Wait for the stems a while before giving the fade up for good.
+                self.waiting[i] += 1;
+                if self.waiting[i] > self.retry_ticks {
+                    self.skipped[i] = Some(SkipReason::NoStems);
+                    report.skipped.push((i, SkipReason::NoStems));
+                }
                 continue;
             }
+            self.waiting[i] = 0;
             sink.send(Command::Param {
                 id,
                 value: fade.value_at(beat),
