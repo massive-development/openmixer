@@ -13,7 +13,7 @@ use om_automix::queue::{
 };
 use om_library::{Library, SearchEngine, TrackRecord};
 use om_ui::library::SearchFeed;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -173,18 +173,21 @@ impl LibraryQueue {
         }
     }
 
-    fn recent_ids(&self) -> Result<HashSet<i64>, String> {
+    /// The last play time of each track in the recent window: the newest `count` plays, within the
+    /// history hours.
+    fn recent_plays(&self, count: usize) -> Result<HashMap<i64, i64>, String> {
         let plays = self
             .library
             .tracks()
-            .recent_plays(self.cfg.recent_count)
+            .recent_plays(count)
             .map_err(|e| e.to_string())?;
         let oldest = (self.clock)() - (self.cfg.recent_hours * 3_600_000.0) as i64;
-        Ok(plays
-            .into_iter()
-            .filter(|p| p.played_ms >= oldest)
-            .map(|p| p.track_id)
-            .collect())
+        let mut last: HashMap<i64, i64> = HashMap::new();
+        for p in plays.into_iter().filter(|p| p.played_ms >= oldest) {
+            let at = last.entry(p.track_id).or_insert(p.played_ms);
+            *at = (*at).max(p.played_ms);
+        }
+        Ok(last)
     }
 
     fn queue_track(&self, t: &TrackRecord) -> QueueTrack {
@@ -193,7 +196,7 @@ impl LibraryQueue {
 
     /// Shuffles all records first, then asks for the beat grid lazily: the walk stops at the first
     /// analysed candidate (or after [`GRID_CHECK_CAP`] checks). Smart picks keep checking up to the
-    /// cap so they have a pool to choose from. Recent tracks are never checked.
+    /// cap so they have a pool to choose from. Recent tracks are checked too, outside the cap.
     fn shuffled_candidates(
         &mut self,
         mut records: Vec<TrackRecord>,
@@ -211,7 +214,9 @@ impl LibraryQueue {
         for t in &records {
             let skipped = recent.contains(&t.id) || current.is_some_and(|c| c.id == t.id);
             if skipped {
-                out.push(to_queue_track(t, false));
+                // Not counted against the cap: the window is small, and relaxing the recent filter
+                // needs to know which recent tracks are analysed.
+                out.push(to_queue_track(t, (self.grid_check)(t)));
                 continue;
             }
             if checks == GRID_CHECK_CAP || (found && !smart) {
@@ -227,7 +232,11 @@ impl LibraryQueue {
 
     fn pick(&mut self, current: Option<&QueueTrack>) -> Result<Option<QueueTrack>, String> {
         let records = self.candidates()?;
-        let recent = self.recent_ids()?;
+        // The recent window never covers more than half the pool, so a short pool still has tracks
+        // to choose from.
+        let window = self.cfg.recent_count.min(records.len() / 2);
+        let last_played = self.recent_plays(window)?;
+        let recent: HashSet<i64> = last_played.keys().copied().collect();
         let in_order = matches!(self.source, QueueSource::Playlist(_));
         let tracks: Vec<QueueTrack> = if in_order {
             let mut tracks: Vec<QueueTrack> = records.iter().map(|t| self.queue_track(t)).collect();
@@ -249,7 +258,26 @@ impl LibraryQueue {
             },
             ..self.cfg
         };
-        let selection = select_next(&tracks, current, &recent, &cfg, self.rng.as_mut());
+        let mut selection = select_next(&tracks, current, &recent, &cfg, self.rng.as_mut());
+        if selection.pick.is_none() {
+            // Nothing eligible: relax the recent filter for the least recently played half of the
+            // recent, analysed candidates.
+            let mut older: Vec<&QueueTrack> = tracks
+                .iter()
+                .filter(|t| t.analysed() && recent.contains(&t.id))
+                .filter(|t| current.is_none_or(|c| c.id != t.id))
+                .collect();
+            older.sort_by_key(|t| last_played.get(&t.id).copied().unwrap_or(i64::MIN));
+            older.truncate(older.len().div_ceil(2));
+            if !older.is_empty() {
+                let relaxed: HashSet<i64> = recent
+                    .iter()
+                    .copied()
+                    .filter(|id| !older.iter().any(|t| t.id == *id))
+                    .collect();
+                selection = select_next(&tracks, current, &relaxed, &cfg, self.rng.as_mut());
+            }
+        }
         self.skips = selection.skipped;
         if in_order {
             if let Some(pick) = &selection.pick {

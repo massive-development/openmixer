@@ -285,3 +285,70 @@ fn grid_checks_are_capped_at_fifty_candidates() {
     assert!(q.next_track(None).is_none(), "no track has a grid");
     assert!(checks.get() <= 50, "checked {} candidates", checks.get());
 }
+
+#[test]
+fn the_recent_window_is_at_most_half_the_pool() {
+    let lib = library();
+    let ids: Vec<i64> = (1..=4).map(|n| add(&lib, n, Some(124.0), "8A")).collect();
+    // Oldest first: the two newest plays (c, d) are the recent window, so only a and b are eligible.
+    for (i, id) in ids.iter().enumerate() {
+        lib.tracks()
+            .record_play(*id, None, NOW - (4 - i as i64) * 60_000)
+            .unwrap();
+    }
+    let cfg = QueueConfig {
+        smart: false,
+        ..QueueConfig::default()
+    };
+    let mut q = queue(lib, QueueSource::Search(String::new()), cfg, 2);
+    let picks = ids_drawn(&mut q, 30);
+    assert!(
+        picks
+            .iter()
+            .all(|id| *id == Some(ids[0]) || *id == Some(ids[1])),
+        "picked a recent track: {picks:?}"
+    );
+}
+
+#[test]
+fn when_every_analysed_track_is_recent_the_least_recent_plays() {
+    let lib = library();
+    let a = add(&lib, 1, Some(124.0), "8A");
+    add(&lib, 2, None, "");
+    add(&lib, 3, None, "");
+    lib.tracks().record_play(a, None, NOW - 60_000).unwrap();
+    let mut q = queue(
+        lib,
+        QueueSource::Search(String::new()),
+        QueueConfig::default(),
+        4,
+    );
+    assert_eq!(
+        q.next_track(None).map(|t| t.id),
+        Some(a),
+        "nothing else is eligible, so the relaxed filter picks it"
+    );
+}
+
+#[test]
+fn a_fifteen_track_playlist_keeps_playing_when_it_wraps() {
+    let lib = library();
+    let tracks: Vec<i64> = (1..=15).map(|n| add(&lib, n, Some(124.0), "8A")).collect();
+    let pl = lib.playlists().create("Long", None, false).unwrap();
+    for (i, t) in tracks.iter().enumerate() {
+        lib.playlists().add_track(pl, *t, i as i32).unwrap();
+        lib.tracks()
+            .record_play(*t, None, NOW - (16 - i as i64) * 60_000)
+            .unwrap();
+    }
+    let mut q = queue(lib, QueueSource::Playlist(pl), QueueConfig::default(), 6);
+    let picks = ids_drawn(&mut q, 30);
+    assert!(
+        picks.iter().all(Option::is_some),
+        "stopped at a wrap: {picks:?}"
+    );
+}
+
+fn ids_drawn(q: &mut LibraryQueue, n: usize) -> Vec<Option<i64>> {
+    (0..n).map(|_| q.next_track(None).map(|t| t.id)).collect()
+}
