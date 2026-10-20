@@ -51,7 +51,10 @@ pub fn main(args: &[String]) -> ExitCode {
     // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
     // automix bar shows the next track and its transition (see docs/screenshots/REVIEW.md).
     let automix_demo = args.iter().any(|a| a == "--demo-automix");
-    let demo = args.iter().any(|a| a == "--demo-library") || automix_demo;
+    // `--demo-record`: the demo library, and a recording started at once into a scratch folder, so
+    // the header shows a live Record button (see docs/screenshots/REVIEW.md). Never the user's folder.
+    let demo_record = args.iter().any(|a| a == "--demo-record");
+    let demo = args.iter().any(|a| a == "--demo-library") || automix_demo || demo_record;
     let start_tab = match openmixer::flags::settings_tab(args) {
         Ok(tab) => tab,
         Err(message) => {
@@ -216,6 +219,14 @@ pub fn main(args: &[String]) -> ExitCode {
         // In memory only: the demo's preferences file is a temporary one.
         composition.prefs.automix.enabled = true;
     }
+    if let (true, Some(root)) = (demo_record, &smoke_root) {
+        // In memory only: the recording folder is the scratch dir, never the music folder.
+        let mut record = composition.prefs.record.clone();
+        record.folder = root.join("recordings").to_string_lossy().into_owned();
+        composition.record.set_prefs(&record);
+        composition.prefs.record = record;
+        composition.record.start();
+    }
     let automix_prefs = composition.prefs.automix.clone();
     apply_automix_prefs(&composition.automix, &automix_prefs, None);
     let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(
@@ -334,6 +345,10 @@ pub fn main(args: &[String]) -> ExitCode {
         record: true,
     };
     let frames = run(Arc::clone(&engine), router, options);
+    if demo_record {
+        // Finishes the WAV headers of the demo recording.
+        composition.borrow().record.stop();
+    }
     output.lock().stop();
 
     let mut failed = false;
