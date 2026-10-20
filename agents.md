@@ -78,6 +78,19 @@ Control paths, and what is live today:
 
 Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
 
+### Automix (Wave 7 A1-A6, Todo 38; settings page and bar, Todo 29)
+
+- Crates: `om-automix` (planner, controller, queue rules, `AutomixControl` target; no engine or audio dependency, enforced by `openmixer/tests/automix_safety.rs`), `openmixer` (`automix_service` runner and shared handle, `automix_host` over the library and the track loader, `automix_queue` library queue, `automix_settings` page control and apply), `om-ui` (`settings/automix.rs` page model, `automix_bar.rs` view-model, `library::SearchFeed`), `om-ui-gpui` (`settings_view/automix.rs`, `automix_bar.rs`).
+- Ids: `automix.enable`, `automix.style` (0 Auto, 1 Crossfade, 2 BassSwap, 3 EchoOut, 4 Cut, 5 StemBridge), `automix.start` and `automix.cancel` (presses, value 0.5 or more). They are typed `Namespace::Automix`; a press only records a request that the controller reads on its next step.
+- Tick: the 30 Hz foreground timer (`CONTROL_TICK`) calls `AutomixRunner::step`, which reads `DjEngine::snapshot()` and calls `AutomixController::tick` with that copy, a `CommandSink` (an `AutomixSink`, which the input observer does not see) and the host. The controller takes no lock and holds no engine reference. Changes from the Automix page reach it through `AutomixShared::update_config` (applied on the next step) and `AutomixControl` setters; the host reads `SharedQueueSettings` before each pick.
+- Controller cache: a deck's `DeckInfo` is cached only once it has a grid, so a track loaded before its analysis finished is read again.
+- Cancel rules: a moved watched control, a paused, unloaded or seeked deck, `automix.cancel`, disabling, or an underrun cancels; the user's value stays, EQ/FX/filter moves are put back. A user move while Loading or Armed drops the run and leaves that pair alone (`stepped aside`).
+- Prefs (version 3, `automix` section, each value clamped or defaulted on its own): `enabled`, `style` (0 to 4), `lengthBeats` (8, 16 or 32), `queuePlaylist` (0 is the whole library), `queueSearch` (the library browser's live search; wins over the playlist), `smart`, `minBpmGapPercent` (0 to 20), `autostartAtEnd`. Edits go through `AutomixSettingsPage` (stored, saved once, applied live). The window applies the stored settings at start-up with `apply_automix_prefs`.
+- Queue: `QueueSource::Playlist` plays in order and wraps; `Search` and `CurrentSearch` shuffle; `smart` turns on the key and tempo preference. Only tracks with a beat grid (analysis cache) are picked. An empty pick fails the run and suppresses that deck; the demo waits for analysis for this reason.
+- Bar: the header strip's left part (`BAR_HEIGHT` 32, Settings button keeps the right 96 px). Enable, style and length edit the settings; Start now and Cancel press the ids. Skip is not offered (no skip-to-next command).
+- Demo: `--demo-automix` (gui) ingests three 24 s click tracks at 120, 122 and 124 BPM, turns automix on in memory, waits for every track's grid and starts deck A on the mock device. Scene `main-automix` in `tools/screenshots.sh`.
+- Not verified: by ear (silent mock device), the transitions on real decks, and the bar at widths other than 1280x800 by eye.
+
 ### Plugin control targets
 
 - A plugin registers its target with the router (`register_target`, a string prefix). The router holds its reentrant gate across every target call, and registration and unregistration wait on the same gate. So a slow or blocking `set_parameter` stalls MIDI and UI dispatch for everything else. Do not block, wait on I/O or take a long lock in `set_parameter`; hand the work to a thread or queue and return `true` at once.
