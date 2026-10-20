@@ -217,13 +217,24 @@ impl Rig {
     pub fn analyse_all(&mut self) {
         let ids = self.tracks.clone();
         for id in &ids {
-            self.library.borrow_mut().services.prep_queue_mut().enqueue(*id, true).expect("enqueue");
+            self.library
+                .borrow_mut()
+                .services
+                .prep_queue_mut()
+                .enqueue(*id, true)
+                .expect("enqueue");
         }
         let ok = wait_until(Duration::from_secs(20), DEFAULT_POLL, || {
             self.pump();
             ids.iter().all(|id| {
                 let lib = self.library.borrow();
-                let track = lib.services.library().tracks().find_by_id(*id).ok().flatten();
+                let track = lib
+                    .services
+                    .library()
+                    .tracks()
+                    .find_by_id(*id)
+                    .ok()
+                    .flatten();
                 track.is_some_and(|t| lib.services.has_beat_grid(&t))
             })
         });

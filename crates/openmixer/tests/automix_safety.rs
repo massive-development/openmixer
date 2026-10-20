@@ -43,12 +43,19 @@ fn a_manual_crossfader_move_cancels_and_the_users_value_wins() {
     let mut rig = transitioning_rig();
     rig.set("mixer.crossfader", 0.2);
     rig.tick();
-    assert!(cancelled_with(&rig, "crossfader"), "{:?}", rig.automix.snapshot());
+    assert!(
+        cancelled_with(&rig, "crossfader"),
+        "{:?}",
+        rig.automix.snapshot()
+    );
     for _ in 0..30 {
         rig.tick();
     }
     let cf = rig.engine.snapshot().mixer.crossfader;
-    assert!((cf - 0.2).abs() < 0.01, "the crossfader snapped back to {cf}");
+    assert!(
+        (cf - 0.2).abs() < 0.01,
+        "the crossfader snapped back to {cf}"
+    );
 }
 
 #[test]
@@ -56,11 +63,18 @@ fn a_manual_play_on_the_outgoing_deck_cancels_and_is_kept() {
     let mut rig = transitioning_rig();
     rig.set("deck.0.play", 0.0);
     rig.tick();
-    assert!(cancelled_with(&rig, "deck.0.play"), "{:?}", rig.automix.snapshot());
+    assert!(
+        cancelled_with(&rig, "deck.0.play"),
+        "{:?}",
+        rig.automix.snapshot()
+    );
     for _ in 0..10 {
         rig.tick();
     }
-    assert!(!rig.engine.snapshot().decks[0].playing, "automix restarted the user's pause");
+    assert!(
+        !rig.engine.snapshot().decks[0].playing,
+        "automix restarted the user's pause"
+    );
 }
 
 #[test]
@@ -68,7 +82,11 @@ fn a_manual_seek_on_the_incoming_deck_cancels() {
     let mut rig = transitioning_rig();
     rig.set("deck.1.seek", 0.5);
     rig.tick();
-    assert!(cancelled_with(&rig, "deck.1.seek"), "{:?}", rig.automix.snapshot());
+    assert!(
+        cancelled_with(&rig, "deck.1.seek"),
+        "{:?}",
+        rig.automix.snapshot()
+    );
 }
 
 #[test]
@@ -76,7 +94,11 @@ fn a_manual_channel_fader_move_cancels() {
     let mut rig = transitioning_rig();
     rig.set("mixer.ch1.fader", 0.3);
     rig.tick();
-    assert!(cancelled_with(&rig, "mixer.ch1.fader"), "{:?}", rig.automix.snapshot());
+    assert!(
+        cancelled_with(&rig, "mixer.ch1.fader"),
+        "{:?}",
+        rig.automix.snapshot()
+    );
 }
 
 #[test]
@@ -134,8 +156,14 @@ fn an_underrun_during_a_transition_turns_automix_off_with_a_reason() {
     extra.store(3, Ordering::SeqCst);
     rig.tick();
     let snap = rig.automix.snapshot();
-    assert!(!snap.enabled, "automix stayed on after an underrun: {snap:?}");
-    assert!(snap.last_error.contains("underrun"), "no visible reason: {snap:?}");
+    assert!(
+        !snap.enabled,
+        "automix stayed on after an underrun: {snap:?}"
+    );
+    assert!(
+        snap.last_error.contains("underrun"),
+        "no visible reason: {snap:?}"
+    );
 }
 
 #[test]
@@ -165,8 +193,11 @@ fn shutdown_while_transitioning_is_clean() {
 
 #[test]
 fn the_controller_and_planner_have_no_audio_dependency() {
-    let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../om-automix/Cargo.toml"))
-        .expect("om-automix manifest");
+    let manifest = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../om-automix/Cargo.toml"
+    ))
+    .expect("om-automix manifest");
     for banned in ["om-engine", "om-audio", "cpal", "om-stretch"] {
         assert!(!manifest.contains(banned), "om-automix depends on {banned}");
     }
