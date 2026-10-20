@@ -124,6 +124,9 @@ fn stems(
     let t = &shell.theme;
     let look = LookAndFeel::from_tokens(t);
     let pads = &shell.decks[index].stems;
+    if let Some(panel) = &shell.library {
+        pads.observe_track(panel.loaded_track_id(index));
+    }
     let states = pads.stems();
     let live = states[0].available;
     let accent = t.accent_for(index as i32);

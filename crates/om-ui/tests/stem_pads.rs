@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use om_core::param_id::StemParam;
-use om_core::{ParamId, ParameterRouter};
+use om_core::{ParamId, ParameterRouter, ParameterTarget};
 use om_engine::DjEngine;
 use om_testing::signals::sine_amp;
 use om_testing::wav::write_pcm16_wav;
@@ -143,4 +143,110 @@ fn a_deck_without_stems_has_no_pads_enabled() {
     let pads = StemBinding::new(Arc::new(engine), Arc::new(ParameterRouter::new()), 0);
     assert!(!pads.has_stems());
     assert_eq!(pads.level(0), 0.0);
+}
+
+/// The engine's stem mutes as the pads read them.
+fn mutes(pads: &StemBinding) -> Vec<bool> {
+    pads.stems().iter().map(|s| s.muted).collect()
+}
+
+/// Sets a mute through the router, as a MIDI controller would (bypassing the pads).
+fn midi_mute(router: &ParameterRouter, stem: u8, muted: bool) {
+    let id = ParamId::Stem {
+        deck: 0,
+        stem,
+        p: StemParam::Mute,
+    };
+    assert!(router.set_parameter(&id.to_string(), if muted { 1.0 } else { 0.0 }));
+}
+
+#[test]
+fn solo_survives_clear_stems_only_until_the_deck_leaves_stem_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, router, _audio) = stem_rig(dir.path());
+    let pads = StemBinding::typed(Arc::clone(&engine), router, 0);
+    pads.observe_track(Some(1));
+    assert!(pads.solo(2));
+    assert_eq!(pads.soloed(), Some(2));
+
+    engine.deck(0).clear_stems();
+    pads.observe_track(Some(1));
+    assert!(!pads.has_stems());
+    assert_eq!(pads.soloed(), None, "the solo ends with the stems");
+
+    let stems = dir.path().join("stems");
+    engine.deck(0).load_stems(&stems).expect("stems reload");
+    pads.observe_track(Some(1));
+    assert!(pads.solo(2));
+    assert_eq!(pads.soloed(), Some(2), "solo again on the reloaded stems");
+    assert!(pads.solo(2));
+    assert_eq!(
+        mutes(&pads),
+        [true, true, false, true],
+        "the mutes the engine kept from the first solo are what the restore brings back"
+    );
+}
+
+#[test]
+fn solo_ends_when_another_track_loads_with_its_own_stems() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, router, _audio) = stem_rig(dir.path());
+    let pads = StemBinding::typed(Arc::clone(&engine), router, 0);
+    pads.observe_track(Some(1));
+    assert!(pads.solo(1));
+
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    for name in ["drums", "bass", "vocals", "other"] {
+        write_stereo(&other.join(format!("{name}.wav")), 330.0);
+    }
+    engine.deck(0).clear_stems();
+    engine.deck(0).load_stems(&other).expect("other stems load");
+    pads.observe_track(Some(2));
+    assert!(pads.has_stems());
+    assert_eq!(pads.soloed(), None, "a new track starts with no solo");
+    assert!(pads.solo(3));
+    assert_eq!(pads.soloed(), Some(3));
+    assert!(pads.solo(3));
+    assert_eq!(
+        mutes(&pads),
+        [true, false, true, true],
+        "the restore is what the engine held when the new solo began, not the old solo's saved mutes"
+    );
+}
+
+#[test]
+fn a_midi_mute_during_a_solo_ends_the_solo() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, router, _audio) = stem_rig(dir.path());
+    let pads = StemBinding::typed(Arc::clone(&engine), Arc::clone(&router), 0);
+    pads.observe_track(Some(1));
+    assert!(pads.solo(2));
+    midi_mute(&router, 2, true);
+    assert_eq!(pads.soloed(), None, "the engine no longer shows the solo");
+
+    midi_mute(&router, 2, false);
+    assert!(pads.solo(0));
+    assert_eq!(pads.soloed(), Some(0));
+    assert!(pads.solo(0));
+    assert_eq!(
+        mutes(&pads),
+        [true, true, false, true],
+        "the restore brings back the mutes the engine showed when the new solo began"
+    );
+}
+
+#[test]
+fn a_second_solo_moves_the_solo_and_keeps_the_first_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, router, _audio) = stem_rig(dir.path());
+    let pads = StemBinding::typed(engine, router, 0);
+    assert!(pads.toggle_mute(1));
+    assert!(pads.solo(2));
+    assert!(pads.solo(3));
+    assert_eq!(pads.soloed(), Some(3));
+    assert_eq!(mutes(&pads), [true, true, true, false]);
+    assert!(pads.solo(3));
+    assert_eq!(mutes(&pads), [false, true, false, false]);
+    assert_eq!(pads.soloed(), None);
 }
