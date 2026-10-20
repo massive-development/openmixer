@@ -25,11 +25,11 @@ pub mod sync;
 
 pub use callback::AudioCallback;
 pub use deck_control::DeckControl;
-pub use stem_control::{EngineCommands, StemSetRegistry};
 pub use dj_engine::{DjEngine, DjEngineAudio};
 pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
 pub use mixer::{ChannelInput, Mixer, MixerControl};
 pub use output::{OutputPairs, OutputRouter, NO_PAIR};
 pub use stage::{ProcessStage, StageChain, StageInsert, INTERFACE_VERSION, MAX_STAGES};
+pub use stem_control::{EngineCommands, StemSetRegistry};
 pub use sync::{Sync, SyncMode};

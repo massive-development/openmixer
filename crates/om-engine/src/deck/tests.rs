@@ -11,6 +11,8 @@ use std::time::Duration;
 mod keylock;
 #[cfg(test)]
 mod loops;
+#[cfg(test)]
+pub(crate) mod stems;
 
 use om_testing::fs::TempDir;
 use om_testing::wav::write_float_wav;
@@ -47,7 +49,9 @@ pub(crate) fn pump_until_buffered(
     let mut r = [0.0_f32; 64];
     wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
         audio.render_stereo(&mut l, &mut r);
-        deck.position_frames() == expected_pos && deck.buffered_frames() >= frames
+        deck.handshake_settled()
+            && deck.position_frames() == expected_pos
+            && deck.buffered_frames() >= frames
     })
 }
 
