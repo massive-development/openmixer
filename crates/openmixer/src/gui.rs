@@ -216,7 +216,7 @@ pub fn main(args: &[String]) -> ExitCode {
         composition.prefs.automix.enabled = true;
     }
     let automix_prefs = composition.prefs.automix.clone();
-    apply_automix_prefs(&composition.automix, &automix_prefs);
+    apply_automix_prefs(&composition.automix, &automix_prefs, None);
     let automix_runner = Rc::new(RefCell::new(AutomixRunner::new(
         composition.automix.clone(),
         composition.automix_sink.clone(),
@@ -302,6 +302,7 @@ pub fn main(args: &[String]) -> ExitCode {
             library
                 .as_ref()
                 .map(|hub| hub.borrow().services.library_handle()),
+            automix_prefs.clone(),
         ))),
         sync_themes: {
             let composition = Rc::clone(&composition);

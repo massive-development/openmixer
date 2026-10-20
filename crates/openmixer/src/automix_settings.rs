@@ -1,6 +1,8 @@
 //! The Automix page's link to the app. [`apply_automix_prefs`] pushes the stored settings into the
-//! running automix (the controller config, the style and enable flags, and the queue settings the
-//! host reads before each pick); [`AppAutomixSettings`] is the page's control. The window also
+//! running automix (the controller config, the style, and the queue settings the host reads before
+//! each pick); [`AppAutomixSettings`] is the page's control. The running enable flag follows the
+//! controller: the stored `enabled` is the launch default and an Enable press sets the flag directly
+//! (`set_running`), so a controller that turned itself off stays off until someone turns it on. The window also
 //! calls `apply_automix_prefs` at start-up, so the page and the start-up path cannot disagree.
 //!
 //! Threads: the window thread only (the library handle is not `Send`).
@@ -36,12 +38,21 @@ pub fn queue_source(a: &AutomixPrefs) -> QueueSource {
     }
 }
 
-/// Pushes the stored automix settings to the running service.
-pub fn apply_automix_prefs(shared: &AutomixShared, a: &AutomixPrefs) {
+/// Pushes the stored automix settings to the running service. The running flag belongs to the
+/// controller (MIDI and automix itself turn it off), so `enabled` is pushed only at start-up
+/// (`previous` is `None`: the preference is the launch default) or when the preference changed.
+/// Editing style, smart or the queue never flips it.
+pub fn apply_automix_prefs(
+    shared: &AutomixShared,
+    a: &AutomixPrefs,
+    previous: Option<&AutomixPrefs>,
+) {
     shared.update_config(automix_config(a));
     let control = shared.control();
     control.set_style(AutomixStyle::from_u8(a.style as u8));
-    control.set_enabled(a.enabled);
+    if previous.is_none_or(|p| p.enabled != a.enabled) {
+        control.set_enabled(a.enabled);
+    }
     let shared_queue = shared.queue_settings();
     let mut queue = shared_queue.lock().unwrap_or_else(|e| e.into_inner());
     *queue = QueueSettings {
@@ -54,12 +65,23 @@ pub fn apply_automix_prefs(shared: &AutomixShared, a: &AutomixPrefs) {
 pub struct AppAutomixSettings {
     shared: Arc<AutomixShared>,
     library: Option<Arc<Library>>,
+    /// The preferences last pushed (the launch ones at first).
+    applied: AutomixPrefs,
 }
 
 impl AppAutomixSettings {
     /// `library` is `None` when the library did not open; the page then says automix is idle.
-    pub fn new(shared: Arc<AutomixShared>, library: Option<Arc<Library>>) -> Self {
-        Self { shared, library }
+    /// `launch` is the preferences the service started with.
+    pub fn new(
+        shared: Arc<AutomixShared>,
+        library: Option<Arc<Library>>,
+        launch: AutomixPrefs,
+    ) -> Self {
+        Self {
+            shared,
+            library,
+            applied: launch,
+        }
     }
 }
 
@@ -77,8 +99,14 @@ impl AutomixControl for AppAutomixSettings {
         Ok(out)
     }
 
+    fn set_running(&mut self, on: bool) -> SettingsResult<()> {
+        self.shared.control().set_enabled(on);
+        Ok(())
+    }
+
     fn apply(&mut self, prefs: &AutomixPrefs) -> SettingsResult<()> {
-        apply_automix_prefs(&self.shared, prefs);
+        apply_automix_prefs(&self.shared, prefs, Some(&self.applied));
+        self.applied = prefs.clone();
         Ok(())
     }
 }
@@ -129,6 +157,26 @@ mod tests {
         assert!(!cfg.autostart);
     }
 
+    /// The controller turned itself off (an underrun) while the preference says On. Editing another
+    /// setting must not turn the running flag back on.
+    #[test]
+    fn editing_other_settings_does_not_touch_the_running_flag() {
+        let shared = AutomixShared::new();
+        let launch = AutomixPrefs {
+            enabled: true,
+            ..Default::default()
+        };
+        apply_automix_prefs(&shared, &launch, None);
+        assert!(shared.control().is_enabled());
+        shared.control().set_enabled(false);
+        let edited = AutomixPrefs {
+            style: 2,
+            ..launch.clone()
+        };
+        apply_automix_prefs(&shared, &edited, Some(&launch));
+        assert!(!shared.control().is_enabled());
+    }
+
     #[test]
     fn applying_prefs_updates_the_queue_settings_the_host_reads() {
         let shared = AutomixShared::new();
@@ -139,7 +187,7 @@ mod tests {
             queue_search: true,
             ..Default::default()
         };
-        apply_automix_prefs(&shared, &a);
+        apply_automix_prefs(&shared, &a, None);
         let queue = shared.queue_settings();
         let settings = queue.lock().unwrap().clone();
         assert_eq!(settings.source, QueueSource::CurrentSearch);
