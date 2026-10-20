@@ -23,6 +23,7 @@ use om_ui::settings::{
     LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage, PageKind,
     PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel, SettingsResult,
 };
+use om_ui::stems::StemHost;
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,6 +35,7 @@ mod library;
 mod midi;
 mod overlay;
 mod plugins;
+mod stems;
 
 /// The audio readout, read on the UI thread each frame.
 pub type AudioStatsFn = Arc<dyn Fn() -> AudioStats + Send + Sync>;
@@ -63,6 +65,9 @@ pub struct SettingsOptions {
     pub learn_targets: Vec<String>,
     /// The library. `None` when it did not open: the watch-folder and import actions say so.
     pub library: Option<Box<dyn LibraryControl>>,
+    /// The stem model and cache, behind the stems section of the Library page. `None` when the
+    /// library did not open: the section says so.
+    pub stems: Option<Box<dyn StemHost>>,
     /// The plugins, behind the Plugins page. `None` leaves the page out of use.
     pub plugins: Option<Box<dyn PluginHost>>,
     /// Makes this window's theme registry hold the plugins' themes. Called on start-up, when the
@@ -82,6 +87,8 @@ pub enum EntryKind {
     ImportXml,
     /// A controller map (JSON) to load into the MIDI service.
     MapFile,
+    /// The stem cache size in whole GB (1 to 1000).
+    MaxCacheGb,
 }
 
 /// The text field open at the foot of the card.
@@ -131,6 +138,12 @@ pub struct SettingsState {
     /// The learn in progress: its target and the map generation when it started.
     learning: Option<(String, u64)>,
     library: Option<Box<dyn LibraryControl>>,
+    stems: Option<Box<dyn StemHost>>,
+    /// Bytes the stem cache holds, read when the overlay opens and after a stems action (the
+    /// cache is not free to measure each frame).
+    pub stems_bytes: u64,
+    /// The Clear-cache confirmation is showing.
+    pub stems_confirm_clear: bool,
     plugins: Option<Box<dyn PluginHost>>,
     sync_themes: Option<ThemeSync>,
 }
@@ -155,6 +168,9 @@ impl SettingsState {
             learn_targets: options.learn_targets,
             learning: None,
             library: options.library,
+            stems: options.stems,
+            stems_bytes: 0,
+            stems_confirm_clear: false,
             plugins: options.plugins,
             sync_themes: options.sync_themes,
         };
@@ -201,6 +217,9 @@ impl SettingsState {
                 }
             }
         }
+        if let Some(stems) = &self.stems {
+            self.stems_bytes = stems.cache_bytes();
+        }
         if let Some(plugins) = &self.plugins {
             self.lists.loaded_plugins = plugins.loaded_plugins();
             self.lists.builtins = plugins.builtins();
@@ -242,6 +261,7 @@ mod fixtures {
             midi: None,
             learn_targets: Vec::new(),
             library: None,
+            stems: None,
             plugins: None,
             sync_themes: None,
             start_tab: None,
@@ -267,6 +287,7 @@ mod fixtures {
             midi,
             learn_targets: vec!["deck.0.play".to_owned()],
             library,
+            stems: None,
             plugins,
             sync_themes: Some(Box::new(move |_| syncs.set(syncs.get() + 1))),
             start_tab: None,

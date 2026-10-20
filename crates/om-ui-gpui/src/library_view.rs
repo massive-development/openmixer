@@ -213,6 +213,12 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     toolbar = toolbar.child(action_button(&t, "Analyse", cx, |p| {
         p.prep_selected();
     }));
+    toolbar = toolbar.child(action_button(&t, "Prepare stems", cx, |p| {
+        p.prepare_stems();
+    }));
+    toolbar = toolbar.child(action_button(&t, "Cancel stems", cx, |p| {
+        p.cancel_stems_selected();
+    }));
 
     let status_colour = if status_error {
         t.highlight
@@ -389,6 +395,9 @@ fn action_button(
             MouseButton::Left,
             cx.listener(move |this, _: &MouseDownEvent, _, cx| {
                 with_library(this, |p| on_press(p));
+                if with_library(this, |p| p.take_licence_request()).unwrap_or(false) {
+                    this.show_stems_licence();
+                }
                 cx.notify();
             }),
         )
