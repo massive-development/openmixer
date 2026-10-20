@@ -215,3 +215,12 @@ fn loading_without_a_bank_or_with_an_empty_path_is_refused() {
     binding.set_path(0, "   ");
     assert!(binding.load_typed_path(0).is_err());
 }
+
+#[test]
+fn every_mode_has_a_label_and_a_hint_and_loop_explains_the_latch() {
+    use om_ui::sampler_binding::{mode_hint, mode_label};
+    for mode in [PadMode::OneShot, PadMode::Gate, PadMode::Loop] {
+        assert!(!mode_label(mode).is_empty() && !mode_hint(mode).is_empty());
+    }
+    assert!(mode_hint(PadMode::Loop).contains("again"));
+}

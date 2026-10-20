@@ -172,7 +172,7 @@ fn one_shot_ignores_release() {
 }
 
 #[test]
-fn loop_wraps_seamlessly_until_release() {
+fn loop_wraps_seamlessly_and_latches_until_a_second_press() {
     let (mut audio, control) = setup();
     let data: Vec<f32> = (0..50).flat_map(|n| [n as f32; 2]).collect();
     let sample = Arc::new(Sample::from_interleaved("saw", RATE, data).unwrap());
@@ -183,10 +183,38 @@ fn loop_wraps_seamlessly_until_release() {
     for (i, &got) in l.iter().enumerate().skip(40) {
         assert_eq!(got, (i % 50) as f32, "frame {i}");
     }
+    // Release, trigger=0 and a note-off style release do not stop a loop.
     control.release(0);
+    let (l, _) = render(&mut audio, 400);
+    assert!(l.iter().any(|&v| v > 0.0));
+    assert!(control.snapshot().pads[0].playing);
+    // The second press fades it out in 5 ms and does not start another voice.
+    control.trigger(0, 1.0);
     render(&mut audio, 400);
     let (l, _) = render(&mut audio, 100);
     assert!(l.iter().all(|&v| v == 0.0));
+    assert_eq!(control.snapshot().voices_active, 0);
+    // A third press starts it again.
+    control.trigger(0, 1.0);
+    let (l, _) = render(&mut audio, 300);
+    assert!(l.iter().any(|&v| v > 0.0));
+    assert_eq!(control.snapshot().voices_active, 1);
+    // stop_all ends a latched loop too.
+    control.stop_all();
+    render(&mut audio, 400);
+    assert_eq!(control.snapshot().voices_active, 0);
+}
+
+#[test]
+fn a_gate_override_on_a_loop_pad_is_a_gate_not_a_latch() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(48_000, 1.0)).unwrap();
+    control.set_mode(0, PadMode::Loop);
+    control.trigger_with(0, 1.0, Some(PadMode::Gate));
+    render(&mut audio, 300);
+    control.release(0);
+    render(&mut audio, 400);
+    assert_eq!(control.snapshot().voices_active, 0);
 }
 
 #[test]

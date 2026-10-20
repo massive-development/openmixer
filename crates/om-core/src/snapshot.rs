@@ -190,7 +190,8 @@ pub enum PadMode {
     OneShot,
     /// Plays while held; release fades it out.
     Gate,
-    /// Loops until release or stop.
+    /// Latches: a press starts the loop and the next press stops it. Release is ignored; stop-all
+    /// and clear also end it.
     Loop,
 }
 
