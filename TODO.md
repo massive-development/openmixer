@@ -235,7 +235,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [x] **Todo 37:** Stem-aware mixing DSP (engine level, Wave 7 S5: `om-dsp` `StemMixer`, stem-mode decks, `stem.*` ids and `Command::LoadStems`; pads UI is Todo 30, transitions Todo 39)
 - [ ] **Todo 38:** Automix transition engine
-- [ ] **Todo 39:** Stem transitions
+- [ ] **Todo 39:** Stem transitions: done at helper level (Wave 7 S8: `om-automix` `stem_fade`, the `StemFade` plan with bass swap, vocals out, drums-only bridge and filter sweep, and a `StemFadeRunner` that sends `Command::Param` on the control tick and skips decks without stems). Not yet driven by automix (Todo 38, A4) or any UI; not heard
 - [ ] **Todo 40:** 8-pad sampler
 
 ## Wave 8: Pro Surface
