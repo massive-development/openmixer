@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 om-core.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 proptest = "1"
