@@ -13,7 +13,7 @@ use crate::paint::{paint, place};
 use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle, KeyDownEvent,
+    div, prelude::*, px, size, App, AsyncApp, Application, Bounds, Context, FocusHandle, KeyDownEvent,
     Window, WindowBounds, WindowOptions,
 };
 use om_analysis::WaveformData;
@@ -65,8 +65,9 @@ pub struct RunOptions {
     /// The sample bank behind the sampler strip (loads and per-pad settings). `None` leaves loads
     /// refused; the pads still play what the engine holds.
     pub samples: Option<Arc<SampleBank>>,
-    /// Called once per rendered frame, on the window thread, after the shell's own upkeep. The app
-    /// steps what must run on this thread (automix, whose host reads the library).
+    /// Called on the window thread every [`CONTROL_TICK`] by a foreground timer, independent of
+    /// rendering (a minimised or occluded window still ticks). The app steps what must run on this
+    /// thread (automix, whose host reads the library).
     pub on_frame: Option<Box<dyn FnMut()>>,
 }
 
@@ -213,9 +214,6 @@ impl Shell {
     /// time. The engine's control clock runs on its own thread (see the composition), so it keeps
     /// going when no frames are drawn.
     fn tick(&mut self) {
-        if let Some(hook) = self.options.on_frame.as_mut() {
-            hook();
-        }
         let now = self.started.elapsed().as_secs_f64();
         let dt = (now - self.last_tick) as f32;
         self.last_tick = now;
@@ -444,14 +442,27 @@ impl Render for Shell {
     }
 }
 
+/// The period of the control timer (the automix step rate): 33 ms, about 30 Hz.
+pub const CONTROL_TICK: std::time::Duration = std::time::Duration::from_millis(33);
+
 /// Opens the main window and runs the GPUI event loop until it closes (or `smoke_frames` pass).
 /// Returns the number of frames rendered.
-pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, options: RunOptions) -> u64 {
+pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: RunOptions) -> u64 {
     let theme = load_theme();
     let frames_out = Arc::new(AtomicU64::new(0));
     let counter = Arc::clone(&frames_out);
     Application::new().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+        if let Some(mut hook) = options.on_frame.take() {
+            // A foreground timer, not the render loop: it keeps running while the window is hidden.
+            cx.spawn(async move |cx: &mut AsyncApp| loop {
+                cx.background_executor().timer(CONTROL_TICK).await;
+                if cx.update(|_| hook()).is_err() {
+                    break;
+                }
+            })
+            .detach();
+        }
         let mut slot = Some((engine, router, theme, options, counter));
         cx.open_window(
             WindowOptions {

@@ -82,9 +82,10 @@ pub struct AutomixConfig {
     pub max_load_failures: u32,
     /// Ticks spent in `Cleanup` before going idle.
     pub cleanup_ticks: u32,
-    /// Ticks the cued position of the incoming deck may take to show up before a mismatch counts
-    /// as the user's seek.
-    pub cue_grace_ticks: u32,
+    /// Seconds (control clock) the cued position of the incoming deck may take to show up before a
+    /// mismatch counts as the user's seek. The decoder acknowledges seeks in wall time, so this is
+    /// time, not ticks.
+    pub cue_grace_s: f64,
 }
 
 impl Default for AutomixConfig {
@@ -103,7 +104,7 @@ impl Default for AutomixConfig {
             load_timeout_s: 30.0,
             max_load_failures: 3,
             cleanup_ticks: 2,
-            cue_grace_ticks: 6,
+            cue_grace_s: 0.2,
         }
     }
 }
