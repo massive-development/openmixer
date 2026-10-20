@@ -82,3 +82,14 @@ Scenes: `tools/screenshots.sh main-record` runs `--demo-record`: the demo librar
 | Recording settings tab (`settings-recording.png`) | fits | Folder (Change folder / Use default, the path field opens below), the three format chips, the low-disk toggle and the status line. Nothing overlaps at 1280x800. |
 | Dropped-frames badge | not captured | Shown as `!N` in the button when frames were dropped; the mock device drops none. |
 | Narrow windows (900x600) | layout test only | The header strip and the cells are checked by `the_cells_clear_the_header_strip_and_each_other_at_the_test_sizes` (om-ui) and the button's rect test in `record_bar.rs`. Not looked at in a picture. |
+
+## Mapping (Todo 36, `settings-mapping`, 2026-10-20)
+
+Scene: `tools/screenshots.sh settings-mapping` runs `--demo-map --settings=mapping` on the mock device. The three fixture controller maps are merged into a temporary map file (`<scratch>/map/demo-map.json`), never the user's map. One capture, checked by eye.
+
+| Item | Status | Notes |
+|---|---|---|
+| Mapping tab (`settings-mapping.png`) | fits, no overlap | Tab chips, the toolbar (Add to Reset), the map path line, the filter chips, the binding table with the selected-row highlight and the `!` conflict mark, the "Select a binding" hint, and the conflicts row with Keep first / Keep second. Nothing overlaps at 1280x800. |
+| Below the fold | scrolls, not visible in the capture | The edit form, the Apply and Learn buttons, the monitor panel and the status line sit below the table inside the scrolling page. The capture stops at the conflicts row. |
+| Narrow window (900x600) | not captured | The card is 720 px wide and shrinks to the window; the page scrolls. Not looked at in a picture. |
+| Confirm steps (Reset, close with unsaved edits) | not captured | Covered by state tests in `settings_view/mapping.rs`. |
