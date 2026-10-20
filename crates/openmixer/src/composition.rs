@@ -26,6 +26,7 @@ use om_midi::MidiBackend;
 use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
 use om_ui::library::{default_options, LibraryServices, Options};
+use om_ui::mapping_editor::MappingEditorPage;
 use om_ui::preferences::{self, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
 use om_ui::sample_bank::{self, SampleBank};
@@ -356,6 +357,18 @@ impl AppComposition {
             .as_ref()
             .ok_or(AppError::MidiNotAttached)?;
         Ok(self.plugins.apply_midi_map(map_name, service.mapper())?)
+    }
+
+    /// The mapping editor over the attached service's live map. Edits apply to the running mapper
+    /// at once (the same path a map load takes); Save writes the effective map file from the
+    /// preferences. `None` until MIDI is attached. Call it again after the map file preference
+    /// changes: the editor keeps the path it was made with.
+    pub fn mapping_editor(&self) -> Option<MappingEditorPage> {
+        let service = self.services.midi.as_ref()?;
+        Some(MappingEditorPage::new(
+            Arc::clone(service.mapper()),
+            Some(self.prefs.effective_map_file()),
+        ))
     }
 
     /// One line on MIDI for the smoke report: the open inputs, the mappings and the devices listed.
