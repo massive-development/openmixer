@@ -243,6 +243,7 @@ mod tests {
         let router = Arc::new(ParameterRouter::new());
         engine.register(&router);
         let options = RunOptions {
+            on_frame: None,
             smoke_frames: None,
             banner: None,
             debug: None,
