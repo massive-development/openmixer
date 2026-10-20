@@ -37,7 +37,9 @@ pub struct AutomixBar {
 
 impl AutomixBar {
     pub fn new(snapshot: &AutomixSnapshot, prefs: &AutomixPrefs) -> Self {
-        let enabled = prefs.enabled;
+        // The running flag, not the preference: the controller can turn itself off (an underrun,
+        // repeated load failures) and the bar says so with the reason in `error`.
+        let enabled = snapshot.enabled;
         let state = state_label(snapshot.state, enabled);
         let style = STYLE_LABELS
             .get(prefs.style.clamp(0, (STYLE_LABELS.len() - 1) as i32) as usize)
@@ -60,8 +62,7 @@ impl AutomixBar {
                 .map(remaining_text)
                 .unwrap_or_default(),
             error: snapshot.last_error.clone(),
-            can_start: enabled
-                && matches!(snapshot.state, AutomixState::Loading | AutomixState::Armed),
+            can_start: enabled && snapshot.state != AutomixState::Transitioning,
             can_cancel: enabled && planned,
         }
     }
@@ -163,10 +164,59 @@ mod tests {
         assert_eq!(armed.remaining, "12 beats left");
         assert_eq!(armed.style, "Auto");
         let idle = AutomixBar::new(&snap(AutomixState::Idle), &prefs);
-        assert!(!idle.can_start && !idle.can_cancel);
-        let off = AutomixBar::new(&snap(AutomixState::Armed), &AutomixPrefs::default());
+        assert!(
+            idle.can_start,
+            "start now works from Idle: it plans the next track"
+        );
+        assert!(!idle.can_cancel);
+        let mut off_snap = snap(AutomixState::Armed);
+        off_snap.enabled = false;
+        let off = AutomixBar::new(&off_snap, &prefs);
         assert_eq!(off.state, "Off");
         assert!(!off.can_start && !off.can_cancel);
+    }
+
+    #[test]
+    fn start_now_is_offered_in_every_state_but_a_running_transition() {
+        let prefs = AutomixPrefs {
+            enabled: true,
+            ..Default::default()
+        };
+        for state in [
+            AutomixState::Idle,
+            AutomixState::Loading,
+            AutomixState::Armed,
+            AutomixState::Cleanup,
+        ] {
+            assert!(
+                AutomixBar::new(&snap(state), &prefs).can_start,
+                "{state:?} accepts start"
+            );
+        }
+        let running = AutomixBar::new(&snap(AutomixState::Transitioning), &prefs);
+        assert!(!running.can_start, "a transition is already running");
+        assert!(running.can_cancel);
+        let mut off_snap = snap(AutomixState::Idle);
+        off_snap.enabled = false;
+        let off = AutomixBar::new(&off_snap, &prefs);
+        assert!(!off.can_start, "disabled: nothing starts");
+    }
+
+    /// The controller turns itself off after an underrun while the preference still says On: the
+    /// bar shows what runs (Off) and why, not the preference.
+    #[test]
+    fn bar_shows_the_running_flag_not_the_preference() {
+        let prefs = AutomixPrefs {
+            enabled: true,
+            ..Default::default()
+        };
+        let mut snapshot = snap(AutomixState::Idle);
+        snapshot.enabled = false;
+        snapshot.last_error = "cancelled: audio underrun, automix is off".into();
+        let bar = AutomixBar::new(&snapshot, &prefs);
+        assert!(!bar.enabled);
+        assert_eq!(bar.state, "Off");
+        assert!(bar.error.contains("underrun"), "{}", bar.error);
     }
 
     #[test]

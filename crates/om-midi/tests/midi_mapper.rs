@@ -325,3 +325,78 @@ fn sampler_pad_map_triggers_pads_with_velocity_and_gates_through_the_router() {
     assert_near(f64::from(pad.pitch), 12.0);
     assert_eq!(router.unknown_count(), 0);
 }
+
+/// Every id in the shipped sampler map must be understood by the engine: mapping targets parse as
+/// `ParamId`s and are taken by the router; output sources parse as `StateId`s and read a value.
+#[test]
+fn every_id_in_sampler_map_json_is_valid() {
+    use om_core::{ParamId, StateId};
+    let text = std::fs::read_to_string(data_dir().join("sampler_map.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+    let (engine, _audio) = DjEngine::new(2);
+    let router = Arc::new(ParameterRouter::new());
+    engine.register(&router);
+    let snapshot = engine.snapshot();
+
+    let mappings = json["mappings"].as_array().unwrap();
+    assert_eq!(mappings.len(), 11);
+    let mut triggers = std::collections::BTreeSet::new();
+    for m in mappings {
+        let target = m["target"].as_str().unwrap();
+        let id: ParamId = target.parse().unwrap_or_else(|e| panic!("{target}: {e}"));
+        assert_eq!(id.to_string(), target, "canonical form");
+        assert!(router.set_parameter(target, 0.5), "{target} rejected");
+        if let ParamId::Sampler { pad, p } = id {
+            assert!(pad < 8);
+            if p == om_core::param_id::SamplerParam::Trigger {
+                triggers.insert(pad);
+            }
+        } else {
+            panic!("{target} is not a sampler id");
+        }
+    }
+    assert_eq!(triggers.len(), 8, "all eight pads have a trigger mapping");
+
+    let outputs = json["outputs"].as_array().unwrap();
+    assert_eq!(outputs.len(), 16);
+    let mut seen = std::collections::BTreeSet::new();
+    for o in outputs {
+        let source = o["source"].as_str().unwrap();
+        let id: StateId = source.parse().unwrap_or_else(|e| panic!("{source}: {e}"));
+        assert!(snapshot.read(&id).is_some(), "{source} reads nothing");
+        assert!(seen.insert(source.to_owned()), "{source} listed twice");
+    }
+    for pad in 0..8 {
+        for state in ["playing", "loaded"] {
+            assert!(seen.contains(&format!("sampler.pad{pad}.{state}")));
+        }
+    }
+    assert_eq!(router.unknown_count(), 0);
+}
+
+#[test]
+fn sampler_state_ids_for_every_pad_parse_and_read() {
+    use om_core::StateId;
+    let (engine, _audio) = DjEngine::new(2);
+    let snapshot = engine.snapshot();
+    for pad in 0..8 {
+        for state in ["loaded", "playing", "volume", "pitch", "mode"] {
+            let text = format!("sampler.pad{pad}.{state}");
+            let id: StateId = text.parse().unwrap_or_else(|e| panic!("{text}: {e}"));
+            assert!(snapshot.read(&id).is_some(), "{text}");
+        }
+    }
+    for bad in ["sampler.pad8.playing", "sampler.pad99.mode"] {
+        let id: StateId = bad.parse().expect("syntactically fine");
+        assert!(snapshot.read(&id).is_none(), "{bad} names no pad");
+    }
+    for bad in [
+        "sampler.pad0.trigger",
+        "sampler.pad.mode",
+        "sampler.padx.mode",
+        "sampler.pad0",
+    ] {
+        assert!(bad.parse::<StateId>().is_err(), "{bad}");
+    }
+}

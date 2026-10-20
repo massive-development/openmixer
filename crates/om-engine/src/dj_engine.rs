@@ -227,6 +227,8 @@ impl DjEngine {
         for control in &self.controls {
             control.tick(elapsed_seconds);
         }
+        // Free samples the audio thread has handed back (finished voices, replaced pad samples).
+        self.sampler.reclaim();
         self.ticks.fetch_add(1, Relaxed);
     }
 

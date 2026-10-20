@@ -215,3 +215,61 @@ fn loading_without_a_bank_or_with_an_empty_path_is_refused() {
     binding.set_path(0, "   ");
     assert!(binding.load_typed_path(0).is_err());
 }
+
+#[test]
+fn every_mode_has_a_label_and_a_hint_and_loop_explains_the_latch() {
+    use om_ui::sampler_binding::{mode_hint, mode_label};
+    for mode in [PadMode::OneShot, PadMode::Gate, PadMode::Loop] {
+        assert!(!mode_label(mode).is_empty() && !mode_hint(mode).is_empty());
+    }
+    assert!(mode_hint(PadMode::Loop).contains("again"));
+}
+
+fn pid(s: &str) -> ParamId {
+    s.parse().unwrap()
+}
+
+#[test]
+fn pressing_a_second_pad_releases_the_first_held_one() {
+    let (engine, _router, recorder, binding) = rig();
+    engine.sampler().set_mode(0, PadMode::Gate);
+    assert!(binding.press_held(0, 0.9));
+    assert_eq!(binding.held(), Some(0));
+    assert!(binding.press_held(1, 0.9));
+    assert_eq!(binding.held(), Some(1));
+    assert_eq!(
+        recorder.taken(),
+        vec![
+            (pid("sampler.pad0.gate"), 1.0),
+            (pid("sampler.pad0.gate"), 0.0),
+            (pid("sampler.pad1.trigger"), 0.9_f32 as f64),
+        ]
+    );
+    // A bad pad changes nothing.
+    assert!(!binding.press_held(99, 1.0));
+    assert_eq!(binding.held(), Some(1));
+}
+
+#[test]
+fn release_held_lets_go_once_and_key_up_only_releases_its_own_pad() {
+    let (engine, _router, recorder, binding) = rig();
+    engine.sampler().set_mode(2, PadMode::Gate);
+    binding.press_held(2, 1.0);
+    recorder.taken();
+    assert!(!binding.release_held_if(3), "another pad's key coming up");
+    assert_eq!(binding.held(), Some(2));
+    assert!(binding.release_held_if(2));
+    assert_eq!(recorder.taken(), vec![(pid("sampler.pad2.gate"), 0.0)]);
+    // Focus lost or mouse up elsewhere with nothing held is a no-op.
+    assert_eq!(binding.release_held(), None);
+    assert!(recorder.taken().is_empty());
+}
+
+#[test]
+fn stop_all_forgets_the_held_pad_and_queues_a_stop() {
+    let (engine, _router, _recorder, binding) = rig();
+    binding.press_held(4, 1.0);
+    binding.stop_all();
+    assert_eq!(binding.held(), None);
+    assert_eq!(engine.sampler().dropped_commands(), 0);
+}
