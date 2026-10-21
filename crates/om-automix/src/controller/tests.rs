@@ -3,7 +3,7 @@ use crate::fixtures::{info, LENGTH_BEATS};
 use crate::readback::blank_snapshot;
 use crate::stem_fade::CancelMode;
 use om_core::param_id::{AutomixParam, EqBand, StemParam};
-use om_core::{AutomixStyle, ParamTarget};
+use om_core::{AutomixStyle, ParamTarget, XfaderAssign};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -241,6 +241,13 @@ impl Sim {
                 match p {
                     ChannelParam::Fader => c.fader = v as f32,
                     ChannelParam::Filter => c.filter = v as f32,
+                    ChannelParam::Xfader => {
+                        c.assign = match v.round() as u8 {
+                            1 => XfaderAssign::Left,
+                            2 => XfaderAssign::Right,
+                            _ => XfaderAssign::Thru,
+                        }
+                    }
                     ChannelParam::Eq(b) => {
                         c.eq[match b {
                             EqBand::Low => 0,
@@ -981,4 +988,130 @@ fn a_track_the_user_loads_over_the_stopped_deck_is_not_loaded_over() {
         "{:?}",
         sim.host.starts
     );
+}
+
+fn set_assign(sim: &mut Sim, ch: usize, assign: XfaderAssign) {
+    sim.snap.mixer.channels[ch].assign = assign;
+}
+
+fn assign_of(sim: &Sim, ch: usize) -> XfaderAssign {
+    sim.snap.mixer.channels[ch].assign
+}
+
+#[test]
+fn deck_zero_on_the_right_and_deck_one_on_the_left_mix_without_reassigning() {
+    let mut sim = Sim::new(380.0, false);
+    set_assign(&mut sim, 0, XfaderAssign::Right);
+    set_assign(&mut sim, 1, XfaderAssign::Left);
+    sim.snap.mixer.crossfader = 1.0;
+    sim.run_until("transitioning", 3000, |s| {
+        s.state() == AutomixState::Transitioning
+    });
+    sim.run(60);
+    assert!(sim.xfader() > 0.0 && sim.xfader() < 1.0, "{}", sim.xfader());
+    sim.run_until("idle after the transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup) && s.state() == AutomixState::Idle
+    });
+    assert_eq!(sim.xfader(), 0.0, "the ramp lands on the incoming side");
+    assert!(sim.sent("mixer.ch0.xfader").is_empty());
+    assert!(sim.sent("mixer.ch1.xfader").is_empty());
+    assert!(!sim.snap.decks[0].playing && sim.snap.decks[1].playing);
+    assert!(sim.ctrl.snapshot().last_error.is_empty());
+}
+
+#[test]
+fn thru_decks_are_routed_for_the_transition_and_put_back_on_finish() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("idle after the transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup) && s.state() == AutomixState::Idle
+    });
+    assert_eq!(
+        sim.xfader(),
+        1.0,
+        "outgoing on the left, incoming on the right"
+    );
+    assert_eq!(sim.sent("mixer.ch0.xfader"), vec![1.0, 0.0]);
+    assert_eq!(sim.sent("mixer.ch1.xfader"), vec![2.0, 0.0]);
+    assert_eq!(assign_of(&sim, 0), XfaderAssign::Thru);
+    assert_eq!(assign_of(&sim, 1), XfaderAssign::Thru);
+    assert!(sim.snap.decks[1].playing);
+}
+
+#[test]
+fn decks_on_the_same_side_reassign_the_incoming_deck_and_restore_it() {
+    let mut sim = Sim::new(380.0, false);
+    set_assign(&mut sim, 0, XfaderAssign::Left);
+    set_assign(&mut sim, 1, XfaderAssign::Left);
+    sim.run_until("idle after the transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup) && s.state() == AutomixState::Idle
+    });
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.sent("mixer.ch0.xfader").is_empty());
+    assert_eq!(sim.sent("mixer.ch1.xfader"), vec![2.0, 1.0]);
+    assert_eq!(assign_of(&sim, 1), XfaderAssign::Left);
+}
+
+#[test]
+fn a_cancel_puts_the_reassigned_channel_back() {
+    let mut sim = Sim::new(380.0, false);
+    set_assign(&mut sim, 0, XfaderAssign::Left);
+    set_assign(&mut sim, 1, XfaderAssign::Left);
+    sim.run_into_transition();
+    assert_eq!(sim.sent("mixer.ch1.xfader"), vec![2.0]);
+    sim.snap.mixer.crossfader = 0.9;
+    assert_cancelled(&mut sim, "mixer.crossfader");
+    assert_eq!(sim.sent("mixer.ch1.xfader"), vec![2.0, 1.0]);
+    assert_eq!(assign_of(&sim, 1), XfaderAssign::Left);
+    assert_eq!(assign_of(&sim, 0), XfaderAssign::Left);
+}
+
+#[test]
+fn a_user_move_of_an_assignment_mid_transition_wins_over_the_restore() {
+    let mut sim = Sim::new(380.0, false);
+    set_assign(&mut sim, 0, XfaderAssign::Left);
+    set_assign(&mut sim, 1, XfaderAssign::Left);
+    sim.run_into_transition();
+    set_assign(&mut sim, 1, XfaderAssign::Thru);
+    assert_cancelled(&mut sim, "mixer.ch1.xfader");
+    assert_eq!(sim.sent("mixer.ch1.xfader"), vec![2.0], "not put back");
+    assert_eq!(assign_of(&sim, 1), XfaderAssign::Thru);
+}
+
+#[test]
+fn a_pair_that_cannot_be_routed_is_refused_before_any_load() {
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.mixer.channels.truncate(1);
+    sim.run_until("refused", 3000, |s| {
+        !s.ctrl.snapshot().last_error.is_empty()
+    });
+    assert_eq!(
+        sim.ctrl.snapshot().last_error,
+        "decks are not on opposite crossfader sides"
+    );
+    assert!(sim.host.starts.is_empty(), "no load was started");
+    assert_eq!(sim.state(), AutomixState::Idle);
+}
+
+#[test]
+fn with_three_decks_the_partner_is_on_the_opposite_side() {
+    let mut snap = blank_snapshot(3);
+    snap.decks[0].playing = true;
+    snap.mixer.channels[0].assign = XfaderAssign::Left;
+    snap.mixer.channels[1].assign = XfaderAssign::Left;
+    snap.mixer.channels[2].assign = XfaderAssign::Right;
+    assert_eq!(
+        partner_deck(&snap, 0),
+        Some(2),
+        "the right side wins over the pair"
+    );
+    snap.mixer.channels[2].assign = XfaderAssign::Left;
+    assert_eq!(
+        partner_deck(&snap, 0),
+        Some(1),
+        "no opposite side: the pair"
+    );
+    snap.decks[2].playing = true;
+    snap.mixer.channels[2].assign = XfaderAssign::Right;
+    snap.decks[1].playing = true;
+    assert_eq!(partner_deck(&snap, 0), None, "playing decks are not free");
 }

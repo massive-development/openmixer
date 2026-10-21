@@ -157,6 +157,7 @@ impl TransitionPlanner for DefaultPlanner {
             },
             cleanup: moves.cleanup,
             restore_on_cancel: moves.restore,
+            route_restore: moves.route_restore,
         })
     }
 }

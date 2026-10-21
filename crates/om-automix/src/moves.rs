@@ -23,6 +23,7 @@ pub(crate) struct Moves {
     pub stem_plan: Option<StemFadePlan>,
     pub cleanup: Vec<(ParamId, f64)>,
     pub restore: Vec<(ParamId, f64)>,
+    pub route_restore: Vec<(ParamId, f64)>,
 }
 
 fn deck_id(deck: u8, p: DeckParam) -> ParamId {
@@ -35,6 +36,10 @@ fn chan_id(ch: u8, p: ChannelParam) -> ParamId {
 
 fn xfader_id() -> ParamId {
     ParamId::Mixer(MixerParam::Crossfader)
+}
+
+fn assign_id(ch: u8) -> ParamId {
+    chan_id(ch, ChannelParam::Xfader)
 }
 
 pub(crate) fn build_moves(
@@ -59,6 +64,13 @@ pub(crate) fn build_moves(
     ];
     let mut restore: Vec<(ParamId, f64)> = Vec::new();
     let mut stem_plan = None;
+    // Crossfader assignments the route changes take effect at the start and go back at the end.
+    let mut route_restore: Vec<(ParamId, f64)> = Vec::new();
+    for &(deck, was, to) in &opts.route.reassign {
+        steps.push(Step::set(start, assign_id(deck), was, to));
+        route_restore.push((assign_id(deck), was));
+    }
+    cleanup.extend(route_restore.iter().cloned());
 
     // The incoming deck follows the outgoing deck's beat and starts on the bar.
     steps.push(Step::set(
@@ -70,7 +82,7 @@ pub(crate) fn build_moves(
     steps.push(Step::set(start, deck_id(i, DeckParam::Sync), 0.0, 1.0));
     steps.push(Step::set(start, deck_id(i, DeckParam::Play), 0.0, 1.0));
 
-    let (side_out, side_in) = if opts.out_on_left {
+    let (side_out, side_in) = if opts.route.out_left {
         (0.0, 1.0)
     } else {
         (1.0, 0.0)
@@ -173,6 +185,7 @@ pub(crate) fn build_moves(
         stem_plan,
         cleanup,
         restore,
+        route_restore,
     }
 }
 

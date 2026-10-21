@@ -349,6 +349,33 @@ fn deck_snapshot_of_a_missing_deck_is_none() {
 }
 
 /// `sync.<d>.sync` for a deck the engine lacks is unhandled, as `deck.<d>.*` ids are.
+/// The crossfader assignment of each channel reads back through the snapshot's typed field and
+/// through the `mixer.ch<N>.xfader` id, and a fresh channel is on `Thru`.
+#[test]
+fn snapshot_reads_each_channels_crossfader_assignment() {
+    use om_core::{StateId, XfaderAssign};
+    use om_dsp::CrossfaderAssign;
+
+    let (engine, _audio) = DjEngine::new(2);
+    assert_eq!(
+        engine.snapshot().mixer.channels[0].assign,
+        XfaderAssign::Thru
+    );
+    engine
+        .mixer()
+        .set_crossfader_assign(0, CrossfaderAssign::Right);
+    engine
+        .mixer()
+        .set_crossfader_assign(1, CrossfaderAssign::Left);
+    let snap = engine.snapshot();
+    assert_eq!(snap.mixer.channels[0].assign, XfaderAssign::Right);
+    assert_eq!(snap.mixer.channels[1].assign, XfaderAssign::Left);
+    let read = |id: &str| snap.read(&id.parse::<StateId>().expect(id));
+    assert_eq!(read("mixer.ch0.xfader"), Some(2.0));
+    assert_eq!(read("mixer.ch1.xfader"), Some(1.0));
+    assert_eq!(read("mixer.ch9.xfader"), None);
+}
+
 #[test]
 fn sync_enable_for_a_missing_deck_is_unhandled() {
     let (engine, _audio) = DjEngine::new(2);
