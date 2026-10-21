@@ -349,6 +349,10 @@ impl LibraryServices {
         let scans = self.finished_scans.load(Ordering::SeqCst);
         if scans != self.seen_scans {
             self.seen_scans = scans;
+            // Tracks the scan found are analysed in the background, behind anything queued.
+            if let Err(error) = self.prep.enqueue_unanalysed() {
+                self.report(&format!("could not queue new tracks for analysis: {error}"));
+            }
             self.notify_library_changed();
         }
         let scan_errors: Vec<String> = match self.scan_errors.lock() {

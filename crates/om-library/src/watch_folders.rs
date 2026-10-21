@@ -16,7 +16,7 @@ use crate::migrations::{core_migrations, Migration};
 use om_core::sync::LockExt;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -72,6 +72,8 @@ struct Shared {
     done: Condvar,
     /// Set on drop; aborts a scan in progress between files.
     stop: AtomicBool,
+    /// Time between automatic rescans; the scan thread reads it on every poll.
+    interval_ms: AtomicI64,
 }
 
 /// Persisted watched-folder list plus a background rescan thread.
@@ -98,6 +100,7 @@ impl WatchFolders {
             wake: Condvar::new(),
             done: Condvar::new(),
             stop: AtomicBool::new(false),
+            interval_ms: AtomicI64::new(options.interval_ms),
         });
         let worker = {
             let shared = Arc::clone(&shared);
@@ -137,6 +140,13 @@ impl WatchFolders {
     /// Watched folders in insertion order.
     pub fn list(&self) -> Result<Vec<String>> {
         self.lock_control().watch_folders().list()
+    }
+
+    /// Changes the time between automatic rescans. Takes effect at the scan thread's next poll,
+    /// measured from the last pass.
+    pub fn set_interval_ms(&self, interval_ms: i64) {
+        self.shared.interval_ms.store(interval_ms, Ordering::SeqCst);
+        self.shared.wake.notify_all();
     }
 
     /// Requests a pass now and returns immediately.
@@ -213,7 +223,7 @@ fn run(
     let mut state = shared.state.lock_unpoisoned();
     while !state.stopping {
         let now = clock();
-        if !state.triggered && now - last_scan < options.interval_ms {
+        if !state.triggered && now - last_scan < shared.interval_ms.load(Ordering::SeqCst) {
             state = shared
                 .wake
                 .wait_timeout(state, poll)
