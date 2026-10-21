@@ -31,7 +31,7 @@ pub fn read_param(snap: &EngineSnapshot, id: &ParamId) -> Option<f64> {
                         EqBand::High => 2,
                     }],
                 )),
-                ChannelParam::Xfader => None,
+                ChannelParam::Xfader => Some(f64::from(c.assign.index())),
             }
         }
         ParamId::Deck { deck, p } => {
