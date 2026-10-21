@@ -8,6 +8,7 @@ use om_testing::fs::TempDir;
 use om_testing::wait::{wait_until, DEFAULT_POLL};
 use om_testing::wav::{write_float_wav, write_pcm16_wav};
 use std::path::Path;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 
 pub(crate) const STEM_FRAMES: usize = 30_000;
@@ -90,16 +91,37 @@ fn render(
     for b in 0..blocks {
         before(deck, b);
         assert!(
+            // A ring parked at end of stream (a loop slot reaching the end of the file) is empty
+            // by design: the decoder has nothing left to produce, and the slot feeds playback.
             wait_until(Duration::from_secs(10), DEFAULT_POLL, || deck
                 .buffered_frames()
-                >= BLOCK * 3),
-            "decoder stalled at block {b}"
+                >= BLOCK * 3
+                || (deck.shared.end_of_stream.load(Relaxed)
+                    && deck.handshake_settled())),
+            "decoder stalled at block {b}: {}",
+            stall_state(deck)
         );
         audio.render_stereo(&mut l, &mut r);
         out_l.extend_from_slice(&l);
         out_r.extend_from_slice(&r);
     }
     (out_l, out_r)
+}
+
+/// Handshake counters, for the stall message.
+fn stall_state(deck: &Deck) -> String {
+    let s = &deck.shared;
+    format!(
+        "eos={} req_epoch={} ack_epoch={} ack_seq={} drained_seq={} written={} read={} stride={}",
+        s.end_of_stream.load(Relaxed),
+        s.request_epoch.load(Relaxed),
+        s.ack_epoch.load(Relaxed),
+        s.ack_seq.load(Relaxed),
+        s.drained_seq.load(Relaxed),
+        s.written_samples.load(Relaxed),
+        s.read_samples.load(Relaxed),
+        s.ack_stride.load(Relaxed),
+    )
 }
 
 fn assert_close(a: &[f32], b: &[f32], tol: f32, what: &str) {
@@ -236,6 +258,46 @@ fn transport_script(deck: &Deck, audio: &mut DeckAudio) -> (Vec<f32>, Vec<f32>) 
     deck.play();
     append(render(deck, audio, 20, |_, _| {}));
     out
+}
+
+/// Plays into a loop whose prefetch slot runs to the end of the file, so the wrap parks the ring
+/// at end of stream, and waits until the audio thread has drained it.
+fn park_ring_at_end_of_stream(deck: &Deck, audio: &mut DeckAudio) {
+    deck.seek(1_500);
+    settle(deck, audio, 1_500);
+    assert!(deck.set_loop(Loop {
+        start: 1_024,
+        end: 3_072
+    }));
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || deck
+        .is_loop_prefetched()));
+    deck.play();
+    let mut l = [0.0_f32; BLOCK];
+    let mut r = [0.0_f32; BLOCK];
+    // Real-time pacing: the wrap is requested, the decoder repositions the ring to the slot's
+    // end (end of file here) and the next render drains it.
+    assert!(wait_until(Duration::from_secs(10), DEFAULT_POLL, || {
+        audio.render_stereo(&mut l, &mut r);
+        deck.handshake_settled() && deck.buffered_frames() == 0 && deck.position_frames() < 3_072
+    }));
+}
+
+/// A ring parked at end of stream behind a loop slot is empty by design, not a stalled decoder.
+#[test]
+fn render_does_not_wait_for_a_ring_parked_at_end_of_stream() {
+    let dir = fixture();
+    let (plain, mut plain_audio) = new_deck(&dir);
+    park_ring_at_end_of_stream(&plain, &mut plain_audio);
+    let (pl, _) = render(&plain, &mut plain_audio, 4, |_, _| {});
+    assert!(energy(&pl) > 0.0, "the loop keeps playing from its slot");
+
+    let (deck, mut audio) = new_deck(&dir);
+    deck.load_stems(dir.path()).unwrap();
+    settle(&deck, &mut audio, 0);
+    park_ring_at_end_of_stream(&deck, &mut audio);
+    let (sl, _) = render(&deck, &mut audio, 4, |_, _| {});
+    assert!(energy(&sl) > 0.0);
+    assert_eq!(deck.underrun_count(), 0);
 }
 
 #[test]
@@ -435,4 +497,40 @@ fn loading_a_new_track_leaves_stem_mode_and_resets_the_mixer() {
         .map(|n| (0..4).fold(0.0_f32, |a, s| a + stem_sample(s, 0, n)))
         .collect();
     assert_close(&l, &expected, 1e-4, "plain again");
+}
+
+/// Stress: the transport script on plain and stem decks while CPU-hog threads starve the decoder.
+/// Run with `--ignored`; bounded to about 20 s.
+#[test]
+#[ignore = "stress"]
+fn stress_transport_script_under_cpu_contention() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let stop = Arc::new(AtomicBool::new(false));
+    let hogs: Vec<_> = (0..8)
+        .map(|_| {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut x = 1_u64;
+                while !stop.load(Ordering::Relaxed) {
+                    x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
+                }
+            })
+        })
+        .collect();
+    let dir = fixture();
+    let started = std::time::Instant::now();
+    let mut runs = 0;
+    while started.elapsed() < Duration::from_secs(20) {
+        let (deck, mut audio) = new_deck(&dir);
+        deck.load_stems(dir.path()).unwrap();
+        settle(&deck, &mut audio, 0);
+        transport_script(&deck, &mut audio);
+        runs += 1;
+    }
+    stop.store(true, Ordering::Relaxed);
+    for h in hogs {
+        h.join().unwrap();
+    }
+    eprintln!("{runs} runs");
 }
