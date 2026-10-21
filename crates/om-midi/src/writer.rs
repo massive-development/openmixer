@@ -9,12 +9,15 @@ impl MidiMap {
     /// Serialises the map at [`MAP_VERSION`]; `parse(to_json())` round-trips.
     pub fn to_json(&self) -> String {
         let mappings: Vec<Value> = self.mappings.iter().map(mapping_to_value).collect();
-        let root = json!({
+        let mut root = json!({
             "version": MAP_VERSION,
             "name": self.name,
             "mappings": mappings,
             "outputs": self.outputs.iter().map(OutputRule::to_value).collect::<Vec<Value>>(),
         });
+        if !self.device.is_empty() {
+            root["device"] = json!(self.device);
+        }
         serde_json::to_string_pretty(&root).unwrap_or_default()
     }
 }

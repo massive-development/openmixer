@@ -49,6 +49,12 @@ impl LibraryControl for LibraryServices {
         result
     }
 
+    fn set_scan_interval_minutes(&mut self, minutes: i32) {
+        if let Some(watch) = self.watch_folders() {
+            watch.set_interval_ms(i64::from(minutes) * 60_000);
+        }
+    }
+
     fn rescan(&mut self) -> SettingsResult<()> {
         match self.watch_folders() {
             Some(watch) => {

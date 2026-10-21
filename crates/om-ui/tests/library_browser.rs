@@ -281,6 +281,86 @@ fn sidebar_lists_all_tracks_playlists_watch_folders_and_the_prep_queue() {
 }
 
 #[test]
+fn playlists_are_created_filled_trimmed_renamed_and_deleted_from_the_browser() {
+    let mut rig = BrowserRig::new();
+    assert_eq!(rig.browser.create_playlist(&mut rig.services, "  "), None);
+    assert!(rig.browser.status_is_error());
+
+    let id = rig
+        .browser
+        .create_playlist(&mut rig.services, " Warm up ")
+        .expect("created");
+    assert_eq!(rig.browser.selected_playlist(), Some(id));
+    assert_eq!(rig.browser.selected_node().label, "Warm up");
+    assert_eq!(rig.rows(), 0, "the new playlist is shown, empty");
+
+    // Add Alpha and Charlie from the all-tracks view; adding Alpha again adds nothing.
+    rig.browser
+        .select_sidebar(&rig.services, SidebarKind::AllTracks, 0, "");
+    rig.browser.select_row(0);
+    assert_eq!(
+        rig.browser.add_selected_to_playlist(&mut rig.services, id),
+        1
+    );
+    assert_eq!(
+        rig.browser.add_selected_to_playlist(&mut rig.services, id),
+        0
+    );
+    rig.browser.select_row(2);
+    assert_eq!(
+        rig.browser.add_selected_to_playlist(&mut rig.services, id),
+        1
+    );
+    rig.browser
+        .select_sidebar(&rig.services, SidebarKind::Playlist, id, "");
+    assert_eq!(rig.rows(), 2);
+
+    // Take Alpha out again.
+    rig.browser.select_row(0);
+    let first = rig.row(0).id;
+    assert_eq!(
+        rig.browser.remove_selected_from_playlist(&mut rig.services),
+        1
+    );
+    assert_eq!(rig.rows(), 1);
+    assert_ne!(rig.row(0).id, first);
+
+    assert!(rig
+        .browser
+        .rename_selected_playlist(&mut rig.services, "Peak"));
+    assert_eq!(rig.browser.selected_node().label, "Peak");
+
+    // Delete asks first and keeps the tracks.
+    assert!(!rig.browser.delete_selected_playlist(&mut rig.services));
+    assert!(rig.browser.status().starts_with("Delete Peak?"));
+    assert_eq!(rig.browser.selected_playlist(), Some(id));
+    assert!(rig.browser.delete_selected_playlist(&mut rig.services));
+    assert_eq!(rig.browser.selected_playlist(), None);
+    assert_eq!(rig.rows(), 4, "back on all tracks");
+    assert!(rig
+        .services
+        .library()
+        .playlists()
+        .find(id)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn tracks_cannot_be_removed_from_a_view_that_is_not_a_playlist() {
+    let mut rig = BrowserRig::new();
+    rig.browser.select_row(0);
+    assert_eq!(
+        rig.browser.remove_selected_from_playlist(&mut rig.services),
+        0
+    );
+    assert!(rig.browser.status_is_error());
+    assert!(!rig.browser.rename_selected_playlist(&mut rig.services, "x"));
+    assert!(!rig.browser.delete_selected_playlist(&mut rig.services));
+    assert_eq!(rig.rows(), 4);
+}
+
+#[test]
 fn watch_folder_node_scopes_the_list_to_that_path() {
     let mut rig = BrowserRig::new();
     add_track(
@@ -590,6 +670,30 @@ fn file_library_scans_watch_folders_and_notifies_the_owner() {
     }));
     assert_eq!(services.library().tracks().count().unwrap(), 1);
     assert_eq!(build_sidebar(services.library()).nodes[2].children.len(), 1);
+}
+
+#[test]
+fn tracks_found_by_a_scan_are_queued_and_analysed_without_a_click() {
+    let dir = tempfile::tempdir().unwrap();
+    write_wav(&dir.path().join("music/a.wav"), 1.0, 220.0);
+    let mut options = Options::for_path(dir.path().join("db/library.db").to_string_lossy());
+    options.analyzers = Some(fake_analyzers());
+    options.scan_on_start = false;
+    let mut services = make_services(options);
+    services
+        .watch_folders()
+        .unwrap()
+        .add(&dir.path().join("music"))
+        .unwrap();
+
+    assert!(pump_until(&mut services, |s| {
+        s.prep_queue()
+            .list()
+            .unwrap()
+            .iter()
+            .any(|e| e.status == PrepStatus::Done)
+    }));
+    assert_eq!(services.prep_queue().list().unwrap().len(), 1);
 }
 
 #[test]

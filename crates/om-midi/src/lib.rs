@@ -10,6 +10,7 @@
 mod alsa_backend;
 mod backend;
 mod echo;
+mod editor;
 mod error;
 mod event;
 mod feedback;
@@ -34,13 +35,17 @@ pub use backend::{
     PortSnapshot,
 };
 pub use echo::{EchoGuard, ECHO_WINDOW};
+pub use editor::{
+    control_label, find_conflicts, write_atomic, BindingDraft, Conflict, Keep, MapEditor,
+    HISTORY_LIMIT, MAX_MAP_BYTES,
+};
 pub use error::MidiError;
 pub use event::{MidiEvent, MidiKind};
 pub use feedback::{system_clock, Clock, MidiFeedback};
 pub use input::{EnableReport, MidiInputRouter};
 pub use learn::{LearnRequest, LearnType, MidiLearn};
 pub use map::{MapMode, Mapping, MidiMap, MAP_VERSION};
-pub use mapper::MidiMapper;
+pub use mapper::{MidiMapper, MonitorEntry, MONITOR_CAPACITY};
 pub use message::{control_change, message_length, note_off, note_on, pitch_bend, program_change};
 pub use mock::MockBackend;
 pub use output_router::{pair_outputs, MidiOutputRouter, MidiOutputSink};

@@ -96,6 +96,15 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 - Demo: `--demo-automix` (gui) ingests three 24 s click tracks at 120, 122 and 124 BPM, turns automix on in memory, waits for every track's grid and starts deck A on the mock device. Scene `main-automix` in `tools/screenshots.sh`.
 - Not verified: by ear (silent mock device), the transitions on real decks, and the bar at widths other than 1280x800 by eye.
 
+### Mapping editor (Todo 36, logic and view level)
+
+- `om-midi/src/editor.rs` (`MapEditor`): the edit model over `MidiMapper`. Add, delete, duplicate, undo and redo, conflicts and resolution, learn (`learn_selected`, `learn_new`, `poll_learn`), save with a `.bak`, import, export, reset to the default map, and the unsaved guard. Edits reach the running mapper at once.
+- `om-ui/src/mapping_editor.rs` (`MappingEditorPage`): the view-model over `MapEditor`: filter, rows, the binding form, the monitor lines, status text. `tick()` completes a learn; it is called from the UI pump.
+- `om-ui-gpui/src/settings_view/mapping.rs`: the Mapping settings tab. `SettingsState::mapping_tick` is called every frame by `Shell::tick` (`om-ui-gpui/src/app.rs`), not only while the overlay is drawn, so a learn started and then closed is still recorded.
+- `openmixer/src/composition.rs`: `AppComposition::mapping_editor()` builds the page over the attached MIDI service (`None` until `attach_midi`). `--settings=mapping` opens the tab.
+- Demo: `--demo-map` merges the fixture maps into `<scratch>/map/demo-map.json` on the mock controller.
+- Demo flags (`--demo-map`, `--demo-library`, `--demo-automix`, `--demo-record`) are listed in `openmixer::flags::DEMO_FLAGS`. A demo run never writes the user's files: `composition::prefs_save_target` sends settings saves to `<scratch>/preferences.json` when `flags::demo_run` is true, and the recording and map paths also live in the scratch folder. Any new `--demo-*` flag must be added to `DEMO_FLAGS`, and its state must stay in memory or in the scratch folder. Covered by `openmixer/tests/demo_prefs.rs`.
+
 ### Plugin control targets
 
 - A plugin registers its target with the router (`register_target`, a string prefix). The router holds its reentrant gate across every target call, and registration and unregistration wait on the same gate. So a slow or blocking `set_parameter` stalls MIDI and UI dispatch for everything else. Do not block, wait on I/O or take a long lock in `set_parameter`; hand the work to a thread or queue and return `true` at once.

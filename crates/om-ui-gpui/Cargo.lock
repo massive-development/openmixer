@@ -61,6 +61,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "alsa"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "812947049edcd670a82cd5c73c3661d2e58468577ba8489de58e1a73c04cbd5d"
+dependencies = [
+ "alsa-sys",
+ "bitflags 2.13.2",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
+name = "alsa-sys"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad7569085a265dd3f607ebecce7458eaab2132a84393534c95b18dcbc3f31e04"
+dependencies = [
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3686,6 +3708,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "om-midi"
+version = "0.1.0"
+dependencies = [
+ "alsa",
+ "om-core",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "om-stretch"
 version = "0.1.0"
 dependencies = [
@@ -3710,6 +3742,7 @@ dependencies = [
  "om-dsp",
  "om-engine",
  "om-library",
+ "om-midi",
  "serde_json",
  "thiserror 2.0.21",
 ]
@@ -3723,6 +3756,7 @@ dependencies = [
  "om-core",
  "om-engine",
  "om-library",
+ "om-midi",
  "om-testing",
  "om-ui",
  "tempfile",
@@ -4740,9 +4774,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -5700,7 +5734,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand 2.5.0",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",

@@ -234,6 +234,11 @@ impl Shell {
         let dt = (now - self.last_tick) as f32;
         self.last_tick = now;
         let dragging = self.dragging_channel_fader();
+        // The mapping editor's learn is polled here, not only while the overlay is drawn, so a
+        // learn started and then closed is still recorded (cheap when idle).
+        if let Some(settings) = self.settings.as_mut() {
+            settings.mapping_tick();
+        }
         if let Some(panel) = self.library.as_mut() {
             panel.tick();
         }

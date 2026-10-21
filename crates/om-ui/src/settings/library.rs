@@ -15,13 +15,17 @@ pub trait LibraryControl {
     fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn remove_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()>;
     fn rescan(&mut self) -> SettingsResult<()>;
+    /// Changes the time between automatic rescans of the running library. Libraries that cannot
+    /// change it ignore the call; the new value then applies at the next start.
+    fn set_scan_interval_minutes(&mut self, _minutes: i32) {}
     /// Imports an iTunes or Rekordbox XML file; returns the one-line outcome for the page.
     fn import_xml(&mut self, _xml: PathBuf) -> SettingsResult<String> {
         Err(SettingsError::ImportUnavailable)
     }
 }
 
-/// Library page logic. Interval and scan-on-start are read when the library starts.
+/// Library page logic. Scan-on-start is read when the library starts; the interval also applies to
+/// the running library.
 pub struct LibrarySettingsPage<'a> {
     prefs: &'a mut Preferences,
     library: &'a mut dyn LibraryControl,
@@ -46,7 +50,11 @@ impl<'a> LibrarySettingsPage<'a> {
     /// Clamped to `1..=MAX_INTERVAL_MINUTES`, as the preferences reader does.
     pub fn set_scan_interval(&mut self, minutes: i32) -> bool {
         let clamped = minutes.clamp(1, Self::MAX_INTERVAL_MINUTES);
-        set_if_changed(&mut self.prefs.library.scan_interval_minutes, clamped)
+        let changed = set_if_changed(&mut self.prefs.library.scan_interval_minutes, clamped);
+        if changed {
+            self.library.set_scan_interval_minutes(clamped);
+        }
+        changed
     }
 
     pub fn add_watch_folder(&mut self, folder: PathBuf) -> SettingsResult<()> {
@@ -103,10 +111,27 @@ mod tests {
             self.calls.push(format!("remove:{}", folder.display()));
             Ok(())
         }
+        fn set_scan_interval_minutes(&mut self, minutes: i32) {
+            self.calls.push(format!("interval:{minutes}"));
+        }
         fn rescan(&mut self) -> SettingsResult<()> {
             self.calls.push("rescan".into());
             Ok(())
         }
+    }
+
+    #[test]
+    fn a_changed_interval_reaches_the_running_library() {
+        let mut prefs = Preferences::default();
+        let mut lib = FakeLibrary {
+            available: true,
+            ..Default::default()
+        };
+        let mut page = LibrarySettingsPage::new(&mut prefs, &mut lib);
+        assert!(page.set_scan_interval(30));
+        assert!(!page.set_scan_interval(30));
+        assert!(page.set_scan_interval(100_000));
+        assert_eq!(lib.calls, ["interval:30", "interval:1440"]);
     }
 
     #[test]

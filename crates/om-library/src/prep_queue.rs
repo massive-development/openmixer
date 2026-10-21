@@ -117,6 +117,12 @@ impl<L: Borrow<Library>, S: Borrow<AnalysisService>> PrepQueue<L, S> {
         Ok(())
     }
 
+    /// Queues every track that has no BPM and was never queued, behind what is waiting. Returns
+    /// how many were added.
+    pub fn enqueue_unanalysed(&mut self) -> Result<usize> {
+        self.lib.borrow().prep_queue().enqueue_unanalysed()
+    }
+
     pub fn prioritise(&mut self, track_id: i64) -> Result<()> {
         let result = self.lib.borrow().prep_queue().prioritise(track_id);
         self.notify(track_id);

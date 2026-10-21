@@ -1,7 +1,7 @@
 //! Start-up flags that need parsing beyond a plain match: `--settings[=TAB]`.
 
 /// The tabs `--settings=TAB` accepts, as the overlay titles them.
-const TABS: [&str; 7] = [
+const TABS: [&str; 8] = [
     "Audio",
     "MIDI",
     "Library",
@@ -9,6 +9,7 @@ const TABS: [&str; 7] = [
     "Appearance",
     "Plugins",
     "Recording",
+    "Mapping",
 ];
 
 /// `--settings` opens the overlay on the first tab, `--settings=midi` on the named one (case is
@@ -25,12 +26,32 @@ pub fn settings_tab(args: &[String]) -> Result<Option<&'static str>, String> {
                 .map(|t| Some(*t))
                 .ok_or_else(|| {
                     format!(
-                        "unknown settings tab {name:?} (audio, midi, library, automix, appearance, plugins, recording)"
+                        "unknown settings tab {name:?} (audio, midi, library, automix, appearance, plugins, recording, mapping)"
                     )
                 });
         }
     }
     Ok(None)
+}
+
+/// `--demo-map` attaches the mock MIDI backend and loads the demo controller map (see `demo_map`)
+/// into a temporary map file, so the mapping editor has bindings to show.
+pub fn demo_map(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--demo-map")
+}
+
+/// The `--demo-*` flags. Each points some state at a temporary folder (the map file, the library,
+/// the recording folder) and saves preferences there too, never into the user's preferences file.
+pub const DEMO_FLAGS: [&str; 4] = [
+    "--demo-map",
+    "--demo-library",
+    "--demo-automix",
+    "--demo-record",
+];
+
+/// True when any demo flag is on the command line.
+pub fn demo_run(args: &[String]) -> bool {
+    args.iter().any(|a| DEMO_FLAGS.contains(&a.as_str()))
 }
 
 /// `--mock-stems` (or a non-empty `OPENMIXER_MOCK_STEMS`) attaches the stem service with the mock
@@ -61,6 +82,28 @@ mod tests {
             Ok(Some("Appearance"))
         );
         assert!(settings_tab(&args(&["--settings=video"])).is_err());
+    }
+
+    #[test]
+    fn mapping_tab_and_demo_map_flags_parse() {
+        assert_eq!(
+            settings_tab(&args(&["--settings=mapping"])),
+            Ok(Some("Mapping"))
+        );
+        assert_eq!(
+            settings_tab(&args(&[
+                "--mock-device",
+                "--settings=MAPPING",
+                "--demo-map"
+            ])),
+            Ok(Some("Mapping"))
+        );
+        assert!(demo_map(&args(&["--mock-device", "--demo-map"])));
+        assert!(!demo_map(&args(&["--mock-device", "--settings=mapping"])));
+        assert!(!demo_map(&args(&["--demo-map-extra"])));
+        assert!(demo_run(&args(&["--demo-record"])));
+        assert!(demo_run(&args(&["--demo-map"])));
+        assert!(!demo_run(&args(&["--demo-map-extra", "--mock-device"])));
     }
 
     #[test]

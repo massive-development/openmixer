@@ -179,7 +179,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 3 | Analysis pipeline | 🟡 Partial: the ONNX stems backend (19) is open |
 | 4 | Library and data | 🟡 Done except play history, artwork persistence and FTS |
 | 5 | User interface | 🟡 Partial: design tokens (25) and stem pads (30) open; decks, mixer and settings partial |
-| 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); controller maps, HID and the mapping editor (34-36) are open |
+| 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); the mapping editor (36) is in at logic and view level (Settings > Mapping, MIDI learn into it; not verified with hardware); controller maps (34) and HID (35) are open |
 | 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; Automix is in (planner, controller, library queue, Automix settings page, main-window bar; not heard, mock device only); stem separation is unproven and stem transitions are open |
 | 8 | Pro features (recording, broadcast, DVS, video) | 🟡 Partial: mix recording (master-output WAV, ids, prefs, Recording settings tab, header Record button and `r` shortcut; not heard); broadcast, DVS and video not started |
 | 9 | Release | ⬜ Not started |
@@ -210,7 +210,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 - Automix is not verified by ear (mock device only); its queue skips tracks that are not analysed yet instead of waiting for them. Stem features still open: stem transitions (Todo 39) and the stem separation backend (Todo 19)
 - The stems ONNX Runtime backend (Todo 19); the separator interface and the licence-gated downloads are done
-- HID (Todo 35), the mapping editor UI (Todo 36) and plug-and-play controller maps (Todo 34)
+- HID (Todo 35) and plug-and-play controller maps (Todo 34). The mapping editor (Todo 36) is done at logic and view level; it is not verified with hardware
 - Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: later. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye

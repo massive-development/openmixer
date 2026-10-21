@@ -5,7 +5,7 @@
 # `gui` feature's build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
 # (`import`, `convert`, `identify`) plus `xwininfo`. Run from anywhere:  tools/screenshots.sh [scene...]
 # Scenes: main-dark main-daylight main-stems debug-panel settings-audio settings-appearance
-# settings-midi settings-library main-automix main-record settings-recording (default: all). main-automix runs the automix demo
+# settings-midi settings-library main-automix main-record settings-recording settings-mapping (default: all). main-automix runs the automix demo
 # (--demo-automix: click tracks, automix on, deck A playing) and is captured after a delay. main-stems loads deck A's track with its stems
 # (the mock separator, --mock-stems) so the stem pads are live.
 # main-dark also shows the library browser (the demo library is loaded in every scene).
@@ -105,13 +105,15 @@ declare -A scenes=(
   [main-automix]="OPENMIXER_THEME=openmixer.dark -- --demo-automix"
   [main-record]="OPENMIXER_THEME=openmixer.dark -- --demo-record"
   [settings-recording]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=recording"
+  # The Mapping tab over the three fixture controller maps (--demo-map: temp map file, mock MIDI).
+  [settings-mapping]="OPENMIXER_THEME=openmixer.dark -- --demo-map --settings=mapping"
 )
 # Seconds to wait before a scene is captured (the automix demo deck plays from the start).
 declare -A delays=(
   [main-automix]=19
   [main-record]=4
 )
-order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording)
+order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording settings-mapping)
 (( $# )) && order=("$@")
 for name in "${order[@]}"; do
   [[ -n "${scenes[$name]:-}" ]] || { echo "unknown scene: $name"; exit 2; }
