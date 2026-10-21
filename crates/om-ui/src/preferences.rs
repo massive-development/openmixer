@@ -60,7 +60,12 @@ impl Default for AutomixPrefs {
 }
 
 /// Snaps a requested transition length to 8, 16 or 32 beats (the nearest; ties go shorter).
+///
+/// 0 is "Auto": the planner picks the length, so it passes through unchanged.
 pub fn snap_length_beats(beats: i64) -> i32 {
+    if beats == 0 {
+        return 0;
+    }
     [8i64, 16, 32]
         .into_iter()
         .min_by_key(|candidate| ((candidate - beats).abs(), *candidate))
@@ -432,7 +437,7 @@ fn read_automix(s: &Map<String, Value>, a: &mut AutomixPrefs) {
     a.style = int_or(s.get("style"), 0, MAX_AUTOMIX_STYLE, a.style.into()) as i32;
     a.length_beats = snap_length_beats(int_or(
         s.get("lengthBeats"),
-        1,
+        0,
         1_000,
         a.length_beats.into(),
     ));
@@ -567,6 +572,13 @@ mod tests {
         assert!(a.smart);
         assert_eq!(snap_length_beats(20), 16);
         assert_eq!(snap_length_beats(1_000), 32);
+        assert_eq!(snap_length_beats(0), 0, "0 is Auto: the planner picks");
+    }
+
+    #[test]
+    fn zero_length_beats_is_auto() {
+        let p = Preferences::from_json(r#"{"version":3,"automix":{"lengthBeats":0}}"#).unwrap();
+        assert_eq!(p.automix.length_beats, 0);
     }
 
     #[test]

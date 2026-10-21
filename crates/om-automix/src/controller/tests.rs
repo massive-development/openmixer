@@ -40,10 +40,15 @@ struct FakeHost {
     fail: Option<String>,
     never_ready: bool,
     underruns: u64,
+    /// The tempo gate each pick was asked with.
+    gates: Vec<Option<f64>>,
+    /// How many times the controller asked for a deck's info.
+    info_calls: u32,
 }
 
 impl AutomixHost for FakeHost {
-    fn next_track(&mut self, _playing: u8) -> Option<NextTrack> {
+    fn next_track(&mut self, _playing: u8, tempo_gate: Option<f64>) -> Option<NextTrack> {
+        self.gates.push(tempo_gate);
         (!self.queue.is_empty()).then(|| self.queue.remove(0))
     }
 
@@ -51,6 +56,7 @@ impl AutomixHost for FakeHost {
         self.starts.push((deck, track.id));
         let mut info = self.tracks.get(&track.id).cloned().ok_or("unknown track")?;
         info.deck = deck;
+        info.loaded_track_id = Some(track.id);
         self.infos.insert(deck, info);
         self.pending = Some((deck, 3));
         Ok(())
@@ -68,6 +74,7 @@ impl AutomixHost for FakeHost {
     }
 
     fn deck_info(&mut self, deck: u8) -> Option<DeckInfo> {
+        self.info_calls += 1;
         self.infos.get(&deck).cloned()
     }
 
@@ -128,7 +135,9 @@ impl Sim {
             }; 4];
         }
         let mut host = FakeHost::default();
-        host.infos.insert(0, info(0, BPM, "8A", stems));
+        let mut outgoing = info(0, BPM, "8A", stems);
+        outgoing.loaded_track_id = Some(6);
+        host.infos.insert(0, outgoing);
         host.tracks.insert(7, next);
         host.queue.push(NextTrack {
             id: 7,
@@ -663,6 +672,131 @@ fn an_unplannable_pair_is_dropped_and_not_retried() {
     assert!(error.starts_with("no transition"), "{error}");
     assert_eq!(sim.host.starts.len(), 1, "the track had its turn");
     assert!(sim.sent("deck.1.play").is_empty());
+}
+
+fn ungridded(bpm: f64) -> DeckInfo {
+    let mut next = info(1, bpm, "8A", false);
+    next.grid = None;
+    next
+}
+
+/// The planner refuses the first pick (no grid). Automix re-picks and loads the next track
+/// instead of giving up on the pair.
+#[test]
+fn a_rejected_pair_is_retried_with_another_track() {
+    let mut sim = Sim::with(AutomixConfig::default(), 380.0, false, ungridded(BPM));
+    sim.host.tracks.insert(8, info(1, BPM, "8A", false));
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Good One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.host.starts, vec![(1, 7), (1, 8)]);
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing);
+}
+
+/// Three retries after the first refusal, then the pair is suppressed with the planner's error.
+#[test]
+fn a_pair_refused_four_times_is_suppressed_with_the_planner_error() {
+    let mut sim = Sim::with(AutomixConfig::default(), 380.0, false, ungridded(BPM));
+    for id in 8..12 {
+        sim.host.tracks.insert(id, ungridded(BPM));
+        sim.host.queue.push(NextTrack {
+            id,
+            title: format!("t{id}"),
+            bpm: None,
+            key: String::new(),
+        });
+    }
+    sim.run(900);
+    assert_eq!(sim.host.starts.len(), 4, "{:?}", sim.host.starts);
+    assert_eq!(sim.state(), AutomixState::Idle);
+    let error = sim.ctrl.snapshot().last_error;
+    assert!(error.starts_with("no transition"), "{error}");
+}
+
+/// The tempo gate goes to the queue for explicit beat-matched styles only.
+#[test]
+fn explicit_styles_ask_the_queue_for_a_tempo_window() {
+    let mut sim = Sim::new(380.0, false);
+    sim.control.set_style(AutomixStyle::Crossfade);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.host.gates.first(), Some(&Some(0.06)));
+
+    let mut auto = Sim::new(380.0, false);
+    auto.control.set_style(AutomixStyle::Auto);
+    auto.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(auto.host.gates.first(), Some(&None));
+}
+
+/// The user loads a different track of the same length on the stopped deck. The track id says it
+/// is theirs, so automix does not load over it, even though the length matches.
+#[test]
+fn a_same_length_track_the_user_loads_over_the_stopped_deck_is_not_loaded_over() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Third".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.tracks.insert(8, info(0, BPM, "8A", false));
+    let mut theirs = info(0, BPM, "8A", false);
+    theirs.loaded_track_id = Some(99);
+    sim.host.infos.insert(0, theirs);
+    sim.snap.decks[0].loaded = true;
+    sim.snap.decks[0].position_frames = 0;
+    sim.snap.decks[1].position_frames = beat(390.0);
+    sim.run(100);
+    assert!(
+        sim.host.starts.iter().all(|(deck, _)| *deck != 0),
+        "{:?}",
+        sim.host.starts
+    );
+}
+
+/// A playing deck whose track has no analysis yet says so once, and the lookup is not repeated on
+/// every tick (the host reads the database).
+#[test]
+fn a_playing_deck_without_analysis_says_so_once_and_is_not_looked_up_every_tick() {
+    let mut sim = Sim::new(100.0, false);
+    sim.host.infos.remove(&0);
+    sim.run(60);
+    assert_eq!(
+        sim.ctrl.snapshot().last_error,
+        "no analysis for the playing track yet"
+    );
+    assert!(
+        sim.host.info_calls <= 3,
+        "{} lookups in 2 s",
+        sim.host.info_calls
+    );
+}
+
+/// The user takes over a cued deck during the run (presses play on it). Once the run has stepped
+/// aside, automix does not re-arm the same pair at once.
+#[test]
+fn a_pair_the_user_takes_over_is_held_back_before_it_is_armed_again() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("armed", 600, |s| s.state() == AutomixState::Armed);
+    sim.snap.decks[1].playing = true;
+    sim.run_until("stepped aside", 10, |s| s.state() == AutomixState::Idle);
+    sim.snap.decks[1].playing = false;
+    sim.run(90);
+    assert_eq!(sim.state(), AutomixState::Idle, "held back for a while");
 }
 
 /// An explicit beat-matched style refuses a tempo gap it cannot take. The planner's rejection must

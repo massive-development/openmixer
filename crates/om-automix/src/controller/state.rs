@@ -26,18 +26,23 @@ impl AutomixController {
         if self
             .suppressed
             .is_some_and(|(d, l)| d == out && l == out_len)
+            || self
+                .hold
+                .is_some_and(|(d, l, until)| d == out && l == out_len && now < until)
         {
             self.remaining_beats = None;
             return;
         }
-        if self.stale_deck.is_some_and(|(d, _)| d == out) {
+        if self.stale_deck.is_some_and(|(d, _, _)| d == out) {
             self.stale_deck = None;
         }
-        let Some(info) = self.out_info(out, out_len, host) else {
+        let Some(info) = self.out_info(out, out_len, now, host) else {
+            self.no_analysis_yet(out, out_len);
             self.remaining_beats = None;
             return;
         };
         let Some(out_beat) = beat_of(&info, &snap.decks[usize::from(out)]) else {
+            self.no_analysis_yet(out, out_len);
             return;
         };
         let remaining = info.length_beats - out_beat;
@@ -78,11 +83,11 @@ impl AutomixController {
             unwatched: Vec::new(),
             sent: Vec::new(),
             ticks: 0,
+            auto_loaded: false,
+            plan_tries: 0,
         };
         let partner = &snap.decks[usize::from(inc)];
-        let stale = self
-            .stale_deck
-            .is_some_and(|(d, len)| d == inc && partner.length_frames == len);
+        let stale = self.is_stale(inc, partner.length_frames, host);
         if partner.loaded && !stale {
             // The user cued a track on the free deck: mix into it as it is.
             run.title = host.deck_title(inc);
@@ -92,12 +97,14 @@ impl AutomixController {
             self.tick_loading_ready(now, snap, sink, host, force);
             return;
         }
-        let Some(track) = host.next_track(out) else {
+        let gate = self.tempo_gate();
+        let Some(track) = host.next_track(out, gate) else {
             self.fail_run(out, out_len, "no track in the queue");
             return;
         };
         match host.start_load(inc, &track) {
             Ok(()) => {
+                run.auto_loaded = true;
                 run.title = track.title.clone();
                 self.next_title = track.title;
                 self.next_bpm = track.bpm;
@@ -111,10 +118,37 @@ impl AutomixController {
         }
     }
 
+    /// Whether `deck` still holds the track automix stopped on. The track id decides when both
+    /// sides know it; otherwise the length does.
+    fn is_stale(&self, deck: u8, len: i64, host: &mut dyn AutomixHost) -> bool {
+        let Some((d, stale_len, stale_id)) = self.stale_deck else {
+            return false;
+        };
+        if d != deck || stale_len != len {
+            return false;
+        }
+        match (
+            stale_id,
+            host.deck_info(deck).and_then(|i| i.loaded_track_id),
+        ) {
+            (Some(was), Some(now)) => was == now,
+            _ => true,
+        }
+    }
+
+    /// Reports a playing track with no analysis, once per track.
+    fn no_analysis_yet(&mut self, deck: u8, len: i64) {
+        if self.no_analysis_told != Some((deck, len)) {
+            self.no_analysis_told = Some((deck, len));
+            self.last_error = "no analysis for the playing track yet".to_owned();
+        }
+    }
+
     pub(super) fn out_info(
         &mut self,
         deck: u8,
         len: i64,
+        now: f64,
         host: &mut dyn AutomixHost,
     ) -> Option<DeckInfo> {
         if let Some((d, l, info)) = &self.out_cache {
@@ -122,13 +156,25 @@ impl AutomixController {
                 return Some(info.clone());
             }
         }
-        let info = host.deck_info(deck)?;
-        // Only an analysed deck is worth caching: a track loaded before its analysis finished has no
-        // grid yet, and the next tick must read it again rather than keep the grid-less copy.
-        if info.grid.is_some() {
-            self.out_cache = Some((deck, len, info.clone()));
+        if let Some((d, l, until)) = self.no_analysis {
+            if d == deck && l == len && now < until {
+                return None;
+            }
         }
-        Some(info)
+        let info = host.deck_info(deck).filter(|i| i.grid.is_some());
+        match info {
+            Some(info) => {
+                // Only an analysed deck is worth caching: a track loaded before its analysis
+                // finished has no grid yet, and it is read again once the lookup has expired.
+                self.out_cache = Some((deck, len, info.clone()));
+                self.no_analysis = None;
+                Some(info)
+            }
+            None => {
+                self.no_analysis = Some((deck, len, now + NO_ANALYSIS_TTL_S));
+                None
+            }
+        }
     }
 
     // ----- Loading -----
@@ -239,6 +285,26 @@ impl AutomixController {
         let plan = match plan {
             Ok(plan) => plan,
             Err(error) => {
+                if run.auto_loaded && run.plan_tries < MAX_PLAN_RETRIES {
+                    run.plan_tries += 1;
+                    let gate = self.tempo_gate();
+                    if let Some(track) = host.next_track(run.out, gate) {
+                        if host.start_load(run.inc, &track).is_ok() {
+                            // Another track goes to the incoming deck; the load is polled next tick.
+                            run.title = track.title.clone();
+                            self.next_title.clone_from(&track.title);
+                            self.next_bpm = track.bpm;
+                            self.next_key = track.key;
+                            self.last_error =
+                                format!("no transition: {error}; trying another track");
+                            run.load_started = now;
+                            self.force_start = asap;
+                            self.run = Some(run);
+                            self.state = AutomixState::Loading;
+                            return;
+                        }
+                    }
+                }
                 self.last_error = format!("no transition: {error}");
                 self.suppressed = Some((run.out, run.out_len));
                 self.state = AutomixState::Idle;
@@ -277,6 +343,15 @@ impl AutomixController {
         self.last_error.clear();
         self.run = Some(run);
         self.state = AutomixState::Armed;
+    }
+
+    /// The tempo gate for the queue: an explicit beat-matched style needs its tempo window. `Auto`
+    /// picks any tempo (a wide gap becomes a cut) and a cut needs no tempo at all.
+    pub(super) fn tempo_gate(&self) -> Option<f64> {
+        match self.control.style() {
+            AutomixStyle::Auto | AutomixStyle::Cut => None,
+            _ => Some(self.cfg.max_bpm_ratio),
+        }
     }
 
     pub(super) fn plan_options<'a>(
@@ -330,7 +405,9 @@ impl AutomixController {
             || cue_moved
             || !routed
         {
-            // The user took over one of the decks: step aside.
+            // The user took over one of the decks: step aside, and hold the outgoing track back for a
+            // while so the same pair is not armed again on the next tick.
+            self.hold = Some((run.out, run.out_len, now + RETRY_HOLD_S));
             self.next_title.clear();
             self.plan_style = None;
             self.state = AutomixState::Idle;

@@ -46,7 +46,7 @@ fn automix_ids_reach_the_controller_and_the_snapshot_follows() {
 struct CountingHost(Arc<AtomicUsize>);
 
 impl AutomixHost for CountingHost {
-    fn next_track(&mut self, _deck: u8) -> Option<NextTrack> {
+    fn next_track(&mut self, _deck: u8, _tempo_gate: Option<f64>) -> Option<NextTrack> {
         self.0.fetch_add(1, Ordering::SeqCst);
         None
     }

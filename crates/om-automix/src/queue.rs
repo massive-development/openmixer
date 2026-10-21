@@ -65,6 +65,9 @@ pub struct QueueConfig {
     pub recent_count: usize,
     /// Plays newer than this many hours count as recent.
     pub recent_hours: f64,
+    /// `Some(ratio)`: only tracks within `ratio` of the current track's tempo are eligible (direct
+    /// tempo, no half or double time). `None`: no tempo pre-filter.
+    pub tempo_gate: Option<f64>,
 }
 
 impl Default for QueueConfig {
@@ -75,6 +78,7 @@ impl Default for QueueConfig {
             bpm_window: 0.08,
             recent_count: 20,
             recent_hours: 4.0,
+            tempo_gate: None,
         }
     }
 }
@@ -132,6 +136,8 @@ pub fn select_next(
             skipped.push((track.id, SkipReason::Recent));
         } else if !track.analysed() {
             skipped.push((track.id, SkipReason::NotAnalysed));
+        } else if !in_tempo_gate(current, track, cfg.tempo_gate) {
+            // Not a skip to report: the track is fine, only the tempo does not suit this style.
         } else {
             eligible.push(track);
         }
@@ -159,6 +165,18 @@ pub fn select_next(
     Selection {
         pick: pick.cloned(),
         skipped,
+    }
+}
+
+/// Whether `track` passes the tempo gate against the current track: within `ratio` of its tempo,
+/// with no half or double time. No gate, or no known tempo on either side, passes everything.
+pub fn in_tempo_gate(current: Option<&QueueTrack>, track: &QueueTrack, gate: Option<f64>) -> bool {
+    let (Some(ratio), Some(cur)) = (gate, current) else {
+        return true;
+    };
+    match (cur.bpm, track.bpm) {
+        (Some(a), Some(b)) if a > 0.0 && b > 0.0 => ((b - a) / a).abs() <= ratio,
+        _ => true,
     }
 }
 
@@ -321,6 +339,39 @@ mod tests {
         assert_eq!(pick(7), pick(7));
         let distinct: HashSet<i64> = (0..20).map(pick).collect();
         assert!(distinct.len() > 3, "{distinct:?}");
+    }
+
+    /// An explicit style's gate keeps out half-time and off-window tracks, whatever the seed.
+    #[test]
+    fn a_tempo_gate_only_takes_tracks_within_the_direct_window() {
+        let cur = track(9, Some(124.0), "8A", true);
+        let candidates = vec![
+            track(4, Some(62.0), "8A", true),
+            track(5, Some(140.0), "8A", true),
+            track(6, Some(125.0), "8A", true),
+        ];
+        let gated = QueueConfig {
+            tempo_gate: Some(0.06),
+            ..cfg(Order::Shuffle, true)
+        };
+        for seed in 0..40 {
+            let sel = select_next(
+                &candidates,
+                Some(&cur),
+                &HashSet::new(),
+                &gated,
+                &mut SplitMix64(seed),
+            );
+            assert_eq!(sel.pick.unwrap().id, 6, "seed {seed}");
+        }
+        let far = select_next(
+            &candidates[..2],
+            Some(&cur),
+            &HashSet::new(),
+            &gated,
+            &mut SplitMix64(1),
+        );
+        assert!(far.pick.is_none(), "no track in the window: nothing picked");
     }
 
     #[test]
