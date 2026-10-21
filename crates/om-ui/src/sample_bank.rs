@@ -27,7 +27,7 @@ use serde_json::{Map, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
@@ -91,6 +91,8 @@ pub enum BankError {
     Sample(#[from] SamplerError),
     #[error("the sampler rejected the sample: {0}")]
     Rejected(String),
+    #[error("the pad was cleared or reloaded while this was decoding")]
+    Superseded,
     #[error("the bank file is from a newer version and is not overwritten")]
     NotWritable,
 }
@@ -298,6 +300,7 @@ enum Job {
         source: PathBuf,
         dir: PathBuf,
         rate: f64,
+        generation: u64,
     },
     /// Decode a file the bank already names.
     Load {
@@ -306,12 +309,15 @@ enum Job {
         path: PathBuf,
         name: String,
         rate: f64,
+        generation: u64,
     },
 }
 
 /// A decode result waiting for [`SampleBank::pump`].
 struct Finished {
     pad: usize,
+    /// The pad's generation when the job was queued; stale once the pad is cleared or reloaded.
+    generation: u64,
     /// What the failure is about (the file or source name), for the note.
     about: String,
     /// The name the pad entry will carry.
@@ -328,6 +334,9 @@ pub struct SampleBank {
     /// Decodes queued or running: incremented on submit, decremented once the result is queued.
     outstanding: Arc<AtomicUsize>,
     pads: Mutex<BankPads>,
+    /// Bumped when a decode is queued for a pad and when the pad is cleared. A finished decode
+    /// installs only if its generation is still the pad's, so a clear (or a newer load) wins.
+    generations: [AtomicU64; PADS],
     notes: Mutex<Vec<String>>,
     writable: bool,
 }
@@ -388,6 +397,7 @@ impl SampleBank {
             finished,
             outstanding,
             pads: Mutex::new(pads),
+            generations: std::array::from_fn(|_| AtomicU64::new(0)),
             notes: Mutex::new(notes),
             writable,
         }
@@ -454,6 +464,7 @@ impl SampleBank {
                 path,
                 name: entry.name.clone(),
                 rate,
+                generation: self.next_generation(pad),
             });
             queued += 1;
         }
@@ -474,6 +485,7 @@ impl SampleBank {
             source: source.to_path_buf(),
             dir: self.dir.clone(),
             rate: self.engine.sampler().engine_rate(),
+            generation: self.next_generation(index),
         };
         Ok(self.submit(job))
     }
@@ -486,14 +498,16 @@ impl SampleBank {
         let mut installed = 0;
         for result in done {
             match result.outcome {
-                Ok((file, sample)) => match self.install(result.pad, file, &result.name, sample) {
-                    Ok(()) => installed += 1,
-                    Err(error) => self.note(format!(
-                        "pad {}: {} could not be assigned ({error})",
-                        result.pad + 1,
-                        result.about
-                    )),
-                },
+                Ok((file, sample)) => {
+                    match self.install(result.pad, result.generation, file, &result.name, sample) {
+                        Ok(()) => installed += 1,
+                        Err(error) => self.note(format!(
+                            "pad {}: {} could not be assigned ({error})",
+                            result.pad + 1,
+                            result.about
+                        )),
+                    }
+                }
                 Err(error) => self.note(format!(
                     "pad {}: {} could not be loaded ({error}); the pad keeps its sample",
                     result.pad + 1,
@@ -517,8 +531,10 @@ impl SampleBank {
     /// Empties `pad` (its sample fades out) and removes its entry. The file stays in the folder.
     pub fn clear_pad(&self, pad: u8) -> Result<(), BankError> {
         let index = check_pad(pad)?;
-        self.engine.sampler().clear(pad)?;
+        // Under the pads lock, like `install`, so a decode finishing now cannot slip in after it.
         let mut pads = self.pads.lock_unpoisoned();
+        self.next_generation(index);
+        self.engine.sampler().clear(pad)?;
         pads[index] = None;
         self.save_locked(&pads)
     }
@@ -579,14 +595,24 @@ impl SampleBank {
         sampler.set_mode(index, mode);
     }
 
+    fn next_generation(&self, pad: usize) -> u64 {
+        self.generations[pad].fetch_add(1, Ordering::AcqRel) + 1
+    }
+
     fn install(
         &self,
         pad: usize,
+        generation: u64,
         file: String,
         name: &str,
         sample: Arc<Sample>,
     ) -> Result<(), BankError> {
         let pad_u8 = u8::try_from(pad).map_err(|_| BankError::BadPad(u8::MAX))?;
+        // The generation check and the assign are atomic with respect to `clear_pad`.
+        let mut pads = self.pads.lock_unpoisoned();
+        if self.generations[pad].load(Ordering::Acquire) != generation {
+            return Err(BankError::Superseded);
+        }
         let id: SampleId = self.engine.register_sample(sample);
         let sent = self.sink.send(Command::SamplerAssign {
             pad: pad_u8,
@@ -594,7 +620,6 @@ impl SampleBank {
         });
         self.engine.forget_sample(id);
         sent.map_err(|e| BankError::Rejected(e.to_string()))?;
-        let mut pads = self.pads.lock_unpoisoned();
         let previous = pads[pad].take();
         let (gain, pitch, mode) = previous
             .as_ref()
@@ -651,6 +676,7 @@ fn run_job(job: &Job) -> Finished {
             source,
             dir,
             rate,
+            generation,
         } => {
             let about = source.display().to_string();
             let outcome = Sample::load(source, *rate)
@@ -662,6 +688,7 @@ fn run_job(job: &Job) -> Finished {
             let name = stem_of(&source.to_string_lossy());
             Finished {
                 pad: *pad,
+                generation: *generation,
                 about,
                 name,
                 outcome,
@@ -673,12 +700,14 @@ fn run_job(job: &Job) -> Finished {
             path,
             name,
             rate,
+            generation,
         } => {
             let outcome = Sample::load(path, *rate)
                 .map(|sample| (file.clone(), Arc::new(sample)))
                 .map_err(BankError::from);
             Finished {
                 pad: *pad,
+                generation: *generation,
                 about: file.clone(),
                 name: name.clone(),
                 outcome,
