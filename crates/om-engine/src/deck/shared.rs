@@ -1,6 +1,24 @@
 //! State shared between control threads, the decoder thread and the audio thread. Everything the
 //! audio thread reads is an atomic; the only lock is the control-to-decoder reader hand-over,
 //! which the audio thread never takes.
+//!
+//! # Handshake invariants
+//!
+//! - Control bumps `request_epoch` (Release) after storing `seek_target`. The decoder is the only
+//!   writer of `ack_*`: it stores `ack_target`, `ack_stride`, `end_of_stream`, then `ack_seq`
+//!   (Release), then `ack_epoch` (Release) last. The audio thread reads `request_epoch`, then
+//!   `ack_epoch` (both Acquire), and renders silence until they match.
+//! - On a new `ack_seq` the audio thread discards everything buffered, adopts `ack_stride`, then
+//!   stores `drained_seq` (Release). The decoder produces only while `drained_seq == ack_seq`
+//!   and its acked epoch equals `request_epoch`, so stale frames never follow a reposition.
+//! - Ring repositions requested by the audio thread (`ring_req_*`) are served only when the
+//!   previous ack is drained, and dropped when their base is older than the latest control ack.
+//! - The decoder never blocks without a timeout (it sleeps 3 ms when it cannot produce), so no
+//!   wakeup can be lost; nothing needs to unpark it.
+//! - The ring may legitimately be empty and idle: a loop prefetch slot that reaches the end of
+//!   the file parks the ring at end of stream (`end_of_stream` set, nothing left to produce)
+//!   while playback is fed from the slot. `buffered_frames() == 0` is therefore not a stall by
+//!   itself; waiters must also consider `end_of_stream`.
 
 use super::hotcues::HotcueBank;
 use super::loop_state::LoopState;
