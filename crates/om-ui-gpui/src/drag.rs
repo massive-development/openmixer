@@ -245,6 +245,7 @@ mod tests {
         let options = RunOptions {
             on_frame: None,
             automix: None,
+            record: false,
             smoke_frames: None,
             banner: None,
             debug: None,

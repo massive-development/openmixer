@@ -21,6 +21,7 @@
     "meterLow": "#FF047857",
     "meterMid": "#FFB45309",
     "meterHigh": "#FFE11D48",
+    "recordRed": "#FFDC2626",
     "master": "#FF334155",
     "popup": "#F5F8FAFD",
     "capTop": "#FFFFFFFF",

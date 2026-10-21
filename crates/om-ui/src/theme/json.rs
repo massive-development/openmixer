@@ -248,6 +248,7 @@ colour_keys! {
     "meterLow" => meter_low;
     "meterMid" => meter_mid;
     "meterHigh" => meter_high;
+    "recordRed" => record_red;
     "master" => master;
     "popup" => popup;
     "capTop" => cap_top;

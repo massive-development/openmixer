@@ -66,6 +66,8 @@ pub struct ThemeTokens {
     pub meter_low: Colour,
     pub meter_mid: Colour,
     pub meter_high: Colour,
+    /// The Record button's dot and the recording state (armed or running).
+    pub record_red: Colour,
     pub master: Colour,
     /// Waveform band colours (bass / mids / highs).
     pub wave_low: Colour,
@@ -201,6 +203,7 @@ impl ThemeTokens {
             meter_low: Colour::from_argb(0xFF34_D399),
             meter_mid: Colour::from_argb(0xFFFB_BF24),
             meter_high: Colour::from_argb(0xFFF4_3F5E),
+            record_red: Colour::from_argb(0xFFE5_3935),
             master: Colour::from_argb(0xFFE2_E8F0),
             wave_low: Colour::from_argb(0xFFF9_7316),
             wave_mid: Colour::from_argb(0xFF34_D399),

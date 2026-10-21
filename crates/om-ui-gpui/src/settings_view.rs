@@ -21,7 +21,8 @@ use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
     AutomixControl, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage,
-    PageKind, PluginHost, PluginsSettingsPage, SettingsError, SettingsPanel, SettingsResult,
+    PageKind, PluginHost, PluginsSettingsPage, RecordHost, SettingsError, SettingsPanel,
+    SettingsResult,
 };
 use om_ui::stems::StemHost;
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
@@ -36,6 +37,7 @@ mod library;
 mod midi;
 mod overlay;
 mod plugins;
+mod recording;
 mod stems;
 
 /// The audio readout, read on the UI thread each frame.
@@ -74,6 +76,8 @@ pub struct SettingsOptions {
     /// The automix service, behind the Automix page. `None` leaves the page without a service: its
     /// settings are still stored and the page says automix is idle.
     pub automix: Option<Box<dyn AutomixControl>>,
+    /// The recorder, behind the Recording tab. `None` leaves the tab storing settings only.
+    pub record: Option<Box<dyn RecordHost>>,
     /// Makes this window's theme registry hold the plugins' themes. Called on start-up, when the
     /// overlay opens and after a plugin or preference change.
     pub sync_themes: Option<ThemeSync>,
@@ -85,6 +89,8 @@ pub struct SettingsOptions {
 /// What a text field is for: what Enter does with the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
+    /// The folder recordings are written to.
+    RecordFolder,
     /// A folder to add to the watch folders.
     WatchFolder,
     /// An iTunes or Rekordbox XML file to import.
@@ -152,6 +158,7 @@ pub struct SettingsState {
     pub stems_confirm_clear: bool,
     plugins: Option<Box<dyn PluginHost>>,
     automix: Option<Box<dyn AutomixControl>>,
+    record: Option<Box<dyn RecordHost>>,
     sync_themes: Option<ThemeSync>,
 }
 
@@ -180,6 +187,7 @@ impl SettingsState {
             stems_confirm_clear: false,
             plugins: options.plugins,
             automix: options.automix,
+            record: options.record,
             sync_themes: options.sync_themes,
         };
         if let Some(title) = options.start_tab.as_deref() {
@@ -284,6 +292,7 @@ mod fixtures {
             stems: None,
             plugins: None,
             automix: None,
+            record: None,
             sync_themes: None,
             start_tab: None,
         })
@@ -311,6 +320,7 @@ mod fixtures {
             stems: None,
             plugins,
             automix: None,
+            record: None,
             sync_themes: Some(Box::new(move |_| syncs.set(syncs.get() + 1))),
             start_tab: None,
         }
