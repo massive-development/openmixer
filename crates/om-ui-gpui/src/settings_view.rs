@@ -159,6 +159,8 @@ pub struct SettingsState {
     /// Text of the last failed audio change, shown in place of the readout.
     setup_error: String,
     midi: Option<Arc<dyn MidiPage>>,
+    /// When the MIDI input list was last read while the page was showing (see `poll_midi_inputs`).
+    midi_polled: Option<std::time::Instant>,
     learn_targets: Vec<String>,
     /// The learn in progress: its target and the map generation when it started.
     learning: Option<(String, u64)>,
@@ -196,6 +198,7 @@ impl SettingsState {
             on_changed: options.on_changed,
             setup_error: String::new(),
             midi: options.midi,
+            midi_polled: None,
             learn_targets: options.learn_targets,
             learning: None,
             library: options.library,

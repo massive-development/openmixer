@@ -2,6 +2,10 @@
 
 use super::chips::*;
 use super::*;
+use std::time::{Duration, Instant};
+
+/// How often the input list is read again while the MIDI page is showing.
+const MIDI_POLL: Duration = Duration::from_secs(1);
 
 /// The device names the page was last given, as the MIDI page's input list.
 pub(super) struct Listed<'a>(&'a [String]);
@@ -148,6 +152,29 @@ impl SettingsState {
     }
 
     /// Called each frame: when the MIDI service has stopped learning, says what happened.
+    /// Reads the input list again when the MIDI page is showing and `MIDI_POLL` has passed since
+    /// the last read, so a controller plugged in with the overlay open appears. Enumerating asks
+    /// the backend, so it is not done every frame. Returns whether the list changed.
+    pub fn poll_midi_inputs(&mut self, now: Instant) -> bool {
+        let Some(midi) = &self.midi else {
+            return false;
+        };
+        if self.panel.page_kind(self.panel.current()) != Some(PageKind::Midi) {
+            return false;
+        }
+        if self
+            .midi_polled
+            .is_some_and(|last| now.duration_since(last) < MIDI_POLL)
+        {
+            return false;
+        }
+        self.midi_polled = Some(now);
+        let names = MidiInputs::input_names(&**midi);
+        let changed = names != self.lists.midi_inputs;
+        self.lists.midi_inputs = names;
+        changed
+    }
+
     pub fn poll_learn(&mut self) {
         let Some((target, generation)) = self.learning.clone() else {
             return;
@@ -251,6 +278,8 @@ mod tests {
     #[derive(Default)]
     struct FakeMidi {
         inputs: Vec<String>,
+        /// Devices plugged in after the start.
+        plugged: Mutex<Vec<String>>,
         learning: Mutex<Option<String>>,
         generation: AtomicU64,
         fail_load: bool,
@@ -260,7 +289,9 @@ mod tests {
 
     impl MidiInputs for FakeMidi {
         fn input_names(&self) -> Vec<String> {
-            self.inputs.clone()
+            let mut names = self.inputs.clone();
+            names.extend(self.plugged.lock().unwrap().iter().cloned());
+            names
         }
     }
 
@@ -292,6 +323,43 @@ mod tests {
             self.generation.load(Ordering::SeqCst)
         }
         fn enable_inputs(&self, _enable_all: bool, _inputs: &[String]) {}
+    }
+
+    #[test]
+    fn a_controller_plugged_in_while_the_midi_page_shows_appears_within_a_second() {
+        let fake = Arc::new(FakeMidi::default());
+        let midi: Arc<dyn MidiPage> = fake.clone();
+        let mut s = SettingsState::new(options(
+            Some(midi),
+            None,
+            None,
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+        ));
+        let midi_tab = s.panel.tabs().iter().position(|t| t == "MIDI").unwrap();
+        let t0 = Instant::now();
+
+        let other_tab = s.panel.tabs().iter().position(|t| t != "MIDI").unwrap();
+        s.panel.show(other_tab);
+        fake.plugged.lock().unwrap().push("Pad".into());
+        assert!(!s.poll_midi_inputs(t0), "another page is showing");
+        assert!(s.lists.midi_inputs.is_empty());
+
+        s.panel.show(midi_tab);
+        assert!(s.poll_midi_inputs(t0));
+        assert_eq!(s.lists.midi_inputs, vec!["Pad".to_owned()]);
+
+        fake.plugged.lock().unwrap().push("Deck".into());
+        assert!(
+            !s.poll_midi_inputs(t0 + Duration::from_millis(500)),
+            "too soon"
+        );
+        assert!(s.poll_midi_inputs(t0 + MIDI_POLL));
+        assert_eq!(
+            s.lists.midi_inputs,
+            vec!["Pad".to_owned(), "Deck".to_owned()]
+        );
+        assert!(!s.poll_midi_inputs(t0 + 2 * MIDI_POLL), "nothing changed");
     }
 
     #[test]
