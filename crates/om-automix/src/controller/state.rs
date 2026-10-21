@@ -1,4 +1,5 @@
 use super::*;
+use om_core::AutomixStyle;
 
 impl AutomixController {
     // ----- Idle -----
@@ -15,6 +16,8 @@ impl AutomixController {
         self.next_title.clear();
         self.next_bpm = None;
         self.next_key.clear();
+        // A `automix.start` press is for this tick only: whatever happens below, it is spent.
+        let force = std::mem::take(&mut self.force_start);
         let Some(out) = playing_deck(snap) else {
             self.remaining_beats = None;
             return;
@@ -27,7 +30,7 @@ impl AutomixController {
             self.remaining_beats = None;
             return;
         }
-        if self.stale_deck == Some(out) {
+        if self.stale_deck.is_some_and(|(d, _)| d == out) {
             self.stale_deck = None;
         }
         let Some(info) = self.out_info(out, out_len, host) else {
@@ -39,7 +42,6 @@ impl AutomixController {
         };
         let remaining = info.length_beats - out_beat;
         self.remaining_beats = Some(remaining.max(0.0));
-        let force = self.force_start;
         if (remaining > self.cfg.arm_beats || !self.cfg.autostart) && !force {
             return;
         }
@@ -47,7 +49,6 @@ impl AutomixController {
             self.fail_run(out, out_len, "no free deck for the next track");
             return;
         };
-        self.force_start = false;
         let mut run = Run {
             out,
             inc,
@@ -71,7 +72,10 @@ impl AutomixController {
             ticks: 0,
         };
         let partner = &snap.decks[usize::from(inc)];
-        if partner.loaded && self.stale_deck != Some(inc) {
+        let stale = self
+            .stale_deck
+            .is_some_and(|(d, len)| d == inc && partner.length_frames == len);
+        if partner.loaded && !stale {
             // The user cued a track on the free deck: mix into it as it is.
             run.title = host.deck_title(inc);
             self.next_title.clone_from(&run.title);
@@ -199,6 +203,21 @@ impl AutomixController {
             let opts = self.plan_options(snap, &run, &out_snap, out_beat, asap);
             self.planner
                 .plan(&run.out_info, &inc_info, self.control.style(), &opts)
+        };
+        // A style the pair cannot take falls back to a cut, so the outgoing deck does not run on
+        // into dead air. Only a pair that cannot be cut either is dropped.
+        let plan = match plan {
+            Err(error) if self.control.style() != AutomixStyle::Cut => {
+                let opts = self.plan_options(snap, &run, &out_snap, out_beat, asap);
+                match self
+                    .planner
+                    .plan(&run.out_info, &inc_info, AutomixStyle::Cut, &opts)
+                {
+                    Ok(plan) => Ok(plan),
+                    Err(_) => Err(error),
+                }
+            }
+            other => other,
         };
         let plan = match plan {
             Ok(plan) => plan,

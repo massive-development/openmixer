@@ -646,19 +646,34 @@ fn an_empty_queue_is_reported_once_and_not_retried() {
 
 #[test]
 fn an_unplannable_pair_is_dropped_and_not_retried() {
-    // 140 vs 120 BPM with an explicit Crossfade: out of range.
-    let mut sim = Sim::with(
-        AutomixConfig::default(),
-        380.0,
-        false,
-        info(1, 140.0, "8A", false),
-    );
+    // No grid on the incoming track: no style, not even a cut, can be planned.
+    let mut next = info(1, BPM, "8A", false);
+    next.grid = None;
+    let mut sim = Sim::with(AutomixConfig::default(), 380.0, false, next);
     sim.run(600);
     assert_eq!(sim.state(), AutomixState::Idle);
     let error = sim.ctrl.snapshot().last_error;
     assert!(error.starts_with("no transition"), "{error}");
     assert_eq!(sim.host.starts.len(), 1, "the track had its turn");
     assert!(sim.sent("deck.1.play").is_empty());
+}
+
+/// An explicit beat-matched style refuses a tempo gap it cannot take. The planner's rejection must
+/// not leave dead air: a cut goes instead.
+#[test]
+fn a_rejected_style_falls_back_to_a_cut() {
+    let mut sim = Sim::with(
+        AutomixConfig::default(),
+        380.0,
+        false,
+        info(1, 140.0, "8A", false),
+    );
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.ctrl.snapshot().last_error, "");
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing);
 }
 
 #[test]
@@ -860,4 +875,110 @@ fn a_grid_that_lands_after_the_load_is_read_on_a_later_tick() {
     assert_eq!(sim.state(), AutomixState::Idle, "no grid, no transition");
     sim.host.infos.insert(0, info(0, BPM, "8A", false));
     sim.run_until("armed", 600, |s| s.state() == AutomixState::Armed);
+}
+
+/// The transition runs to the end of the outgoing track. The engine stops that deck at its last
+/// frame, which the controller must read as the end, not as the user pausing the deck.
+#[test]
+fn natural_end_of_the_outgoing_track_completes_the_transition() {
+    let cfg = AutomixConfig {
+        length_beats: Some(32.0),
+        ..AutomixConfig::default()
+    };
+    let mut sim = Sim::with(cfg, 380.0, false, info(1, BPM, "8A", false));
+    sim.host.infos.get_mut(&0).unwrap().length_beats = 432.0;
+    sim.snap.decks[0].length_frames = beat(432.0);
+    sim.run_until("transitioning", 3000, |s| {
+        s.state() == AutomixState::Transitioning
+    });
+    assert_eq!(sim.ctrl.plan().unwrap().end_beat(), 432.0);
+    sim.run_until("the track is at its last beat", 3000, |s| {
+        s.snap.decks[0].position_frames >= beat(431.5)
+    });
+    // The engine reaches the end of the track: the deck stops on its last frame.
+    sim.snap.decks[0].playing = false;
+    sim.snap.decks[0].position_frames = beat(432.0);
+    sim.run_until("cleanup", 10, |s| s.states.contains(&AutomixState::Cleanup));
+    assert!(
+        sim.ctrl.snapshot().last_error.is_empty(),
+        "{:?}",
+        sim.ctrl.snapshot().last_error
+    );
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    assert_eq!(
+        sim.xfader(),
+        1.0,
+        "the crossfader lands on the incoming deck"
+    );
+    assert!(sim.snap.decks[1].playing && sim.snap.decks[1].sync_master);
+    assert!(!sim.snap.decks[0].playing);
+}
+
+/// `automix.start` pressed when nothing plays must not wait for the next deck to start playing and
+/// then fire a transition the user did not ask for.
+#[test]
+fn start_pressed_with_nothing_playing_does_not_fire_later() {
+    let mut sim = Sim::new(100.0, false);
+    sim.snap.decks[0].playing = false;
+    sim.control
+        .set_param(&ParamId::Automix(AutomixParam::Start), 1.0);
+    sim.run(5);
+    assert!(sim.host.starts.is_empty());
+    // Much later the user starts a track from its beginning.
+    sim.snap.decks[0].playing = true;
+    sim.snap.decks[0].position_frames = beat(10.0);
+    sim.run(200);
+    assert!(sim.host.starts.is_empty(), "{:?}", sim.host.starts);
+    assert_eq!(sim.state(), AutomixState::Idle);
+}
+
+/// A press during a transition is for that transition only: it must not start the track after it.
+#[test]
+fn start_pressed_during_a_transition_does_not_chain_into_the_next_one() {
+    let mut sim = Sim::new(380.0, false);
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Third".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.tracks.insert(8, info(0, BPM, "8A", false));
+    sim.run_into_transition();
+    sim.control
+        .set_param(&ParamId::Automix(AutomixParam::Start), 1.0);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    sim.run(200);
+    assert_eq!(sim.host.starts.len(), 1, "{:?}", sim.host.starts);
+}
+
+/// After automix stops a deck, the user loads a different track on it. That track is theirs: it
+/// must not be loaded over, and it is mixed into as it is.
+#[test]
+fn a_track_the_user_loads_over_the_stopped_deck_is_not_loaded_over() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle", 10, |s| s.state() == AutomixState::Idle);
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Third".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.tracks.insert(8, info(0, BPM, "8A", false));
+    // The user loads a shorter track on the stopped deck 0 and starts the deck 1 leader near its end.
+    sim.snap.decks[0].length_frames = beat(LENGTH_BEATS - 50.0);
+    sim.snap.decks[0].position_frames = 0;
+    sim.snap.decks[0].loaded = true;
+    sim.snap.decks[1].position_frames = beat(390.0);
+    sim.run(100);
+    assert!(
+        sim.host.starts.iter().all(|(deck, _)| *deck != 0),
+        "{:?}",
+        sim.host.starts
+    );
 }

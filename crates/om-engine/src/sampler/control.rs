@@ -75,6 +75,8 @@ impl SamplerControl {
         if usize::from(pad) >= PADS || !velocity.is_finite() || velocity <= 0.0 {
             return;
         }
+        // Before the push, so the audio side never sees a voice whose press is not yet marked held.
+        self.shared.held[usize::from(pad)].store(true, Relaxed);
         self.send_or_count(SamplerCmd::Trigger {
             pad,
             velocity: velocity.min(1.0),
@@ -82,15 +84,20 @@ impl SamplerControl {
         });
     }
 
-    /// Releases the pad's gate and loop voices; one-shots ignore it.
+    /// Releases the pad's gate voices. Loop voices latch (a second trigger stops them) and one-shots
+    /// play out, so both ignore it.
     pub fn release(&self, pad: u8) {
         if usize::from(pad) < PADS {
+            self.shared.held[usize::from(pad)].store(false, Relaxed);
             self.send_or_count(SamplerCmd::Release { pad });
         }
     }
 
     /// Fades out every voice.
     pub fn stop_all(&self) {
+        for held in &self.shared.held {
+            held.store(false, Relaxed);
+        }
         self.send_or_count(SamplerCmd::StopAll);
     }
 
@@ -128,8 +135,9 @@ impl SamplerControl {
         }
     }
 
-    /// Frees samples the audio thread has let go of. Called by `assign` and `clear`; call it from a
-    /// timer too if a pad can go a long time without either.
+    /// Frees samples the audio thread has let go of. Called by `assign` and `clear`, and by
+    /// [`crate::DjEngine::update_control`] on the control tick. The audio side keeps working
+    /// without it (finished voices stay reusable), but replaced samples are only freed here.
     pub fn reclaim(&self) {
         let mut retired = self.retired.lock_unpoisoned();
         while retired.pop().is_ok() {}
@@ -183,7 +191,7 @@ fn name_hash(name: &str) -> u64 {
 }
 
 impl ParamTarget for SamplerControl {
-    /// `trigger`: the value is the velocity (0 to 1, above 1 clamps); 0 or less releases the pad.
+    /// `trigger`: the value is the velocity (0 to 1, above 1 clamps); 0 or less releases the pad (which only ends gate voices; a loop pad latches: trigger again to stop it).
     /// `gate`: 0.5 or more presses the pad as a gate (velocity 1, whatever the pad's mode), below
     /// 0.5 releases it; one id carries MIDI note on and note off. `volume`: linear gain 0 to 1.5.
     /// `pitch`: semitones, -12 to 12. Non-finite values are rejected.

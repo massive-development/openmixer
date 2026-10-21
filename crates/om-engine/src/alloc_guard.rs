@@ -492,8 +492,8 @@ fn dj_engine_process_does_not_allocate_in_stem_mode_with_live_stem_changes() {
 
 /// The sampler under the guard: two playing decks plus all 8 pads triggered every few blocks in
 /// mixed modes, with live gain, pitch and mode changes, gate presses through the router and a pad
-/// sample replaced mid-run. Only `audio.process` runs guarded; assigning and reclaiming run on the
-/// control side between blocks, where the replaced samples are freed. A deallocation inside the
+/// sample replaced mid-run. Only `audio.process` runs guarded; assigning runs on the control
+/// side between blocks (it reclaims, nothing else does: the audio side must cope alone). A deallocation inside the
 /// guard fails too, so a sample dropped on the audio thread would fail this test.
 #[test]
 fn dj_engine_process_does_not_allocate_with_decks_and_a_busy_sampler() {
@@ -587,7 +587,6 @@ fn dj_engine_process_does_not_allocate_with_decks_and_a_busy_sampler() {
         }
         assert!(router.set_parameter("sampler.pad2.gate", f64::from(block % 4 < 2)));
         assert!(router.set_parameter("sampler.pad4.trigger", f64::from(block % 5 == 0)));
-        sampler.reclaim();
         for d in 0..2 {
             assert!(
                 wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || engine

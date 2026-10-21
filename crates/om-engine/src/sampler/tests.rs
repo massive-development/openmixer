@@ -60,7 +60,16 @@ fn a_sample_plays_to_its_end_then_the_voice_is_free_and_silent() {
     control.assign(0, dc(100, 0.5)).unwrap();
     control.trigger(0, 1.0);
     let (l, _) = render(&mut audio, 300);
-    assert_eq!(l[99], 0.5);
+    assert_eq!(l[60], 0.5, "full level before the tail");
+    assert!(
+        l[99] > 0.0 && l[99] < 0.1,
+        "last frame is nearly faded: {}",
+        l[99]
+    );
+    assert!(
+        l[68..100].windows(2).all(|w| w[1] < w[0]),
+        "a 32 frame tail fade"
+    );
     assert!(l[100..].iter().all(|&v| v == 0.0));
     assert_eq!(control.snapshot().voices_active, 0);
     assert!(!control.snapshot().pads[0].playing);
@@ -163,7 +172,7 @@ fn one_shot_ignores_release() {
 }
 
 #[test]
-fn loop_wraps_seamlessly_until_release() {
+fn loop_wraps_seamlessly_and_latches_until_a_second_press() {
     let (mut audio, control) = setup();
     let data: Vec<f32> = (0..50).flat_map(|n| [n as f32; 2]).collect();
     let sample = Arc::new(Sample::from_interleaved("saw", RATE, data).unwrap());
@@ -174,10 +183,38 @@ fn loop_wraps_seamlessly_until_release() {
     for (i, &got) in l.iter().enumerate().skip(40) {
         assert_eq!(got, (i % 50) as f32, "frame {i}");
     }
+    // Release, trigger=0 and a note-off style release do not stop a loop.
     control.release(0);
+    let (l, _) = render(&mut audio, 400);
+    assert!(l.iter().any(|&v| v > 0.0));
+    assert!(control.snapshot().pads[0].playing);
+    // The second press fades it out in 5 ms and does not start another voice.
+    control.trigger(0, 1.0);
     render(&mut audio, 400);
     let (l, _) = render(&mut audio, 100);
     assert!(l.iter().all(|&v| v == 0.0));
+    assert_eq!(control.snapshot().voices_active, 0);
+    // A third press starts it again.
+    control.trigger(0, 1.0);
+    let (l, _) = render(&mut audio, 300);
+    assert!(l.iter().any(|&v| v > 0.0));
+    assert_eq!(control.snapshot().voices_active, 1);
+    // stop_all ends a latched loop too.
+    control.stop_all();
+    render(&mut audio, 400);
+    assert_eq!(control.snapshot().voices_active, 0);
+}
+
+#[test]
+fn a_gate_override_on_a_loop_pad_is_a_gate_not_a_latch() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(48_000, 1.0)).unwrap();
+    control.set_mode(0, PadMode::Loop);
+    control.trigger_with(0, 1.0, Some(PadMode::Gate));
+    render(&mut audio, 300);
+    control.release(0);
+    render(&mut audio, 400);
+    assert_eq!(control.snapshot().voices_active, 0);
 }
 
 #[test]
@@ -486,4 +523,137 @@ fn sampler_cost() {
         "4 voices per pad, pitch +3.3:  {:.2} us / block",
         per_block_us(4, 3.3)
     );
+}
+
+fn audible(l: &[f32]) -> bool {
+    l.iter().any(|&v| v != 0.0)
+}
+
+#[test]
+fn two_hundred_one_shots_play_with_no_reclaim_at_all() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(50, 0.5)).unwrap();
+    render(&mut audio, 64);
+    for n in 0..200 {
+        control.trigger(0, 1.0);
+        let (l, _) = render(&mut audio, 128);
+        assert!(audible(&l), "trigger {n} was silent");
+    }
+    assert_eq!(control.dropped_commands(), 0);
+}
+
+#[test]
+fn one_shots_survive_a_slow_control_thread() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(50, 0.5)).unwrap();
+    control.assign(1, dc(50, 0.25)).unwrap();
+    render(&mut audio, 64);
+    for n in 0..200 {
+        control.trigger(0, 1.0);
+        control.trigger(1, 1.0);
+        let (l, _) = render(&mut audio, 128);
+        assert!(audible(&l), "trigger {n} was silent");
+        if n % 50 == 49 {
+            control.reclaim();
+        }
+    }
+    assert_eq!(control.dropped_commands(), 0);
+}
+
+#[test]
+fn voices_of_replaced_samples_stay_reusable_when_the_retire_ring_is_full() {
+    let (mut audio, control) = setup();
+    audio.fill_retire_ring_for_test();
+    let old = dc(50, 0.5);
+    control.assign(0, Arc::clone(&old)).unwrap();
+    for _ in 0..4 {
+        control.trigger(0, 1.0);
+    }
+    render(&mut audio, 16);
+    control.assign(0, dc(50, 0.25)).unwrap(); // `old` is now stale: ring full, nowhere to go
+    for n in 0..200 {
+        control.trigger(0, 1.0);
+        let (l, _) = render(&mut audio, 128);
+        assert!(audible(&l), "trigger {n} was silent");
+    }
+    assert_eq!(control.dropped_commands(), 0);
+    // Nothing was freed on the audio side: the references are parked, then handed back once the
+    // control side reclaims and the audio side retries.
+    assert!(Arc::strong_count(&old) > 1);
+    control.reclaim();
+    render(&mut audio, 16);
+    control.reclaim();
+    assert_eq!(Arc::strong_count(&old), 1);
+}
+
+#[test]
+fn a_release_lost_to_a_full_command_ring_still_ends_the_gate() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(48_000, 1.0)).unwrap();
+    control.set_mode(0, PadMode::Gate);
+    control.trigger(0, 1.0);
+    let (l, _) = render(&mut audio, 500);
+    assert_eq!(l[499], 1.0);
+    for _ in 0..RING_CAPACITY {
+        control.release(1);
+    }
+    control.release(0); // the ring is full: this one is lost
+    assert_eq!(control.dropped_commands(), 1);
+    render(&mut audio, 500);
+    let (l, _) = render(&mut audio, 100);
+    assert!(
+        l.iter().all(|&v| v == 0.0),
+        "the held flag released the voice"
+    );
+    assert_eq!(control.snapshot().voices_active, 0);
+}
+
+#[test]
+fn trigger_and_release_in_one_block_is_a_short_audible_tap() {
+    let (mut audio, control) = setup();
+    control.assign(0, dc(48_000, 1.0)).unwrap();
+    control.set_mode(0, PadMode::Gate);
+    control.trigger(0, 1.0);
+    control.release(0);
+    let (l, _) = render(&mut audio, 1000);
+    let peak = l.iter().copied().fold(0.0_f32, f32::max);
+    assert!(peak > 0.99, "the tap reaches full level: {peak}");
+    let sounding = l.iter().filter(|&&v| v > 0.0).count();
+    assert!(sounding >= 32, "at least a ramp long: {sounding}");
+    assert!(l[500..].iter().all(|&v| v == 0.0), "and then silent");
+    assert_eq!(control.snapshot().voices_active, 0);
+}
+
+fn tone_wav(dir: &om_testing::fs::TempDir, name: &str, frames: usize) -> std::path::PathBuf {
+    let path = dir.file(name);
+    let mono: Vec<f32> = (0..frames).map(|n| (n as f32 * 0.05).sin() * 0.5).collect();
+    om_testing::wav::write_float_wav(&path, 1, 8_000, &mono);
+    path
+}
+
+#[test]
+fn load_rejects_a_file_cut_off_mid_stream() {
+    let dir = om_testing::fs::TempDir::new("om_sampler_trunc");
+    let whole = tone_wav(&dir, "whole.wav", 8_000);
+    let bytes = std::fs::read(&whole).unwrap();
+    let cut = dir.file("cut.wav");
+    std::fs::write(&cut, &bytes[..44 + (bytes.len() - 44) / 2]).unwrap();
+    assert!(Sample::load(&whole, 8_000.0).is_ok());
+    let err = Sample::load(&cut, 8_000.0).expect_err("a half file must not load as a short sample");
+    assert!(matches!(err, SamplerError::Corrupt(_)), "{err:?}");
+}
+
+#[test]
+fn an_unknown_length_is_decoded_to_the_end_under_the_cap() {
+    use super::sample::decode_all;
+    let dir = om_testing::fs::TempDir::new("om_sampler_unknown");
+    let path = tone_wav(&dir, "stream.wav", 10_000);
+    let open = || crate::deck::SourceReader::open(&path).unwrap();
+    // declared 0: what a container without a frame count reports.
+    let data = decode_all(&mut open(), 0, 1_000_000).expect("decodes to the end");
+    assert_eq!(data.len() / 2, 10_000);
+    assert!(matches!(
+        decode_all(&mut open(), 0, 5_000),
+        Err(SamplerError::TooLarge)
+    ));
 }

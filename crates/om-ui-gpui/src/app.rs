@@ -111,8 +111,6 @@ pub struct Shell {
     pub(crate) sampler_editing: bool,
     /// The last sampler action's outcome: its text, and whether it is an error.
     pub(crate) sampler_status: Option<(String, bool)>,
-    /// The pad held down by a click or a digit key, released when that goes up.
-    pub(crate) sampler_held: Option<usize>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -191,7 +189,6 @@ impl Shell {
             sampler_focus: None,
             sampler_editing: false,
             sampler_status: None,
-            sampler_held: None,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -368,6 +365,10 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.tick();
         window.request_animation_frame();
+        if !window.is_window_active() {
+            // The key-up or mouse-up of a held sampler pad never reaches an inactive window.
+            self.sampler.release_held();
+        }
         if self
             .options
             .smoke_frames

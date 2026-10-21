@@ -294,3 +294,37 @@ fn parse_ok(path: &Path) -> bool {
     let text = fs::read_to_string(path).unwrap();
     sample_bank::parse(&text).is_ok_and(|p| p.issues.is_empty())
 }
+
+#[test]
+fn a_decode_finishing_after_clear_pad_does_not_bring_the_pad_back() {
+    let rig = Rig::new();
+    let bank = rig.open();
+    let handle = bank.import_file(3, &rig.wav("late.wav", 0.4)).unwrap();
+    assert!(handle.wait(WAIT), "decode done, not yet installed");
+    bank.clear_pad(3).unwrap();
+    settle(&bank);
+    assert!(bank.entry(3).is_none(), "no entry resurrected");
+    assert!(!rig.engine.snapshot().sampler.pads[3].loaded);
+    let notes = bank.take_notes();
+    assert!(
+        notes.iter().any(|n| n.contains("cleared or reloaded")),
+        "{notes:?}"
+    );
+    // A load queued after the clear works.
+    bank.import_file(3, &rig.wav("again.wav", 0.4))
+        .unwrap()
+        .wait(WAIT);
+    settle(&bank);
+    assert!(bank.entry(3).is_some());
+}
+
+#[test]
+fn the_newest_load_for_a_pad_wins() {
+    let rig = Rig::new();
+    let bank = rig.open();
+    bank.import_file(1, &rig.wav("first.wav", 0.4)).unwrap();
+    let second = bank.import_file(1, &rig.wav("second.wav", 0.4)).unwrap();
+    assert!(second.wait(WAIT));
+    settle(&bank);
+    assert_eq!(bank.entry(1).unwrap().name, "second");
+}

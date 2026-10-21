@@ -61,6 +61,10 @@ impl AutomixController {
             }
         }
         for w in &run.watches {
+            // The outgoing deck stopping at its last frame is the end of the track, not a pause.
+            if ended && w.id == play_id(run.out) {
+                continue;
+            }
             let Some(v) = read_param(snap, &w.id) else {
                 continue;
             };

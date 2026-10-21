@@ -13,7 +13,7 @@ use gpui::{
 };
 use om_engine::sampler::PadMode;
 use om_ui::geometry::Rect;
-use om_ui::sampler_binding::{mode_label, pad_for_key, PadView};
+use om_ui::sampler_binding::{mode_hint, mode_label, pad_for_key, PadView};
 use om_ui::style::LookAndFeel;
 use om_ui::theme::Colour;
 use om_ui::widgets::sampler_strip::{sampler_strip_layout, SamplerStripLayout};
@@ -28,20 +28,15 @@ const PITCH_STEP: f32 = 1.0;
 const PAD_NAME_CHARS: usize = 8;
 
 impl Shell {
-    /// Selects `pad` and presses it. The pad is held until [`Shell::sampler_release`].
+    /// Selects `pad` and presses it. The pad is held until [`Shell::sampler_release`]; a pad still
+    /// held is released first.
     pub(crate) fn sampler_press(&mut self, pad: usize) {
-        if !self.sampler.select(pad) {
-            return;
-        }
-        self.sampler_held = Some(pad);
-        self.sampler.press(pad, PRESS_VELOCITY);
+        self.sampler.press_held(pad, PRESS_VELOCITY);
     }
 
-    /// Lets go of the held pad, if any; a gate's voices end, one-shots ignore it.
+    /// Lets go of the held pad, if any; a gate's voices end, others ignore it.
     pub(crate) fn sampler_release(&mut self) {
-        if let Some(pad) = self.sampler_held.take() {
-            self.sampler.release(pad);
-        }
+        self.sampler.release_held();
     }
 
     /// A key on the strip: typed text while a path field is open, else the digit keys press pads.
@@ -62,8 +57,7 @@ impl Shell {
             return;
         }
         if let Some(pad) = pad_for_key(key) {
-            if self.sampler_held != Some(pad) {
-                self.sampler_release();
+            if self.sampler.held() != Some(pad) {
                 self.sampler_press(pad);
             }
         }
@@ -72,9 +66,7 @@ impl Shell {
     /// Lets go of a pad whose digit key came up.
     pub(crate) fn sampler_key_up(&mut self, key: &str) {
         if let Some(pad) = pad_for_key(key) {
-            if self.sampler_held == Some(pad) {
-                self.sampler_release();
-            }
+            self.sampler.release_held_if(pad);
         }
     }
 
@@ -163,6 +155,14 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
                 this.sampler_release();
                 cx.notify();
             }),
+        )
+        // A release outside the strip (the press began on a pad) must still let go.
+        .on_mouse_up_out(
+            MouseButton::Left,
+            cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                this.sampler_release();
+                cx.notify();
+            }),
         );
 
     // Caption: the path field while it is open, else the selected pad, or the last problem.
@@ -171,7 +171,11 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     } else if let Some((message, _)) = &shell.sampler_status {
         message.clone()
     } else {
-        shell.sampler.caption()
+        format!(
+            "{} - {}",
+            shell.sampler.caption(),
+            mode_hint(pads[selected].mode)
+        )
     };
     let error = shell.sampler_status.as_ref().is_some_and(|(_, e)| *e);
     root = root.child(caption(t, l.caption, &text).text_color(paint(if error {
@@ -194,11 +198,20 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     root = root.child(button(
         t,
         l.mode,
-        &format!("Mode: {}", mode_label(pads[selected].mode)),
+        mode_label(pads[selected].mode),
         pads[selected].mode != PadMode::OneShot,
         accent,
         cx,
         |this| this.sampler_cycle_mode(),
+    ));
+    root = root.child(button(
+        t,
+        l.stop_all,
+        "Stop all",
+        false,
+        accent,
+        cx,
+        |this| this.sampler.stop_all(),
     ));
     root = root.child(button(
         t,

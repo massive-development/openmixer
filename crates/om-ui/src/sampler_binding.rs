@@ -39,6 +39,15 @@ pub fn mode_label(mode: PadMode) -> &'static str {
     }
 }
 
+/// One line on how a pad of this mode behaves, shown next to the mode.
+pub fn mode_hint(mode: PadMode) -> &'static str {
+    match mode {
+        PadMode::OneShot => "plays to the end",
+        PadMode::Gate => "plays while held",
+        PadMode::Loop => "tap to start, tap again to stop",
+    }
+}
+
 /// The next mode in the pad's toggle order: one-shot, gate, loop, one-shot.
 pub fn next_mode(mode: PadMode) -> PadMode {
     match mode {
@@ -82,6 +91,8 @@ pub struct SamplerBinding {
     pub bank: Option<Arc<SampleBank>>,
     selected: Arc<Mutex<usize>>,
     paths: Arc<Mutex<[String; PADS]>>,
+    /// The pad a click or digit key is holding down.
+    held: Arc<Mutex<Option<usize>>>,
     pending: Arc<Mutex<Vec<(usize, JobHandle)>>>,
 }
 
@@ -100,6 +111,7 @@ impl SamplerBinding {
             bank,
             selected: Arc::new(Mutex::new(0)),
             paths: Arc::new(Mutex::new(Default::default())),
+            held: Arc::new(Mutex::new(None)),
             pending: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -117,6 +129,47 @@ impl SamplerBinding {
         } else {
             false
         }
+    }
+
+    /// The pad being held down by a click or a key, if any.
+    pub fn held(&self) -> Option<usize> {
+        *self.held.lock_unpoisoned()
+    }
+
+    /// Selects `pad` and presses it as the held pad. A pad still held from before is released
+    /// first, so pressing a second pad (or a key repeat) never leaves the first one stuck. False
+    /// for a bad pad or a rejected write.
+    pub fn press_held(&self, pad: usize, velocity: f32) -> bool {
+        if !self.select(pad) {
+            return false;
+        }
+        self.release_held();
+        *self.held.lock_unpoisoned() = Some(pad);
+        self.press(pad, velocity)
+    }
+
+    /// Releases the held pad, if any (mouse up anywhere, the key coming up, window focus lost).
+    /// Returns the pad released.
+    pub fn release_held(&self) -> Option<usize> {
+        let pad = self.held.lock_unpoisoned().take()?;
+        self.release(pad);
+        Some(pad)
+    }
+
+    /// Releases the held pad only when it is `pad` (that pad's key came up).
+    pub fn release_held_if(&self, pad: usize) -> bool {
+        if self.held() == Some(pad) {
+            self.release_held();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Fades out every voice on every pad, loops included, and forgets the held pad.
+    pub fn stop_all(&self) {
+        *self.held.lock_unpoisoned() = None;
+        self.engine.sampler().stop_all();
     }
 
     /// The path text typed for `pad` (empty when none).
@@ -168,7 +221,8 @@ impl SamplerBinding {
         }
     }
 
-    /// Lets go of `pad`: ends a gate's hold and its loops. One-shots ignore it.
+    /// Lets go of `pad`: ends a gate's hold. Loops latch (press again to stop) and one-shots play
+    /// out, so both ignore it.
     pub fn release(&self, pad: usize) -> bool {
         let Ok(index) = u8::try_from(pad) else {
             return false;
