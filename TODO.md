@@ -240,7 +240,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 ## Wave 8: Pro Surface
 
-- [ ] **Todo 41:** Mix recording
+- [x] **Todo 41:** Mix recording: master-output tap, `rtrb` ring, writer thread, streaming WAV (16/24-bit, float32), crash-safe header, auto split, low-disk checks, `record.start|stop|toggle` ids, `record.*` state reads, Recording prefs and settings page logic, header button view-model. Done at logic level; the window button, the settings drawing and the `r` shortcut are not drawn yet; unverified by ear (mock device only)
 - [ ] **Todo 42:** Broadcasting
 - [ ] **Todo 43:** DVS (timecode vinyl)
 - [ ] **Todo 44:** Video mixing

@@ -15,9 +15,10 @@
 //! stem.<d>.<s>.volume | mute | filter                s < 4
 //! sampler.pad<p>.trigger | volume | gate | pitch      p < 8
 //! automix.enable | start | cancel | style
+//! record.start | stop | toggle        value >= 0.5 triggers
 //! <prefix>.<rest>                                     any other id: Ext, routed by prefix
 //! ```
-//! `<d>` < [`MAX_DECKS`]. Namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler`, `automix`
+//! `<d>` < [`MAX_DECKS`]. Namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler`, `automix`, `record`
 //! are reserved: a malformed id in them is an error, never an `Ext`. Plugin prefixes must avoid them.
 //!
 //! Threads: pure data and parsing; usable from any thread.
@@ -69,6 +70,7 @@ pub enum ParamId {
         p: SamplerParam,
     },
     Automix(AutomixParam),
+    Record(RecordParam),
     /// An id outside the engine namespaces, routed to a registered prefix with `rest` as its id.
     Ext {
         prefix: String,
@@ -87,10 +89,11 @@ pub enum Namespace {
     Stem,
     Sampler,
     Automix,
+    Record,
 }
 
 impl Namespace {
-    pub const ALL: [Namespace; 7] = [
+    pub const ALL: [Namespace; 8] = [
         Namespace::Deck,
         Namespace::Mixer,
         Namespace::Fx,
@@ -98,6 +101,7 @@ impl Namespace {
         Namespace::Stem,
         Namespace::Sampler,
         Namespace::Automix,
+        Namespace::Record,
     ];
 
     /// The root segment of this namespace's ids.
@@ -110,6 +114,7 @@ impl Namespace {
             Self::Stem => "stem",
             Self::Sampler => "sampler",
             Self::Automix => "automix",
+            Self::Record => "record",
         }
     }
 
@@ -218,6 +223,16 @@ pub enum SamplerParam {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordParam {
+    /// A value of 0.5 or more starts recording.
+    Start,
+    /// A value of 0.5 or more stops recording.
+    Stop,
+    /// A value of 0.5 or more toggles recording.
+    Toggle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutomixParam {
     Enable,
     Start,
@@ -236,6 +251,7 @@ impl ParamId {
             Self::Stem { .. } => Some(Namespace::Stem),
             Self::Sampler { .. } => Some(Namespace::Sampler),
             Self::Automix(_) => Some(Namespace::Automix),
+            Self::Record(_) => Some(Namespace::Record),
             Self::Ext { .. } => None,
         }
     }
@@ -256,6 +272,7 @@ impl fmt::Display for ParamId {
             Self::Stem { deck, stem, p } => write!(f, "stem.{deck}.{stem}.{p}"),
             Self::Sampler { pad, p } => write!(f, "sampler.pad{pad}.{p}"),
             Self::Automix(p) => write!(f, "automix.{p}"),
+            Self::Record(p) => write!(f, "record.{p}"),
             Self::Ext { prefix, rest } => write!(f, "{prefix}.{rest}"),
         }
     }
@@ -367,6 +384,16 @@ impl fmt::Display for SamplerParam {
             Self::Volume => "volume",
             Self::Gate => "gate",
             Self::Pitch => "pitch",
+        })
+    }
+}
+
+impl fmt::Display for RecordParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Toggle => "toggle",
         })
     }
 }
