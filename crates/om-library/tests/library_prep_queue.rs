@@ -243,6 +243,46 @@ fn prep_queue_dao_enqueue_keeps_order_and_move_rewrites_positions() {
 }
 
 #[test]
+fn prep_queue_dao_enqueues_only_unanalysed_tracks_that_were_never_queued() {
+    let mut f = Fixture::new(2);
+    let (a, b, c, analysed, failed) = (
+        f.add_track(None),
+        f.add_track(None),
+        f.add_track(None),
+        f.add_track(None),
+        f.add_track(None),
+    );
+    f.lib
+        .tracks()
+        .set_analysis(analysed, 128.0, "", "")
+        .unwrap();
+    let dao = f.lib.prep_queue();
+    dao.enqueue(failed).unwrap();
+    dao.set_status(failed, PrepStatus::Failed, "boom").unwrap();
+
+    assert_eq!(dao.enqueue_unanalysed().unwrap(), 3);
+    let all = dao.all().unwrap();
+    let ids: Vec<i64> = all.iter().map(|e| e.track_id).collect();
+    assert_eq!(
+        ids,
+        [failed, a, b, c],
+        "appended in track order, behind the old row"
+    );
+    assert_eq!(
+        dao.find(failed).unwrap().unwrap().status,
+        PrepStatus::Failed
+    );
+    assert_eq!(dao.find(a).unwrap().unwrap().status, PrepStatus::Queued);
+    assert!(dao.find(analysed).unwrap().is_none());
+
+    assert_eq!(
+        dao.enqueue_unanalysed().unwrap(),
+        0,
+        "a second pass adds nothing"
+    );
+}
+
+#[test]
 fn prep_queue_dao_prioritise_jumps_ahead_and_latest_wins() {
     let mut f = Fixture::new(2);
     let (a, b, c) = (f.add_track(None), f.add_track(None), f.add_track(None));

@@ -278,3 +278,56 @@ fn sidebar_starts_on_all_tracks_and_sorting_flips_on_a_second_click() {
     assert!(panel.sort_by_column(title_column));
     assert_eq!(panel.sort_indicator(), Some((title_column, false)));
 }
+
+#[test]
+fn a_playlist_is_named_with_the_keys_filled_by_a_drop_and_emptied_with_remove() {
+    let fx = fixture("playlist");
+    add(&fx, "Alpha", "8A", false);
+    add(&fx, "Bravo", "9A", false);
+    let (mut panel, _engine) = panel(&fx);
+    panel.tick();
+
+    panel.begin_new_playlist();
+    assert!(panel.is_typing());
+    type_text(&mut panel, "Warm up");
+    assert_eq!(
+        panel.name_entry.as_ref().unwrap().prompt(),
+        "New playlist: Warm up|"
+    );
+    assert_eq!(panel.handle_key("enter", None), KeyOutcome::Edited);
+    assert!(!panel.is_typing());
+    let playlist = panel
+        .browser
+        .selected_playlist()
+        .expect("the new playlist is shown");
+
+    // A refused (blank) name keeps the box open, Escape closes it.
+    panel.begin_new_playlist();
+    panel.handle_key("enter", None);
+    assert!(panel.is_typing() && panel.browser.status_is_error());
+    panel.handle_key("escape", None);
+    assert!(!panel.is_typing());
+
+    // Back on all tracks, drag Bravo onto the playlist.
+    let all = panel.sidebar_lines()[0].node.clone();
+    panel.select_sidebar(&all);
+    panel.tick();
+    let bravo = (0..panel.row_count())
+        .filter_map(|row| panel.row(row))
+        .find(|r| r.cells.iter().any(|c| c == "Bravo"))
+        .expect("Bravo is listed");
+    assert_eq!(panel.drop_on_playlist(playlist, &bravo.drag), Some(1));
+    assert_eq!(panel.drop_on_playlist(playlist, "some other drag"), None);
+
+    let line = panel
+        .sidebar_lines()
+        .into_iter()
+        .find(|l| l.node.playlist_id == playlist && l.node.label == "Warm up")
+        .expect("the playlist is in the sidebar");
+    panel.select_sidebar(&line.node);
+    panel.tick();
+    assert_eq!(panel.row_count(), 1);
+    panel.select_row(0);
+    assert_eq!(panel.remove_selected_from_playlist(), 1);
+    assert_eq!(panel.row_count(), 0);
+}

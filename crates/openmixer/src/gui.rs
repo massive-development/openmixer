@@ -46,6 +46,9 @@ pub fn main(args: &[String]) -> ExitCode {
     let mock = args.iter().any(|a| a == "--mock-device");
     let smoke = args.iter().any(|a| a == "--smoke");
     let debug = args.iter().any(|a| a == "--debug-panel");
+    // `--demo-map`: the merged fixture controller maps, loaded into a temporary map file on a mock
+    // MIDI backend, so the mapping editor is populated (see `openmixer::demo_map`).
+    let demo_map = openmixer::flags::demo_map(args);
     // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
     // window stays open; used by tools/screenshots.sh.
     // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
@@ -55,6 +58,8 @@ pub fn main(args: &[String]) -> ExitCode {
     // the header shows a live Record button (see docs/screenshots/REVIEW.md). Never the user's folder.
     let demo_record = args.iter().any(|a| a == "--demo-record");
     let demo = args.iter().any(|a| a == "--demo-library") || automix_demo || demo_record;
+    // Every demo flag saves preferences into the scratch folder, never the user's file.
+    let demo_run = openmixer::flags::demo_run(args);
     let start_tab = match openmixer::flags::settings_tab(args) {
         Ok(tab) => tab,
         Err(message) => {
@@ -75,7 +80,7 @@ pub fn main(args: &[String]) -> ExitCode {
     }
     // MIDI: the system backend on a real run; a mock controller under --mock-device and --smoke, so
     // neither run opens hardware.
-    if mock || smoke {
+    if mock || smoke || demo_map {
         let midi = om_midi::MockBackend::new();
         midi.add_input("Mock controller");
         composition.attach_midi(Box::new(midi));
@@ -85,13 +90,32 @@ pub fn main(args: &[String]) -> ExitCode {
             Err(error) => eprintln!("openmixer: MIDI unavailable: {error}"),
         }
     }
+    if demo_map {
+        // Saves from the editor go to this temporary file, never the user's map.
+        let dir = library_smoke::scratch_dir().join("map");
+        match openmixer::demo_map::write_demo_map(&dir) {
+            Ok(path) => {
+                if let Some(service) = &composition.services.midi {
+                    if let Err(error) = service.load_map_file(&path) {
+                        eprintln!("openmixer: demo map: {error}");
+                    }
+                }
+                composition.prefs.midi.map_file = path.to_string_lossy().into_owned();
+            }
+            Err(error) => eprintln!("openmixer: demo map: {error}"),
+        }
+    }
     let engine = Arc::clone(&composition.engine);
     let router = Arc::clone(&composition.router);
     let Some(audio) = composition.take_audio() else {
         eprintln!("openmixer: the audio side was already taken");
         return ExitCode::FAILURE;
     };
-    let prefs_file = om_ui::preferences::default_file();
+    let prefs_file = openmixer::composition::prefs_save_target(
+        demo_run,
+        om_ui::preferences::default_file(),
+        &library_smoke::scratch_dir(),
+    );
     let home = dirs::home_dir().map(std::path::PathBuf::into_os_string);
     let user_themes = default_user_directory(home.as_deref());
 
@@ -307,6 +331,7 @@ pub fn main(args: &[String]) -> ExitCode {
         stems: library
             .clone()
             .map(|hub| Box::new(HubStems(hub)) as Box<dyn StemHost>),
+        mapping: composition.borrow().mapping_editor(),
         record: Some(Box::new(AppRecordHost(composition.borrow().record.clone()))
             as Box<dyn om_ui::settings::RecordHost>),
         start_tab: start_tab.map(str::to_owned),

@@ -10,7 +10,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 - **Foundation (Phase F): done.** Typed control surface (`ParamId`, `Command`, typed engine targets, string façade), pulled `EngineSnapshot`, `WorkerPool`, typed error enums with `AppError`, and `Services`/`MidiHost`. It clears no item below by itself; the items build on it.
 - **Todo 19:** stem separation is built but unproven on real audio. `om-stems` has `OrtInference` (ONNX Runtime, feature `onnx`, tensor names and shapes checked at load), `HtDemucsPipeline` (segmenting, resampling, overlap-add), `StemService` (worker, cache, library index) and the app side `StemsHost` (model install, service created on first submit). The real htdemucs export (`tools/export_htdemucs.py`) has not been run or checked against the contract, the toy ONNX fixture is the only ONNX test, and nothing has been verified by ear. Open: the export and a real-model run, then a listening check. L
-- **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. Stem transitions (39) are still open. L
+- **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. Stem transitions (39) are done and tested on the engine; not heard. L
 - **Todo 30:** done at logic and view level (Wave 7 S6/S7): stem pads in the deck card, cached stems auto-load (`stems.autoLoad`), Load/Stems off, MIDI stem targets. Not checked by ear; mock device only. Transitions are Todo 39. L
 - **Todo 38:** done at logic and view level (Wave 7 A1-A6): the Automix settings page (Todo 29), the main-window bar, the `--demo-automix` scene and the A6 safety tests. Not verified by ear (mock device only). Skip is not offered; the queue skips tracks that are not analysed yet. L
 - **Todo 40:** 8-pad sampler: the engine (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`), the sample bank (P2: `<data>/samples/sampler.json`, off-thread import, start-up apply), the pad view-model and sampler strip (P4: `om-ui::sampler_binding`, `om-ui-gpui::sampler_view`) and the soak and UI gate scenarios (P5) are built, at logic and view level. Not heard, and the window was checked on screenshots only, not by eye. Open: the user's listening and by-eye check; a per-pad mode and gain on MIDI; learn for pad settings. M
@@ -31,16 +31,11 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 ### (C) Smaller gaps
 
-- **Todo 29:** `--settings` start flag: not in `crates/openmixer/src`. S
-- **Todo 29:** live scan-interval change: the interval is read when the library starts (`om-ui::settings`). S
-- **Todo 29:** MIDI hot-plug refresh: `midi.rs` reconciles ports about once a second, but the MIDI page list is read on open and on page change only. S
 - **Todo 10a:** plugin dynamic loading: open decision; `PluginLoader` reports every shared library as unsupported. S for the decision, L to implement
 - **Todo 35:** HID layer: not started. L
-- **Todo 36:** mapping editor: only learn start and cancel exist; no in-app editing of maps. M
 - **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
 - **Todo 8b:** FFmpeg decode backend: not started (optional). M
-- **Todo 24:** auto-enqueue after scan: the prep queue is fed only by a browser click and by track load (`browser.rs`, `track_loader.rs`); a scan does not enqueue. S
-- **Todo 28:** playlist editing UI: the playlist DAO has create, rename, move, add and remove, but the sidebar only selects. M
+- **Todo 28:** playlist editing UI: new, rename, delete (second press), add by drop on a sidebar playlist and remove tracks are built (`LibraryBrowser`, sidebar buttons); not checked by eye. Open: nested folders and reordering entries in a playlist. S
 
 Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
 
@@ -184,6 +179,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 24:** Track prep queue
   - Persisted queue with order, priority and status
   - Bounded in-flight analysis; results written back to the library
+  - A finished library scan queues every track with no BPM that was never queued (`PrepQueue::enqueue_unanalysed`), so new files are analysed without a click
 
 ## Wave 5: UI
 
@@ -213,7 +209,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Audio/MIDI settings, preferences
   - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
-  - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
+  - `--settings[=Tab]` start flag, live scan-interval change and the MIDI input list refreshing about once a second while the MIDI page shows are done
+  - Also open: dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
   - Automix settings page and bar: done at logic and view level (Todo 38); the rest of the Todo 29 list stays open
 
 - [x] **Todo 30:** Stem pads UI (logic and deck-card view done, not verified by ear; the mock device plays nothing)
@@ -229,13 +226,13 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - Todos 32/33 moved to Wave 2
 - [ ] **Todo 34:** Plug-and-play controller maps (`fixtures/controllers` holds only test fixtures)
 - [ ] **Todo 35:** HID layer
-- [ ] **Todo 36:** Mapping editor UI
+- [x] **Todo 36:** Mapping editor UI (logic and view level: edit, undo, conflicts, learn, save and import in the Mapping tab; not verified with hardware)
 
 ## Wave 7: Intelligence
 
 - [x] **Todo 37:** Stem-aware mixing DSP (engine level, Wave 7 S5: `om-dsp` `StemMixer`, stem-mode decks, `stem.*` ids and `Command::LoadStems`; pads UI is Todo 30, transitions Todo 39)
 - [x] **Todo 38:** Automix transition engine: planner, controller, queue, loader host, settings page and bar done and tested without audio (Wave 7 A1-A6); not verified by ear
-- [ ] **Todo 39:** Stem transitions: done at helper level (Wave 7 S8: `om-automix` `stem_fade`, the `StemFade` plan with bass swap, vocals out, drums-only bridge and filter sweep, and a `StemFadeRunner` that sends `Command::Param` on the control tick and skips decks without stems). Driven by the automix planner (A4: `BassSwap` and `StemBridge` styles read the start gains from the snapshot and fall back to `Crossfade` without stems) but by no UI or real deck yet; not heard
+- [x] **Todo 39:** Stem transitions: `om-automix` `stem_fade` (bass swap, vocals out, drums-only bridge, filter sweep), the `StemFadeRunner` driven by the controller, and the `BassSwap` and `StemBridge` styles in the planner (fall back to `Crossfade` without stems). The Automix settings page picks the style. Tested end to end on the real `DjEngine` with stem-mode decks on the mock device (`openmixer/tests/automix_stems.rs`: bass swap, stem bridge, fallback); not heard
 - [x] **Todo 40:** 8-pad sampler: engine, ids, snapshot and command (P1/P3); sample bank (P2); pad view-model and strip (P4); soak and UI gate scenarios (P5). Done at logic and view level; not heard, not seen by eye
 
 ## Wave 8: Pro Surface

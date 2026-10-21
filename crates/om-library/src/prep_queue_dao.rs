@@ -89,6 +89,23 @@ impl<'a> PrepQueueDao<'a> {
         Ok(())
     }
 
+    /// Appends every track that has no BPM and no queue row yet, in track order, and returns how
+    /// many it added. A track that was queued before (done, failed or cancelled) is left alone, so
+    /// a failing file is not retried on every scan.
+    pub fn enqueue_unanalysed(&self) -> Result<usize> {
+        let added = self.db.connection().execute(
+            "INSERT INTO prep_queue (track_id, position, priority, status) \
+             SELECT t.id, \
+                    (SELECT COALESCE(MAX(position), -1) FROM prep_queue) + ROW_NUMBER() OVER (ORDER BY t.id), \
+                    0, 'queued' \
+             FROM tracks t \
+             WHERE t.bpm IS NULL AND NOT EXISTS (SELECT 1 FROM prep_queue q WHERE q.track_id = t.id) \
+             ORDER BY t.id;",
+            [],
+        )?;
+        Ok(added)
+    }
+
     /// Runs next among queued entries (the latest call goes first).
     pub fn prioritise(&self, track_id: i64) -> Result<()> {
         self.db.connection().execute(

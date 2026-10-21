@@ -128,6 +128,22 @@ fn nothing_scans_until_the_fake_clock_reaches_the_interval() {
 }
 
 #[test]
+fn a_changed_interval_applies_to_the_running_thread() {
+    let f = Fixture::new();
+    let w = f.make(10_000, false);
+    w.add(&f.music).unwrap();
+    assert!(w.wait_for_scans(1, WAIT));
+
+    f.fake_now.store(500, Ordering::SeqCst);
+    w.poke();
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(w.scan_count(), 1); // 500 ms into a 10 s interval
+
+    w.set_interval_ms(400);
+    assert!(w.wait_for_scans(2, WAIT)); // 500 ms is now past the interval
+}
+
+#[test]
 fn manual_trigger_scans_immediately_and_reports_summary() {
     let f = Fixture::new();
     let added = Arc::new(AtomicUsize::new(0));
