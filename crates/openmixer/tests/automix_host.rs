@@ -120,7 +120,7 @@ fn the_queue_asks_the_cache_for_a_grid_not_for_a_bpm() {
     let mut host = rig.host();
     let mut picks = Vec::new();
     for _ in 0..4 {
-        if let Some(next) = host.next_track(0) {
+        if let Some(next) = host.next_track(0, None) {
             picks.push(next.id);
         }
     }

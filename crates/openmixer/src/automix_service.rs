@@ -23,6 +23,9 @@ use om_core::{AutomixSnapshot, CommandSink, EngineSnapshot, ParamId};
 use om_engine::DjEngine;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+/// Most user-input notices kept between two controller steps.
+const NOTICE_CAP: usize = 64;
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -86,8 +89,14 @@ impl AutomixShared {
     /// Reports user input on `id`. If it touches the decks being mixed, the running plan is
     /// cancelled on the next tick. Automix's own ids are ignored.
     pub fn notify_user_input(&self, id: &ParamId) {
-        if !matches!(id, ParamId::Automix(_)) && self.control.is_enabled() {
-            lock(&self.notices).push(id.clone());
+        if matches!(id, ParamId::Automix(_)) || !self.control.is_enabled() {
+            return;
+        }
+        // Only the controls that matter are worth a notice: the controller checks each against the
+        // pair it mixes. Repeats collapse, and a burst that outruns the step is capped.
+        let mut notices = lock(&self.notices);
+        if notices.len() < NOTICE_CAP && !notices.contains(id) {
+            notices.push(id.clone());
         }
     }
 }
@@ -162,5 +171,38 @@ impl AutomixRunner {
         if *published != latest {
             *published = latest;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use om_core::param_id::DeckParam;
+
+    fn deck_id(deck: u8) -> ParamId {
+        ParamId::Deck {
+            deck,
+            p: DeckParam::Play,
+        }
+    }
+
+    #[test]
+    fn repeated_input_on_one_control_is_noted_once() {
+        let shared = AutomixShared::new();
+        shared.control().set_enabled(true);
+        for _ in 0..100 {
+            shared.notify_user_input(&deck_id(0));
+        }
+        assert_eq!(lock(&shared.notices).len(), 1);
+    }
+
+    #[test]
+    fn the_notice_inbox_is_capped() {
+        let shared = AutomixShared::new();
+        shared.control().set_enabled(true);
+        for deck in 0..200u8 {
+            shared.notify_user_input(&deck_id(deck));
+        }
+        assert_eq!(lock(&shared.notices).len(), NOTICE_CAP);
     }
 }

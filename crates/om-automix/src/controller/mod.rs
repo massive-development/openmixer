@@ -98,6 +98,10 @@ struct Run {
     sent: Vec<ParamId>,
     /// Ticks run in `Transitioning`.
     ticks: u64,
+    /// Automix loaded the incoming track itself (not the user's cue): only then may it re-pick.
+    auto_loaded: bool,
+    /// Re-picks made after the planner refused the pair.
+    plan_tries: u32,
 }
 
 pub struct AutomixController {
@@ -109,10 +113,17 @@ pub struct AutomixController {
     /// The deck whose current track already got its turn (planned, cancelled or failed): automix
     /// does not retry it.
     suppressed: Option<(u8, i64)>,
-    /// A deck automix stopped, with the length of the track it stopped on. The deck is loaded over
-    /// only while it still holds that track; a different length means the user loaded it.
-    stale_deck: Option<(u8, i64)>,
+    /// A deck automix stopped, with the length and the track id it stopped on. The deck is loaded
+    /// over only while it still holds that track: a different id (or, without ids, a different
+    /// length) means the user loaded it.
+    stale_deck: Option<(u8, i64, Option<i64>)>,
     out_cache: Option<(u8, i64, DeckInfo)>,
+    /// A negative lookup of the playing deck's analysis: (deck, length, until, control seconds).
+    no_analysis: Option<(u8, i64, f64)>,
+    /// The track whose missing analysis was already reported in `last_error`.
+    no_analysis_told: Option<(u8, i64)>,
+    /// A track automix stepped aside from: (deck, length, until). Not armed again before `until`.
+    hold: Option<(u8, i64, f64)>,
     force_start: bool,
     pending_input: Option<String>,
     load_failures: u32,
@@ -145,6 +156,9 @@ impl AutomixController {
             suppressed: None,
             stale_deck: None,
             out_cache: None,
+            no_analysis: None,
+            no_analysis_told: None,
+            hold: None,
             force_start: false,
             pending_input: None,
             load_failures: 0,
@@ -320,6 +334,15 @@ fn playing_deck(snap: &EngineSnapshot) -> Option<u8> {
     let first = playing.next()?;
     playing.next().is_none().then(|| u8::try_from(first).ok())?
 }
+
+/// Seconds a missing analysis is remembered before the host is asked again.
+const NO_ANALYSIS_TTL_S: f64 = 2.0;
+
+/// Seconds a track is held back after automix stepped aside from it.
+const RETRY_HOLD_S: f64 = 10.0;
+
+/// Re-picks after the planner refuses a pair (on top of the first pick).
+const MAX_PLAN_RETRIES: u32 = 3;
 
 /// The refusal when the two decks cannot be put on opposite crossfader sides.
 const NOT_OPPOSITE: &str = "decks are not on opposite crossfader sides";
