@@ -400,3 +400,24 @@ fn sampler_state_ids_for_every_pad_parse_and_read() {
         assert!(bad.parse::<StateId>().is_err(), "{bad}");
     }
 }
+
+/// The record map's ids parse: the target is a `record.*` ParamId (taken by the app's typed target,
+/// not the engine's), the LED source is a readable state id.
+#[test]
+fn every_id_in_record_map_json_is_valid() {
+    use om_core::{ParamId, StateId};
+    let text = std::fs::read_to_string(data_dir().join("record_map.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let (engine, _audio) = DjEngine::new(2);
+    let snapshot = engine.snapshot();
+    for m in json["mappings"].as_array().unwrap() {
+        let target = m["target"].as_str().unwrap();
+        let id: ParamId = target.parse().unwrap();
+        assert!(matches!(id, ParamId::Record(_)));
+        assert_eq!(id.to_string(), target);
+    }
+    for o in json["outputs"].as_array().unwrap() {
+        let id: StateId = o["source"].as_str().unwrap().parse().unwrap();
+        assert_eq!(snapshot.read(&id), Some(0.0), "idle reads 0");
+    }
+}

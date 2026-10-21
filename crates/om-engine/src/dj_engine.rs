@@ -14,6 +14,7 @@ use crate::deck_control::{DeckBank, DeckControl};
 use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
+use crate::recorder::{Recorder, RecorderControl, RecorderTap};
 use crate::sampler::{Sample, SampleRegistry, SamplerAudio, SamplerControl, SamplerError};
 use crate::stem_control::{snapshot_stems, EngineCommands, StemBank, StemSetRegistry};
 use crate::sync::Sync;
@@ -43,6 +44,7 @@ pub struct DjEngine {
     stem_sets: Arc<StemSetRegistry>,
     sampler: Arc<SamplerControl>,
     samples: Arc<SampleRegistry>,
+    recorder: Arc<RecorderControl>,
     /// Control-timer ticks so far; stamps [`EngineSnapshot::ticks`].
     ticks: AtomicU64,
     /// Snapshots built so far; stamps [`EngineSnapshot::built`].
@@ -56,6 +58,8 @@ pub struct DjEngineAudio {
     deck_buffers: Vec<StereoBuffer>,
     master: StereoBuffer,
     cue: StereoBuffer,
+    /// Taps the final master output (after gain and inserts) for mix recording.
+    recorder: RecorderTap,
     max_block: usize,
 }
 
@@ -104,6 +108,7 @@ impl DjEngine {
             deck_audio.push(audio);
         }
         let fx = Arc::new(FxRouting::new(&mixer_control));
+        let (recorder_tap, recorder) = Recorder::create();
         let engine = Self {
             decks,
             controls,
@@ -113,6 +118,7 @@ impl DjEngine {
             stem_sets: Arc::new(StemSetRegistry::default()),
             sampler: Arc::new(sampler_control),
             samples: Arc::new(SampleRegistry::default()),
+            recorder: Arc::new(recorder),
             ticks: AtomicU64::new(0),
             builds: AtomicU64::new(0),
         };
@@ -122,6 +128,7 @@ impl DjEngine {
             deck_buffers: (0..count).map(|_| StereoBuffer::new()).collect(),
             master: StereoBuffer::new(),
             cue: StereoBuffer::new(),
+            recorder: recorder_tap,
             max_block: 0,
         };
         (engine, audio)
@@ -166,6 +173,16 @@ impl DjEngine {
     /// thread.
     pub fn register_stem_set(&self, dir: &Path) -> StemSetRef {
         self.stem_sets.register(dir)
+    }
+
+    /// The mix recorder's control side.
+    pub fn recorder(&self) -> &RecorderControl {
+        &self.recorder
+    }
+
+    /// Shared handle to the recorder, for the app's `record.*` target.
+    pub fn recorder_handle(&self) -> Arc<RecorderControl> {
+        Arc::clone(&self.recorder)
     }
 
     /// The sampler's control side.
@@ -325,6 +342,7 @@ impl DjEngine {
             stems,
             sampler: self.sampler.snapshot(),
             automix: AutomixSnapshot::default(),
+            record: self.recorder.snapshot(),
         }
     }
 }
@@ -350,6 +368,8 @@ impl DjEngineAudio {
             &mut self.cue.left[..n],
             &mut self.cue.right[..n],
         );
+        self.recorder
+            .process(&self.master.left[..n], &self.master.right[..n]);
 
         let channels = outputs.len();
         for (c, out) in outputs.iter_mut().enumerate() {
@@ -376,6 +396,7 @@ impl AudioCallback for DjEngineAudio {
             deck.prepare(sample_rate, self.max_block);
         }
         self.mixer.prepare(sample_rate, self.max_block);
+        self.recorder.prepare(sample_rate);
         for buf in &mut self.deck_buffers {
             buf.resize(self.max_block);
         }

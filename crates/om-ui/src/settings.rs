@@ -13,6 +13,7 @@ mod library;
 mod midi;
 mod panel;
 mod plugins;
+mod record;
 mod stems;
 
 pub use appearance::AppearanceSettingsPage;
@@ -24,6 +25,7 @@ pub use library::{LibraryControl, LibrarySettingsPage};
 pub use midi::{learnable_targets, MidiHost, MidiInputs, MidiPage, MidiSettingsPage};
 pub use panel::{PageKind, SettingsPanel};
 pub use plugins::{PluginHost, PluginsSettingsPage};
+pub use record::{RecordHost, RecordSettingsPage, FORMAT_LABELS as RECORD_FORMAT_LABELS};
 pub use stems::{format_gib, StemsSettingsPage};
 
 /// An error from a layer the settings page does not name (the audio device, the MIDI service, the

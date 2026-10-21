@@ -15,5 +15,6 @@ pub use cpal_device::{
 pub use device::{AudioDevice, AudioError};
 pub use mock::MockAudioDevice;
 pub use om_engine::{
-    AudioCallback, DjEngine, DjEngineAudio, LatencyMonitor, LatencyStats, OutputPairs, OutputRouter,
+    AudioCallback, DjEngine, DjEngineAudio, LatencyMonitor, LatencyStats, OutputPairs,
+    OutputRouter, RecordSettings,
 };
