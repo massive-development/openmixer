@@ -14,6 +14,7 @@ use gpui::{
 };
 use om_ui::geometry::Rect;
 use om_ui::library::{columns, SEARCH_PLACEHOLDER};
+use om_ui::sidebar::SidebarKind;
 use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::ThemeTokens;
 
@@ -112,7 +113,8 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .collect();
     let sidebar = panel.sidebar_lines();
     let search_text = panel.browser.search_text().to_owned();
-    let search_active = panel.search_active;
+    let name_prompt = panel.name_entry.as_ref().map(|entry| entry.prompt());
+    let search_active = panel.search_active || name_prompt.is_some();
     let status = panel.browser.status().to_owned();
     let status_error = panel.browser.status_is_error();
     let num_decks = panel.browser.num_decks();
@@ -130,9 +132,15 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .p(px(4.))
         .bg(paint(t.well))
         .overflow_hidden();
+    let drop_target = {
+        let mut c = paint(t.master);
+        c.a = 0.35;
+        c
+    };
     for line in sidebar {
         let node = line.node.clone();
         let lit = line.selected;
+        let playlist = (node.kind == SidebarKind::Playlist).then_some(node.playlist_id);
         tree = tree.child(
             div()
                 .h(px(ROW_HEIGHT))
@@ -147,6 +155,14 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
                     t.text_secondary
                 }))
                 .child(line.node.label.clone())
+                // Tracks dropped on a playlist are added to it.
+                .when_some(playlist, |el, id| {
+                    el.drag_over::<TrackDragPayload>(move |style, _, _, _| style.bg(drop_target))
+                        .on_drop(cx.listener(move |this, payload: &TrackDragPayload, _, cx| {
+                            with_library(this, |p| p.drop_on_playlist(id, &payload.description));
+                            cx.notify();
+                        }))
+                })
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _: &MouseDownEvent, _, cx| {
@@ -156,9 +172,29 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
                 ),
         );
     }
+    // The playlist actions sit under the tree.
+    let playlist_actions = div()
+        .absolute()
+        .left(px(0.))
+        .bottom(px(0.))
+        .w(px(SIDEBAR_WIDTH))
+        .p(px(4.))
+        .flex()
+        .flex_wrap()
+        .gap(px(4.))
+        .child(action_button(&t, "New", cx, |p| p.begin_new_playlist()))
+        .child(action_button(&t, "Rename", cx, |p| {
+            p.begin_rename_playlist()
+        }))
+        .child(action_button(&t, "Delete", cx, |p| p.delete_playlist()))
+        .child(action_button(&t, "Remove tracks", cx, |p| {
+            p.remove_selected_from_playlist();
+        }));
 
     // Toolbar: search box, load buttons, analyse, status line.
-    let search_label = if search_text.is_empty() && !search_active {
+    let search_label = if let Some(prompt) = name_prompt.clone() {
+        prompt
+    } else if search_text.is_empty() && !search_active {
         SEARCH_PLACEHOLDER.to_owned()
     } else if search_active {
         format!("{search_text}|")
@@ -176,11 +212,13 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .border_1()
         .border_color(paint(if search_active { t.highlight } else { t.border }))
         .bg(paint(t.surface_raised))
-        .text_color(paint(if search_text.is_empty() && !search_active {
-            t.text_muted.with_multiplied_alpha(0.8)
-        } else {
-            t.text_primary
-        }))
+        .text_color(paint(
+            if search_text.is_empty() && !search_active && name_prompt.is_none() {
+                t.text_muted.with_multiplied_alpha(0.8)
+            } else {
+                t.text_primary
+            },
+        ))
         // The hint is dim and italic so it never reads as a typed query.
         .when(search_text.is_empty() && !search_active, |el| el.italic())
         .child(search_label)
@@ -303,6 +341,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     }
 
     root.child(tree)
+        .child(playlist_actions)
         .child(toolbar)
         .child(status_line)
         .child(header)

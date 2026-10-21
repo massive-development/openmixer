@@ -60,6 +60,8 @@ pub struct LibraryBrowser {
     events: Receiver<LibraryEvent>,
     /// Tracks whose analysis finished since the last [`LibraryBrowser::take_analysed`].
     analysed: Vec<i64>,
+    /// The playlist a first Delete press named; a second press on the same one removes it.
+    delete_armed: Option<i64>,
 }
 
 impl LibraryBrowser {
@@ -99,6 +101,7 @@ impl LibraryBrowser {
             selected_rows: BTreeSet::new(),
             events,
             analysed: Vec::new(),
+            delete_armed: None,
         };
         browser.apply_query(services);
         browser
@@ -264,6 +267,198 @@ impl LibraryBrowser {
             self.set_status("Select tracks to analyse first".to_owned(), true);
         }
         queued
+    }
+
+    /// Creates a playlist at the top level and selects it. `None` (with the reason in the status
+    /// line) for a blank name or a library error.
+    pub fn create_playlist(&mut self, services: &mut LibraryServices, name: &str) -> Option<i64> {
+        let name = name.trim();
+        if name.is_empty() {
+            self.set_status("Name the playlist first".to_owned(), true);
+            return None;
+        }
+        match services.library().playlists().create(name, None, false) {
+            Ok(id) => {
+                self.playlists_changed(services);
+                self.select_sidebar(services, SidebarKind::Playlist, id, "");
+                self.set_status(format!("Created playlist {name}"), false);
+                Some(id)
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't create the playlist: {error}"), true);
+                None
+            }
+        }
+    }
+
+    /// Renames the playlist shown. Returns whether it was renamed.
+    pub fn rename_selected_playlist(&mut self, services: &mut LibraryServices, name: &str) -> bool {
+        let Some(id) = self.selected_playlist() else {
+            self.set_status("Select a playlist first".to_owned(), true);
+            return false;
+        };
+        let name = name.trim();
+        if name.is_empty() {
+            self.set_status("Name the playlist first".to_owned(), true);
+            return false;
+        }
+        match services.library().playlists().rename(id, name) {
+            Ok(()) => {
+                self.playlists_changed(services);
+                self.set_status(format!("Renamed to {name}"), false);
+                true
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't rename the playlist: {error}"), true);
+                false
+            }
+        }
+    }
+
+    /// Removes the playlist shown, on the second call for the same playlist: the first call only
+    /// says what Delete would do. The tracks stay in the library. Returns whether it was removed.
+    pub fn delete_selected_playlist(&mut self, services: &mut LibraryServices) -> bool {
+        let Some(id) = self.selected_playlist() else {
+            self.set_status("Select a playlist first".to_owned(), true);
+            return false;
+        };
+        if self.delete_armed != Some(id) {
+            self.delete_armed = Some(id);
+            let label = self.selected.label.clone();
+            self.set_status(
+                format!("Delete {label}? Press Delete again (its tracks stay in the library)"),
+                true,
+            );
+            return false;
+        }
+        self.delete_armed = None;
+        match services.library().playlists().remove(id) {
+            Ok(()) => {
+                self.selected = self.nodes.first().cloned().unwrap_or(self.selected.clone());
+                self.playlists_changed(services);
+                self.set_status("Deleted the playlist".to_owned(), false);
+                true
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't delete the playlist: {error}"), true);
+                false
+            }
+        }
+    }
+
+    /// Appends the selected rows to playlist `playlist_id`, skipping tracks already in it. Returns
+    /// how many were added.
+    pub fn add_selected_to_playlist(
+        &mut self,
+        services: &mut LibraryServices,
+        playlist_id: i64,
+    ) -> usize {
+        let ids: Vec<i64> = self
+            .selected_rows()
+            .into_iter()
+            .filter_map(|row| self.model.row_at(row as isize).map(|t| t.id))
+            .collect();
+        if ids.is_empty() {
+            self.set_status("Select tracks to add first".to_owned(), true);
+            return 0;
+        }
+        self.add_tracks_to_playlist(services, playlist_id, &ids)
+    }
+
+    /// Appends `track_ids` to playlist `playlist_id`, skipping tracks already in it (a drop of
+    /// tracks on a sidebar playlist lands here). Returns how many were added.
+    pub fn add_tracks_to_playlist(
+        &mut self,
+        services: &mut LibraryServices,
+        playlist_id: i64,
+        track_ids: &[i64],
+    ) -> usize {
+        let lists = services.library().playlists();
+        let present: BTreeSet<i64> = match lists.entries(playlist_id) {
+            Ok(entries) => entries.iter().map(|e| e.track_id).collect(),
+            Err(error) => {
+                self.set_status(format!("Couldn't read the playlist: {error}"), true);
+                return 0;
+            }
+        };
+        let mut added = 0;
+        let mut seen = present;
+        for &id in track_ids {
+            if !seen.insert(id) {
+                continue;
+            }
+            match lists.add_track(playlist_id, id, -1) {
+                Ok(_) => added += 1,
+                Err(error) => {
+                    self.set_status(format!("Couldn't add to the playlist: {error}"), true);
+                    break;
+                }
+            }
+        }
+        if added > 0 {
+            self.playlists_changed(services);
+            let name = find_node(&self.nodes, &|n| {
+                n.kind == SidebarKind::Playlist && n.playlist_id == playlist_id
+            })
+            .map(|n| n.label)
+            .unwrap_or_default();
+            self.set_status(format!("Added {added} to {name}"), false);
+        } else if !self.status_is_error {
+            self.set_status("Already in the playlist".to_owned(), false);
+        }
+        added
+    }
+
+    /// Takes the selected rows out of the playlist shown. Returns how many entries were removed.
+    pub fn remove_selected_from_playlist(&mut self, services: &mut LibraryServices) -> usize {
+        let Some(id) = self.selected_playlist() else {
+            self.set_status("Open a playlist to remove tracks from it".to_owned(), true);
+            return 0;
+        };
+        let wanted: BTreeSet<i64> = self
+            .selected_rows()
+            .into_iter()
+            .filter_map(|row| self.model.row_at(row as isize).map(|t| t.id))
+            .collect();
+        if wanted.is_empty() {
+            self.set_status("Select tracks to remove first".to_owned(), true);
+            return 0;
+        }
+        let lists = services.library().playlists();
+        let entries = match lists.entries(id) {
+            Ok(entries) => entries,
+            Err(error) => {
+                self.set_status(format!("Couldn't read the playlist: {error}"), true);
+                return 0;
+            }
+        };
+        let mut removed = 0;
+        for entry in entries.iter().filter(|e| wanted.contains(&e.track_id)) {
+            match lists.remove_entry(entry.id) {
+                Ok(()) => removed += 1,
+                Err(error) => {
+                    self.set_status(format!("Couldn't remove from the playlist: {error}"), true);
+                    break;
+                }
+            }
+        }
+        if removed > 0 {
+            self.selected_rows.clear();
+            self.playlists_changed(services);
+            self.set_status(format!("Removed {removed} from the playlist"), false);
+        }
+        removed
+    }
+
+    /// The id of the playlist shown, when a playlist (not a folder or another node) is.
+    pub fn selected_playlist(&self) -> Option<i64> {
+        (self.selected.kind == SidebarKind::Playlist).then_some(self.selected.playlist_id)
+    }
+
+    /// Tells the other subscribers and redraws the sidebar and the table now.
+    fn playlists_changed(&mut self, services: &mut LibraryServices) {
+        services.notify_library_changed();
+        self.refresh(services);
     }
 
     /// Track ids whose analysis finished since the last call. The stem auto-prepare trigger reads
