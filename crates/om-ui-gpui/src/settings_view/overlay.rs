@@ -11,6 +11,7 @@ use super::plugins::*;
 use super::recording::*;
 use super::*;
 use crate::text_entry::{apply_key, EntryKey};
+use std::time::Instant;
 
 impl Shell {
     /// Runs `f` on the settings when the window has them.
@@ -113,6 +114,7 @@ impl Shell {
             focus.focus(window);
         }
         settings.poll_learn();
+        settings.poll_midi_inputs(Instant::now());
         settings.mapping_tick();
         let w = CARD_WIDTH.min(area.w - 2 * CARD_MARGIN).max(0);
         // The Appearance page is short: its card fits the content instead of showing empty space.
