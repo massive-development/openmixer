@@ -316,6 +316,7 @@ pub fn visible_cells(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record_bar::{automix_width, record_rect};
 
     #[test]
     fn rows_need_cells_and_a_positive_height() {
@@ -330,6 +331,43 @@ mod tests {
         assert!(LayoutSpec::from_json(r#"{"rows":[{"cells":[{}]}]}"#).is_err());
         assert!(LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":0,"weight":0}]}]}"#).is_err());
         assert!(LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":-1}]}]}"#).is_err());
+    }
+
+    /// At the test sizes the cells sit under the header strip (automix bar, Record button and the
+    /// Settings button, all in y `0..HEADER`), stay inside the window and never overlap each other.
+    #[test]
+    fn the_cells_clear_the_header_strip_and_each_other_at_the_test_sizes() {
+        const HEADER: i32 = 32;
+        const SETTINGS_RESERVE: i32 = 96;
+        const GAP: i32 = 8;
+        let spec = LayoutSpec::standard(2);
+        for (w, h) in [(900, 600), (1024, 640), (1280, 800), (1920, 1080)] {
+            let header = [
+                Rect::new(0, 0, automix_width(w, SETTINGS_RESERVE), HEADER),
+                record_rect(w, 0, HEADER, SETTINGS_RESERVE).expect("the record button fits"),
+                Rect::new(w - SETTINGS_RESERVE, 0, SETTINGS_RESERVE, HEADER),
+            ];
+            let cells = compute_layout(&spec, Rect::new(0, HEADER, w, h - HEADER), GAP);
+            for cell in &cells {
+                let b = cell.bounds;
+                assert!(
+                    b.y >= HEADER && b.x >= 0 && b.x + b.w <= w && b.y + b.h <= h,
+                    "{w}x{h}: {b:?}"
+                );
+                for strip in &header {
+                    assert!(!overlaps(b, *strip), "{w}x{h}: {b:?} over {strip:?}");
+                }
+            }
+            for (i, a) in cells.iter().enumerate() {
+                for b in &cells[i + 1..] {
+                    assert!(!overlaps(a.bounds, b.bounds), "{w}x{h}: {a:?} vs {b:?}");
+                }
+            }
+        }
+    }
+
+    fn overlaps(a: Rect, b: Rect) -> bool {
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
     }
 
     #[test]

@@ -409,6 +409,7 @@ impl RecorderControl {
             recording: state == RecordState::Recording,
             failed: state == RecordState::Error,
             elapsed_s: self.shared.frames.load(Relaxed) as f64 / self.shared.rate.load().max(1.0),
+            bytes: self.shared.bytes.load(Relaxed),
             dropped_frames: self.shared.dropped.load(Relaxed),
             peak_left: self.shared.peak_l.load(),
             peak_right: self.shared.peak_r.load(),
