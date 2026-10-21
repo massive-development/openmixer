@@ -31,15 +31,11 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 ### (C) Smaller gaps
 
-- **Todo 29:** `--settings` start flag: not in `crates/openmixer/src`. S
-- **Todo 29:** live scan-interval change: the interval is read when the library starts (`om-ui::settings`). S
-- **Todo 29:** MIDI hot-plug refresh: `midi.rs` reconciles ports about once a second, but the MIDI page list is read on open and on page change only. S
 - **Todo 10a:** plugin dynamic loading: open decision; `PluginLoader` reports every shared library as unsupported. S for the decision, L to implement
 - **Todo 35:** HID layer: not started. L
 - **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
 - **Todo 8b:** FFmpeg decode backend: not started (optional). M
-- **Todo 24:** auto-enqueue after scan: the prep queue is fed only by a browser click and by track load (`browser.rs`, `track_loader.rs`); a scan does not enqueue. S
-- **Todo 28:** playlist editing UI: the playlist DAO has create, rename, move, add and remove, but the sidebar only selects. M
+- **Todo 28:** playlist editing UI: new, rename, delete (second press), add by drop on a sidebar playlist and remove tracks are built (`LibraryBrowser`, sidebar buttons); not checked by eye. Open: nested folders and reordering entries in a playlist. S
 
 Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
 
@@ -183,6 +179,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 24:** Track prep queue
   - Persisted queue with order, priority and status
   - Bounded in-flight analysis; results written back to the library
+  - A finished library scan queues every track with no BPM that was never queued (`PrepQueue::enqueue_unanalysed`), so new files are analysed without a click
 
 ## Wave 5: UI
 
@@ -212,7 +209,8 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Audio/MIDI settings, preferences
   - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
-  - Also open: `--settings` start flag; a live scan-interval change (read when the library starts); MIDI hot-plug refresh while the overlay is open (lists are read on open and on each page change); dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
+  - `--settings[=Tab]` start flag, live scan-interval change and the MIDI input list refreshing about once a second while the MIDI page shows are done
+  - Also open: dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
   - Automix settings page and bar: done at logic and view level (Todo 38); the rest of the Todo 29 list stays open
 
 - [x] **Todo 30:** Stem pads UI (logic and deck-card view done, not verified by ear; the mock device plays nothing)

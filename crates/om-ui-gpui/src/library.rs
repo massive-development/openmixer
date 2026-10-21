@@ -156,6 +156,10 @@ impl LibraryControl for HubLibrary {
         LibraryControl::remove_watch_folder(&mut self.0.borrow_mut().services, folder)
     }
 
+    fn set_scan_interval_minutes(&mut self, minutes: i32) {
+        LibraryControl::set_scan_interval_minutes(&mut self.0.borrow_mut().services, minutes);
+    }
+
     fn rescan(&mut self) -> SettingsResult<()> {
         LibraryControl::rescan(&mut self.0.borrow_mut().services)
     }
@@ -216,12 +220,34 @@ pub enum KeyOutcome {
     Activated,
 }
 
+/// A playlist name being typed in the search box's place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameEntry {
+    /// `Some(id)` renames that playlist; `None` names a new one.
+    pub rename: Option<i64>,
+    pub text: String,
+}
+
+impl NameEntry {
+    /// What the box shows while the name is typed.
+    pub fn prompt(&self) -> String {
+        let what = if self.rename.is_some() {
+            "Rename playlist"
+        } else {
+            "New playlist"
+        };
+        format!("{what}: {}|", self.text)
+    }
+}
+
 pub struct LibraryPanel {
     hub: SharedHub,
     engine: Arc<DjEngine>,
     pub browser: LibraryBrowser,
     /// Typing goes to the search box (set by a click on it or by `/`).
     pub search_active: bool,
+    /// A playlist name being typed; takes the keys before the search box does.
+    pub name_entry: Option<NameEntry>,
     /// Set when a stems action needs the model first: the window opens the Library settings page.
     licence_request: bool,
     /// Column and direction of the last header click (`true` = ascending).
@@ -262,6 +288,7 @@ impl LibraryPanel {
             engine,
             browser,
             search_active: false,
+            name_entry: None,
             licence_request: false,
             sort: None,
             table_top: 0,
@@ -292,7 +319,104 @@ impl LibraryPanel {
     /// Rows in the table.
     /// True while the search field takes typed keys.
     pub fn is_typing(&self) -> bool {
-        self.search_active
+        self.search_active || self.name_entry.is_some()
+    }
+
+    /// Starts naming a new playlist.
+    pub fn begin_new_playlist(&mut self) {
+        self.search_active = false;
+        self.name_entry = Some(NameEntry {
+            rename: None,
+            text: String::new(),
+        });
+    }
+
+    /// Starts renaming the playlist shown; the status line says so when none is.
+    pub fn begin_rename_playlist(&mut self) {
+        match self.browser.selected_playlist() {
+            Some(id) => {
+                self.search_active = false;
+                self.name_entry = Some(NameEntry {
+                    rename: Some(id),
+                    text: self.browser.selected_node().label.clone(),
+                });
+            }
+            None => {
+                let mut h = self.hub.borrow_mut();
+                self.browser.rename_selected_playlist(&mut h.services, "");
+            }
+        }
+    }
+
+    /// Deletes the playlist shown, on the second press (see the browser).
+    pub fn delete_playlist(&mut self) {
+        let mut h = self.hub.borrow_mut();
+        self.browser.delete_selected_playlist(&mut h.services);
+    }
+
+    /// Takes the selected rows out of the playlist shown.
+    pub fn remove_selected_from_playlist(&mut self) -> usize {
+        let mut h = self.hub.borrow_mut();
+        self.browser.remove_selected_from_playlist(&mut h.services)
+    }
+
+    /// A drop on a sidebar playlist: adds the dragged track, or the whole selection when the
+    /// dragged track is part of it. `None` when the drag was not a library track.
+    pub fn drop_on_playlist(&mut self, playlist_id: i64, description: &str) -> Option<usize> {
+        let id = parse_track_drag(description)?;
+        let mut h = self.hub.borrow_mut();
+        let selected: Vec<i64> = self
+            .browser
+            .selected_rows()
+            .into_iter()
+            .filter_map(|row| self.browser.model.row_at(row as isize).map(|t| t.id))
+            .collect();
+        let ids = if selected.contains(&id) {
+            selected
+        } else {
+            vec![id]
+        };
+        Some(
+            self.browser
+                .add_tracks_to_playlist(&mut h.services, playlist_id, &ids),
+        )
+    }
+
+    /// Typed keys for the playlist name: text edits it, Enter creates or renames, Escape cancels.
+    fn handle_name_key(&mut self, key: &str, text: Option<&str>) -> KeyOutcome {
+        let Some(entry) = self.name_entry.as_mut() else {
+            return KeyOutcome::Ignored;
+        };
+        match key {
+            "escape" => {
+                self.name_entry = None;
+            }
+            "enter" => {
+                let entry = entry.clone();
+                let mut h = self.hub.borrow_mut();
+                let done = match entry.rename {
+                    Some(_) => self
+                        .browser
+                        .rename_selected_playlist(&mut h.services, &entry.text),
+                    None => self
+                        .browser
+                        .create_playlist(&mut h.services, &entry.text)
+                        .is_some(),
+                };
+                // A refused name stays open so it can be fixed; the status line says why.
+                if done {
+                    self.name_entry = None;
+                }
+            }
+            "backspace" => {
+                entry.text.pop();
+            }
+            _ => match text {
+                Some(typed) if !typed.chars().any(char::is_control) => entry.text.push_str(typed),
+                _ => return KeyOutcome::Ignored,
+            },
+        }
+        KeyOutcome::Edited
     }
 
     pub fn row_count(&self) -> usize {
@@ -504,6 +628,9 @@ impl LibraryPanel {
     /// `/` opens the box, arrows move the selection and Enter activates it.
     /// `text` is the typed character (if any); `key` is the key name.
     pub fn handle_key(&mut self, key: &str, text: Option<&str>) -> KeyOutcome {
+        if self.name_entry.is_some() {
+            return self.handle_name_key(key, text);
+        }
         if self.search_active {
             return match key {
                 "enter" => {
