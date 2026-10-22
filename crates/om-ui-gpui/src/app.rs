@@ -8,10 +8,11 @@ use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::library::{LibraryPanel, SharedHub};
 use crate::library_view::library_card;
-use crate::mixer_view::mixer_card;
+use crate::mixer_view::{channel_card, mixer_card};
 use crate::paint::{paint, place};
 use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
+use crate::stage_view::stage_card;
 use gpui::{
     div, prelude::*, px, size, App, Application, AsyncApp, Bounds, Context, FocusHandle,
     KeyDownEvent, Window, WindowBounds, WindowOptions,
@@ -24,7 +25,8 @@ use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{
-    visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIXER_SLOT, SAMPLER_SLOT,
+    channel_of_slot, visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIN_WINDOW,
+    MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
 };
 use om_ui::meter::meter_params;
 use om_ui::sample_bank::SampleBank;
@@ -118,6 +120,8 @@ pub struct Shell {
     last_tick: f64,
     frames: u64,
     frames_out: Arc<AtomicU64>,
+    /// Frame-time measurement, on when `OPENMIXER_FRAME_STATS` is set.
+    frame_stats: Option<crate::frame_stats::FrameStats>,
 }
 
 /// The theme the window uses: the active theme of a registry loaded with the built-ins.
@@ -196,6 +200,8 @@ impl Shell {
             last_tick: 0.0,
             frames: 0,
             frames_out,
+            frame_stats: std::env::var_os("OPENMIXER_FRAME_STATS")
+                .map(|_| crate::frame_stats::FrameStats::default()),
         }
     }
 
@@ -351,7 +357,13 @@ impl Shell {
         let t = &self.theme;
         match &cell.kind {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
+            CellKind::Slot(name) if name == STAGE_SLOT => stage_card(self, cell.bounds, cx),
             CellKind::Slot(name) if name == MIXER_SLOT => mixer_card(self, cell.bounds, cx),
+            CellKind::Slot(name)
+                if channel_of_slot(name).is_some_and(|ch| ch < self.mixer.strips.len()) =>
+            {
+                channel_card(self, channel_of_slot(name).unwrap_or(0), cell.bounds, cx)
+            }
             CellKind::Slot(name) if name == SAMPLER_SLOT => {
                 let focus = self
                     .sampler_focus
@@ -362,6 +374,8 @@ impl Shell {
             CellKind::Slot(name) if name == LIBRARY_SLOT && self.library.is_some() => {
                 library_card(self, cell.bounds, cx)
             }
+            // `compute_layout` flattens groups, so none reaches the view.
+            CellKind::Rows(_) => place(cell.bounds),
             CellKind::Slot(name) => {
                 let title = if name == LIBRARY_SLOT {
                     "Library not available (see the terminal for the reason)".to_owned()
@@ -383,6 +397,7 @@ impl Shell {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let frame_start = Instant::now();
         self.tick();
         window.request_animation_frame();
         if !window.is_window_active() {
@@ -510,6 +525,11 @@ impl Render for Shell {
         if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), window, cx) {
             root = root.child(overlay);
         }
+        if let Some(stats) = self.frame_stats.as_mut() {
+            if let Some(line) = stats.frame(frame_start, frame_start.elapsed()) {
+                eprintln!("frame stats: {line}");
+            }
+        }
         root
     }
 }
@@ -539,6 +559,8 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                // Below this the deck controls would overlap; see `main_layout::MIN_WINDOW`.
+                window_min_size: Some(size(px(MIN_WINDOW.0 as f32), px(MIN_WINDOW.1 as f32))),
                 ..Default::default()
             },
             move |_, cx| {

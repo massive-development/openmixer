@@ -24,7 +24,8 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 
 **Before implementing:**
 - [ ] Read `agents.md` for context
-- [ ] Identify the wave and todo number
+- [ ] Identify the track (see `ROADMAP.md`), and the wave and todo number
+- [ ] Read `docs/PRODUCT.md` if the change touches what a DJ sees or reaches
 - [ ] Check ADRs for design decisions
 - [ ] Verify no existing implementation exists
 
@@ -113,6 +114,17 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 2. Reuse an existing pattern wherever it fits rather than inventing a new one.
 3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
 4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
+
+## Experience bar (required for anything a DJ sees)
+
+`docs/PRODUCT.md` is the bar and ADR 0005 the decision. Interface work is not a wave and is not finished when the logic tests pass.
+
+- **Look at it.** A PR that changes what the window shows includes a screenshot from `tools/screenshots.sh`, and you have looked at it (not just that it rendered). Say what you saw and what is still wrong.
+- **Use real music** for anything involving waveforms, the library, analysis or colour. The demo tracks are sine waves and hide most defects.
+- **Judge it as a DJ would.** At the default window size and the minimum (`MIN_WINDOW`), can a DJ read the playing deck's BPM, key, time and phrase position at a glance, and reach EQ, transport and pads without looking? If not, say so in the PR.
+- **Layout and look may change.** Replace a layout or control when a better one is found. Keep the tests that guard function (no overlap, no clipping, the minimum window); update the ones that only recorded the old arrangement.
+- **Tokens, not literals** still applies (see "Styling a control"); if the look you need has no token, add one.
+- **Clean-room still applies.** Borrow the reason a layout works, not another product's names, icons, artwork or pixel layout.
 
 ## Token Efficiency & Knowledge Reuse (required)
 
@@ -318,6 +330,7 @@ All pull requests must:
 3. Have evidence file (for AI work)
 4. Update ADR if applicable
 5. Follow code style
+6. For changes to what the window shows: a screenshot you have looked at, and real music where it applies ("Experience bar")
 
 ## Support
 

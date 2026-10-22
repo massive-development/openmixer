@@ -4155,7 +4155,9 @@ dependencies = [
  "om-engine",
  "om-library",
  "om-midi",
+ "om-testing",
  "om-ui",
+ "tempfile",
 ]
 
 [[package]]

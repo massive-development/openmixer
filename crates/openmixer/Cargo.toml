@@ -23,13 +23,14 @@ dirs.workspace = true
 serde_json.workspace = true
 # The example plugin, compiled in as a built-in the Plugins page can load and unload.
 gain-plugin = { path = "../../examples/plugins/gain-plugin" }
-# The GPUI window (not a workspace member; see the root Cargo.toml). Off by default.
-om-ui-gpui = { path = "../om-ui-gpui", optional = true }
+# The GPUI window. On by default; `--no-default-features` builds the headless binary.
+om-ui-gpui = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["gui"]
 # Real stem separation through ONNX Runtime (see om-stems). Off by default: no runtime, no network.
 onnx = ["om-stems/onnx"]
+# The window. Off (`--no-default-features`) leaves only the headless flags: --smoke and --version.
 gui = ["dep:om-ui-gpui"]
 
 [lints]

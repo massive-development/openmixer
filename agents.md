@@ -10,9 +10,9 @@ OpenMixer is a clean-room, legally original implementation of professional DJ so
 
 ```
 openmixer/
-├── .github/workflows/        # rust.yml: the Rust CI (every PR); gui-check and gpui-lint are non-blocking
+├── .github/workflows/        # rust.yml: the Rust CI (every PR)
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
-│   └── om-ui-gpui/           # GPUI window: its own workspace, behind the openmixer `gui` feature
+│   └── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── legal/                # Legal documentation
@@ -28,8 +28,7 @@ openmixer/
 ├── rust-toolchain.toml       # Pinned toolchain
 ├── rustfmt.toml
 ├── clippy.toml
-├── deny.toml                 # Licence and ban policy (cargo deny)
-└── crates/om-ui-gpui/deny.toml  # GPUI policy: the root policy plus what the GPUI tree needs
+└── deny.toml                 # Licence and ban policy (cargo deny), including what the GPUI tree needs
 ```
 
 ## Architecture and Crate Responsibilities
@@ -49,7 +48,7 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
   - **Cancel rules (the user always wins):** a control that differs from the value automix last set (crossfader, either channel fader, EQ, filter, sync, play), a deck paused, unloaded, loaded over or seeked, `notify_user_input(id)` from the binding layer, `automix.cancel`, `automix.enable` off, or a rise in the host's underrun count (which also turns automix off) cancels the plan. Nothing is sent to a control the user moved; the crossfader, faders, play and seek are never put back; EQ, filter and FX moves go back to their plan-time values (`restore_on_cancel`) and stem moves follow `stem_cancel`. The track is not retried. Three load failures in a row turn automix off.
 - **Automix in the app** (`openmixer`): `automix_service` (`AutomixShared`: target, published `AutomixSnapshot`, host factory; `AutomixRunner`, stepped by the control thread, builds a snapshot only while automix is on or busy) and `automix_queue` (`LibraryQueue` over its own `Library` handle). The composition registers `Namespace::Automix`. `AutomixShared::overlay` puts the controller's snapshot into an `EngineSnapshot` (the engine leaves `automix` at its default). `Command::Automix` is routed by the router's sink to the same target.
 - **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
-- **`om-ui-gpui`** (own workspace, behind the `gui` feature): GPUI drawing and events over `om-ui` models.
+- **`om-ui-gpui`** (workspace member, the default `gui` feature): GPUI drawing and events over `om-ui` models.
 - **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
 
 Control paths, and what is live today:
@@ -127,8 +126,8 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 **Implemented:**
 - Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
 - The crates and features in the status above, plus the headless UI gate
-- The GPUI window behind the `gui` feature
-- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; `gui-check` builds the GPUI feature and runs its tests on Linux, and `gpui-lint` runs fmt, clippy and `cargo deny` for `om-ui-gpui` (both non-blocking)
+- The GPUI window (the default `gui` feature)
+- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; the GPUI crate is a workspace member, so the same jobs cover it, and a headless `--no-default-features` test of `openmixer` runs too
 
 **Known gaps:** see the list in `ROADMAP.md` (Known gaps) and the Before-Wave-7 list in `TODO.md`, which is the authoritative list.
 
@@ -229,6 +228,17 @@ Colours, radii, border widths, insets and font sizes come from the theme, never 
 
 gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
 
+## Experience bar (required for anything a DJ sees)
+
+`docs/PRODUCT.md` is the bar and ADR 0005 the decision. Interface work is not a wave and is not finished when the logic tests pass.
+
+- **Look at it.** A PR that changes what the window shows includes a screenshot from `tools/screenshots.sh`, and you have looked at it (not just that it rendered). Say what you saw and what is still wrong.
+- **Use real music** for anything involving waveforms, the library, analysis or colour. The demo tracks are sine waves and hide most defects.
+- **Judge it as a DJ would.** At the default window size and the minimum (`MIN_WINDOW`), can a DJ read the playing deck's BPM, key, time and phrase position at a glance, and reach EQ, transport and pads without looking? If not, say so in the PR.
+- **Layout and look may change.** Replace a layout or control when a better one is found. Keep the tests that guard function (no overlap, no clipping, the minimum window); update the ones that only recorded the old arrangement.
+- **Tokens, not literals** still applies (see "Styling a control"); if the look you need has no token, add one.
+- **Clean-room still applies.** Borrow the reason a layout works, not another product's names, icons, artwork or pixel layout.
+
 ## Token Efficiency & Knowledge Reuse (required)
 
 Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
@@ -256,7 +266,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 Every PR that completes or advances a task must update, in the same PR:
 - `TODO.md` (tick items), `docs/progress.json` (status), `docs/PROGRESS.md` (done/missing detail)
 - the heatmap: `python3 tools/progress_heatmap.py` (CI's `progress-check` job fails if `docs/progress-heatmap.svg` is stale)
-- screenshots: `tools/screenshots.sh` rebuilds the `gui` binary and regenerates `docs/screenshots/*.png` from the real window (X11, `--mock-device` only, temp library and preferences; every `import` passes `-silent`)
+- screenshots: `tools/screenshots.sh` rebuilds the `openmixer` binary and regenerates `docs/screenshots/*.png` from the real window (X11, `--mock-device` only, temp library and preferences; every `import` passes `-silent`)
 
 ## CI Workflow Changes (required)
 
