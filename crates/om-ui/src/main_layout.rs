@@ -10,26 +10,55 @@
 use crate::geometry::Rect;
 use serde_json::{json, Map, Value};
 
-/// Name of the mixer slot.
+/// Name of the mixer module slot: page tabs, master, crossfader and headphone cue, between the decks'
+/// controls. The channel strips are separate slots, one beside each deck (see [`channel_slot`]).
 pub const MIXER_SLOT: &str = "mixer";
 /// Name of the library slot.
 pub const LIBRARY_SLOT: &str = "library";
+/// Prefix of a channel strip's slot name; the channel number follows (`channel:0`).
+pub const CHANNEL_SLOT_PREFIX: &str = "channel:";
+/// Share of the deck rows' width one channel strip takes in the standard layout.
+pub const CHANNEL_WEIGHT: f32 = 0.15;
+/// Share of the deck rows' width the stage and the controls below it take.
+pub const CENTRE_WEIGHT: f32 = 1.0;
+/// Name of the waveform stage: the decks' headers, overviews and zoomed waveforms, across the top.
+pub const STAGE_SLOT: &str = "stage";
+/// Share of the window height the waveform stage takes in the standard layout.
+pub const STAGE_SHARE: f32 = 0.50;
+/// Height the deck controls row needs (transport, hotcues, loops and the stems row), in px. On a
+/// short window the stage and the library band give up height before the controls do.
+pub const CONTROLS_MIN_HEIGHT: i32 = 262;
+/// Smallest window the layout is designed for.
+pub const MIN_WINDOW: (i32, i32) = (1024, 640);
 /// Name of the sampler strip: eight pads beside the library, in the same band.
 pub const SAMPLER_SLOT: &str = "sampler";
 /// Share of the library band's width the sampler strip takes.
 pub const SAMPLER_WEIGHT: f32 = 0.34;
 /// Share of the window height the deck rows take in the standard layout.
 pub const DECK_ROWS_SHARE: f32 = 0.79;
-/// Share of a row's width the mixer takes next to the decks.
-pub const MIXER_WEIGHT: f32 = 0.85;
+/// Share of a row's width the mixer module takes between the decks' controls.
+pub const MIXER_WEIGHT: f32 = 0.6;
+
+/// Slot name of channel `index`'s strip.
+pub fn channel_slot(index: usize) -> String {
+    format!("{CHANNEL_SLOT_PREFIX}{index}")
+}
+
+/// The channel number in a slot name made by [`channel_slot`].
+pub fn channel_of_slot(name: &str) -> Option<usize> {
+    name.strip_prefix(CHANNEL_SLOT_PREFIX)?.parse().ok()
+}
 
 /// What fills a cell.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CellKind {
     /// A deck by index.
     Deck(usize),
     /// A named slot, filled by the app or a later task.
     Slot(String),
+    /// Rows laid out inside the cell: how a column of the window holds stacked parts. The placed
+    /// result holds the inner cells, never the group itself.
+    Rows(Vec<RowSpec>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +89,14 @@ impl CellSpec {
         }
     }
 
+    /// A cell holding stacked rows.
+    pub fn rows(rows: Vec<RowSpec>, weight: f32) -> Self {
+        Self {
+            kind: CellKind::Rows(rows),
+            weight,
+        }
+    }
+
     pub fn is_deck(&self) -> bool {
         matches!(self.kind, CellKind::Deck(_))
     }
@@ -69,6 +106,9 @@ impl CellSpec {
 pub struct RowSpec {
     /// Share of the window height.
     pub height: f32,
+    /// Smallest height in px. A row that its share would leave shorter takes this instead, and the
+    /// rows without a floor give up the difference.
+    pub min_height: i32,
     pub cells: Vec<CellSpec>,
 }
 
@@ -94,29 +134,58 @@ pub struct PlacedCell {
 }
 
 impl LayoutSpec {
-    /// Decks flank the mixer on the first row (any further decks get a row below); the library and
-    /// the sampler strip share the bottom band.
+    /// Channel strips at the window's left and right edges, the stage over the decks' controls
+    /// between them, and the library and sampler strip across the bottom. Further decks (and their
+    /// strips) get a row of full cards below the first.
     pub fn standard(num_decks: usize) -> Self {
-        let mut top = RowSpec {
-            height: DECK_ROWS_SHARE,
-            cells: vec![
-                CellSpec::deck(0),
-                CellSpec::slot(MIXER_SLOT, MIXER_WEIGHT),
-                CellSpec::deck(1),
+        let centre = CellSpec::rows(
+            vec![
+                RowSpec {
+                    height: STAGE_SHARE,
+                    min_height: 0,
+                    cells: vec![CellSpec::slot(STAGE_SLOT, 1.0)],
+                },
+                RowSpec {
+                    height: 1.0 - STAGE_SHARE,
+                    min_height: CONTROLS_MIN_HEIGHT,
+                    cells: match num_decks {
+                        0 | 1 => vec![CellSpec::deck(0), CellSpec::slot(MIXER_SLOT, MIXER_WEIGHT)],
+                        _ => vec![
+                            CellSpec::deck(0),
+                            CellSpec::slot(MIXER_SLOT, MIXER_WEIGHT),
+                            CellSpec::deck(1),
+                        ],
+                    },
+                },
             ],
-        };
-        if num_decks < 2 {
-            top.cells = vec![CellSpec::deck(0), CellSpec::slot(MIXER_SLOT, MIXER_WEIGHT)];
+            CENTRE_WEIGHT,
+        );
+        let mut top = vec![CellSpec::slot(&channel_slot(0), CHANNEL_WEIGHT), centre];
+        if num_decks > 1 {
+            top.push(CellSpec::slot(&channel_slot(1), CHANNEL_WEIGHT));
         }
-        let mut rows = vec![top];
+        let mut rows = vec![RowSpec {
+            height: DECK_ROWS_SHARE,
+            min_height: 0,
+            cells: top,
+        }];
         if num_decks > 2 {
             rows.push(RowSpec {
                 height: DECK_ROWS_SHARE,
-                cells: (2..num_decks).map(CellSpec::deck).collect(),
+                min_height: 0,
+                cells: (2..num_decks)
+                    .flat_map(|d| {
+                        [
+                            CellSpec::deck(d),
+                            CellSpec::slot(&channel_slot(d), CHANNEL_WEIGHT),
+                        ]
+                    })
+                    .collect(),
             });
         }
         rows.push(RowSpec {
             height: 1.0 - DECK_ROWS_SHARE,
+            min_height: 0,
             cells: vec![
                 CellSpec::slot(LIBRARY_SLOT, 1.0 - SAMPLER_WEIGHT),
                 CellSpec::slot(SAMPLER_SLOT, SAMPLER_WEIGHT),
@@ -141,25 +210,16 @@ impl LayoutSpec {
 
     /// The JSON form, compact.
     pub fn to_json(&self) -> String {
-        let rows: Vec<Value> = self
-            .rows
-            .iter()
-            .map(|row| {
-                let cells: Vec<Value> = row.cells.iter().map(cell_json).collect();
-                json!({ "height": f64::from(row.height), "cells": cells })
-            })
-            .collect();
-        json!({ "rows": rows }).to_string()
+        json!({ "rows": rows_json(&self.rows) }).to_string()
     }
 
     /// One more than the highest deck index used; 0 with no decks.
     pub fn deck_count(&self) -> usize {
-        self.rows
-            .iter()
-            .flat_map(|r| r.cells.iter())
-            .filter_map(|c| match c.kind {
+        self.cells()
+            .filter_map(|c| match &c.kind {
                 CellKind::Deck(d) => Some(d + 1),
                 CellKind::Slot(_) => None,
+                CellKind::Rows(rows) => Some(Self { rows: rows.clone() }.deck_count()),
             })
             .max()
             .unwrap_or(0)
@@ -168,15 +228,40 @@ impl LayoutSpec {
     /// Slot names in order of first use, without repeats.
     pub fn slot_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for c in self.rows.iter().flat_map(|r| r.cells.iter()) {
-            if let CellKind::Slot(name) = &c.kind {
-                if !names.contains(name) {
-                    names.push(name.clone());
+        for c in self.cells() {
+            let found = match &c.kind {
+                CellKind::Slot(name) => vec![name.clone()],
+                CellKind::Rows(rows) => Self { rows: rows.clone() }.slot_names(),
+                CellKind::Deck(_) => Vec::new(),
+            };
+            for name in found {
+                if !names.contains(&name) {
+                    names.push(name);
                 }
             }
         }
         names
     }
+
+    /// The cells of every row, outermost level only.
+    fn cells(&self) -> impl Iterator<Item = &CellSpec> {
+        self.rows.iter().flat_map(|r| r.cells.iter())
+    }
+}
+
+fn rows_json(rows: &[RowSpec]) -> Value {
+    Value::Array(
+        rows.iter()
+            .map(|row| {
+                let cells: Vec<Value> = row.cells.iter().map(cell_json).collect();
+                let mut obj = json!({ "height": f64::from(row.height), "cells": cells });
+                if row.min_height > 0 {
+                    obj["minHeight"] = json!(row.min_height);
+                }
+                obj
+            })
+            .collect(),
+    )
 }
 
 fn parse_row(row: &Value) -> Result<RowSpec, LayoutError> {
@@ -198,8 +283,18 @@ fn parse_row(row: &Value) -> Result<RowSpec, LayoutError> {
         .iter()
         .map(parse_cell)
         .collect::<Result<Vec<_>, _>>()?;
+    let min_height = match row.get("minHeight") {
+        None => 0,
+        Some(v) => v
+            .as_u64()
+            .and_then(|m| i32::try_from(m).ok())
+            .ok_or(LayoutError::Malformed(
+                "row minHeight must be a non-negative integer",
+            ))?,
+    };
     Ok(RowSpec {
         height: height as f32,
+        min_height,
         cells,
     })
 }
@@ -219,14 +314,22 @@ fn parse_cell(value: &Value) -> Result<CellSpec, LayoutError> {
     }
     let deck = obj.get("deck");
     let slot = obj.get("slot");
-    let kind = match (deck, slot) {
-        (Some(d), None) => {
+    let rows = obj.get("rows");
+    let kind = match (deck, slot, rows) {
+        (None, None, Some(r)) => {
+            let rows = r
+                .as_array()
+                .filter(|rows| !rows.is_empty())
+                .ok_or(LayoutError::Malformed("rows must be a non-empty array"))?;
+            CellKind::Rows(rows.iter().map(parse_row).collect::<Result<Vec<_>, _>>()?)
+        }
+        (Some(d), None, None) => {
             let index = d.as_u64().ok_or(LayoutError::Malformed(
                 "deck must be a non-negative integer",
             ))?;
             CellKind::Deck(index as usize)
         }
-        (None, Some(s)) => {
+        (None, Some(s), None) => {
             let name = s
                 .as_str()
                 .filter(|n| !n.is_empty())
@@ -235,7 +338,7 @@ fn parse_cell(value: &Value) -> Result<CellSpec, LayoutError> {
         }
         _ => {
             return Err(LayoutError::Malformed(
-                "a cell has exactly one of deck or slot",
+                "a cell has exactly one of deck, slot or rows",
             ))
         }
     };
@@ -250,6 +353,7 @@ fn cell_json(cell: &CellSpec) -> Value {
     match &cell.kind {
         CellKind::Deck(d) => obj.insert("deck".to_owned(), json!(d)),
         CellKind::Slot(s) => obj.insert("slot".to_owned(), json!(s)),
+        CellKind::Rows(rows) => obj.insert("rows".to_owned(), rows_json(rows)),
     };
     obj.insert("weight".to_owned(), json!(f64::from(cell.weight)));
     Value::Object(obj)
@@ -275,22 +379,75 @@ fn split(length: i32, weights: &[f32], gap: i32) -> Vec<(i32, i32)> {
     parts
 }
 
+/// Like [`split`], with a floor per part: a part that its share leaves below its floor takes the
+/// floor, and the rest is shared out again among the others.
+fn split_with_floors(length: i32, weights: &[f32], floors: &[i32], gap: i32) -> Vec<(i32, i32)> {
+    let n = weights.len();
+    let usable = (length - gap * (n as i32 - 1)).max(0);
+    let mut fixed: Vec<Option<i32>> = vec![None; n];
+    loop {
+        let taken: i32 = fixed.iter().flatten().sum();
+        let free_weight: f32 = (0..n)
+            .filter(|&i| fixed[i].is_none())
+            .map(|i| weights[i])
+            .sum();
+        if free_weight <= 0.0 {
+            break;
+        }
+        let share = |i: usize| ((usable - taken).max(0) as f32 * weights[i] / free_weight) as i32;
+        match (0..n).find(|&i| fixed[i].is_none() && share(i) < floors[i]) {
+            Some(i) => fixed[i] = Some(floors[i]),
+            None => {
+                return place_parts(length, gap, n, |i| fixed[i].unwrap_or_else(|| share(i)));
+            }
+        }
+    }
+    place_parts(length, gap, n, |i| fixed[i].unwrap_or(0))
+}
+
+/// Lays `n` parts of the given sizes along `length` with `gap` between them; the last part takes
+/// whatever is left, so rounding never leaves a seam at the end.
+fn place_parts(length: i32, gap: i32, n: usize, size: impl Fn(usize) -> i32) -> Vec<(i32, i32)> {
+    let mut parts = Vec::with_capacity(n);
+    let mut pos = 0;
+    for i in 0..n {
+        let s = if i == n - 1 {
+            (length - pos).max(0)
+        } else {
+            size(i)
+        };
+        parts.push((pos, s));
+        pos += s + gap;
+    }
+    parts
+}
+
 /// Splits `area` by row heights and cell weights with `gap` between neighbours.
 pub fn compute_layout(spec: &LayoutSpec, area: Rect, gap: i32) -> Vec<PlacedCell> {
     if spec.rows.is_empty() {
         return Vec::new();
     }
     let heights: Vec<f32> = spec.rows.iter().map(|r| r.height).collect();
-    let row_parts = split(area.h, &heights, gap);
+    let floors: Vec<i32> = spec.rows.iter().map(|r| r.min_height).collect();
+    let row_parts = split_with_floors(area.h, &heights, &floors, gap);
     let mut placed = Vec::new();
     for (r, row) in spec.rows.iter().enumerate() {
         let weights: Vec<f32> = row.cells.iter().map(|c| c.weight).collect();
         for (c, (x, w)) in split(area.w, &weights, gap).into_iter().enumerate() {
             let (y, h) = row_parts[r];
-            placed.push(PlacedCell {
-                kind: row.cells[c].kind.clone(),
-                bounds: Rect::new(area.x + x, area.y + y, w, h),
-            });
+            let bounds = Rect::new(area.x + x, area.y + y, w, h);
+            match &row.cells[c].kind {
+                CellKind::Rows(inner) => {
+                    let inner = LayoutSpec {
+                        rows: inner.clone(),
+                    };
+                    placed.extend(compute_layout(&inner, bounds, gap));
+                }
+                kind => placed.push(PlacedCell {
+                    kind: kind.clone(),
+                    bounds,
+                }),
+            }
         }
     }
     placed
@@ -308,7 +465,7 @@ pub fn visible_cells(
         .into_iter()
         .filter(|p| match p.kind {
             CellKind::Deck(d) => d < engine_decks,
-            CellKind::Slot(_) => true,
+            CellKind::Slot(_) | CellKind::Rows(_) => true,
         })
         .collect()
 }

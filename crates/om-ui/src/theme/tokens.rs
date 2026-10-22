@@ -33,6 +33,27 @@ impl Colour {
         self.with_alpha(self.alpha() * factor)
     }
 
+    /// Weighted blend of `parts` in RGB (alpha blends the same way). Weights need not sum to 1; a
+    /// zero or negative total returns the first colour.
+    pub fn mix(parts: &[(Colour, f32)]) -> Colour {
+        let total: f32 = parts.iter().map(|(_, w)| w.max(0.0)).sum();
+        let Some((first, _)) = parts.first() else {
+            return Colour(0);
+        };
+        if total <= f32::EPSILON {
+            return *first;
+        }
+        let mut channels = [0.0_f32; 4];
+        for (colour, weight) in parts {
+            let w = weight.max(0.0) / total;
+            for (i, shift) in [24u32, 16, 8, 0].into_iter().enumerate() {
+                channels[i] += ((colour.0 >> shift) & 0xFF) as f32 * w;
+            }
+        }
+        let [a, r, g, b] = channels.map(|c| c.round().clamp(0.0, 255.0) as u32);
+        Colour((a << 24) | (r << 16) | (g << 8) | b)
+    }
+
     /// Largest channel as 0..=1.
     pub fn brightness(self) -> f32 {
         let r = (self.0 >> 16) & 0xFF;

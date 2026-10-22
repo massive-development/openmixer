@@ -17,10 +17,11 @@ use om_analysis::{WaveformData, WaveformPoint};
 use om_ui::geometry::Rect;
 use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
 use om_ui::style::LookAndFeel;
-use om_ui::waveform::View;
-use om_ui::widgets::deck::{deck_layout, DeckLayout};
+use om_ui::waveform::{column, BandBalance, View};
+use om_ui::widgets::deck::{deck_controls_layout, deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
+use om_ui::widgets::stage::STAGE_DECKS;
 use om_ui::widgets::stem_pads::stem_pad_layout;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 use std::sync::Arc;
@@ -34,9 +35,13 @@ pub fn peak(p: &WaveformPoint) -> f32 {
 pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let drop_target = t.drop_target;
-    let deck = &shell.decks[index];
-    let l = deck_layout(Rect::sized(card.w, card.h), t);
-    let text = deck.header.text();
+    // A stage deck's header, overview and zoomed waveform are drawn by the stage above.
+    let area = Rect::sized(card.w, card.h);
+    let l = if index < STAGE_DECKS {
+        deck_controls_layout(area, t)
+    } else {
+        deck_layout(area, t)
+    };
 
     let mut root = place(card)
         .overflow_hidden()
@@ -54,50 +59,12 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
             cx.notify();
         }));
 
-    // Header: title and elapsed/remaining time on the first line, artist and key/BPM on the second.
-    // Clipped to the header so it never runs into the overview strip.
-    root = root.child(
-        place(l.header)
-            .overflow_hidden()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .child(
-                        div()
-                            .overflow_hidden()
-                            .text_size(px(t.type_title))
-                            .child(text.title.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .pl(px(8.))
-                            .text_size(px(t.type_mono))
-                            .child(format!("{}  {}", text.elapsed, text.remaining)),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .text_size(px(t.type_small))
-                    .text_color(paint(t.text_secondary))
-                    .child(div().overflow_hidden().child(text.artist.clone()))
-                    .child(
-                        div()
-                            .flex_none()
-                            .pl(px(8.))
-                            .child(format!("{}   {} BPM", text.key, text.bpm)),
-                    ),
-            ),
-    );
-
-    root = root.child(overview(shell, index, card, &l, cx));
+    if !l.header.is_empty() {
+        root = root.child(header(shell, index, &l));
+    }
+    if !l.overview.is_empty() {
+        root = root.child(overview(shell, index, card, &l, cx));
+    }
     root = root.child(pitch(shell, index, card, &l, cx));
     if l.zoom_visible {
         root = root.child(zoom(shell, index, card, &l, cx));
@@ -109,6 +76,51 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
         root = root.child(part);
     }
     root
+}
+
+/// The deck header: title and elapsed/remaining time on the first line, artist and key/BPM on the
+/// second. Clipped to its rectangle so it never runs into the overview strip.
+pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
+    let t = &shell.theme;
+    let text = shell.decks[index].header.text();
+    place(l.header)
+        .overflow_hidden()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .items_center()
+                .child(
+                    div()
+                        .overflow_hidden()
+                        .text_size(px(t.type_title))
+                        .child(text.title.clone()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .pl(px(8.))
+                        .text_size(px(t.type_mono))
+                        .child(format!("{}  {}", text.elapsed, text.remaining)),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .items_center()
+                .text_size(px(t.type_small))
+                .text_color(paint(t.text_secondary))
+                .child(div().overflow_hidden().child(text.artist.clone()))
+                .child(
+                    div()
+                        .flex_none()
+                        .pl(px(8.))
+                        .child(format!("{}   {} BPM", text.key, text.bpm)),
+                ),
+        )
 }
 
 /// The stems row (S7): a load/off control with its caption, then one pad per stem. A pad is live
@@ -234,7 +246,7 @@ fn stems(
     parts
 }
 
-fn overview(
+pub(crate) fn overview(
     shell: &Shell,
     index: usize,
     card: Rect,
@@ -248,9 +260,9 @@ fn overview(
     let playhead = deck.overview.playhead_x(width);
     let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
     let origin_x = card.x + area.x;
-    let bar_count = (area.w / 3).max(1);
-    let (wave_colour, head_colour, head_w) =
-        (paint(t.wave_mid), paint(t.highlight), t.playhead_width);
+    let bar_count = area.w.max(1);
+    let (head_colour, head_w) = (paint(t.highlight), t.playhead_width);
+    let tokens = t.clone();
 
     let canvas_el = canvas(
         |_, _, _| (),
@@ -261,11 +273,16 @@ fn overview(
             if let Some(data) = &wave {
                 let points = &data.overview().points;
                 if !points.is_empty() {
+                    let balance = BandBalance::of(points);
                     for i in 0..bar_count {
-                        let frac = f64::from(i) / f64::from(bar_count);
-                        let idx = ((frac * points.len() as f64) as usize).min(points.len() - 1);
-                        let amp = peak(&points[idx]) * mid * 0.9;
-                        let x = i as f32 * 3.0;
+                        // One pixel column folds the points it covers, so the colour follows the
+                        // spectrum under it.
+                        let lo = i as usize * points.len() / bar_count as usize;
+                        let hi = ((i as usize + 1) * points.len() / bar_count as usize)
+                            .clamp(lo + 1, points.len());
+                        let col = column(&points[lo..hi]);
+                        let amp = col.peak * mid * 0.9;
+                        let x = i as f32;
                         if x >= w {
                             break;
                         }
@@ -275,9 +292,9 @@ fn overview(
                                     bounds.origin.x + px(x),
                                     bounds.origin.y + px(mid - amp.max(1.0)),
                                 ),
-                                size(px(2.0), px((amp * 2.0).max(2.0))),
+                                size(px(1.0), px((amp * 2.0).max(2.0))),
                             ),
-                            wave_colour,
+                            paint(balance.colour(&col, &tokens)),
                         ));
                     }
                 }
@@ -348,7 +365,13 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
         )
 }
 
-fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
+pub(crate) fn zoom(
+    shell: &Shell,
+    index: usize,
+    _card: Rect,
+    l: &DeckLayout,
+    cx: &mut Context<Shell>,
+) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let area = l.zoom;
@@ -364,7 +387,7 @@ fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Conte
     let length = shell.engine.deck(index).length_frames();
     let playhead = view.x_of_frame(shell.engine.deck(index).position_frames());
     let accent = paint(t.accent_for(index as i32));
-    let wave_colour = paint(t.wave_high);
+    let tokens = t.clone();
     let cue_colour = paint(t.master);
     let head_colour = paint(t.highlight);
     let (cue_w, head_w) = (t.cue_marker_width, t.playhead_width);
@@ -389,12 +412,19 @@ fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Conte
             if let Some(data) = &wave {
                 let level = data.level_for(fpp);
                 let per_point = level.samples_per_point.max(1) as f64;
+                let balance = BandBalance::of(&data.overview().points);
                 let mut x = 0.0_f32;
                 while x < w {
                     let frame = view.frame_at_x(f64::from(x));
                     if frame >= 0.0 && frame < length as f64 {
-                        if let Some(p) = level.points.get((frame / per_point) as usize) {
-                            let amp = peak(p) * mid * 0.9;
+                        // The points under this pixel column (one or a few, per the zoom level).
+                        let lo = (frame / per_point) as usize;
+                        let hi = (((frame + fpp) / per_point).ceil() as usize)
+                            .max(lo + 1)
+                            .min(level.points.len());
+                        if let Some(slice) = level.points.get(lo..hi) {
+                            let col = column(slice);
+                            let amp = col.peak * mid * 0.9;
                             window.paint_quad(fill(
                                 Bounds::new(
                                     point(
@@ -403,11 +433,11 @@ fn zoom(shell: &Shell, index: usize, _card: Rect, l: &DeckLayout, cx: &mut Conte
                                     ),
                                     size(px(1.0), px((amp * 2.0).max(1.0))),
                                 ),
-                                wave_colour,
+                                paint(balance.colour(&col, &tokens)),
                             ));
                         }
                     }
-                    x += 2.0;
+                    x += 1.0;
                 }
             }
             for line in &grid {

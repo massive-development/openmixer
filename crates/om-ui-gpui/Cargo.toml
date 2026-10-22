@@ -1,30 +1,25 @@
 [package]
 name = "om-ui-gpui"
-version = "0.1.0"
-edition = "2021"
-license = "AGPL-3.0-only"
-repository = "https://github.com/massive-development/openmixer"
-rust-version = "1.91"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 publish = false
 description = "GPUI window layer for OpenMixer: drawing and event glue over om-ui's models."
 
-# Not a member of the root workspace (GPUI needs system libraries and a display; see
-# docs/spikes/DECISIONS.md, "GPUI integration"). Builds on its own, and the openmixer binary pulls it in
-# behind the `gui` feature.
-[workspace]
-
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true
 
 [dependencies]
 gpui = "=0.2.2"
-om-analysis = { path = "../om-analysis" }
-om-core = { path = "../om-core" }
-om-engine = { path = "../om-engine" }
-om-library = { path = "../om-library" }
-om-ui = { path = "../om-ui" }
-om-midi = { path = "../om-midi" }
+om-analysis.workspace = true
+om-core.workspace = true
+om-engine.workspace = true
+om-library.workspace = true
+om-ui.workspace = true
+om-midi.workspace = true
 
 [dev-dependencies]
-om-testing = { path = "../om-testing" }
-tempfile = "3"
+om-testing.workspace = true
+tempfile.workspace = true

@@ -313,49 +313,50 @@ fn assert_no_overlap(parts: &[(&str, Rect)], context: &str) {
 }
 
 #[test]
-fn layout_has_no_overlaps_across_sizes_and_channel_counts() {
+fn module_layout_has_no_overlaps_across_sizes() {
     let theme = ThemeTokens::builtin_dark();
-    for decks in [1usize, 2, 4] {
-        let rig = Rig::new(decks);
-        let channels = MixerBinding::new(rig.engine.clone(), rig.recorder.clone()).num_channels();
-        for (w, h) in [(420, 520), (560, 600), (760, 700)] {
-            let context = format!("{decks} decks {w}x{h}");
-            let bounds = Rect::sized(w, h);
-            let layout = MixerPanel::layout(bounds, channels, &theme);
-            let mut parts: Vec<(&str, Rect)> = vec![
-                ("master", layout.master),
-                ("crossfader", layout.crossfader),
-                ("cue", layout.cue),
-            ];
-            parts.extend(layout.strips.iter().map(|r| ("strip", *r)));
-            assert_no_overlap(&parts, &context);
-            for (name, r) in &parts {
-                assert!(bounds.contains(r), "{context}: {name} clipped");
-            }
+    for (w, h) in [(220, 280), (270, 300), (330, 420)] {
+        let context = format!("module {w}x{h}");
+        let bounds = Rect::sized(w, h);
+        let layout = MixerPanel::module_layout(bounds, &theme);
+        let parts: Vec<(&str, Rect)> = vec![
+            ("tab mixer", layout.tabs[0]),
+            ("tab fx", layout.tabs[1]),
+            ("master", layout.master),
+            ("crossfader", layout.crossfader),
+            ("cue", layout.cue),
+        ];
+        assert_no_overlap(&parts, &context);
+        for (name, r) in &parts {
+            assert!(bounds.contains(r), "{context}: {name} clipped");
         }
     }
 }
 
-#[test]
-fn strip_children_fit_and_do_not_overlap_at_the_default_slot_size() {
+/// The cell the standard layout gives a named slot at the default window size.
+fn slot_cell(decks: usize, name: &str) -> Rect {
     let theme = ThemeTokens::builtin_dark();
-    let decks = 2;
     let gap = theme.gap;
-    let main = om_ui::geometry::Rect::sized(1280, 800).reduced(gap, gap);
-    let slot = om_ui::main_layout::visible_cells(
+    let main = Rect::sized(1280, 800).reduced(gap, gap);
+    om_ui::main_layout::visible_cells(
         &om_ui::main_layout::LayoutSpec::standard(decks),
         decks,
         main,
         gap,
     )
     .into_iter()
-    .find(|c| c.kind == om_ui::main_layout::CellKind::Slot("mixer".into()))
-    .expect("mixer slot")
-    .bounds;
+    .find(|c| c.kind == om_ui::main_layout::CellKind::Slot(name.into()))
+    .unwrap_or_else(|| panic!("{name} slot"))
+    .bounds
+}
 
-    let layout = MixerPanel::layout(slot, decks, &theme);
-    for (c, strip_rect) in layout.strips.iter().enumerate() {
-        let s = ChannelStrip::layout(*strip_rect, &theme);
+#[test]
+fn strip_children_fit_and_do_not_overlap_at_the_default_slot_size() {
+    let theme = ThemeTokens::builtin_dark();
+    for c in 0..2 {
+        let strip_rect = slot_cell(2, &om_ui::main_layout::channel_slot(c));
+        let strip_rect = Rect::sized(strip_rect.w, strip_rect.h);
+        let s = ChannelStrip::layout(strip_rect, &theme);
         let mut kids: Vec<(&str, Rect)> = vec![
             ("title", s.title),
             ("trim", s.trim),
@@ -382,21 +383,13 @@ fn strip_children_fit_and_do_not_overlap_at_the_default_slot_size() {
 }
 
 #[test]
-fn mixer_slot_is_wide_enough_at_the_default_window_size() {
-    let theme = ThemeTokens::builtin_dark();
-    let gap = theme.gap;
-    let main = Rect::sized(1280, 800).reduced(gap, gap);
-    let slot = om_ui::main_layout::visible_cells(
-        &om_ui::main_layout::LayoutSpec::standard(2),
-        2,
-        main,
-        gap,
-    )
-    .into_iter()
-    .find(|c| c.kind == om_ui::main_layout::CellKind::Slot("mixer".into()))
-    .expect("mixer slot")
-    .bounds;
-    assert!(slot.w >= 360, "mixer slot is {} px wide", slot.w);
+fn mixer_module_is_wide_enough_at_the_default_window_size() {
+    let slot = slot_cell(2, "mixer");
+    assert!(slot.w >= 200, "mixer module is {} px wide", slot.w);
+    assert!(
+        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w >= 140,
+        "a channel strip needs room for three EQ knobs and the fader"
+    );
 }
 
 // ---- FX panel ----

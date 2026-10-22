@@ -350,6 +350,49 @@ pub struct DeckLayout {
     pub stems: Rect,
 }
 
+impl DeckLayout {
+    /// Every rectangle empty and the zoom hidden: the start of a layout that sets only some parts.
+    pub fn empty() -> Self {
+        Self {
+            header: Rect::default(),
+            overview: Rect::default(),
+            pitch: Rect::default(),
+            zoom: Rect::default(),
+            zoom_visible: false,
+            hotcues: Rect::default(),
+            loops: Rect::default(),
+            transport: Rect::default(),
+            stems: Rect::default(),
+        }
+    }
+}
+
+/// The deck card of a stage deck: no header, overview or zoomed waveform (the stage above draws
+/// those), only the controls, from the top: transport, hotcues, loops, with the pitch column on the
+/// right and the stems row along the bottom.
+pub fn deck_controls_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
+    let gap = theme.inner_gap;
+    let mut area = bounds.reduced(theme.pad, theme.pad);
+    let stems = area.remove_bottom(stem_pads::stems_row_height(theme));
+    area.remove_bottom(gap);
+    let pitch = area.remove_right(px(theme.deck_pitch_width));
+    area.remove_right(gap);
+    let row = px(theme.deck_row_height);
+    let transport = area.remove_top(px(theme.deck_transport_height));
+    area.remove_top(gap);
+    let hotcues = area.remove_top(row);
+    area.remove_top(gap);
+    let loops = area.remove_top(row * 2 + gap);
+    DeckLayout {
+        pitch,
+        hotcues,
+        loops,
+        transport,
+        stems,
+        ..DeckLayout::empty()
+    }
+}
+
 /// Places the deck card's parts inside `bounds` (the card itself). Mirrors `DeckWidget::resized`.
 pub fn deck_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
     let gap = theme.inner_gap;

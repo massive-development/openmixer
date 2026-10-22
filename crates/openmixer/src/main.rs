@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 
 //! `openmixer` binary. Headless flags run the engine and composition without a window; the GPUI window
-//! is behind the `gui` feature (see `gui.rs`). `--smoke` is the headless start-up check.
+//! is on by default behind the `gui` feature (see `gui.rs`). `--headless --smoke` is the start-up check that
+//! opens no window; without the feature (`--no-default-features`) `--headless` is implied.
 
 #[cfg(feature = "gui")]
 mod gui;
@@ -18,13 +19,15 @@ const SMOKE_BLOCK: usize = 256;
 const SMOKE_BLOCKS: usize = 120;
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let headless = args.iter().any(|a| a == "--headless");
+    args.retain(|a| a != "--headless");
     if args.iter().any(|a| a == "--version") {
         println!("openmixer {}", om_core::VERSION);
         return ExitCode::SUCCESS;
     }
     #[cfg(feature = "gui")]
-    if args.is_empty() || args.iter().any(|a| a.starts_with("--")) {
+    if !headless && (args.is_empty() || args.iter().any(|a| a.starts_with("--"))) {
         return gui::main(&args);
     }
     #[cfg(not(feature = "gui"))]
@@ -32,7 +35,7 @@ fn main() -> ExitCode {
         .iter()
         .any(|a| a == "--mock-device" || a == "--debug-panel")
     {
-        eprintln!("openmixer: --mock-device and --debug-panel need the window (build with --features gui)");
+        eprintln!("openmixer: --mock-device and --debug-panel need the window (build without --no-default-features)");
         return ExitCode::FAILURE;
     }
     match args.first().map(String::as_str) {
@@ -47,7 +50,9 @@ fn main() -> ExitCode {
             }
         },
         _ => {
-            eprintln!("usage: openmixer --smoke | --version (window: build with --features gui)");
+            eprintln!(
+                "usage: openmixer --headless --smoke | --version (the window is the default build)"
+            );
             ExitCode::FAILURE
         }
     }

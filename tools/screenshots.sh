@@ -2,7 +2,7 @@
 # Regenerates docs/screenshots/*.png from the real GPUI window (Linux, X11).
 #
 # Never opens an audio device or MIDI hardware: every scene runs with --mock-device. Needs the
-# `gui` feature's build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
+# GPUI build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
 # (`import`, `convert`, `identify`) plus `xwininfo`. Run from anywhere:  tools/screenshots.sh [scene...]
 # Scenes: main-dark main-daylight main-stems debug-panel settings-audio settings-appearance
 # settings-midi settings-library main-automix main-record settings-recording settings-mapping (default: all). main-automix runs the automix demo
@@ -10,8 +10,6 @@
 # (the mock separator, --mock-stems) so the stem pads are live.
 # main-dark also shows the library browser (the demo library is loaded in every scene).
 #
-# libxkbcommon-x11 link shim: if the linker cannot find -lxkbcommon-x11, the script makes a
-# symlink dir under $TMPDIR and passes it through RUSTFLAGS (see docs/spikes/DECISIONS.md).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,14 +36,8 @@ mkdir -p "$out"
 
 # Build (no-op when up to date). One cargo process, low priority.
 if [[ -z "${SKIP_BUILD:-}" ]]; then
-  if [[ ! -e /usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so ]]; then
-    shim="${TMPDIR:-/tmp}/om-libshim"
-    mkdir -p "$shim"
-    ln -sf "$(ls /lib/x86_64-linux-gnu/libxkbcommon-x11.so.0* | head -1)" "$shim/libxkbcommon-x11.so"
-    export RUSTFLAGS="${RUSTFLAGS:-} -L $shim"
-  fi
   (cd "$root" && nice -n 19 env CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-3}" \
-    cargo build -p openmixer --features gui)
+    cargo build -p openmixer)
 fi
 
 # The window has no title; it is the 1280x800 client window in the root tree.

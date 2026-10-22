@@ -104,6 +104,8 @@ pub fn knob(
     } else {
         readout
     };
+    // A very narrow knob (the stem filter beside a channel strip) has room for the value only.
+    let label = if rect.w < 36 { "" } else { label };
     let frac = fraction(value, min, max) as f32;
     let fill_h = ((rect.h as f32 - inset_l) * frac) as i32;
     // The value fill is translucent and drawn first; label and readout are drawn above it in the

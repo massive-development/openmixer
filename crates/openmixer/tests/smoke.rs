@@ -3,7 +3,7 @@ use std::process::Command;
 #[test]
 fn smoke_flag_exits_zero_and_prints_ok() {
     let output = Command::new(env!("CARGO_BIN_EXE_openmixer"))
-        .arg("--smoke")
+        .args(["--headless", "--smoke"])
         .output()
         .expect("failed to run openmixer binary");
 
