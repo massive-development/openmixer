@@ -1,5 +1,6 @@
-//! The mixer section for the main window's mixer slot: channel strips around the master section,
-//! crossfader and headphone cue below, and an effects page. Page state, refresh and layout. The frame clock belongs to the gpui layer.
+//! The mixer: one channel strip per deck beside the waveform stage, and the mixer module between the
+//! decks' controls (page tabs, master, crossfader, headphone cue); the effects page replaces the
+//! stage. Page state, refresh and the module layout. The frame clock belongs to the gpui layer.
 
 use super::channel::ChannelStrip;
 use super::crossfader::CrossfaderSection;
@@ -22,17 +23,14 @@ pub enum Page {
     Fx,
 }
 
-/// Rectangles of the mixer slot.
+/// Rectangles of the mixer module.
 #[derive(Debug, Clone, PartialEq)]
-pub struct MixerLayout {
+pub struct ModuleLayout {
     /// Mixer tab, FX tab.
     pub tabs: [Rect; 2],
-    /// The FX page takes the whole body under the tabs.
-    pub fx: Rect,
-    pub cue: Rect,
-    pub crossfader: Rect,
-    pub strips: Vec<Rect>,
     pub master: Rect,
+    pub crossfader: Rect,
+    pub cue: Rect,
 }
 
 pub struct MixerPanel {
@@ -89,11 +87,11 @@ impl MixerPanel {
     }
 
     /// One frame: mirrors the engine and advances the meters by `dt` seconds (clamped to
-    /// [`MAX_FRAME_SECONDS`]). On the FX page only the effects are refreshed.
+    /// [`MAX_FRAME_SECONDS`]). The strips and the module stay on screen on the FX page, so they
+    /// keep updating; the effects are refreshed as well while that page is open.
     pub fn refresh(&mut self, dt: f32, levels: &dyn LevelSource, dragging_fader: bool) {
         if self.page == Page::Fx {
             self.fx.refresh();
-            return;
         }
         let dt = dt.clamp(0.0, MAX_FRAME_SECONDS);
         for strip in &mut self.strips {
@@ -108,58 +106,24 @@ impl MixerPanel {
         &self.binding
     }
 
-    /// Layout of the slot. The channels split around the master: the first half left of it, the
-    /// rest right. Mirrors `MixerPanel::resized` and `layoutStrips`.
-    pub fn layout(bounds: Rect, channels: usize, theme: &ThemeTokens) -> MixerLayout {
+    /// Layout of the mixer module: the page tabs on top, the cue blend at the bottom, the crossfader
+    /// above it and the master section in what is left.
+    pub fn module_layout(bounds: Rect, theme: &ThemeTokens) -> ModuleLayout {
         let gap = theme.inner_gap;
         let mut area = bounds;
         let mut tab_row = area.remove_top(px(theme.mixer_tab_height));
-        let tabs = [0, 1].map(|_| tab_row.remove_left(px(theme.mixer_page_button_width)));
+        let tab_w = px(theme.mixer_page_button_width).min(tab_row.w / 2);
+        let tabs = [0, 1].map(|_| tab_row.remove_left(tab_w));
         area.remove_top(gap);
-        let fx = area;
         let cue = area.remove_bottom(px(theme.mixer_cue_height));
         area.remove_bottom(gap);
-        let crossfader = area.remove_bottom(px(theme.mixer_crossfader_height));
+        let crossfader = area.remove_bottom(CrossfaderSection::height_for(bounds.w, theme));
         area.remove_bottom(gap);
-
-        let (strips, master) = Self::layout_strips(area, channels, theme);
-        MixerLayout {
+        ModuleLayout {
             tabs,
-            fx,
-            cue,
+            master: area,
             crossfader,
-            strips,
-            master,
+            cue,
         }
-    }
-
-    fn layout_strips(row: Rect, n: usize, theme: &ThemeTokens) -> (Vec<Rect>, Rect) {
-        let gap = theme.inner_gap;
-        let mut row = row;
-        let n_i = n as i32;
-        let left_count = n.div_ceil(2);
-        let strip_w = if n > 0 {
-            (row.w - px(theme.mixer_master_width) - n_i * gap) / n_i
-        } else {
-            0
-        };
-        let mut strips = Vec::with_capacity(n);
-        let mut master = Rect::default();
-        for i in 0..n {
-            if i == left_count {
-                master = row.remove_left(px(theme.mixer_master_width));
-                row.remove_left(gap);
-            }
-            if i == n - 1 && left_count < n {
-                strips.push(row);
-            } else {
-                strips.push(row.remove_left(strip_w));
-            }
-            row.remove_left(gap);
-        }
-        if left_count == n {
-            master = row;
-        }
-        (strips, master)
     }
 }

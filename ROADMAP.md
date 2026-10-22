@@ -1,10 +1,23 @@
 # OpenMixer Roadmap
 
-This document outlines the implementation plan for OpenMixer. Task-level status is in `TODO.md` and `docs/PROGRESS.md`.
+This document outlines the plan for OpenMixer. What the product has to be is in `docs/PRODUCT.md`; task-level status is in `TODO.md` and `docs/PROGRESS.md`.
 
-## Overview
+## Tracks
 
-OpenMixer is being built in 9 implementation waves, organized by feature area:
+Work runs in parallel tracks, each measured against the product bar. No track waits for another to finish, and Experience is not gated on the engine.
+
+| Track | Outcome a DJ notices | Where it lives today |
+|-------|----------------------|----------------------|
+| Experience | The screen looks like a product and reads at a glance: spectrum-coloured waveforms with bar numbers and cues, rotary EQ, large labelled pads, a library with artwork and compatibility cues | `TODO.md` "Experience track" |
+| Performance | No dropouts over a long set; honest latency; low CPU with four decks and stems | Waves 2 and 9, soak gates |
+| Hardware | A controller works when plugged in | Wave 6 |
+| Intelligence | Stems, Automix and the sampler save time and sound right | Wave 7 |
+| Pro surface | Recording, broadcast, DVS, video | Wave 8 |
+| Release | Installable, legal, documented | Wave 9 |
+
+## Waves
+
+The nine implementation waves below are stable identifiers for the tasks in `TODO.md` and `docs/PROGRESS.md`. They are not an order of work.
 
 | Wave | Area | Focus |
 |------|-------|-------|
@@ -21,13 +34,14 @@ OpenMixer is being built in 9 implementation waves, organized by feature area:
 ## Key Decisions
 
 1. **Clean-room originality** - Features are lawfully copied, expression is not
-2. **Depth-first approach** - Core mixing must be production-ready before extras
+2. **Depth where DJs spend their time** - waveform, library, mixing and reliability come before breadth; extras do not wait on the engine, and the interface does not wait on extras (ADR 0005)
 3. **Precomputed stems** - Offline separation, not real-time
 4. **Pure AGPLv3** - No contributor CLA required
 5. **Unsigned releases** - Signing is a pre-release decision
 6. **Audible vertical slice first** - mixer, MIDI and a minimal debug panel come before time-stretch, FX and heavy dependencies so sound can be tested early
 7. **Rust with GPUI** - The application is written in Rust with GPUI for the UI (ADR 0004)
-8. **Linux first** - Linux is the target for now; Windows and macOS support comes later. CI still builds and tests the Rust workspace on all three OSes
+8. **Experience is a deliverable** - what a DJ sees is verified by looking at it, with real music where relevant, not by logic tests alone (`docs/PRODUCT.md`, ADR 0005)
+9. **Linux first** - Linux is the target for now; Windows and macOS support comes later. CI still builds and tests the Rust workspace on all three OSes
 
 ## Milestones
 

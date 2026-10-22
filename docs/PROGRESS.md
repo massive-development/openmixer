@@ -27,7 +27,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 
 **Current state:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock) on cpal or a mock device; analysis (BPM, key, waveform, structure); the library (ingest, import, search, prep queue); MIDI (ALSA sequencer on Linux, mapping and feedback); in-process plugins; the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel), stems (the cache, the service and the settings and browser UI run on the mock separator; the htdemucs model is not installed or listened to yet), the hardware wave. The GPUI window has never been viewed by eye. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7. See `docs/spikes/DECISIONS.md`.
 
-**What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test --workspace`), check startup with `cargo run -p openmixer -- --smoke`, and with the `gui` feature open the GPUI window (`cargo run -p openmixer --features gui -- --mock-device`). Audio, analysis, library, MIDI and the UI are implemented; the wave sections say what is partial.
+**What you can do today:** build the Rust workspace (`cargo build`), run the tests (`cargo test --workspace`), check startup with `cargo run -p openmixer -- --headless --smoke`, and open the GPUI window (`cargo run -p openmixer -- --mock-device`). Audio, analysis, library, MIDI and the UI are implemented; the wave sections say what is partial.
 
 ---
 
