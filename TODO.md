@@ -2,6 +2,22 @@
 
 OpenMixer is a free, open-source DJ application written in Rust with GPUI. The statuses below describe the current code. Todo numbers are stable identifiers.
 
+## Experience track
+
+Runs alongside everything else; not gated on a wave (ADR 0005, `docs/PRODUCT.md`). Each item is done when it has been looked at on real music at 1280x800 and the minimum window, not when its tests pass. Size as below.
+
+- **E1 Brand and visual design pass (L):** define the OpenMixer look (palette, type, depth, motion, an identity of our own that is not a copy of another program), then a type scale, depth and glow on active states, readable BPM, key and time, restrained colour for a dark room. Applies to both built-in themes. Tokens first, then controls.
+- **E2 Waveform that shows phrases (M):** bar numbers on the beat grid, cue and loop regions on the strip, structure hints (intro, drop, breakdown) from analysis, zoom levels that match a phrase. Colour from the spectrum is in; tune it on real tracks.
+- **E3 Library as a performance tool (L):** artwork column, BPM and key shown against the playing track (compatible tracks stand out), history, playlists beside the browser, instant search. Bigger than the current table.
+- **E4 Rotary EQ and channel strip (M):** rotary knobs with a centre detent and a level meter beside them, replacing the bar sliders.
+- **E5 Pads and sampler (M):** large, colour-coded, labelled by function; hotcues show their colour and name.
+- **E6 Real-music review loop (S):** a fixture set of real, licence-clean tracks (or a documented way to point the demo at the user's own) so screenshots show real waveforms.
+- **E7 Reliability for performance (M):** run the 10-minute soaks on a schedule, report latency honestly in the UI, test a four-deck set with stems.
+- **E8 Second colour scheme (S):** a familiar, brand-aligned alternative scheme after E1, as theme JSON only.
+- **E2a Progressive waveform (M):** play at once and let the waveform fill in while the file is read, like a buffering video: the analyser publishes partial `WaveformData` as it decodes, the strips draw what exists and show the rest as a dim placeholder, and BPM, key and the grid land when their analysis finishes. Today the waveform arrives all at once when the whole analysis is done (the deck itself already plays immediately).
+- **E9 Smoothness (M):** measure first: frame times on a release build with real music, four decks and stems, at the display refresh rate (a frame-time overlay and a headless frame-time test). Then fix what the numbers show: per-frame work in the waveform strips, redraw only what changed, smooth animation of faders and meters, no flicker on state changes. Done when no frame goes over the budget in `docs/PRODUCT.md` over a ten-minute set.
+  - Measured 2026-10-21 (`OPENMIXER_FRAME_STATS=1`, WSLg, `--demo-automix`, decks playing): release 60 fps, no hitches after start-up; debug 12 fps (the unoptimised GPUI window). The view builds in about 0.5 ms, so the cost is in painting. Fixed: dev builds now optimise dependencies and the view crates (`.cargo/config.toml`), giving about 59 fps with an occasional 33 ms frame. Not measured yet: real tracks, four decks, stems, the scrolling zoomed waveform on a real GPU. Paints about 3,000 quads a frame even when nothing moves (one per waveform pixel column): cache the strips if the numbers on real hardware need it. Start-up and track loads show one to five hitches in the first window.
+
 ## Before Wave 7
 
 Checked against the code on 2026-10-19 (not against the older docs). Size: S = up to a day, M = a few days, L = a week or more.
@@ -27,7 +43,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Wave 1 CI:** macOS and Windows legs are `continue-on-error`. macOS `soak_short` exceeds its xrun budget on shared runners; the Windows `file_url` fix is not confirmed by a run. S-M
 - **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. Add a scheduled job. S
 - **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
-- **Wave 1 CI:** the `gui-check` and `gpui-lint` jobs have not run on a clean runner (non-blocking). S
+- **Wave 1 CI:** the `check` job now builds and lints the GPUI crate with the rest of the workspace; it has not run on a clean runner since the merge. S
 
 ### (C) Smaller gaps
 
@@ -210,7 +226,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Verified headlessly (model and glue tests, `--smoke`); the window has never been viewed by eye.
   - Done: versioned preferences, applier, `AppComposition`, audio/MIDI/library/plugins/appearance page models, `--smoke`, the settings overlay (Settings button in the header; Escape closes it; a text field at the foot of the card for paths), audio device state restore on start-up (`openmixer::audio_settings`). The MIDI page lists the inputs, toggles them, loads a map file by typed path, and starts and cancels MIDI learn with a status line. The library page adds and removes watch folders, sets the rescan interval and scan-on-start, rescans, and imports iTunes or Rekordbox XML. The Plugins page lists the loaded plugins, loads and unloads the built-ins (the gain example), and reloads the folder; plugin themes appear in Appearance. `--mock-device --smoke` prints the MIDI and plugin status lines. Overlay not checked by eye
   - `--settings[=Tab]` start flag, live scan-interval change and the MIDI input list refreshing about once a second while the MIDI page shows are done
-  - Also open: dynamic plugin loading (open decision); the Linux GPUI CI job is in place as `gui-check` in `.github/workflows/rust.yml` (non-blocking until its package list is verified)
+  - Also open: dynamic plugin loading (open decision); the GPUI crate is built and linted by the `check` job in `.github/workflows/rust.yml`
   - Automix settings page and bar: done at logic and view level (Todo 38); the rest of the Todo 29 list stays open
 
 - [x] **Todo 30:** Stem pads UI (logic and deck-card view done, not verified by ear; the mock device plays nothing)
@@ -219,7 +235,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 31:** UI verification gate (logic layer; window-driven pass open)
   - Scripted 10-minute mix driven through the UI
   - Done at the logic layer: `crates/openmixer/tests/ui_gate.rs` (8 s `#[test]`, 10-minute `#[ignore]`) drives the composition over a paced mock device with the om-ui transport and binding models. Not done: a window-driven pass (needs a display)
-  - `--smoke` without the `gui` feature is headless (checked by `crates/openmixer/tests/smoke.rs`). The window-opening `--smoke` exists only behind `--features gui` and is not run in CI; `gui-check` only runs `cargo check` and the `om-ui-gpui` lib tests.
+  - `--headless --smoke` opens no window (checked by `crates/openmixer/tests/smoke.rs`, with and without the `gui` feature). The window-opening `--smoke` (no `--headless`) is not run in CI.
 
 ## Wave 6: Hardware I/O
 

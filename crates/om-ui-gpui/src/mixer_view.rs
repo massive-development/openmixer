@@ -16,11 +16,12 @@ use om_ui::widgets::fx_panel::FxPanel;
 use om_ui::widgets::master::MasterSection;
 use om_ui::widgets::mixer::{MixerPanel, Page};
 
-/// The mixer card drawn at `card` (window coordinates).
+/// The mixer module drawn at `card` (window coordinates): the page tabs, master section, crossfader
+/// and headphone cue. The channel strips are separate cards ([`channel_card`]).
 pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let m = &shell.mixer;
-    let l = MixerPanel::layout(Rect::sized(card.w, card.h), m.strips.len(), t);
+    let l = MixerPanel::module_layout(Rect::sized(card.w, card.h), t);
     let accent = t.accent_for(0);
 
     let mut root = place(card)
@@ -30,13 +31,11 @@ pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary));
 
-    // Page tabs.
-    let on_mixer = m.mixer_visible();
     root = root.child(button(
         t,
         l.tabs[0],
         "Mixer",
-        on_mixer,
+        m.mixer_visible(),
         accent,
         cx,
         |this| {
@@ -54,18 +53,22 @@ pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
             this.mixer.set_page(Page::Fx);
         },
     ));
-
-    if on_mixer {
-        for (ch, strip_rect) in l.strips.iter().enumerate() {
-            root = root.children(channel(shell, ch, *strip_rect, card, cx));
-        }
-        root = root.children(master(shell, l.master, card, cx));
-        root = root.children(crossfader(shell, l.crossfader, card, cx));
-        root = root.children(cue(shell, l.cue, card, cx));
-    } else {
-        root = root.children(fx_page(shell, l.fx, card, cx));
-    }
+    root = root.children(master(shell, l.master, card, cx));
+    root = root.children(crossfader(shell, l.crossfader, card, cx));
+    root = root.children(cue(shell, l.cue, card, cx));
     root
+}
+
+/// Channel `ch`'s strip as a card drawn at `card` (window coordinates), edged in the deck's colour.
+pub fn channel_card(shell: &Shell, ch: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
+    let t = &shell.theme;
+    place(card)
+        .bg(paint(t.surface))
+        .border_1()
+        .border_color(paint(t.accent_for(ch as i32)))
+        .rounded(px(t.control_radius))
+        .text_color(paint(t.text_primary))
+        .children(channel(shell, ch, Rect::sized(card.w, card.h), card, cx))
 }
 
 /// One channel strip: title, trim and filter knobs, EQ bands with kill buttons, PFL, FX, the
@@ -245,7 +248,6 @@ fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) 
     );
     let mut out = vec![
         caption(t, lay.caption, "Crossfader"),
-        caption(t, lay.curve_caption, "Curve"),
         slider(
             t,
             lay.slider,
@@ -255,6 +257,10 @@ fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) 
             cx,
         ),
     ];
+    // The stacked (narrow) layout has no room for the "Curve" caption.
+    if !lay.curve_caption.is_empty() {
+        out.push(caption(t, lay.curve_caption, "Curve"));
+    }
     let selected = x.selected_curve();
     for (i, label) in CURVE_LABELS.iter().enumerate() {
         out.push(button(
@@ -301,7 +307,12 @@ fn cue(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<
 }
 
 /// The FX page: scope buttons, unit selector, enable, the mix knob and the unit's parameters.
-fn fx_page(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
+pub(crate) fn fx_page(
+    shell: &Shell,
+    bounds: Rect,
+    card: Rect,
+    cx: &mut Context<Shell>,
+) -> Vec<Div> {
     let t = &shell.theme;
     let fx = &shell.mixer.fx;
     let lay = fx.layout(bounds, t);

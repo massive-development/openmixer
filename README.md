@@ -11,7 +11,7 @@ Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for kno
 
 ## Mission
 
-OpenMixer is a clean-room, legally original implementation of professional DJ software features. Our goal is to provide djay-Pro-class capability—multi-deck mixing, effects, sync, BPM/key analysis, stem separation, Automix, and controller support—without copying any copyrighted expression from existing applications.
+OpenMixer is a clean-room, legally original implementation of professional DJ software features. Our goal is a program a working DJ would choose over what they use now: djay-Pro-class capability (multi-deck mixing, effects, sync, BPM/key analysis, stem separation, Automix, controller support) with an interface that reads at a glance, all without copying any copyrighted expression from existing applications. The bar is in [docs/PRODUCT.md](docs/PRODUCT.md).
 
 ## Clean-Room Statement
 
@@ -32,6 +32,8 @@ OpenMixer is written in Rust with [GPUI](https://www.gpui.rs/) for the UI. The s
 | Document | Purpose |
 |----------|---------|
 | [README.md](README.md) | Project overview (this file) |
+| [docs/PRODUCT.md](docs/PRODUCT.md) | **What the product has to be: the bar every area is measured against** |
+| [ROADMAP.md](ROADMAP.md) | Tracks, waves and key decisions |
 | [agents.md](agents.md) | **AI Agent setup and implementation guide** |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 | [TODO.md](TODO.md) | Implementation task list |
@@ -87,10 +89,8 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
 
-# GPUI crate (outside the workspace; non-blocking in CI)
-cargo fmt --manifest-path crates/om-ui-gpui/Cargo.toml --check
-cargo clippy --manifest-path crates/om-ui-gpui/Cargo.toml --all-targets -- -D warnings
-cargo deny --manifest-path crates/om-ui-gpui/Cargo.toml --config crates/om-ui-gpui/deny.toml check
+# Headless binary (no window, no GPUI system libraries at run time)
+cargo test -p openmixer --no-default-features
 ```
 
 ### Running on WSL
@@ -120,17 +120,14 @@ export DISPLAY=127.0.0.1:0
 ### Running
 
 ```bash
-cargo run -p openmixer -- --smoke   # startup check
+cargo run -p openmixer -- --mock-device              # the window (dev builds optimise the UI crates; use --release to judge smoothness)
+cargo run -p openmixer -- --headless --smoke         # startup check, no window
 cargo run -p openmixer -- --version
 ```
 
-The GPUI window is behind the `gui` feature, which is off by default and not built by the main CI matrix:
+The GPUI window is the default build and needs the `-dev` packages listed in the `check` job of `.github/workflows/rust.yml` (on Linux: `libxkbcommon-x11-dev`, Wayland, fontconfig, freetype, Vulkan). `--no-default-features` builds the headless binary without it. Nobody has yet looked at the window by eye.
 
-```bash
-cargo run -p openmixer --features gui -- --mock-device
-```
-
-The `gui-check` job in `.github/workflows/rust.yml` builds the feature on Linux and is non-blocking. Nobody has yet looked at the window by eye.
+Set `OPENMIXER_FRAME_STATS=1` to print frame-time percentiles to the terminal every five seconds.
 
 ### Debug Build
 
@@ -159,7 +156,7 @@ crates/
 ├── om-stems/     # Stem model manifests, licence-gated verified downloads (ONNX backend open)
 ├── om-plugins/   # In-process plugin API and registry
 ├── om-ui/        # UI logic without a window: themes, preferences, mixer, deck and library view models
-├── om-ui-gpui/   # GPUI window (its own workspace, behind the openmixer `gui` feature)
+├── om-ui-gpui/   # GPUI window (the openmixer `gui` feature, on by default)
 └── openmixer/    # Binary and composition root: --smoke, --mock-device, settings, plugins
 examples/plugins/gain-plugin/   # Example in-process plugin
 fixtures/                       # Small test inputs: controller maps and traces, library exports
@@ -221,7 +218,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - Auto-enqueue after a library scan; playlist editing
 - macOS: `soak_short` exceeds its xrun budget on hosted runners (that CI leg is non-blocking)
 - The headphone-cue second stream is unproven (it failed on WSLg)
-- The window-opening `--smoke` (behind `gui`) is not run in CI
+- The window-opening `--smoke` (without `--headless`) is not run in CI
 
 ---
 

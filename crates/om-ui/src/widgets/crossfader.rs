@@ -73,8 +73,34 @@ impl CrossfaderSection {
         self.curve
     }
 
+    /// Narrower than this the curve buttons go under the slider instead of beside it.
+    pub const STACK_BELOW_WIDTH: i32 = 300;
+
+    /// Height the section needs at `width`: the slider row, plus a button row when stacked.
+    pub fn height_for(width: i32, theme: &ThemeTokens) -> i32 {
+        let base = px(theme.mixer_crossfader_height);
+        if width < Self::STACK_BELOW_WIDTH {
+            base + px(theme.mixer_button_height) + theme.inner_gap
+        } else {
+            base
+        }
+    }
+
     /// Rectangles of the section for a `bounds` card. Mirrors `CrossfaderSection::resized`.
     pub fn layout(bounds: Rect, theme: &ThemeTokens) -> CrossfaderLayout {
+        if bounds.w < Self::STACK_BELOW_WIDTH {
+            let mut area = bounds.reduced(theme.pad, theme.pad - 4);
+            let mut segments = area.remove_bottom(px(theme.mixer_button_height));
+            area.remove_bottom(theme.inner_gap);
+            let first = segments.remove_left(segments.w / 2);
+            let (caption, slider) = place_captioned(area, CAPTION_HEIGHT);
+            return CrossfaderLayout {
+                caption,
+                curve_caption: Rect::default(),
+                slider,
+                curves: [first, segments],
+            };
+        }
         let mut area = bounds.reduced(theme.pad, theme.pad - 4);
         let mut right = area.remove_right(px(theme.mixer_curve_width));
         let curve_caption = right.remove_top(CAPTION_HEIGHT);

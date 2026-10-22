@@ -13,14 +13,11 @@ members = [
     "crates/om-ui",
     "crates/om-plugins",
     "crates/om-stems",
+    "crates/om-ui-gpui",
     "crates/om-testing",
     "examples/plugins/gain-plugin",
     "crates/openmixer",
 ]
-# GPUI window layer: its own workspace (system libraries and a display are needed to build it). The
-# openmixer binary pulls it in behind the `gui` feature. See docs/spikes/DECISIONS.md, "GPUI integration".
-exclude = ["crates/om-ui-gpui"]
-
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -43,6 +40,7 @@ om-automix = { path = "crates/om-automix" }
 om-stretch = { path = "crates/om-stretch" }
 om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
+om-ui-gpui = { path = "crates/om-ui-gpui" }
 rtrb = "0.4"
 rusqlite = { version = "0.35", features = ["bundled"] }
 serde_json = "1"
@@ -53,6 +51,16 @@ tracing = "0.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+# Release is the shipping, real-time build. Thin LTO with one codegen unit lets the audio path inline across
+# om-core, om-dsp and om-engine. Do not set `panic = "abort"`: deck workers, the job queue and the watch-folder
+# scanner isolate panics with `catch_unwind`, and abort would turn a bad file into a dead audio thread.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+strip = true
 
 # `cargo test` runs the engine in real time (the soak and the render-budget tests). Unoptimized DSP
 # misses the 256-frame budget, so test builds optimize the audio crates and their dependencies (the

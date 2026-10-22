@@ -39,7 +39,7 @@ pub fn stem_pad_layout(bounds: Rect, theme: &ThemeTokens) -> StemPadLayout {
     let gap = theme.inner_gap;
     let row = px(theme.deck_row_height);
     let mut area = bounds;
-    let control = area.remove_left(row * 2 + row / 2);
+    let control = area.remove_left(row * 2 + row / 8);
     area.remove_left(gap);
     let cell_w = ((area.w - gap * (PADS as i32 - 1)) / PADS as i32).max(0);
     let mut pads = [PadRects::default(); PADS];
@@ -48,11 +48,14 @@ pub fn stem_pad_layout(bounds: Rect, theme: &ThemeTokens) -> StemPadLayout {
         let mut column = Rect::new(x, area.y, cell_w, area.h);
         let header = column.remove_top(row);
         column.remove_top(gap);
-        pad.mute = Rect::new(header.x, header.y, (header.w - row).max(0), header.h);
+        // The solo button is narrower than a row: on a deck beside a channel strip the pads share
+        // about 230 px, and the stem name needs the rest.
+        let solo_w = (row * 4 / 5).min(header.w);
+        pad.mute = Rect::new(header.x, header.y, (header.w - solo_w).max(0), header.h);
         pad.solo = Rect::new(
-            header.x + (header.w - row).max(0),
+            header.x + (header.w - solo_w).max(0),
             header.y,
-            row.min(header.w),
+            solo_w,
             header.h,
         );
         let slider_w = column.w * 45 / 100;

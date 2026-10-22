@@ -46,7 +46,10 @@ jobs:
         run: |
           sudo apt-get update
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
-          sudo apt-get install -y libasound2-dev pkg-config libclang-dev
+          # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
+            libvulkan-dev libssl-dev
 
       - uses: Swatinem/rust-cache@v2
 
@@ -58,6 +61,9 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace
+
+      - name: cargo test (headless binary)
+        run: cargo test -p openmixer --no-default-features
 
   deny:
     name: cargo deny (licences and bans)
@@ -141,94 +147,3 @@ jobs:
             echo "ERROR: ASIO SDK file name found in the tracked tree"
             exit 1
           fi
-
-  # Non-blocking: the first runs reveal which system packages the GPUI window needs on a clean runner.
-  # GPUI is not a workspace member (see docs/spikes/DECISIONS.md, "GPUI integration"), so its tests run
-  # from its own directory. Remove `continue-on-error` once the package list is verified.
-  gui-check:
-    name: gui check (linux, non-blocking)
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Read toolchain from rust-toolchain.toml
-        id: tc
-        shell: bash
-        run: |
-          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.tc.outputs.channel }}
-          components: rustfmt, clippy
-
-      - name: Install GPUI system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev libxkbcommon-x11-dev \
-            libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev libvulkan-dev libssl-dev \
-            libclang-dev
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: cargo check (openmixer with the gui feature)
-        run: cargo check -p openmixer --features gui
-
-      - name: cargo test (om-ui-gpui, all targets)
-        working-directory: crates/om-ui-gpui
-        run: cargo test
-
-  # Non-blocking: fmt, clippy and licence/ban/advisory policy for om-ui-gpui (outside the workspace).
-  # Own job so lint results are not hidden behind the GPUI build or test failures in gui-check.
-  # Becomes required once it is green twice in a row; then drop `continue-on-error`.
-  gpui-lint:
-    name: gpui lint (linux, non-blocking)
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Read toolchain from rust-toolchain.toml
-        id: tc
-        shell: bash
-        run: |
-          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.tc.outputs.channel }}
-          components: rustfmt, clippy
-
-      - name: Install GPUI system dependencies
-        # Same package list as gui-check: clippy compiles the GPUI tree.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev libxkbcommon-x11-dev \
-            libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev libvulkan-dev libssl-dev \
-            libclang-dev
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates/om-ui-gpui
-
-      - name: cargo fmt (om-ui-gpui)
-        run: cargo fmt --manifest-path crates/om-ui-gpui/Cargo.toml --check
-
-      - name: cargo clippy (om-ui-gpui)
-        run: cargo clippy --manifest-path crates/om-ui-gpui/Cargo.toml --all-targets -- -D warnings
-
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny
-
-      # The GPUI policy is crates/om-ui-gpui/deny.toml (the root policy plus what the GPUI tree needs).
-      - name: cargo deny (om-ui-gpui licences, bans, advisories, sources)
-        run: cargo deny --manifest-path crates/om-ui-gpui/Cargo.toml --config crates/om-ui-gpui/deny.toml check
