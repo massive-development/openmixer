@@ -16,6 +16,8 @@ DOC_FILES = [
     "ROADMAP.md",
     "docs/PROGRESS.md",
     "docs/DESIGN_PATTERNS.md",
+    "NOTICE",
+    "fixtures/README.md",
 ]
 FORBIDDEN = ["C++", "JUCE", "CMake", "cmake", "ctest", "g++", "clang-tidy",
              ".cpp", ".hpp", "GoogleTest", "webkit"]

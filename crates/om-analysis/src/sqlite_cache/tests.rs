@@ -58,7 +58,7 @@ fn open_fails_for_unwritable_path() {
 }
 
 #[test]
-fn schema_matches_the_cpp_layout() {
+fn schema_has_the_expected_columns_and_version() {
     let cache = memory_cache();
     let db = cache.lock();
     let version: i32 = db
