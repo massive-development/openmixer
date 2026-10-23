@@ -421,7 +421,7 @@ pub(crate) fn zoom(
     let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
     let fpp = deck.zoom.frames_per_pixel();
     let length = shell.engine.deck(index).length_frames();
-    let playhead = view.x_of_frame(shell.engine.deck(index).position_frames());
+    let playhead = view.x_of_frame(view.centre_frame);
     let accent = paint(t.accent_for(index as i32));
     let tokens = t.clone();
     let cue_colour = paint(t.master);

@@ -3,9 +3,11 @@
 
 use om_analysis::{WaveformLevel, WaveformPoint};
 
+mod clock;
 mod colour;
 mod hue;
 
+pub use clock::PlayheadClock;
 pub use colour::{hsl_to_colour, is_audible, loudness_level, wave_colour, wave_hsl, Hsl};
 pub use hue::{hue_span, overview_hues, HUE_SPAN_COLUMNS, HUE_SPAN_PERCENTILES};
 

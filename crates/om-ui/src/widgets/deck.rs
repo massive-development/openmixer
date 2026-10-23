@@ -178,6 +178,7 @@ pub struct ZoomWaveform {
     frames_per_pixel: f64,
     cache: Option<StripCache>,
     shown: Option<ZoomShown>,
+    clock: waveform::PlayheadClock,
     /// Repaints requested by [`ZoomWaveform::refresh`] (state changes only).
     pub repaint_requests: u64,
     /// Strips rendered into the cache.
@@ -192,6 +193,7 @@ impl ZoomWaveform {
             frames_per_pixel: 256.0,
             cache: None,
             shown: None,
+            clock: waveform::PlayheadClock::default(),
             repaint_requests: 0,
             cache_renders: 0,
         }
@@ -227,10 +229,30 @@ impl ZoomWaveform {
         self.cache = None;
     }
 
+    /// Advances the smoothed playhead to `now` (seconds on a monotonic clock). Call once per frame,
+    /// before the view is built.
+    pub fn advance_playhead(&mut self, now: f64) {
+        let deck = self.binding.state();
+        let fps = deck.rate * deck.file_sample_rate;
+        self.clock
+            .advance(deck.position_frames, now, deck.playing, fps);
+    }
+
+    /// The playhead frame the zoomed view is centred on: smoothed once [`advance_playhead`] has
+    /// run, else the engine's published position.
+    ///
+    /// [`advance_playhead`]: ZoomWaveform::advance_playhead
+    pub fn playhead_frame(&self) -> i64 {
+        match self.clock.current() {
+            Some(frame) => frame.round() as i64,
+            None => self.binding.state().position_frames,
+        }
+    }
+
     /// The view for a widget `width` px wide, centred on the playhead.
     pub fn view(&self, width: f64) -> View {
         View {
-            centre_frame: self.binding.state().position_frames,
+            centre_frame: self.playhead_frame(),
             frames_per_pixel: self.frames_per_pixel,
             width,
         }
