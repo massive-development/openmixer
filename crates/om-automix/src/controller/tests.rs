@@ -2,7 +2,7 @@ use super::*;
 use crate::fixtures::{info, LENGTH_BEATS};
 use crate::readback::blank_snapshot;
 use crate::stem_fade::CancelMode;
-use om_core::param_id::{AutomixParam, EqBand, StemParam};
+use om_core::param_id::{AutomixParam, EqBand, FxParam, FxRack, StemParam};
 use om_core::{AutomixStyle, ParamTarget, XfaderAssign};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -566,6 +566,98 @@ fn automix_cancel_stops_the_plan_and_skips_the_track() {
     assert_eq!(sim.host.starts.len(), 1);
 }
 
+fn skip_press() -> ParamId {
+    ParamId::Automix(AutomixParam::Skip)
+}
+
+/// `automix.skip` during a transition lands it at the plan's end: the incoming deck is in, the
+/// outgoing one is stopped, and the user's input is still respected (checked in the next test).
+#[test]
+fn automix_skip_lands_a_running_transition_at_its_end() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_into_transition();
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.run_until("cleanup after the skip", 200, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle after the skip", 200, |s| {
+        s.state() == AutomixState::Idle
+    });
+    assert_eq!(sim.xfader(), 1.0, "the ramp lands on the incoming side");
+    assert!(sim.snap.decks[1].playing && !sim.snap.decks[0].playing);
+    assert_eq!(sim.ctrl.snapshot().last_error, "transition skipped");
+    assert_eq!(sim.host.starts.len(), 1, "no second track is picked");
+}
+
+/// A skip while a pick is armed abandons it, and the queue's next track is mixed in instead. The
+/// queue offers the skipped track again first; it is passed over.
+#[test]
+fn automix_skip_while_armed_abandons_the_pick_and_passes_over_it_again() {
+    let mut sim = Sim::new(380.0, false);
+    sim.host.tracks.insert(8, info(1, BPM, "8A", false));
+    sim.host.queue.push(NextTrack {
+        id: 7,
+        title: "Next One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Good One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.run_until("armed", 3000, |s| s.state() == AutomixState::Armed);
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.run_until("the next track is loading", 3000, |s| {
+        s.host.starts.len() == 2
+    });
+    assert_eq!(sim.host.starts, vec![(1, 7), (1, 8)]);
+    assert!(
+        sim.sent("mixer.crossfader").is_empty(),
+        "nothing moved for the skipped pick"
+    );
+    sim.run_until("cleanup of the next transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing && !sim.snap.decks[0].playing);
+}
+
+/// A skip pressed while the pick is still loading waits for the load, then abandons the pick the
+/// same way.
+#[test]
+fn automix_skip_while_loading_abandons_the_pick_once_it_is_loaded() {
+    let mut sim = Sim::new(380.0, false);
+    sim.host.tracks.insert(8, info(1, BPM, "8A", false));
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Good One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.run_until("loading", 3000, |s| s.state() == AutomixState::Loading);
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.run_until("the next track is loading", 3000, |s| {
+        s.host.starts.len() == 2
+    });
+    assert_eq!(sim.host.starts, vec![(1, 7), (1, 8)]);
+    sim.run_until("cleanup of the next transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert!(sim.snap.decks[1].playing && !sim.snap.decks[0].playing);
+}
+
+#[test]
+fn automix_skip_with_nothing_to_skip_says_so() {
+    let mut sim = Sim::new(10.0, false);
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.tick();
+    assert_eq!(sim.state(), AutomixState::Idle);
+    assert_eq!(sim.ctrl.snapshot().last_error, "nothing to skip");
+    assert!(sim.cmds().is_empty());
+}
+
 #[test]
 fn an_underrun_cancels_and_turns_automix_off() {
     let mut sim = Sim::new(380.0, false);
@@ -718,6 +810,149 @@ fn a_pair_refused_four_times_is_suppressed_with_the_planner_error() {
     assert_eq!(sim.state(), AutomixState::Idle);
     let error = sim.ctrl.snapshot().last_error;
     assert!(error.starts_with("no transition"), "{error}");
+    // The last refused track stays on the incoming deck, but it is not a cue to mix into.
+    assert_eq!(
+        sim.ctrl.stale_deck.map(|(d, _, id)| (d, id)),
+        Some((1, Some(10)))
+    );
+}
+
+/// Echo-out switches its unit on and raises the send. Both go back to off and zero when the
+/// transition finishes and when it is cancelled, so the unit is left the way automix found it.
+#[test]
+fn echo_out_puts_its_unit_back_off_on_finish_and_on_cancel() {
+    let fx_id = |p| {
+        ParamId::Fx {
+            rack: FxRack::Channel(0),
+            unit: Some(0),
+            p,
+        }
+        .to_string()
+    };
+    let (enable, mix) = (fx_id(FxParam::Enable), fx_id(FxParam::Mix));
+    let last = |sim: &Sim, id: &str| sim.fx.iter().rev().find(|(n, _)| n == id).map(|(_, v)| *v);
+
+    let mut sim = Sim::new(380.0, false);
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(last(&sim, &mix), Some(0.0));
+    assert_eq!(last(&sim, &enable), Some(0.0));
+
+    let mut sim = Sim::new(380.0, false);
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("echo on", 3000, |s| last(s, &mix) == Some(0.5));
+    assert_eq!(last(&sim, &enable), Some(1.0));
+    sim.snap.mixer.crossfader = 0.9;
+    assert_cancelled(&mut sim, "mixer.crossfader");
+    assert_eq!(last(&sim, &mix), Some(0.0));
+    assert_eq!(last(&sim, &enable), Some(0.0));
+}
+
+/// Channel 0's rack for the FX readback tests: the given `(effect, enabled, mix)` units.
+fn rack_with(units: &[(&'static str, bool, f32)]) -> om_core::FxSnapshot {
+    let channel = units
+        .iter()
+        .map(|&(effect, enabled, mix)| om_core::FxUnitSnapshot {
+            effect,
+            enabled,
+            mix,
+        })
+        .collect();
+    om_core::FxSnapshot {
+        channels: vec![channel, Vec::new()],
+    }
+}
+
+fn unit_ids(unit: u16) -> (String, String) {
+    let id = |p| {
+        ParamId::Fx {
+            rack: FxRack::Channel(0),
+            unit: Some(unit),
+            p,
+        }
+        .to_string()
+    };
+    (id(FxParam::Enable), id(FxParam::Mix))
+}
+
+fn last_sent(sim: &Sim, id: &str) -> Option<f64> {
+    sim.fx.iter().rev().find(|(n, _)| n == id).map(|(_, v)| *v)
+}
+
+/// The configured unit (0) is in use by the user, so echo-out takes the next free echo unit and
+/// puts that unit back to the switch and send it had, on finish and on cancel.
+#[test]
+fn echo_out_picks_a_free_unit_and_restores_its_previous_state() {
+    let rack = rack_with(&[("echo", true, 0.8), ("echo", false, 0.3)]);
+    let (busy_enable, busy_mix) = unit_ids(0);
+    let (enable, mix) = unit_ids(1);
+
+    // Finish.
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.fx = rack.clone();
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(last_sent(&sim, &enable), Some(0.0));
+    assert!((last_sent(&sim, &mix).unwrap() - 0.3).abs() < 1e-6);
+    assert_eq!(
+        last_sent(&sim, &busy_enable),
+        None,
+        "the busy unit is untouched"
+    );
+    assert_eq!(last_sent(&sim, &busy_mix), None);
+    assert!(
+        sim.fx.iter().any(|(n, v)| *n == enable && *v == 1.0),
+        "echo was on"
+    );
+
+    // Cancel.
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.fx = rack;
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("echo on", 3000, |s| last_sent(s, &mix) == Some(0.5));
+    assert_eq!(last_sent(&sim, &enable), Some(1.0));
+    sim.snap.mixer.crossfader = 0.9;
+    assert_cancelled(&mut sim, "mixer.crossfader");
+    assert_eq!(last_sent(&sim, &enable), Some(0.0));
+    assert!((last_sent(&sim, &mix).unwrap() - 0.3).abs() < 1e-6);
+    assert_eq!(last_sent(&sim, &busy_enable), None);
+}
+
+/// Every echo unit is on: the transition falls back to a crossfade and no FX id is sent.
+#[test]
+fn echo_out_with_no_free_unit_falls_back_to_a_crossfade() {
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.fx = rack_with(&[("echo", true, 0.8)]);
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert!(sim.fx.is_empty(), "{:?}", sim.fx);
+    assert_eq!(sim.xfader(), 1.0);
+}
+
+/// A centred crossfader and a channel that has to be reassigned: the outgoing channel is moved to
+/// its full level first, so the ramp starts there instead of dipping through the centre.
+#[test]
+fn a_centred_crossfader_is_moved_to_the_outgoing_side_when_a_channel_is_reassigned() {
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.mixer.crossfader = 0.5;
+    sim.run_until("transitioning", 3000, |s| {
+        s.state() == AutomixState::Transitioning
+    });
+    sim.run_until("idle after the transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup) && s.state() == AutomixState::Idle
+    });
+    let xfader = sim.sent("mixer.crossfader");
+    // The first value sent is the outgoing side's edge (one tick into the ramp), not the centre.
+    assert!(xfader.first().is_some_and(|v| *v < 0.01), "{xfader:?}");
+    assert_eq!(sim.sent("mixer.ch0.xfader"), vec![1.0, 0.0]);
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing);
 }
 
 /// The tempo gate goes to the queue for explicit beat-matched styles only.
@@ -1001,6 +1236,10 @@ fn control_target_maps_the_automix_ids() {
     assert!(c.take_start() && !c.take_start());
     c.set_param(&ParamId::Automix(AutomixParam::Cancel), 1.0);
     assert!(c.take_cancel() && !c.take_cancel());
+    c.set_param(&ParamId::Automix(AutomixParam::Skip), 0.0);
+    assert!(!c.take_skip(), "release is not a press");
+    c.set_param(&ParamId::Automix(AutomixParam::Skip), 1.0);
+    assert!(c.take_skip() && !c.take_skip());
     assert!(!c.set_param(&"deck.0.play".parse().unwrap(), 1.0));
 }
 

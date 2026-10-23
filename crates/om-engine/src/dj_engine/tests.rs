@@ -377,6 +377,22 @@ fn snapshot_reads_each_channels_crossfader_assignment() {
 }
 
 #[test]
+fn snapshot_carries_each_channels_fx_units() {
+    let (engine, _audio) = DjEngine::new(2);
+    let before = engine.snapshot();
+    assert_eq!(before.fx.channels.len(), 2);
+    assert!(before.fx.unit(0, 0).is_some_and(|u| !u.enabled));
+    assert!(engine.fx().channel_rack(1).unwrap().set_fx(
+        Some(0),
+        &om_core::param_id::FxParam::Enable,
+        1.0
+    ));
+    let after = engine.snapshot();
+    assert!(after.fx.unit(1, 0).unwrap().enabled);
+    assert!(!after.fx.unit(0, 0).unwrap().enabled);
+}
+
+#[test]
 fn sync_enable_for_a_missing_deck_is_unhandled() {
     let (engine, _audio) = DjEngine::new(2);
     let router = ParameterRouter::new();

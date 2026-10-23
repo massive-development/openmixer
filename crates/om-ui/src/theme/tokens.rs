@@ -109,6 +109,13 @@ pub struct ThemeTokens {
     /// The Record button's dot and the recording state (armed or running).
     pub record_red: Colour,
     pub master: Colour,
+    /// Waveform band colours (bass / mids / highs).
+    /// The OpenMixer signature colour (E1). Reserved for brand marks and the "now" cues (the
+    /// playhead, the master); it is never one of the deck accents.
+    pub brand: Colour,
+    /// BPM, key and time numerals, and the dimmer colour of their unit labels.
+    pub readout: Colour,
+    pub readout_dim: Colour,
     /// Menus, tooltips and knob/fader caps.
     pub popup: Colour,
     pub cap_top: Colour,
@@ -133,6 +140,9 @@ pub struct ThemeTokens {
     pub type_title: f32,
     pub type_heading: f32,
     pub type_mono: f32,
+    /// Large numerals for BPM and time, and the smaller companion size (key, remaining time).
+    pub type_readout: f32,
+    pub type_readout_small: f32,
 
     // Deck widget metrics (px) and overlay strengths (0..1 alpha).
     pub deck_header_height: f32,
@@ -226,6 +236,13 @@ pub struct ThemeTokens {
     pub wave_spread_narrow: f32,
     pub wave_spread_wide: f32,
     pub wave_spread_saturation: f32,
+    // Depth, glow and motion (E1). Glow is the accent of a lit control spilled around it.
+    pub glow_alpha: f32,
+    pub glow_radius: f32,
+    pub shadow_blur: f32,
+    pub shadow_offset_y: f32,
+    pub motion_fast_ms: f32,
+    pub motion_base_ms: f32,
 
     /// Scales the alpha of surface, raised and hover (glass strength).
     pub surface_opacity: f32,
@@ -237,10 +254,10 @@ impl ThemeTokens {
     /// The built-in dark theme. Also the fallback for anything a theme file leaves out.
     pub fn builtin_dark() -> Self {
         Self {
-            backdrop_top: Colour::from_argb(0xFF0E_1220),
-            backdrop_bottom: Colour::from_argb(0xFF07_090F),
-            glow_cool: Colour::from_argb(0x3038_BDF8),
-            glow_warm: Colour::from_argb(0x28F4_72B6),
+            backdrop_top: Colour::from_argb(0xFF12_1020),
+            backdrop_bottom: Colour::from_argb(0xFF08_0710),
+            glow_cool: Colour::from_argb(0x304C_C9F0),
+            glow_warm: Colour::from_argb(0x28FF_8F5A),
             surface: Colour::from_argb(0x14FF_FFFF),
             surface_raised: Colour::from_argb(0x1FFF_FFFF),
             surface_hover: Colour::from_argb(0x2EFF_FFFF),
@@ -251,7 +268,7 @@ impl ThemeTokens {
             text_primary: Colour::from_argb(0xF2F4_F6FB),
             text_secondary: Colour::from_argb(0xA6C9_D1E3),
             text_muted: Colour::from_argb(0x6BC9_D1E3),
-            on_accent: Colour::from_argb(0xFF07_090F),
+            on_accent: Colour::from_argb(0xFF08_0710),
             meter_low: Colour::from_argb(0xFF34_D399),
             meter_mid: Colour::from_argb(0xFFFB_BF24),
             meter_high: Colour::from_argb(0xFFF4_3F5E),
@@ -261,6 +278,9 @@ impl ThemeTokens {
             cap_top: Colour::from_argb(0xFF2C_3446),
             cap_bottom: Colour::from_argb(0xFF16_1B26),
             drop_target: Colour::from_argb(0x402A_6F9E),
+            brand: Colour::from_argb(0xFFFF_8F5A),
+            readout: Colour::from_argb(0xFFF7_F3EC),
+            readout_dim: Colour::from_argb(0xFF9A_A0B4),
             accents: builtin_accents(),
 
             gap: 12,
@@ -276,6 +296,8 @@ impl ThemeTokens {
             type_title: 16.0,
             type_heading: 17.0,
             type_mono: 15.0,
+            type_readout: 22.0,
+            type_readout_small: 14.0,
 
             deck_header_height: 52.0,
             deck_overview_height: 40.0,
@@ -357,6 +379,12 @@ impl ThemeTokens {
             wave_spread_narrow: 1.0,
             wave_spread_wide: 3.5,
             wave_spread_saturation: 0.5,
+            glow_alpha: 0.45,
+            glow_radius: 10.0,
+            shadow_blur: 18.0,
+            shadow_offset_y: 6.0,
+            motion_fast_ms: 90.0,
+            motion_base_ms: 180.0,
 
             surface_opacity: 1.0,
             backdrop_opacity: 1.0,
@@ -394,10 +422,10 @@ impl ThemeTokens {
 }
 
 const BUILTIN_ACCENTS: [Colour; 4] = [
-    Colour::from_argb(0xFF38_BDF8),
-    Colour::from_argb(0xFFF4_72B6),
-    Colour::from_argb(0xFFA3_E635),
-    Colour::from_argb(0xFFFB_BF24),
+    Colour::from_argb(0xFF4C_C9F0),
+    Colour::from_argb(0xFFB7_94F6),
+    Colour::from_argb(0xFF5F_D6A4),
+    Colour::from_argb(0xFFE3_D26F),
 ];
 
 /// Bass red through orange, green, cyan and blue to violet, then a wash toward white for the air.

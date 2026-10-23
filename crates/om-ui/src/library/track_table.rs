@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use om_analysis::{is_harmonically_compatible, MusicalKey};
 use om_library::TrackRecord;
 
+use super::mix_match::{self, MixLevel, MixMatch, MixReference};
 use super::track_drag;
 use super::track_source::TrackSource;
 use crate::format;
@@ -109,6 +110,7 @@ pub struct TrackTableModel {
     pages: BTreeMap<usize, Vec<TrackRecord>>,
     total: usize,
     reference: Option<MusicalKey>,
+    reference_bpm: Option<f64>,
     /// The error from the last page that could not be read; empty when the last fetch worked.
     fetch_error: String,
 }
@@ -151,6 +153,29 @@ impl TrackTableModel {
         } else {
             MusicalKey::from_camelot(camelot)
         };
+    }
+
+    /// Tempo of the reference track (`None` = unknown); with a reference key it sharpens the tint.
+    pub fn set_reference_bpm(&mut self, bpm: Option<f64>) {
+        self.reference_bpm = bpm;
+    }
+
+    /// Key relation and tempo distance of `track` against the reference.
+    pub fn mix_match(&self, track: &TrackRecord) -> MixMatch {
+        let reference = MixReference {
+            camelot: self
+                .reference
+                .as_ref()
+                .map(MusicalKey::camelot)
+                .unwrap_or_default(),
+            bpm: self.reference_bpm,
+        };
+        mix_match::score(&reference, &track.camelot, track.bpm)
+    }
+
+    /// How strongly the row stands out against the reference.
+    pub fn mix_level(&self, track: &TrackRecord) -> MixLevel {
+        self.mix_match(track).level
     }
 
     pub fn reference_camelot_key(&self) -> Option<&MusicalKey> {

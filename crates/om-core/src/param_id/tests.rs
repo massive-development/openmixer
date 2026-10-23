@@ -111,6 +111,7 @@ const GOLDEN: &[&str] = &[
     "automix.enable",
     "automix.start",
     "automix.cancel",
+    "automix.skip",
     "automix.style",
     // Record
     "record.start",

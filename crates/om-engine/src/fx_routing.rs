@@ -9,7 +9,7 @@ use crate::fx::{FxRack, FxRackControl};
 use crate::mixer::MixerControl;
 use crate::sync::Sync;
 use om_core::param_id::FxRack as RackId;
-use om_core::{ParamId, ParamTarget, ParameterTarget};
+use om_core::{FxSnapshot, FxUnitSnapshot, ParamId, ParamTarget, ParameterTarget};
 
 pub const INSERT_SLOT: usize = 0;
 
@@ -59,6 +59,26 @@ impl FxRouting {
                 self.master_rack
                     .set_tempo_from_grid(grid.as_ref(), deck.rate());
             }
+        }
+    }
+
+    /// Switch and mix of every unit of every channel rack, from the control atomics. Control thread.
+    pub fn snapshot(&self) -> FxSnapshot {
+        FxSnapshot {
+            channels: self
+                .channel_racks
+                .iter()
+                .map(|rack| {
+                    (0..rack.num_units())
+                        .filter_map(|i| rack.unit(i))
+                        .map(|u| FxUnitSnapshot {
+                            effect: u.effect_name(),
+                            enabled: u.is_enabled(),
+                            mix: u.mix(),
+                        })
+                        .collect()
+                })
+                .collect(),
         }
     }
 
@@ -139,6 +159,25 @@ mod tests {
             (tempo(routing.master_rack()) - 100.0).abs() < 1e-9,
             "master follows the sync leader"
         );
+    }
+
+    #[test]
+    fn snapshot_reads_switch_and_mix_per_channel_unit() {
+        let (_mixer, ctl) = Mixer::new(2);
+        let routing = FxRouting::new(&ctl);
+        assert!(routing.set_parameter("ch1.fx0.enable", 1.0));
+        assert!(routing.set_parameter("ch1.fx0.mix", 0.25));
+        let snap = routing.snapshot();
+        assert_eq!(snap.channels.len(), 2);
+        assert_eq!(snap.channels[1].len(), 8);
+        let u = snap.unit(1, 0).unwrap();
+        assert_eq!(u.effect, "echo");
+        assert!(u.enabled);
+        assert_eq!(u.mix, 0.25);
+        let idle = snap.unit(0, 0).unwrap();
+        assert!(!idle.enabled);
+        assert_eq!(idle.mix, 1.0, "a fresh unit starts at full mix");
+        assert!(snap.unit(2, 0).is_none());
     }
 
     #[test]
