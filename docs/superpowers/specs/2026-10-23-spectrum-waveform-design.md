@@ -1,6 +1,6 @@
 # Spectrum waveform (E10): design
 
-Status: proposed. Tracks TODO.md item E10.
+Status: implemented, awaiting review on real music. Tracks TODO.md item E10.
 
 ## Summary
 
@@ -71,6 +71,16 @@ Waveform analysis for a track takes at most 3 times the current time on the same
 - Old-format cache entries rebuild without error.
 - Demo screenshots from the mock device show a wide hue range in both themes.
 - A tuning tool renders a track's strips to PNG so the result can be reviewed on real audio. Reference tracks are not committed. The first reference track is "Make some room" by Renaux, with two or three more full tracks in other styles (heavy bass, vocal-led, sparse) added before the threshold is locked.
+
+## Implementation notes
+
+Chosen during implementation (see the PR for the measurements):
+
+- FFT of 2048 samples, Hann window, hop 512 samples (about 11.6 ms at 44.1 kHz). Each 128-sample point blends the two frames around its centre, weighted by closeness, in energy; that is the only smoothing.
+- Bands: the moments are taken per FFT bin on a log-frequency axis between 25 Hz and 16 kHz (the limit of a fine log band split), not over 8 to 12 coarse bands, because coarse bands step the hue visibly. Bin weights are power times sqrt(f / 1 kHz), which lifts highs against the bass-heavy slope of music so hats and vocals move the centroid.
+- Stored: centroid as 8 bits over 9.32 octaves (about 1/27 octave per step), spread as 8 bits of standard deviation up to 4 octaves, loudness as sqrt-quantised RMS. The spare byte is zero.
+- Format 1 payloads read as a colourless silhouette (`WaveformData::silhouette_from_v1_json`) while the analysis rebuilds; the rebuild runs when the track is loaded, urgent, on the prep queue.
+- Cost on a 120 s synthetic mix: the new analysis took 0.73 times the old three-band pass at a hop of 512 (0.4 at 1024); memory is 20 bytes per point in memory (as before) and 6 bytes in the payload (was 5), 1.2 times. The limits are 3 times and 1.5 times.
 
 ## Out of scope for the sandbox
 
