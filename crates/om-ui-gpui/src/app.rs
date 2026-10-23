@@ -277,6 +277,9 @@ impl Shell {
             }
         }
         for deck in &mut self.decks {
+            // Before refresh: the zoomed view follows the smoothed playhead, not the raw
+            // once-per-audio-buffer position.
+            deck.zoom.advance_playhead(now);
             deck.refresh(false);
         }
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
