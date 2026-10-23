@@ -39,7 +39,7 @@ All tokens have defaults in `ThemeTokens::builtin_dark`, so older theme files st
 ## Applied so far
 
 - Lit buttons (`om-ui-gpui::controls::button`) draw `LookAndFeel::glow(accent)` around the lit fill.
-- Deck header (`deck_view`): elapsed time, key and BPM use the readout style (numerals in `readout`, the unit in `readoutDim`).
+- Deck header (`deck_view`): elapsed time, key and BPM use the readout style (numerals in `readout`, the unit in `readoutDim`). The readout divs set `line_height(relative(1.1))`: gpui's default line height is about 1.6x, which pushed the artist line out of the header.
 
 ## Not done yet
 
