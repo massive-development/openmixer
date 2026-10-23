@@ -21,11 +21,13 @@ mod registry;
 mod result_cache;
 mod segmenter;
 mod service;
+mod spectrum;
 mod sqlite_cache;
 mod stft;
 mod structure;
 mod tempo;
 mod waveform;
+mod waveform_codec;
 mod waveform_data;
 
 #[cfg(test)]
@@ -48,6 +50,7 @@ pub use registry::{AnalyzerRegistry, RegistryError};
 pub use result_cache::ResultCache;
 pub use segmenter::{compute_energy_curve, segment_sections, EnergyCurve, Section, SegmentOptions};
 pub use service::{AnalysisService, Listener};
+pub use spectrum::{CENTROID_MIN_HZ, CENTROID_OCTAVES, SPREAD_MAX_OCTAVES};
 pub use sqlite_cache::{CacheError, SqliteResultCache, SCHEMA_VERSION};
 pub use stft::MagnitudeStft;
 pub use structure::{StructureAnalyzer, StructureEstimator, StructureResult};
@@ -56,7 +59,9 @@ pub use tempo::{
     BeatPhase,
 };
 pub use waveform::{WaveformAnalyzer, WaveformBuilder, WaveformOptions};
-pub use waveform_data::{WaveformData, WaveformLevel, WaveformPoint};
+pub use waveform_data::{
+    WaveformData, WaveformLevel, WaveformPoint, LEGACY_FORMAT_VERSION, WAVEFORM_FORMAT_VERSION,
+};
 
 /// Clamps `value` into `[lo, hi]` (never panics on odd bounds).
 pub(crate) fn jlimit(lo: f64, hi: f64, value: f64) -> f64 {
