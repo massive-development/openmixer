@@ -475,10 +475,9 @@ impl TrackLoader {
         idle.unwrap_or(0)
     }
 
-    /// Camelot code of the track playing now (the first playing deck), else of the first loaded
-    /// deck; empty when neither has a key.
-    pub fn reference_camelot(&self, engine: &DjEngine) -> String {
-        let mut first_loaded = String::new();
+    /// The track playing now (the first playing deck), else the first loaded deck with a key.
+    fn reference_track(&self, engine: &DjEngine) -> Option<&TrackRecord> {
+        let mut first_loaded = None;
         for (deck, slot) in self.slots.iter().enumerate() {
             let Some(track) = slot.track.as_ref() else {
                 continue;
@@ -487,13 +486,24 @@ impl TrackLoader {
                 continue;
             }
             if engine.deck(deck).is_playing() {
-                return track.camelot.clone();
+                return Some(track);
             }
-            if first_loaded.is_empty() {
-                first_loaded = track.camelot.clone();
-            }
+            first_loaded.get_or_insert(track);
         }
         first_loaded
+    }
+
+    /// Camelot code of the track playing now (the first playing deck), else of the first loaded
+    /// deck; empty when neither has a key.
+    pub fn reference_camelot(&self, engine: &DjEngine) -> String {
+        self.reference_track(engine)
+            .map(|t| t.camelot.clone())
+            .unwrap_or_default()
+    }
+
+    /// Analysed tempo of the same track [`Self::reference_camelot`] reads.
+    pub fn reference_bpm(&self, engine: &DjEngine) -> Option<f64> {
+        self.reference_track(engine).and_then(|t| t.bpm)
     }
 }
 

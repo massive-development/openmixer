@@ -2,12 +2,17 @@
 //! and the watch folders; the track table and its sources; the browser; the track loader; and the
 //! library settings page. The gpui front end renders these models.
 
+mod mix_match;
 mod services;
 mod track_drag;
 mod track_source;
 mod track_table;
 mod tree;
 
+pub use mix_match::{
+    bpm_distance_percent, key_relation, score as mix_score, KeyRelation, MixLevel, MixMatch,
+    MixReference, BPM_TOLERANCE_PERCENT,
+};
 pub use services::{
     default_options, LibraryEvent, LibraryServices, Options, TrackAnalysis, LIBRARY_DB_ENV,
     MEMORY_PATH,
