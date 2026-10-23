@@ -43,14 +43,22 @@ pub fn waveform_json() -> String {
             WaveformPoint {
                 min: -0.5,
                 max: 0.5,
-                low: 0.4,
-                mid: 0.3,
-                high: 0.2,
+                loudness: 0.4,
+                centroid: 0.3,
+                spread: 0.2,
             };
             64
         ],
     };
     WaveformData::new(8000.0, 64 * 64, base).to_json()
+}
+
+/// A format 1 payload (three band levels per point), as the first release cached it.
+pub fn legacy_waveform_json() -> String {
+    format!(
+        r#"{{"version":1,"sampleRate":8000.0,"numSamples":4096,"samplesPerPoint":64,"points":"{}"}}"#,
+        "IOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEAg4GBQQCDgYFBAIOBgUEA="
+    )
 }
 
 pub fn bpm_json(bpm: f64) -> String {
@@ -63,6 +71,11 @@ pub fn bpm_json(bpm: f64) -> String {
 }
 
 pub fn fake_analyzers() -> Arc<AnalyzerRegistry> {
+    registry_with_waveform(None)
+}
+
+/// The fake analysers, with `waveform` standing in for the fake waveform one when given.
+pub fn registry_with_waveform(waveform: Option<Arc<dyn Analyzer>>) -> Arc<AnalyzerRegistry> {
     let registry = AnalyzerRegistry::new();
     let key = KeyResult {
         key: MusicalKey::new(9, true), // A minor = 8A
@@ -77,6 +90,10 @@ pub fn fake_analyzers() -> Arc<AnalyzerRegistry> {
         ("structure", "{}".to_owned()),
     ];
     for (id, payload) in analyzers {
+        if let (true, Some(real)) = (id == "waveform", &waveform) {
+            registry.add(real.clone()).expect("unique ids");
+            continue;
+        }
         registry
             .add(Arc::new(FixedAnalyzer {
                 id: id.to_owned(),

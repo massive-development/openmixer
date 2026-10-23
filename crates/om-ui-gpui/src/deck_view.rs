@@ -13,11 +13,11 @@ use gpui::{
     canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton,
     MouseDownEvent, Pixels, Window,
 };
-use om_analysis::{WaveformData, WaveformPoint};
+use om_analysis::WaveformData;
 use om_ui::geometry::Rect;
 use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
 use om_ui::style::LookAndFeel;
-use om_ui::waveform::{column, BandBalance, View};
+use om_ui::waveform::{overview_column, strip_column, wave_colour, View};
 use om_ui::widgets::deck::{deck_controls_layout, deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
@@ -273,14 +273,11 @@ pub(crate) fn overview(
             if let Some(data) = &wave {
                 let points = &data.overview().points;
                 if !points.is_empty() {
-                    let balance = BandBalance::of(points);
+                    let spectral = data.has_spectrum();
                     for i in 0..bar_count {
                         // One pixel column folds the points it covers, so the colour follows the
                         // spectrum under it.
-                        let lo = i as usize * points.len() / bar_count as usize;
-                        let hi = ((i as usize + 1) * points.len() / bar_count as usize)
-                            .clamp(lo + 1, points.len());
-                        let col = column(&points[lo..hi]);
+                        let col = overview_column(points, i as usize, bar_count as usize);
                         let amp = col.peak * mid * 0.9;
                         let x = i as f32;
                         if x >= w {
@@ -294,7 +291,7 @@ pub(crate) fn overview(
                                 ),
                                 size(px(1.0), px((amp * 2.0).max(2.0))),
                             ),
-                            paint(balance.colour(&col, &tokens)),
+                            paint(wave_colour(&col, spectral, &tokens)),
                         ));
                     }
                 }
@@ -411,31 +408,23 @@ pub(crate) fn zoom(
             }
             if let Some(data) = &wave {
                 let level = data.level_for(fpp);
-                let per_point = level.samples_per_point.max(1) as f64;
-                let balance = BandBalance::of(&data.overview().points);
+                let spectral = data.has_spectrum();
                 let mut x = 0.0_f32;
                 while x < w {
                     let frame = view.frame_at_x(f64::from(x));
-                    if frame >= 0.0 && frame < length as f64 {
-                        // The points under this pixel column (one or a few, per the zoom level).
-                        let lo = (frame / per_point) as usize;
-                        let hi = (((frame + fpp) / per_point).ceil() as usize)
-                            .max(lo + 1)
-                            .min(level.points.len());
-                        if let Some(slice) = level.points.get(lo..hi) {
-                            let col = column(slice);
-                            let amp = col.peak * mid * 0.9;
-                            window.paint_quad(fill(
-                                Bounds::new(
-                                    point(
-                                        bounds.origin.x + px(x),
-                                        bounds.origin.y + px(mid - amp.max(1.0)),
-                                    ),
-                                    size(px(1.0), px((amp * 2.0).max(1.0))),
+                    let inside = frame < length as f64;
+                    if let Some(col) = strip_column(level, frame, fpp).filter(|_| inside) {
+                        let amp = col.peak * mid * 0.9;
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(
+                                    bounds.origin.x + px(x),
+                                    bounds.origin.y + px(mid - amp.max(1.0)),
                                 ),
-                                paint(balance.colour(&col, &tokens)),
-                            ));
-                        }
+                                size(px(1.0), px((amp * 2.0).max(1.0))),
+                            ),
+                            paint(wave_colour(&col, spectral, &tokens)),
+                        ));
                     }
                     x += 1.0;
                 }

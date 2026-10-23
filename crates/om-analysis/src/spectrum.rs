@@ -12,7 +12,8 @@ pub const CENTROID_OCTAVES: f32 = 9.321_928;
 /// Spread is stored as octaves of standard deviation up to this value.
 pub const SPREAD_MAX_OCTAVES: f32 = 4.0;
 const TILT_REFERENCE_HZ: f64 = 1000.0;
-/// Exponent on the frequency tilt of the bin weights; lifts highs so hats show up against bass.
+/// Exponent on the frequency tilt of the bin power weights; lifts highs against the bass-heavy
+/// slope of music so hats and vocals move the centroid.
 const TILT_EXPONENT: f64 = 0.5;
 const SILENT_ENERGY: f64 = 1e-12;
 
@@ -129,7 +130,7 @@ impl FrameAnalyzer {
         let energy = sum_sq / 6.0;
         let (mut w, mut wx, mut wxx) = (0.0f32, 0.0f32, 0.0f32);
         for (bin, t) in &self.terms {
-            let weight = m[*bin] * t.weight;
+            let weight = m[*bin] * m[*bin] * t.weight;
             w += weight;
             wx += weight * t.octave;
             wxx += weight * t.octave * t.octave;
