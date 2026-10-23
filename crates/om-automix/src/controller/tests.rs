@@ -2,7 +2,7 @@ use super::*;
 use crate::fixtures::{info, LENGTH_BEATS};
 use crate::readback::blank_snapshot;
 use crate::stem_fade::CancelMode;
-use om_core::param_id::{AutomixParam, EqBand, StemParam};
+use om_core::param_id::{AutomixParam, EqBand, FxParam, FxRack, StemParam};
 use om_core::{AutomixStyle, ParamTarget, XfaderAssign};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -815,6 +815,39 @@ fn a_pair_refused_four_times_is_suppressed_with_the_planner_error() {
         sim.ctrl.stale_deck.map(|(d, _, id)| (d, id)),
         Some((1, Some(10)))
     );
+}
+
+/// Echo-out switches its unit on and raises the send. Both go back to off and zero when the
+/// transition finishes and when it is cancelled, so the unit is left the way automix found it.
+#[test]
+fn echo_out_puts_its_unit_back_off_on_finish_and_on_cancel() {
+    let fx_id = |p| {
+        ParamId::Fx {
+            rack: FxRack::Channel(0),
+            unit: Some(0),
+            p,
+        }
+        .to_string()
+    };
+    let (enable, mix) = (fx_id(FxParam::Enable), fx_id(FxParam::Mix));
+    let last = |sim: &Sim, id: &str| sim.fx.iter().rev().find(|(n, _)| n == id).map(|(_, v)| *v);
+
+    let mut sim = Sim::new(380.0, false);
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(last(&sim, &mix), Some(0.0));
+    assert_eq!(last(&sim, &enable), Some(0.0));
+
+    let mut sim = Sim::new(380.0, false);
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("echo on", 3000, |s| last(s, &mix) == Some(0.5));
+    assert_eq!(last(&sim, &enable), Some(1.0));
+    sim.snap.mixer.crossfader = 0.9;
+    assert_cancelled(&mut sim, "mixer.crossfader");
+    assert_eq!(last(&sim, &mix), Some(0.0));
+    assert_eq!(last(&sim, &enable), Some(0.0));
 }
 
 /// A centred crossfader and a channel that has to be reassigned: the outgoing channel is moved to
