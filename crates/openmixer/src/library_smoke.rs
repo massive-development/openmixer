@@ -32,6 +32,9 @@ const DEMO_TAGS: [(&str, &str); 3] = [
     ("Hertz & The Waves", "Ambient"),
 ];
 
+/// Start and end frequency of each generated track's sweep, cycled (the second one falls).
+const DEMO_SWEEPS: [(f64, f64); 3] = [(40.0, 14_000.0), (12_000.0, 50.0), (60.0, 9_000.0)];
+
 /// A per-run folder under the system temp directory (the library file and the music live there).
 pub fn scratch_dir() -> PathBuf {
     std::env::temp_dir().join(format!("openmixer-smoke-{}", std::process::id()))
@@ -66,6 +69,23 @@ fn info_chunk(tags: &[(&str, &str)]) -> Vec<u8> {
 pub fn write_wav_tagged(path: &Path, freq: f32, tags: &[(&str, &str)]) -> io::Result<()> {
     write_pcm(path, SECONDS, tags, |n| {
         let phase = f64::from(n) * f64::from(freq) * std::f64::consts::TAU / f64::from(RATE);
+        (phase.sin() * 0.25 * f64::from(i16::MAX)) as i16
+    })
+}
+
+/// A logarithmic sweep from `from_hz` to `to_hz` over the track, so the demo waveform shows every
+/// hue of the spectrum colour (a plain sine tone is one hue).
+pub fn write_sweep_track(
+    path: &Path,
+    from_hz: f64,
+    to_hz: f64,
+    tags: &[(&str, &str)],
+) -> io::Result<()> {
+    let ratio = to_hz / from_hz;
+    let phase_scale = std::f64::consts::TAU * from_hz * SECONDS / ratio.ln();
+    write_pcm(path, SECONDS, tags, move |n| {
+        let progress = f64::from(n) / (SECONDS * f64::from(RATE));
+        let phase = phase_scale * (ratio.powf(progress) - 1.0);
         (phase.sin() * 0.25 * f64::from(i16::MAX)) as i16
     })
 }
@@ -137,11 +157,12 @@ pub fn ingest_generated(services: &mut LibraryServices, root: &Path) -> Result<u
     let music = root.join("music");
     fs::create_dir_all(&music)?;
     for i in 0..TRACKS {
-        let freq = 220.0 * (i as f32 + 1.0);
+        let (low, high) = DEMO_SWEEPS[i % DEMO_SWEEPS.len()];
         let (artist, genre) = DEMO_TAGS[i % DEMO_TAGS.len()];
-        write_wav_tagged(
+        write_sweep_track(
             &music.join(format!("smoke_{i}.wav")),
-            freq,
+            low,
+            high,
             &[
                 ("INAM", &format!("smoke_{i}")),
                 ("IART", artist),
