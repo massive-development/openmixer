@@ -13,7 +13,7 @@ use gpui::{
     MouseDownEvent, Render, ScrollWheelEvent, Window,
 };
 use om_ui::geometry::Rect;
-use om_ui::library::{columns, SEARCH_PLACEHOLDER};
+use om_ui::library::{columns, MixLevel, SEARCH_PLACEHOLDER};
 use om_ui::sidebar::SidebarKind;
 use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::ThemeTokens;
@@ -355,9 +355,14 @@ fn track_row(t: &ThemeTokens, row: RowView, cx: &mut Context<Shell>) -> AnyEleme
     let background = if row.selected {
         paint(t.surface_raised)
     } else if row.compatible {
-        // The Camelot tint: the master colour, translucent, over the row.
+        // The Camelot tint: the master colour, translucent, over the row. Key and tempo both
+        // fitting is stronger than the key alone.
         let mut tint = paint(t.master);
-        tint.a = 0.22;
+        tint.a = if row.mix == MixLevel::Strong {
+            0.34
+        } else {
+            0.16
+        };
         tint
     } else {
         paint(t.surface)

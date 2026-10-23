@@ -15,7 +15,7 @@ use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
 use om_ui::library::{
     columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, LoadError,
-    SearchFeed, TrackLoader, STEMS_COLUMN,
+    MixLevel, SearchFeed, TrackLoader, STEMS_COLUMN,
 };
 use om_ui::settings::{LibraryControl, SettingsError, SettingsResult};
 use om_ui::sidebar::SidebarNode;
@@ -194,6 +194,8 @@ pub struct RowView {
     pub cells: Vec<String>,
     /// Harmonically compatible with the reference key (the Camelot tint).
     pub compatible: bool,
+    /// How strongly the row stands out: key and tempo both fit, key only, or neither.
+    pub mix: MixLevel,
     pub selected: bool,
     /// Drag payload for the row (the library track id).
     pub drag: String,
@@ -309,11 +311,18 @@ impl LibraryPanel {
             } = &mut *h;
             loader.pump(&self.engine, services);
         }
-        let reference = self.hub.borrow().loader.reference_camelot(&self.engine);
+        let (reference, bpm) = {
+            let h = self.hub.borrow();
+            (
+                h.loader.reference_camelot(&self.engine),
+                h.loader.reference_bpm(&self.engine),
+            )
+        };
         if reference != self.shown_reference {
             self.shown_reference.clone_from(&reference);
             self.browser.model.set_reference_camelot(&reference);
         }
+        self.browser.model.set_reference_bpm(bpm);
     }
 
     /// Rows in the table.
@@ -442,6 +451,7 @@ impl LibraryPanel {
             track_id: track.id,
             cells,
             compatible: self.browser.model.is_compatible(&track),
+            mix: self.browser.model.mix_level(&track),
             selected: self.browser.selected_rows().contains(&row),
             drag: describe_track_drag(track.id),
         })
