@@ -340,6 +340,7 @@ impl DjEngine {
             decks,
             mixer,
             stems,
+            fx: self.fx.snapshot(),
             sampler: self.sampler.snapshot(),
             automix: AutomixSnapshot::default(),
             record: self.recorder.snapshot(),

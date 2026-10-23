@@ -18,6 +18,9 @@ use crate::types::DeckInfo;
 use om_core::param_id::{ChannelParam, DeckParam, EqBand, FxParam, FxRack, MixerParam, StemParam};
 use om_core::ParamId;
 
+/// Name of the effect an echo-out needs, as the engine's FX units report it.
+pub(crate) const ECHO_EFFECT: &str = "echo";
+
 pub(crate) struct Moves {
     pub steps: Vec<Step>,
     pub stem_plan: Option<StemFadePlan>,
@@ -134,14 +137,18 @@ pub(crate) fn build_moves(
         }
         Style::EchoOut => {
             let rack = FxRack::Channel(o);
+            // The planner only picks EchoOut when a unit is free; the configured one is the
+            // last resort for a caller that built the moves by hand.
+            let unit = pick_echo_unit(opts, o).unwrap_or(opts.echo_unit);
+            let (was_on, was_mix) = echo_unit_state(opts, o, unit);
             let fx = |p| ParamId::Fx {
                 rack,
-                unit: Some(opts.echo_unit),
+                unit: Some(unit),
                 p,
             };
             let enable = fx(FxParam::Enable);
-            steps.push(Step::set(start, enable.clone(), 0.0, 1.0));
-            steps.push(Step::set(start, fx(FxParam::Mix), 0.0, 0.5));
+            steps.push(Step::set(start, enable.clone(), was_on, 1.0));
+            steps.push(Step::set(start, fx(FxParam::Mix), was_mix, 0.5));
             let (ramp_at, ramp_len) = (start + length / 4.0, length / 2.0);
             steps.push(Step::new(
                 ramp_at,
@@ -161,14 +168,14 @@ pub(crate) fn build_moves(
                 0.6,
                 Curve::Linear,
             ));
-            // The send goes back to zero with the switch: a unit left at a send level would keep
-            // ringing on the next track that uses it.
+            // The unit goes back to the switch and send it had before the transition: a unit left
+            // at the echo's send level would keep ringing on the next track that uses it.
             let mix = fx(FxParam::Mix);
-            restore.push((enable.clone(), 0.0));
-            restore.push((mix.clone(), 0.0));
+            restore.push((enable.clone(), was_on));
+            restore.push((mix.clone(), was_mix));
             restore.push((filter.clone(), filter_orig));
-            cleanup.push((enable, 0.0));
-            cleanup.push((mix, 0.0));
+            cleanup.push((enable, was_on));
+            cleanup.push((mix, was_mix));
             cleanup.push((filter, filter_orig));
         }
         Style::BassSwap | Style::StemBridge => {
@@ -200,6 +207,40 @@ pub(crate) fn build_moves(
         restore,
         route_restore,
     }
+}
+
+/// The echo unit to use on channel `ch`'s rack: the configured one when it runs the echo and is
+/// off, else the first other echo unit that is off. `None` when the snapshot lists the rack and
+/// none is free. Without a snapshot, or with one that does not list the rack, the configured unit
+/// (nothing can be checked).
+pub(crate) fn pick_echo_unit(opts: &PlanOptions<'_>, ch: u8) -> Option<u16> {
+    let Some(units) = opts
+        .snapshot
+        .and_then(|s| s.fx.channels.get(usize::from(ch)))
+    else {
+        return Some(opts.echo_unit);
+    };
+    let free = |i: usize| {
+        units
+            .get(i)
+            .is_some_and(|u| u.effect == ECHO_EFFECT && !u.enabled)
+    };
+    let configured = usize::from(opts.echo_unit);
+    let pick = if free(configured) {
+        Some(configured)
+    } else {
+        (0..units.len()).find(|&i| free(i))
+    };
+    pick.and_then(|i| u16::try_from(i).ok())
+}
+
+/// The switch and mix (as control values) the unit has now; off and zero when unknown.
+fn echo_unit_state(opts: &PlanOptions<'_>, ch: u8, unit: u16) -> (f64, f64) {
+    opts.snapshot
+        .and_then(|s| s.fx.unit(usize::from(ch), usize::from(unit)))
+        .map_or((0.0, 0.0), |u| {
+            (if u.enabled { 1.0 } else { 0.0 }, f64::from(u.mix))
+        })
 }
 
 /// The stem fades of `BassSwap` and `StemBridge`. Start gains and mutes come from the snapshot

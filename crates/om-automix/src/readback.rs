@@ -89,6 +89,7 @@ pub fn blank_snapshot(decks: usize) -> EngineSnapshot {
             ..MixerSnapshot::default()
         },
         stems: (0..decks).map(|_| [StemSnapshot::default(); 4]).collect(),
+        fx: Default::default(),
         sampler: SamplerSnapshot::default(),
         automix: AutomixSnapshot::default(),
         record: Default::default(),

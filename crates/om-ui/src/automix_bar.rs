@@ -11,6 +11,15 @@ use om_core::{AutomixSnapshot, AutomixState};
 /// Settings button keeps the right.
 pub const BAR_HEIGHT: i32 = 32;
 
+/// Widths of the bar's fixed-size parts, in pixels. The window lays the bar out with these; the
+/// tests check that the row still fits at the minimum window width.
+pub const STATE_WIDTH: f32 = 80.0;
+pub const PROGRESS_WIDTH: f32 = 48.0;
+pub const REMAINING_WIDTH: f32 = 72.0;
+/// Gap between the row's items, and its left and right padding.
+pub const ROW_GAP: f32 = 4.0;
+pub const ROW_PADDING: f32 = 10.0;
+
 /// What the bar shows.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AutomixBar {
@@ -33,6 +42,9 @@ pub struct AutomixBar {
     pub can_start: bool,
     /// Cancel is useful: anything is planned or running.
     pub can_cancel: bool,
+    /// Skip does something: a pick is armed or loading, or a transition is running. Idle has
+    /// nothing to skip (the controller would only report so).
+    pub can_skip: bool,
 }
 
 impl AutomixBar {
@@ -64,6 +76,11 @@ impl AutomixBar {
             error: snapshot.last_error.clone(),
             can_start: enabled && snapshot.state != AutomixState::Transitioning,
             can_cancel: enabled && planned,
+            can_skip: enabled
+                && matches!(
+                    snapshot.state,
+                    AutomixState::Loading | AutomixState::Armed | AutomixState::Transitioning
+                ),
         }
     }
 }
@@ -217,6 +234,70 @@ mod tests {
         assert!(!bar.enabled);
         assert_eq!(bar.state, "Off");
         assert!(bar.error.contains("underrun"), "{}", bar.error);
+    }
+
+    #[test]
+    fn skip_is_enabled_while_armed_loading_or_transitioning() {
+        let prefs = AutomixPrefs {
+            enabled: true,
+            ..Default::default()
+        };
+        for (state, expected) in [
+            (AutomixState::Idle, false),
+            (AutomixState::Loading, true),
+            (AutomixState::Armed, true),
+            (AutomixState::Transitioning, true),
+            (AutomixState::Cleanup, false),
+        ] {
+            assert_eq!(
+                AutomixBar::new(&snap(state), &prefs).can_skip,
+                expected,
+                "{state:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn skip_is_disabled_while_automix_is_off() {
+        let prefs = AutomixPrefs::default();
+        for state in [
+            AutomixState::Loading,
+            AutomixState::Armed,
+            AutomixState::Transitioning,
+        ] {
+            let mut off = snap(state);
+            off.enabled = false;
+            assert!(!AutomixBar::new(&off, &prefs).can_skip, "{state:?}");
+        }
+    }
+
+    /// A rough width of the bar's row with the widest labels: 6 px per glyph at the small type
+    /// size, 28 px of chip padding, border and margin. It must fit the strip at the minimum
+    /// window width, next to the Record button and the Settings reserve (96 px in the window).
+    #[test]
+    fn the_row_fits_the_minimum_window_width() {
+        const GLYPH: f32 = 6.0;
+        const CHIP: f32 = 28.0;
+        let widest_style = STYLE_LABELS.iter().map(|l| l.len()).max().unwrap_or(0);
+        let chips = [2, widest_style, "16 beats".len(), "Start now".len(), 6, 4];
+        let chip_width: f32 = chips.iter().map(|n| *n as f32 * GLYPH + CHIP).sum();
+        let label = "Automix".len() as f32 * GLYPH;
+        // label, On, style, length, state, next, progress group, Start now, Skip, Cancel
+        let items = 10.0;
+        let width = 2.0 * ROW_PADDING
+            + label
+            + chip_width
+            + STATE_WIDTH
+            + PROGRESS_WIDTH
+            + ROW_GAP
+            + REMAINING_WIDTH
+            + (items - 1.0) * ROW_GAP;
+        let (min_width, _) = crate::main_layout::MIN_WINDOW;
+        let available = crate::record_bar::automix_width(min_width, 96) as f32;
+        assert!(
+            width <= available,
+            "bar needs about {width} px, {available} available"
+        );
     }
 
     #[test]

@@ -850,6 +850,91 @@ fn echo_out_puts_its_unit_back_off_on_finish_and_on_cancel() {
     assert_eq!(last(&sim, &enable), Some(0.0));
 }
 
+/// Channel 0's rack for the FX readback tests: the given `(effect, enabled, mix)` units.
+fn rack_with(units: &[(&'static str, bool, f32)]) -> om_core::FxSnapshot {
+    let channel = units
+        .iter()
+        .map(|&(effect, enabled, mix)| om_core::FxUnitSnapshot {
+            effect,
+            enabled,
+            mix,
+        })
+        .collect();
+    om_core::FxSnapshot {
+        channels: vec![channel, Vec::new()],
+    }
+}
+
+fn unit_ids(unit: u16) -> (String, String) {
+    let id = |p| {
+        ParamId::Fx {
+            rack: FxRack::Channel(0),
+            unit: Some(unit),
+            p,
+        }
+        .to_string()
+    };
+    (id(FxParam::Enable), id(FxParam::Mix))
+}
+
+fn last_sent(sim: &Sim, id: &str) -> Option<f64> {
+    sim.fx.iter().rev().find(|(n, _)| n == id).map(|(_, v)| *v)
+}
+
+/// The configured unit (0) is in use by the user, so echo-out takes the next free echo unit and
+/// puts that unit back to the switch and send it had, on finish and on cancel.
+#[test]
+fn echo_out_picks_a_free_unit_and_restores_its_previous_state() {
+    let rack = rack_with(&[("echo", true, 0.8), ("echo", false, 0.3)]);
+    let (busy_enable, busy_mix) = unit_ids(0);
+    let (enable, mix) = unit_ids(1);
+
+    // Finish.
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.fx = rack.clone();
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(last_sent(&sim, &enable), Some(0.0));
+    assert!((last_sent(&sim, &mix).unwrap() - 0.3).abs() < 1e-6);
+    assert_eq!(
+        last_sent(&sim, &busy_enable),
+        None,
+        "the busy unit is untouched"
+    );
+    assert_eq!(last_sent(&sim, &busy_mix), None);
+    assert!(
+        sim.fx.iter().any(|(n, v)| *n == enable && *v == 1.0),
+        "echo was on"
+    );
+
+    // Cancel.
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.fx = rack;
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("echo on", 3000, |s| last_sent(s, &mix) == Some(0.5));
+    assert_eq!(last_sent(&sim, &enable), Some(1.0));
+    sim.snap.mixer.crossfader = 0.9;
+    assert_cancelled(&mut sim, "mixer.crossfader");
+    assert_eq!(last_sent(&sim, &enable), Some(0.0));
+    assert!((last_sent(&sim, &mix).unwrap() - 0.3).abs() < 1e-6);
+    assert_eq!(last_sent(&sim, &busy_enable), None);
+}
+
+/// Every echo unit is on: the transition falls back to a crossfade and no FX id is sent.
+#[test]
+fn echo_out_with_no_free_unit_falls_back_to_a_crossfade() {
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.fx = rack_with(&[("echo", true, 0.8)]);
+    sim.control.set_style(AutomixStyle::EchoOut);
+    sim.run_until("cleanup", 3000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert!(sim.fx.is_empty(), "{:?}", sim.fx);
+    assert_eq!(sim.xfader(), 1.0);
+}
+
 /// A centred crossfader and a channel that has to be reassigned: the outgoing channel is moved to
 /// its full level first, so the ramp starts there instead of dipping through the centre.
 #[test]
