@@ -271,7 +271,7 @@ fn zoom_scrolling_reuses_the_cached_strip_and_rerenders_only_when_needed() {
     deck.zoom.paint_strip(400, 120);
     assert_eq!(deck.zoom.cache_renders, 1, "same view reuses the strip");
 
-    deck.zoom.set_frames_per_pixel(512.0);
+    deck.zoom.set_zoom_step(2);
     deck.zoom.paint_strip(400, 120);
     assert_eq!(deck.zoom.cache_renders, 2, "zoom change re-renders");
     deck.zoom.paint_strip(300, 120);
@@ -294,7 +294,7 @@ fn zoom_without_a_waveform_paints_nothing() {
 #[test]
 fn zoom_grid_lines_appear_with_a_grid_and_zoom_stays_in_range() {
     let rig = Rig::new(2);
-    let mut deck = DeckWidget::new(binding(&rig, 0));
+    let deck = DeckWidget::new(binding(&rig, 0));
     let view = View {
         centre_frame: 0,
         frames_per_pixel: 200.0,
@@ -303,28 +303,39 @@ fn zoom_grid_lines_appear_with_a_grid_and_zoom_stays_in_range() {
     assert!(deck.zoom.grid_lines(&view).is_empty(), "no grid, no lines");
     rig.engine.set_grid(0, Some(Rig::grid(120.0)));
     assert!(!deck.zoom.grid_lines(&view).is_empty(), "grid lines appear");
+}
 
-    deck.zoom.set_frames_per_pixel(1.0);
-    assert_eq!(
-        deck.zoom.frames_per_pixel(),
-        om_ui::waveform::MIN_FRAMES_PER_PIXEL
-    );
-    deck.zoom.set_frames_per_pixel(1.0e9);
-    assert_eq!(
-        deck.zoom.frames_per_pixel(),
-        om_ui::waveform::MAX_FRAMES_PER_PIXEL
-    );
-    deck.zoom.set_frames_per_pixel(256.0);
-    deck.zoom.zoom_by(2.0);
-    assert_eq!(deck.zoom.frames_per_pixel(), 512.0);
+#[test]
+fn zoom_is_four_discrete_steps_in_seconds_and_the_wheel_stays_in_range() {
+    let rig = Rig::new(2);
+    let mut deck = DeckWidget::new(binding(&rig, 0));
+    assert_eq!(deck.zoom.zoom_seconds(), 8.0, "default");
+    deck.zoom.set_zoom_step(99);
+    assert_eq!(deck.zoom.zoom_seconds(), 32.0, "clamped");
     deck.zoom.wheel(-1.0);
-    assert!((deck.zoom.frames_per_pixel() - 512.0 * 1.25).abs() < 1e-9);
+    assert_eq!(deck.zoom.zoom_seconds(), 32.0, "already widest");
+    assert_eq!(deck.zoom.wheel(1.0), 2);
+    assert_eq!(deck.zoom.zoom_seconds(), 16.0, "scroll down zooms in");
+    for _ in 0..10 {
+        deck.zoom.wheel(1.0);
+    }
+    assert_eq!(deck.zoom.zoom_seconds(), 4.0, "already closest");
+
+    // The same step spans the same seconds whatever the strip width.
+    deck.zoom.set_waveform(Some(WaveformMeta {
+        sample_rate: 44_100.0,
+    }));
+    for width in [800.0, 1900.0] {
+        let view = deck.zoom.view(width);
+        let seconds = view.frames_per_pixel * width / 44_100.0;
+        assert!((seconds - 4.0).abs() < 1e-9, "{width}: {seconds}");
+    }
 }
 
 #[test]
 fn bars_only_when_beats_are_too_dense_to_draw() {
     // 120 BPM at 44.1 kHz is 22050 frames per beat. At 4410 frames per pixel a beat is 5 px apart,
-    // closer than the 6 px minimum, so only bars (every four beats) remain.
+    // closer than the 8 px minimum, so only bars (every four beats) remain.
     let grid = Rig::grid(120.0);
     let dense = View {
         centre_frame: 0,
@@ -348,6 +359,52 @@ fn bars_only_when_beats_are_too_dense_to_draw() {
             .any(|l| !l.bar),
         "beats are drawn when there is room"
     );
+}
+
+#[test]
+fn bars_carry_numbers_that_thin_out_before_they_touch() {
+    let grid = Rig::grid(120.0); // a bar is 88_200 frames
+                                 // 300 frames per pixel: a bar is 294 px wide, every bar is labelled, counting from 1.
+    let roomy = View {
+        centre_frame: 88_200 * 3,
+        frames_per_pixel: 300.0,
+        width: 1200.0,
+    };
+    let numbers: Vec<_> = grid_lines_for(grid.as_ref(), &roomy)
+        .iter()
+        .filter_map(|l| l.bar_number)
+        .collect();
+    assert!(numbers.len() >= 3, "{numbers:?}");
+    assert!(numbers.windows(2).all(|w| w[1] == w[0] + 1));
+    assert!(grid_lines_for(grid.as_ref(), &roomy)
+        .iter()
+        .filter(|l| !l.bar)
+        .all(|l| l.bar_number.is_none()));
+    // 2000 frames per pixel: a bar is 44 px, so only every second bar keeps its number.
+    let tight = View {
+        frames_per_pixel: 2_000.0,
+        width: 1200.0,
+        centre_frame: 88_200 * 20,
+    };
+    let numbers: Vec<_> = grid_lines_for(grid.as_ref(), &tight)
+        .iter()
+        .filter_map(|l| l.bar_number)
+        .collect();
+    assert!(numbers.windows(2).all(|w| w[1] == w[0] + 2), "{numbers:?}");
+}
+
+#[test]
+fn hot_cues_reach_the_overview_markers_and_no_loop_means_no_region() {
+    let rig = Rig::new(2);
+    let deck = DeckWidget::new(binding(&rig, 0));
+    rig.engine.set_grid(0, Some(Rig::grid(120.0)));
+    let view = deck.zoom.view(800.0);
+    assert!(deck.zoom.loop_region(&view).is_none());
+    assert!(deck.overview.markers(400.0).cues.is_empty());
+    rig.engine.deck(0).set_hotcue(1, 5000);
+    let markers = deck.overview.markers(400.0);
+    assert_eq!(markers.cues.len(), 1);
+    assert_eq!(markers.cues[0].1, om_ui::waveform::cue_colour(1));
 }
 
 #[test]
@@ -399,7 +456,7 @@ fn set_grid_reaches_the_engine() {
 fn zoom_view_centres_on_the_playhead_and_strip_plan_reuses_within_margin() {
     let rig = Rig::new(2);
     let mut deck = DeckWidget::new(binding(&rig, 0));
-    deck.zoom.set_frames_per_pixel(32.0);
+    deck.zoom.set_zoom_step(0);
     deck.zoom.set_waveform(Some(WaveformMeta {
         sample_rate: 44_100.0,
     }));
