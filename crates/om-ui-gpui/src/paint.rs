@@ -1,8 +1,8 @@
 //! Conversions from om-ui's models to GPUI values: colours and absolutely placed boxes.
 
-use gpui::{div, prelude::*, px, rgba, Div, Rgba};
+use gpui::{div, point, prelude::*, px, rgba, BoxShadow, Div, Rgba};
 use om_ui::geometry::Rect;
-use om_ui::style::ControlStyle;
+use om_ui::style::{ControlStyle, ShadowStyle};
 use om_ui::theme::Colour;
 
 /// om-ui stores ARGB; GPUI's `rgba` takes RRGGBBAA.
@@ -57,6 +57,16 @@ pub fn skin(el: Div, style: &ControlStyle) -> Div {
         .text_color(paint(style.text))
         .text_size(px(style.font_size))
         .rounded(px(style.radius))
+}
+
+/// Gives `el` a soft shadow (or, with an accent colour and no offset, a glow).
+pub fn shadow(el: Div, style: &ShadowStyle) -> Div {
+    el.shadow(vec![BoxShadow {
+        color: paint(style.colour).into(),
+        offset: point(px(0.), px(style.offset_y)),
+        blur_radius: px(style.blur),
+        spread_radius: px(0.),
+    }])
 }
 
 #[cfg(test)]
