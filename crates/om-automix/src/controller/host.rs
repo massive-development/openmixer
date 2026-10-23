@@ -120,7 +120,7 @@ impl Default for AutomixConfig {
 }
 
 /// The `automix` namespace target: `automix.enable`, `automix.style` (a value of
-/// [`AutomixStyle::as_u8`]), `automix.start` and `automix.cancel` (presses, value >= 0.5). Setting
+/// [`AutomixStyle::as_u8`]), `automix.start`, `automix.cancel` and `automix.skip` (presses, value >= 0.5). Setting
 /// these only records the request; the controller reads them on its next tick, so the router call
 /// never blocks and never touches the audio thread.
 #[derive(Debug, Default)]
@@ -129,6 +129,7 @@ pub struct AutomixControl {
     style: AtomicU8,
     start: AtomicBool,
     cancel: AtomicBool,
+    skip: AtomicBool,
 }
 
 impl AutomixControl {
@@ -161,6 +162,11 @@ impl AutomixControl {
     pub(crate) fn take_cancel(&self) -> bool {
         self.cancel.swap(false, Ordering::AcqRel)
     }
+
+    /// Takes a pending `automix.skip` press.
+    pub(crate) fn take_skip(&self) -> bool {
+        self.skip.swap(false, Ordering::AcqRel)
+    }
 }
 
 impl ParamTarget for AutomixControl {
@@ -179,6 +185,11 @@ impl ParamTarget for AutomixControl {
             AutomixParam::Cancel => {
                 if value >= 0.5 {
                     self.cancel.store(true, Ordering::Release);
+                }
+            }
+            AutomixParam::Skip => {
+                if value >= 0.5 {
+                    self.skip.store(true, Ordering::Release);
                 }
             }
         }

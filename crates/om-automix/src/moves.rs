@@ -87,7 +87,15 @@ pub(crate) fn build_moves(
     } else {
         (1.0, 0.0)
     };
-    let xf_from = get(&xfader_id(), side_out).clamp(0.0, 1.0);
+    // A reassigned channel is at its full level only at its side's edge, so with the crossfader
+    // anywhere else (a centred one, say) its level would dip the moment the assignment changes. The
+    // ramp therefore starts from the outgoing side's edge whenever the routing changes.
+    let xf_now = get(&xfader_id(), side_out).clamp(0.0, 1.0);
+    let xf_from = if opts.route.reassign.is_empty() {
+        xf_now
+    } else {
+        side_out
+    };
     let mid = start + length / 2.0;
 
     match style {
@@ -153,9 +161,14 @@ pub(crate) fn build_moves(
                 0.6,
                 Curve::Linear,
             ));
+            // The send goes back to zero with the switch: a unit left at a send level would keep
+            // ringing on the next track that uses it.
+            let mix = fx(FxParam::Mix);
             restore.push((enable.clone(), 0.0));
+            restore.push((mix.clone(), 0.0));
             restore.push((filter.clone(), filter_orig));
             cleanup.push((enable, 0.0));
+            cleanup.push((mix, 0.0));
             cleanup.push((filter, filter_orig));
         }
         Style::BassSwap | Style::StemBridge => {

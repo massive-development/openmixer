@@ -85,6 +85,7 @@ impl AutomixController {
             ticks: 0,
             auto_loaded: false,
             plan_tries: 0,
+            pick: None,
         };
         let partner = &snap.decks[usize::from(inc)];
         let stale = self.is_stale(inc, partner.length_frames, host);
@@ -97,14 +98,14 @@ impl AutomixController {
             self.tick_loading_ready(now, snap, sink, host, force);
             return;
         }
-        let gate = self.tempo_gate();
-        let Some(track) = host.next_track(out, gate) else {
+        let Some(track) = self.next_pick(out, out_len, host) else {
             self.fail_run(out, out_len, "no track in the queue");
             return;
         };
         match host.start_load(inc, &track) {
             Ok(()) => {
                 run.auto_loaded = true;
+                run.pick = Some(track.id);
                 run.title = track.title.clone();
                 self.next_title = track.title;
                 self.next_bpm = track.bpm;
@@ -134,6 +135,62 @@ impl AutomixController {
             (Some(was), Some(now)) => was == now,
             _ => true,
         }
+    }
+
+    /// The queue's next track for the outgoing track on `out`. Picks skipped for that track are
+    /// asked for again, a few times, and passed over.
+    pub(super) fn next_pick(
+        &mut self,
+        out: u8,
+        out_len: i64,
+        host: &mut dyn AutomixHost,
+    ) -> Option<NextTrack> {
+        let gate = self.tempo_gate();
+        let skipped: Vec<i64> = self
+            .skipped
+            .iter()
+            .filter(|(d, l, _)| *d == out && *l == out_len)
+            .map(|(_, _, id)| *id)
+            .collect();
+        for _ in 0..MAX_PICK_TRIES {
+            let track = host.next_track(out, gate)?;
+            if !skipped.contains(&track.id) {
+                return Some(track);
+            }
+        }
+        None
+    }
+
+    /// `automix.skip` while a pick is loading or armed. An automix pick is abandoned: the track
+    /// is not mixed in and is not picked again for this outgoing track, and the next pick comes
+    /// from the queue once the outgoing track is near its end. A track the user cued is left
+    /// alone, and this outgoing track gets no automatic transition.
+    pub(super) fn skip_pick(&mut self, snap: &EngineSnapshot) {
+        let Some(run) = self.run.take() else {
+            self.state = AutomixState::Idle;
+            return;
+        };
+        let title = if run.title.is_empty() {
+            "the next track".to_owned()
+        } else {
+            run.title.clone()
+        };
+        match (run.auto_loaded, run.pick) {
+            (true, Some(id)) => {
+                self.skipped
+                    .retain(|(d, l, _)| *d == run.out && *l == run.out_len);
+                self.skipped.push((run.out, run.out_len, id));
+                // The incoming deck holds the pick now (it is armed or just loaded): it is not a cue.
+                let len = snap.decks[usize::from(run.inc)].length_frames;
+                self.stale_deck = Some((run.inc, len, Some(id)));
+                self.last_error = format!("skipped {title}");
+            }
+            _ => {
+                self.suppressed = Some((run.out, run.out_len));
+                self.last_error = format!("skipped {title}; the cued track stays on its deck");
+            }
+        }
+        self.drop_run(AutomixState::Idle);
     }
 
     /// Reports a playing track with no analysis, once per track.
@@ -237,6 +294,12 @@ impl AutomixController {
         let Some(mut run) = self.run.take() else {
             return;
         };
+        if std::mem::take(&mut self.skip_pending) {
+            // `automix.skip` came while the pick was loading: it is abandoned now that it is loaded.
+            self.run = Some(run);
+            self.skip_pick(snap);
+            return;
+        }
         // The routing is made again now: the user may have moved an assignment while loading.
         match crossfader_route(snap, run.out, run.inc) {
             Ok(route) => run.route = route,
@@ -287,10 +350,14 @@ impl AutomixController {
             Err(error) => {
                 if run.auto_loaded && run.plan_tries < MAX_PLAN_RETRIES {
                     run.plan_tries += 1;
-                    let gate = self.tempo_gate();
-                    if let Some(track) = host.next_track(run.out, gate) {
+                    if let Some(id) = run.pick {
+                        // The refused track is not offered again for this outgoing track.
+                        self.skipped.push((run.out, run.out_len, id));
+                    }
+                    if let Some(track) = self.next_pick(run.out, run.out_len, host) {
                         if host.start_load(run.inc, &track).is_ok() {
                             // Another track goes to the incoming deck; the load is polled next tick.
+                            run.pick = Some(track.id);
                             run.title = track.title.clone();
                             self.next_title.clone_from(&track.title);
                             self.next_bpm = track.bpm;
@@ -304,6 +371,11 @@ impl AutomixController {
                             return;
                         }
                     }
+                }
+                if run.auto_loaded {
+                    // The refused track stays on the incoming deck: it is not a cue to mix into.
+                    let len = snap.decks[usize::from(run.inc)].length_frames;
+                    self.stale_deck = Some((run.inc, len, run.pick));
                 }
                 self.last_error = format!("no transition: {error}");
                 self.suppressed = Some((run.out, run.out_len));
