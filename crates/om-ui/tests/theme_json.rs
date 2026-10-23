@@ -98,15 +98,12 @@ fn parses_mixer_metrics_and_meter_ballistics() {
 }
 
 #[test]
-fn parses_waveform_colours_and_deck_metrics() {
+fn parses_deck_metrics() {
     let p = parse_theme(
-        r##"{ "id": "t.deck", "colours": { "waveLow": "#010203", "waveHigh": "#A0040506" },
+        r##"{ "id": "t.deck",
             "deck": { "rowHeight": 22, "pitchWidth": 70, "gridBarAlpha": 0.9, "playheadWidth": 3 } }"##,
     )
     .expect("deck section parses");
-    assert_eq!(p.tokens.wave_low, Colour::from_argb(0xFF01_0203));
-    assert_eq!(p.tokens.wave_high, Colour::from_argb(0xA004_0506));
-    assert_eq!(p.tokens.wave_mid, dark().wave_mid);
     assert_close(p.tokens.deck_row_height, 22.0);
     assert_close(p.tokens.deck_pitch_width, 70.0);
     assert_close(p.tokens.grid_bar_alpha, 0.9);
@@ -159,4 +156,77 @@ fn unknown_keys_warn_but_do_not_fail() {
 #[test]
 fn missing_file_fails() {
     assert!(parse_theme_file(Path::new("/definitely/not/here.json")).is_err());
+}
+
+#[test]
+fn parses_the_waveform_curve_and_limits() {
+    let p = parse_theme(
+        r##"{ "id": "t.wave", "waveform": { "saturationMax": 0.5, "lightnessMax": 0.7,
+            "hueStops": [ { "pos": 0, "hue": 10, "saturation": 1, "lightness": 1 },
+                          { "pos": 1, "hue": 400, "saturation": 0.2, "lightness": 0.5 } ] } }"##,
+    )
+    .expect("waveform section parses");
+    assert_close(p.tokens.wave_saturation_max, 0.5);
+    assert_close(p.tokens.wave_lightness_max, 0.7);
+    assert_close(p.tokens.wave_lightness_min, dark().wave_lightness_min);
+    assert_eq!(p.tokens.wave_stops.len(), 2);
+    assert_close(p.tokens.wave_stops[1].hue, 400.0);
+    assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+}
+
+#[test]
+fn a_theme_without_waveform_keys_inherits_the_built_in_curve() {
+    let p = parse_theme(r##"{ "id": "t.plain" }"##).expect("minimal theme");
+    assert_eq!(p.tokens.wave_stops, dark().wave_stops);
+    assert_close(p.tokens.wave_floor_db, dark().wave_floor_db);
+}
+
+#[test]
+fn old_wave_colour_keys_are_ignored_with_a_warning() {
+    let p = parse_theme(r##"{ "id": "t.old", "colours": { "waveLow": "#010203" } }"##)
+        .expect("old theme still loads");
+    assert!(p.warnings.iter().any(|w| w.contains("waveLow")));
+}
+
+#[test]
+fn rejects_a_bad_waveform_curve() {
+    let bad = |body: &str| parse_theme(&format!(r##"{{ "id": "t.bad", "waveform": {body} }}"##));
+    assert!(bad(r##"{ "hueStops": [] }"##).is_err());
+    assert!(bad(
+        r##"{ "hueStops": [ { "pos": 0, "hue": 0, "saturation": 1, "lightness": 1 } ] }"##
+    )
+    .is_err());
+    let backwards = r##"{ "hueStops": [ { "pos": 0.6, "hue": 0, "saturation": 1, "lightness": 1 },
+        { "pos": 0.4, "hue": 90, "saturation": 1, "lightness": 1 } ] }"##;
+    assert!(bad(backwards).is_err());
+    let missing = r##"{ "hueStops": [ { "pos": 0, "hue": 0, "lightness": 1 },
+        { "pos": 1, "hue": 90, "saturation": 1, "lightness": 1 } ] }"##;
+    assert!(bad(missing).is_err());
+    assert!(bad(r##"{ "saturationMax": 2 }"##).is_err());
+    assert!(bad(r##"{ "lightnessMin": 0.9, "lightnessMax": 0.5 }"##).is_err());
+    assert!(bad(r##"{ "spreadNarrow": 3, "spreadWide": 1 }"##).is_err());
+}
+
+#[test]
+fn both_built_in_themes_define_every_waveform_key() {
+    for json in [
+        include_str!("../../../resources/themes/openmixer-dark.json"),
+        include_str!("../../../resources/themes/openmixer-daylight.json"),
+    ] {
+        let value: serde_json::Value = serde_json::from_str(json).expect("valid json");
+        let section = &value["waveform"];
+        for key in [
+            "saturationMax",
+            "lightnessMin",
+            "lightnessMax",
+            "floorDb",
+            "spreadNarrow",
+            "spreadWide",
+            "spreadSaturation",
+            "hueStops",
+        ] {
+            assert!(!section[key].is_null(), "missing waveform.{key}");
+        }
+        assert!(parse_theme(json).expect("parses").warnings.is_empty());
+    }
 }

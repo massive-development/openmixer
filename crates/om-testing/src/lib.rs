@@ -5,12 +5,14 @@
 //!
 //! - [`wav`]: float and 16-bit PCM WAV fixtures, a reader for round trips, interleave helpers.
 //! - [`signals`]: deterministic sines, noise and impulse trains.
+//! - [`mix`]: a synthetic music-like mix (drums, bass, voice, pad) for spectrum tests.
 //! - [`level`]: gain/dB conversion and peak/RMS measures.
 //! - [`wait`]: condition polling with a timeout, and the `assert_eventually!` macro.
 //! - [`fs`]: a temporary directory that is removed on drop.
 
 pub mod fs;
 pub mod level;
+pub mod mix;
 pub mod signals;
 pub mod wait;
 pub mod wav;

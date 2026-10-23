@@ -172,7 +172,7 @@ pub trait AudioCallback: Send {
 - **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator, then the wrapper, then an adapter for the consumer's trait.
 
 ### Pyramid of levels (multi-resolution data)
-- **Where:** `om-analysis` waveform data (`waveform_data.rs`, `WaveformData` with levels built by `merge_points`)
+- **Where:** `om-analysis` waveform data (`waveform_data.rs`, `WaveformData` with levels built by `WaveformPoint::merge`, the same rule the strip columns use)
 - **Why:** zoomed and overview views read pre-reduced data instead of scanning samples per paint.
 - **Reuse when:** any per-time data drawn at many zooms (energy, stems, spectrogram).
 - **Notes:** coarser levels are built by merging the finer points: min and max, and RMS as the square root of the mean of squares. Keep merge rules associative.
