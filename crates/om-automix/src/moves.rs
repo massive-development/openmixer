@@ -87,7 +87,15 @@ pub(crate) fn build_moves(
     } else {
         (1.0, 0.0)
     };
-    let xf_from = get(&xfader_id(), side_out).clamp(0.0, 1.0);
+    // A reassigned channel is at its full level only at its side's edge, so with the crossfader
+    // anywhere else (a centred one, say) its level would dip the moment the assignment changes. The
+    // ramp therefore starts from the outgoing side's edge whenever the routing changes.
+    let xf_now = get(&xfader_id(), side_out).clamp(0.0, 1.0);
+    let xf_from = if opts.route.reassign.is_empty() {
+        xf_now
+    } else {
+        side_out
+    };
     let mid = start + length / 2.0;
 
     match style {
