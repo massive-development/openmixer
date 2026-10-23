@@ -1,109 +1,51 @@
-//! Builds [`WaveformData`] from a clip: splits it into three bands with biquad crossovers, then
-//! reduces blocks of `samples_per_point` samples to one point. Stateless and thread-safe.
-//! [`WaveformAnalyzer`] wraps it for the job service (id "waveform").
+//! Builds [`WaveformData`] from a clip: the peak range of each block of `samples_per_point`
+//! samples, plus loudness, spectral centroid and spread from an overlapping FFT. FFT frames are
+//! `hop` apart and each point blends the two frames around its centre, so colour changes smoothly
+//! along the strip. Stateless and thread-safe. [`WaveformAnalyzer`] wraps it for the job service
+//! (id "waveform").
 
+use crate::spectrum::{pool, FrameAnalyzer, Moment};
 use crate::{AnalysisContext, Analyzer, AudioClip, WaveformData, WaveformLevel, WaveformPoint};
-use om_dsp::{design_high_pass, design_low_pass, Biquad, BiquadCoeffs};
 
-// Literal kept verbatim so the crossover coefficients stay bit-identical.
-#[allow(clippy::approx_constant)]
-const BUTTERWORTH_Q: f32 = 0.7071;
+/// Frames between cancellation checks and progress reports.
+const REPORT_EVERY: usize = 256;
+/// Share of the progress bar the FFT pass takes; assembling the points is the rest.
+const FFT_PROGRESS: f32 = 0.9;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaveformOptions {
     /// Finest level: about 2.9 ms at 44.1 kHz.
     pub samples_per_point: usize,
-    pub low_crossover_hz: f32,
-    pub high_crossover_hz: f32,
+    /// FFT frame of `1 << fft_order` samples (2048: 46 ms, bins of 21.5 Hz at 44.1 kHz).
+    pub fft_order: u32,
+    /// Samples between FFT frames.
+    pub hop: usize,
 }
 
 impl Default for WaveformOptions {
     fn default() -> Self {
         Self {
             samples_per_point: 128,
-            low_crossover_hz: 250.0,
-            high_crossover_hz: 4000.0,
+            fft_order: 11,
+            hop: 512,
         }
     }
 }
 
-/// Two cascaded biquads per edge (24 dB/oct) keep the bands visually distinct.
-#[derive(Debug, Clone, Copy, Default)]
-struct Cascade {
-    stages: [Biquad; 2],
-}
-
-impl Cascade {
-    fn design(&mut self, c: BiquadCoeffs) {
-        for s in &mut self.stages {
-            s.set_coeffs(c);
-        }
-    }
-
-    fn process(&mut self, samples: &mut [f32]) {
-        for s in &mut self.stages {
-            s.process(0, samples);
-        }
-    }
-}
-
-struct BandSplitter {
-    low_pass: Cascade,
-    mid_high: Cascade,
-    mid_low: Cascade,
-    high_pass: Cascade,
-}
-
-impl BandSplitter {
-    fn new(rate: f32, low_hz: f32, high_hz: f32) -> Self {
-        let mut s = Self {
-            low_pass: Cascade::default(),
-            mid_high: Cascade::default(),
-            mid_low: Cascade::default(),
-            high_pass: Cascade::default(),
-        };
-        s.low_pass
-            .design(design_low_pass(rate, low_hz, BUTTERWORTH_Q));
-        s.mid_high
-            .design(design_high_pass(rate, low_hz, BUTTERWORTH_Q));
-        s.mid_low
-            .design(design_low_pass(rate, high_hz, BUTTERWORTH_Q));
-        s.high_pass
-            .design(design_high_pass(rate, high_hz, BUTTERWORTH_Q));
-        s
-    }
-
-    fn process(&mut self, input: &[f32], bands: &mut [Vec<f32>; 3]) {
-        for b in bands.iter_mut() {
-            b.clear();
-            b.extend_from_slice(input);
-        }
-        self.low_pass.process(&mut bands[0]);
-        self.mid_high.process(&mut bands[1]);
-        self.mid_low.process(&mut bands[1]);
-        self.high_pass.process(&mut bands[2]);
-    }
-}
-
-fn rms(v: &[f32]) -> f32 {
-    if v.is_empty() {
-        return 0.0;
-    }
-    let sum: f64 = v.iter().map(|&x| f64::from(x) * f64::from(x)).sum();
-    (sum / v.len() as f64).sqrt() as f32
-}
-
-fn reduce_block(input: &[f32], bands: &[Vec<f32>; 3]) -> WaveformPoint {
-    let (min, max) = input
+fn peak_range(block: &[f32]) -> (f32, f32) {
+    block
         .iter()
-        .fold((1.0f32, -1.0f32), |(lo, hi), &x| (lo.min(x), hi.max(x)));
-    WaveformPoint {
-        min,
-        max,
-        low: rms(&bands[0]),
-        mid: rms(&bands[1]),
-        high: rms(&bands[2]),
-    }
+        .fold((1.0f32, -1.0f32), |(lo, hi), &x| (lo.min(x), hi.max(x)))
+}
+
+/// The blend of the frames around `centre` (a sample index), weighted by closeness.
+fn blend_frames(frames: &[Moment], centre: f64, frame_size: usize, hop: usize) -> Moment {
+    let position = ((centre - frame_size as f64 / 2.0) / hop as f64).max(0.0);
+    let last = frames.len() - 1;
+    let first = (position.floor() as usize).min(last);
+    let second = (first + 1).min(last);
+    let into = (position - first as f64).clamp(0.0, 1.0) as f32;
+    pool([(1.0 - into, frames[first]), (into, frames[second])])
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -116,31 +58,47 @@ impl WaveformBuilder {
         Self { options }
     }
 
+    fn frame_moments(
+        &self,
+        clip: &AudioClip,
+        context: &dyn AnalysisContext,
+    ) -> Option<(FrameAnalyzer, Vec<Moment>)> {
+        let (order, hop) = (self.options.fft_order, self.options.hop);
+        let mut analyzer = FrameAnalyzer::new(order, hop, clip.sample_rate);
+        let count = analyzer.num_frames(clip.samples.len());
+        let mut frames = Vec::with_capacity(count);
+        for index in 0..count {
+            if index % REPORT_EVERY == 0 {
+                if context.is_cancelled() {
+                    return None;
+                }
+                context.set_progress(FFT_PROGRESS * index as f32 / count as f32);
+            }
+            frames.push(analyzer.frame(&clip.samples, index));
+        }
+        Some((analyzer, frames))
+    }
+
     /// `None` when cancelled; invalid (empty) data for an empty clip.
     pub fn build(&self, clip: &AudioClip, context: &dyn AnalysisContext) -> Option<WaveformData> {
         let total = clip.samples.len();
         let block = self.options.samples_per_point.max(1);
-        let mut splitter = BandSplitter::new(
-            clip.sample_rate as f32,
-            self.options.low_crossover_hz,
-            self.options.high_crossover_hz,
-        );
-        let mut bands: [Vec<f32>; 3] = Default::default();
+        let (analyzer, frames) = self.frame_moments(clip, context)?;
         let mut base = WaveformLevel {
             samples_per_point: block,
             points: Vec::with_capacity(total / block + 1),
         };
-
-        for start in (0..total).step_by(block) {
-            if (base.points.len() & 1023) == 0 && context.is_cancelled() {
+        for (index, chunk) in clip.samples.chunks(block).enumerate() {
+            if index % 1024 == 0 && context.is_cancelled() {
                 return None;
             }
-            let end = (start + block).min(total);
-            let chunk = &clip.samples[start..end];
-            splitter.process(chunk, &mut bands);
-            base.points.push(reduce_block(chunk, &bands));
-            context.set_progress(end as f32 / total as f32);
+            let centre = (index * block) as f64 + chunk.len() as f64 / 2.0;
+            let moment = blend_frames(&frames, centre, analyzer.frame_size(), analyzer.hop());
+            let (min, max) = peak_range(chunk);
+            base.points
+                .push(WaveformPoint::from_moment(min, max, moment));
         }
+        context.set_progress(1.0);
         Some(WaveformData::new(clip.sample_rate, total as i64, base))
     }
 }
@@ -156,8 +114,9 @@ impl Analyzer for WaveformAnalyzer {
         "waveform"
     }
 
+    /// 2: spectral points (format 2); version 1 entries read as missing.
     fn version(&self) -> i32 {
-        1
+        2
     }
 
     fn analyze(&self, clip: &AudioClip, context: &dyn AnalysisContext) -> Option<String> {
@@ -169,5 +128,7 @@ impl Analyzer for WaveformAnalyzer {
     }
 }
 
+#[cfg(test)]
+mod legacy_reference;
 #[cfg(test)]
 mod tests;

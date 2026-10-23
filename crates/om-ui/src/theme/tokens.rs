@@ -63,6 +63,25 @@ impl Colour {
     }
 }
 
+/// One point of the waveform hue curve: where on the centroid axis, which hue (degrees, unwrapped
+/// so the curve can run past 360), and how much of the saturation and lightness the column keeps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaveStop {
+    pub pos: f32,
+    pub hue: f32,
+    pub saturation: f32,
+    pub lightness: f32,
+}
+
+const fn stop(pos: f32, hue: f32, saturation: f32, lightness: f32) -> WaveStop {
+    WaveStop {
+        pos,
+        hue,
+        saturation,
+        lightness,
+    }
+}
+
 /// Every design token one theme sets. Field names are snake case.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeTokens {
@@ -91,9 +110,6 @@ pub struct ThemeTokens {
     pub record_red: Colour,
     pub master: Colour,
     /// Waveform band colours (bass / mids / highs).
-    pub wave_low: Colour,
-    pub wave_mid: Colour,
-    pub wave_high: Colour,
     /// The OpenMixer signature colour (E1). Reserved for brand marks and the "now" cues (the
     /// playhead, the master); it is never one of the deck accents.
     pub brand: Colour,
@@ -205,6 +221,21 @@ pub struct ThemeTokens {
     pub meter_headroom: f32,
     pub disabled_alpha: f32,
 
+    // Waveform colour (`waveform` section): the hue curve and the limits that keep it legible.
+    /// Hue curve over the centroid axis (0..1, log frequency); positions rise strictly.
+    pub wave_stops: Vec<WaveStop>,
+    /// Ceiling on saturation after the spread and curve scales (0..1).
+    pub wave_saturation_max: f32,
+    /// Lightness at the loudness floor, and the ceiling any column can reach (0..1).
+    pub wave_lightness_min: f32,
+    pub wave_lightness_max: f32,
+    /// Loudness (dBFS RMS) that maps to the lightest and the dimmest column.
+    pub wave_floor_db: f32,
+    /// Spectral spread (octaves) where saturation starts to fall, and where it has fallen all the
+    /// way to `wave_spread_saturation` of its value.
+    pub wave_spread_narrow: f32,
+    pub wave_spread_wide: f32,
+    pub wave_spread_saturation: f32,
     // Depth, glow and motion (E1). Glow is the accent of a lit control spilled around it.
     pub glow_alpha: f32,
     pub glow_radius: f32,
@@ -243,9 +274,6 @@ impl ThemeTokens {
             meter_high: Colour::from_argb(0xFFF4_3F5E),
             record_red: Colour::from_argb(0xFFE5_3935),
             master: Colour::from_argb(0xFFE2_E8F0),
-            wave_low: Colour::from_argb(0xFFF9_7316),
-            wave_mid: Colour::from_argb(0xFF34_D399),
-            wave_high: Colour::from_argb(0xFF4C_C9F0),
             popup: Colour::from_argb(0xF014_1926),
             cap_top: Colour::from_argb(0xFF2C_3446),
             cap_bottom: Colour::from_argb(0xFF16_1B26),
@@ -343,6 +371,14 @@ impl ThemeTokens {
             meter_headroom: 14.0,
             disabled_alpha: 0.4,
 
+            wave_stops: builtin_wave_stops(),
+            wave_saturation_max: 0.9,
+            wave_lightness_min: 0.2,
+            wave_lightness_max: 0.88,
+            wave_floor_db: -42.0,
+            wave_spread_narrow: 1.0,
+            wave_spread_wide: 3.5,
+            wave_spread_saturation: 0.5,
             glow_alpha: 0.45,
             glow_radius: 10.0,
             shadow_blur: 18.0,
@@ -391,6 +427,23 @@ const BUILTIN_ACCENTS: [Colour; 4] = [
     Colour::from_argb(0xFF5F_D6A4),
     Colour::from_argb(0xFFE3_D26F),
 ];
+
+/// Bass red through orange, green, cyan and blue to violet, then a wash toward white for the air.
+pub fn builtin_wave_stops() -> Vec<WaveStop> {
+    vec![
+        stop(0.00, 0.0, 1.0, 0.75),
+        stop(0.14, 8.0, 1.0, 0.8),
+        stop(0.30, 38.0, 1.0, 0.8),
+        stop(0.44, 95.0, 0.95, 0.75),
+        stop(0.55, 150.0, 0.9, 0.75),
+        stop(0.65, 190.0, 0.95, 0.8),
+        stop(0.75, 225.0, 1.0, 0.85),
+        stop(0.82, 262.0, 0.95, 0.9),
+        stop(0.87, 290.0, 0.6, 0.95),
+        stop(0.90, 305.0, 0.2, 0.98),
+        stop(1.00, 320.0, 0.08, 1.0),
+    ]
+}
 
 fn builtin_accents() -> Vec<Colour> {
     BUILTIN_ACCENTS.to_vec()

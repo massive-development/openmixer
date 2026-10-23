@@ -98,9 +98,9 @@ fn waveform_json() -> String {
             WaveformPoint {
                 min: -0.5,
                 max: 0.5,
-                low: 0.4,
-                mid: 0.3,
-                high: 0.2,
+                loudness: 0.4,
+                centroid: 0.3,
+                spread: 0.2,
             };
             64
         ],

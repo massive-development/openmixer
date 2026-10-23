@@ -1,8 +1,13 @@
 //! Pixel <-> frame geometry for the overview and zoomed waveforms, and the zoomed strip cache
 //! decisions. Pure: no painting, so seek-by-click and scrolling can be tested headless. Includes the zoomed strip cache rules.
 
-use crate::theme::{Colour, ThemeTokens};
-use om_analysis::WaveformPoint;
+use om_analysis::{WaveformLevel, WaveformPoint};
+
+mod colour;
+mod hue;
+
+pub use colour::{hsl_to_colour, is_audible, loudness_level, wave_colour, wave_hsl, Hsl};
+pub use hue::{hue_span, overview_hues, HUE_SPAN_COLUMNS, HUE_SPAN_PERCENTILES};
 
 pub const MIN_FRAMES_PER_PIXEL: f64 = 32.0;
 pub const MAX_FRAMES_PER_PIXEL: f64 = 8192.0;
@@ -11,86 +16,56 @@ pub const WHEEL_ZOOM_STEP: f64 = 1.25;
 /// The cached strip is three views wide: one visible, one of margin each side.
 pub const CACHE_VIEWS: i32 = 3;
 
-/// Peak and band energies of the waveform points under one pixel column.
+/// One pixel column: the loudest peak of the points under it, and their merged spectrum.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Column {
     /// Loudest sample, 0..=1.
     pub peak: f32,
-    pub low: f32,
-    pub mid: f32,
-    pub high: f32,
+    /// RMS, 0..=1.
+    pub loudness: f32,
+    /// Spectral centroid on the stored log axis, 0..=1.
+    pub centroid: f32,
+    /// Spectral spread, 0..=1 of `SPREAD_MAX_OCTAVES`.
+    pub spread: f32,
 }
 
-/// Folds the points a pixel column covers into one: the loudest peak, the mean band energy.
+/// Folds the points a pixel column covers into one, with the same rule the pyramid levels use, so
+/// a column over fine points and the coarser level over the same span agree.
 pub fn column(points: &[WaveformPoint]) -> Column {
     if points.is_empty() {
         return Column::default();
     }
-    let n = points.len() as f32;
-    let mut out = Column::default();
-    for p in points {
-        out.peak = out.peak.max(p.min.abs().max(p.max.abs()).min(1.0));
-        out.low += p.low / n;
-        out.mid += p.mid / n;
-        out.high += p.high / n;
-    }
-    out
-}
-
-/// How loud each band usually is in one track. Music is bass heavy, so raw band levels would paint
-/// nearly everything in the low colour; dividing by the track's own average shows which band stands
-/// out at each point instead.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BandBalance {
-    low: f32,
-    mid: f32,
-    high: f32,
-}
-
-/// Floor for a band average, so a band with no energy cannot blow up the ratio.
-const BALANCE_FLOOR: f32 = 1e-4;
-/// Exponent on the relative band energy: above 1 favours the standout band, so colours stay vivid
-/// instead of averaging to grey.
-const BAND_CONTRAST: f32 = 2.0;
-
-impl Default for BandBalance {
-    fn default() -> Self {
-        Self {
-            low: 1.0,
-            mid: 1.0,
-            high: 1.0,
-        }
+    let merged = WaveformPoint::merge(points);
+    Column {
+        peak: merged.min.abs().max(merged.max.abs()).min(1.0),
+        loudness: merged.loudness,
+        centroid: merged.centroid,
+        spread: merged.spread,
     }
 }
 
-impl BandBalance {
-    /// The average band energy over `points` (use the overview level).
-    pub fn of(points: &[WaveformPoint]) -> Self {
-        if points.is_empty() {
-            return Self::default();
-        }
-        let c = column(points);
-        Self {
-            low: c.low.max(BALANCE_FLOOR),
-            mid: c.mid.max(BALANCE_FLOOR),
-            high: c.high.max(BALANCE_FLOOR),
-        }
-    }
+/// Overview: column `index` of `count` over the whole level.
+pub fn overview_column(points: &[WaveformPoint], index: usize, count: usize) -> Column {
+    let count = count.max(1);
+    let lo = index * points.len() / count;
+    let hi = ((index + 1) * points.len() / count)
+        .max(lo + 1)
+        .min(points.len());
+    points.get(lo..hi).map(column).unwrap_or_default()
+}
 
-    /// Colour for a column: the three band tokens blended by how far each band stands above this
-    /// track's average. Silence takes the mid colour.
-    pub fn colour(&self, c: &Column, tokens: &ThemeTokens) -> Colour {
-        let rel = |band: f32, avg: f32| (band / avg).powf(BAND_CONTRAST);
-        let parts = [
-            (tokens.wave_low, rel(c.low, self.low)),
-            (tokens.wave_mid, rel(c.mid, self.mid)),
-            (tokens.wave_high, rel(c.high, self.high)),
-        ];
-        if parts.iter().all(|(_, w)| *w <= f32::EPSILON) {
-            return tokens.wave_mid;
-        }
-        Colour::mix(&parts)
+/// Zoomed strip: the column that starts at `frame` and spans `frames_per_pixel` frames of `level`.
+/// `None` outside the level.
+pub fn strip_column(level: &WaveformLevel, frame: f64, frames_per_pixel: f64) -> Option<Column> {
+    if frame < 0.0 {
+        return None;
     }
+    let per_point = level.samples_per_point.max(1) as f64;
+    let lo = (frame / per_point) as usize;
+    let hi = (((frame + frames_per_pixel) / per_point).ceil() as usize)
+        .max(lo + 1)
+        .min(level.points.len());
+    level.points.get(lo..hi).map(column)
 }
 
 /// Clamps a zoom level into the supported range.
@@ -195,62 +170,23 @@ pub fn strip_for(view: &View, height_px: i32) -> StripCache {
 mod tests {
     use super::*;
 
-    fn point(peak: f32, low: f32, mid: f32, high: f32) -> WaveformPoint {
+    fn point(peak: f32, loudness: f32, centroid: f32, spread: f32) -> WaveformPoint {
         WaveformPoint {
             min: -peak,
             max: peak,
-            low,
-            mid,
-            high,
+            loudness,
+            centroid,
+            spread,
         }
     }
 
     #[test]
-    fn column_takes_the_loudest_peak_and_the_mean_bands() {
-        let c = column(&[point(0.2, 0.1, 0.0, 0.0), point(0.9, 0.3, 0.2, 0.0)]);
+    fn column_takes_the_loudest_peak_and_merges_the_spectrum() {
+        let c = column(&[point(0.2, 0.1, 0.2, 0.0), point(0.9, 0.3, 0.8, 0.0)]);
         assert_eq!(c.peak, 0.9);
-        assert!((c.low - 0.2).abs() < 1e-6);
-        assert!((c.mid - 0.1).abs() < 1e-6);
+        assert!(c.centroid > 0.5, "the louder point pulls the centroid");
+        assert!((c.loudness - (0.5f32 * (0.01 + 0.09)).sqrt()).abs() < 1e-5);
         assert_eq!(column(&[]), Column::default());
-    }
-
-    #[test]
-    fn a_standout_band_sets_the_colour_even_when_bass_dominates_the_track() {
-        let t = ThemeTokens::builtin_dark();
-        // A bass-heavy track: low is ten times mid and high on average.
-        let avg = [point(0.5, 0.5, 0.05, 0.05), point(0.5, 0.5, 0.05, 0.05)];
-        let balance = BandBalance::of(&avg);
-        let bass = balance.colour(&column(&[point(0.5, 0.5, 0.05, 0.05)]), &t);
-        let hats = balance.colour(&column(&[point(0.5, 0.05, 0.05, 0.5)]), &t);
-        assert_eq!(
-            bass,
-            Colour::mix(&[(t.wave_low, 1.0), (t.wave_mid, 1.0), (t.wave_high, 1.0)])
-        );
-        // Hats stand out in the high band, so they lean to the high colour, not the low one.
-        let to_high = |c: Colour| {
-            let d = |a: Colour| {
-                let (x, y) = (a.argb(), c.argb());
-                (0..3)
-                    .map(|i| {
-                        let s = 8 * i;
-                        (((x >> s) & 0xFF) as i32 - ((y >> s) & 0xFF) as i32).abs()
-                    })
-                    .sum::<i32>()
-            };
-            d(t.wave_high) < d(t.wave_low)
-        };
-        assert!(to_high(hats));
-        assert!(!to_high(Colour::mix(&[(t.wave_low, 1.0)])));
-    }
-
-    #[test]
-    fn silence_takes_the_mid_colour_and_mix_handles_edges() {
-        let t = ThemeTokens::builtin_dark();
-        let balance = BandBalance::default();
-        assert_eq!(balance.colour(&Column::default(), &t), t.wave_mid);
-        assert_eq!(Colour::mix(&[]), Colour::from_argb(0));
-        assert_eq!(Colour::mix(&[(t.wave_low, 0.0)]), t.wave_low);
-        assert_eq!(Colour::mix(&[(t.wave_low, 3.0)]), t.wave_low);
     }
 
     #[test]

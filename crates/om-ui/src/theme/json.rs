@@ -2,7 +2,7 @@
 //! Pure; no global state. Missing keys inherit the built-in dark theme; a malformed value rejects
 //! the whole theme; unknown keys are reported as warnings and ignored.
 
-use super::tokens::{Colour, ThemeTokens};
+use super::tokens::{Colour, ThemeTokens, WaveStop};
 use serde_json::{Map, Value};
 use std::path::Path;
 
@@ -223,6 +223,19 @@ mod settings_keys {
     }
 }
 
+mod wave_keys {
+    use super::*;
+    float_keys! {
+        "saturationMax" => wave_saturation_max: 0.0, 1.0;
+        "lightnessMin" => wave_lightness_min: 0.0, 1.0;
+        "lightnessMax" => wave_lightness_max: 0.0, 1.0;
+        "floorDb" => wave_floor_db: -90.0, -6.0;
+        "spreadNarrow" => wave_spread_narrow: 0.0, 4.0;
+        "spreadWide" => wave_spread_wide: 0.0, 4.0;
+        "spreadSaturation" => wave_spread_saturation: 0.0, 1.0;
+    }
+}
+
 /// Colour keys of the `colours` section.
 macro_rules! colour_keys {
     ($( $key:literal => $field:ident ; )*) => {
@@ -262,16 +275,13 @@ colour_keys! {
     "capTop" => cap_top;
     "capBottom" => cap_bottom;
     "dropTarget" => drop_target;
-    "waveLow" => wave_low;
-    "waveMid" => wave_mid;
-    "waveHigh" => wave_high;
     "brand" => brand;
     "readout" => readout;
     "readoutDim" => readout_dim;
 }
 
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
-const ROOT_KEYS: [&str; 14] = [
+const ROOT_KEYS: [&str; 15] = [
     "id",
     "name",
     "author",
@@ -286,6 +296,7 @@ const ROOT_KEYS: [&str; 14] = [
     "library",
     "settings",
     "style",
+    "waveform",
 ];
 
 /// Parses a theme document. On error no tokens are returned, so a caller can never use a half-filled
@@ -380,6 +391,7 @@ pub fn parse_theme(json: &str) -> Result<ParsedTheme, ThemeError> {
         style_keys::set,
         style_keys::range,
     )?;
+    read_waveform(section(&root, "waveform")?, w, t)?;
     if let Some(accents) = root.get("accents") {
         t.accents = read_accents(accents)?;
     }
@@ -397,6 +409,77 @@ pub fn parse_theme_file(path: &Path) -> Result<ParsedTheme, ThemeError> {
         why: e.to_string(),
     })?;
     parse_theme(&text)
+}
+
+const WAVE_STOP_KEYS: [&str; 4] = ["pos", "hue", "saturation", "lightness"];
+const WAVE_STOPS_KEY: &str = "hueStops";
+const MAX_WAVE_STOPS: usize = 16;
+
+fn read_waveform(
+    section: Option<&Map<String, Value>>,
+    warnings: &mut Vec<String>,
+    t: &mut ThemeTokens,
+) -> Result<(), ThemeError> {
+    let Some(section) = section else {
+        return Ok(());
+    };
+    let floats: Map<String, Value> = section
+        .iter()
+        .filter(|(k, _)| k.as_str() != WAVE_STOPS_KEY)
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    read_floats(
+        Some(&floats),
+        "waveform",
+        warnings,
+        t,
+        wave_keys::KEYS,
+        wave_keys::set,
+        wave_keys::range,
+    )?;
+    if let Some(stops) = section.get(WAVE_STOPS_KEY) {
+        t.wave_stops = read_wave_stops(stops)?;
+    }
+    check_wave_limits(t)
+}
+
+fn check_wave_limits(t: &ThemeTokens) -> Result<(), ThemeError> {
+    if t.wave_lightness_min >= t.wave_lightness_max {
+        return Err(field("waveform.lightnessMin", "must be below lightnessMax"));
+    }
+    if t.wave_spread_narrow >= t.wave_spread_wide {
+        return Err(field("waveform.spreadNarrow", "must be below spreadWide"));
+    }
+    Ok(())
+}
+
+fn read_wave_stops(value: &Value) -> Result<Vec<WaveStop>, ThemeError> {
+    let bad = |why: String| field(format!("waveform.{WAVE_STOPS_KEY}"), why);
+    let items = match value {
+        Value::Array(items) if (2..=MAX_WAVE_STOPS).contains(&items.len()) => items,
+        _ => return Err(bad(format!("expected 2-{MAX_WAVE_STOPS} stops"))),
+    };
+    let mut stops: Vec<WaveStop> = Vec::with_capacity(items.len());
+    for item in items {
+        let get = |key: &str, lo: f64, hi: f64| {
+            item.get(key)
+                .and_then(Value::as_f64)
+                .filter(|v| *v >= lo && *v <= hi)
+                .map(|v| v as f32)
+                .ok_or_else(|| bad(format!("each stop needs {key} in {lo}-{hi}")))
+        };
+        let stop = WaveStop {
+            pos: get(WAVE_STOP_KEYS[0], 0.0, 1.0)?,
+            hue: get(WAVE_STOP_KEYS[1], 0.0, 720.0)?,
+            saturation: get(WAVE_STOP_KEYS[2], 0.0, 1.5)?,
+            lightness: get(WAVE_STOP_KEYS[3], 0.0, 2.0)?,
+        };
+        if stops.last().is_some_and(|prev| prev.pos >= stop.pos) {
+            return Err(bad("pos must rise from stop to stop".to_owned()));
+        }
+        stops.push(stop);
+    }
+    Ok(stops)
 }
 
 fn read_identity(root: &Map<String, Value>) -> Result<ThemeInfo, ThemeError> {

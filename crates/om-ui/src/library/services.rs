@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use om_analysis::{
     hash_file_content, make_engine_grid, AnalysisService, Analyzer, AnalyzerRegistry, BpmResult,
-    FileClipSource, ResultCache, SqliteResultCache, WaveformData,
+    FileClipSource, ResultCache, SqliteResultCache, WaveformData, LEGACY_FORMAT_VERSION,
 };
 use om_engine::grid::BeatGrid;
 use om_library::{
@@ -323,11 +323,9 @@ impl LibraryServices {
             analysed: wave.is_some() && bpm.is_some(),
             ..TrackAnalysis::default()
         };
-        if let Some(data) = wave.and_then(|json| WaveformData::from_json(&json)) {
-            if data.is_valid() {
-                out.waveform = Some(Arc::new(data));
-            }
-        }
+        let current = wave.and_then(|json| WaveformData::from_json(&json));
+        let shown = current.or_else(|| self.legacy_silhouette(&hash));
+        out.waveform = shown.filter(WaveformData::is_valid).map(Arc::new);
         if let Some(result) = bpm.and_then(|json| BpmResult::from_json(&json)) {
             out.grid = make_engine_grid(&result.grid);
         }
@@ -391,6 +389,13 @@ impl LibraryServices {
     /// `track`, when the analysis finished with the analyser version that is registered now.
     pub fn cached_analysis(&self, track: &TrackRecord, id: &str) -> Option<String> {
         self.cached(&track_hash(track), id)
+    }
+
+    /// A format 1 waveform as a colourless silhouette, shown while the spectral one rebuilds.
+    fn legacy_silhouette(&self, hash: &str) -> Option<WaveformData> {
+        let cache = self.cache.as_ref()?;
+        let json = cache.find(hash, "waveform", LEGACY_FORMAT_VERSION as i32)?;
+        WaveformData::silhouette_from_v1_json(&json)
     }
 
     fn cached(&self, hash: &str, id: &str) -> Option<String> {

@@ -27,9 +27,6 @@
     "capTop": "#FF2C3446",
     "capBottom": "#FF161B26",
     "dropTarget": "#402A6F9E",
-    "waveLow": "#FFF97316",
-    "waveMid": "#FF34D399",
-    "waveHigh": "#FF4CC9F0",
     "brand": "#FFFF8F5A",
     "readout": "#FFF7F3EC",
     "readoutDim": "#FF9AA0B4"
@@ -52,5 +49,19 @@
   "style": { "borderWidth": 1, "focusBorderWidth": 2, "thumbSize": 12, "insetSmall": 2, "insetLarge": 4,
              "barRadius": 2, "lampHeight": 8, "meterHeadroom": 14, "disabledAlpha": 0.4,
              "glowAlpha": 0.45, "glowRadius": 10, "shadowBlur": 18, "shadowOffsetY": 6, "motionFastMs": 90, "motionBaseMs": 180 },
+  "waveform": { "saturationMax": 0.9, "lightnessMin": 0.2, "lightnessMax": 0.88, "floorDb": -42, "spreadNarrow": 1.0, "spreadWide": 3.5, "spreadSaturation": 0.5,
+    "hueStops": [
+      { "pos": 0.00, "hue": 0, "saturation": 1.0, "lightness": 0.75 },
+      { "pos": 0.14, "hue": 8, "saturation": 1.0, "lightness": 0.8 },
+      { "pos": 0.30, "hue": 38, "saturation": 1.0, "lightness": 0.8 },
+      { "pos": 0.44, "hue": 95, "saturation": 0.95, "lightness": 0.75 },
+      { "pos": 0.55, "hue": 150, "saturation": 0.9, "lightness": 0.75 },
+      { "pos": 0.65, "hue": 190, "saturation": 0.95, "lightness": 0.8 },
+      { "pos": 0.75, "hue": 225, "saturation": 1.0, "lightness": 0.85 },
+      { "pos": 0.82, "hue": 262, "saturation": 0.95, "lightness": 0.9 },
+      { "pos": 0.87, "hue": 290, "saturation": 0.6, "lightness": 0.95 },
+      { "pos": 0.90, "hue": 305, "saturation": 0.2, "lightness": 0.98 },
+      { "pos": 1.00, "hue": 320, "saturation": 0.08, "lightness": 1.0 }
+    ] },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }
