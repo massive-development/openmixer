@@ -3,7 +3,7 @@
 
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
-use crate::paint::{border, paint, place, skin};
+use crate::paint::{border, paint, place, shadow, skin};
 use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent, MouseUpEvent};
 use om_ui::geometry::Rect;
 use om_ui::style::LookAndFeel;
@@ -30,7 +30,7 @@ pub fn button(
         },
     );
     let el = if lit {
-        el
+        shadow(el, &look.glow(accent))
     } else {
         el.hover(move |style| style.bg(paint(hover)))
     };

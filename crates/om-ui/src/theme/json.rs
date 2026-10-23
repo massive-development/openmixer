@@ -107,6 +107,8 @@ mod type_keys {
         "title" => type_title: MIN_TYPE, MAX_TYPE;
         "heading" => type_heading: MIN_TYPE, MAX_TYPE;
         "mono" => type_mono: MIN_TYPE, MAX_TYPE;
+        "readout" => type_readout: MIN_TYPE, MAX_TYPE;
+        "readoutSmall" => type_readout_small: MIN_TYPE, MAX_TYPE;
     }
 }
 
@@ -199,6 +201,12 @@ mod style_keys {
         "lampHeight" => lamp_height: 0.0, 32.0;
         "meterHeadroom" => meter_headroom: 0.0, 64.0;
         "disabledAlpha" => disabled_alpha: 0.0, 1.0;
+        "glowAlpha" => glow_alpha: 0.0, 1.0;
+        "glowRadius" => glow_radius: 0.0, 64.0;
+        "shadowBlur" => shadow_blur: 0.0, 64.0;
+        "shadowOffsetY" => shadow_offset_y: 0.0, 32.0;
+        "motionFastMs" => motion_fast_ms: 0.0, 1000.0;
+        "motionBaseMs" => motion_base_ms: 0.0, 2000.0;
     }
 }
 
@@ -257,6 +265,9 @@ colour_keys! {
     "waveLow" => wave_low;
     "waveMid" => wave_mid;
     "waveHigh" => wave_high;
+    "brand" => brand;
+    "readout" => readout;
+    "readoutDim" => readout_dim;
 }
 
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
@@ -574,5 +585,22 @@ mod tests {
         assert_eq!(parse_colour_hex("#1122"), None);
         assert_eq!(parse_colour_hex(""), None);
         assert_eq!(parse_colour_hex("#GG0000"), None);
+    }
+
+    #[test]
+    fn brand_tokens_parse_and_are_range_checked() {
+        let ok = r##"{"id":"t.one","name":"T","colours":{"brand":"#FF112233"},
+            "type":{"readout":30},"style":{"glowAlpha":0.5,"glowRadius":12}}"##;
+        let t = parse_theme(ok).expect("parses").tokens;
+        assert_eq!(t.brand, Colour::from_argb(0xFF11_2233));
+        assert_eq!(t.type_readout, 30.0);
+        assert_eq!((t.glow_alpha, t.glow_radius), (0.5, 12.0));
+        // A file that leaves them out inherits the defaults.
+        let bare = parse_theme(r#"{"id":"t.two","name":"T"}"#)
+            .expect("parses")
+            .tokens;
+        assert_eq!(bare.brand, ThemeTokens::builtin_dark().brand);
+        let bad = r#"{"id":"t.three","name":"T","style":{"glowAlpha":2}}"#;
+        assert!(parse_theme(bad).is_err());
     }
 }
