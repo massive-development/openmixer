@@ -13,7 +13,7 @@ use gpui::{
     canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton,
     MouseDownEvent, Pixels, Window,
 };
-use om_analysis::WaveformData;
+use om_analysis::{WaveformData, WaveformPoint};
 use om_ui::geometry::Rect;
 use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
 use om_ui::style::LookAndFeel;
