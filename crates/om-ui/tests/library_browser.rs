@@ -215,6 +215,28 @@ fn harmonically_compatible_keys_are_flagged_against_the_reference() {
 }
 
 #[test]
+fn tempo_sharpens_the_compatible_highlight() {
+    use om_ui::library::MixLevel;
+    let mut rig = BrowserRig::new();
+    let mut track = rig.row(0);
+    track.camelot = "9A".to_owned();
+    track.bpm = Some(126.0);
+    rig.browser.model.set_reference_camelot("8A");
+    assert_eq!(
+        rig.browser.model.mix_level(&track),
+        MixLevel::Key,
+        "tempo unknown"
+    );
+    rig.browser.model.set_reference_bpm(Some(124.0));
+    assert_eq!(rig.browser.model.mix_level(&track), MixLevel::Strong);
+    track.bpm = Some(150.0);
+    assert_eq!(rig.browser.model.mix_level(&track), MixLevel::Key);
+    track.camelot = "3B".to_owned();
+    track.bpm = Some(124.0);
+    assert_eq!(rig.browser.model.mix_level(&track), MixLevel::None);
+}
+
+#[test]
 fn reference_key_provider_is_polled_by_the_tick() {
     let mut rig = BrowserRig::new();
     let camelot = Rc::new(RefCell::new(String::from("9A")));
