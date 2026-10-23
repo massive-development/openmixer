@@ -93,7 +93,7 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 - Queue: `QueueSource::Playlist` plays in order and wraps; `Search` and `CurrentSearch` shuffle; `smart` turns on the key and tempo preference. Only tracks with a beat grid (analysis cache) are picked. An empty pick fails the run and suppresses that deck; the demo waits for analysis for this reason.
 - Bar: the header strip's left part (`BAR_HEIGHT` 32, Settings button keeps the right 96 px). Enable, style and length edit the settings; Start now and Cancel press the ids. Skip is not offered (no skip-to-next command).
 - Demo: `--demo-automix` (gui) ingests three 24 s click tracks at 120, 122 and 124 BPM, turns automix on in memory, waits for every track's grid and starts deck A on the mock device. Scene `main-automix` in `tools/screenshots.sh`.
-- Not verified: by ear (silent mock device), the transitions on real decks, and the bar at widths other than 1280x800 by eye.
+- Not verified: by ear (silent mock device), the transitions on real decks, and the bar at widths other than 1280x800 (the screenshot size) by eye.
 
 ### Mapping editor (Todo 36, logic and view level)
 
