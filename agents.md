@@ -317,6 +317,17 @@ cargo run -p openmixer -- --smoke
 
 Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
 
+### Working on a constrained machine (WSL)
+
+- WSL crashes under heavy builds. Run `nice -n 19 env CARGO_BUILD_JOBS=3 cargo ...`, one cargo process at a time, never in the background, and never clippy and test in one command. Agents sharing a checkout serialise with `flock /tmp/openmixer-cargo.lock`.
+- Agents on separate worktrees that share a `CARGO_TARGET_DIR` can see each other's output as fresh: touch the files you changed before testing, and check the new tests actually ran.
+- Check `free -m` first. Do not build the gui crate unless more than 6 GB is free.
+- GUI build (`docs/spikes/gpui.md`): run with `WAYLAND_DISPLAY=` to force X11. For the link error `unable to find library -lxkbcommon-x11`, symlink `libxkbcommon-x11.so.0` into a shim directory and pass `RUSTFLAGS="-L <shim dir>"`; the proper fix is `sudo apt install libxkbcommon-x11-dev`. The gui crate tests need this too.
+- `soak_short` (`crates/om-audio/tests/soak.rs`) can flake once under load; rerun it alone.
+- Git corruption recovery: delete zero-byte files under `.git/objects`, run `git fetch --refetch origin`, then reset the branch to `origin/<branch>`.
+- Never play audio; use the mock device. Screenshots only with `import -silent` (see `tools/screenshots.sh`), into temp dirs, at most 6 per task.
+- Agents default to haiku; use sonnet for audio-thread or design-heavy work. Review once per phase. Push after every step.
+
 ### Test support
 
 `crates/om-testing` holds the helpers the crates share in their tests: `wav` (fixture writers and a reader), `signals` (deterministic sines, noise and impulse trains), `level` (dB, peak and RMS), `wait` (`wait_until` and `assert_eventually!`) and `fs::TempDir`. Reuse these instead of writing a new WAV writer, sine or poll loop. Waits poll for the condition they expect, with a timeout; never sleep a fixed time to wait for something to happen. It is a dev-dependency only: no shipped crate may depend on it.

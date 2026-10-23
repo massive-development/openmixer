@@ -98,7 +98,7 @@ fn first_echo_position(bpm: f64, beats: f64, block: usize) -> usize {
     argmax_abs(&s.l)
 }
 
-/// gtest `EXPECT_FLOAT_EQ`: equal within 4 ULPs.
+/// Equal within 4 ULPs.
 fn ulps_f32(a: f32, b: f32) -> i64 {
     fn ordered(x: f32) -> i64 {
         let bits = i64::from(x.to_bits());
@@ -118,7 +118,7 @@ fn assert_float_eq(actual: f32, expected: f32) {
     );
 }
 
-/// gtest `EXPECT_DOUBLE_EQ`: equal within 4 ULPs.
+/// Equal within 4 ULPs.
 fn assert_double_eq(actual: f64, expected: f64) {
     fn ordered(x: f64) -> i128 {
         let bits = i128::from(x.to_bits());

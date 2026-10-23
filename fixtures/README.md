@@ -1,6 +1,6 @@
 # OpenMixer Test Data
 
-Repo-root `fixtures/` holds the small test inputs that Rust tests read (moved from the C++ era's `tests/data/`).
+Repo-root `fixtures/` holds the small test inputs that Rust tests read.
 
 ## Rules
 - Only test data, no copyrighted content
