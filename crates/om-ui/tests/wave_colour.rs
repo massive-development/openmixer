@@ -60,6 +60,7 @@ fn tones_map_to_distinct_hues_in_order_of_frequency() {
             .iter()
             .map(|&hz| wave_hsl(&tone_column(hz), &t).hue)
             .collect();
+        eprintln!("tone hues {name}: {hues:?}");
         assert!(hues[0] < hues[1] && hues[1] < hues[2], "{name}: {hues:?}");
         assert!(
             hues[1] - hues[0] > 60.0 && hues[2] - hues[1] > 60.0,
