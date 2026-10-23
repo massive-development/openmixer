@@ -544,7 +544,15 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
     let frames_out = Arc::new(AtomicU64::new(0));
     let counter = Arc::clone(&frames_out);
     Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+        let requested = std::env::var("OPENMIXER_WINDOW")
+            .ok()
+            .and_then(|text| crate::window_size::parse_size(&text));
+        let display = cx.primary_display().map(|d| {
+            let b = d.bounds().size;
+            (f32::from(b.width), f32::from(b.height))
+        });
+        let (width, height) = crate::window_size::initial_size(requested, display);
+        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
         if let Some(mut hook) = options.on_frame.take() {
             // A foreground timer, not the render loop: it keeps running while the window is hidden.
             cx.spawn(async move |cx: &mut AsyncApp| loop {

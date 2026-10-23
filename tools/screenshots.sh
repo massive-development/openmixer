@@ -40,7 +40,8 @@ if [[ -z "${SKIP_BUILD:-}" ]]; then
     cargo build -p openmixer)
 fi
 
-# The window has no title; it is the 1280x800 client window in the root tree.
+# The window has no title; it is the 1280x800 client window in the root tree (the app opens at
+# 1920x1080 by default, so every capture pins OPENMIXER_WINDOW=1280x800).
 find_window() {
   xwininfo -root -tree 2>/dev/null \
     | awk '/\(has no name\): \(\)  1280x800\+/ {print $1; exit}'
@@ -55,7 +56,7 @@ capture() {
   local log="$work/$name.log" win="" i
   # Temp preferences, library, config and data dirs: the user's own files are never touched.
   mkdir -p "$work/xdg-config" "$work/xdg-data" "$work/lib-$name"
-  env "${envs[@]}" OPENMIXER_PREFS="$work/prefs.json" OPENMIXER_LIBRARY_DB="$work/lib-$name/library.db" \
+  env "${envs[@]}" OPENMIXER_WINDOW=1280x800 OPENMIXER_PREFS="$work/prefs.json" OPENMIXER_LIBRARY_DB="$work/lib-$name/library.db" \
     XDG_CONFIG_HOME="$work/xdg-config" XDG_DATA_HOME="$work/xdg-data" \
     "$bin" --mock-device "$@" >"$log" 2>&1 &
   pid=$!
