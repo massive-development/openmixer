@@ -817,6 +817,26 @@ fn a_pair_refused_four_times_is_suppressed_with_the_planner_error() {
     );
 }
 
+/// A centred crossfader and a channel that has to be reassigned: the outgoing channel is moved to
+/// its full level first, so the ramp starts there instead of dipping through the centre.
+#[test]
+fn a_centred_crossfader_is_moved_to_the_outgoing_side_when_a_channel_is_reassigned() {
+    let mut sim = Sim::new(380.0, false);
+    sim.snap.mixer.crossfader = 0.5;
+    sim.run_until("transitioning", 3000, |s| {
+        s.state() == AutomixState::Transitioning
+    });
+    sim.run_until("idle after the transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup) && s.state() == AutomixState::Idle
+    });
+    let xfader = sim.sent("mixer.crossfader");
+    // The first value sent is the outgoing side's edge (one tick into the ramp), not the centre.
+    assert!(xfader.first().is_some_and(|v| *v < 0.01), "{xfader:?}");
+    assert_eq!(sim.sent("mixer.ch0.xfader"), vec![1.0, 0.0]);
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing);
+}
+
 /// The tempo gate goes to the queue for explicit beat-matched styles only.
 #[test]
 fn explicit_styles_ask_the_queue_for_a_tempo_window() {
