@@ -18,4 +18,5 @@ pub mod sampler_view;
 pub mod settings_view;
 pub mod stage_view;
 pub mod text_entry;
+pub mod waveform_paint;
 pub mod window_size;

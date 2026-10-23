@@ -9,27 +9,24 @@ use crate::controls::{button as push_button, knob, slider};
 use crate::drag::Target;
 use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place, skin};
+use crate::waveform_paint::{paint_overview, paint_zoom, with_alpha, OverviewScene, ZoomScene};
 use gpui::{
-    canvas, div, fill, point, prelude::*, px, relative, size, Bounds, Context, Div, MouseButton,
-    MouseDownEvent, Pixels, Window,
+    canvas, div, prelude::*, px, relative, Bounds, Context, Div, MouseButton, MouseDownEvent,
+    MouseMoveEvent, Pixels, Window,
 };
-use om_analysis::{WaveformData, WaveformPoint};
 use om_ui::geometry::Rect;
 use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
 use om_ui::style::LookAndFeel;
-use om_ui::waveform::{overview_column, strip_column, wave_colour, View};
+use om_ui::waveform::{
+    cue_flags, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_LINE_WIDTH,
+    CUE_NUMBER_SIZE, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
+};
 use om_ui::widgets::deck::{deck_controls_layout, deck_layout, DeckLayout};
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::{LoopControls, SIZE_NAMES};
 use om_ui::widgets::stage::STAGE_DECKS;
 use om_ui::widgets::stem_pads::stem_pad_layout;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
-use std::sync::Arc;
-
-/// The loudest sample of a waveform point, 0..1 (full-band peak).
-pub fn peak(p: &WaveformPoint) -> f32 {
-    p.min.abs().max(p.max.abs()).min(1.0)
-}
 
 /// Card for deck `index`, drawn at `card` (window coordinates).
 pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
@@ -285,6 +282,8 @@ fn stems(
     parts
 }
 
+/// The overview: the whole track in the three bands, played part dimmed, with the playhead, hot
+/// cue ticks, loop and bar ticks. A click or a drag across it seeks.
 pub(crate) fn overview(
     shell: &Shell,
     index: usize,
@@ -296,68 +295,167 @@ pub(crate) fn overview(
     let deck = &shell.decks[index];
     let area = l.overview;
     let width = f64::from(area.w);
-    let playhead = deck.overview.playhead_x(width);
-    let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
     let origin_x = card.x + area.x;
-    let bar_count = area.w.max(1);
-    let (head_colour, head_w) = (paint(t.highlight), t.playhead_width);
-    let tokens = t.clone();
+    let scene = OverviewScene {
+        deck: index,
+        wave: shell.library.as_ref().and_then(|p| p.waveform(index)),
+        markers: deck.overview.markers(width),
+        well: t.well,
+    };
 
     let canvas_el = canvas(
         |_, _, _| (),
         move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
-            let w = f32::from(bounds.size.width);
-            let h = f32::from(bounds.size.height);
-            let mid = h / 2.0;
-            if let Some(data) = &wave {
-                let points = &data.overview().points;
-                if !points.is_empty() {
-                    let spectral = data.has_spectrum();
-                    for i in 0..bar_count {
-                        // One pixel column folds the points it covers, so the colour follows the
-                        // spectrum under it.
-                        let col = overview_column(points, i as usize, bar_count as usize);
-                        let amp = col.peak * mid * 0.9;
-                        let x = i as f32;
-                        if x >= w {
-                            break;
-                        }
-                        window.paint_quad(fill(
-                            Bounds::new(
-                                point(
-                                    bounds.origin.x + px(x),
-                                    bounds.origin.y + px(mid - amp.max(1.0)),
-                                ),
-                                size(px(1.0), px((amp * 2.0).max(2.0))),
-                            ),
-                            paint(wave_colour(&col, spectral, &tokens)),
-                        ));
-                    }
-                }
-            }
-            window.paint_quad(fill(
-                Bounds::new(
-                    point(bounds.origin.x + px(playhead as f32), bounds.origin.y),
-                    size(px(head_w), px(h)),
-                ),
-                head_colour,
-            ));
+            paint_overview(window, bounds, &scene);
         },
     )
     .size_full();
 
+    let seek = move |this: &mut Shell, x: f32| {
+        this.decks[index]
+            .overview
+            .seek_at(f64::from(x - origin_x as f32), width);
+    };
     place(area)
+        .overflow_hidden()
         .bg(paint(t.well))
         .rounded(px(t.control_radius))
         .child(canvas_el)
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                let x = f32::from(ev.position.x) - origin_x as f32;
-                this.decks[index].overview.seek_at(f64::from(x), width);
+                seek(this, f32::from(ev.position.x));
                 cx.notify();
             }),
         )
+        .on_mouse_move(cx.listener(move |this, ev: &MouseMoveEvent, _, cx| {
+            if ev.dragging() {
+                seek(this, f32::from(ev.position.x));
+                cx.notify();
+            }
+        }))
+}
+
+/// A text label placed inside a strip.
+fn label(x: f32, y: f32, size: f32, colour: gpui::Rgba, text: String) -> Div {
+    div()
+        .absolute()
+        .left(px(x))
+        .top(px(y))
+        .text_size(px(size))
+        .line_height(px(size + 2.0))
+        .text_color(colour)
+        .child(text)
+}
+
+pub(crate) fn zoom(
+    shell: &Shell,
+    index: usize,
+    _card: Rect,
+    l: &DeckLayout,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let deck = &shell.decks[index];
+    let area = l.zoom;
+    let width = f64::from(area.w);
+    let height = area.h as f32;
+    let view: View = deck.zoom.view(width);
+    let grid = deck.zoom.grid_lines(&view);
+    let loop_region = deck.zoom.loop_region(&view);
+    let flags = cue_flags(&deck.zoom.cue_xs(&view), width);
+    let scene = ZoomScene {
+        deck: index,
+        wave: shell.library.as_ref().and_then(|p| p.waveform(index)),
+        view,
+        length_frames: shell.engine.deck(index).length_frames(),
+        grid: grid.clone(),
+        loop_span: loop_region.as_ref().map(|r| (r.x0, r.x1, r.looping)),
+        well: t.well,
+    };
+
+    let strip = canvas(
+        |_, _, _| (),
+        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
+            paint_zoom(window, bounds, &scene);
+        },
+    )
+    .size_full();
+
+    let mut el = place(area)
+        .overflow_hidden()
+        .bg(paint(t.well))
+        .rounded(px(t.control_radius))
+        .child(strip);
+
+    // Bar numbers sit at the foot of their line, in front of the waveform.
+    let number_colour = with_alpha(GRID_COLOUR, 0.85);
+    for line in &grid {
+        if let Some(n) = line.bar_number {
+            el = el.child(label(
+                line.x as f32 + 4.0,
+                height - BAR_NUMBER_SIZE - 6.0,
+                BAR_NUMBER_SIZE,
+                number_colour,
+                n.to_string(),
+            ));
+        }
+    }
+
+    if let Some(region) = &loop_region {
+        if !region.label.is_empty() {
+            let x = (region.x0 as f32).max(0.0) + 6.0;
+            el = el.child(label(
+                x,
+                height - BAR_NUMBER_SIZE - 6.0,
+                BAR_NUMBER_SIZE,
+                with_alpha(LOOP_COLOUR, region.edge_alpha()),
+                region.label.clone(),
+            ));
+        }
+    }
+
+    // Hot cue flags: a 2 px line down the strip and a numbered tab at the top.
+    for flag in &flags {
+        el = el
+            .child(
+                div()
+                    .absolute()
+                    .left(px(flag.x))
+                    .top(px(0.))
+                    .w(px(CUE_LINE_WIDTH))
+                    .h(px(height))
+                    .bg(paint(flag.colour)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(flag.x))
+                    .top(px(0.))
+                    .w(px(CUE_FLAG_WIDTH))
+                    .h(px(CUE_FLAG_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_br(px(3.))
+                    .bg(paint(flag.colour))
+                    .text_color(paint(CUE_TEXT_COLOUR))
+                    .text_size(px(CUE_NUMBER_SIZE))
+                    .child(flag.label.clone()),
+            );
+    }
+
+    el.on_scroll_wheel(
+        cx.listener(move |this, ev: &gpui::ScrollWheelEvent, _, cx| {
+            let dy = f32::from(ev.delta.pixel_delta(px(16.)).y);
+            // Both decks follow one time scale.
+            let step = this.decks[index].zoom.wheel(dy);
+            for deck in &mut this.decks {
+                deck.zoom.set_zoom_step(step);
+            }
+            cx.notify();
+        }),
+    )
 }
 
 fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
@@ -396,120 +494,6 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
                 this.begin_drag(Target::Pitch(index), abs_pitch, ev.position);
-                cx.notify();
-            }),
-        )
-}
-
-pub(crate) fn zoom(
-    shell: &Shell,
-    index: usize,
-    _card: Rect,
-    l: &DeckLayout,
-    cx: &mut Context<Shell>,
-) -> Div {
-    let t = &shell.theme;
-    let deck = &shell.decks[index];
-    let area = l.zoom;
-    let width = f64::from(area.w);
-    let view: View = deck.zoom.view(width);
-    let cues = deck.zoom.cue_xs(&view);
-    let grid = deck.zoom.grid_lines(&view);
-    let grid_colour = paint(t.text_secondary);
-    let (bar_alpha, beat_alpha) = (t.grid_bar_alpha, t.grid_beat_alpha);
-    let loop_span = deck.zoom.loop_span(&view);
-    let wave: Option<Arc<WaveformData>> = shell.library.as_ref().and_then(|p| p.waveform(index));
-    let fpp = deck.zoom.frames_per_pixel();
-    let length = shell.engine.deck(index).length_frames();
-    let playhead = view.x_of_frame(shell.engine.deck(index).position_frames());
-    let accent = paint(t.accent_for(index as i32));
-    let tokens = t.clone();
-    let cue_colour = paint(t.master);
-    let head_colour = paint(t.highlight);
-    let (cue_w, head_w) = (t.cue_marker_width, t.playhead_width);
-    let (loop_looping, loop_idle) = (t.loop_active_alpha, t.loop_idle_alpha);
-
-    let strip = canvas(
-        |_, _, _| (),
-        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
-            let w = f32::from(bounds.size.width);
-            let h = f32::from(bounds.size.height);
-            let mid = h / 2.0;
-            if let Some((x0, x1, looping)) = loop_span {
-                let colour = if looping { loop_looping } else { loop_idle };
-                window.paint_quad(fill(
-                    Bounds::new(
-                        point(bounds.origin.x + px(x0 as f32), bounds.origin.y),
-                        size(px((x1 - x0) as f32), px(h)),
-                    ),
-                    accent_with_alpha(accent, colour),
-                ));
-            }
-            if let Some(data) = &wave {
-                let level = data.level_for(fpp);
-                let spectral = data.has_spectrum();
-                let mut x = 0.0_f32;
-                while x < w {
-                    let frame = view.frame_at_x(f64::from(x));
-                    let inside = frame < length as f64;
-                    if let Some(col) = strip_column(level, frame, fpp).filter(|_| inside) {
-                        let amp = col.peak * mid * 0.9;
-                        window.paint_quad(fill(
-                            Bounds::new(
-                                point(
-                                    bounds.origin.x + px(x),
-                                    bounds.origin.y + px(mid - amp.max(1.0)),
-                                ),
-                                size(px(1.0), px((amp * 2.0).max(1.0))),
-                            ),
-                            paint(wave_colour(&col, spectral, &tokens)),
-                        ));
-                    }
-                    x += 1.0;
-                }
-            }
-            for line in &grid {
-                let (alpha, width) = if line.bar {
-                    (bar_alpha, 2.0)
-                } else {
-                    (beat_alpha, 1.0)
-                };
-                window.paint_quad(fill(
-                    Bounds::new(
-                        point(bounds.origin.x + px(line.x as f32), bounds.origin.y),
-                        size(px(width), px(h)),
-                    ),
-                    accent_with_alpha(grid_colour, alpha),
-                ));
-            }
-            for x in cues.iter().flatten() {
-                window.paint_quad(fill(
-                    Bounds::new(
-                        point(bounds.origin.x + px(*x as f32), bounds.origin.y),
-                        size(px(cue_w), px(h)),
-                    ),
-                    cue_colour,
-                ));
-            }
-            window.paint_quad(fill(
-                Bounds::new(
-                    point(bounds.origin.x + px(playhead as f32), bounds.origin.y),
-                    size(px(head_w), px(h)),
-                ),
-                head_colour,
-            ));
-        },
-    )
-    .size_full();
-
-    place(area)
-        .bg(paint(t.well))
-        .rounded(px(t.control_radius))
-        .child(strip)
-        .on_scroll_wheel(
-            cx.listener(move |this, ev: &gpui::ScrollWheelEvent, _, cx| {
-                let dy = f32::from(ev.delta.pixel_delta(px(16.)).y);
-                this.decks[index].zoom.wheel(dy);
                 cx.notify();
             }),
         )
