@@ -306,6 +306,108 @@ fn echo_out_switches_the_echo_on_the_outgoing_rack() {
     assert_eq!(xfader_value(&p, p.start_beat + p.length_beats * 0.75), 1.0);
 }
 
+fn echo_enable(unit: u16) -> ParamId {
+    ParamId::Fx {
+        rack: FxRack::Channel(0),
+        unit: Some(unit),
+        p: FxParam::Enable,
+    }
+}
+
+fn echo_mix(unit: u16) -> ParamId {
+    ParamId::Fx {
+        rack: FxRack::Channel(0),
+        unit: Some(unit),
+        p: FxParam::Mix,
+    }
+}
+
+/// A snapshot whose channel 0 rack holds the given `(effect, enabled, mix)` units.
+fn with_rack(units: &[(&'static str, bool, f32)]) -> om_core::EngineSnapshot {
+    let mut snap = blank_snapshot(2);
+    snap.fx.channels = vec![
+        units
+            .iter()
+            .map(|&(effect, enabled, mix)| om_core::FxUnitSnapshot {
+                effect,
+                enabled,
+                mix,
+            })
+            .collect(),
+        Vec::new(),
+    ];
+    snap
+}
+
+fn plan_with(snap: &om_core::EngineSnapshot, style: Style) -> TransitionPlan {
+    let (out, inc) = pair();
+    let opts = PlanOptions {
+        snapshot: Some(snap),
+        ..PlanOptions::default()
+    };
+    DefaultPlanner.plan(&out, &inc, style, &opts).unwrap()
+}
+
+#[test]
+fn echo_out_takes_the_configured_unit_when_it_is_free() {
+    let snap = with_rack(&[("echo", false, 0.0), ("echo", false, 0.0)]);
+    let p = plan_with(&snap, Style::EchoOut);
+    assert_eq!(p.style, Style::EchoOut);
+    assert!(p.steps.iter().any(|s| s.id == echo_enable(0)));
+    assert!(p.steps.iter().all(|s| s.id != echo_enable(1)));
+}
+
+#[test]
+fn echo_out_skips_a_busy_unit_and_picks_a_free_echo() {
+    // Unit 0 is on, unit 1 is a reverb, unit 2 is a free echo with a send the user left.
+    let snap = with_rack(&[
+        ("echo", true, 0.8),
+        ("reverb", false, 0.0),
+        ("echo", false, 0.4),
+    ]);
+    let p = plan_with(&snap, Style::EchoOut);
+    assert_eq!(p.style, Style::EchoOut);
+    assert!(p.steps.iter().any(|s| s.id == echo_enable(2)));
+    assert!(p
+        .steps
+        .iter()
+        .all(|s| s.id != echo_enable(0) && s.id != echo_enable(1)));
+    // The previous state is what finish and cancel put back.
+    let was = (echo_enable(2), 0.0);
+    let mix = (echo_mix(2), f64::from(0.4_f32));
+    assert!(p.cleanup.contains(&was) && p.cleanup.contains(&mix));
+    assert!(p.restore_on_cancel.contains(&was) && p.restore_on_cancel.contains(&mix));
+}
+
+#[test]
+fn echo_out_with_no_free_unit_falls_back_to_crossfade() {
+    for rack in [
+        vec![("echo", true, 0.0)],
+        vec![("reverb", false, 0.0)],
+        Vec::new(),
+    ] {
+        let snap = with_rack(&rack);
+        assert_eq!(plan_with(&snap, Style::EchoOut).style, Style::Crossfade);
+    }
+    // Auto with a key clash resolves to EchoOut and falls back the same way.
+    let (out, clash) = (info(0, 124.0, "8A", false), info(1, 124.0, "3B", false));
+    let snap = with_rack(&[("echo", true, 0.0)]);
+    let opts = PlanOptions {
+        snapshot: Some(&snap),
+        ..PlanOptions::default()
+    };
+    let p = DefaultPlanner
+        .plan(&out, &clash, Style::Auto, &opts)
+        .unwrap();
+    assert_eq!(p.style, Style::Crossfade);
+    // A wide tempo gap still gives Cut, which needs no unit.
+    let fast = info(1, 140.0, "3B", false);
+    let p = DefaultPlanner
+        .plan(&out, &fast, Style::Auto, &opts)
+        .unwrap();
+    assert_eq!(p.style, Style::Cut);
+}
+
 #[test]
 fn cut_has_no_length_and_flips_the_crossfader_at_once() {
     let (out, inc) = pair();

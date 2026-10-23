@@ -10,7 +10,7 @@ use crate::drag::Target;
 use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place, skin};
 use gpui::{
-    canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton,
+    canvas, div, fill, point, prelude::*, px, relative, size, Bounds, Context, Div, MouseButton,
     MouseDownEvent, Pixels, Window,
 };
 use om_analysis::{WaveformData, WaveformPoint};
@@ -82,6 +82,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
 /// second. Clipped to its rectangle so it never runs into the overview strip.
 pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
     let t = &shell.theme;
+    let look = LookAndFeel::from_tokens(t);
     let text = shell.decks[index].header.text();
     place(l.header)
         .overflow_hidden()
@@ -102,8 +103,23 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
                     div()
                         .flex_none()
                         .pl(px(8.))
-                        .text_size(px(t.type_mono))
-                        .child(format!("{}  {}", text.elapsed, text.remaining)),
+                        .flex()
+                        .items_baseline()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(px(look.readout.value_size))
+                                .line_height(relative(1.1))
+                                .text_color(paint(look.readout.value))
+                                .child(text.elapsed.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(look.readout.small_size))
+                                .line_height(relative(1.1))
+                                .text_color(paint(look.readout.unit))
+                                .child(text.remaining.clone()),
+                        ),
                 ),
         )
         .child(
@@ -118,7 +134,30 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
                     div()
                         .flex_none()
                         .pl(px(8.))
-                        .child(format!("{}   {} BPM", text.key, text.bpm)),
+                        .flex()
+                        .items_baseline()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(px(look.readout.small_size))
+                                .line_height(relative(1.1))
+                                .text_color(paint(look.readout.value))
+                                .child(text.key.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(look.readout.small_size))
+                                .line_height(relative(1.1))
+                                .text_color(paint(look.readout.value))
+                                .child(text.bpm.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(look.readout.unit_size))
+                                .line_height(relative(1.1))
+                                .text_color(paint(look.readout.unit))
+                                .child("BPM"),
+                        ),
                 ),
         )
 }

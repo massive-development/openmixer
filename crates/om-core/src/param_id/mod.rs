@@ -237,6 +237,7 @@ pub enum AutomixParam {
     Enable,
     Start,
     Cancel,
+    Skip,
     Style,
 }
 
@@ -404,6 +405,7 @@ impl fmt::Display for AutomixParam {
             Self::Enable => "enable",
             Self::Start => "start",
             Self::Cancel => "cancel",
+            Self::Skip => "skip",
             Self::Style => "style",
         })
     }

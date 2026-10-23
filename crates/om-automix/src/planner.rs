@@ -7,7 +7,8 @@
 //! 2. **Style** (`Auto` only). Keys that agree on the Camelot wheel give `BassSwap` when both decks
 //!    play stems and `Crossfade` otherwise; keys that clash give `EchoOut`, which hides the clash;
 //!    an unknown key is treated as neutral (`Crossfade`). `BassSwap` and `StemBridge` fall back to
-//!    `Crossfade` unless both decks have stems.
+//!    `Crossfade` unless both decks have stems. `EchoOut` falls back to `Crossfade` when the
+//!    snapshot lists the outgoing rack and no echo unit on it is off.
 //! 3. **Length.** 8, 16 or 32 beats. Long (32) needs a tight tempo, no key clash and an outro or
 //!    intro that long; a key clash or a wide tempo gap gets the short one (8). Shrunk to fit.
 //! 4. **Start.** The outgoing mix-out point (else its last outro or breakdown, else late in the
@@ -16,7 +17,7 @@
 //!
 //! The ramps and EQ/FX/stem moves per style are built in `moves.rs`.
 
-use crate::moves::build_moves;
+use crate::moves::{build_moves, pick_echo_unit};
 use crate::plan::{PlanError, PlanOptions, Style, TempoPlan, TransitionPlan, LENGTHS};
 use crate::types::{DeckInfo, SectionKind};
 
@@ -97,6 +98,11 @@ impl TransitionPlanner for DefaultPlanner {
             });
         }
         if matches!(resolved, Style::BassSwap | Style::StemBridge) && !both_stems {
+            resolved = Style::Crossfade;
+        }
+        // No free echo unit on the outgoing rack: plain crossfade (a tempo gap already chose Cut
+        // above, and a Cut needs no unit).
+        if resolved == Style::EchoOut && pick_echo_unit(opts, out.deck).is_none() {
             resolved = Style::Crossfade;
         }
 
