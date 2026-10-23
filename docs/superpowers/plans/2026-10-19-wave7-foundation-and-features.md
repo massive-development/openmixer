@@ -1,7 +1,5 @@
 # Wave 7 Foundation and Features Implementation Plan
 
-> Session handoff and current PR stack: [docs/HANDOFF.md](../../HANDOFF.md)
-
 > REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Constraints (forbid unsafe except FFI crates, RT rules, silent audio in tests, cheap models by default, commit per task, review per phase): see `docs/superpowers/plans/2026-10-18-rust-port-mixer-first.md` (Global Constraints) and `agents.md`. WSL: `nice -n 19`, `CARGO_BUILD_JOBS=3`, one cargo process at a time.
 
 **Goal:** clear the Before-Wave-7 (A) list and build Todos 19, 37, 30/39, 38, 40 on a typed control surface. Spec: `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md` + `TODO.md` Wave 7.

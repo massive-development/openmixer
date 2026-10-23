@@ -18,6 +18,7 @@ Runs alongside everything else; not gated on a wave (ADR 0005, `docs/PRODUCT.md`
 - **E2a Progressive waveform (M):** play at once and let the waveform fill in while the file is read, like a buffering video: the analyser publishes partial `WaveformData` as it decodes, the strips draw what exists and show the rest as a dim placeholder, and BPM, key and the grid land when their analysis finishes. Today the waveform arrives all at once when the whole analysis is done (the deck itself already plays immediately).
 - **E9 Smoothness (M):** measure first: frame times on a release build with real music, four decks and stems, at the display refresh rate (a frame-time overlay and a headless frame-time test). Then fix what the numbers show: per-frame work in the waveform strips, redraw only what changed, smooth animation of faders and meters, no flicker on state changes. Done when no frame goes over the budget in `docs/PRODUCT.md` over a ten-minute set.
   - Measured 2026-10-21 (`OPENMIXER_FRAME_STATS=1`, WSLg, `--demo-automix`, decks playing): release 60 fps, no hitches after start-up; debug 12 fps (the unoptimised GPUI window). The view builds in about 0.5 ms, so the cost is in painting. Fixed: dev builds now optimise dependencies and the view crates (`.cargo/config.toml`), giving about 59 fps with an occasional 33 ms frame. Not measured yet: real tracks, four decks, stems, the scrolling zoomed waveform on a real GPU. Paints about 3,000 quads a frame even when nothing moves (one per waveform pixel column): cache the strips if the numbers on real hardware need it. Start-up and track loads show one to five hitches in the first window.
+- **E10 Spectrum analysis, best in class (L):** the spectrum view and its analysis must match or beat the leading DJ programs. Scope is set by a design pass first (what the competition shows, what ours shows now, accuracy and latency targets, tests on real tracks); not started.
 
 ## Before Wave 7
 
@@ -55,6 +56,15 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 28:** playlist editing UI: new, rename, delete (second press), add by drop on a sidebar playlist and remove tracks are built (`LibraryBrowser`, sidebar buttons); not checked by eye. Open: nested folders and reordering entries in a playlist. S
 
 Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
+
+### (D) Needs you (cannot be checked from the sandbox)
+
+- Export `htdemucs.onnx` with `tools/export_htdemucs.py` and confirm the ModelContract: input `mix` `[1, 2, 343980]`, output `stems` `[1, 4, 2, N]`. The STFT-inside export may fail on complex ops; the STFT-outside variant (inputs `mix` and `z`) is tested only with fake models.
+- Listening: stem seams and clicks, mute and solo, bass swap, key-lock with stems; sampler latency, clicks, loop latch and gate.
+- An Automix transition on real decks: phase, EQ and bass swap, echo-out, and how cancel feels with real MIDI fader jitter. Decide whether Automix stays enabled across restarts.
+- The GPUI window by eye at 900x600 and smaller, in both themes, on a real display (the E1 glow and the E3 row tint are guesses from software-render screenshots).
+- The `onnx` CI job on a clean runner.
+- The macOS and Windows porting phase (root causes in `docs/spikes/DECISIONS.md`).
 
 ## Spikes (done)
 

@@ -19,6 +19,8 @@ DOC_FILES = [
     "ROADMAP.md",
     "docs/PROGRESS.md",
     "docs/DESIGN_PATTERNS.md",
+    "NOTICE",
+    "fixtures/README.md",
 ]
 README_OK = "AGPL clean-room Spotify cargo\n"
 
