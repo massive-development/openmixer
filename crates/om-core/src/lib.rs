@@ -22,8 +22,8 @@ pub use parameter::{ParamTarget, ParameterTarget};
 pub use router::{AutomixSink, InputObserver, ParameterRouter};
 pub use snapshot::{
     AutomixSnapshot, AutomixState, AutomixStyle, ChannelSnapshot, DeckSnapshot, EngineSnapshot,
-    MixerSnapshot, PadMode, PadSnapshot, RecordSnapshot, SamplerSnapshot, StemSnapshot,
-    XfaderAssign,
+    FxSnapshot, FxUnitSnapshot, MixerSnapshot, PadMode, PadSnapshot, RecordSnapshot,
+    SamplerSnapshot, StemSnapshot, XfaderAssign,
 };
 pub use state::{StateKey, StateReader};
 pub use state_id::StateId;

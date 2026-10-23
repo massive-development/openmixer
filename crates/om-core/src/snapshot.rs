@@ -25,6 +25,8 @@ pub struct EngineSnapshot {
     pub decks: Vec<DeckSnapshot>,
     pub mixer: MixerSnapshot,
     pub stems: Vec<[StemSnapshot; STEMS_PER_DECK as usize]>,
+    /// FX racks: units of each channel's rack, in rack order. Built on the control thread.
+    pub fx: FxSnapshot,
     pub sampler: SamplerSnapshot,
     pub automix: AutomixSnapshot,
     pub record: RecordSnapshot,
@@ -172,6 +174,29 @@ impl MixerSnapshot {
             }
         }
     }
+}
+
+/// The channel FX racks as plain values: `channels[ch][unit]`. A channel the engine lacks, or a
+/// unit past the rack, reads as absent. The master rack is not carried.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FxSnapshot {
+    pub channels: Vec<Vec<FxUnitSnapshot>>,
+}
+
+impl FxSnapshot {
+    /// One unit of one channel's rack.
+    pub fn unit(&self, ch: usize, unit: usize) -> Option<&FxUnitSnapshot> {
+        self.channels.get(ch).and_then(|units| units.get(unit))
+    }
+}
+
+/// One FX unit: the effect it runs (`"echo"`, `"reverb"`, ...), its switch and its mix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FxUnitSnapshot {
+    pub effect: &'static str,
+    pub enabled: bool,
+    /// Target mix, 0 to 1.
+    pub mix: f32,
 }
 
 /// State of one stem of a deck.
