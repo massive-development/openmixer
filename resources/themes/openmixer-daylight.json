@@ -26,10 +26,7 @@
     "popup": "#F5F8FAFD",
     "capTop": "#FFFFFFFF",
     "capBottom": "#FFD5DCE8",
-    "dropTarget": "#330284C7",
-    "waveLow": "#FFEA580C",
-    "waveMid": "#FF059669",
-    "waveHigh": "#FF0284C7"
+    "dropTarget": "#330284C7"
   },
   "accents": ["#FF0284C7", "#FFDB2777", "#FF65A30D", "#FFD97706"],
   "spacing": { "gap": 12, "pad": 12, "innerGap": 8 },
@@ -48,5 +45,19 @@
   "settings": { "panelWidth": 760, "panelHeight": 540, "tabHeight": 32, "rowHeight": 30, "labelWidth": 150, "buttonWidth": 96, "dimAlpha": 0.55 },
   "style": { "borderWidth": 1, "focusBorderWidth": 2, "thumbSize": 12, "insetSmall": 2, "insetLarge": 4,
              "barRadius": 2, "lampHeight": 8, "meterHeadroom": 14, "disabledAlpha": 0.85 },
+  "waveform": { "saturationMax": 0.85, "lightnessMin": 0.3, "lightnessMax": 0.6, "floorDb": -42, "spreadNarrow": 1.0, "spreadWide": 3.5, "spreadSaturation": 0.5,
+    "hueStops": [
+      { "pos": 0.00, "hue": 0, "saturation": 0.9, "lightness": 0.8 },
+      { "pos": 0.14, "hue": 8, "saturation": 0.9, "lightness": 0.85 },
+      { "pos": 0.30, "hue": 36, "saturation": 0.95, "lightness": 0.85 },
+      { "pos": 0.44, "hue": 92, "saturation": 0.9, "lightness": 0.8 },
+      { "pos": 0.55, "hue": 150, "saturation": 0.9, "lightness": 0.8 },
+      { "pos": 0.65, "hue": 190, "saturation": 0.9, "lightness": 0.85 },
+      { "pos": 0.75, "hue": 222, "saturation": 0.95, "lightness": 0.9 },
+      { "pos": 0.82, "hue": 262, "saturation": 0.85, "lightness": 0.95 },
+      { "pos": 0.87, "hue": 290, "saturation": 0.6, "lightness": 0.95 },
+      { "pos": 0.90, "hue": 305, "saturation": 0.2, "lightness": 0.9 },
+      { "pos": 1.00, "hue": 320, "saturation": 0.08, "lightness": 0.8 }
+    ] },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }

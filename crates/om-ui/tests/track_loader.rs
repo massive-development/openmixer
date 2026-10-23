@@ -26,7 +26,11 @@ struct LoaderRig {
 
 impl LoaderRig {
     fn new() -> Self {
-        let mut services = make_services(memory_options());
+        Self::with_options(memory_options())
+    }
+
+    fn with_options(options: om_ui::library::Options) -> Self {
+        let mut services = make_services(options);
         let (engine, audio) = DjEngine::new(2);
         let loader = TrackLoader::new(&mut services, 2);
         Self {
@@ -75,6 +79,11 @@ impl LoaderRig {
             self.loader.pump(&self.engine, &self.services);
             self.loader.waveform(deck).is_some()
         })
+    }
+
+    fn loader_hash(&self, track_id: i64) -> String {
+        let track = self.services.library().tracks().find_by_id(track_id);
+        track.unwrap().unwrap().content_hash
     }
 
     fn prep_entries(&self) -> Vec<om_library::PrepEntry> {
@@ -656,4 +665,44 @@ fn starting_cached_stems_marks_the_entry_as_recently_used() {
     let mtime = std::fs::metadata(&meta).unwrap().modified().unwrap();
     let age = std::time::SystemTime::now().duration_since(mtime).unwrap();
     assert!(age < std::time::Duration::from_secs(600), "age {age:?}");
+}
+
+fn has_spectrum(rig: &LoaderRig, deck: usize) -> Option<bool> {
+    rig.loader.waveform(deck).map(|w| w.has_spectrum())
+}
+
+#[test]
+fn a_format_one_waveform_shows_a_silhouette_and_rebuilds_with_the_spectrum() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache_path = cache_dir.path().join("analysis.db");
+    let mut options = memory_options();
+    options.cache_path = cache_path.to_string_lossy().into_owned();
+    options.analyzers = Some(registry_with_waveform(Some(std::sync::Arc::new(
+        om_analysis::WaveformAnalyzer::default(),
+    ))));
+    let mut rig = LoaderRig::with_options(options);
+    let id = rig.add_file("old.wav", "8A", true);
+    let hash = rig.loader_hash(id);
+
+    // The cache holds what the first release wrote: format 1, analyser version 1.
+    let v1 = legacy_waveform_json();
+    let cache = om_analysis::SqliteResultCache::open(&cache_path.to_string_lossy()).unwrap();
+    assert!(om_analysis::ResultCache::store(
+        &cache, &hash, "waveform", 1, &v1
+    ));
+
+    assert!(rig.load(0, id).is_ok(), "the track loads at once");
+    assert_eq!(
+        has_spectrum(&rig, 0),
+        Some(false),
+        "neutral silhouette while it rebuilds"
+    );
+    assert!(
+        wait_until(Duration::from_secs(8), DEFAULT_POLL, || {
+            rig.services.pump();
+            rig.loader.pump(&rig.engine, &rig.services);
+            has_spectrum(&rig, 0) == Some(true)
+        }),
+        "the rebuilt waveform replaces it"
+    );
 }

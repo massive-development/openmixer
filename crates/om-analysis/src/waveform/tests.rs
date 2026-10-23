@@ -4,7 +4,8 @@
 use super::*;
 use crate::test_signals::{add_tone, add_tone_between, silence, RATE};
 use crate::{NullAnalysisContext, CENTROID_MIN_HZ, CENTROID_OCTAVES, SPREAD_MAX_OCTAVES};
-use om_testing::signals::{mix_fixture, noise, MixStyle};
+use om_testing::mix::{mix_fixture, MixStyle};
+use om_testing::signals::noise;
 
 mod cost;
 
