@@ -56,7 +56,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
 
-### (D) Needs you (cannot be checked from the sandbox)
+### (D) Maintainer verification (cannot be checked from the sandbox)
 
 - Export `htdemucs.onnx` with `tools/export_htdemucs.py` and confirm the ModelContract: input `mix` `[1, 2, 343980]`, output `stems` `[1, 4, 2, N]`. The STFT-inside export may fail on complex ops; the STFT-outside variant (inputs `mix` and `z`) is tested only with fake models.
 - Listening: stem seams and clicks, mute and solo, bass swap, key-lock with stems; sampler latency, clicks, loop latch and gate.
