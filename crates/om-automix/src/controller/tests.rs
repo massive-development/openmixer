@@ -566,6 +566,98 @@ fn automix_cancel_stops_the_plan_and_skips_the_track() {
     assert_eq!(sim.host.starts.len(), 1);
 }
 
+fn skip_press() -> ParamId {
+    ParamId::Automix(AutomixParam::Skip)
+}
+
+/// `automix.skip` during a transition lands it at the plan's end: the incoming deck is in, the
+/// outgoing one is stopped, and the user's input is still respected (checked in the next test).
+#[test]
+fn automix_skip_lands_a_running_transition_at_its_end() {
+    let mut sim = Sim::new(380.0, false);
+    sim.run_into_transition();
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.run_until("cleanup after the skip", 200, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    sim.run_until("idle after the skip", 200, |s| {
+        s.state() == AutomixState::Idle
+    });
+    assert_eq!(sim.xfader(), 1.0, "the ramp lands on the incoming side");
+    assert!(sim.snap.decks[1].playing && !sim.snap.decks[0].playing);
+    assert_eq!(sim.ctrl.snapshot().last_error, "transition skipped");
+    assert_eq!(sim.host.starts.len(), 1, "no second track is picked");
+}
+
+/// A skip while a pick is armed abandons it, and the queue's next track is mixed in instead. The
+/// queue offers the skipped track again first; it is passed over.
+#[test]
+fn automix_skip_while_armed_abandons_the_pick_and_passes_over_it_again() {
+    let mut sim = Sim::new(380.0, false);
+    sim.host.tracks.insert(8, info(1, BPM, "8A", false));
+    sim.host.queue.push(NextTrack {
+        id: 7,
+        title: "Next One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Good One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.run_until("armed", 3000, |s| s.state() == AutomixState::Armed);
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.run_until("the next track is loading", 3000, |s| {
+        s.host.starts.len() == 2
+    });
+    assert_eq!(sim.host.starts, vec![(1, 7), (1, 8)]);
+    assert!(
+        sim.sent("mixer.crossfader").is_empty(),
+        "nothing moved for the skipped pick"
+    );
+    sim.run_until("cleanup of the next transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert_eq!(sim.xfader(), 1.0);
+    assert!(sim.snap.decks[1].playing && !sim.snap.decks[0].playing);
+}
+
+/// A skip pressed while the pick is still loading waits for the load, then abandons the pick the
+/// same way.
+#[test]
+fn automix_skip_while_loading_abandons_the_pick_once_it_is_loaded() {
+    let mut sim = Sim::new(380.0, false);
+    sim.host.tracks.insert(8, info(1, BPM, "8A", false));
+    sim.host.queue.push(NextTrack {
+        id: 8,
+        title: "Good One".into(),
+        bpm: None,
+        key: String::new(),
+    });
+    sim.run_until("loading", 3000, |s| s.state() == AutomixState::Loading);
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.run_until("the next track is loading", 3000, |s| {
+        s.host.starts.len() == 2
+    });
+    assert_eq!(sim.host.starts, vec![(1, 7), (1, 8)]);
+    sim.run_until("cleanup of the next transition", 4000, |s| {
+        s.states.contains(&AutomixState::Cleanup)
+    });
+    assert!(sim.snap.decks[1].playing && !sim.snap.decks[0].playing);
+}
+
+#[test]
+fn automix_skip_with_nothing_to_skip_says_so() {
+    let mut sim = Sim::new(10.0, false);
+    assert!(sim.control.set_param(&skip_press(), 1.0));
+    sim.tick();
+    assert_eq!(sim.state(), AutomixState::Idle);
+    assert_eq!(sim.ctrl.snapshot().last_error, "nothing to skip");
+    assert!(sim.cmds().is_empty());
+}
+
 #[test]
 fn an_underrun_cancels_and_turns_automix_off() {
     let mut sim = Sim::new(380.0, false);
@@ -718,6 +810,11 @@ fn a_pair_refused_four_times_is_suppressed_with_the_planner_error() {
     assert_eq!(sim.state(), AutomixState::Idle);
     let error = sim.ctrl.snapshot().last_error;
     assert!(error.starts_with("no transition"), "{error}");
+    // The last refused track stays on the incoming deck, but it is not a cue to mix into.
+    assert_eq!(
+        sim.ctrl.stale_deck.map(|(d, _, id)| (d, id)),
+        Some((1, Some(10)))
+    );
 }
 
 /// The tempo gate goes to the queue for explicit beat-matched styles only.
@@ -1001,6 +1098,10 @@ fn control_target_maps_the_automix_ids() {
     assert!(c.take_start() && !c.take_start());
     c.set_param(&ParamId::Automix(AutomixParam::Cancel), 1.0);
     assert!(c.take_cancel() && !c.take_cancel());
+    c.set_param(&ParamId::Automix(AutomixParam::Skip), 0.0);
+    assert!(!c.take_skip(), "release is not a press");
+    c.set_param(&ParamId::Automix(AutomixParam::Skip), 1.0);
+    assert!(c.take_skip() && !c.take_skip());
     assert!(!c.set_param(&"deck.0.play".parse().unwrap(), 1.0));
 }
 
