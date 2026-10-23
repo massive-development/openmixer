@@ -95,6 +95,35 @@ pub struct SeparatorStyle {
     pub thickness: f32,
 }
 
+/// BPM, key and time numerals: big and bright, with a dimmer unit label.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReadoutStyle {
+    pub value: Colour,
+    pub unit: Colour,
+    /// Size of the primary numeral (BPM, elapsed time).
+    pub value_size: f32,
+    /// Size of the companion numeral (key, remaining time).
+    pub small_size: f32,
+    /// Size of unit labels ("BPM").
+    pub unit_size: f32,
+}
+
+/// A soft shadow: `colour` blurred over `blur` px, dropped `offset_y` px. Glow is the same with
+/// an accent colour and no offset.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShadowStyle {
+    pub colour: Colour,
+    pub blur: f32,
+    pub offset_y: f32,
+}
+
+/// Transition lengths in milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MotionStyle {
+    pub fast_ms: f32,
+    pub base_ms: f32,
+}
+
 /// Every control style for one theme. Built once per theme change; cheap to rebuild.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LookAndFeel {
@@ -121,6 +150,16 @@ pub struct LookAndFeel {
     /// Disabled text colour is the muted text colour at this alpha.
     pub disabled_alpha: f32,
     pub accent: Colour,
+    pub readout: ReadoutStyle,
+    /// Lift under cards and raised controls.
+    pub lift: ShadowStyle,
+    /// Strength and reach of the glow of a lit control; the colour is the control's accent, see
+    /// [`LookAndFeel::glow`].
+    pub glow_alpha: f32,
+    pub glow_radius: f32,
+    pub motion: MotionStyle,
+    /// The brand colour, for marks and "now" cues.
+    pub brand: Colour,
 }
 
 impl LookAndFeel {
@@ -272,6 +311,34 @@ impl LookAndFeel {
             bar_radius: t.bar_radius,
             disabled_alpha: t.disabled_alpha,
             accent,
+            readout: ReadoutStyle {
+                value: t.readout,
+                unit: t.readout_dim,
+                value_size: t.type_readout,
+                small_size: t.type_readout_small,
+                unit_size: t.type_small,
+            },
+            lift: ShadowStyle {
+                colour: t.shadow,
+                blur: t.shadow_blur,
+                offset_y: t.shadow_offset_y,
+            },
+            glow_alpha: t.glow_alpha,
+            glow_radius: t.glow_radius,
+            motion: MotionStyle {
+                fast_ms: t.motion_fast_ms,
+                base_ms: t.motion_base_ms,
+            },
+            brand: t.brand,
+        }
+    }
+
+    /// The glow around a lit control of colour `accent`.
+    pub fn glow(&self, accent: Colour) -> ShadowStyle {
+        ShadowStyle {
+            colour: accent.with_multiplied_alpha(self.glow_alpha),
+            blur: self.glow_radius,
+            offset_y: 0.0,
         }
     }
 
@@ -499,6 +566,78 @@ mod tests {
                 check(&format!("meter.{name}"), contrast_ratio(c, ground), floor);
             }
             assert!(found.is_empty(), "{id}: {found:?}");
+        }
+    }
+
+    #[test]
+    fn readouts_are_the_strongest_text_and_larger_than_body() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            let r = look.readout;
+            let ground = |b: Colour| over(t.surface_scaled(), b);
+            for b in [t.backdrop_top, t.backdrop_bottom] {
+                let value = contrast_ratio(over(r.value, ground(b)), ground(b));
+                let unit = contrast_ratio(over(r.unit, ground(b)), ground(b));
+                let body = contrast_ratio(over(t.text_primary, ground(b)), ground(b));
+                assert!(value >= 7.0, "{id}: readout contrast {value:.2} < 7");
+                assert!(unit >= 4.5, "{id}: readout unit contrast {unit:.2} < 4.5");
+                assert!(value + 0.01 >= body, "{id}: readout weaker than body text");
+            }
+            assert!(
+                r.value_size >= t.type_heading + 4.0,
+                "{id}: numerals too small"
+            );
+            assert!(r.small_size > t.type_body && r.small_size < r.value_size);
+            assert!(r.unit_size < r.small_size);
+        }
+    }
+
+    #[test]
+    fn glow_is_the_accent_and_visible_but_restrained() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            for accent in t.accents.clone() {
+                let g = look.glow(accent);
+                assert_eq!(g.colour.argb() & 0x00FF_FFFF, accent.argb() & 0x00FF_FFFF);
+                assert!(g.colour.alpha() >= 0.2, "{id}: glow too faint");
+                assert!(
+                    g.colour.alpha() <= 0.6,
+                    "{id}: glow too loud for a dark room"
+                );
+                assert!(g.blur > 0.0 && g.offset_y == 0.0);
+            }
+            assert!(look.lift.blur > 0.0 && look.lift.offset_y > 0.0);
+            assert!(look.motion.fast_ms < look.motion.base_ms);
+            assert!(look.motion.base_ms <= 300.0, "{id}: motion should be brief");
+        }
+    }
+
+    #[test]
+    fn brand_is_not_a_deck_accent_and_reads_on_the_backdrop() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            assert!(
+                !t.accents.contains(&t.brand),
+                "{id}: brand reused as accent"
+            );
+            for b in [t.backdrop_top, t.backdrop_bottom] {
+                assert!(contrast_ratio(t.brand, b) >= 3.0, "{id}: brand unreadable");
+            }
+        }
+        assert_ne!(builtin("dark").accents, builtin("daylight").accents);
+    }
+
+    #[test]
+    fn deck_accents_are_distinct_in_both_themes() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            for (i, a) in t.accents.iter().enumerate() {
+                for b in &t.accents[i + 1..] {
+                    assert_ne!(a, b, "{id}: duplicate accent");
+                }
+            }
         }
     }
 
