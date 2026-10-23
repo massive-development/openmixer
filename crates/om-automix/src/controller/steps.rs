@@ -20,8 +20,10 @@ impl AutomixController {
             return;
         };
         run.ticks += 1;
+        // `automix.skip`: the user's input is still checked below, then the plan lands at its end.
+        let skip = std::mem::take(&mut self.skip_requested);
         let out_snap = snap.decks[usize::from(run.out)];
-        let Some(beat) = beat_of(&run.out_info, &out_snap) else {
+        let Some(actual) = beat_of(&run.out_info, &out_snap) else {
             let reason = CancelReason::Unloaded(run.out);
             self.cancel_transition(&mut run, &plan, reason, snap, sink);
             return;
@@ -31,11 +33,12 @@ impl AutomixController {
             self.control.set_enabled(false);
             return;
         }
-        let ended = !out_snap.playing && beat >= run.out_info.length_beats - 0.5;
-        if let Some(reason) = self.detect_input(&run, snap, now, beat, ended) {
+        let ended = !out_snap.playing && actual >= run.out_info.length_beats - 0.5;
+        if let Some(reason) = self.detect_input(&run, snap, now, actual, ended) {
             self.cancel_transition(&mut run, &plan, reason, snap, sink);
             return;
         }
+        let beat = if skip { plan.end_beat() } else { actual };
 
         // Drive: the plan's value at this beat for every control, sent when it changed.
         for (id, value) in plan.values_at(beat) {
@@ -88,6 +91,9 @@ impl AutomixController {
         let stems_done = run.stems.as_ref().is_none_or(|s| s.is_finished(beat));
         if beat >= plan.end_beat() - 1e-9 && stems_done {
             self.finish(&run, &plan, sink);
+            if skip {
+                self.last_error = "transition skipped".to_owned();
+            }
             return;
         }
         run.plan = Some(plan);

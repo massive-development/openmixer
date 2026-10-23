@@ -320,6 +320,7 @@ fn parse_automix(id: &str, rest: &[&str]) -> Result<ParamId, ParamError> {
         ["enable"] => AutomixParam::Enable,
         ["start"] => AutomixParam::Start,
         ["cancel"] => AutomixParam::Cancel,
+        ["skip"] => AutomixParam::Skip,
         ["style"] => AutomixParam::Style,
         _ => return Err(unknown(id)),
     };

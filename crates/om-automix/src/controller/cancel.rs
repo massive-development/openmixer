@@ -136,6 +136,7 @@ impl AutomixController {
     /// Drops whatever is in flight without sending anything and goes to `state`.
     pub(super) fn drop_run(&mut self, state: AutomixState) {
         self.run = None;
+        self.skip_pending = false;
         self.state = state;
         self.progress = 0.0;
         self.plan_style = None;

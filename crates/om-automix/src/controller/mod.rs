@@ -102,6 +102,8 @@ struct Run {
     auto_loaded: bool,
     /// Re-picks made after the planner refused the pair.
     plan_tries: u32,
+    /// The queue track automix loaded itself (`auto_loaded`).
+    pick: Option<i64>,
 }
 
 pub struct AutomixController {
@@ -125,6 +127,13 @@ pub struct AutomixController {
     /// A track automix stepped aside from: (deck, length, until). Not armed again before `until`.
     hold: Option<(u8, i64, f64)>,
     force_start: bool,
+    /// An `automix.skip` press that lands on a running transition (set and spent in one tick).
+    skip_requested: bool,
+    /// An `automix.skip` press while a pick loads: it is abandoned once the track is loaded.
+    skip_pending: bool,
+    /// Tracks skipped as picks for the outgoing track (deck, length, track id): not picked again
+    /// for that track.
+    skipped: Vec<(u8, i64, i64)>,
     pending_input: Option<String>,
     load_failures: u32,
     cleanup_left: u32,
@@ -160,6 +169,9 @@ impl AutomixController {
             no_analysis_told: None,
             hold: None,
             force_start: false,
+            skip_requested: false,
+            skip_pending: false,
+            skipped: Vec::new(),
             pending_input: None,
             load_failures: 0,
             cleanup_left: 0,
@@ -230,6 +242,8 @@ impl AutomixController {
             self.force_start = false;
             self.abort(CancelReason::UserCancel, snap, sink);
         }
+        self.skip_requested = false;
+        let skip = self.control.take_skip();
         if self.control.take_start() && self.state != AutomixState::Transitioning {
             self.force_start = true;
         }
@@ -238,6 +252,16 @@ impl AutomixController {
             self.abort(CancelReason::Disabled, snap, sink);
             self.remaining_beats = None;
             return;
+        }
+        if skip {
+            match self.state {
+                AutomixState::Transitioning => self.skip_requested = true,
+                AutomixState::Loading => self.skip_pending = true,
+                AutomixState::Armed => self.skip_pick(snap),
+                AutomixState::Idle | AutomixState::Cleanup => {
+                    self.last_error = "nothing to skip".to_owned();
+                }
+            }
         }
         if let Some(id) = self.pending_input.take() {
             if self.state == AutomixState::Transitioning {
@@ -343,6 +367,9 @@ const RETRY_HOLD_S: f64 = 10.0;
 
 /// Re-picks after the planner refuses a pair (on top of the first pick).
 const MAX_PLAN_RETRIES: u32 = 3;
+
+/// Queue asks for one pick when the queue keeps offering skipped or refused tracks.
+const MAX_PICK_TRIES: u32 = 8;
 
 /// The refusal when the two decks cannot be put on opposite crossfader sides.
 const NOT_OPPOSITE: &str = "decks are not on opposite crossfader sides";
