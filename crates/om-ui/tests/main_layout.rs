@@ -295,29 +295,28 @@ fn sampler_strip_has_room_in_the_library_band() {
 }
 
 /// The automix bar shares the header strip above the layout: at every window size it fits in the
-/// strip (left of the 96 px Settings button), inside the window, and above the cells, so the deck
+/// strip (left of the other header parts), inside the window, and above the cells, so the deck
 /// rows keep the room they had before the bar existed.
 #[test]
 fn automix_bar_fits_in_the_header_strip_at_every_size() {
-    use om_ui::automix_bar::BAR_HEIGHT;
+    use om_ui::header_layout::HeaderNeeds;
+    use om_ui::main_layout::{page_for, LayoutState};
     let t = om_ui::theme::ThemeTokens::builtin_dark();
-    let (banner, header) = (24, 36);
+    let needs = HeaderNeeds {
+        automix: true,
+        record: true,
+        settings: true,
+        notice: false,
+    };
     for (w, h) in WINDOWS {
-        let strip = Rect::new(0, banner, w - 96, BAR_HEIGHT);
-        let window = Rect::sized(w, h);
+        let page = page_for(2, (w, h), 0, t.gap, LayoutState::default(), needs);
+        let strip = page.header.automix.expect("bar");
         assert!(
-            window.contains(&strip),
-            "{w}x{h}: bar {strip:?} outside window"
+            page.header.bar.contains(&strip),
+            "{w}x{h}: bar {strip:?} outside the header"
         );
-        assert!(
-            strip.bottom() <= banner + header,
-            "{w}x{h}: bar leaves the header"
-        );
-        for cell in compute_layout(
-            &LayoutSpec::standard(2),
-            Rect::new(0, banner + header, w, h - banner - header),
-            t.gap,
-        ) {
+        assert!(strip.w >= 300, "{w}x{h}: bar is {} px", strip.w);
+        for cell in &page.cells {
             assert!(
                 !cell.bounds.intersects(&strip),
                 "{w}x{h}: {:?} under the bar",

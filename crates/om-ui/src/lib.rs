@@ -10,6 +10,7 @@ pub mod binding;
 pub mod control;
 pub mod format;
 pub mod geometry;
+pub mod header_layout;
 pub mod labels;
 pub mod library;
 pub mod main_layout;
