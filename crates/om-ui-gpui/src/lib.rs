@@ -12,6 +12,7 @@ pub mod fader_paint;
 pub mod font;
 pub mod frame_stats;
 pub mod header_view;
+pub mod knob_paint;
 pub mod library;
 pub mod library_view;
 pub mod meter_paint;
