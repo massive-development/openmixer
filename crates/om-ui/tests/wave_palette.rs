@@ -89,8 +89,9 @@ fn pure_bands_sit_on_their_hues_in_order() {
         hue(colour_of(&p, 0.0, 0.0, 1.0)),
     );
     assert!(angle(low, 0.0) < 20.0, "low {low}");
-    assert!(angle(mid, 130.0) < 20.0, "mid {mid}");
-    assert!(angle(high, 215.0) < 20.0, "high {high}");
+    // Mixxx's Classic scheme: red, green, blue (hues 0, 120, 240).
+    assert!(angle(mid, 120.0) < 20.0, "mid {mid}");
+    assert!(angle(high, 240.0) < 20.0, "high {high}");
     assert!(low < mid && mid < high);
 }
 
@@ -103,8 +104,8 @@ fn the_dominant_band_stays_a_saturated_hue() {
     assert!(r - g >= 0.3 && r - b >= 0.3, "{:?}", [r, g, b]);
     let green = colour_of(&p, 0.1, 1.0, 0.1);
     let blue = colour_of(&p, 0.1, 0.1, 1.0);
-    assert!(angle(hue(green), 130.0) < 20.0, "{}", hue(green));
-    assert!(angle(hue(blue), 215.0) < 20.0, "{}", hue(blue));
+    assert!(angle(hue(green), 120.0) < 20.0, "{}", hue(green));
+    assert!(angle(hue(blue), 240.0) < 20.0, "{}", hue(blue));
     for c in [colour_of(&p, 1.0, 0.1, 0.1), green, blue] {
         assert!(saturation(c) >= 0.45, "{c:?}: {}", saturation(c));
     }
@@ -123,13 +124,13 @@ fn silence_is_the_silhouette_colour_at_the_floor() {
 }
 
 #[test]
-fn mixed_columns_go_yellow_or_white() {
+fn mixed_columns_go_orange_or_pale() {
     let p = dark_palette(WaveStyle::Colour);
+    // Low and mid in equal measure: red plus green, orange to yellow, with no blue.
     let [r, g, b] = rgb(colour_of(&p, 1.0, 1.0, 0.0));
-    assert!((r - g).abs() < 0.1, "{r} {g}");
-    assert!(r > b + 0.3 && g > b + 0.3, "{:?}", [r, g, b]);
-    let all = rgb(colour_of(&p, 1.0, 1.0, 1.0));
-    assert!(all.iter().all(|c| *c > 0.85), "{all:?}");
+    assert!(r >= g && g > b + 0.3, "{:?}", [r, g, b]);
+    // All three equal: a pale colour, not a hue.
+    assert!(saturation(colour_of(&p, 1.0, 1.0, 1.0)) < 0.5);
 }
 
 #[test]

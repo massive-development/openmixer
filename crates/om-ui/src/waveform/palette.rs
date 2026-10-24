@@ -1,8 +1,10 @@
 //! Waveform colour: three fixed band hues (low red, mid green, high blue; the role convention
-//! Serato documents, see docs/design/research/waveform.md section 2) blended per column in
-//! proportion to how much of the column's peak each band carries, so a colour always means the same
-//! thing. The blend is additive and clamped (no normalisation, no lift toward white), so a
-//! dominant band keeps its saturated hue and mixed columns go yellow, cyan or white.
+//! Serato documents, see docs/design/research/waveform.md section 2) blended per column from the
+//! band peaks the way Mixxx's RGB waveform does: the colour is the sum of the three band colours
+//! weighted by the bands' linear peaks, divided by its largest channel (rgbsignal.frag,
+//! https://raw.githubusercontent.com/mixxxdj/mixxx/main/res/shaders/rgbsignal.frag). Band peaks are
+//! used as they are, not squashed, so a column's hue follows the ratios of its bands and a loud
+//! full-range column with a strong bass reads orange, not white.
 //!
 //! The strip is dark in every theme ([`WAVE_WELL`], by the user's decision), so the additive blend
 //! never runs on a light ground. Palettes are checked against it (4.5:1).
@@ -52,10 +54,15 @@ impl WaveStyle {
     }
 }
 
-// Band hues (plan table, dark column).
-pub const DARK_LOW: Colour = Colour::from_argb(0xFFFF_3B3B);
-pub const DARK_MID: Colour = Colour::from_argb(0xFF35_E06A);
-pub const DARK_HIGH: Colour = Colour::from_argb(0xFF3D_8BFF);
+// Band hues: Mixxx's LateNight "Classic" scheme, SignalLowColor red, SignalMidColor green (CSS
+// green, #008000) and SignalHighColor blue
+// (https://raw.githubusercontent.com/mixxxdj/mixxx/main/res/skins/LateNight/skin.xml). They replace
+// the plan table's #FF3B3B / #35E06A / #3D8BFF: those carry 23% to 55% in their off channels, which
+// washed 68% of the columns of a loud full-range track out to near white (measured). Brought to
+// 4.5:1 on the dark well by `Palette::new`, so the pure blue and green are lightened a little.
+pub const DARK_LOW: Colour = Colour::from_argb(0xFFFF_0000);
+pub const DARK_MID: Colour = Colour::from_argb(0xFF00_8000);
+pub const DARK_HIGH: Colour = Colour::from_argb(0xFF00_00FF);
 pub const DARK_SILHOUETTE: Colour = Colour::from_argb(0xFF8A_94A6);
 pub const SAFE_LOW: Colour = Colour::from_argb(0xFFE6_9F00);
 pub const SAFE_MID: Colour = Colour::from_argb(0xFFF0_E442);
@@ -69,9 +76,10 @@ pub const SILHOUETTE_COLOUR: Colour = DARK_SILHOUETTE;
 /// Mono: the band shows as a grey level (55%, 75%, 95%; plan table).
 const MONO_LEVELS: [f32; 3] = [0.55, 0.75, 0.95];
 
-/// A column's weight for each band is `(band peak / peak)^WEIGHT_EXPONENT`: relative to the
-/// column, so its hue is about the balance of the spectrum and its height about the loudness.
-pub const WEIGHT_EXPONENT: f32 = 0.7;
+/// A column's weight for each band is `(band peak / peak)^WEIGHT_EXPONENT`. 1 is Mixxx's linear
+/// band peaks (the plan and waveform.md section 3 say 0.7, which lifts the quiet bands and washes
+/// the hue out on loud material).
+pub const WEIGHT_EXPONENT: f32 = 1.0;
 /// A silent column keeps this share of the silhouette colour's brightness.
 pub const BRIGHTNESS_FLOOR: f32 = 0.35;
 /// Contrast of a band colour against the strip well (WCAG, for the body of the waveform).
@@ -189,16 +197,16 @@ impl Palette {
             let level: f32 = sharp.iter().zip(&bands).map(|(m, b)| m / norm * b[0]).sum();
             return from_rgb([level; 3]);
         }
-        // Additive and clamped: the sum of the weighted band colours (Mixxx's rgbsignal.frag sums
-        // them too, then divides by the largest channel; that division is dropped here so the
-        // dominant band stays a saturated hue).
+        // Mixxx rgbsignal.frag: sum of the band colours weighted by the band peaks, divided by the
+        // largest channel. No lift toward white.
         let mut sum = [0.0f32; 3];
         for (weight, band) in w.iter().zip(&bands) {
             for (s, c) in sum.iter_mut().zip(band) {
                 *s += weight * c;
             }
         }
-        from_rgb(sum)
+        let top = sum.iter().fold(f32::EPSILON, |m, v| m.max(*v));
+        from_rgb(sum.map(|v| v / top))
     }
 
     fn at_floor(&self, c: Colour) -> Colour {

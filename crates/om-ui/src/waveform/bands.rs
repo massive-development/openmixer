@@ -4,11 +4,11 @@
 //! so quiet and loud tracks fill the strip alike.
 //!
 //! The analysis stores the peak of each band per point (format 3), so a band's height is read, not
-//! modelled. The silhouette is the full-band peak, `compress(peak / reference)`. The body is the
-//! RMS, `compress(loudness / reference)`, never taller: the research suggests RMS as an inner core
-//! (waveform.md section 4) and Mixxx draws its unscaled envelope as a translucent shadow around
-//! the scaled signal (section 2, rgbsignal.frag), so the silhouette shows where peaks poke out of
-//! the body. Colour never changes a height: the same column in any style is as tall.
+//! modelled. Body and silhouette are both `compress(peak / reference)`: Mixxx draws its unscaled
+//! envelope as a 0.4 alpha shadow only where per-band gains make the scaled signal shorter
+//! (rgbsignal.frag), and at unity gain there is none. An RMS body (waveform.md section 4) left a
+//! thick grey halo on loud material (measured on a real track), so it is not used. Colour never
+//! changes a height: the same column in any style is as tall.
 
 use super::palette::{bucket_key, weights, Key, MAX_BUCKETS};
 use super::{cap_keys, Column};
@@ -102,7 +102,7 @@ pub fn band_heights(c: &Column, reference: f32, spectral: bool) -> BandHeights {
 pub struct ColumnShape {
     /// Full-band peak height, 0..=1 of the half-height: the outline.
     pub silhouette: f32,
-    /// Height of the coloured body: the RMS height, at most `silhouette`.
+    /// Height of the coloured body (equal to the silhouette; see the module docs).
     pub body: f32,
     /// For the nested three-band style.
     pub bands: BandHeights,
@@ -116,7 +116,7 @@ pub fn column_shape(c: &Column, reference: f32, spectral: bool) -> ColumnShape {
     let silhouette = compress(c.peak / reference);
     ColumnShape {
         silhouette,
-        body: compress(c.loudness / reference).min(silhouette),
+        body: silhouette,
         bands: band_heights(c, reference, spectral),
         key: if spectral {
             bucket_key(weights(c))
