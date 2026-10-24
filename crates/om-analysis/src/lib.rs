@@ -60,7 +60,8 @@ pub use tempo::{
 };
 pub use waveform::{WaveformAnalyzer, WaveformBuilder, WaveformOptions};
 pub use waveform_data::{
-    WaveformData, WaveformLevel, WaveformPoint, LEGACY_FORMAT_VERSION, WAVEFORM_FORMAT_VERSION,
+    WaveformData, WaveformLevel, WaveformPoint, LEGACY_FORMAT_VERSION, SPECTRAL_FORMAT_VERSION,
+    WAVEFORM_FORMAT_VERSION,
 };
 
 /// Clamps `value` into `[lo, hi]` (never panics on odd bounds).

@@ -1,12 +1,14 @@
-//! Multi-resolution levels, peaks, spectral points, the pyramid merge, serialisation, the old-cache
-//! path and the cost limits.
+//! Multi-resolution levels, peaks, band points, the pyramid merge, serialisation, the old-cache
+//! paths and the cost limits.
 
 use super::*;
 use crate::test_signals::{add_tone, add_tone_between, silence, RATE};
-use crate::{NullAnalysisContext, CENTROID_MIN_HZ, CENTROID_OCTAVES, SPREAD_MAX_OCTAVES};
+use crate::NullAnalysisContext;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use om_testing::mix::{mix_fixture, MixStyle};
-use om_testing::signals::noise;
 
+mod bands;
 mod cost;
 
 fn build(clip: &AudioClip) -> WaveformData {
@@ -21,27 +23,11 @@ fn tone(hz: f64, gain: f32, seconds: f64) -> AudioClip {
     clip
 }
 
-/// Mean of the middle half of the base level (skips the edges).
-fn middle(data: &WaveformData) -> WaveformPoint {
+/// Mean loudness over the middle half of the base level (skips the edges).
+fn middle_loudness(data: &WaveformData) -> f32 {
     let points = &data.levels()[0].points;
     let (from, to) = (points.len() / 4, points.len() * 3 / 4);
-    let n = (to - from) as f32;
-    let sum = |f: fn(&WaveformPoint) -> f32| points[from..to].iter().map(f).sum::<f32>() / n;
-    WaveformPoint {
-        min: 0.0,
-        max: 0.0,
-        loudness: sum(|p| p.loudness),
-        centroid: sum(|p| p.centroid),
-        spread: sum(|p| p.spread),
-    }
-}
-
-fn centroid_hz(p: &WaveformPoint) -> f64 {
-    CENTROID_MIN_HZ * 2f64.powf(f64::from(p.centroid * CENTROID_OCTAVES))
-}
-
-fn octaves_between(a: f64, b: f64) -> f64 {
-    (a / b).log2().abs()
+    points[from..to].iter().map(|p| p.loudness).sum::<f32>() / (to - from) as f32
 }
 
 #[test]
@@ -78,50 +64,12 @@ fn peaks_track_amplitude_and_time() {
 }
 
 #[test]
-fn tones_land_on_their_frequency_in_order() {
-    let found: Vec<f64> = [60.0, 1000.0, 10_000.0]
-        .iter()
-        .map(|&hz| centroid_hz(&middle(&build(&tone(hz, 0.5, 5.0)))))
-        .collect();
-    assert!(found[0] < found[1] && found[1] < found[2], "{found:?}");
-    for (hz, got) in [60.0, 1000.0, 10_000.0].iter().zip(&found) {
-        assert!(octaves_between(*hz, *got) < 0.5, "{hz} Hz read as {got}");
-    }
-}
-
-#[test]
 fn loudness_is_the_rms_and_silence_is_silent() {
-    let loud = middle(&build(&tone(1000.0, 0.5, 5.0)));
-    assert!(
-        (loud.loudness - 0.5 / 2f32.sqrt()).abs() < 0.02,
-        "{}",
-        loud.loudness
-    );
-    let quiet = middle(&build(&tone(1000.0, 0.05, 5.0)));
-    assert!((quiet.loudness - 0.05 / 2f32.sqrt()).abs() < 0.003);
-    assert_eq!(middle(&build(&silence(5.0, RATE))).loudness, 0.0);
-}
-
-#[test]
-fn noise_spreads_wider_than_a_tone() {
-    let tone_spread = middle(&build(&tone(1000.0, 0.5, 5.0))).spread;
-    let noise_clip = AudioClip::new(noise(3, (5.0 * RATE) as usize), RATE);
-    let noise_spread = middle(&build(&noise_clip)).spread;
-    assert!(tone_spread * SPREAD_MAX_OCTAVES < 0.4, "tone {tone_spread}");
-    assert!(
-        noise_spread > tone_spread * 3.0,
-        "{noise_spread} vs {tone_spread}"
-    );
-}
-
-#[test]
-fn a_chord_has_a_centroid_between_its_notes_and_a_wide_spread() {
-    let mut clip = tone(100.0, 0.3, 5.0);
-    add_tone(&mut clip, 4000.0, 0.3);
-    let p = middle(&build(&clip));
-    let hz = centroid_hz(&p);
-    assert!(hz > 100.0 && hz < 4000.0, "{hz}");
-    assert!(p.spread * SPREAD_MAX_OCTAVES > 1.5, "{}", p.spread);
+    let loud = middle_loudness(&build(&tone(1000.0, 0.5, 5.0)));
+    assert!((loud - 0.5 / 2f32.sqrt()).abs() < 0.02, "{loud}");
+    let quiet = middle_loudness(&build(&tone(1000.0, 0.05, 5.0)));
+    assert!((quiet - 0.05 / 2f32.sqrt()).abs() < 0.003);
+    assert_eq!(middle_loudness(&build(&silence(5.0, RATE))), 0.0);
 }
 
 #[test]
@@ -141,46 +89,36 @@ fn overview_points_equal_merged_fine_points() {
     let direct = WaveformPoint::merge(&fine.points[160..176]);
     let grouped = WaveformPoint::merge(&coarse.points[40..44]);
     assert!((direct.loudness - grouped.loudness).abs() < 1e-5);
-    assert!((direct.centroid - grouped.centroid).abs() < 1e-4);
-    assert!((direct.spread - grouped.spread).abs() < 1e-3);
-}
-
-#[test]
-fn merging_a_silent_point_does_not_move_the_colour() {
-    let loud = WaveformPoint {
-        min: -0.5,
-        max: 0.5,
-        loudness: 0.4,
-        centroid: 0.7,
-        spread: 0.1,
-    };
-    let merged = WaveformPoint::merge(&[loud, WaveformPoint::default(), WaveformPoint::default()]);
-    assert!((merged.centroid - 0.7).abs() < 1e-5);
-    assert!((merged.spread - 0.1).abs() < 1e-4);
-    assert!(merged.loudness < loud.loudness);
     assert_eq!(
-        WaveformPoint::merge(&[WaveformPoint::default()]).centroid,
-        0.0
+        (direct.low, direct.mid, direct.high),
+        (grouped.low, grouped.mid, grouped.high)
     );
 }
 
 #[test]
-fn merging_two_distant_tones_widens_the_spread() {
-    let low = WaveformPoint {
+fn merging_peak_holds_the_bands_and_keeps_the_rms() {
+    let a = WaveformPoint {
         min: -0.5,
-        max: 0.5,
+        max: 0.4,
         loudness: 0.3,
-        centroid: 0.2,
-        spread: 0.02,
+        low: 0.5,
+        mid: 0.1,
+        high: 0.0,
     };
-    let high = WaveformPoint {
-        centroid: 0.8,
-        ..low
+    let b = WaveformPoint {
+        min: -0.2,
+        max: 0.6,
+        loudness: 0.1,
+        low: 0.0,
+        mid: 0.2,
+        high: 0.6,
     };
-    let merged = WaveformPoint::merge(&[low, high]);
-    assert!((merged.centroid - 0.5).abs() < 1e-5);
-    let octaves = merged.spread * SPREAD_MAX_OCTAVES;
-    assert!((octaves - 0.3 * CENTROID_OCTAVES).abs() < 0.2, "{octaves}");
+    let merged = WaveformPoint::merge(&[a, b, WaveformPoint::default()]);
+    assert_eq!((merged.min, merged.max), (-0.5, 0.6));
+    assert_eq!((merged.low, merged.mid, merged.high), (0.5, 0.2, 0.6));
+    let rms = ((0.09f32 + 0.01) / 3.0).sqrt();
+    assert!((merged.loudness - rms).abs() < 1e-6);
+    assert_eq!(WaveformPoint::merge(&[]), WaveformPoint::default());
 }
 
 fn mix_fixture_clip(style: MixStyle, seconds: f64) -> AudioClip {
@@ -188,7 +126,7 @@ fn mix_fixture_clip(style: MixStyle, seconds: f64) -> AudioClip {
 }
 
 #[test]
-fn json_round_trip_keeps_shape_and_spectrum() {
+fn json_round_trip_keeps_shape_and_bands() {
     let data = build(&mix_fixture_clip(MixStyle::Full, 6.0));
     let copy = WaveformData::from_json(&data.to_json()).expect("round trip");
     assert_eq!(copy.levels().len(), data.levels().len());
@@ -205,16 +143,16 @@ fn json_round_trip_keeps_shape_and_spectrum() {
             (a[i].loudness - b[i].loudness).abs() <= 0.01,
             "loudness {i}"
         );
-        assert!(
-            (a[i].centroid - b[i].centroid).abs() <= 1.0 / 255.0,
-            "centroid {i}"
-        );
-        assert!(
-            (a[i].spread - b[i].spread).abs() <= 1.0 / 255.0,
-            "spread {i}"
-        );
+        for (name, x, y) in [
+            ("low", a[i].low, b[i].low),
+            ("mid", a[i].mid, b[i].mid),
+            ("high", a[i].high, b[i].high),
+        ] {
+            // The level quantiser is a square root: the step grows with the value.
+            assert!((x - y).abs() <= 2.0 / 255.0 * x.sqrt() + 1e-4, "{name} {i}");
+        }
     }
-    assert!(WaveformData::from_json("{\"version\":2,\"points\":\"%%%\"}").is_none());
+    assert!(WaveformData::from_json("{\"version\":3,\"points\":\"%%%\"}").is_none());
     assert!(WaveformData::from_json("{}").is_none());
 }
 
@@ -223,20 +161,59 @@ fn format_one_payloads_are_missing_but_give_a_silhouette() {
     let v1 = legacy_reference::to_v1_json(&mix_fixture_clip(MixStyle::Full, 3.0));
     assert!(
         WaveformData::from_json(&v1).is_none(),
-        "never misread as v2"
+        "never misread as v3"
     );
     let silhouette = WaveformData::silhouette_from_v1_json(&v1).expect("v1 silhouette");
     assert!(silhouette.is_valid() && !silhouette.has_spectrum());
     assert!(silhouette.overview().points.iter().any(|p| p.max > 0.1));
-    let v2 = build(&tone(500.0, 0.5, 1.0)).to_json();
-    assert!(WaveformData::silhouette_from_v1_json(&v2).is_none());
+    let v3 = build(&tone(500.0, 0.5, 1.0)).to_json();
+    assert!(WaveformData::silhouette_from_v1_json(&v3).is_none());
     assert!(WaveformData::silhouette_from_v1_json("{\"version\":1,\"points\":\"AAAA\"}").is_none());
 }
 
 #[test]
 fn analyzer_version_changes_so_old_entries_miss() {
-    assert_eq!(WaveformAnalyzer::default().version(), 2);
-    assert_eq!(crate::WAVEFORM_FORMAT_VERSION, 2);
+    assert_eq!(WaveformAnalyzer::default().version(), 3);
+    assert_eq!(crate::WAVEFORM_FORMAT_VERSION, 3);
+}
+
+/// A format 2 payload: `min, max, loudness, centroid, spread, 0` per point, hand built.
+fn v2_json(points: &[[u8; 5]]) -> String {
+    let bytes: Vec<u8> = points
+        .iter()
+        .flat_map(|p| [p[0], p[1], p[2], p[3], p[4], 0])
+        .collect();
+    format!(
+        "{{\"version\":2,\"sampleRate\":44100.0,\"numSamples\":{},\"samplesPerPoint\":128,\"points\":\"{}\"}}",
+        points.len() * 128,
+        STANDARD.encode(bytes)
+    )
+}
+
+#[test]
+fn format_two_payloads_still_decode_through_the_model() {
+    // Centroid byte 0..255 spans 25 Hz to 16 kHz on a log axis: 60 Hz is about 0.14, 9 kHz 0.93.
+    let bass = [230, 25, 120, 36, 20];
+    let hats = [230, 25, 120, 237, 20];
+    let v2 = v2_json(&[bass, hats]);
+    assert!(
+        WaveformData::from_json(&v2).is_none(),
+        "not a format 3 payload"
+    );
+    let data = WaveformData::from_v2_json(&v2).expect("format 2 reads");
+    assert!(data.has_spectrum());
+    let points = &data.levels()[0].points;
+    for p in points {
+        let peak = p.min.abs().max(p.max.abs());
+        assert!(p.low <= peak + 1e-6 && p.mid <= peak + 1e-6 && p.high <= peak + 1e-6);
+    }
+    assert!(
+        points[0].low > points[0].mid && points[0].low > points[0].high,
+        "{:?}",
+        points[0]
+    );
+    assert!(points[1].high > points[1].low, "{:?}", points[1]);
+    assert!(WaveformData::from_v2_json(&build(&tone(500.0, 0.5, 1.0)).to_json()).is_none());
 }
 
 #[test]
