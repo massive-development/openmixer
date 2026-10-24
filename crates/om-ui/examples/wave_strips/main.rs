@@ -20,7 +20,7 @@ use om_ui::style::over;
 use om_ui::theme::{parse_theme, parse_theme_file, Colour, ThemeTokens};
 use om_ui::waveform::{
     bucket_runs, cap_shapes, column_shape, overview_column, reference_peak, shape_px, strip_column,
-    strip_well, Band, ColumnShape, Palette, WaveStyle, KEY_LEVELS, MAX_BUCKETS,
+    strip_well, weights, Band, ColumnShape, Palette, WaveStyle, KEY_LEVELS, MAX_BUCKETS,
 };
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -291,7 +291,57 @@ fn histogram(data: &WaveformData, width: usize) -> Vec<(om_ui::waveform::Key, us
     counts
 }
 
-fn report(name: &str, data: &WaveformData, width: usize) {
+/// The plan's gates on this track, as numbers: columns at full height, columns within 0.12
+/// (linear RGB) of their exact colour once bucketed, and how many columns read as washed out
+/// (saturation under 0.25).
+fn gates(data: &WaveformData, width: usize, palette: &Palette) {
+    let points = &data.overview().points;
+    let reference = reference_peak(points);
+    let columns: Vec<_> = (0..width)
+        .map(|i| overview_column(points, i, width))
+        .collect();
+    let shapes = shapes_for(data, reference, width, |i| Some(columns[i]));
+    let audible: Vec<usize> = (0..width).filter(|&i| columns[i].peak > 0.02).collect();
+    let n = audible.len().max(1) as f32;
+    let full = audible
+        .iter()
+        .filter(|&&i| shapes[i].silhouette >= 1.0)
+        .count();
+    let lin = |c: Colour| {
+        let a = c.argb();
+        [16, 8, 0].map(|s| {
+            let v = ((a >> s) & 0xFF) as f32 / 255.0;
+            if v <= 0.040_45 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        })
+    };
+    let (mut close, mut washed) = (0, 0);
+    for &i in &audible {
+        let exact = palette.colour(weights(&columns[i]));
+        let (a, b) = (lin(exact), lin(palette.bucket_colour(shapes[i].key)));
+        let d: f32 = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>().sqrt();
+        close += usize::from(d <= 0.12);
+        let rgb = [16, 8, 0].map(|sh| ((exact.argb() >> sh) & 0xFF) as f32 / 255.0);
+        let (max, min) = (
+            rgb.iter().cloned().fold(0.0, f32::max),
+            rgb.iter().cloned().fold(1.0, f32::min),
+        );
+        washed += usize::from(max > 0.0 && (max - min) / max < 0.25);
+    }
+    println!(
+        "    gates over {} audible columns: full height {:.1}% (plan < 5%), within 0.12 of exact colour {:.1}% (plan >= 95%), washed out {:.1}%",
+        audible.len(),
+        100.0 * full as f32 / n,
+        100.0 * close as f32 / n,
+        100.0 * washed as f32 / n
+    );
+}
+
+fn report(name: &str, data: &WaveformData, width: usize, palette: &Palette) {
+    gates(data, width, palette);
     let counts = histogram(data, width);
     println!(
         "  {name}: {} buckets of {MAX_BUCKETS} (levels 0..{KEY_LEVELS} as low/mid/high), columns per bucket:",
@@ -335,7 +385,12 @@ fn write(options: &Options, stem: &str, data: &WaveformData, grid: Option<f64>) 
         for &style in &options.styles {
             let palette = Palette::new(style, well);
             println!("  {name} / {}", style.name());
-            report(&format!("{name}-{}", style.name()), data, options.width);
+            report(
+                &format!("{name}-{}", style.name()),
+                data,
+                options.width,
+                &palette,
+            );
             let image = render(data, options, well, &palette, grid);
             let file = options
                 .out

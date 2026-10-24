@@ -82,21 +82,19 @@ struct Overview {
     paths: Vec<(Rgba, Path<Pixels>)>,
 }
 
-/// What an overview's cached shapes were built for. A different style or theme gives a different key.
+/// What an overview's cached shapes were built for. A different style gives a different key (the strip background is the same in every theme).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OverviewKey {
     track: usize,
     bounds: [f32; 4],
     style: WaveStyle,
-    dark: bool,
 }
 
-pub fn overview_key(track: usize, bounds: [f32; 4], style: WaveStyle, dark: bool) -> OverviewKey {
+pub fn overview_key(track: usize, bounds: [f32; 4], style: WaveStyle) -> OverviewKey {
     OverviewKey {
         track,
         bounds,
         style,
-        dark,
     }
 }
 
@@ -424,7 +422,6 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
                 track_id(data),
                 [f32::from(bounds.origin.x), f32::from(bounds.origin.y), w, h],
                 palette.style,
-                palette.dark,
             );
             OVERVIEWS.with(|cache| {
                 let mut cache = cache.borrow_mut();
@@ -567,16 +564,15 @@ mod tests {
     }
 
     #[test]
-    fn style_or_theme_changes_invalidate_the_overview() {
+    fn a_style_change_invalidates_the_overview() {
         let bounds = [0.0, 0.0, 600.0, 48.0];
-        let base = overview_key(7, bounds, WaveStyle::Colour, true);
-        assert_eq!(base, overview_key(7, bounds, WaveStyle::Colour, true));
-        assert_ne!(base, overview_key(7, bounds, WaveStyle::Mono, true));
-        assert_ne!(base, overview_key(7, bounds, WaveStyle::Colour, false));
-        assert_ne!(base, overview_key(8, bounds, WaveStyle::Colour, true));
+        let base = overview_key(7, bounds, WaveStyle::Colour);
+        assert_eq!(base, overview_key(7, bounds, WaveStyle::Colour));
+        assert_ne!(base, overview_key(7, bounds, WaveStyle::Mono));
+        assert_ne!(base, overview_key(8, bounds, WaveStyle::Colour));
         assert_ne!(
             base,
-            overview_key(7, [0.0, 0.0, 601.0, 48.0], WaveStyle::Colour, true)
+            overview_key(7, [0.0, 0.0, 601.0, 48.0], WaveStyle::Colour)
         );
     }
 }

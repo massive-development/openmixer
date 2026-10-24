@@ -4,9 +4,11 @@
 //! so quiet and loud tracks fill the strip alike.
 //!
 //! The analysis stores the peak of each band per point (format 3), so a band's height is read, not
-//! modelled. Silhouette and body are both `compress(peak / reference)` (plan, Rendering model 1),
-//! so the translucent silhouette layer is fully covered by the body; whether it should differ is an
-//! open question. Colour never changes a height: the same column in any style is as tall.
+//! modelled. The silhouette is the full-band peak, `compress(peak / reference)`. The body is the
+//! RMS, `compress(loudness / reference)`, never taller: the research suggests RMS as an inner core
+//! (waveform.md section 4) and Mixxx draws its unscaled envelope as a translucent shadow around
+//! the scaled signal (section 2, rgbsignal.frag), so the silhouette shows where peaks poke out of
+//! the body. Colour never changes a height: the same column in any style is as tall.
 
 use super::palette::{bucket_key, weights, Key, MAX_BUCKETS};
 use super::{cap_keys, Column};
@@ -100,7 +102,7 @@ pub fn band_heights(c: &Column, reference: f32, spectral: bool) -> BandHeights {
 pub struct ColumnShape {
     /// Full-band peak height, 0..=1 of the half-height: the outline.
     pub silhouette: f32,
-    /// Height of the coloured body (equal to the silhouette; see the module docs).
+    /// Height of the coloured body: the RMS height, at most `silhouette`.
     pub body: f32,
     /// For the nested three-band style.
     pub bands: BandHeights,
@@ -114,7 +116,7 @@ pub fn column_shape(c: &Column, reference: f32, spectral: bool) -> ColumnShape {
     let silhouette = compress(c.peak / reference);
     ColumnShape {
         silhouette,
-        body: silhouette,
+        body: compress(c.loudness / reference).min(silhouette),
         bands: band_heights(c, reference, spectral),
         key: if spectral {
             bucket_key(weights(c))
