@@ -809,4 +809,35 @@ mod tests {
         let hold = (-6.0 - t.meter_floor_db) / -t.meter_floor_db;
         assert_eq!(peak_text(&t, bars(0.0, hold, false, false)), "-6.0");
     }
+
+    /// Perf gate (plan Phase 4): the CPU cost of planning every meter of the mixer at full level,
+    /// each frame. Prints figures; run with
+    /// `cargo test -p om-ui-gpui --lib perf_gate -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "prints timings; not a pass/fail test"]
+    fn perf_gate_plan_cost() {
+        let t = tokens();
+        let rect = Rect::new(0, 0, 60, 240);
+        let full = bars(1.0, 1.0, true, true);
+        let frames = 2000;
+        let start = std::time::Instant::now();
+        let mut boxes = 0;
+        let mut quads = 0;
+        for _ in 0..frames {
+            // Four channel meters and the master, as the mixer draws them.
+            for face in [
+                MeterFace::channel(&t),
+                MeterFace::channel(&t),
+                MeterFace::channel(&t),
+                MeterFace::channel(&t),
+                MeterFace::master(&t),
+            ] {
+                let plan = MeterPlan::new(&t, rect, true, full, face);
+                boxes = boxes.max(plan.div_count());
+                quads = quads.max(plan.quad_count());
+            }
+        }
+        let per_frame = start.elapsed().as_secs_f64() * 1000.0 / frames as f64;
+        eprintln!("perf gate: 5 meters planned in {per_frame:.4} ms/frame (debug build); max {boxes} boxes and {quads} quads per meter");
+    }
 }
