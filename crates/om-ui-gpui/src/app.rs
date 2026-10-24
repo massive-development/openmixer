@@ -316,10 +316,15 @@ impl Shell {
         let playing: Vec<bool> = (0..self.engine.num_decks())
             .map(|deck| self.engine.deck(deck).is_playing())
             .collect();
-        let mut lines = vec![("Device".to_owned(), String::new())];
-        lines.extend(device_rows(status));
-        lines.push((String::new(), String::new()));
-        lines.push(("Parameters".to_owned(), String::new()));
+        let blank = |label: &str| (label.to_owned(), String::new(), String::new());
+        let mut lines = vec![blank("Developer"), blank("Device")];
+        lines.extend(
+            device_rows(status)
+                .into_iter()
+                .map(|(label, value)| (label, String::new(), value)),
+        );
+        lines.push(blank(""));
+        lines.push(blank("Parameters"));
         lines.extend(parameter_rows(&self.engine, self.router.unknown_count()));
         let mut body = div()
             .id("debug-scroll")
@@ -330,11 +335,18 @@ impl Shell {
             .gap(px(2.))
             .text_size(px(t.type_caption))
             .child(decks_section(t, &self.deck_controls, &playing, cx));
-        for (label, value) in lines {
+        for (label, id, value) in lines {
             let row = div()
                 .flex()
-                .justify_between()
+                .gap(px(6.))
                 .child(div().text_color(paint(t.text_secondary)).child(label))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .text_color(paint(t.text_muted))
+                        .child(id),
+                )
                 .child(div().text_color(paint(t.text_primary)).child(value));
             body = body.child(row);
         }
@@ -393,7 +405,7 @@ impl Shell {
             CellKind::Rows(_) => place(cell.bounds),
             CellKind::Slot(name) => {
                 let title = if name == LIBRARY_SLOT {
-                    "Library not available (see the terminal for the reason)".to_owned()
+                    "Library could not open. Open Settings > Library.".to_owned()
                 } else {
                     name.clone()
                 };

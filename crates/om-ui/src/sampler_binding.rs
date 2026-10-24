@@ -30,6 +30,9 @@ pub fn pad_for_key(key: &str) -> Option<usize> {
     PAD_KEYS.iter().position(|&k| k == c)
 }
 
+/// What an empty pad says.
+pub const EMPTY_PAD_HINT: &str = "Empty: drop a sample or press Load";
+
 /// The mode's name on screen.
 pub fn mode_label(mode: PadMode) -> &'static str {
     match mode {
@@ -351,21 +354,25 @@ impl SamplerBinding {
     pub fn caption(&self) -> String {
         let pad = self.selected();
         let view = &self.pads()[pad];
-        let state = if view.missing {
-            "file missing"
-        } else if view.loading {
-            "loading"
-        } else if view.loaded {
-            "loaded"
-        } else {
-            "empty"
-        };
+        if view.missing {
+            return format!("{}  File missing", view.name);
+        }
+        if view.loading {
+            return format!("{}  Loading", view.name);
+        }
+        if !view.loaded {
+            return EMPTY_PAD_HINT.to_owned();
+        }
+        let mode = mode_label(view.mode);
+        let mut mode_chars = mode.chars();
+        let mode: String = mode_chars
+            .next()
+            .map(|c| c.to_uppercase().chain(mode_chars).collect())
+            .unwrap_or_default();
         format!(
-            "Pad {} ({}): {} · {} · {:+.1} st · {:.0}%",
-            pad + 1,
-            view.key,
-            state,
-            mode_label(view.mode),
+            "{}  {}  {:+.1} st  {:.0}%",
+            view.name,
+            mode,
             view.pitch,
             view.gain * 100.0
         )

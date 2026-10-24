@@ -240,3 +240,35 @@ impl Shell {
         let _ = self.router.set_parameter(id, 1.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// User-visible strings never show a router id: the settings pages and the automix bar write
+    /// words (`om_ui::labels`), and ids appear only in tests and the developer panel.
+    #[test]
+    fn no_dotted_ids_in_user_strings() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = vec![dir.join("automix_bar.rs")];
+        for entry in std::fs::read_dir(dir.join("settings_view")).expect("settings_view dir") {
+            files.push(entry.expect("entry").path());
+        }
+        for file in files {
+            let text = std::fs::read_to_string(&file).expect("source");
+            let production = text.split("#[cfg(test)]").next().unwrap_or_default();
+            for (n, line) in production.lines().enumerate() {
+                let code = line.trim_start();
+                if code.starts_with("//") || !code.contains('"') {
+                    continue;
+                }
+                for id in ["deck.0", "mixer.ch"] {
+                    assert!(
+                        !code.contains(id),
+                        "{}:{}: a literal shows `{id}`: {code}",
+                        file.display(),
+                        n + 1
+                    );
+                }
+            }
+        }
+    }
+}
