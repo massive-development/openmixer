@@ -5,6 +5,7 @@ pub mod channel;
 pub mod crossfader;
 pub mod cue;
 pub mod deck;
+pub mod deck_header;
 pub mod fx_panel;
 pub mod hotcues;
 pub mod loops;
