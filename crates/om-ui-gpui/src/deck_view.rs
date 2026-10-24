@@ -446,7 +446,7 @@ pub(crate) fn overview(
         deck: index,
         wave: shell.library.as_ref().and_then(|p| p.waveform(index)),
         markers: deck.overview.markers(width),
-        well: t.well,
+        well: om_ui::waveform::strip_well(t),
     };
 
     let canvas_el = canvas(
@@ -517,7 +517,7 @@ pub(crate) fn zoom(
         length_frames: shell.engine.deck(index).length_frames(),
         grid: grid.clone(),
         loop_span: loop_region.as_ref().map(|r| (r.x0, r.x1, r.looping)),
-        well: t.well,
+        well: om_ui::waveform::strip_well(t),
     };
 
     let strip = canvas(
