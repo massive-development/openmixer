@@ -232,6 +232,21 @@ fn build(poly: &Poly, stroke: Option<f32>) -> Option<Path<Pixels>> {
     b.build().ok()
 }
 
+/// The three paths rebuilt each frame: played arc, ticks (one stroked path) and marker.
+fn frame_paths(shapes: &FrameShapes) -> [Option<Path<Pixels>>; 3] {
+    let at = |(x, y): (f32, f32)| -> Point<Pixels> { point(px(x), px(y)) };
+    let mut ticks = PathBuilder::stroke(px(2.0));
+    for tick in &shapes.ticks {
+        ticks.move_to(at(tick[0]));
+        ticks.line_to(at(tick[1]));
+    }
+    [
+        build(&shapes.progress, Some(RING_WIDTH)),
+        ticks.build().ok(),
+        build(&shapes.marker, None),
+    ]
+}
+
 /// What one deck's platter paints this frame.
 #[derive(Clone)]
 pub struct PlatterScene {
@@ -301,21 +316,15 @@ pub fn paint_platter(window: &mut Window, bounds: Bounds<Pixels>, scene: &Platte
         progress_sweep(scene.position_frames, scene.length_frames),
         marker_deg,
     );
-    if let Some(path) = build(&shapes.progress, Some(RING_WIDTH)) {
-        window.paint_path(path, paint(scene.accent));
-    }
-    // All ticks in one stroked path: separate sub-paths with a move_to each.
-    let mut ticks = PathBuilder::stroke(px(2.0));
-    let at = |(x, y): (f32, f32)| -> Point<Pixels> { point(px(x), px(y)) };
-    for tick in &shapes.ticks {
-        ticks.move_to(at(tick[0]));
-        ticks.line_to(at(tick[1]));
-    }
-    if let Ok(path) = ticks.build() {
-        window.paint_path(path, paint(scene.tick));
-    }
-    if let Some(path) = build(&shapes.marker, None) {
-        window.paint_path(path, paint(scene.marker));
+    let [progress, ticks, marker] = frame_paths(&shapes);
+    for (path, colour) in [
+        (progress, scene.accent),
+        (ticks, scene.tick),
+        (marker, scene.marker),
+    ] {
+        if let Some(path) = path {
+            window.paint_path(path, paint(colour));
+        }
     }
     // The centre label is a div drawn over this canvas by the deck view.
 }
@@ -427,6 +436,24 @@ mod tests {
         let statics: usize = static_polylines(&p).iter().map(Vec::len).sum();
         assert!(statics < FRAME_VERTEX_BUDGET, "{statics}");
         assert!(frame_shapes(&p, 0.0, 0.0).progress.is_empty());
+    }
+
+    /// Cost of one platter's per-frame path building (CPU only; the GPU draw is not included).
+    /// `cargo test -p om-ui-gpui --release platter_frame_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore = "benchmark"]
+    fn platter_frame_cost() {
+        let p = platter(160);
+        let runs = 2000;
+        let start = std::time::Instant::now();
+        let mut built = 0;
+        for i in 0..runs {
+            let shapes = frame_shapes(&p, (i % 360) as f32, (i * 7 % 360) as f32);
+            built += frame_paths(&shapes).iter().flatten().count();
+        }
+        let per = start.elapsed().as_secs_f64() * 1000.0 / f64::from(runs);
+        println!("platter frame build: {per:.4} ms per platter ({built} paths)");
+        assert!(per < 0.3, "{per} ms");
     }
 
     #[test]

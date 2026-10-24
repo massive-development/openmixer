@@ -15,7 +15,7 @@ use crate::platter_paint::{
 };
 use crate::waveform_paint::{paint_overview, paint_zoom, with_alpha, OverviewScene, ZoomScene};
 use gpui::{
-    canvas, div, prelude::*, px, relative, rgba, Bounds, Context, Div, MouseButton, MouseDownEvent,
+    canvas, div, prelude::*, px, relative, Bounds, Context, Div, MouseButton, MouseDownEvent,
     MouseMoveEvent, Pixels, Render, SharedString, Stateful, Window,
 };
 use om_core::DeckSnapshot;
@@ -736,7 +736,6 @@ const DISABLED_ALPHA: f32 = 0.4;
 const ACTIVE_WINDOW_S: f64 = 0.25;
 /// Estimated width of one character at 12-14 px, to decide whether a toggle row fits.
 const CHAR_W: i32 = 7;
-const WHITE: Colour = Colour::from_argb(0xFFFF_FFFF);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Shape {
@@ -839,20 +838,18 @@ pub(crate) fn pad_colour(t: &ThemeTokens, i: usize) -> Colour {
     if !is_light(t) {
         return c;
     }
-    let k = 1.0 - DAYLIGHT_DARKEN;
-    let chan = |shift: u32| (((c.argb() >> shift) & 0xFF) as f32 * k).round() as u32;
-    Colour::from_argb(0xFF00_0000 | (chan(16) << 16) | (chan(8) << 8) | chan(0))
+    // Blend toward the near-black text colour: 12 % darker.
+    Colour::mix(&[(c, 1.0 - DAYLIGHT_DARKEN), (ON_BRIGHT, DAYLIGHT_DARKEN)])
 }
 
-/// Black or white text, whichever reads better on `fill` (WCAG contrast). The research says black
-/// when luminance is above 0.4; that threshold leaves mid-tone cue colours under 4.5:1, so the rule
-/// here is the crossover itself.
-fn text_on(fill: Colour) -> Colour {
-    if contrast_ratio(fill, ON_BRIGHT) >= contrast_ratio(fill, WHITE) {
-        ON_BRIGHT
-    } else {
-        WHITE
-    }
+/// Dark or light text, whichever reads better on `fill` (WCAG contrast): the near-black bright-fill
+/// ink, or the theme's primary or on-accent text. The research says black when luminance is above
+/// 0.4; that threshold leaves mid-tone cue colours under 4.5:1, so the rule here is the crossover.
+fn text_on(t: &ThemeTokens, fill: Colour) -> Colour {
+    [ON_BRIGHT, t.text_primary, t.on_accent]
+        .into_iter()
+        .max_by(|a, b| contrast_ratio(*a, fill).total_cmp(&contrast_ratio(*b, fill)))
+        .unwrap_or(ON_BRIGHT)
 }
 
 /// The look of pad `i`. Empty: dashed border, "Set", no colour. Set: its cue colour at 85 % with the
@@ -873,7 +870,7 @@ pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> P
     let fill = colour.with_alpha(if active { 1.0 } else { PAD_ALPHA });
     PadStyle {
         fill,
-        text: text_on(over(fill, pad_ground(t))),
+        text: text_on(t, over(fill, pad_ground(t))),
         border: colour,
         dashed: false,
         label: format!("Cue {}", i + 1),
@@ -1077,7 +1074,11 @@ fn set_platter(index: usize, f: impl FnOnce(&mut PlatterState)) {
 }
 
 /// A tooltip bubble.
-struct Tip(String);
+struct Tip {
+    text: String,
+    fill: Colour,
+    ink: Colour,
+}
 
 impl Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -1085,10 +1086,10 @@ impl Render for Tip {
             .px(px(6.))
             .py(px(2.))
             .rounded(px(4.))
-            .bg(rgba(0x1a1f_2bf0))
-            .text_color(rgba(0xf2f4_f8ff))
+            .bg(paint(self.fill))
+            .text_color(paint(self.ink))
             .text_size(px(MIN_TEXT_SIZE))
-            .child(self.0.clone())
+            .child(self.text.clone())
     }
 }
 
@@ -1103,6 +1104,7 @@ fn transport_button(
     down: impl Fn(&mut Shell) + 'static,
 ) -> Stateful<Div> {
     let look = LookAndFeel::from_tokens(t);
+    let tip_style = look.tooltip;
     let radius = match style.shape {
         Shape::Round => rect.w.min(rect.h) as f32 / 2.0,
         Shape::Pill => PILL_RADIUS,
@@ -1131,7 +1133,14 @@ fn transport_button(
     };
     el.child(label.to_owned())
         .id(SharedString::from(format!("tb-{}-{}", rect.x, rect.y)))
-        .tooltip(move |_, cx| cx.new(|_| Tip(tip.to_owned())).into())
+        .tooltip(move |_, cx| {
+            cx.new(|_| Tip {
+                text: tip.to_owned(),
+                fill: tip_style.fill,
+                ink: tip_style.text,
+            })
+            .into()
+        })
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, _: &MouseDownEvent, _, cx| {
