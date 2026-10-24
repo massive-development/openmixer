@@ -56,13 +56,39 @@ impl HotcuePads {
         std::array::from_fn(|i| cues[i].is_some())
     }
 
-    /// Pads in one row across `area`, `gap` apart.
+    /// Pads in two rows of four across `area`, `gap` apart. Each pad is no shorter than the 44 px
+    /// touch floor when `area` allows; spare height beyond [`super::deck::CUE_PAD_MAX`] is left
+    /// empty under the pads.
     pub fn layout(area: Rect, gap: i32) -> [Rect; Self::COUNT] {
-        let n = Self::COUNT as i32;
-        let w = (area.w - gap * (n - 1)) / n;
+        let cols = (Self::COUNT / 2) as i32;
+        let w = (area.w - gap * (cols - 1)) / cols;
+        let h = ((area.h - gap) / 2).clamp(0, super::deck::CUE_PAD_MAX);
         std::array::from_fn(|i| {
-            let i = i as i32;
-            Rect::new(area.x + i * (w + gap), area.y, w, area.h)
+            let (row, col) = ((i as i32) / cols, (i as i32) % cols);
+            Rect::new(area.x + col * (w + gap), area.y + row * (h + gap), w, h)
         })
+    }
+
+    /// The colour of pad `index`'s cue (wraps past the palette).
+    pub fn colour(index: usize) -> crate::theme::Colour {
+        super::deck_header::CUE_PALETTE[index % super::deck_header::CUE_PALETTE.len()]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pads_form_two_rows_of_four_at_least_44_px_square() {
+        let pads = HotcuePads::layout(Rect::new(0, 0, 200, 108), 6);
+        assert_eq!(pads[0].y, pads[3].y);
+        assert!(pads[4].y >= pads[0].bottom());
+        assert!(pads.iter().all(|p| p.w >= 44 && p.h >= 44), "{pads:?}");
+        for (i, a) in pads.iter().enumerate() {
+            for b in &pads[i + 1..] {
+                assert!(!a.intersects(b));
+            }
+        }
     }
 }

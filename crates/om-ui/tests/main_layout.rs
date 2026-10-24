@@ -205,7 +205,7 @@ fn library_band_is_below_decks_and_mixer_at_every_window_size() {
             if a.kind.is_deck() {
                 let card = Rect::sized(a.bounds.w, a.bounds.h);
                 let l = deck_controls_layout(card, &t);
-                let parts = [l.pitch, l.hotcues, l.loops, l.transport, l.stems];
+                let parts = [l.pitch, l.hotcues, l.loops, l.transport, l.tabs, l.stems];
                 for (i, p) in parts.iter().enumerate() {
                     assert!(
                         card.contains(p),
@@ -241,8 +241,8 @@ fn deck_controls_and_stage_fit_without_overlap_at_every_window_size() {
             match &cell.kind {
                 CellKind::Deck(_) => {
                     let l = deck_controls_layout(card, &theme);
-                    assert!(l.stems.h > 0, "{width}x{height}: no stems row");
-                    parts = vec![l.pitch, l.hotcues, l.loops, l.transport, l.stems];
+                    assert!(l.tabs.h >= 32, "{width}x{height}: no tab strip");
+                    parts = vec![l.pitch, l.hotcues, l.loops, l.transport, l.tabs];
                 }
                 CellKind::Slot(name) if name == STAGE_SLOT => {
                     let layouts = stage_layout(card, &theme, 2);

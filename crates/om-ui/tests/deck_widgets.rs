@@ -421,7 +421,8 @@ fn header_shows_track_info_and_effective_bpm() {
     let t = header.text();
     assert_eq!(t.title, "Night Drive");
     assert_eq!(t.artist, "Some Artist");
-    assert_eq!(t.key, "Am  8A");
+    assert_eq!(t.key, "8A", "one notation only, Camelot by default");
+    assert_eq!(t.letter, 'A');
     assert_eq!(t.bpm, "124.0");
     assert_eq!(t.elapsed, "0:00.0");
 
