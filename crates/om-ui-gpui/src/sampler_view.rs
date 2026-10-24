@@ -137,7 +137,7 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         .text_size(px(t.type_caption))
         .hover(move |style| style.bg(paint(hover)))
         .track_focus(&focus)
-        .child("SAMPLER")
+        .children("SAMPLER".chars().map(|c| gpui::div().child(c.to_string())))
         .child("\u{203A}")
         .on_mouse_down(
             MouseButton::Left,

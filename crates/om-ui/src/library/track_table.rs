@@ -25,8 +25,12 @@ pub struct Column {
     pub title: &'static str,
     /// Search field the column sorts by; `None` = not sortable.
     pub sort_field: Option<&'static str>,
+    /// Width in px; 0 = flexible (Title and Artist share what the fixed columns leave).
     pub width: i32,
+    /// Right-aligned.
     pub numeric: bool,
+    /// Hidden in windows narrower than this (0 = always shown).
+    pub min_window_w: i32,
 }
 
 const COLUMNS: [Column; 9] = [
@@ -34,57 +38,65 @@ const COLUMNS: [Column; 9] = [
         id: 1,
         title: "Title",
         sort_field: Some("title"),
-        width: 260,
+        width: 0,
         numeric: false,
+        min_window_w: 0,
     },
     Column {
         id: 2,
         title: "Artist",
         sort_field: Some("artist"),
-        width: 180,
+        width: 0,
         numeric: false,
+        min_window_w: 0,
     },
     Column {
         id: 3,
         title: "BPM",
         sort_field: Some("bpm"),
-        width: 60,
+        width: 64,
         numeric: true,
+        min_window_w: 0,
     },
     Column {
         id: 4,
         title: "Key",
         sort_field: Some("key"),
-        width: 52,
+        width: 56,
         numeric: true,
+        min_window_w: 0,
     },
     Column {
         id: 5,
         title: crate::labels::LENGTH_COLUMN,
         sort_field: Some("duration"),
-        width: 56,
+        width: 64,
         numeric: true,
+        min_window_w: 0,
     },
     Column {
         id: 6,
         title: "Rating",
         sort_field: Some("rating"),
-        width: 70,
+        width: 80,
         numeric: false,
+        min_window_w: 0,
     },
     Column {
         id: 7,
         title: "Genre",
         sort_field: Some("genre"),
-        width: 110,
+        width: 120,
         numeric: false,
+        min_window_w: 1400,
     },
     Column {
         id: 8,
         title: "Added",
         sort_field: Some("added"),
-        width: 92,
+        width: 96,
         numeric: false,
+        min_window_w: 1400,
     },
     Column {
         id: STEMS_COLUMN,
@@ -92,6 +104,7 @@ const COLUMNS: [Column; 9] = [
         sort_field: None,
         width: 96,
         numeric: false,
+        min_window_w: 0,
     },
 ];
 
@@ -102,6 +115,35 @@ pub const STEMS_COLUMN: i32 = 9;
 /// The browser's columns, in display order.
 pub fn columns() -> &'static [Column] {
     &COLUMNS
+}
+
+/// Whether `column` is shown in a window `window_w` px wide.
+pub fn column_shown(column: &Column, window_w: i32) -> bool {
+    window_w >= column.min_window_w
+}
+
+/// A rating as five characters, `*` for a star and `-` for an empty slot ("***--" for 3). The view
+/// maps them to glyphs.
+pub fn rating_stars(rating: i32) -> String {
+    let stars = rating.clamp(0, 5) as usize;
+    format!("{}{}", "*".repeat(stars), "-".repeat(5 - stars))
+}
+
+/// Which way a column header's sort glyph points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortGlyph {
+    None,
+    Up,
+    Down,
+}
+
+/// The glyph for column `column_id` given the table's current sort `(column, ascending)`.
+pub fn sort_glyph(sort: Option<(i32, bool)>, column_id: i32) -> SortGlyph {
+    match sort {
+        Some((column, true)) if column == column_id => SortGlyph::Up,
+        Some((column, false)) if column == column_id => SortGlyph::Down,
+        _ => SortGlyph::None,
+    }
 }
 
 #[derive(Default)]
@@ -258,7 +300,7 @@ impl TrackTableModel {
                 }
             }
             5 => format_duration(track.duration_sec),
-            6 => track.rating.to_string(),
+            6 => rating_stars(track.rating),
             7 => track.genre,
             8 => format_added(track.date_added_ms),
             _ => String::new(),
@@ -338,6 +380,35 @@ fn file_stem(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn columns_follow_the_plan_and_genre_and_added_hide_in_narrow_windows() {
+        let by_title = |t: &str| *columns().iter().find(|c| c.title == t).expect(t);
+        assert_eq!(by_title("Length").title, "Length");
+        assert_eq!(
+            ["BPM", "Key", "Length", "Rating", "Genre", "Added"].map(|t| by_title(t).width),
+            [64, 56, 64, 80, 120, 96]
+        );
+        assert_eq!((by_title("Title").width, by_title("Artist").width), (0, 0));
+        assert!(by_title("BPM").numeric && by_title("Length").numeric);
+        for narrow in [1280, 1399] {
+            assert!(!column_shown(&by_title("Genre"), narrow));
+            assert!(!column_shown(&by_title("Added"), narrow));
+            assert!(column_shown(&by_title("Rating"), narrow));
+        }
+        assert!(column_shown(&by_title("Genre"), 1400));
+    }
+
+    #[test]
+    fn ratings_are_five_star_strings_and_sort_has_a_glyph_model() {
+        assert_eq!(rating_stars(3), "***--");
+        assert_eq!(rating_stars(0), "-----");
+        assert_eq!(rating_stars(9), "*****");
+        assert_eq!(sort_glyph(None, 3), SortGlyph::None);
+        assert_eq!(sort_glyph(Some((3, true)), 3), SortGlyph::Up);
+        assert_eq!(sort_glyph(Some((3, false)), 3), SortGlyph::Down);
+        assert_eq!(sort_glyph(Some((3, true)), 4), SortGlyph::None);
+    }
 
     #[test]
     fn formats_match_the_cpp_table() {
