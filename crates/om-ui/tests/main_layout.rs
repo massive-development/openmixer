@@ -164,9 +164,9 @@ fn mixer_sits_between_the_decks_and_the_library_is_below() {
     assert!(!sampler.intersects(&library) && !sampler.intersects(&mixer));
 }
 
-/// Window sizes the app must lay out cleanly: the common ones and the 1024x640 minimum
+/// Window sizes the app must lay out cleanly: the common ones and the 1280x720 minimum
 /// (`MIN_WINDOW`; the window cannot be resized below it).
-const WINDOWS: [(i32, i32); 3] = [(1280, 800), (1024, 640), (1920, 1080)];
+const WINDOWS: [(i32, i32); 3] = [(1280, 800), (1280, 720), (1920, 1080)];
 
 #[test]
 fn library_band_is_below_decks_and_mixer_at_every_window_size() {
@@ -232,7 +232,7 @@ fn deck_controls_and_stage_fit_without_overlap_at_every_window_size() {
     use om_ui::widgets::deck::deck_controls_layout;
     use om_ui::widgets::stage::stage_layout;
     let theme = om_ui::theme::ThemeTokens::builtin_dark();
-    for (width, height) in [(1280, 800), (1024, 640), (1920, 1080)] {
+    for (width, height) in [(1280, 800), (1280, 720), (1920, 1080)] {
         let area = R::new(0, 48, width, height - 48);
         let spec = LayoutSpec::standard(2);
         for cell in compute_layout(&spec, area, 8) {
