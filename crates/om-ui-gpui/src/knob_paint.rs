@@ -4,6 +4,13 @@
 //! Angles are degrees clockwise from 12 o'clock. The sweep is 270 degrees (spec: `docs/design/
 //! research/knobs.md` section 3), leaving a 90 degree gap at the bottom.
 
+use crate::paint::paint;
+use gpui::{
+    point, px, quad, size, BorderStyle, Bounds, Path, PathBuilder, Pixels, Point, Rgba, Window,
+};
+use om_ui::style::LookAndFeel;
+use om_ui::theme::{Colour, ThemeTokens};
+
 /// Angle of the minimum, degrees clockwise from 12 o'clock (7:30).
 pub const SWEEP_START: f64 = -135.0;
 /// Angle of the maximum (4:30).
@@ -218,6 +225,288 @@ impl KnobGeom {
     }
 }
 
+/// Longest arc one `arc_to` call draws, degrees. Under 180 so the large-arc flag is never
+/// ambiguous.
+pub const MAX_ARC_SEGMENT: f64 = 170.0;
+
+/// Splits the arc from `a0` to `a1` (degrees clockwise from 12 o'clock) into equal pieces, each at
+/// most [`MAX_ARC_SEGMENT`] long, as increasing `(start, end)` pairs. A zero-length arc yields
+/// none; reversed ends are put in order.
+pub fn arc_segments(a0: f64, a1: f64) -> Vec<(f64, f64)> {
+    let (a0, a1) = if a0 <= a1 { (a0, a1) } else { (a1, a0) };
+    let span = a1 - a0;
+    if span < 1e-9 {
+        return Vec::new();
+    }
+    let n = (span / MAX_ARC_SEGMENT).ceil().max(1.0);
+    // 180 degrees must split too: `ceil` alone would leave it whole, at the large-arc boundary.
+    let n = if span >= 180.0 { n.max(2.0) } else { n };
+    let step = span / n;
+    (0..n as usize)
+        .map(|i| {
+            let start = a0 + step * i as f64;
+            let end = if i + 1 == n as usize {
+                a1
+            } else {
+                start + step
+            };
+            (start, end)
+        })
+        .collect()
+}
+
+/// The point at `angle` degrees clockwise from 12 o'clock on the circle of radius `r` about
+/// `(cx, cy)`, in y-down screen coordinates.
+pub fn point_on(cx: f32, cy: f32, r: f32, angle: f64) -> (f32, f32) {
+    let rad = angle.to_radians();
+    (cx + r * rad.sin() as f32, cy - r * rad.cos() as f32)
+}
+
+// ---- Painting ----------------------------------------------------------------------------
+
+/// Colours one knob is painted with, all from the theme (`LookAndFeel`/`ThemeTokens`).
+#[derive(Debug, Clone, Copy)]
+pub struct KnobColours {
+    pub track: Colour,
+    /// The value arc: the channel accent.
+    pub value: Colour,
+    /// Arc and pointer in the kill zone.
+    pub kill: Colour,
+    pub cap: Colour,
+    pub cap_hover: Colour,
+    pub cap_border: Colour,
+    pub pointer: Colour,
+    /// Detent tick and scale ticks.
+    pub mark: Colour,
+}
+
+impl KnobColours {
+    pub fn new(look: &LookAndFeel, t: &ThemeTokens, accent: Colour) -> Self {
+        Self {
+            track: look.knob.track,
+            value: accent,
+            kill: look.knob.kill,
+            cap: look.knob.body.fill,
+            cap_hover: look.button.hover.fill,
+            cap_border: look.knob.body.border,
+            pointer: look.knob.pointer,
+            mark: t.text_secondary,
+        }
+    }
+}
+
+/// What a knob looks like right now.
+#[derive(Debug, Clone, Copy)]
+pub struct KnobPaintState {
+    pub geom: KnobGeom,
+    /// Pointer angle, from [`angle_of`].
+    pub angle: f64,
+    /// The detent's angle when the knob has one inside its range.
+    pub detent_angle: Option<f64>,
+    /// The value arc runs from the detent instead of the minimum.
+    pub bipolar: bool,
+    /// In the kill zone: arc and pointer in the kill colour.
+    pub killed: bool,
+    pub hovered: bool,
+    /// Being dragged: a slightly heavier arc.
+    pub active: bool,
+    pub disabled: bool,
+}
+
+/// Extra arc stroke while dragged, px (spec section 3).
+const ACTIVE_STROKE_EXTRA: f32 = 0.5;
+/// Weight of the pointer colour mixed into the value arc on hover: the spec's "+10% lightness".
+const HOVER_LIFT: f32 = 0.1;
+/// Pointer line: from this share of the cap radius to [`POINTER_OUTER`], px wide.
+const POINTER_INNER: f32 = 0.35;
+const POINTER_OUTER: f32 = 0.85;
+const POINTER_WIDTH: f32 = 2.0;
+/// Width of the detent and scale marks, px.
+const MARK_WIDTH: f32 = 2.0;
+/// Diameter of the dot a bipolar knob shows at rest, px.
+const REST_DOT: f32 = 2.0;
+
+fn px_point(origin: Point<Pixels>, p: (f32, f32)) -> Point<Pixels> {
+    point(origin.x + px(p.0), origin.y + px(p.1))
+}
+
+/// A stroked arc of the circle about `(cx, cy)` from `a0` to `a1` degrees, in the box at `origin`.
+/// None for an empty arc.
+fn arc_path(
+    origin: Point<Pixels>,
+    (cx, cy): (f32, f32),
+    r: f32,
+    (a0, a1): (f64, f64),
+    stroke: f32,
+) -> Option<Path<Pixels>> {
+    let segments = arc_segments(a0, a1);
+    let (first, _) = *segments.first()?;
+    let mut builder = PathBuilder::stroke(px(stroke));
+    builder.move_to(px_point(origin, point_on(cx, cy, r, first)));
+    for (_, end) in segments {
+        builder.arc_to(
+            point(px(r), px(r)),
+            px(0.0),
+            false,
+            true,
+            px_point(origin, point_on(cx, cy, r, end)),
+        );
+    }
+    builder.build().ok()
+}
+
+/// A straight stroked line between two points of the box at `origin`.
+fn line_path(
+    origin: Point<Pixels>,
+    from: (f32, f32),
+    to: (f32, f32),
+    width: f32,
+) -> Option<Path<Pixels>> {
+    let mut builder = PathBuilder::stroke(px(width));
+    builder.move_to(px_point(origin, from));
+    builder.line_to(px_point(origin, to));
+    builder.build().ok()
+}
+
+/// A filled disc of `diameter` centred on `(x, y)`; with `border`, a 1 px ring of that colour.
+fn disc(
+    window: &mut Window,
+    origin: Point<Pixels>,
+    (x, y): (f32, f32),
+    diameter: f32,
+    fill: Rgba,
+    border: Option<Rgba>,
+) {
+    let bounds = Bounds::new(
+        px_point(origin, (x - diameter / 2.0, y - diameter / 2.0)),
+        size(px(diameter), px(diameter)),
+    );
+    let ring = border.map_or(0.0, |_| 1.0);
+    window.paint_quad(quad(
+        bounds,
+        px(diameter / 2.0),
+        fill,
+        px(ring),
+        border.unwrap_or(fill),
+        BorderStyle::Solid,
+    ));
+}
+
+/// Paints a knob into the box whose top-left is `origin` (the geometry's coordinates are relative
+/// to it).
+///
+/// gpui 0.2.2 strokes have butt caps and `PathBuilder` offers no way to change that without a
+/// direct `lyon` dependency, so arc ends are capped with small discs.
+pub fn paint_knob(
+    window: &mut Window,
+    origin: Point<Pixels>,
+    state: &KnobPaintState,
+    colours: &KnobColours,
+) {
+    let g = &state.geom;
+    let fade = if state.disabled { 0.4 } else { 1.0 };
+    let col = |c: Colour| paint(c.with_multiplied_alpha(fade));
+    let stroke = g.stroke
+        + if state.active {
+            ACTIVE_STROKE_EXTRA
+        } else {
+            0.0
+        };
+    let centre = (g.cx, g.cy);
+
+    let value_colour = if state.killed {
+        colours.kill
+    } else if state.hovered {
+        Colour::mix(&[
+            (colours.value, 1.0 - HOVER_LIFT),
+            (colours.pointer, HOVER_LIFT),
+        ])
+    } else {
+        colours.value
+    };
+
+    // Track, then the value arc over it. Both end in discs for round caps.
+    let (track_a, value_a) = (colours.track, value_colour);
+    if let Some(path) = arc_path(
+        origin,
+        centre,
+        g.r_track,
+        (SWEEP_START, SWEEP_END),
+        g.stroke,
+    ) {
+        window.paint_path(path, col(track_a));
+    }
+    for angle in [SWEEP_START, SWEEP_END] {
+        let p = point_on(g.cx, g.cy, g.r_track, angle);
+        disc(window, origin, p, g.stroke, col(track_a), None);
+    }
+    let (from, to) = if state.bipolar {
+        (state.detent_angle.unwrap_or(0.0), state.angle)
+    } else {
+        (SWEEP_START, state.angle)
+    };
+    if (to - from).abs() > 0.5 {
+        if let Some(path) = arc_path(origin, centre, g.r_track, (from, to), stroke) {
+            window.paint_path(path, col(value_a));
+        }
+        for angle in [from, to] {
+            let p = point_on(g.cx, g.cy, g.r_track, angle);
+            disc(window, origin, p, stroke, col(value_a), None);
+        }
+    } else if state.bipolar {
+        // At rest on the detent: a dot where the arc would start.
+        let p = point_on(g.cx, g.cy, g.r_track, state.detent_angle.unwrap_or(0.0));
+        disc(window, origin, p, REST_DOT, col(colours.mark), None);
+    }
+
+    // Detent and scale marks sit in the gap between cap and track so they stay inside the box.
+    let inner = g.r_cap + 0.5;
+    let outer = (g.r_track - g.stroke / 2.0).max(inner + 0.5);
+    let mut mark_angles: Vec<f64> = Vec::new();
+    if g.shows_ticks() {
+        mark_angles.extend([SWEEP_START, SWEEP_END]);
+    }
+    mark_angles.extend(state.detent_angle);
+    for angle in mark_angles {
+        let (a, b) = (
+            point_on(g.cx, g.cy, inner, angle),
+            point_on(g.cx, g.cy, outer, angle),
+        );
+        if let Some(path) = line_path(origin, a, b, MARK_WIDTH) {
+            window.paint_path(path, col(colours.mark));
+        }
+    }
+
+    // Cap.
+    let cap_fill = if state.hovered {
+        colours.cap_hover
+    } else {
+        colours.cap
+    };
+    disc(
+        window,
+        origin,
+        centre,
+        2.0 * g.r_cap,
+        col(cap_fill),
+        Some(col(colours.cap_border)),
+    );
+
+    // Pointer.
+    let pointer = if state.killed {
+        colours.kill
+    } else {
+        colours.pointer
+    };
+    let (a, b) = (
+        point_on(g.cx, g.cy, g.r_cap * POINTER_INNER, state.angle),
+        point_on(g.cx, g.cy, g.r_cap * POINTER_OUTER, state.angle),
+    );
+    if let Some(path) = line_path(origin, a, b, POINTER_WIDTH) {
+        window.paint_path(path, col(pointer));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +707,32 @@ mod tests {
         let tight = knob_geometry(40.0, 40.0, 0.0, KnobRole::Cue);
         assert!(tight.popup_top(5.0) >= tight.cy + tight.r_track - 1e-3);
         assert!(tight.popup_top(60.0) < tight.cy);
+    }
+
+    #[test]
+    fn arc_segments_split_at_most_170_degrees() {
+        let full = arc_segments(-135.0, 135.0);
+        assert_eq!(full.len(), 2);
+        assert!(near(full[0].0, -135.0) && near(full[1].1, 135.0));
+        assert!(near(full[0].1, full[1].0), "pieces join");
+        assert!(full.iter().all(|(a, b)| b - a <= MAX_ARC_SEGMENT + 1e-9));
+        assert_eq!(arc_segments(0.0, 100.0), vec![(0.0, 100.0)]);
+        assert_eq!(arc_segments(180.0, 0.0).len(), 2, "exactly 180 is split");
+    }
+
+    #[test]
+    fn arc_segments_empty_and_reversed() {
+        assert!(arc_segments(0.0, 0.0).is_empty());
+        assert!(arc_segments(30.0, 30.0 + 1e-12).is_empty());
+        assert_eq!(arc_segments(100.0, 0.0), arc_segments(0.0, 100.0));
+    }
+
+    #[test]
+    fn point_on_runs_clockwise_from_twelve() {
+        let close = |p: (f32, f32), q: (f32, f32)| near32(p.0, q.0) && near32(p.1, q.1);
+        assert!(close(point_on(10.0, 10.0, 5.0, 0.0), (10.0, 5.0)));
+        assert!(close(point_on(10.0, 10.0, 5.0, 90.0), (15.0, 10.0)));
+        assert!(close(point_on(10.0, 10.0, 5.0, 180.0), (10.0, 15.0)));
+        assert!(close(point_on(10.0, 10.0, 5.0, -90.0), (5.0, 10.0)));
     }
 }
