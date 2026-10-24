@@ -8,9 +8,15 @@
 
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
-use crate::knob_paint::{sweep_fraction, value_of_fraction};
+use crate::knob_paint::{
+    angle_of, in_kill_zone, knob_geometry, paint_knob, sweep_fraction, value_of_fraction,
+    KnobColours, KnobPaintState, KnobRole, POPUP_LIFT,
+};
 use crate::paint::{border, paint, place, shadow, skin};
-use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent, MouseUpEvent};
+use gpui::{
+    canvas, div, prelude::*, px, Bounds, Context, Div, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseUpEvent, Pixels, ScrollWheelEvent, Window,
+};
 use om_ui::geometry::Rect;
 use om_ui::meter::{column_layout, fitting_marks, MeterScale, MeterZone, MIN_LAMP_HEIGHT};
 use om_ui::style::LookAndFeel;
@@ -18,8 +24,14 @@ use om_ui::theme::{Colour, ThemeTokens};
 
 /// Smallest text drawn on a control, in px.
 const MIN_TEXT_PX: f32 = 12.0;
-/// How far above its control a value popup floats, in px.
-const POPUP_LIFT: f32 = 26.0;
+/// A knob cell this tall or taller puts its label under the knob; shorter ones put it beside.
+const LABEL_BELOW_MIN_H: i32 = 48;
+/// Gap between the left edge of a cell and a knob that has its label beside it, px. Unsourced.
+const KNOB_EDGE_PAD: f32 = 4.0;
+/// Space between a knob's track and a label beside it, px. Unsourced.
+const LABEL_GAP: f32 = 6.0;
+/// Pixels one wheel line is worth when the wheel reports pixels.
+const WHEEL_LINE_PX: f32 = 16.0;
 
 /// Share of a knob's sweep one wheel notch or arrow key moves (spec section 3: 1/100).
 const STEP_FRACTION: f64 = 0.01;
@@ -276,76 +288,202 @@ pub fn knob(
     draggable(body, target, abs, cx)
 }
 
-/// A knob: a body with the value drawn as a fill from its detent (or bottom) to the value, a
-/// centre mark at the detent, the label in the middle, and, while `face.active`, the value in a
-/// popup above it. Hovering the knob tells the Shell, which turns `active` on.
+/// How a rotary knob is drawn beyond what [`KnobFace`] says. The default is a band (EQ) knob in
+/// the first channel accent, idle and enabled.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KnobLook {
+    /// Largest cap and label placement; see [`KnobRole`].
+    pub role: KnobRole,
+    /// The value arc colour (the strip accent); the theme's first accent when None.
+    pub accent: Option<Colour>,
+    /// Being dragged: a heavier arc.
+    pub dragging: bool,
+    /// Nothing to control (an empty sampler pad): faded, no input, no popup.
+    pub disabled: bool,
+}
+
+/// The caption line under a knob whose label sits below it, px.
+fn label_line_height(t: &ThemeTokens) -> f32 {
+    (t.type_caption.max(MIN_TEXT_PX) + 2.0).ceil()
+}
+
+/// A rotary knob with the default look. See [`knob_face_with`].
 pub fn knob_face(
     t: &ThemeTokens,
     rect: Rect,
     face: KnobFace<'_>,
-    (value, min, max): (f64, f64, f64),
+    range: (f64, f64, f64),
     target: Target,
     abs: Rect,
     cx: &mut Context<Shell>,
 ) -> Div {
+    knob_face_with(t, rect, face, range, (target, abs), KnobLook::default(), cx)
+}
+
+/// A rotary knob in `rect`: a 270 degree arc with the value from the detent (or minimum), a cap
+/// with a pointer, the label below or beside it, and, while `face.active`, the value in a popup.
+/// `at` is the target and the rect's window coordinates.
+///
+/// Only the disc of the knob takes the pointer: the wide trim bar is not one big button. It
+/// responds to a press (drag; double-click or ctrl/cmd-click reset), shift (fine), the wheel, and
+/// the keys of [`key_step`] when focused. Hovering tells the Shell, which turns `active` on.
+pub fn knob_face_with(
+    t: &ThemeTokens,
+    rect: Rect,
+    face: KnobFace<'_>,
+    (value, min, max): (f64, f64, f64),
+    (target, abs): (Target, Rect),
+    knob_look: KnobLook,
+    cx: &mut Context<Shell>,
+) -> Div {
     let look = LookAndFeel::from_tokens(t);
-    let inset = look.inset_small;
-    let span = (rect.h as f32 - 2.0 * inset).max(1.0);
-    let y_of = |v: f64| inset + span * (1.0 - fraction(v, min, max) as f32);
-    let base_y = face.detent.map_or(inset + span, y_of);
-    let value_y = y_of(value);
-    let (top, bottom) = if value_y < base_y {
-        (value_y, base_y)
+    let show_label = !face.label.is_empty() && knob_look.role.shows_label();
+    // Tall cells (the EQ) put the label under the knob; short ones put it beside.
+    let label_below = show_label && rect.h >= LABEL_BELOW_MIN_H;
+    let label_h = if label_below {
+        label_line_height(t)
     } else {
-        (base_y, value_y)
+        0.0
     };
-    let mut body = skin(place(Rect::sized(rect.w, rect.h)), &look.knob.body)
-        .overflow_hidden()
-        .text_color(paint(look.knob.readout.text))
-        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
-        .child(
-            place(Rect::new(0, top as i32, rect.w, (bottom - top) as i32))
-                .bg(paint(look.knob.fill.with_multiplied_alpha(0.45))),
-        );
-    if let Some(d) = face.detent {
-        body = body.child(
-            place(Rect::new(0, y_of(d) as i32, rect.w, 1))
-                .bg(paint(look.knob.readout.text.with_multiplied_alpha(0.5))),
-        );
+    let mut geom = knob_geometry(rect.w as f32, rect.h as f32, label_h, knob_look.role);
+    if show_label && !label_below {
+        // Room for the label: the knob moves to the left edge instead of the middle.
+        let (_, _, side) = geom.bbox();
+        geom.cx = side / 2.0 + KNOB_EDGE_PAD;
     }
-    if !face.label.is_empty() {
-        body = body.child(
+    let detent = face.detent.filter(|d| *d > min && *d < max);
+    let state = KnobPaintState {
+        geom,
+        angle: angle_of(value, min, detent, max),
+        detent_angle: detent.map(|d| angle_of(d, min, detent, max)),
+        bipolar: detent.is_some(),
+        killed: in_kill_zone(value, min, detent, matches!(target, Target::Eq(..))),
+        hovered: face.active && !knob_look.disabled,
+        active: knob_look.dragging,
+        disabled: knob_look.disabled,
+    };
+    let colours = KnobColours::new(&look, t, knob_look.accent.unwrap_or(look.knob.fill));
+    let painter = canvas(
+        |_, _, _| (),
+        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
+            paint_knob(window, bounds.origin, &state, &colours);
+        },
+    )
+    .absolute()
+    .size_full();
+
+    let mut outer = place(rect)
+        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
+        .text_color(paint(
+            look.knob
+                .label
+                .text
+                .with_multiplied_alpha(if knob_look.disabled { 0.4 } else { 1.0 }),
+        ))
+        .child(painter);
+
+    if show_label {
+        let label = if label_below {
             div()
                 .absolute()
-                .size_full()
+                .left(px(0.))
+                .top(px(rect.h as f32 - label_h))
+                .w(px(rect.w as f32))
+                .h(px(label_h))
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_color(paint(look.knob.label.text))
+        } else {
+            let (_, _, side) = geom.bbox();
+            let left = geom.cx + side / 2.0 + LABEL_GAP;
+            div()
+                .absolute()
+                .left(px(left))
+                .top(px(0.))
+                .w(px((rect.w as f32 - left).max(0.)))
+                .h(px(rect.h as f32))
+                .flex()
+                .items_center()
+        };
+        outer = outer.child(
+            label
+                .overflow_hidden()
+                .whitespace_nowrap()
                 .child(face.label.to_owned()),
         );
     }
-    // The pressable, hoverable part fills the wrapper; the popup is the wrapper's other child, so
-    // it exists (and takes the pointer) only while shown, and then it takes nothing.
-    let pad = draggable(div().size_full().child(body), target, abs, cx);
-    let pad = pad
-        .id(gpui::ElementId::Name(format!("knob-{target:?}").into()))
-        .on_hover(cx.listener(move |this, over: &bool, _, cx| {
-            if *over {
-                this.hovered = Some(target);
-            } else if this.hovered == Some(target) {
-                this.hovered = None;
-            }
-            cx.notify();
-        }));
-    let mut outer = place(rect).child(pad);
-    if face.active {
+
+    // The pressable part is the knob's bounding square, and a press outside the disc itself is
+    // ignored. The popup is the wrapper's other child, so it exists (and takes the pointer) only
+    // while shown, and then it takes nothing.
+    let (bx, by, side) = geom.bbox();
+    let hit_rect = Rect::new(
+        bx.floor() as i32,
+        by.floor() as i32,
+        side.ceil() as i32,
+        side.ceil() as i32,
+    );
+    let hit = place(hit_rect).id(gpui::ElementId::Name(format!("knob-{target:?}").into()));
+    let hit = if knob_look.disabled {
+        hit
+    } else {
+        hit.tab_index(0)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                    let local_x = f32::from(ev.position.x) - abs.x as f32;
+                    let local_y = f32::from(ev.position.y) - abs.y as f32;
+                    if !geom.hits(local_x, local_y) {
+                        return;
+                    }
+                    let reset = is_reset_click(
+                        ev.click_count,
+                        ev.modifiers.control || ev.modifiers.platform,
+                    );
+                    if reset && this.reset_target(target) {
+                        this.end_drag();
+                    } else {
+                        this.begin_drag_fine(target, abs, ev.position, ev.modifiers.shift);
+                    }
+                    cx.notify();
+                }),
+            )
+            .on_scroll_wheel(cx.listener(move |this, ev: &ScrollWheelEvent, _, cx| {
+                let lines = f64::from(f32::from(ev.delta.pixel_delta(px(WHEEL_LINE_PX)).y))
+                    / f64::from(WHEEL_LINE_PX);
+                if lines != 0.0 {
+                    this.knob_wheel(target, lines, ev.modifiers.shift);
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
+            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+                let keys = &ev.keystroke;
+                if keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt {
+                    return;
+                }
+                if this.knob_key(target, keys.key.as_str(), keys.modifiers.shift) {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
+            .on_hover(cx.listener(move |this, over: &bool, _, cx| {
+                if *over {
+                    this.hovered = Some(target);
+                } else if this.hovered == Some(target) {
+                    this.hovered = None;
+                }
+                cx.notify();
+            }))
+    };
+    outer = outer.child(hit);
+    if face.active && !knob_look.disabled {
         let text = if face.label.is_empty() {
             face.readout.to_owned()
         } else {
             format!("{} {}", face.label, face.readout)
         };
-        outer = outer.child(popup(t, rect.w, -POPUP_LIFT, &text));
+        outer = outer.child(popup(t, rect.w, geom.popup_top(rect.y as f32), &text));
     }
     outer
 }
