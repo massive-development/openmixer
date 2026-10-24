@@ -389,7 +389,8 @@ fn mixer_module_is_wide_enough_at_the_default_window_size() {
     let slot = slot_cell(2, "mixer");
     assert!(slot.w >= 200, "mixer module is {} px wide", slot.w);
     assert!(
-        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w >= 140,
+        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w
+            >= om_ui::main_layout::CHANNEL_MIN_WIDTH,
         "a channel strip needs room for three EQ knobs and the fader"
     );
 }
