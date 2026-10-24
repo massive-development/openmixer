@@ -201,6 +201,8 @@ mod style_keys {
         "lampHeight" => lamp_height: 0.0, 32.0;
         "meterHeadroom" => meter_headroom: 0.0, 64.0;
         "disabledAlpha" => disabled_alpha: 0.0, 1.0;
+        "minTarget" => min_target: 0.0, MAX_PX;
+        "minPointerTarget" => min_pointer_target: 0.0, MAX_PX;
         "glowAlpha" => glow_alpha: 0.0, 1.0;
         "glowRadius" => glow_radius: 0.0, 64.0;
         "shadowBlur" => shadow_blur: 0.0, 64.0;
@@ -260,6 +262,8 @@ colour_keys! {
     "surfaceHover" => surface_hover;
     "well" => well;
     "border" => border;
+    "borderStrong" => border_strong;
+    "focusRing" => focus_ring;
     "highlight" => highlight;
     "shadow" => shadow;
     "textPrimary" => text_primary;
@@ -270,6 +274,11 @@ colour_keys! {
     "meterMid" => meter_mid;
     "meterHigh" => meter_high;
     "recordRed" => record_red;
+    "cue" => cue;
+    "loopMark" => loop_mark;
+    "syncOn" => sync_on;
+    "warning" => warning;
+    "danger" => danger;
     "master" => master;
     "popup" => popup;
     "capTop" => cap_top;
@@ -281,7 +290,7 @@ colour_keys! {
 }
 
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
-const ROOT_KEYS: [&str; 15] = [
+const ROOT_KEYS: [&str; 17] = [
     "id",
     "name",
     "author",
@@ -297,6 +306,8 @@ const ROOT_KEYS: [&str; 15] = [
     "settings",
     "style",
     "waveform",
+    "font",
+    "accessibility",
 ];
 
 /// Parses a theme document. On error no tokens are returned, so a caller can never use a half-filled
@@ -392,6 +403,8 @@ pub fn parse_theme(json: &str) -> Result<ParsedTheme, ThemeError> {
         style_keys::range,
     )?;
     read_waveform(section(&root, "waveform")?, w, t)?;
+    read_font(section(&root, "font")?, w, t)?;
+    read_accessibility(section(&root, "accessibility")?, w, t)?;
     if let Some(accents) = root.get("accents") {
         t.accents = read_accents(accents)?;
     }
@@ -409,6 +422,57 @@ pub fn parse_theme_file(path: &Path) -> Result<ParsedTheme, ThemeError> {
         why: e.to_string(),
     })?;
     parse_theme(&text)
+}
+
+const MAX_FONT_FAMILY_LEN: usize = 64;
+
+/// `font`: `family` (non-empty string) and `tabularNumerals` (bool).
+fn read_font(
+    section: Option<&Map<String, Value>>,
+    warnings: &mut Vec<String>,
+    t: &mut ThemeTokens,
+) -> Result<(), ThemeError> {
+    let Some(section) = section else {
+        return Ok(());
+    };
+    if let Some(value) = section.get("family") {
+        match value.as_str().map(str::trim) {
+            Some(name) if !name.is_empty() && name.len() <= MAX_FONT_FAMILY_LEN => {
+                t.font_family = name.to_owned();
+            }
+            _ => {
+                return Err(field(
+                    "font.family",
+                    "expected a non-empty font family name",
+                ))
+            }
+        }
+    }
+    if let Some(value) = section.get("tabularNumerals") {
+        t.tabular_numerals = value
+            .as_bool()
+            .ok_or_else(|| field("font.tabularNumerals", "expected true or false"))?;
+    }
+    warn_unknown(section, &["family", "tabularNumerals"], "font.", warnings);
+    Ok(())
+}
+
+/// `accessibility`: `reducedMotion` (bool).
+fn read_accessibility(
+    section: Option<&Map<String, Value>>,
+    warnings: &mut Vec<String>,
+    t: &mut ThemeTokens,
+) -> Result<(), ThemeError> {
+    let Some(section) = section else {
+        return Ok(());
+    };
+    if let Some(value) = section.get("reducedMotion") {
+        t.reduced_motion = value
+            .as_bool()
+            .ok_or_else(|| field("accessibility.reducedMotion", "expected true or false"))?;
+    }
+    warn_unknown(section, &["reducedMotion"], "accessibility.", warnings);
+    Ok(())
 }
 
 const WAVE_STOP_KEYS: [&str; 4] = ["pos", "hue", "saturation", "lightness"];
@@ -685,5 +749,19 @@ mod tests {
         assert_eq!(bare.brand, ThemeTokens::builtin_dark().brand);
         let bad = r#"{"id":"t.three","name":"T","style":{"glowAlpha":2}}"#;
         assert!(parse_theme(bad).is_err());
+    }
+
+    #[test]
+    fn font_and_accessibility_sections_parse_and_validate() {
+        let ok = r#"{"id":"t.f","font":{"family":"Plex Sans","tabularNumerals":false},
+            "accessibility":{"reducedMotion":true}}"#;
+        let t = parse_theme(ok).expect("parses").tokens;
+        assert_eq!(t.font_family, "Plex Sans");
+        assert!(!t.tabular_numerals && t.reduced_motion);
+        let bare = parse_theme(r#"{"id":"t.g"}"#).expect("parses").tokens;
+        assert_eq!(bare.font_family, "Inter");
+        assert!(bare.tabular_numerals && !bare.reduced_motion);
+        assert!(parse_theme(r#"{"id":"t.h","font":{"family":""}}"#).is_err());
+        assert!(parse_theme(r#"{"id":"t.i","accessibility":{"reducedMotion":1}}"#).is_err());
     }
 }
