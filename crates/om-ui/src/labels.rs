@@ -198,6 +198,20 @@ pub fn status_count(total: usize, shown: usize) -> String {
     }
 }
 
+/// The library status line from the browser's own text and the rows in view: a count line
+/// ("3 tracks") reads "3 tracks", or "3 of 120" when a filter hides some; any other message
+/// (an error, "Analysing...") is shown as it is.
+pub fn library_status(status: &str, shown: usize) -> String {
+    let total = status
+        .strip_suffix(" tracks")
+        .or_else(|| status.strip_suffix(" track"))
+        .and_then(|n| n.parse::<usize>().ok());
+    match total {
+        Some(total) => status_count(total, shown),
+        None => status.to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,5 +313,11 @@ mod tests {
         assert_eq!(LENGTH_COLUMN, "Length");
         assert_eq!(status_count(3, 3), "3 tracks");
         assert_eq!(status_count(120, 3), "3 of 120");
+        assert_eq!(library_status("120 tracks", 3), "3 of 120");
+        assert_eq!(library_status("3 tracks", 3), "3 tracks");
+        assert_eq!(
+            library_status("Select tracks to analyse first", 3),
+            "Select tracks to analyse first"
+        );
     }
 }

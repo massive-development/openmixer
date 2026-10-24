@@ -134,11 +134,11 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         .items_center()
         .justify_center()
         .gap(px(4.))
-        .text_size(px(t.type_caption.max(12.0)))
+        .text_size(px(t.type_caption))
         .hover(move |style| style.bg(paint(hover)))
         .track_focus(&focus)
-        .child("PADS")
-        .child("+")
+        .child("SAMPLER")
+        .child("\u{203A}")
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, _: &MouseDownEvent, window, cx| {
@@ -207,7 +207,7 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     } else if pads[selected].loaded {
         format!("{} {}", pads[selected].key, pads[selected].name)
     } else {
-        format!("{} empty", pads[selected].key)
+        om_ui::sampler_binding::EMPTY_PAD_HINT.to_owned()
     };
     let error = shell.sampler_status.as_ref().is_some_and(|(_, e)| *e);
     root = root.child(caption(t, l.caption, &text).text_color(paint(if error {
@@ -215,7 +215,7 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     } else {
         t.text_primary
     })));
-    root = root.child(button(t, l.close, "HIDE", false, accent, cx, |this| {
+    root = root.child(button(t, l.close, "Close", false, accent, cx, |this| {
         this.sampler_open = false;
     }));
 
@@ -239,19 +239,25 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         cx,
         |this| this.sampler_cycle_mode(),
     ));
-    root = root.child(button(t, l.stop_all, "STOP", false, accent, cx, |this| {
-        this.sampler.stop_all()
-    }));
+    root = root.child(button(
+        t,
+        l.stop_all,
+        "Stop all",
+        false,
+        accent,
+        cx,
+        |this| this.sampler.stop_all(),
+    ));
     root = root.child(button(
         t,
         l.load,
-        "LOAD",
+        "Load",
         shell.sampler_editing,
         accent,
         cx,
         |this| this.sampler_begin_path(),
     ));
-    root = root.child(button(t, l.clear, "CLEAR", false, accent, cx, |this| {
+    root = root.child(button(t, l.clear, "Clear", false, accent, cx, |this| {
         this.sampler_clear_selected()
     }));
     // Gain and pitch steppers: `-`, the name and value between, `+`.

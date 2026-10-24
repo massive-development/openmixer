@@ -60,7 +60,7 @@ const COLUMNS: [Column; 9] = [
     },
     Column {
         id: 5,
-        title: "Time",
+        title: crate::labels::LENGTH_COLUMN,
         sort_field: Some("duration"),
         width: 56,
         numeric: true,

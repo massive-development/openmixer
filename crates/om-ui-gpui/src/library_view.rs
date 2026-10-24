@@ -100,7 +100,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
             div()
                 .p(px(PAD))
                 .text_color(paint(t.text_secondary))
-                .child("Library not available (see the terminal for the reason)"),
+                .child("Library could not open. Open Settings > Library."),
         );
     };
 
@@ -188,10 +188,17 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .child(action_button(&t, "Rename", cx, |p| {
             p.begin_rename_playlist()
         }))
-        .child(action_button(&t, "Delete", cx, |p| p.delete_playlist()))
-        .child(action_button(&t, "Remove tracks", cx, |p| {
-            p.remove_selected_from_playlist();
-        }));
+        .child(action_button(&t, om_ui::labels::DELETE_PLAYLIST, cx, |p| {
+            p.delete_playlist()
+        }))
+        .child(action_button(
+            &t,
+            om_ui::labels::REMOVE_FROM_PLAYLIST,
+            cx,
+            |p| {
+                p.remove_selected_from_playlist();
+            },
+        ));
 
     // Toolbar: search box, load buttons, analyse, status line.
     let search_label = if let Some(prompt) = name_prompt.clone() {
@@ -247,12 +254,12 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     toolbar = toolbar.child(action_button(&t, "Analyse", cx, |p| {
         p.prep_selected();
     }));
-    toolbar = toolbar.child(action_button(&t, "Stems", cx, |p| {
+    toolbar = toolbar.child(action_button(&t, om_ui::labels::SPLIT_STEMS, cx, |p| {
         p.prepare_stems();
     }));
     // Cancel is only worth a button while stem jobs are queued or running.
     if stems_running {
-        toolbar = toolbar.child(action_button(&t, "Cancel stems", cx, |p| {
+        toolbar = toolbar.child(action_button(&t, om_ui::labels::CANCEL_STEMS, cx, |p| {
             p.cancel_stems_selected();
         }));
     }
@@ -272,7 +279,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .items_center()
         .text_color(paint(status_colour))
         .overflow_hidden()
-        .child(format!("{status}   {count} in view"));
+        .child(om_ui::labels::library_status(&status, count));
 
     // Column header: a click sorts by the column.
     let mut header = div()
