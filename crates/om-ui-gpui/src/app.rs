@@ -442,6 +442,7 @@ impl Render for Shell {
             div()
                 .size_full()
                 .relative()
+                .font(crate::font::interface_font(&self.theme))
                 .bg(paint(self.theme.backdrop_top))
                 .text_color(paint(self.theme.text_primary))
                 .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
@@ -544,6 +545,7 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
     let frames_out = Arc::new(AtomicU64::new(0));
     let counter = Arc::clone(&frames_out);
     Application::new().run(move |cx: &mut App| {
+        crate::font::register(cx);
         let requested = std::env::var("OPENMIXER_WINDOW")
             .ok()
             .and_then(|text| crate::window_size::parse_size(&text));

@@ -8,6 +8,7 @@ pub mod controls;
 pub mod debug_panel;
 pub mod deck_view;
 pub mod drag;
+pub mod font;
 pub mod frame_stats;
 pub mod library;
 pub mod library_view;

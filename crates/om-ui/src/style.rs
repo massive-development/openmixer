@@ -160,6 +160,11 @@ pub struct LookAndFeel {
     pub motion: MotionStyle,
     /// The brand colour, for marks and "now" cues.
     pub brand: Colour,
+    /// Keyboard focus ring colour (>= 3:1 on every surface).
+    pub focus_ring: Colour,
+    /// Smallest button/pad, and smallest mouse-only target (px).
+    pub min_target: f32,
+    pub min_pointer_target: f32,
 }
 
 impl LookAndFeel {
@@ -177,7 +182,7 @@ impl LookAndFeel {
                 font_size: size,
             };
         let button = |fill: Colour, text: Colour| {
-            shape(fill, text, t.border, t.control_radius, t.type_small)
+            shape(fill, text, t.border_strong, t.control_radius, t.type_small)
         };
         let disabled_text = t.text_muted.with_multiplied_alpha(t.disabled_alpha);
         Self {
@@ -192,7 +197,7 @@ impl LookAndFeel {
                 body: shape(
                     raised,
                     t.text_primary,
-                    t.border,
+                    t.border_strong,
                     t.control_radius,
                     t.type_caption,
                 ),
@@ -200,14 +205,14 @@ impl LookAndFeel {
                 label: shape(
                     raised,
                     t.text_secondary,
-                    t.border,
+                    t.border_strong,
                     t.control_radius,
                     t.type_caption,
                 ),
                 readout: shape(
                     raised,
                     t.text_primary,
-                    t.border,
+                    t.border_strong,
                     t.control_radius,
                     t.type_caption,
                 ),
@@ -216,14 +221,14 @@ impl LookAndFeel {
                 track: shape(
                     t.well,
                     t.text_primary,
-                    t.border,
+                    t.border_strong,
                     t.control_radius,
                     t.type_caption,
                 ),
                 thumb: shape(
                     t.cap_top,
                     t.text_primary,
-                    t.highlight,
+                    t.border_strong,
                     t.control_radius,
                     t.type_caption,
                 ),
@@ -240,7 +245,7 @@ impl LookAndFeel {
                 unselected: shape(
                     t.surface_scaled(),
                     t.text_secondary,
-                    t.border,
+                    t.border_strong,
                     t.control_radius,
                     t.type_small,
                 ),
@@ -256,17 +261,17 @@ impl LookAndFeel {
                 idle: shape(
                     t.well,
                     t.text_primary,
-                    t.border,
+                    t.border_strong,
                     t.control_radius,
                     t.type_body,
                 ),
                 focus: ControlStyle {
-                    border: accent,
+                    border: t.focus_ring,
                     border_width: t.focus_border_width,
                     ..shape(
                         t.well,
                         t.text_primary,
-                        accent,
+                        t.focus_ring,
                         t.control_radius,
                         t.type_body,
                     )
@@ -279,7 +284,7 @@ impl LookAndFeel {
                 high: t.meter_high,
                 lamp_on: t.meter_high,
                 lamp_off: raised,
-                border: t.border,
+                border: t.border_strong,
                 radius: t.bar_radius,
                 headroom: t.meter_headroom,
                 lamp_height: t.lamp_height,
@@ -325,10 +330,22 @@ impl LookAndFeel {
             },
             glow_alpha: t.glow_alpha,
             glow_radius: t.glow_radius,
+            // Reduced motion collapses every transition to zero length.
             motion: MotionStyle {
-                fast_ms: t.motion_fast_ms,
-                base_ms: t.motion_base_ms,
+                fast_ms: if t.reduced_motion {
+                    0.0
+                } else {
+                    t.motion_fast_ms
+                },
+                base_ms: if t.reduced_motion {
+                    0.0
+                } else {
+                    t.motion_base_ms
+                },
             },
+            focus_ring: t.focus_ring,
+            min_target: t.min_target,
+            min_pointer_target: t.min_pointer_target,
             brand: t.brand,
         }
     }
@@ -510,9 +527,9 @@ mod tests {
 
     #[test]
     fn every_control_is_distinguishable_from_its_background_in_both_themes() {
-        // The light theme is held to WCAG's 3:1 for non-text UI; the dark theme's subtle chrome is
-        // only required to stay visible (1.2:1), as its screenshots read well.
-        for (id, floor) in [("dark", 1.2_f32), ("daylight", 3.0)] {
+        // Both themes are held to WCAG 1.4.11's 3:1 for non-text UI (control outlines use
+        // `border_strong`; `border` is a decorative hairline and is not an outline).
+        for (id, floor) in [("dark", 3.0_f32), ("daylight", 3.0)] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             let b = &look.button;
@@ -551,11 +568,8 @@ mod tests {
                 check("fader.thumb", r, floor);
             }
             // A disabled label is still legible.
-            check(
-                "button.disabled text",
-                worst_contrast(&b.disabled, &t),
-                floor,
-            );
+            // (WCAG exempts inactive controls; this only keeps them from vanishing.)
+            check("button.disabled text", worst_contrast(&b.disabled, &t), 1.5);
             // Meter bars show up against their well.
             for (name, c) in [
                 ("low", look.meter.low),
@@ -639,6 +653,202 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ---- Opaque-palette contrast and colour-distinctness checks (dark theme) ----
+
+    fn c(argb: u32) -> Colour {
+        Colour::from_argb(argb)
+    }
+
+    /// The surfaces text and markers are drawn on.
+    fn dark_surfaces(t: &ThemeTokens) -> [(&'static str, Colour); 4] {
+        [
+            ("backdrop", t.backdrop_top),
+            ("surface", t.surface),
+            ("surface_raised", t.surface_raised),
+            ("well", t.well),
+        ]
+    }
+
+    #[test]
+    fn dark_surfaces_and_text_are_opaque() {
+        let t = ThemeTokens::builtin_dark();
+        for (name, col) in [
+            ("backdrop_top", t.backdrop_top),
+            ("backdrop_bottom", t.backdrop_bottom),
+            ("surface", t.surface),
+            ("surface_raised", t.surface_raised),
+            ("surface_hover", t.surface_hover),
+            ("well", t.well),
+            ("border", t.border),
+            ("border_strong", t.border_strong),
+            ("popup", t.popup),
+            ("text_primary", t.text_primary),
+            ("text_secondary", t.text_secondary),
+            ("text_muted", t.text_muted),
+        ] {
+            assert_eq!(col.alpha(), 1.0, "{name} must be opaque");
+        }
+    }
+
+    #[test]
+    fn every_text_token_is_aa_on_every_surface_it_sits_on() {
+        let t = ThemeTokens::builtin_dark();
+        let mut surfaces = dark_surfaces(&t).to_vec();
+        surfaces.push(("popup", t.popup));
+        surfaces.push(("surface_hover", t.surface_hover));
+        for (text_name, text, floor) in [
+            ("text_primary", t.text_primary, 4.5),
+            ("text_secondary", t.text_secondary, 4.5),
+            ("text_muted", t.text_muted, 4.5),
+            ("readout", t.readout, 4.5),
+            ("readout_dim", t.readout_dim, 4.5),
+        ] {
+            for (surface_name, surface) in &surfaces {
+                let r = contrast_ratio(text, *surface);
+                assert!(
+                    r >= floor,
+                    "{text_name} on {surface_name}: {r:.2} < {floor}"
+                );
+            }
+        }
+        // The headline ratios the palette is specified against.
+        assert!(contrast_ratio(t.text_primary, t.surface) >= 15.0);
+        assert!(contrast_ratio(t.text_secondary, t.surface) >= 8.0);
+        assert!(contrast_ratio(t.text_muted, t.surface) >= 5.0);
+    }
+
+    #[test]
+    fn text_on_accent_fills_is_aa() {
+        let t = ThemeTokens::builtin_dark();
+        for accent in t.accents.iter().chain([
+            &t.brand,
+            &t.cue,
+            &t.loop_mark,
+            &t.sync_on,
+            &t.warning,
+            &t.danger,
+        ]) {
+            let r = contrast_ratio(t.on_accent, *accent);
+            assert!(r >= 4.5, "on_accent over {:08X}: {r:.2}", accent.argb());
+        }
+    }
+
+    #[test]
+    fn markers_borders_and_focus_ring_hold_3_to_1_on_every_surface() {
+        let t = ThemeTokens::builtin_dark();
+        let markers: Vec<(&str, Colour)> = vec![
+            ("border_strong", t.border_strong),
+            ("focus_ring", t.focus_ring),
+            ("brand/playhead", t.brand),
+            ("cue", t.cue),
+            ("loop_mark", t.loop_mark),
+            ("sync_on", t.sync_on),
+            ("warning", t.warning),
+            ("danger", t.danger),
+            ("deck A", t.accent_for(0)),
+            ("deck B", t.accent_for(1)),
+            ("deck C", t.accent_for(2)),
+            ("deck D", t.accent_for(3)),
+        ];
+        // The raised surface is the lightest ground a marker sits on.
+        for (name, col) in markers {
+            for (surface_name, surface) in dark_surfaces(&t) {
+                let r = contrast_ratio(col, surface);
+                assert!(r >= 3.0, "{name} on {surface_name}: {r:.2} < 3.0");
+            }
+        }
+    }
+
+    /// Euclidean distance in Oklab (perceptual; ~0.02 is a just-noticeable difference).
+    fn oklab_distance(a: Colour, b: Colour) -> f32 {
+        let lab = |c: Colour| {
+            let lin = |shift: u32| {
+                let s = ((c.argb() >> shift) & 0xFF) as f32 / 255.0;
+                if s <= 0.040_45 {
+                    s / 12.92
+                } else {
+                    ((s + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            let (r, g, b) = (lin(16), lin(8), lin(0));
+            let l = (0.412_221_47 * r + 0.536_332_55 * g + 0.051_445_995 * b).cbrt();
+            let m = (0.211_903_5 * r + 0.680_699_5 * g + 0.107_396_96 * b).cbrt();
+            let s = (0.088_302_46 * r + 0.281_718_85 * g + 0.629_978_7 * b).cbrt();
+            [
+                0.210_454_26 * l + 0.793_617_8 * m - 0.004_072_047 * s,
+                1.977_998_5 * l - 2.428_592_2 * m + 0.450_593_7 * s,
+                0.025_904_037 * l + 0.782_771_77 * m - 0.808_675_77 * s,
+            ]
+        };
+        let (p, q) = (lab(a), lab(b));
+        ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn deck_colours_are_distinct_from_each_other_and_from_waveform_bands() {
+        let t = ThemeTokens::builtin_dark();
+        // Waveform band colours: bass blue, mid amber, high near-white.
+        let bands = [c(0xFF25_63FF), c(0xFFFF_A726), c(0xFFF5_F7FA)];
+        let decks: Vec<Colour> = (0..4).map(|i| t.accent_for(i)).collect();
+        for (i, d) in decks.iter().enumerate() {
+            for band in bands {
+                let dist = oklab_distance(*d, band);
+                assert!(
+                    dist >= 0.15,
+                    "deck {i} vs band {:08X}: {dist:.3}",
+                    band.argb()
+                );
+            }
+            for other in &decks[i + 1..] {
+                let dist = oklab_distance(*d, *other);
+                assert!(dist >= 0.15, "deck {i} vs another deck: {dist:.3}");
+            }
+            // Semantic colours: pink B and red danger are the closest pair (about 0.08), which is
+            // why deck identity is always paired with the deck letter, never colour alone.
+            for sem in [t.cue, t.loop_mark, t.sync_on, t.warning, t.danger] {
+                let dist = oklab_distance(*d, sem);
+                assert!(
+                    dist >= 0.07,
+                    "deck {i} vs semantic {:08X}: {dist:.3}",
+                    sem.argb()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn type_scale_has_no_text_below_12_and_targets_meet_minimums() {
+        let t = ThemeTokens::builtin_dark();
+        for (name, size) in [
+            ("small", t.type_small),
+            ("caption", t.type_caption),
+            ("body", t.type_body),
+            ("label", t.type_label),
+            ("title", t.type_title),
+            ("heading", t.type_heading),
+            ("mono", t.type_mono),
+            ("readout_small", t.type_readout_small),
+            ("readout", t.type_readout),
+        ] {
+            assert!(size >= 12.0, "type {name} = {size}");
+        }
+        assert_eq!((t.type_readout, t.type_readout_small), (40.0, 28.0));
+        assert!(t.deck_row_height >= 40.0);
+        assert!(t.min_target >= 44.0 && t.min_pointer_target >= 32.0);
+        for gap in [t.gap, t.pad, t.inner_gap] {
+            assert!(crate::theme::SPACE_SCALE.contains(&(gap as f32)), "{gap}");
+        }
+    }
+
+    #[test]
+    fn reduced_motion_zeroes_transitions() {
+        let mut t = ThemeTokens::builtin_dark();
+        assert!(LookAndFeel::from_tokens(&t).motion.base_ms > 0.0);
+        t.reduced_motion = true;
+        let m = LookAndFeel::from_tokens(&t).motion;
+        assert_eq!((m.fast_ms, m.base_ms), (0.0, 0.0));
     }
 
     #[test]

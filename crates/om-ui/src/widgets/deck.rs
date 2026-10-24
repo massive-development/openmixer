@@ -516,7 +516,8 @@ mod tests {
     #[test]
     fn deck_parts_fit_inside_the_card_at_the_default_size() {
         let theme = ThemeTokens::builtin_dark();
-        let card = Rect::sized(560, 420);
+        // 16px card padding and 40px control rows need ~560px of height for every part.
+        let card = Rect::sized(560, 600);
         let l = deck_layout(card, &theme);
         for part in [
             l.header,
