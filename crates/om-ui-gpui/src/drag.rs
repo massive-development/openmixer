@@ -110,7 +110,57 @@ impl Shell {
                 (axis_of(pos, false) - f64::from(drag.rect.x)) / f64::from(drag.rect.w.max(1));
             min + frac.clamp(0.0, 1.0) * (max - min)
         };
-        self.apply(drag.target, value.clamp(min, max));
+        let value = value.clamp(min, max);
+        // A press alone never moves a knob, so the detent only pulls once the pointer has moved.
+        let value = match self.knob_of(drag.target) {
+            Some(k) if (value - drag.anchor_value).abs() > 1e-9 => k.snap_to_detent(value),
+            _ => value,
+        };
+        self.apply(drag.target, value);
+    }
+
+    /// True while `target` is the control under the pointer drag: it shows its value popup.
+    pub(crate) fn is_dragging(&self, target: Target) -> bool {
+        self.drag.is_some_and(|d| d.target == target)
+    }
+
+    /// True while a knob is dragged or hovered: it shows its value in a popup.
+    pub(crate) fn shows_value(&self, target: Target) -> bool {
+        self.is_dragging(target) || self.hovered == Some(target)
+    }
+
+    /// Puts a mixer control back to its default (a double-click). Returns false for controls that
+    /// have no default to return to (the deck pitch fader and the stems), which drag as usual.
+    pub(crate) fn reset_target(&mut self, target: Target) -> bool {
+        let Some(default) = self.default_of(target) else {
+            return false;
+        };
+        self.apply(target, default);
+        true
+    }
+
+    /// The model of a knob target, for its detent.
+    fn knob_of(&self, target: Target) -> Option<&om_ui::control::Knob> {
+        match target {
+            Target::Trim(c) => Some(&self.mixer.strips[c].trim),
+            Target::Filter(c) => Some(&self.mixer.strips[c].filter),
+            Target::Eq(c, b) => Some(&self.mixer.strips[c].eq[b]),
+            Target::FxMix => Some(&self.mixer.fx.mix),
+            Target::FxParam(i) => self.mixer.fx.params.get(i),
+            _ => None,
+        }
+    }
+
+    fn default_of(&self, target: Target) -> Option<f64> {
+        match target {
+            Target::Channel(c) => Some(self.mixer.strips[c].fader.default),
+            Target::Master => Some(self.mixer.master.fader.default),
+            Target::Crossfader => Some(self.mixer.crossfader.slider.default),
+            Target::CueMix => Some(self.mixer.cue.mix.default),
+            Target::CueLevel => Some(self.mixer.cue.level.default),
+            Target::Pitch(_) | Target::StemVolume(..) | Target::StemFilter(..) => None,
+            knob => self.knob_of(knob).map(|k| k.range.default),
+        }
     }
 
     /// Ends the drag (pointer released).
@@ -337,6 +387,54 @@ mod tests {
         );
         assert!(engine.mixer().trim(0) > before);
         assert!(f64::from(engine.mixer().trim(0)) <= max + 1e-3 && min <= max);
+    }
+
+    #[test]
+    fn an_eq_knob_sticks_at_zero_db_and_leaves_it_when_pulled_further() {
+        let (mut shell, engine) = shell();
+        let knob = Rect::new(0, 0, 40, 56);
+        shell.begin_drag(Target::Eq(0, 0), knob, at(20.0, 100.0));
+        assert_eq!(engine.mixer().eq(0, 0), 0.0, "a press does not move it");
+        // 10 px up is 0.05 of the 54 dB range: 2.7 dB, outside the detent.
+        shell.drag_move(at(20.0, 90.0));
+        assert!((engine.mixer().eq(0, 0) - 2.7).abs() < 0.05);
+        // 5 px up is 1.35 dB, inside the detent (3% of 54 dB is 1.62): it reads exactly 0.
+        shell.drag_move(at(20.0, 95.0));
+        assert_eq!(engine.mixer().eq(0, 0), 0.0);
+        shell.end_drag();
+    }
+
+    #[test]
+    fn a_double_click_puts_mixer_controls_back_to_their_defaults() {
+        let (mut shell, engine) = shell();
+        engine.mixer().set_master_gain(0.4);
+        shell.mixer.refresh(0.0, engine.mixer(), false);
+        assert!(shell.reset_target(Target::Master));
+        assert!((engine.mixer().master_gain() - 1.0).abs() < 1e-3);
+        shell.begin_drag(Target::Filter(1), Rect::new(0, 0, 40, 40), at(20.0, 100.0));
+        shell.drag_move(at(20.0, 20.0));
+        assert!(engine.mixer().filter(1) > 0.1);
+        assert!(shell.reset_target(Target::Filter(1)));
+        assert_eq!(engine.mixer().filter(1), 0.0);
+        assert!(
+            !shell.reset_target(Target::Pitch(0)),
+            "the pitch fader keeps its own behaviour"
+        );
+    }
+
+    #[test]
+    fn a_knob_shows_its_value_while_dragged_or_hovered() {
+        let (mut shell, _engine) = shell();
+        let target = Target::Trim(0);
+        assert!(!shell.shows_value(target));
+        shell.hovered = Some(target);
+        assert!(shell.shows_value(target));
+        assert!(!shell.shows_value(Target::Trim(1)));
+        shell.hovered = None;
+        shell.begin_drag(target, Rect::new(0, 0, 40, 40), at(20.0, 20.0));
+        assert!(shell.shows_value(target));
+        shell.end_drag();
+        assert!(!shell.shows_value(target));
     }
 
     #[test]

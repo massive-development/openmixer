@@ -5,19 +5,19 @@ use super::{px, CAPTION_HEIGHT};
 use crate::binding::{LevelSource, MixerBinding};
 use crate::control::Ranged;
 use crate::geometry::Rect;
-use crate::meter::{MeterParams, StereoMeter};
+use crate::meter::{column_width, MeterParams, StereoMeter};
 use crate::theme::ThemeTokens;
 use om_core::param_id::MixerParam;
 use om_engine::mixer::MAX_GAIN;
 
-/// Rectangles of the master section.
+/// Rectangles of the master section: the MASTER caption, the fader and the meter column.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MasterLayout {
     pub title: Rect,
-    pub fader_caption: Rect,
-    pub meter_caption: Rect,
     pub fader: Rect,
     pub meter: Rect,
+    /// Whether the meter column has room for its dB labels.
+    pub meter_labels: bool,
 }
 
 pub struct MasterSection {
@@ -59,22 +59,36 @@ impl MasterSection {
     }
 
     pub fn layout(bounds: Rect, theme: &ThemeTokens) -> MasterLayout {
-        let gap = theme.inner_gap / 2;
         let mut area = bounds.reduced(px(theme.mixer_pad_x), px(theme.mixer_pad_y));
-        let title = area.remove_top(px(theme.mixer_title_height));
-        area.remove_top(gap);
-        let mut meter_column = area.remove_right(px(theme.mixer_meter_width) * 2 + 2);
-        let meter_caption = meter_column.remove_top(CAPTION_HEIGHT).expanded(6, 0);
-        let meter = meter_column;
-        area.remove_right(gap);
-        let fader_caption = area.remove_top(CAPTION_HEIGHT);
-        let fader = area.with_size_keeping_centre(area.w.min(px(theme.mixer_fader_width)), area.h);
+        let title = area.remove_top(CAPTION_HEIGHT);
+        area.remove_top(theme.inner_gap / 2);
+        let fader_w = px(theme.mixer_fader_width);
+        let gap = theme.inner_gap;
+        let with_labels = area.w >= fader_w + gap + column_width(theme.mixer_meter_width, true);
+        let meter_w = column_width(theme.mixer_meter_width, with_labels);
+        let mut group = area.with_size_keeping_centre(area.w.min(fader_w + gap + meter_w), area.h);
+        let meter = group.remove_right(meter_w);
+        group.remove_right(gap);
         MasterLayout {
             title,
-            fader_caption,
-            meter_caption,
-            fader,
+            fader: group,
             meter,
+            meter_labels: with_labels,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_fader_and_meter_sit_side_by_side_under_the_title() {
+        let theme = ThemeTokens::builtin_dark();
+        let l = MasterSection::layout(Rect::sized(213, 150), &theme);
+        assert!(l.title.bottom() <= l.fader.y && l.title.bottom() <= l.meter.y);
+        assert!(!l.fader.intersects(&l.meter));
+        assert!(l.meter_labels, "213 px is room for the scale");
+        assert!(l.fader.h >= 80);
     }
 }

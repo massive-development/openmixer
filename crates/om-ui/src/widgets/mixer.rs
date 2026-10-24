@@ -4,10 +4,9 @@
 
 use super::channel::ChannelStrip;
 use super::crossfader::CrossfaderSection;
-use super::cue::CueSection;
+use super::cue::{CueSection, CUE_HEIGHT};
 use super::fx_panel::FxPanel;
 use super::master::MasterSection;
-use super::px;
 use crate::binding::{LevelSource, MixerBinding};
 use crate::geometry::Rect;
 use crate::meter::MeterParams;
@@ -23,11 +22,16 @@ pub enum Page {
     Fx,
 }
 
+/// Height and width of the FX toggle at the module's top, in px.
+pub const FX_TOGGLE_HEIGHT: i32 = 32;
+pub const FX_TOGGLE_WIDTH: i32 = 64;
+
 /// Rectangles of the mixer module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleLayout {
-    /// Mixer tab, FX tab.
-    pub tabs: [Rect; 2],
+    /// The FX toggle: lit while the FX page replaces the stage. There is no "Mixer" tab; the
+    /// strips and sections are always on screen.
+    pub fx: Rect,
     pub master: Rect,
     pub crossfader: Rect,
     pub cue: Rect,
@@ -106,21 +110,20 @@ impl MixerPanel {
         &self.binding
     }
 
-    /// Layout of the mixer module: the page tabs on top, the cue blend at the bottom, the crossfader
-    /// above it and the master section in what is left.
+    /// Layout of the mixer module: the FX toggle on top, the crossfader row at the foot, the
+    /// headphone row above it and the master section in what is left.
     pub fn module_layout(bounds: Rect, theme: &ThemeTokens) -> ModuleLayout {
         let gap = theme.inner_gap;
         let mut area = bounds;
-        let mut tab_row = area.remove_top(px(theme.mixer_tab_height));
-        let tab_w = px(theme.mixer_page_button_width).min(tab_row.w / 2);
-        let tabs = [0, 1].map(|_| tab_row.remove_left(tab_w));
+        let mut top = area.remove_top(FX_TOGGLE_HEIGHT);
+        let fx = top.remove_left(FX_TOGGLE_WIDTH.min(top.w));
         area.remove_top(gap);
-        let cue = area.remove_bottom(px(theme.mixer_cue_height));
-        area.remove_bottom(gap);
         let crossfader = area.remove_bottom(CrossfaderSection::height_for(bounds.w, theme));
         area.remove_bottom(gap);
+        let cue = area.remove_bottom(CUE_HEIGHT);
+        area.remove_bottom(gap);
         ModuleLayout {
-            tabs,
+            fx,
             master: area,
             crossfader,
             cue,
