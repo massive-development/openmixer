@@ -241,6 +241,7 @@ pub struct ThemeTokens {
     pub disabled_alpha: f32,
 
     // Waveform colour (`waveform` section): the hue curve and the limits that keep it legible.
+    // unused since the band palette; remove in a theme cleanup
     /// Hue curve over the centroid axis (0..1, log frequency); positions rise strictly.
     pub wave_stops: Vec<WaveStop>,
     /// Ceiling on saturation after the spread and curve scales (0..1).
