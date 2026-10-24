@@ -5,7 +5,7 @@
 # GPUI build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
 # (`import`, `convert`, `identify`) plus `xwininfo`. Run from anywhere:  tools/screenshots.sh [scene...]
 # Scenes: main-dark main-daylight main-stems debug-panel settings-audio settings-appearance
-# settings-midi settings-library main-automix main-record settings-recording settings-mapping (default: all). main-automix runs the automix demo
+# settings-midi settings-library main-automix main-record settings-recording settings-mapping main-waveform (default: all). main-waveform is the demo loop on deck A after the analysis finishes (OPENMIXER_WAVE_STYLE picks the style; OUT_DIR overrides the output folder). main-automix runs the automix demo
 # (--demo-automix: click tracks, automix on, deck A playing) and is captured after a delay. main-stems loads deck A's track with its stems
 # (the mock separator, --mock-stems) so the stem pads are live.
 # main-dark also shows the library browser (the demo library is loaded in every scene).
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-out="$root/docs/screenshots"
+out="${OUT_DIR:-$root/docs/screenshots}"
 work="$(mktemp -d "${TMPDIR:-/tmp}/om-shots.XXXXXX")"
 bin="$root/target/debug/openmixer"
 pid=""
@@ -96,6 +96,7 @@ declare -A scenes=(
   [settings-midi]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=midi"
   [settings-library]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=library"
   [main-automix]="OPENMIXER_THEME=openmixer.dark -- --demo-automix"
+  [main-waveform]="OPENMIXER_THEME=openmixer.dark -- --demo-library"
   [main-record]="OPENMIXER_THEME=openmixer.dark -- --demo-record"
   [settings-recording]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=recording"
   # The Mapping tab over the three fixture controller maps (--demo-map: temp map file, mock MIDI).
@@ -104,6 +105,7 @@ declare -A scenes=(
 # Seconds to wait before a scene is captured (the automix demo deck plays from the start).
 declare -A delays=(
   [main-automix]=19
+  [main-waveform]=8
   [main-record]=4
 )
 order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording settings-mapping)

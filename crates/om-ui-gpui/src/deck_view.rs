@@ -20,7 +20,7 @@ use om_ui::style::LookAndFeel;
 use om_ui::theme::ThemeTokens;
 use om_ui::waveform::{
     cue_flags, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_LINE_WIDTH,
-    CUE_NUMBER_SIZE, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
+    CUE_NUMBER_SIZE, CUE_STACK_STEP, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
 };
 use om_ui::widgets::deck::{
     deck_controls_layout_for, deck_layout_for, tab_rects, DeckLayout, PadMode, CONTROL_GAP,
@@ -577,7 +577,7 @@ pub(crate) fn zoom(
                 div()
                     .absolute()
                     .left(px(flag.x))
-                    .top(px(0.))
+                    .top(px(f32::from(flag.row) * CUE_STACK_STEP))
                     .w(px(CUE_FLAG_WIDTH))
                     .h(px(CUE_FLAG_HEIGHT))
                     .flex()
