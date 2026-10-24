@@ -12,7 +12,7 @@ pub const STAGE_DECKS: usize = 2;
 /// Header (title and artist lines), overview strip and smallest readable zoomed strip on the stage,
 /// in px. Tighter than a deck card's: the stage shares the window height with the controls.
 pub const STAGE_HEADER_HEIGHT: i32 = 46;
-pub const STAGE_OVERVIEW_HEIGHT: i32 = 34;
+pub const STAGE_OVERVIEW_HEIGHT: i32 = 48;
 pub const STAGE_MIN_ZOOM_HEIGHT: i32 = 32;
 
 /// Places the header, overview and zoomed waveform of each stage deck inside `bounds` (the stage

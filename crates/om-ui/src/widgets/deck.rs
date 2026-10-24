@@ -142,6 +142,33 @@ impl OverviewWaveform {
         let deck = self.binding.state();
         waveform::frame_to_x(deck.position_frames, deck.length_frames, width)
     }
+
+    /// Playhead, hot cues, loop and bar ticks across a strip `width` px wide, from one deck
+    /// state.
+    pub fn markers(&self, width: f64) -> waveform::OverviewMarkers {
+        let deck = self.binding.state();
+        let x = |frame: i64| waveform::frame_to_x(frame, deck.length_frames, width);
+        let cues = deck
+            .hotcues
+            .iter()
+            .enumerate()
+            .filter_map(|(i, cue)| cue.map(|f| (x(f), waveform::cue_colour(i))))
+            .collect();
+        let bar_ticks = self
+            .binding
+            .control()
+            .grid()
+            .map(|g| waveform::overview_bar_ticks(g.as_ref(), deck.length_frames, width))
+            .unwrap_or_default();
+        waveform::OverviewMarkers {
+            playhead_x: x(deck.position_frames),
+            cues,
+            loop_span: deck
+                .loop_valid()
+                .then(|| (x(deck.loop_start), x(deck.loop_end), deck.looping)),
+            bar_ticks,
+        }
+    }
 }
 
 /// What the zoomed view needs from a loaded waveform: the sample rate it was analysed at.
@@ -165,17 +192,19 @@ pub struct ZoomShown {
 pub struct GridLine {
     pub x: i32,
     pub bar: bool,
+    /// Bar number to print at this line (bars count from 1); only on bars with room for a label.
+    pub bar_number: Option<i64>,
 }
 
 /// Thinner than this and the beat lines turn to noise: only bars are drawn.
-pub const MIN_GRID_SPACING_PX: f32 = 6.0;
+pub const MIN_GRID_SPACING_PX: f32 = 8.0;
 
 /// The zoomed waveform: a view centred on the playhead, with a cached strip that is only redrawn when
 /// the view leaves its margin or the scale, size or waveform changes.
 pub struct ZoomWaveform {
     binding: DeckBinding,
     waveform: Option<WaveformMeta>,
-    frames_per_pixel: f64,
+    zoom_step: usize,
     cache: Option<StripCache>,
     shown: Option<ZoomShown>,
     clock: waveform::PlayheadClock,
@@ -190,7 +219,7 @@ impl ZoomWaveform {
         Self {
             binding,
             waveform: None,
-            frames_per_pixel: 256.0,
+            zoom_step: waveform::DEFAULT_ZOOM_STEP,
             cache: None,
             shown: None,
             clock: waveform::PlayheadClock::default(),
@@ -199,28 +228,28 @@ impl ZoomWaveform {
         }
     }
 
-    pub fn frames_per_pixel(&self) -> f64 {
-        self.frames_per_pixel
+    /// Index into [`waveform::ZOOM_SECONDS`].
+    pub fn zoom_step(&self) -> usize {
+        self.zoom_step
     }
 
-    /// Sets the scale, clamped to the supported range.
-    pub fn set_frames_per_pixel(&mut self, frames_per_pixel: f64) {
-        self.frames_per_pixel = waveform::clamp_zoom(frames_per_pixel);
+    /// Seconds of track across the strip at the current step.
+    pub fn zoom_seconds(&self) -> f64 {
+        waveform::seconds_at(self.zoom_step)
+    }
+
+    /// Sets the zoom step (clamped). The caller applies the same step to every deck so they share
+    /// one time scale.
+    pub fn set_zoom_step(&mut self, step: usize) {
+        self.zoom_step = waveform::clamp_step(step);
         self.cache = None;
     }
 
-    pub fn zoom_by(&mut self, factor: f64) {
-        self.set_frames_per_pixel(self.frames_per_pixel * factor);
-    }
-
-    /// Mouse wheel: scrolling down zooms in, up zooms out, one notch per step.
-    pub fn wheel(&mut self, delta_y: f32) {
-        let factor = if delta_y > 0.0 {
-            1.0 / waveform::WHEEL_ZOOM_STEP
-        } else {
-            waveform::WHEEL_ZOOM_STEP
-        };
-        self.zoom_by(factor);
+    /// Mouse wheel: scrolling down zooms in, up zooms out, one step per notch. Returns the new
+    /// step.
+    pub fn wheel(&mut self, delta_y: f32) -> usize {
+        self.set_zoom_step(waveform::step_after_wheel(self.zoom_step, delta_y));
+        self.zoom_step
     }
 
     /// Replaces the loaded waveform (or drops it). Invalidates the strip.
@@ -251,9 +280,15 @@ impl ZoomWaveform {
 
     /// The view for a widget `width` px wide, centred on the playhead.
     pub fn view(&self, width: f64) -> View {
+        let deck = self.binding.state();
+        let rate = if deck.file_sample_rate > 0.0 {
+            deck.file_sample_rate
+        } else {
+            self.waveform.map_or(0.0, |w| w.sample_rate)
+        };
         View {
             centre_frame: self.playhead_frame(),
-            frames_per_pixel: self.frames_per_pixel,
+            frames_per_pixel: waveform::frames_per_pixel(self.zoom_seconds(), rate, width),
             width,
         }
     }
@@ -313,15 +348,28 @@ impl ZoomWaveform {
         grid_lines_for(grid.as_ref(), view)
     }
 
-    /// Loop span in pixels, when a loop is set.
-    pub fn loop_span(&self, view: &View) -> Option<(f64, f64, bool)> {
+    /// The loop in pixels, when one is set, with its length in beats when the deck has a grid.
+    pub fn loop_region(&self, view: &View) -> Option<waveform::LoopRegion> {
         let deck = self.binding.state();
         deck.loop_valid().then(|| {
-            (
-                view.x_of_frame(deck.loop_start),
-                view.x_of_frame(deck.loop_end),
-                deck.looping,
-            )
+            let label = self
+                .binding
+                .control()
+                .grid()
+                .map(|g| {
+                    waveform::loop_label(waveform::loop_beats(
+                        g.as_ref(),
+                        deck.loop_start,
+                        deck.loop_end,
+                    ))
+                })
+                .unwrap_or_default();
+            waveform::LoopRegion {
+                x0: view.x_of_frame(deck.loop_start),
+                x1: view.x_of_frame(deck.loop_end),
+                looping: deck.looping,
+                label,
+            }
         })
     }
 
@@ -340,15 +388,22 @@ pub fn grid_lines_for(grid: &dyn BeatGrid, view: &View) -> Vec<GridLine> {
     let beat_px =
         (grid.frame_at_beat(1.0) - grid.frame_at_beat(0.0)) as f32 / view.frames_per_pixel as f32;
     let bars_only = beat_px.abs() < MIN_GRID_SPACING_PX;
+    let label_step = waveform::bar_label_step(beat_px * per_bar as f32);
     let mut lines = Vec::new();
     let mut beat = first;
     while beat <= last {
         let bar = (beat.round() as i64).rem_euclid(per_bar) == 0;
         if !bars_only || bar {
             let x = view.x_of_frame(grid.frame_at_beat(beat));
+            let bar_number = if bar {
+                waveform::bar_number(beat, per_bar).filter(|n| (n - 1) % label_step == 0)
+            } else {
+                None
+            };
             lines.push(GridLine {
                 x: x.round() as i32,
                 bar,
+                bar_number,
             });
         }
         beat += 1.0;

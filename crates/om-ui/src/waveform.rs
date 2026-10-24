@@ -4,17 +4,23 @@
 use om_analysis::{WaveformLevel, WaveformPoint};
 
 mod clock;
+mod bands;
+// The spectral-centroid rainbow: superseded by the three fixed bands in `bands`, kept for the
+// tuning example and its tests. The GPUI layer no longer paints with it.
 mod colour;
 mod hue;
+mod markers;
+mod strip;
+mod zoom;
 
 pub use clock::PlayheadClock;
+pub use bands::*;
 pub use colour::{hsl_to_colour, is_audible, loudness_level, wave_colour, wave_hsl, Hsl};
 pub use hue::{hue_span, overview_hues, HUE_SPAN_COLUMNS, HUE_SPAN_PERCENTILES};
+pub use markers::*;
+pub use strip::*;
+pub use zoom::*;
 
-pub const MIN_FRAMES_PER_PIXEL: f64 = 32.0;
-pub const MAX_FRAMES_PER_PIXEL: f64 = 8192.0;
-/// Each wheel notch multiplies or divides the zoom by this.
-pub const WHEEL_ZOOM_STEP: f64 = 1.25;
 /// The cached strip is three views wide: one visible, one of margin each side.
 pub const CACHE_VIEWS: i32 = 3;
 
@@ -70,11 +76,6 @@ pub fn strip_column(level: &WaveformLevel, frame: f64, frames_per_pixel: f64) ->
     level.points.get(lo..hi).map(column)
 }
 
-/// Clamps a zoom level into the supported range.
-pub fn clamp_zoom(frames_per_pixel: f64) -> f64 {
-    frames_per_pixel.clamp(MIN_FRAMES_PER_PIXEL, MAX_FRAMES_PER_PIXEL)
-}
-
 /// Overview: the whole track spans the width. Click position to a seek fraction, clamped to 0..=1.
 pub fn x_to_fraction(x: f64, width: f64) -> f64 {
     if width > 0.0 {
@@ -104,6 +105,11 @@ pub struct View {
 impl View {
     pub fn x_of_frame(&self, frame: i64) -> f64 {
         self.width * 0.5 + (frame - self.centre_frame) as f64 / self.frames_per_pixel
+    }
+
+    /// [`Self::x_of_frame`] for a fractional frame.
+    pub fn x_of_frame_f(&self, frame: f64) -> f64 {
+        self.width * 0.5 + (frame - self.centre_frame as f64) / self.frames_per_pixel
     }
 
     pub fn frame_at_x(&self, x: f64) -> f64 {
@@ -216,13 +222,6 @@ mod tests {
         assert_eq!(view.x_of_frame(10_100), 201.0);
         assert_eq!(view.frame_at_x(0.0), -10_000.0);
         assert_eq!(view.last_frame(), 30_000.0);
-    }
-
-    #[test]
-    fn zoom_is_clamped() {
-        assert_eq!(clamp_zoom(1.0), MIN_FRAMES_PER_PIXEL);
-        assert_eq!(clamp_zoom(1.0e9), MAX_FRAMES_PER_PIXEL);
-        assert_eq!(clamp_zoom(512.0), 512.0);
     }
 
     #[test]
