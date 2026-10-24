@@ -8,10 +8,11 @@
 
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
-use crate::paint::{border, paint, place, shadow, skin};
+use crate::fader_paint::{self, FaderFace, FaderLaw};
+use crate::meter_paint;
+use crate::paint::{paint, place, shadow, skin};
 use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent, MouseUpEvent};
 use om_ui::geometry::Rect;
-use om_ui::meter::{column_layout, fitting_marks, MeterScale, MeterZone, MIN_LAMP_HEIGHT};
 use om_ui::style::LookAndFeel;
 use om_ui::theme::{Colour, ThemeTokens};
 
@@ -113,22 +114,35 @@ pub fn slider_with_popup(
     popup_text: Option<&str>,
     cx: &mut Context<Shell>,
 ) -> Div {
+    let vertical = rect.h >= rect.w;
+    let accent = match target {
+        Target::Channel(ch) => t.accent_for(ch as i32),
+        _ => t.brand,
+    };
+    if target == Target::Crossfader && !vertical {
+        let pos = fraction(value, min, max) as f32;
+        return fader_paint::crossfader(t, rect, pos, accent, target, abs, popup_text, cx);
+    }
+    if vertical {
+        // The stored value stays linear; Linear is today's cap travel (plan Phase 2 default). The
+        // tapered laws are wired at the call sites in Phase 5.
+        let law = FaderLaw::Linear {
+            max_gain: max as f32,
+        };
+        let face = if target == Target::Master {
+            FaderFace::master(law)
+        } else {
+            FaderFace::channel(law)
+        };
+        let pos = fraction(value, min, max) as f32;
+        return fader_paint::fader(t, rect, &face, pos, accent, target, abs, popup_text, cx);
+    }
+    // Other horizontal sliders (stems, phones) keep the plain track and thumb.
     let look = LookAndFeel::from_tokens(t);
     let frac = fraction(value, min, max) as f32;
-    let vertical = rect.h >= rect.w;
     let thumb_px = look.fader.thumb_size.round() as i32;
-    let thumb = if vertical {
-        let travel = (rect.h - thumb_px).max(0) as f32;
-        place(Rect::new(
-            0,
-            ((1.0 - frac) * travel) as i32,
-            rect.w,
-            thumb_px,
-        ))
-    } else {
-        let travel = (rect.w - thumb_px).max(0) as f32;
-        place(Rect::new((frac * travel) as i32, 0, thumb_px, rect.h))
-    };
+    let travel = (rect.w - thumb_px).max(0) as f32;
+    let thumb = place(Rect::new((frac * travel) as i32, 0, thumb_px, rect.h));
     let track = skin(place(rect), &look.fader.track);
     let mut track = track.child(skin(thumb, &look.fader.thumb));
     if let Some(text) = popup_text {
@@ -298,8 +312,9 @@ pub struct BarState {
     pub clipping: bool,
 }
 
-/// One stereo meter column: an optional dB scale, then two bars coloured by dB zone (the theme's
-/// `meter_mid_db` / `meter_high_db`), each with a peak-hold tick and a latching clip lamp above it.
+/// One stereo meter column: an optional dB scale, then two segmented bars coloured by dB zone (the
+/// theme's `meter_mid_db` / `meter_high_db`), each with a peak-hold segment and a latching clip lamp
+/// above it. See `meter_paint`.
 /// A click anywhere on the column runs `on_click` (it clears the lamps).
 pub fn stereo_meter(
     t: &ThemeTokens,
@@ -309,93 +324,7 @@ pub fn stereo_meter(
     cx: &mut Context<Shell>,
     on_click: impl Fn(&mut Shell) + 'static,
 ) -> Div {
-    let look = LookAndFeel::from_tokens(t);
-    let m = look.meter;
-    let scale = MeterScale::from_tokens(t);
-    let headroom = m.headroom as i32;
-    let col = column_layout(Rect::sized(rect.w, rect.h), labels);
-    let well_h = (rect.h - headroom).max(1);
-    let tick_h = t.meter_hold_tick_height.round().max(1.0) as i32;
-    let lamp_h = (m.lamp_height.round() as i32).max(MIN_LAMP_HEIGHT);
-    let zone_colour = |zone: MeterZone| match zone {
-        MeterZone::Low => m.low,
-        MeterZone::Mid => m.mid,
-        MeterZone::High => m.high,
-    };
-    // A proportion's y inside the column: the well's top is 1.0, its bottom 0.0.
-    let y_of = |p: f32| headroom + ((1.0 - p.clamp(0.0, 1.0)) * well_h as f32) as i32;
-    let marks = fitting_marks(&scale, well_h);
-
-    let mut el = place(rect);
-    for mark in &marks {
-        if labels {
-            let ty = (y_of(mark.proportion) - 6).clamp(0, (rect.h - 12).max(0));
-            el = el.child(
-                place(Rect::new(0, ty, col.labels.w - 3, 12))
-                    .flex()
-                    .justify_end()
-                    .text_size(px(MIN_TEXT_PX))
-                    .line_height(px(12.))
-                    .text_color(paint(t.text_secondary))
-                    .child(mark.label.clone()),
-            );
-        }
-    }
-    for (bar, state) in col.bars.iter().zip(bars) {
-        let well = Rect::new(bar.x, headroom, bar.w.max(1), well_h);
-        el = el.child(
-            border(place(well), t.border_width)
-                .border_color(paint(m.border))
-                .bg(paint(m.well))
-                .rounded(px(m.radius)),
-        );
-        let side = m.bar_inset as i32;
-        let inner_w = (well.w - 2 * side).max(1);
-        for mark in &marks {
-            if mark.proportion > 0.0 && mark.proportion < 1.0 {
-                el = el.child(
-                    place(Rect::new(well.x + side, y_of(mark.proportion), inner_w, 1))
-                        .bg(paint(m.border)),
-                );
-            }
-        }
-        for (zone, from, to) in scale.runs(state.level) {
-            let (y_top, y_bottom) = (y_of(to), y_of(from));
-            el = el.child(
-                place(Rect::new(
-                    well.x + side,
-                    y_top,
-                    inner_w,
-                    (y_bottom - y_top).max(1),
-                ))
-                .bg(paint(zone_colour(zone))),
-            );
-        }
-        if state.hold > 0.0 {
-            let hold_zone = scale.zone(state.hold);
-            let y = (y_of(state.hold) - tick_h / 2).clamp(headroom, rect.h - tick_h);
-            el = el.child(
-                place(Rect::new(well.x + side, y, inner_w, tick_h))
-                    .bg(paint(zone_colour(hold_zone))),
-            );
-        }
-        el = el.child(
-            place(Rect::new(well.x + side, m.inset as i32, inner_w, lamp_h))
-                .bg(paint(if state.clipping {
-                    m.lamp_on
-                } else {
-                    m.lamp_off
-                }))
-                .rounded(px(m.radius)),
-        );
-    }
-    el.on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-            on_click(this);
-            cx.notify();
-        }),
-    )
+    meter_paint::segmented_meter(t, rect, labels, bars, cx, on_click)
 }
 
 /// A text caption at `rect` (parent coordinates). 12 px at least.
