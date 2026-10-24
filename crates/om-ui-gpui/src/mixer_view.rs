@@ -1,23 +1,32 @@
-//! The mixer card: tabs, channel strips, crossfader, master, headphone cue and the FX page. Models
-//! come from `om-ui`'s `MixerPanel`; every control sends through the string-id control surface.
+//! The mixer: channel strips, crossfader, master, headphone cue and the FX page. Models come from
+//! `om-ui`'s `MixerPanel`; every control sends through the string-id control surface.
+//!
+//! Labels appear only where position does not already say what a control is: the band names (which
+//! double as kill switches), GAIN, FILTER, A / THRU / B, MASTER and PHONES. Values appear in a
+//! popup while a control is dragged (knobs also on hover), never at rest.
 
 use crate::app::Shell;
-use crate::controls::{button, caption, knob, slider, stereo_meter};
+use crate::controls::{
+    button, caption, knob_face, mark, slider_with_popup, stereo_meter, BarState, KnobFace,
+};
 use crate::drag::Target;
 use crate::paint::{paint, place};
-use gpui::{prelude::*, px, Context, Div};
+use gpui::{prelude::*, px, Context, Div, FontWeight};
 use om_ui::control::{Knob, Readout};
 use om_ui::geometry::Rect;
-use om_ui::theme::ThemeTokens;
-use om_ui::widgets::channel::{ChannelStrip, ASSIGN_LABELS};
+use om_ui::meter::MeterBar;
+use om_ui::widgets::channel::{channel_letter, ChannelStrip, ASSIGN_LABELS};
 use om_ui::widgets::crossfader::{CrossfaderSection, CURVE_LABELS};
-use om_ui::widgets::cue::CueSection;
+use om_ui::widgets::cue::{CueSection, LEVEL_LABEL, MIX_LABEL};
 use om_ui::widgets::fx_panel::FxPanel;
 use om_ui::widgets::master::MasterSection;
 use om_ui::widgets::mixer::{MixerPanel, Page};
 
-/// The mixer module drawn at `card` (window coordinates): the page tabs, master section, crossfader
-/// and headphone cue. The channel strips are separate cards ([`channel_card`]).
+/// Narrower than this a knob drops its label (a stem filter beside a strip), in px.
+const MIN_LABELLED_KNOB: i32 = 36;
+
+/// The mixer module drawn at `card` (window coordinates): the FX toggle, master section,
+/// headphone cue and crossfader. The channel strips are separate cards ([`channel_card`]).
 pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let m = &shell.mixer;
@@ -31,31 +40,18 @@ pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary));
 
-    root = root.child(button(
-        t,
-        l.tabs[0],
-        "Mixer",
-        m.mixer_visible(),
-        accent,
-        cx,
-        |this| {
-            this.mixer.set_page(Page::Mixer);
-        },
-    ));
-    root = root.child(button(
-        t,
-        l.tabs[1],
-        "FX",
-        m.fx_visible(),
-        accent,
-        cx,
-        |this| {
-            this.mixer.set_page(Page::Fx);
-        },
-    ));
+    // One toggle: the FX page replaces the stage while it is lit.
+    root = root.child(button(t, l.fx, "FX", m.fx_visible(), accent, cx, |this| {
+        let page = if this.mixer.fx_visible() {
+            Page::Mixer
+        } else {
+            Page::Fx
+        };
+        this.mixer.set_page(page);
+    }));
     root = root.children(master(shell, l.master, card, cx));
-    root = root.children(crossfader(shell, l.crossfader, card, cx));
     root = root.children(cue(shell, l.cue, card, cx));
+    root = root.children(crossfader(shell, l.crossfader, card, cx));
     root
 }
 
@@ -71,8 +67,18 @@ pub fn channel_card(shell: &Shell, ch: usize, card: Rect, cx: &mut Context<Shell
         .children(channel(shell, ch, Rect::sized(card.w, card.h), card, cx))
 }
 
-/// One channel strip: title, trim and filter knobs, EQ bands with kill buttons, PFL, FX, the
-/// crossfader assignment, the fader and the meter.
+/// The bars of a stereo meter as the view model reports them.
+fn bar_state(bar: &MeterBar) -> BarState {
+    let b = bar.ballistics();
+    BarState {
+        level: b.level(),
+        hold: b.peak_hold(),
+        clipping: bar.is_latched(),
+    }
+}
+
+/// One channel strip, top to bottom: the deck letter, gain, the three bands (each label is its
+/// kill switch), filter, PFL and FX, the fader beside its meter, and the A / THRU / B switch.
 fn channel(
     shell: &Shell,
     ch: usize,
@@ -87,37 +93,31 @@ fn channel(
     let accent = t.accent_for(ch as i32);
     let mut out = Vec::new();
 
-    out.push(caption(t, lay.title, &format!("Ch {}", ch + 1)));
+    out.push(
+        place(lay.title)
+            .flex()
+            .items_center()
+            .text_size(px(t.type_label))
+            .font_weight(FontWeight::BOLD)
+            .text_color(paint(accent))
+            .child(channel_letter(ch).to_string()),
+    );
     out.push(knob_view(
-        t,
+        shell,
         lay.trim,
         &strip.trim,
         Target::Trim(ch),
         card,
-        cx,
-    ));
-    out.push(knob_view(
-        t,
-        lay.filter,
-        &strip.filter,
-        Target::Filter(ch),
-        card,
+        true,
         cx,
     ));
     for band in 0..3 {
-        out.push(knob_view(
-            t,
-            lay.eq[band],
-            &strip.eq[band],
-            Target::Eq(ch, band),
-            card,
-            cx,
-        ));
+        // The band's name is its kill switch: lit while the band is killed.
         let killed = strip.is_killed(band);
         out.push(button(
             t,
             lay.kill[band],
-            "Kill",
+            &strip.eq[band].label,
             killed,
             accent,
             cx,
@@ -125,7 +125,25 @@ fn channel(
                 this.mixer.strips[ch].kill_pressed(band);
             },
         ));
+        out.push(knob_view(
+            shell,
+            lay.eq[band],
+            &strip.eq[band],
+            Target::Eq(ch, band),
+            card,
+            false,
+            cx,
+        ));
     }
+    out.push(knob_view(
+        shell,
+        lay.filter,
+        &strip.filter,
+        Target::Filter(ch),
+        card,
+        true,
+        cx,
+    ));
     out.push(button(
         t,
         lay.pfl,
@@ -140,6 +158,33 @@ fn channel(
     out.push(button(t, lay.fx, "FX", false, accent, cx, move |this| {
         this.mixer.request_fx(ch);
     }));
+    let fader = &strip.fader;
+    let target = Target::Channel(ch);
+    let popup = shell
+        .is_dragging(target)
+        .then(|| Readout::Gain.text(fader.value()));
+    out.push(slider_with_popup(
+        t,
+        lay.fader,
+        (fader.value(), fader.min, fader.max),
+        target,
+        abs(lay.fader),
+        popup.as_deref(),
+        cx,
+    ));
+    let bars = [bar_state(&strip.meter.left), bar_state(&strip.meter.right)];
+    out.push(stereo_meter(
+        t,
+        lay.meter,
+        lay.meter_labels,
+        bars,
+        cx,
+        move |this| {
+            let meter = &mut this.mixer.strips[ch].meter;
+            meter.left.click();
+            meter.right.click();
+        },
+    ));
     let assigned = strip.assign;
     for (k, label) in ASSIGN_LABELS.iter().enumerate() {
         out.push(button(
@@ -154,46 +199,36 @@ fn channel(
             },
         ));
     }
-    let fader = &strip.fader;
-    out.push(caption(
-        t,
-        lay.fader_caption,
-        &Readout::Gain.text(fader.value()),
-    ));
-    out.push(slider(
-        t,
-        lay.fader,
-        (fader.value(), fader.min, fader.max),
-        Target::Channel(ch),
-        abs(lay.fader),
-        cx,
-    ));
-    let levels = [
-        strip.meter.left.ballistics().level(),
-        strip.meter.right.ballistics().level(),
-    ];
-    let clip = [
-        strip.meter.left.ballistics().is_clipping(),
-        strip.meter.right.ballistics().is_clipping(),
-    ];
-    out.push(stereo_meter(t, lay.meter, levels, clip));
     out
 }
 
-/// A knob at `rect` for `knob`, with its own label and readout.
+/// A knob at `rect` for `model`. `labelled` prints its name on the body; the value is in the
+/// popup (while dragged or hovered).
 fn knob_view(
-    t: &ThemeTokens,
+    shell: &Shell,
     rect: Rect,
     model: &Knob,
     target: Target,
     card: Rect,
+    labelled: bool,
     cx: &mut Context<Shell>,
 ) -> Div {
     let abs = Rect::new(card.x + rect.x, card.y + rect.y, rect.w, rect.h);
-    knob(
-        t,
+    let readout = model.text();
+    let label = if labelled && rect.w >= MIN_LABELLED_KNOB {
+        model.label.as_str()
+    } else {
+        ""
+    };
+    knob_face(
+        &shell.theme,
         rect,
-        (&model.label, &model.text()),
+        KnobFace {
+            label,
+            readout: &readout,
+            detent: model.detent,
+            active: shell.shows_value(target),
+        },
         (model.value(), model.range.min, model.range.max),
         target,
         abs,
@@ -201,7 +236,7 @@ fn knob_view(
     )
 }
 
-/// Master fader and stereo meter.
+/// Master fader and stereo meter under the MASTER caption.
 fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = MasterSection::layout(bounds, t);
@@ -212,30 +247,30 @@ fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> V
         lay.fader.h,
     );
     let m = &shell.mixer.master;
-    let levels = [
-        m.meter.left.ballistics().level(),
-        m.meter.right.ballistics().level(),
-    ];
-    let clip = [
-        m.meter.left.ballistics().is_clipping(),
-        m.meter.right.ballistics().is_clipping(),
-    ];
+    let popup = shell
+        .is_dragging(Target::Master)
+        .then(|| Readout::Gain.text(m.fader.value()));
+    let bars = [bar_state(&m.meter.left), bar_state(&m.meter.right)];
     vec![
-        caption(t, lay.title, "Master"),
-        caption(t, lay.fader_caption, &Readout::Gain.text(m.fader.value())),
-        slider(
+        caption(t, lay.title, "MASTER"),
+        slider_with_popup(
             t,
             lay.fader,
             (m.fader.value(), m.fader.min, m.fader.max),
             Target::Master,
             abs,
+            popup.as_deref(),
             cx,
         ),
-        stereo_meter(t, lay.meter, levels, clip),
+        stereo_meter(t, lay.meter, lay.meter_labels, bars, cx, |this| {
+            let meter = &mut this.mixer.master.meter;
+            meter.left.click();
+            meter.right.click();
+        }),
     ]
 }
 
-/// Crossfader slider and the Linear / Power curve buttons.
+/// The crossfader, with A and B printed at its ends, and the curve switch beside it.
 fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = CrossfaderSection::layout(bounds, t);
@@ -246,63 +281,77 @@ fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) 
         lay.slider.w,
         lay.slider.h,
     );
-    let mut out = vec![
-        caption(t, lay.caption, "Crossfader"),
-        slider(
+    let end = lay.slider.h.min(lay.slider.w / 4);
+    let selected = x.selected_curve().min(CURVE_LABELS.len() - 1);
+    vec![
+        slider_with_popup(
             t,
             lay.slider,
             (x.slider.value(), x.slider.min, x.slider.max),
             Target::Crossfader,
             abs,
+            None,
             cx,
         ),
-    ];
-    // The stacked (narrow) layout has no room for the "Curve" caption.
-    if !lay.curve_caption.is_empty() {
-        out.push(caption(t, lay.curve_caption, "Curve"));
-    }
-    let selected = x.selected_curve();
-    for (i, label) in CURVE_LABELS.iter().enumerate() {
-        out.push(button(
+        mark(
             t,
-            lay.curves[i],
-            label,
-            selected == i,
+            Rect::new(lay.slider.x, lay.slider.y, end, lay.slider.h),
+            "A",
+        ),
+        mark(
+            t,
+            Rect::new(lay.slider.right() - end, lay.slider.y, end, lay.slider.h),
+            "B",
+        ),
+        button(
+            t,
+            lay.curve,
+            CURVE_LABELS[selected],
+            false,
             t.accent_for(0),
             cx,
-            move |this| {
-                this.mixer.crossfader.curve_pressed(i);
+            |this| {
+                this.mixer.crossfader.curve_cycled();
             },
-        ));
-    }
-    out
+        ),
+    ]
 }
 
-/// Headphone cue blend and phones level.
+/// Headphone cue blend and phones level, side by side under one PHONES caption.
 fn cue(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = CueSection::layout(bounds, t);
     let c = &shell.mixer.cue;
     let abs = |r: Rect| Rect::new(card.x + r.x, card.y + r.y, r.w, r.h);
+    let percent = |v: f64| Readout::Percent.text(v);
+    let mix_popup = shell
+        .is_dragging(Target::CueMix)
+        .then(|| percent(c.mix.value()));
+    let level_popup = shell
+        .is_dragging(Target::CueLevel)
+        .then(|| Readout::Gain.text(c.level.value()));
     vec![
-        caption(t, lay.mix_caption, "Cue mix"),
-        slider(
+        caption(t, lay.caption, "PHONES"),
+        slider_with_popup(
             t,
             lay.mix,
             (c.mix.value(), c.mix.min, c.mix.max),
             Target::CueMix,
             abs(lay.mix),
+            mix_popup.as_deref(),
             cx,
         ),
-        caption(t, lay.level_caption, "Phones"),
-        slider(
+        mark(t, lay.mix, MIX_LABEL),
+        slider_with_popup(
             t,
             lay.level,
             (c.level.value(), c.level.min, c.level.max),
             Target::CueLevel,
             abs(lay.level),
+            level_popup.as_deref(),
             cx,
         ),
+        mark(t, lay.level, LEVEL_LABEL),
     ]
 }
 
@@ -360,11 +409,27 @@ pub(crate) fn fx_page(
         },
     ));
     if let Some(rect) = lay.knobs.first() {
-        out.push(knob_view(t, *rect, &fx.mix, Target::FxMix, card, cx));
+        out.push(knob_view(
+            shell,
+            *rect,
+            &fx.mix,
+            Target::FxMix,
+            card,
+            true,
+            cx,
+        ));
     }
     for (i, param) in fx.params.iter().enumerate() {
         if let Some(rect) = lay.knobs.get(i + 1) {
-            out.push(knob_view(t, *rect, param, Target::FxParam(i), card, cx));
+            out.push(knob_view(
+                shell,
+                *rect,
+                param,
+                Target::FxParam(i),
+                card,
+                true,
+                cx,
+            ));
         }
     }
     out.push(caption(t, lay.beat, fx.beat_label()));
