@@ -4,11 +4,10 @@
 //! the pointer's travel, so a click does not jump them.
 
 use crate::app::Shell;
+use crate::controls::{key_step, wheel_step};
+use crate::knob_paint::{dragged_value, snap_with_bypass};
 use gpui::Point;
 use om_ui::geometry::Rect;
-
-/// Pixels of vertical travel that span a knob's full range.
-const KNOB_TRAVEL_PX: f64 = 200.0;
 
 /// A control that a drag can change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +32,8 @@ pub enum Target {
 }
 
 impl Target {
-    /// Knobs move by travel; faders and sliders follow the pointer.
-    fn is_knob(self) -> bool {
+    /// Knobs move by travel along their sweep; faders and sliders follow the pointer.
+    pub(crate) fn is_knob(self) -> bool {
         matches!(
             self,
             Target::Trim(_)
@@ -42,6 +41,9 @@ impl Target {
                 | Target::Eq(..)
                 | Target::FxMix
                 | Target::FxParam(_)
+                | Target::Master
+                | Target::CueMix
+                | Target::CueLevel
         )
     }
 }
@@ -58,6 +60,8 @@ pub struct Drag {
     pub anchor: f64,
     /// The value when the press began.
     pub anchor_value: f64,
+    /// Shift was held at the press: a knob moves a tenth as far and skips its detent pull.
+    pub fine: bool,
 }
 
 /// Axis for a slider drawn in `rect`: the longer side.
@@ -77,6 +81,17 @@ pub fn fraction(value: f64, min: f64, max: f64) -> f64 {
 impl Shell {
     /// Starts a drag on `target` at the pointer and applies the value under the pointer at once.
     pub(crate) fn begin_drag(&mut self, target: Target, rect: Rect, pos: Point<gpui::Pixels>) {
+        self.begin_drag_fine(target, rect, pos, false);
+    }
+
+    /// `begin_drag` with fine mode (shift held at the press) for knobs.
+    pub(crate) fn begin_drag_fine(
+        &mut self,
+        target: Target,
+        rect: Rect,
+        pos: Point<gpui::Pixels>,
+        fine: bool,
+    ) {
         let vertical = if target == Target::Crossfader {
             false
         } else {
@@ -89,6 +104,7 @@ impl Shell {
             vertical,
             anchor,
             anchor_value: self.value_of(target),
+            fine,
         });
         self.drag_move(pos);
     }
@@ -98,9 +114,10 @@ impl Shell {
         let Some(drag) = self.drag else { return };
         let (min, max) = self.range_of(drag.target);
         let value = if drag.target.is_knob() {
-            // Up is more. A full sweep of the knob is KNOB_TRAVEL_PX.
-            let travel = (drag.anchor - axis_of(pos, true)) / KNOB_TRAVEL_PX;
-            drag.anchor_value + travel * (max - min)
+            // Up is more. Travel turns the pointer: a full sweep is KNOB_TRAVEL_PX.
+            let dy = drag.anchor - axis_of(pos, true);
+            let detent = self.detent_of(drag.target);
+            dragged_value(drag.anchor_value, dy, drag.fine, min, detent, max)
         } else if drag.vertical {
             let frac =
                 (axis_of(pos, true) - f64::from(drag.rect.y)) / f64::from(drag.rect.h.max(1));
@@ -113,7 +130,9 @@ impl Shell {
         let value = value.clamp(min, max);
         // A press alone never moves a knob, so the detent only pulls once the pointer has moved.
         let value = match self.knob_of(drag.target) {
-            Some(k) if (value - drag.anchor_value).abs() > 1e-9 => k.snap_to_detent(value),
+            Some(k) if (value - drag.anchor_value).abs() > 1e-9 => {
+                snap_with_bypass(k, value, drag.fine)
+            }
             _ => value,
         };
         self.apply(drag.target, value);
@@ -148,6 +167,44 @@ impl Shell {
             Target::FxMix => Some(&self.mixer.fx.mix),
             Target::FxParam(i) => self.mixer.fx.params.get(i),
             _ => None,
+        }
+    }
+
+    /// The value a knob's pointer rests at 12 o'clock on, if it has one. The master and phones
+    /// level mark unity; the cue mix has none.
+    pub(crate) fn detent_of(&self, target: Target) -> Option<f64> {
+        match target {
+            Target::Master | Target::CueLevel => Some(1.0),
+            _ => self.knob_of(target).and_then(|k| k.detent),
+        }
+    }
+
+    /// Moves a knob by `notches` wheel notches (positive: more).
+    pub(crate) fn knob_wheel(&mut self, target: Target, notches: f64, shift: bool) {
+        let (min, max) = self.range_of(target);
+        let value = wheel_step(
+            self.value_of(target),
+            notches,
+            shift,
+            min,
+            self.detent_of(target),
+            max,
+        );
+        self.apply(target, value);
+    }
+
+    /// Applies a key to a focused knob. Returns false for a key the knob does not use.
+    pub(crate) fn knob_key(&mut self, target: Target, key: &str, shift: bool) -> bool {
+        let (min, max) = self.range_of(target);
+        let reset = self.default_of(target).unwrap_or(min);
+        let detent = self.detent_of(target);
+        let value = self.value_of(target);
+        match key_step(key, shift, (value, reset), (min, detent, max)) {
+            Some(v) => {
+                self.apply(target, v);
+                true
+            }
+            None => false,
         }
     }
 
@@ -395,13 +452,85 @@ mod tests {
         let knob = Rect::new(0, 0, 40, 56);
         shell.begin_drag(Target::Eq(0, 0), knob, at(20.0, 100.0));
         assert_eq!(engine.mixer().eq(0, 0), 0.0, "a press does not move it");
-        // 10 px up is 0.05 of the 54 dB range: 2.7 dB, outside the detent.
-        shell.drag_move(at(20.0, 90.0));
-        assert!((engine.mixer().eq(0, 0) - 2.7).abs() < 0.05);
-        // 5 px up is 1.35 dB, inside the detent (3% of 54 dB is 1.62): it reads exactly 0.
-        shell.drag_move(at(20.0, 95.0));
+        // 40 px up is 0.2 of the sweep, 2.4 dB on the boost side: outside the detent.
+        shell.drag_move(at(20.0, 60.0));
+        assert!((engine.mixer().eq(0, 0) - 2.4).abs() < 0.05);
+        // 20 px up is 1.2 dB, inside the detent (3% of 54 dB is 1.62): it reads exactly 0.
+        shell.drag_move(at(20.0, 80.0));
         assert_eq!(engine.mixer().eq(0, 0), 0.0);
         shell.end_drag();
+    }
+
+    #[test]
+    fn eq_knob_drag_moves_by_angle() {
+        let (mut shell, engine) = shell();
+        let knob = Rect::new(0, 0, 40, 56);
+        shell.begin_drag(Target::Eq(0, 0), knob, at(20.0, 300.0));
+        // 50 px is a quarter of the 200 px sweep: the pointer turns 67.5 degrees, which is +3 dB
+        // (a linear drag would give +13.5 dB).
+        shell.drag_move(at(20.0, 250.0));
+        assert!((engine.mixer().eq(0, 0) - 3.0).abs() < 0.05);
+        // Down by 50 px from the press is -24 dB: the lower half is 48 dB wide.
+        shell.drag_move(at(20.0, 350.0));
+        assert!((engine.mixer().eq(0, 0) + 24.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn shift_drag_is_finer() {
+        let (mut shell, engine) = shell();
+        let knob = Rect::new(0, 0, 40, 56);
+        shell.begin_drag_fine(Target::Eq(0, 0), knob, at(20.0, 300.0), true);
+        assert!(shell.drag.is_some_and(|d| d.fine));
+        // 50 px with shift is 5 px of travel: 0.025 of the sweep, 0.3 dB.
+        shell.drag_move(at(20.0, 250.0));
+        assert!((engine.mixer().eq(0, 0) - 0.3).abs() < 0.02);
+    }
+
+    #[test]
+    fn detent_pulls_without_shift_and_not_with_it() {
+        let (mut shell, engine) = shell();
+        let knob = Rect::new(0, 0, 40, 56);
+        // 10 px up is 0.6 dB: inside the pull.
+        shell.begin_drag(Target::Eq(0, 0), knob, at(20.0, 300.0));
+        shell.drag_move(at(20.0, 290.0));
+        assert_eq!(engine.mixer().eq(0, 0), 0.0);
+        shell.end_drag();
+        // The same travel with shift is 1 px, 0.06 dB, and shift bypasses the pull.
+        shell.begin_drag_fine(Target::Eq(0, 0), knob, at(20.0, 300.0), true);
+        shell.drag_move(at(20.0, 290.0));
+        let v = engine.mixer().eq(0, 0);
+        assert!(v > 0.01 && v < 0.2, "{v}");
+    }
+
+    #[test]
+    fn master_and_cue_are_knobs() {
+        for target in [Target::Master, Target::CueMix, Target::CueLevel] {
+            assert!(target.is_knob(), "{target:?}");
+        }
+        assert!(!Target::Channel(0).is_knob());
+        let (mut shell, engine) = shell();
+        engine.mixer().set_master_gain(0.4);
+        shell.mixer.refresh(0.0, engine.mixer(), false);
+        assert!(shell.reset_target(Target::Master));
+        assert!((engine.mixer().master_gain() - 1.0).abs() < 1e-3);
+        assert_eq!(shell.detent_of(Target::Master), Some(1.0));
+        assert_eq!(shell.detent_of(Target::CueLevel), Some(1.0));
+        assert_eq!(shell.detent_of(Target::CueMix), None);
+        assert_eq!(shell.detent_of(Target::Eq(0, 0)), Some(0.0));
+    }
+
+    #[test]
+    fn wheel_and_keys_move_a_knob_by_the_sweep() {
+        let (mut shell, engine) = shell();
+        let target = Target::Eq(0, 0);
+        shell.knob_wheel(target, 10.0, false);
+        // 10 notches is 0.1 of the sweep: 1.2 dB on the boost side.
+        assert!((engine.mixer().eq(0, 0) - 1.2).abs() < 0.05);
+        assert!(shell.knob_key(target, "home", false));
+        assert_eq!(engine.mixer().eq(0, 0), 0.0);
+        assert!(shell.knob_key(target, "end", false));
+        assert!((engine.mixer().eq(0, 0) - 6.0).abs() < 0.05);
+        assert!(!shell.knob_key(target, "tab", false), "unused keys pass on");
     }
 
     #[test]
