@@ -118,6 +118,8 @@ pub struct Shell {
     pub(crate) sampler_open: bool,
     /// The header's notice chip was dismissed (it stays gone for the session).
     pub(crate) notice_dismissed: bool,
+    /// The window's size in px, as the last frame saw it (the library sizes itself from it).
+    pub(crate) window_size: (i32, i32),
     pub(crate) options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -211,6 +213,7 @@ impl Shell {
             performance: false,
             sampler_open: false,
             notice_dismissed: false,
+            window_size: (0, 0),
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -448,6 +451,7 @@ impl Render for Shell {
             0
         };
         let gap = self.theme.gap;
+        self.window_size = (width, height);
         let page = page_for(
             self.engine.num_decks(),
             (width, height),

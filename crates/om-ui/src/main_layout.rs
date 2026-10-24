@@ -42,6 +42,34 @@ pub const HEADER_HEIGHT_TALL: i32 = 40;
 /// Height of the header strip in a shorter window, in px.
 pub const HEADER_HEIGHT_SHORT: i32 = 36;
 
+/// Window width under which the library drops its Genre and Added columns and narrows the sidebar.
+pub const COMPACT_WINDOW_WIDTH: i32 = 1400;
+
+/// Sizes of the library browser's parts, in px (plan, Rect contract).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LibraryMetrics {
+    pub row_h: i32,
+    pub header_h: i32,
+    pub toolbar_h: i32,
+    pub sidebar_w: i32,
+}
+
+/// Library sizes for a window: rows 28 px (24 under 900 px tall), header 28, toolbar 36, sidebar
+/// 170 (160 under 1400 px wide). The plan's contract names only `window_h`; the sidebar rule needs
+/// the width too.
+pub fn library_metrics(window_w: i32, window_h: i32) -> LibraryMetrics {
+    LibraryMetrics {
+        row_h: if window_h < 900 { 24 } else { 28 },
+        header_h: 28,
+        toolbar_h: 36,
+        sidebar_w: if window_w < COMPACT_WINDOW_WIDTH {
+            160
+        } else {
+            170
+        },
+    }
+}
+
 /// The header strip's height for a window `window_h` px tall.
 pub fn header_height(window_h: i32) -> i32 {
     if window_h >= 900 {
@@ -876,6 +904,20 @@ mod tests {
         assert_eq!(page.area.w, 1620);
         assert!(page.cells.iter().all(|c| c.bounds.right() <= 1620));
         assert_eq!(page.header.bar.w, 1920, "the header spans the window");
+    }
+
+    #[test]
+    fn library_metrics_follow_the_window() {
+        let tall = library_metrics(1920, 1080);
+        assert_eq!(
+            (tall.row_h, tall.header_h, tall.toolbar_h, tall.sidebar_w),
+            (28, 28, 36, 170)
+        );
+        let small = library_metrics(1280, 720);
+        assert_eq!((small.row_h, small.sidebar_w), (24, 160));
+        assert_eq!(library_metrics(1280, 800).row_h, 24);
+        assert_eq!(library_metrics(1400, 900).row_h, 28);
+        assert_eq!(library_metrics(1400, 900).sidebar_w, 170);
     }
 
     #[test]
