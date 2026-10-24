@@ -1,28 +1,30 @@
-//! Crossfader slider with its curve selector (Linear / Power). Routes `mixer.crossfader` and
+//! Crossfader slider with its curve switch (Linear / Power). Routes `mixer.crossfader` and
 //! `mixer.crossfader.curve`; the selector mirrors the engine.
 
-use super::{px, CAPTION_HEIGHT};
 use crate::binding::{curve_from_index, curve_index, MixerBinding};
 use crate::control::Ranged;
-use crate::geometry::{place_captioned, Rect};
+use crate::geometry::Rect;
 use crate::theme::ThemeTokens;
 use om_core::param_id::MixerParam;
 use om_dsp::CrossfaderCurve;
 
-/// Curve buttons in display order: Linear, Power.
-pub const CURVE_LABELS: [&str; 2] = ["Linear", "Power"];
+/// The curve switch's labels, indexed like [`curve_index`]: Linear, Power.
+pub const CURVE_LABELS: [&str; 2] = ["LIN", "PWR"];
 pub const CURVE_TIPS: [&str; 2] = [
     "Straight blend between the two sides",
     "Constant-power blend: no volume dip in the middle",
 ];
+/// Height of the crossfader row (a primary control), in px.
+pub const CROSSFADER_HEIGHT: i32 = 44;
+/// Width of the curve switch beside the slider, in px.
+pub const CURVE_SWITCH_WIDTH: i32 = 48;
 
-/// Rectangles of the crossfader section.
+/// Rectangles of the crossfader section: the slider, and one switch that cycles the curve. The
+/// section carries no caption; the A and B ends are printed on the slider itself.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CrossfaderLayout {
-    pub caption: Rect,
-    pub curve_caption: Rect,
     pub slider: Rect,
-    pub curves: [Rect; 2],
+    pub curve: Rect,
 }
 
 pub struct CrossfaderSection {
@@ -73,46 +75,49 @@ impl CrossfaderSection {
         self.curve
     }
 
-    /// Narrower than this the curve buttons go under the slider instead of beside it.
-    pub const STACK_BELOW_WIDTH: i32 = 300;
+    /// The curve switch: moves to the other curve and mirrors the engine's answer.
+    pub fn curve_cycled(&mut self) -> Option<CrossfaderCurve> {
+        self.curve_pressed((self.curve + 1) % CURVE_LABELS.len())
+    }
 
-    /// Height the section needs at `width`: the slider row, plus a button row when stacked.
-    pub fn height_for(width: i32, theme: &ThemeTokens) -> i32 {
-        let base = px(theme.mixer_crossfader_height);
-        if width < Self::STACK_BELOW_WIDTH {
-            base + px(theme.mixer_button_height) + theme.inner_gap
-        } else {
-            base
+    /// Height the section needs: one row.
+    pub fn height_for(_width: i32, _theme: &ThemeTokens) -> i32 {
+        CROSSFADER_HEIGHT
+    }
+
+    /// Rectangles of the section for a `bounds` card.
+    pub fn layout(bounds: Rect, theme: &ThemeTokens) -> CrossfaderLayout {
+        let mut area = bounds.reduced(theme.pad, 0);
+        let curve = area.remove_right(CURVE_SWITCH_WIDTH.min(area.w / 3));
+        area.remove_right(theme.inner_gap.min(area.w));
+        CrossfaderLayout {
+            slider: area,
+            curve,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_layout_has_a_slider_and_a_curve_switch_side_by_side() {
+        let theme = ThemeTokens::builtin_dark();
+        for w in [200, 213, 320] {
+            let l = CrossfaderSection::layout(Rect::sized(w, CROSSFADER_HEIGHT), &theme);
+            assert!(
+                l.slider.w > l.curve.w,
+                "{w}: the slider is the main control"
+            );
+            assert!(!l.slider.intersects(&l.curve));
+            assert!(l.curve.h >= 32 && l.slider.h >= 32);
         }
     }
 
-    /// Rectangles of the section for a `bounds` card. Mirrors `CrossfaderSection::resized`.
-    pub fn layout(bounds: Rect, theme: &ThemeTokens) -> CrossfaderLayout {
-        if bounds.w < Self::STACK_BELOW_WIDTH {
-            let mut area = bounds.reduced(theme.pad, theme.pad - 4);
-            let mut segments = area.remove_bottom(px(theme.mixer_button_height));
-            area.remove_bottom(theme.inner_gap);
-            let first = segments.remove_left(segments.w / 2);
-            let (caption, slider) = place_captioned(area, CAPTION_HEIGHT);
-            return CrossfaderLayout {
-                caption,
-                curve_caption: Rect::default(),
-                slider,
-                curves: [first, segments],
-            };
-        }
-        let mut area = bounds.reduced(theme.pad, theme.pad - 4);
-        let mut right = area.remove_right(px(theme.mixer_curve_width));
-        let curve_caption = right.remove_top(CAPTION_HEIGHT);
-        let mut segments = right.remove_top(px(theme.mixer_button_height));
-        let first = segments.remove_left(segments.w / 2);
-        area.remove_right(theme.gap);
-        let (caption, slider) = place_captioned(area, CAPTION_HEIGHT);
-        CrossfaderLayout {
-            caption,
-            curve_caption,
-            slider,
-            curves: [first, segments],
-        }
+    #[test]
+    fn curve_labels_are_short_codes() {
+        assert_eq!(CURVE_LABELS.len(), CURVE_TIPS.len());
+        assert!(CURVE_LABELS.iter().all(|l| l.len() == 3));
     }
 }
