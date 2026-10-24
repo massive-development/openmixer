@@ -464,7 +464,7 @@ pub(crate) fn overview(
     };
     place(area)
         .overflow_hidden()
-        .bg(paint(t.well))
+        .bg(paint(om_ui::waveform::WAVE_WELL))
         .rounded(px(t.control_radius))
         .child(canvas_el)
         .on_mouse_down(
@@ -530,7 +530,7 @@ pub(crate) fn zoom(
 
     let mut el = place(area)
         .overflow_hidden()
-        .bg(paint(t.well))
+        .bg(paint(om_ui::waveform::WAVE_WELL))
         .rounded(px(t.control_radius))
         .child(strip);
 

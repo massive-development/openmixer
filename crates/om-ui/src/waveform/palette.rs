@@ -1,15 +1,18 @@
-//! Waveform colour: three fixed band hues (low red, mid green, high blue) blended per column in
+//! Waveform colour: three fixed band hues (low red, mid green, high blue; the role convention
+//! Serato documents, see docs/design/research/waveform.md section 2) blended per column in
 //! proportion to how much of the column's peak each band carries, so a colour always means the same
-//! thing. Dark themes blend additively and normalise by the largest channel, so the dominant band
-//! reads at full strength and mixed sections go yellow, cyan or pale; light themes take a weighted
-//! mean of darker hues. The palettes are checked against the strip's background (4.5:1).
+//! thing. The blend is additive and clamped (no normalisation, no lift toward white), so a
+//! dominant band keeps its saturated hue and mixed columns go yellow, cyan or white.
+//!
+//! The strip is dark in every theme ([`WAVE_WELL`], by the user's decision), so the additive blend
+//! never runs on a light ground. Palettes are checked against it (4.5:1).
 //!
 //! Painting can only afford a few distinct colours per strip (one path each), so the weights are
 //! quantised to a [`Key`] and the painter draws one shape per key ([`cap_keys`] limits how many).
 //! Pure: no painting. The values are local to the waveform and do not come from the theme.
 
 use super::Column;
-use crate::style::{contrast_ratio, over, relative_luminance};
+use crate::style::{contrast_ratio, relative_luminance};
 use crate::theme::{Colour, ThemeTokens};
 
 /// Which palette draws the waveform.
@@ -49,15 +52,11 @@ impl WaveStyle {
     }
 }
 
-// Band hues. Dark and daylight tables; the colour-blind set serves both (darkened on daylight).
+// Band hues (plan table, dark column).
 pub const DARK_LOW: Colour = Colour::from_argb(0xFFFF_3B3B);
 pub const DARK_MID: Colour = Colour::from_argb(0xFF35_E06A);
 pub const DARK_HIGH: Colour = Colour::from_argb(0xFF3D_8BFF);
 pub const DARK_SILHOUETTE: Colour = Colour::from_argb(0xFF8A_94A6);
-pub const LIGHT_LOW: Colour = Colour::from_argb(0xFFC6_2828);
-pub const LIGHT_MID: Colour = Colour::from_argb(0xFF1B_8F45);
-pub const LIGHT_HIGH: Colour = Colour::from_argb(0xFF1D_5FD1);
-pub const LIGHT_SILHOUETTE: Colour = Colour::from_argb(0xFF5B_6475);
 pub const SAFE_LOW: Colour = Colour::from_argb(0xFFE6_9F00);
 pub const SAFE_MID: Colour = Colour::from_argb(0xFFF0_E442);
 pub const SAFE_HIGH: Colour = Colour::from_argb(0xFF56_B4E9);
@@ -67,25 +66,22 @@ pub const MID_COLOUR: Colour = Colour::from_argb(0xFFFF_A726);
 pub const HIGH_COLOUR: Colour = Colour::from_argb(0xFFF5_F7FA);
 /// A waveform whose spectrum is not analysed yet is one neutral grey silhouette.
 pub const SILHOUETTE_COLOUR: Colour = DARK_SILHOUETTE;
-/// Mono: the band shows as a grey level (55%, 75%, 95%; plan table). The plan gives no separate
-/// daylight greys, so light strips use the same levels darkened by the contrast rule.
+/// Mono: the band shows as a grey level (55%, 75%, 95%; plan table).
 const MONO_LEVELS: [f32; 3] = [0.55, 0.75, 0.95];
 
 /// A column's weight for each band is `(band peak / peak)^WEIGHT_EXPONENT`: relative to the
 /// column, so its hue is about the balance of the spectrum and its height about the loudness.
 pub const WEIGHT_EXPONENT: f32 = 0.7;
-/// A column whose three weights all exceed this lerps toward white by [`WHITE_LERP`].
-pub const WHITE_THRESHOLD: f32 = 0.6;
-pub const WHITE_LERP: f32 = 0.15;
 /// A silent column keeps this share of the silhouette colour's brightness.
 pub const BRIGHTNESS_FLOOR: f32 = 0.35;
 /// Contrast of a band colour against the strip well (WCAG, for the body of the waveform).
 pub const BODY_CONTRAST: f32 = 4.5;
 /// Contrast of grid lines and the playhead.
 pub const LINE_CONTRAST: f32 = 3.0;
-/// A well at or above this relative luminance is a light strip (unsourced: the plan only says
-/// dark/light derive from the well luminance).
-const LIGHT_WELL_LUMINANCE: f32 = 0.5;
+/// The background of the overview and zoomed strips in every theme: the dark theme's well
+/// (resources/themes/openmixer-dark.json, `#07090D`). Kept dark in the light theme too (user
+/// decision), so the additive blend and white grid and playhead always have a dark ground.
+pub const WAVE_WELL: Colour = Colour::from_argb(0xFF07_090D);
 
 fn rgb(c: Colour) -> [f32; 3] {
     let a = c.argb();
@@ -123,15 +119,9 @@ pub fn ensure_contrast(c: Colour, background: Colour, ratio: f32) -> Colour {
     from_rgb(target)
 }
 
-/// The colour the strip is actually seen on: the theme's well over its surface over the backdrop
-/// (the wells of the light theme are translucent).
-pub fn strip_well(t: &ThemeTokens) -> Colour {
-    over(t.well, over(t.surface_scaled(), t.backdrop_bottom))
-}
-
-/// Whether `well` is a dark strip background.
-pub fn is_dark_well(well: Colour) -> bool {
-    relative_luminance(well) < LIGHT_WELL_LUMINANCE
+/// The colour the waveform strips are painted on: [`WAVE_WELL`] whatever the theme.
+pub fn strip_well(_theme: &ThemeTokens) -> Colour {
+    WAVE_WELL
 }
 
 /// The three weights of a column, each 0..=1, in low, mid, high order. All zero for a silent one.
@@ -146,7 +136,6 @@ pub fn weights(c: &Column) -> [f32; 3] {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Palette {
     pub style: WaveStyle,
-    pub dark: bool,
     pub well: Colour,
     pub low: Colour,
     pub mid: Colour,
@@ -158,27 +147,20 @@ impl Palette {
     /// The palette for `style` on a strip whose background is `well` (opaque). Every colour is
     /// brought to [`BODY_CONTRAST`] against it.
     pub fn new(style: WaveStyle, well: Colour) -> Self {
-        let dark = is_dark_well(well);
-        let (low, mid, high) = match (style, dark) {
-            (WaveStyle::Colour, true) => (DARK_LOW, DARK_MID, DARK_HIGH),
-            (WaveStyle::Colour, false) => (LIGHT_LOW, LIGHT_MID, LIGHT_HIGH),
-            (WaveStyle::ThreeBand, _) => (LOW_COLOUR, MID_COLOUR, HIGH_COLOUR),
-            (WaveStyle::ColourBlind, _) => (SAFE_LOW, SAFE_MID, SAFE_HIGH),
-            (WaveStyle::Mono, _) => (
+        let (low, mid, high) = match style {
+            WaveStyle::Colour => (DARK_LOW, DARK_MID, DARK_HIGH),
+            WaveStyle::ThreeBand => (LOW_COLOUR, MID_COLOUR, HIGH_COLOUR),
+            WaveStyle::ColourBlind => (SAFE_LOW, SAFE_MID, SAFE_HIGH),
+            WaveStyle::Mono => (
                 grey(MONO_LEVELS[0]),
                 grey(MONO_LEVELS[1]),
                 grey(MONO_LEVELS[2]),
             ),
         };
-        let silhouette = if dark {
-            DARK_SILHOUETTE
-        } else {
-            LIGHT_SILHOUETTE
-        };
+        let silhouette = DARK_SILHOUETTE;
         let fit = |c| ensure_contrast(c, well, BODY_CONTRAST);
         Self {
             style,
-            dark,
             well,
             low: fit(low),
             mid: fit(mid),
@@ -200,46 +182,27 @@ impl Palette {
             return self.at_floor(self.silhouette);
         }
         let bands = self.bands().map(rgb);
-        let mix = if self.dark && self.style != WaveStyle::Mono {
-            // Additive: sum the band colours, scale so the largest channel is 1, and pull full
-            // spectrum columns a little toward white.
-            let mut sum = [0.0f32; 3];
-            for (weight, band) in w.iter().zip(&bands) {
-                for (s, c) in sum.iter_mut().zip(band) {
-                    *s += weight * c;
-                }
-            }
-            let top = sum.iter().fold(f32::EPSILON, |m, v| m.max(*v));
-            let mut c = sum.map(|v| v / top);
-            if w.iter().all(|&v| v > WHITE_THRESHOLD) {
-                c = lerp(c, [1.0; 3], WHITE_LERP);
-            }
-            c
-        } else {
-            // Multiplicative (plan): 1 - sum(w_i * (1 - colour_i)), clamped; darkened to the
-            // contrast floor below. Mono keeps the same form on its greys.
-            let mut c = [1.0f32; 3];
-            for (weight, band) in w.iter().zip(&bands) {
-                for (s, v) in c.iter_mut().zip(band) {
-                    *s -= weight * (1.0 - v);
-                }
-            }
-            c.map(|v| v.max(0.0))
-        };
-        let colour = from_rgb(mix);
-        if self.dark {
-            colour
-        } else {
-            ensure_contrast(colour, self.well, BODY_CONTRAST)
+        if self.style == WaveStyle::Mono {
+            // Greys do not add up to white: a weighted mean keeps the band's shade.
+            let sharp = w.map(|v| v * v);
+            let norm: f32 = sharp.iter().sum();
+            let level: f32 = sharp.iter().zip(&bands).map(|(m, b)| m / norm * b[0]).sum();
+            return from_rgb([level; 3]);
         }
+        // Additive and clamped: the sum of the weighted band colours (Mixxx's rgbsignal.frag sums
+        // them too, then divides by the largest channel; that division is dropped here so the
+        // dominant band stays a saturated hue).
+        let mut sum = [0.0f32; 3];
+        for (weight, band) in w.iter().zip(&bands) {
+            for (s, c) in sum.iter_mut().zip(band) {
+                *s += weight * c;
+            }
+        }
+        from_rgb(sum)
     }
 
     fn at_floor(&self, c: Colour) -> Colour {
-        if self.dark {
-            from_rgb(rgb(c).map(|v| v * BRIGHTNESS_FLOOR))
-        } else {
-            from_rgb(lerp(rgb(c), rgb(self.well), 1.0 - BRIGHTNESS_FLOOR))
-        }
+        from_rgb(rgb(c).map(|v| v * BRIGHTNESS_FLOOR))
     }
 
     /// The colour a bucket is drawn with.
