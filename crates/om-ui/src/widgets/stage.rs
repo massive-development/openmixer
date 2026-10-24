@@ -9,9 +9,9 @@ use crate::theme::ThemeTokens;
 /// Decks the stage draws. Further decks keep a full card with their own zoomed waveform.
 pub const STAGE_DECKS: usize = 2;
 
-/// Header (title and artist lines), overview strip and smallest readable zoomed strip on the stage,
+/// Header (badge, title and artist, chips, BPM, key and the countdown), overview strip and smallest readable zoomed strip on the stage,
 /// in px. Tighter than a deck card's: the stage shares the window height with the controls.
-pub const STAGE_HEADER_HEIGHT: i32 = 46;
+pub const STAGE_HEADER_HEIGHT: i32 = super::deck_header::HEADER_HEIGHT;
 pub const STAGE_OVERVIEW_HEIGHT: i32 = 34;
 pub const STAGE_MIN_ZOOM_HEIGHT: i32 = 32;
 

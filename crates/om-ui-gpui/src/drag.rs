@@ -28,7 +28,7 @@ pub enum Target {
     FxParam(usize),
     /// A stem's volume slider (deck, stem).
     StemVolume(usize, usize),
-    /// A stem's filter knob (deck, stem).
+    /// A stem's filter slider, horizontal with a centre detent (deck, stem).
     StemFilter(usize, usize),
 }
 
@@ -42,7 +42,6 @@ impl Target {
                 | Target::Eq(..)
                 | Target::FxMix
                 | Target::FxParam(_)
-                | Target::StemFilter(..)
         )
     }
 }

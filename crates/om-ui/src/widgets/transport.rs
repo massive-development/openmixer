@@ -31,14 +31,29 @@ impl TransportButton {
         TransportButton::Slip,
     ];
 
+    /// The buttons of the always-visible transport row, in display order.
+    pub const PRIMARY: [TransportButton; 3] = [
+        TransportButton::Play,
+        TransportButton::Cue,
+        TransportButton::Sync,
+    ];
+
+    /// The toggles in the More drawer, in display order.
+    pub const SECONDARY: [TransportButton; 4] = [
+        TransportButton::Master,
+        TransportButton::KeyLock,
+        TransportButton::Quantize,
+        TransportButton::Slip,
+    ];
+
     pub const fn label(self) -> &'static str {
         match self {
             TransportButton::Play => "Play",
-            TransportButton::Cue => "Cue",
-            TransportButton::Sync => "Sync",
-            TransportButton::Master => "Mstr",
-            TransportButton::KeyLock => "Key",
-            TransportButton::Quantize => "Qnt",
+            TransportButton::Cue => "CUE",
+            TransportButton::Sync => "SYNC",
+            TransportButton::Master => "Master",
+            TransportButton::KeyLock => "Key lock",
+            TransportButton::Quantize => "Quantize",
             TransportButton::Slip => "Slip",
         }
     }
@@ -131,6 +146,11 @@ impl TransportPanel {
         TransportButton::ALL.map(|b| b.is_toggle() && lit(b, &state))
     }
 
+    /// Whether one button is lit, from a single engine read.
+    pub fn is_lit(&self, button: TransportButton) -> bool {
+        button.is_toggle() && self.state(button)
+    }
+
     /// Play reads "Pause" while the deck plays.
     pub fn play_label(&self) -> &'static str {
         if self.binding.state().playing {
@@ -140,15 +160,26 @@ impl TransportPanel {
         }
     }
 
-    /// Seven equal cells across `area`, with half an inner gap between them.
-    pub fn layout(area: Rect, inner_gap: i32) -> [Rect; 7] {
+    /// The primary row: Play takes twice the width of Cue and Sync, `gap` between the cells.
+    pub fn layout(area: Rect, gap: i32) -> [Rect; 3] {
         let mut area = area;
-        let half = inner_gap / 2;
-        let cell = (area.w - half * 6) / 7;
-        TransportButton::ALL.map(|_| {
-            let r = area.remove_left(cell);
-            area.remove_left(half);
-            r
+        let unit = (area.w - gap * 2) / 4;
+        let play = area.remove_left(unit * 2);
+        area.remove_left(gap);
+        let cue = area.remove_left(unit);
+        area.remove_left(gap);
+        [play, cue, area]
+    }
+
+    /// The More drawer: six cells in two columns and three rows, each 32 px or taller (up to 44
+    /// when the area allows). Master, key lock, quantize and slip use the first four; the gpui layer
+    /// puts the stems on/off toggle in the fifth.
+    pub fn secondary_layout(area: Rect, gap: i32) -> [Rect; 6] {
+        let w = (area.w - gap) / 2;
+        let h = ((area.h - gap * 2) / 3).clamp(0, 44);
+        std::array::from_fn(|i| {
+            let (row, col) = ((i / 2) as i32, (i % 2) as i32);
+            Rect::new(area.x + col * (w + gap), area.y + row * (h + gap), w, h)
         })
     }
 }
