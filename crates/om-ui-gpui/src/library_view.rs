@@ -1,5 +1,7 @@
-//! The library browser in the bottom area: the sidebar tree, the search box, the "Load to deck"
-//! buttons, the sortable track table with the Camelot tint, and the drag source for rows. Every
+//! The library browser in the bottom area: the sidebar tree, the search box, the Analyse and Stems
+//! buttons, the sortable track table with the Camelot tint, and the drag source for rows. A track
+//! loads by dragging its row onto a deck or by double-clicking it (into the suggested deck), so
+//! there are no per-deck load buttons. Every
 //! click and key calls [`LibraryPanel`], which owns the behaviour; this file only draws it.
 //!
 //! The table is virtualised by hand: [`LibraryPanel::table_top`] and [`LibraryPanel::visible_rows`]
@@ -19,11 +21,11 @@ use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::ThemeTokens;
 
 /// Height of one table row and one sidebar line.
-pub const ROW_HEIGHT: f32 = 18.0;
+pub const ROW_HEIGHT: f32 = 20.0;
 /// Width of the sidebar tree.
 const SIDEBAR_WIDTH: f32 = 170.0;
 /// Height of the toolbar (search box and buttons).
-const TOOLBAR_HEIGHT: f32 = 26.0;
+const TOOLBAR_HEIGHT: f32 = 34.0;
 /// Height of the table's column header.
 const HEADER_HEIGHT: f32 = 18.0;
 /// Inner padding of the library card.
@@ -69,7 +71,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .border_color(paint(t.border))
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary))
-        .text_size(px(t.type_small))
+        .text_size(px(t.type_caption.max(12.0)))
         .overflow_hidden()
         .track_focus(&focus)
         .on_mouse_down(
@@ -117,7 +119,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     let search_active = panel.search_active || name_prompt.is_some();
     let status = panel.browser.status().to_owned();
     let status_error = panel.browser.status_is_error();
-    let num_decks = panel.browser.num_decks();
+    let stems_running = panel.stems_in_flight() > 0;
     let sort = panel.sort_indicator();
 
     // Sidebar tree.
@@ -203,7 +205,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     };
     let search_box = div()
         .flex_1()
-        .h(px(TOOLBAR_HEIGHT - 6.))
+        .h(px(TOOLBAR_HEIGHT - 4.))
         .px(px(6.))
         .flex()
         .items_center()
@@ -242,21 +244,18 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .items_center()
         .gap(px(4.))
         .child(search_box);
-    for deck in 0..num_decks {
-        let label = format!("Load to {}", (b'A' + deck as u8) as char);
-        toolbar = toolbar.child(action_button(&t, &label, cx, move |p| {
-            p.load_selected(deck)
-        }));
-    }
     toolbar = toolbar.child(action_button(&t, "Analyse", cx, |p| {
         p.prep_selected();
     }));
-    toolbar = toolbar.child(action_button(&t, "Prepare stems", cx, |p| {
+    toolbar = toolbar.child(action_button(&t, "Stems", cx, |p| {
         p.prepare_stems();
     }));
-    toolbar = toolbar.child(action_button(&t, "Cancel stems", cx, |p| {
-        p.cancel_stems_selected();
-    }));
+    // Cancel is only worth a button while stem jobs are queued or running.
+    if stems_running {
+        toolbar = toolbar.child(action_button(&t, "Cancel stems", cx, |p| {
+            p.cancel_stems_selected();
+        }));
+    }
 
     let status_colour = if status_error {
         t.highlight
@@ -424,8 +423,8 @@ fn action_button(
     on_press: impl Fn(&mut LibraryPanel) + 'static,
 ) -> Div {
     div()
-        .h(px(TOOLBAR_HEIGHT - 6.))
-        .px(px(8.))
+        .h(px(TOOLBAR_HEIGHT - 4.))
+        .px(px(10.))
         .flex()
         .items_center()
         .flex_none()

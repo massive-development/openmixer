@@ -46,7 +46,7 @@ mod tests {
     fn a_small_display_shrinks_the_default_but_not_below_the_minimum() {
         assert_eq!(initial_size(None, Some((1440.0, 900.0))), (1296.0, 810.0));
         let (w, h) = initial_size(None, Some((1024.0, 600.0)));
-        assert_eq!((w, h), (1024.0, 640.0));
+        assert_eq!((w, h), (1280.0, 720.0));
     }
 
     #[test]

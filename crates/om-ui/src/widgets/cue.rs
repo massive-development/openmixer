@@ -4,17 +4,22 @@
 use super::CAPTION_HEIGHT;
 use crate::binding::MixerBinding;
 use crate::control::Ranged;
-use crate::geometry::{place_captioned, Rect};
+use crate::geometry::Rect;
 use crate::theme::ThemeTokens;
 use om_core::param_id::MixerParam;
 use om_engine::mixer::MAX_GAIN;
 
-/// Rectangles of the cue section.
+/// Height of the phones row: the PHONES caption and a 32 px slider row, in px.
+pub const CUE_HEIGHT: i32 = CAPTION_HEIGHT + 32;
+/// Short names printed inside the two sliders.
+pub const MIX_LABEL: &str = "MIX";
+pub const LEVEL_LABEL: &str = "VOL";
+
+/// Rectangles of the cue section: one PHONES caption over the blend and level sliders.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CueLayout {
-    pub mix_caption: Rect,
+    pub caption: Rect,
     pub mix: Rect,
-    pub level_caption: Rect,
     pub level: Rect,
 }
 
@@ -59,16 +64,29 @@ impl CueSection {
     }
 
     pub fn layout(bounds: Rect, theme: &ThemeTokens) -> CueLayout {
-        let mut area = bounds.reduced(theme.pad, theme.pad - 4);
-        let half = (area.w - theme.gap) / 2;
-        let (mix_caption, mix) = place_captioned(area.remove_left(half), CAPTION_HEIGHT);
-        area.remove_left(theme.gap);
-        let (level_caption, level) = place_captioned(area, CAPTION_HEIGHT);
+        let mut area = bounds.reduced(theme.pad, 0);
+        let caption = area.remove_top(CAPTION_HEIGHT);
+        let half = (area.w - theme.inner_gap) / 2;
+        let mix = area.remove_left(half);
+        area.remove_left(theme.inner_gap);
         CueLayout {
-            mix_caption,
+            caption,
             mix,
-            level_caption,
-            level,
+            level: area,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn two_sliders_share_the_row_under_one_caption() {
+        let theme = ThemeTokens::builtin_dark();
+        let l = CueSection::layout(Rect::sized(213, CUE_HEIGHT), &theme);
+        assert!(l.caption.bottom() <= l.mix.y);
+        assert!(!l.mix.intersects(&l.level));
+        assert!(l.mix.h >= 32 && l.level.h >= 32);
     }
 }

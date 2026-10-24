@@ -90,10 +90,10 @@ impl Readout {
                 if value <= 0.0 {
                     "-inf".to_owned()
                 } else {
-                    format!("{} dB", format::round_half_away(20.0 * value.log10()))
+                    format::whole_decibels(20.0 * value.log10())
                 }
             }
-            Readout::Decibels => format!("{} dB", format::round_half_away(value)),
+            Readout::Decibels => format::eq_band(value),
             Readout::Filter => format::filter(value),
             Readout::Percent => format!("{}%", format::round_half_away(value * 100.0)),
             Readout::Whole => format!("{}", format::round_half_away(value)),
@@ -103,12 +103,18 @@ impl Readout {
     }
 }
 
-/// A labelled knob: a ranged value plus how it reads.
+/// Share of a knob's range, each side of its detent, within which a drag sticks to the detent.
+pub const DETENT_FRACTION: f64 = 0.03;
+
+/// A labelled knob: a ranged value plus how it reads. A knob whose default is meaningful (0 dB,
+/// filter off) has a centre detent there: dragging through it sticks, and the knob reads "at rest".
 #[derive(Debug, Clone, PartialEq)]
 pub struct Knob {
     pub label: String,
     pub readout: Readout,
     pub range: Ranged,
+    /// The value a drag sticks to, when the knob has one.
+    pub detent: Option<f64>,
 }
 
 impl Knob {
@@ -123,7 +129,31 @@ impl Knob {
             label: label.into(),
             readout,
             range: Ranged::new(min, max, 0.0, default),
+            detent: None,
         }
+    }
+
+    /// The same knob with its detent at its default value.
+    pub fn with_detent(mut self) -> Self {
+        self.detent = Some(self.range.default);
+        self
+    }
+
+    /// `value` with the detent applied: within [`DETENT_FRACTION`] of the range on either side of
+    /// the detent it becomes the detent itself. Knobs without a detent return `value` unchanged.
+    pub fn snap_to_detent(&self, value: f64) -> f64 {
+        match self.detent {
+            Some(d) if (value - d).abs() <= DETENT_FRACTION * (self.range.max - self.range.min) => {
+                d
+            }
+            _ => value,
+        }
+    }
+
+    /// True when the knob sits on its detent (or, with none, its default).
+    pub fn at_rest(&self) -> bool {
+        let rest = self.detent.unwrap_or(self.range.default);
+        (self.value() - rest).abs() < 1e-6
     }
 
     pub fn value(&self) -> f64 {
@@ -157,6 +187,26 @@ mod tests {
     }
 
     #[test]
+    fn a_detent_sticks_within_three_percent_of_the_range() {
+        let eq = Knob::new("HI", Readout::Decibels, -48.0, 6.0, 0.0).with_detent();
+        assert_eq!(eq.detent, Some(0.0));
+        assert_eq!(eq.snap_to_detent(1.2), 0.0, "1.2 dB is inside 3% of 54 dB");
+        assert_eq!(eq.snap_to_detent(-1.5), 0.0);
+        assert_eq!(eq.snap_to_detent(2.0), 2.0, "outside the pull");
+        assert_eq!(eq.snap_to_detent(-30.0), -30.0);
+        let free = Knob::new("X", Readout::Whole, 0.0, 10.0, 5.0);
+        assert_eq!(free.snap_to_detent(5.1), 5.1, "no detent, no pull");
+    }
+
+    #[test]
+    fn a_knob_is_at_rest_on_its_default() {
+        let mut k = Knob::new("FILTER", Readout::Filter, -1.0, 1.0, 0.0).with_detent();
+        assert!(k.at_rest());
+        k.set_quiet(0.4);
+        assert!(!k.at_rest());
+    }
+
+    #[test]
     fn narrowing_the_range_refits_the_value() {
         let mut r = Ranged::new(0.0, 2.0, 0.001, 1.0);
         r.set(1.4);
@@ -167,7 +217,10 @@ mod tests {
     #[test]
     fn readouts_match_the_value_formats() {
         assert_eq!(Readout::Gain.text(0.0), "-inf");
-        assert_eq!(Readout::Gain.text(2.0), "6 dB");
+        assert_eq!(Readout::Gain.text(2.0), "+6 dB");
+        assert_eq!(Readout::Gain.text(1.0), "0 dB");
+        assert_eq!(Readout::Decibels.text(-12.4), "-12 dB");
+        assert_eq!(Readout::Decibels.text(-48.0), "KILL");
         assert_eq!(Readout::Percent.text(0.35), "35%");
         assert_eq!(Readout::Fixed2.text(0.5), "0.50");
         assert_eq!(Readout::Whole.text(120.4), "120");

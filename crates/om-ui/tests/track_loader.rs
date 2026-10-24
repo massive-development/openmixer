@@ -12,7 +12,7 @@ use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
 use om_testing::wait::{wait_until, DEFAULT_POLL};
 use om_ui::library::{LibraryServices, LoadError, TrackLoader};
-use om_ui::widgets::deck::format_key;
+use om_ui::widgets::deck_header::{format_key, KeyNotation};
 
 struct LoaderRig {
     dir: tempfile::TempDir,
@@ -102,7 +102,7 @@ fn loads_the_file_into_the_deck_and_shows_metadata() {
     let info = rig.loader.track_info(0);
     assert_eq!(info.title, "one.wav");
     assert_eq!(info.artist, "Artist");
-    assert!(format_key(&info).contains("8A"));
+    assert!(format_key(&info, KeyNotation::Camelot) == "8A");
     assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(id));
     assert!(rig.loader.loaded_track(1).is_none());
 }

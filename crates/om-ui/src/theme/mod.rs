@@ -12,4 +12,6 @@ pub use json::{
 pub use registry::{
     default_user_directory, session_theme_override, Entry, Source, ThemeRegistry, UserLoad,
 };
-pub use tokens::{builtin_wave_stops, Colour, ThemeTokens, WaveStop};
+pub use tokens::{
+    builtin_wave_stops, Colour, ThemeTokens, WaveStop, DEFAULT_FONT_FAMILY, SPACE_SCALE,
+};

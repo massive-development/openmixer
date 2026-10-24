@@ -19,6 +19,20 @@ use crate::binding::{deliver, DeckBinding};
 /// Stem names as the pads show them, in stem index order (the cache writes the same order).
 pub const STEM_NAMES: [&str; STEM_COUNT] = ["Drums", "Bass", "Vocals", "Other"];
 
+/// Half-width of the filter's centre detent: a position this close to 0 snaps to exactly 0 (no
+/// filtering), so the neutral point is easy to find by hand.
+pub const FILTER_DETENT: f64 = 0.06;
+
+/// A filter position clamped to -1..=1 with the centre detent applied.
+pub fn filter_detent(position: f64) -> f64 {
+    let p = position.clamp(-1.0, 1.0);
+    if p.abs() < FILTER_DETENT {
+        0.0
+    } else {
+        p
+    }
+}
+
 /// Upper end of the volume range (linear gain).
 pub const MAX_VOLUME: f64 = 1.5;
 
@@ -231,7 +245,7 @@ impl StemBinding {
 
     /// Sets the sweep filter of one stem, clamped to -1 (low-pass) .. +1 (high-pass).
     pub fn set_filter(&self, stem: usize, position: f64) -> bool {
-        self.send(stem, StemParam::Filter, position.clamp(-1.0, 1.0))
+        self.send(stem, StemParam::Filter, filter_detent(position))
     }
 
     /// Presses solo on `stem`: it plays alone, the others are muted; pressing it again restores the
@@ -288,6 +302,15 @@ fn flag(on: bool) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_filter_snaps_to_neutral_near_the_centre_only() {
+        assert_eq!(filter_detent(0.05), 0.0);
+        assert_eq!(filter_detent(-0.05), 0.0);
+        assert_eq!(filter_detent(0.07), 0.07);
+        assert_eq!(filter_detent(3.0), 1.0);
+        assert_eq!(filter_detent(-3.0), -1.0);
+    }
 
     #[test]
     fn solo_mutes_the_others_and_restores_them_on_the_second_press() {

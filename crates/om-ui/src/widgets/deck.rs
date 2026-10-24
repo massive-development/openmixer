@@ -1,8 +1,12 @@
 //! One deck: track header, overview and zoomed waveforms, and the composition of the deck card.
 //! Models only; drawing and drag-and-drop are the gpui layer's job. State and geometry only.
 
+use super::deck_header::{self, KeyNotation};
 use super::{
-    hotcues::HotcuePads, loops::LoopControls, pitch::PitchFader, px, stem_pads,
+    hotcues::HotcuePads,
+    loops::{LoopControls, LoopFrame},
+    pitch::PitchFader,
+    px,
     transport::TransportPanel,
 };
 use crate::binding::DeckBinding;
@@ -45,30 +49,32 @@ pub fn format_bpm(bpm: f64) -> String {
     }
 }
 
-/// Musical key and Camelot code, separated by two spaces; whichever is empty is left out.
-pub fn format_key(info: &TrackInfo) -> String {
-    [info.key.as_str(), info.camelot.as_str()]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("  ")
-}
-
 /// Text of every header label at one moment.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeaderText {
+    /// A, B, C, ...: the deck's identity that does not rely on colour.
+    pub letter: char,
     pub title: String,
     pub artist: String,
+    /// One notation only, see [`KeyNotation`].
     pub key: String,
     pub bpm: String,
     pub elapsed: String,
+    /// Time left with its minus sign.
     pub remaining: String,
+    /// The countdown is under the warning threshold (drawn red).
+    pub remaining_warn: bool,
+    pub sync: bool,
+    pub master: bool,
+    /// Length of the active loop (`1/4`, `8`); `None` while not looping.
+    pub loop_label: Option<String>,
 }
 
 #[derive(Clone)]
 pub struct TrackHeader {
     binding: DeckBinding,
     info: TrackInfo,
+    key_notation: KeyNotation,
 }
 
 impl TrackHeader {
@@ -76,7 +82,13 @@ impl TrackHeader {
         Self {
             binding,
             info: TrackInfo::default(),
+            key_notation: KeyNotation::default(),
         }
+    }
+
+    /// Chooses the key spelling the header shows.
+    pub fn set_key_notation(&mut self, notation: KeyNotation) {
+        self.key_notation = notation;
     }
 
     pub fn set_track(&mut self, info: TrackInfo) {
@@ -104,17 +116,25 @@ impl TrackHeader {
         } else {
             (0.0, 0.0)
         };
+        let loop_frame = LoopFrame::from_state(&deck, self.binding.control().grid().as_deref());
+        let loop_label = (deck.looping && loop_frame.length_beats > 0.0)
+            .then(|| deck_header::loop_label(loop_frame.length_beats));
         HeaderText {
+            letter: deck_header::deck_letter(self.binding.index),
             title: if self.info.title.is_empty() {
                 "No track loaded".to_owned()
             } else {
                 self.info.title.clone()
             },
             artist: self.info.artist.clone(),
-            key: format_key(&self.info),
+            key: deck_header::format_key(&self.info, self.key_notation),
             bpm: format_bpm(self.effective_bpm()),
             elapsed: format_time(position, false),
             remaining: format_time(length - position, true),
+            remaining_warn: deck_header::remaining_warning(length - position, length),
+            sync: deck.sync,
+            master: deck.sync_master,
+            loop_label,
         }
     }
 }
@@ -142,6 +162,33 @@ impl OverviewWaveform {
         let deck = self.binding.state();
         waveform::frame_to_x(deck.position_frames, deck.length_frames, width)
     }
+
+    /// Playhead, hot cues, loop and bar ticks across a strip `width` px wide, from one deck
+    /// state.
+    pub fn markers(&self, width: f64) -> waveform::OverviewMarkers {
+        let deck = self.binding.state();
+        let x = |frame: i64| waveform::frame_to_x(frame, deck.length_frames, width);
+        let cues = deck
+            .hotcues
+            .iter()
+            .enumerate()
+            .filter_map(|(i, cue)| cue.map(|f| (x(f), waveform::cue_colour(i))))
+            .collect();
+        let bar_ticks = self
+            .binding
+            .control()
+            .grid()
+            .map(|g| waveform::overview_bar_ticks(g.as_ref(), deck.length_frames, width))
+            .unwrap_or_default();
+        waveform::OverviewMarkers {
+            playhead_x: x(deck.position_frames),
+            cues,
+            loop_span: deck
+                .loop_valid()
+                .then(|| (x(deck.loop_start), x(deck.loop_end), deck.looping)),
+            bar_ticks,
+        }
+    }
 }
 
 /// What the zoomed view needs from a loaded waveform: the sample rate it was analysed at.
@@ -165,19 +212,22 @@ pub struct ZoomShown {
 pub struct GridLine {
     pub x: i32,
     pub bar: bool,
+    /// Bar number to print at this line (bars count from 1); only on bars with room for a label.
+    pub bar_number: Option<i64>,
 }
 
 /// Thinner than this and the beat lines turn to noise: only bars are drawn.
-pub const MIN_GRID_SPACING_PX: f32 = 6.0;
+pub const MIN_GRID_SPACING_PX: f32 = 8.0;
 
 /// The zoomed waveform: a view centred on the playhead, with a cached strip that is only redrawn when
 /// the view leaves its margin or the scale, size or waveform changes.
 pub struct ZoomWaveform {
     binding: DeckBinding,
     waveform: Option<WaveformMeta>,
-    frames_per_pixel: f64,
+    zoom_step: usize,
     cache: Option<StripCache>,
     shown: Option<ZoomShown>,
+    clock: waveform::PlayheadClock,
     /// Repaints requested by [`ZoomWaveform::refresh`] (state changes only).
     pub repaint_requests: u64,
     /// Strips rendered into the cache.
@@ -189,36 +239,37 @@ impl ZoomWaveform {
         Self {
             binding,
             waveform: None,
-            frames_per_pixel: 256.0,
+            zoom_step: waveform::DEFAULT_ZOOM_STEP,
             cache: None,
             shown: None,
+            clock: waveform::PlayheadClock::default(),
             repaint_requests: 0,
             cache_renders: 0,
         }
     }
 
-    pub fn frames_per_pixel(&self) -> f64 {
-        self.frames_per_pixel
+    /// Index into [`waveform::ZOOM_SECONDS`].
+    pub fn zoom_step(&self) -> usize {
+        self.zoom_step
     }
 
-    /// Sets the scale, clamped to the supported range.
-    pub fn set_frames_per_pixel(&mut self, frames_per_pixel: f64) {
-        self.frames_per_pixel = waveform::clamp_zoom(frames_per_pixel);
+    /// Seconds of track across the strip at the current step.
+    pub fn zoom_seconds(&self) -> f64 {
+        waveform::seconds_at(self.zoom_step)
+    }
+
+    /// Sets the zoom step (clamped). The caller applies the same step to every deck so they share
+    /// one time scale.
+    pub fn set_zoom_step(&mut self, step: usize) {
+        self.zoom_step = waveform::clamp_step(step);
         self.cache = None;
     }
 
-    pub fn zoom_by(&mut self, factor: f64) {
-        self.set_frames_per_pixel(self.frames_per_pixel * factor);
-    }
-
-    /// Mouse wheel: scrolling down zooms in, up zooms out, one notch per step.
-    pub fn wheel(&mut self, delta_y: f32) {
-        let factor = if delta_y > 0.0 {
-            1.0 / waveform::WHEEL_ZOOM_STEP
-        } else {
-            waveform::WHEEL_ZOOM_STEP
-        };
-        self.zoom_by(factor);
+    /// Mouse wheel: scrolling down zooms in, up zooms out, one step per notch. Returns the new
+    /// step.
+    pub fn wheel(&mut self, delta_y: f32) -> usize {
+        self.set_zoom_step(waveform::step_after_wheel(self.zoom_step, delta_y));
+        self.zoom_step
     }
 
     /// Replaces the loaded waveform (or drops it). Invalidates the strip.
@@ -227,11 +278,37 @@ impl ZoomWaveform {
         self.cache = None;
     }
 
+    /// Advances the smoothed playhead to `now` (seconds on a monotonic clock). Call once per frame,
+    /// before the view is built.
+    pub fn advance_playhead(&mut self, now: f64) {
+        let deck = self.binding.state();
+        let fps = deck.rate * deck.file_sample_rate;
+        self.clock
+            .advance(deck.position_frames, now, deck.playing, fps);
+    }
+
+    /// The playhead frame the zoomed view is centred on: smoothed once [`advance_playhead`] has
+    /// run, else the engine's published position.
+    ///
+    /// [`advance_playhead`]: ZoomWaveform::advance_playhead
+    pub fn playhead_frame(&self) -> i64 {
+        match self.clock.current() {
+            Some(frame) => frame.round() as i64,
+            None => self.binding.state().position_frames,
+        }
+    }
+
     /// The view for a widget `width` px wide, centred on the playhead.
     pub fn view(&self, width: f64) -> View {
+        let deck = self.binding.state();
+        let rate = if deck.file_sample_rate > 0.0 {
+            deck.file_sample_rate
+        } else {
+            self.waveform.map_or(0.0, |w| w.sample_rate)
+        };
         View {
-            centre_frame: self.binding.state().position_frames,
-            frames_per_pixel: self.frames_per_pixel,
+            centre_frame: self.playhead_frame(),
+            frames_per_pixel: waveform::frames_per_pixel(self.zoom_seconds(), rate, width),
             width,
         }
     }
@@ -291,15 +368,28 @@ impl ZoomWaveform {
         grid_lines_for(grid.as_ref(), view)
     }
 
-    /// Loop span in pixels, when a loop is set.
-    pub fn loop_span(&self, view: &View) -> Option<(f64, f64, bool)> {
+    /// The loop in pixels, when one is set, with its length in beats when the deck has a grid.
+    pub fn loop_region(&self, view: &View) -> Option<waveform::LoopRegion> {
         let deck = self.binding.state();
         deck.loop_valid().then(|| {
-            (
-                view.x_of_frame(deck.loop_start),
-                view.x_of_frame(deck.loop_end),
-                deck.looping,
-            )
+            let label = self
+                .binding
+                .control()
+                .grid()
+                .map(|g| {
+                    waveform::loop_label(waveform::loop_beats(
+                        g.as_ref(),
+                        deck.loop_start,
+                        deck.loop_end,
+                    ))
+                })
+                .unwrap_or_default();
+            waveform::LoopRegion {
+                x0: view.x_of_frame(deck.loop_start),
+                x1: view.x_of_frame(deck.loop_end),
+                looping: deck.looping,
+                label,
+            }
         })
     }
 
@@ -318,15 +408,22 @@ pub fn grid_lines_for(grid: &dyn BeatGrid, view: &View) -> Vec<GridLine> {
     let beat_px =
         (grid.frame_at_beat(1.0) - grid.frame_at_beat(0.0)) as f32 / view.frames_per_pixel as f32;
     let bars_only = beat_px.abs() < MIN_GRID_SPACING_PX;
+    let label_step = waveform::bar_label_step(beat_px * per_bar as f32);
     let mut lines = Vec::new();
     let mut beat = first;
     while beat <= last {
         let bar = (beat.round() as i64).rem_euclid(per_bar) == 0;
         if !bars_only || bar {
             let x = view.x_of_frame(grid.frame_at_beat(beat));
+            let bar_number = if bar {
+                waveform::bar_number(beat, per_bar).filter(|n| (n - 1) % label_step == 0)
+            } else {
+                None
+            };
             lines.push(GridLine {
                 x: x.round() as i32,
                 bar,
+                bar_number,
             });
         }
         beat += 1.0;
@@ -346,7 +443,10 @@ pub struct DeckLayout {
     pub hotcues: Rect,
     pub loops: Rect,
     pub transport: Rect,
-    /// The stem pads row, full width under the pitch column and the loops.
+    /// Tab strip under the drawer: Cues / Stems / More.
+    pub tabs: Rect,
+    /// The stems drawer. Only set while [`PadMode::Stems`] is open, then it takes the place of
+    /// the hotcue pads and the loop row.
     pub stems: Rect,
 }
 
@@ -362,55 +462,131 @@ impl DeckLayout {
             hotcues: Rect::default(),
             loops: Rect::default(),
             transport: Rect::default(),
+            tabs: Rect::default(),
             stems: Rect::default(),
         }
     }
 }
 
-/// The deck card of a stage deck: no header, overview or zoomed waveform (the stage above draws
-/// those), only the controls, from the top: transport, hotcues, loops, with the pitch column on the
-/// right and the stems row along the bottom.
+// Deck control metrics (px), local until they move into theme tokens. Touch-size floors: the
+// transport and the hotcue pads are at least 44 px, every other clickable at least 32 px.
+// Gap 6 = inner gap 8 / (4/3); the 4 px stem row gap is the half-step below it.
+pub const TRANSPORT_HEIGHT: i32 = 44;
+pub const CUE_PAD_MIN: i32 = 44;
+pub const CUE_PAD_MAX: i32 = 56;
+pub const LOOP_ROW_HEIGHT: i32 = 36;
+pub const TAB_HEIGHT: i32 = 32;
+pub const STEM_ROW_HEIGHT: i32 = 32;
+pub const STEM_ROW_GAP: i32 = 4;
+pub const CONTROL_GAP: i32 = 6;
+pub const PITCH_WIDTH: i32 = 64;
+/// Height of the controls column in its default (Cues) mode: transport, two pad rows, loop row and
+/// tab strip with the gaps between them.
+pub const CONTROLS_HEIGHT: i32 =
+    TRANSPORT_HEIGHT + CUE_PAD_MIN * 2 + LOOP_ROW_HEIGHT + TAB_HEIGHT + CONTROL_GAP * 5;
+
+/// What the drawer under the transport shows. The default is the hotcue pads; the others are one
+/// tap away, so a deck is one row of essentials until the DJ asks for more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PadMode {
+    #[default]
+    Cues,
+    Stems,
+    /// Master, key lock, quantize and slip.
+    More,
+}
+
+impl PadMode {
+    pub const ALL: [PadMode; 3] = [PadMode::Cues, PadMode::Stems, PadMode::More];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            PadMode::Cues => "CUES",
+            PadMode::Stems => "STEMS",
+            PadMode::More => "MORE",
+        }
+    }
+
+    pub const fn tooltip(self) -> &'static str {
+        match self {
+            PadMode::Cues => "Hotcue pads",
+            PadMode::Stems => "Stem mute, solo, volume and filter",
+            PadMode::More => "Master, key lock, quantize and slip",
+        }
+    }
+}
+
+/// Equal cells across the tab strip.
+pub fn tab_rects(tabs: Rect) -> [Rect; 3] {
+    let mut area = tabs;
+    let cell = (area.w - CONTROL_GAP * 2) / 3;
+    std::array::from_fn(|_| {
+        let r = area.remove_left(cell);
+        area.remove_left(CONTROL_GAP);
+        r
+    })
+}
+
+/// The controls column inside `area`: transport on top, the tab strip at the bottom, between them
+/// the drawer. In [`PadMode::Stems`] the drawer is the stems; otherwise it is the pads (hotcues or
+/// the More toggles) over the loop row.
+fn controls_in(mut area: Rect, mode: PadMode) -> DeckLayout {
+    let transport = area.remove_top(TRANSPORT_HEIGHT);
+    area.remove_top(CONTROL_GAP);
+    let tabs = area.remove_bottom(TAB_HEIGHT);
+    area.remove_bottom(CONTROL_GAP);
+    if mode == PadMode::Stems {
+        return DeckLayout {
+            transport,
+            tabs,
+            stems: area,
+            ..DeckLayout::empty()
+        };
+    }
+    let loops = area.remove_bottom(LOOP_ROW_HEIGHT);
+    area.remove_bottom(CONTROL_GAP);
+    DeckLayout {
+        transport,
+        tabs,
+        loops,
+        hotcues: area,
+        ..DeckLayout::empty()
+    }
+}
+
+/// The deck card of a stage deck in its default mode; see [`deck_controls_layout_for`].
 pub fn deck_controls_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
-    let gap = theme.inner_gap;
+    deck_controls_layout_for(bounds, theme, PadMode::Cues)
+}
+
+/// The deck card of a stage deck: no header, overview or zoomed waveform (the stage above draws
+/// those), only the controls: the transport on top, the drawer for `mode` under it and the tab
+/// strip at the bottom, with the pitch column on the right.
+pub fn deck_controls_layout_for(bounds: Rect, theme: &ThemeTokens, mode: PadMode) -> DeckLayout {
     let mut area = bounds.reduced(theme.pad, theme.pad);
-    let stems = area.remove_bottom(stem_pads::stems_row_height(theme));
-    area.remove_bottom(gap);
-    let pitch = area.remove_right(px(theme.deck_pitch_width));
-    area.remove_right(gap);
-    let row = px(theme.deck_row_height);
-    let transport = area.remove_top(px(theme.deck_transport_height));
-    area.remove_top(gap);
-    let hotcues = area.remove_top(row);
-    area.remove_top(gap);
-    let loops = area.remove_top(row * 2 + gap);
+    let pitch = area.remove_right(PITCH_WIDTH);
+    area.remove_right(theme.inner_gap);
     DeckLayout {
         pitch,
-        hotcues,
-        loops,
-        transport,
-        stems,
-        ..DeckLayout::empty()
+        ..controls_in(area, mode)
     }
 }
 
 /// Places the deck card's parts inside `bounds` (the card itself). Mirrors `DeckWidget::resized`.
 pub fn deck_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
+    deck_layout_for(bounds, theme, PadMode::Cues)
+}
+
+/// [`deck_layout`] with the drawer for `mode`.
+pub fn deck_layout_for(bounds: Rect, theme: &ThemeTokens, mode: PadMode) -> DeckLayout {
     let gap = theme.inner_gap;
     let mut area = bounds.reduced(theme.pad, theme.pad);
-    let header = area.remove_top(px(theme.deck_header_height));
+    let header = area.remove_top(px(theme.deck_header_height).max(deck_header::HEADER_HEIGHT));
     let overview = area.remove_top(px(theme.deck_overview_height));
     area.remove_top(gap);
-    // The stems row spans the whole card, under the pitch column, so its pads have the width.
-    let stems = area.remove_bottom(stem_pads::stems_row_height(theme));
-    area.remove_bottom(gap);
-    let pitch = area.remove_right(px(theme.deck_pitch_width));
+    let pitch = area.remove_right(PITCH_WIDTH);
     area.remove_right(gap);
-    let row = px(theme.deck_row_height);
-    let loops = area.remove_bottom(row * 2 + gap);
-    area.remove_bottom(gap);
-    let hotcues = area.remove_bottom(row);
-    area.remove_bottom(gap);
-    let transport = area.remove_bottom(px(theme.deck_transport_height));
+    let controls = controls_in(area.remove_bottom(CONTROLS_HEIGHT.min(area.h)), mode);
     area.remove_bottom(gap);
     let zoom_visible = area.h >= px(theme.deck_min_zoom_height);
     let zoom = if area.h > 0 { area } else { Rect::default() };
@@ -420,10 +596,7 @@ pub fn deck_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
         pitch,
         zoom,
         zoom_visible,
-        hotcues,
-        loops,
-        transport,
-        stems,
+        ..controls
     }
 }
 
@@ -438,6 +611,8 @@ pub struct DeckWidget {
     pub hotcues: HotcuePads,
     pub loops: LoopControls,
     pub stems: StemBinding,
+    /// Which drawer is open under the transport.
+    pub pad_mode: PadMode,
 }
 
 impl DeckWidget {
@@ -451,6 +626,7 @@ impl DeckWidget {
             pitch: PitchFader::new(binding.clone()),
             hotcues: HotcuePads::new(binding.clone()),
             loops: LoopControls::new(binding.clone()),
+            pad_mode: PadMode::default(),
             binding,
         }
     }
@@ -477,27 +653,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn time_bpm_and_key_read_as_the_header_shows_them() {
+    fn time_and_bpm_read_as_the_header_shows_them() {
         assert_eq!(format_time(65.34, false), "1:05.3");
         assert_eq!(format_time(12.0, true), "-0:12.0");
         assert_eq!(format_time(-3.0, false), "0:00.0");
         assert_eq!(format_bpm(0.0), "--");
         assert_eq!(format_bpm(127.96), "128.0");
-        assert_eq!(
-            format_key(&TrackInfo {
-                key: "Am".into(),
-                camelot: "8A".into(),
-                ..Default::default()
-            }),
-            "Am  8A"
-        );
-        assert_eq!(
-            format_key(&TrackInfo {
-                camelot: "8A".into(),
-                ..Default::default()
-            }),
-            "8A"
-        );
     }
 
     #[test]
@@ -514,9 +675,34 @@ mod tests {
     }
 
     #[test]
+    fn every_pad_mode_fits_without_overlap_at_the_smallest_controls_height() {
+        let theme = ThemeTokens::builtin_dark();
+        // 290 px wide and as tall as the layout guarantees the controls row (CONTROLS_MIN_HEIGHT).
+        let card = Rect::sized(290, 262);
+        for mode in PadMode::ALL {
+            let l = deck_controls_layout_for(card, &theme, mode);
+            let parts = [l.pitch, l.transport, l.tabs, l.hotcues, l.loops, l.stems];
+            for (i, a) in parts.iter().enumerate() {
+                assert!(card.contains(a), "{mode:?}: {a:?} escapes the card");
+                for b in &parts[i + 1..] {
+                    assert!(!a.intersects(b), "{mode:?}: {a:?} overlaps {b:?}");
+                }
+            }
+            assert!(l.transport.h >= 44 && l.tabs.h >= 32);
+            if mode == PadMode::Stems {
+                assert!(l.stems.h >= STEM_ROW_HEIGHT * 4 + STEM_ROW_GAP * 3, "{l:?}");
+            } else {
+                assert!(l.hotcues.h >= CUE_PAD_MIN * 2 + CONTROL_GAP, "{l:?}");
+                assert!(l.loops.h >= 32);
+            }
+        }
+    }
+
+    #[test]
     fn deck_parts_fit_inside_the_card_at_the_default_size() {
         let theme = ThemeTokens::builtin_dark();
-        let card = Rect::sized(560, 420);
+        // 16px card padding and 40px control rows need ~560px of height for every part.
+        let card = Rect::sized(560, 600);
         let l = deck_layout(card, &theme);
         for part in [
             l.header,
@@ -526,6 +712,7 @@ mod tests {
             l.hotcues,
             l.loops,
             l.transport,
+            l.tabs,
         ] {
             assert!(!part.is_empty(), "{part:?}");
             assert!(card.contains(&part), "{part:?} escapes the card");
