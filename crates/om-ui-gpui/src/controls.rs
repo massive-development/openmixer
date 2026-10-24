@@ -8,6 +8,7 @@
 
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
+use crate::knob_paint::{sweep_fraction, value_of_fraction};
 use crate::paint::{border, paint, place, shadow, skin};
 use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent, MouseUpEvent};
 use om_ui::geometry::Rect;
@@ -19,6 +20,68 @@ use om_ui::theme::{Colour, ThemeTokens};
 const MIN_TEXT_PX: f32 = 12.0;
 /// How far above its control a value popup floats, in px.
 const POPUP_LIFT: f32 = 26.0;
+
+/// Share of a knob's sweep one wheel notch or arrow key moves (spec section 3: 1/100).
+const STEP_FRACTION: f64 = 0.01;
+/// The same with shift held: 1/1000.
+const FINE_STEP_FRACTION: f64 = 0.001;
+/// Steps a Page Up or Page Down key moves.
+const PAGE_STEPS: f64 = 10.0;
+
+/// The value after `notches` wheel notches over a knob (positive: more). One notch is 1/100 of
+/// the sweep, 1/1000 with shift. Like a drag, it moves along the sweep, not the raw range.
+pub fn wheel_step(
+    value: f64,
+    notches: f64,
+    shift: bool,
+    min: f64,
+    detent: Option<f64>,
+    max: f64,
+) -> f64 {
+    let step = if shift {
+        FINE_STEP_FRACTION
+    } else {
+        STEP_FRACTION
+    };
+    nudge(value, notches * step, min, detent, max)
+}
+
+/// `value` moved `delta` of the sweep.
+fn nudge(value: f64, delta: f64, min: f64, detent: Option<f64>, max: f64) -> f64 {
+    let fraction = sweep_fraction(value, min, detent, max) + delta;
+    value_of_fraction(fraction, min, detent, max)
+}
+
+/// The value a key press gives a focused knob, or None for a key the knob does not use. Up and
+/// Right are one step more, Down and Left one less, Page Up and Page Down ten steps; shift makes
+/// a step finer. Home goes to `reset` (the default) and End to the maximum.
+pub fn key_step(
+    key: &str,
+    shift: bool,
+    (value, reset): (f64, f64),
+    (min, detent, max): (f64, Option<f64>, f64),
+) -> Option<f64> {
+    let step = if shift {
+        FINE_STEP_FRACTION
+    } else {
+        STEP_FRACTION
+    };
+    let by = |steps: f64| Some(nudge(value, steps * step, min, detent, max));
+    match key {
+        "up" | "right" => by(1.0),
+        "down" | "left" => by(-1.0),
+        "pageup" => by(PAGE_STEPS),
+        "pagedown" => by(-PAGE_STEPS),
+        "home" => Some(reset),
+        "end" => Some(max),
+        _ => None,
+    }
+}
+
+/// True when a press resets a knob: a double-click, or a click with ctrl or cmd held.
+pub fn is_reset_click(click_count: usize, ctrl_or_cmd: bool) -> bool {
+    click_count >= 2 || ctrl_or_cmd
+}
 
 /// A labelled push button. `accent` is its colour when lit. Idle buttons take the hover fill.
 pub fn button(
@@ -429,4 +492,58 @@ pub fn release_on(el: Div, cx: &mut Context<Shell>) -> Div {
             cx.notify();
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::knob_paint::{angle_of, sweep_fraction};
+
+    const EQ: (f64, Option<f64>, f64) = (-48.0, Some(0.0), 6.0);
+
+    fn frac(v: f64) -> f64 {
+        sweep_fraction(v, EQ.0, EQ.1, EQ.2)
+    }
+
+    #[test]
+    fn wheel_notch_is_one_hundredth_of_the_sweep() {
+        let (min, d, max) = EQ;
+        let up = wheel_step(0.0, 1.0, false, min, d, max);
+        assert!((frac(up) - 0.51).abs() < 1e-9);
+        let down = wheel_step(0.0, -3.0, false, min, d, max);
+        assert!((frac(down) - 0.47).abs() < 1e-9);
+        let fine = wheel_step(0.0, 1.0, true, min, d, max);
+        assert!((frac(fine) - 0.501).abs() < 1e-9);
+        assert!(angle_of(up, min, d, max) > 0.0);
+        assert_eq!(wheel_step(6.0, 5.0, false, min, d, max), 6.0, "clamps");
+    }
+
+    #[test]
+    fn keys_step_reset_and_jump() {
+        let (min, d, max) = EQ;
+        let key = |k: &str, shift: bool| key_step(k, shift, (0.0, 0.0), (min, d, max));
+        let step = |v: f64| (frac(v) - 0.5).abs();
+        assert!((step(key("up", false).unwrap()) - 0.01).abs() < 1e-9);
+        assert!(key("right", false).unwrap() > 0.0);
+        assert!(key("down", false).unwrap() < 0.0);
+        assert!(key("left", false).unwrap() < 0.0);
+        assert!((step(key("up", true).unwrap()) - 0.001).abs() < 1e-9);
+        assert!((step(key("pageup", false).unwrap()) - 0.1).abs() < 1e-9);
+        assert!(key("pagedown", false).unwrap() < 0.0);
+        assert_eq!(key("end", false), Some(6.0));
+        assert_eq!(
+            key_step("home", false, (3.0, 1.0), (min, d, max)),
+            Some(1.0)
+        );
+        assert_eq!(key("x", false), None);
+        assert_eq!(key("enter", false), None);
+    }
+
+    #[test]
+    fn ctrl_click_resets() {
+        assert!(is_reset_click(2, false));
+        assert!(is_reset_click(1, true));
+        assert!(is_reset_click(3, true));
+        assert!(!is_reset_click(1, false));
+    }
 }
