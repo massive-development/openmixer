@@ -67,6 +67,7 @@ impl Shell {
         }
 
         if let (Some(rect), Some(text)) = (rects.notice, self.options.banner.clone()) {
+            let collapsed = rect.w < om_ui::header_layout::NOTICE_WIDTH;
             strip = strip.child(
                 place(rect)
                     .flex()
@@ -80,7 +81,11 @@ impl Shell {
                     .text_size(px(t.type_caption))
                     .text_color(paint(t.text_primary))
                     .overflow_hidden()
-                    .child(div().flex_1().min_w(px(0.)).child(text))
+                    .child(div().flex_1().min_w(px(0.)).child(if collapsed {
+                        "!".to_owned()
+                    } else {
+                        text
+                    }))
                     .child(
                         div()
                             .flex_none()

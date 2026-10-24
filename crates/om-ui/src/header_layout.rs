@@ -17,6 +17,11 @@ pub const BRAND_WIDTH: i32 = 112;
 pub const MASTER_BPM_WIDTH: i32 = 120;
 /// Width of the notice chip (two lines of caption text).
 pub const NOTICE_WIDTH: i32 = 240;
+/// Width of the notice chip collapsed to its icon and dismiss button.
+pub const COLLAPSED_NOTICE_WIDTH: i32 = 56;
+/// The automix bar's width the plan wants at 1280 wide; a notice chip collapses before the bar
+/// goes under it.
+pub const AUTOMIX_FLOOR: i32 = 300;
 /// Width of the latency and dropout indicator.
 pub const LATENCY_WIDTH: i32 = 120;
 /// Width of the Record button.
@@ -119,9 +124,16 @@ pub fn header_rects(window_w: i32, header_h: i32, needs: HeaderNeeds) -> HeaderR
     let master_bpm = (bpm_x >= bpm_floor).then(|| part(bpm_x, MASTER_BPM_WIDTH));
 
     let notice_end = master_bpm.map_or(free_end, |b| b.x - GAP);
+    // The chip keeps the automix bar at or above 300 px (plan, header invariants): it takes its
+    // full width only when that leaves the bar enough, and collapses to icon plus dismiss if not.
     let notice = needs.notice.then(|| {
-        let x = (notice_end - NOTICE_WIDTH).max(free_start);
-        part(x, (notice_end - x).max(0))
+        let room = notice_end - free_start - GAP - AUTOMIX_FLOOR;
+        let w = if !needs.automix || room >= NOTICE_WIDTH {
+            NOTICE_WIDTH.min((notice_end - free_start).max(0))
+        } else {
+            COLLAPSED_NOTICE_WIDTH
+        };
+        part(notice_end - w, w)
     });
     let automix = needs.automix.then(|| {
         let end = notice.map_or(notice_end, |n| n.x - GAP);
@@ -242,21 +254,35 @@ mod tests {
     }
 
     #[test]
-    fn a_notice_takes_room_from_the_automix_bar_not_the_master_bpm() {
-        let plain = header_rects(1280, 36, FULL);
-        let noisy = header_rects(
-            1280,
-            36,
-            HeaderNeeds {
-                notice: true,
-                ..FULL
-            },
-        );
-        assert_eq!(plain.master_bpm, noisy.master_bpm);
-        let notice = noisy.notice.expect("chip");
-        assert!(notice.w >= 200);
-        assert!(noisy.automix.expect("bar").w < plain.automix.expect("bar").w);
-        assert!(plain.notice.is_none());
+    fn a_notice_collapses_before_the_automix_bar_drops_under_300() {
+        for (w, h) in [
+            (1280, 720),
+            (1280, 800),
+            (1100, 700),
+            (1920, 1080),
+            (2560, 1440),
+        ] {
+            let plain = header_rects(w, header_h(h), FULL);
+            let noisy = header_rects(
+                w,
+                header_h(h),
+                HeaderNeeds {
+                    notice: true,
+                    ..FULL
+                },
+            );
+            assert_eq!(plain.master_bpm, noisy.master_bpm, "{w}x{h}: bpm stays");
+            let notice = noisy.notice.expect("chip");
+            let bar = noisy.automix.expect("bar");
+            assert!(bar.w >= 300 || w < 1280, "{w}x{h}: bar {} px", bar.w);
+            if w == 1280 {
+                assert_eq!(notice.w, COLLAPSED_NOTICE_WIDTH);
+            }
+            if w >= 1920 {
+                assert_eq!(notice.w, NOTICE_WIDTH, "{w}: wide windows show the text");
+            }
+            assert!(plain.notice.is_none());
+        }
     }
 
     #[test]
