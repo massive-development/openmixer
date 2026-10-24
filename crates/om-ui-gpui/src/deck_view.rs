@@ -9,14 +9,21 @@ use crate::controls::slider;
 use crate::drag::Target;
 use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place, shadow, skin};
+use crate::platter_paint::{
+    angle_delta, paint_platter, platter_geometry, platter_rect, pointer_angle, scratch_target,
+    zone_at, PlatterScene, Zone, SECONDS_PER_TURN,
+};
 use crate::waveform_paint::{paint_overview, paint_zoom, with_alpha, OverviewScene, ZoomScene};
 use gpui::{
     canvas, div, prelude::*, px, relative, Bounds, Context, Div, MouseButton, MouseDownEvent,
-    MouseMoveEvent, Pixels, Window,
+    MouseMoveEvent, Pixels, Render, SharedString, Stateful, Window,
 };
+use om_core::DeckSnapshot;
 use om_ui::geometry::Rect;
 use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
 use om_ui::style::LookAndFeel;
+use om_ui::style::{contrast_ratio, over, relative_luminance};
+use om_ui::theme::Colour;
 use om_ui::theme::ThemeTokens;
 use om_ui::waveform::{
     cue_flags, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_LINE_WIDTH,
@@ -26,15 +33,18 @@ use om_ui::widgets::deck::{
     deck_controls_layout_for, deck_layout_for, tab_rects, DeckLayout, PadMode, CONTROL_GAP,
     STEM_ROW_GAP,
 };
+use om_ui::widgets::deck_header::deck_letter;
 use om_ui::widgets::deck_header::{
     header_metrics, ARTIST_SIZE, BADGE_SIZE, ELAPSED_SIZE, MIN_TEXT_SIZE, ON_BRIGHT, SYNC_ON,
     TITLE_SIZE, WARN_RED,
 };
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
-use om_ui::widgets::loops::LoopControls;
+use om_ui::widgets::loops::LoopFrame;
 use om_ui::widgets::stage::STAGE_DECKS;
 use om_ui::widgets::stem_pads::stem_pad_layout;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// Card for deck `index`, drawn at `card` (window coordinates).
 pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
@@ -43,6 +53,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
     // A stage deck's header, overview and zoomed waveform are drawn by the stage above.
     let area = Rect::sized(card.w, card.h);
     let mode = shell.decks[index].pad_mode;
+    let snap = shell.engine.deck_snapshot(index).unwrap_or_default();
     let l = if index < STAGE_DECKS {
         deck_controls_layout_for(area, t, mode)
     } else {
@@ -71,15 +82,33 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
     if !l.overview.is_empty() {
         root = root.child(overview(shell, index, card, &l, cx));
     }
-    root = root.child(pitch(shell, index, card, &l, cx));
+    let lay = local_layout(&l);
+    let platter_on = platter_state(index).on;
+    // The fader sits under the Platter switch.
+    let pitch_layout = DeckLayout {
+        pitch: lay.pitch,
+        ..l.clone()
+    };
+    root = root.child(pitch(shell, index, card, &pitch_layout, cx));
+    if !lay.platter_toggle.is_empty() {
+        root = root.child(platter_switch(shell, index, lay.platter_toggle, cx));
+    }
     if l.zoom_visible {
         root = root.child(zoom(shell, index, card, &l, cx));
     }
-    root = root.child(transport(shell, index, card, &l, cx));
+    root = root.child(transport(shell, index, card, &lay, &snap, cx));
     root = root.child(tabs(shell, index, &l, card, cx));
+    if platter_on {
+        return root.child(platter(shell, index, card, drawer_rect(&l), &snap, cx));
+    }
     match mode {
-        PadMode::Cues => root = root.child(hotcues(shell, index, card, &l, cx)),
-        PadMode::More => root = root.child(more(shell, index, &l, card, cx)),
+        PadMode::Cues => {
+            root = root.child(hotcues(shell, index, card, &lay, &snap, cx));
+            if let Some(cells) = &lay.toggles {
+                root = root.child(toggle_pills(shell, index, card, cells, &snap, cx));
+            }
+        }
+        PadMode::More => root = root.child(more(shell, index, &l, card, &snap, cx)),
         PadMode::Stems => {
             for part in stems(shell, index, card, &l, cx) {
                 root = root.child(part);
@@ -87,7 +116,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
         }
     }
     if !l.loops.is_empty() {
-        root = root.child(loops(shell, index, card, &l, cx));
+        root = root.child(loops(shell, index, card, &lay, &snap, cx));
     }
     root
 }
@@ -677,152 +706,637 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
         )
 }
 
+// ---------------------------------------------------------------------------------------------
+// Transport, pads, loops and the platter. The decisions (which fill, which label, which rect) are
+// the pure functions below, tested at the end of the file; the drawing functions only apply them.
+// Research: docs/design/research/deck-controls.md sections 2 and 3.
+// ---------------------------------------------------------------------------------------------
+
+/// Diameter of the Play and Cue circles, and the floor they fall back to when the transport row is
+/// shorter than 56 px (the 44 px touch floor).
+pub(crate) const ROUND_DIAMETER: i32 = 56;
+pub(crate) const ROUND_COMPACT: i32 = 44;
+/// Gap between Play and Cue, and from Cue to Sync (research section 3).
+const ROUND_GAP: i32 = 24;
+const SYNC_GAP: i32 = 12;
+const PILL_HEIGHT: i32 = 36;
+const PILL_GAP: i32 = 8;
+const PILL_RADIUS: f32 = 12.0;
+/// Width and height of the Platter switch at the top of the pitch column.
+const PLATTER_TOGGLE_W: i32 = 56;
+const PLATTER_TOGGLE_H: i32 = 32;
+/// Alpha of a set pad's fill; an active pad is opaque.
+const PAD_ALPHA: f32 = 0.85;
+const PAD_TAB_H: f32 = 3.0;
+/// Daylight lit pads are darkened by this share so their text stays readable (research section 3).
+const DAYLIGHT_DARKEN: f32 = 0.12;
+/// Opacity of a control while it cannot act (no track loaded).
+const DISABLED_ALPHA: f32 = 0.4;
+/// Seconds after a cue point during which a playing deck marks that pad active. Unsourced.
+const ACTIVE_WINDOW_S: f64 = 0.25;
+/// Estimated width of one character at 12-14 px, to decide whether a toggle row fits.
+const CHAR_W: i32 = 7;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Shape {
+    Round,
+    Pill,
+}
+
+/// How one transport button is drawn.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ButtonStyle {
+    pub shape: Shape,
+    /// Nominal diameter of a round button (0 for pills); the layout may shrink it to the 44 floor.
+    pub diameter: i32,
+    pub fill: Colour,
+    pub text: Colour,
+    /// Glow colour while lit.
+    pub glow: Option<Colour>,
+    pub alpha: f32,
+    pub hover: bool,
+}
+
+/// The style of a transport button. Idle is the `well` fill; lit toggles take the deck accent
+/// (Sync keeps its own green, Play is green while playing, Cue is amber while held); with no track
+/// the button is at 40 % opacity and has no hover or glow.
+pub(crate) fn transport_style(
+    t: &ThemeTokens,
+    button: TransportButton,
+    lit: bool,
+    loaded: bool,
+    deck: usize,
+) -> ButtonStyle {
+    let round = matches!(button, TransportButton::Play | TransportButton::Cue);
+    let accent = t.accent_for(deck as i32);
+    let (fill, text, glow) = match (button, lit) {
+        (_, false) => (t.well, t.text_primary, None),
+        (TransportButton::Sync, true) => (SYNC_ON, ON_BRIGHT, Some(SYNC_ON)),
+        (TransportButton::Play, true) => (t.meter_low, ON_BRIGHT, Some(t.meter_low)),
+        (TransportButton::Cue, true) => (t.warning, ON_BRIGHT, Some(t.warning)),
+        (_, true) => (accent, t.on_accent, Some(accent)),
+    };
+    ButtonStyle {
+        shape: if round { Shape::Round } else { Shape::Pill },
+        diameter: if round { ROUND_DIAMETER } else { 0 },
+        fill,
+        text,
+        glow: if loaded { glow } else { None },
+        alpha: if loaded { 1.0 } else { DISABLED_ALPHA },
+        hover: loaded && !lit,
+    }
+}
+
+/// Text of a transport button: sentence case words (research table); Play reads Pause while playing.
+pub(crate) fn transport_label(button: TransportButton, playing: bool) -> &'static str {
+    match button {
+        TransportButton::Play if playing => "Pause",
+        TransportButton::Play => "Play",
+        TransportButton::Cue => "Cue",
+        TransportButton::Sync => "Sync",
+        TransportButton::Master => "Tempo leader",
+        TransportButton::KeyLock => "Key lock",
+        TransportButton::Quantize => "Snap to beat",
+        TransportButton::Slip => "Slip",
+    }
+}
+
+/// Tooltip text; Master keeps its old name for people who search for it.
+pub(crate) fn transport_tip(button: TransportButton) -> &'static str {
+    match button {
+        TransportButton::Master => "Other decks follow this deck's tempo (master)",
+        other => other.tooltip(),
+    }
+}
+
+/// How one hotcue pad is drawn.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PadStyle {
+    pub fill: Colour,
+    pub text: Colour,
+    pub border: Colour,
+    pub dashed: bool,
+    pub label: String,
+    /// Colour tab along the top edge of a set pad.
+    pub tab: Option<Colour>,
+    pub glow: Option<Colour>,
+}
+
+/// What a pad sits on, for contrast: the well over the surface over the backdrop.
+fn pad_ground(t: &ThemeTokens) -> Colour {
+    over(t.well, over(t.surface, t.backdrop_bottom))
+}
+
+/// A daylight theme has a light surface.
+fn is_light(t: &ThemeTokens) -> bool {
+    relative_luminance(over(t.surface, t.backdrop_bottom)) > 0.5
+}
+
+/// The cue colour of pad `i` as it is filled: the palette, darkened 12 % on a light theme.
+pub(crate) fn pad_colour(t: &ThemeTokens, i: usize) -> Colour {
+    let c = HotcuePads::colour(i);
+    if !is_light(t) {
+        return c;
+    }
+    // Blend toward the near-black text colour: 12 % darker.
+    Colour::mix(&[(c, 1.0 - DAYLIGHT_DARKEN), (ON_BRIGHT, DAYLIGHT_DARKEN)])
+}
+
+/// Dark or light text, whichever reads better on `fill` (WCAG contrast): the near-black bright-fill
+/// ink, or the theme's primary or on-accent text. The research says black when luminance is above
+/// 0.4; that threshold leaves mid-tone cue colours under 4.5:1, so the rule here is the crossover.
+fn text_on(t: &ThemeTokens, fill: Colour) -> Colour {
+    [ON_BRIGHT, t.text_primary, t.on_accent]
+        .into_iter()
+        .max_by(|a, b| contrast_ratio(*a, fill).total_cmp(&contrast_ratio(*b, fill)))
+        .unwrap_or(ON_BRIGHT)
+}
+
+/// The look of pad `i`. Empty: dashed border, "Set", no colour. Set: its cue colour at 85 % with the
+/// name and a 3 px tab. Active (playing from it): opaque with a glow.
+pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> PadStyle {
+    if !set {
+        return PadStyle {
+            fill: t.well,
+            text: t.text_secondary,
+            border: t.border_strong,
+            dashed: true,
+            label: "Set".to_owned(),
+            tab: None,
+            glow: None,
+        };
+    }
+    let colour = pad_colour(t, i);
+    let fill = colour.with_alpha(if active { 1.0 } else { PAD_ALPHA });
+    PadStyle {
+        fill,
+        text: text_on(t, over(fill, pad_ground(t))),
+        border: colour,
+        dashed: false,
+        label: format!("Cue {}", i + 1),
+        tab: Some(colour),
+        glow: active.then_some(colour),
+    }
+}
+
+/// Whether the deck is playing from the cue at `cue_frame`: within [`ACTIVE_WINDOW_S`] after it.
+pub(crate) fn pad_active(s: &DeckSnapshot, cue_frame: Option<i64>) -> bool {
+    match cue_frame {
+        Some(c) if s.playing && s.file_sample_rate > 0.0 => {
+            let d = (s.position_frames - c) as f64 / s.file_sample_rate;
+            (0.0..ACTIVE_WINDOW_S).contains(&d)
+        }
+        _ => false,
+    }
+}
+
+/// What the loop row shows.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LoopView {
+    pub label: String,
+    /// The Loop button is lit while a loop is active.
+    pub loop_lit: bool,
+    pub halve_enabled: bool,
+    pub double_enabled: bool,
+}
+
+pub(crate) fn loop_view(frame: &LoopFrame, loaded: bool) -> LoopView {
+    LoopView {
+        label: frame.label(),
+        loop_lit: frame.reloop_lit,
+        halve_enabled: loaded,
+        double_enabled: loaded,
+    }
+}
+
+/// Every rect the controls column places itself, from the shared [`DeckLayout`] (which this file
+/// does not change). Card coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LocalLayout {
+    pub play: Rect,
+    pub cue: Rect,
+    pub sync: Rect,
+    /// Tempo leader, Key lock, Snap to beat, Slip as a row under the pads, when it fits.
+    pub toggles: Option<[Rect; 4]>,
+    /// The Platter switch at the top of the pitch column (empty when the column is too short).
+    pub platter_toggle: Rect,
+    /// The pitch column below the switch.
+    pub pitch: Rect,
+    /// The pads' area, shortened to leave room for the toggle row.
+    pub hotcues: Rect,
+    /// Halve, length chip, double, Loop switch.
+    pub loops: [Rect; 4],
+}
+
+/// The union of the drawer's rects: where the pads, loops or stems (and so the platter) go.
+pub(crate) fn drawer_rect(l: &DeckLayout) -> Rect {
+    let parts: Vec<Rect> = [l.hotcues, l.loops, l.stems]
+        .into_iter()
+        .filter(|r| !r.is_empty())
+        .collect();
+    let Some(first) = parts.first() else {
+        return Rect::default();
+    };
+    let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.right(), first.bottom());
+    for r in &parts {
+        x0 = x0.min(r.x);
+        y0 = y0.min(r.y);
+        x1 = x1.max(r.right());
+        y1 = y1.max(r.bottom());
+    }
+    Rect::new(x0, y0, x1 - x0, y1 - y0)
+}
+
+pub(crate) fn local_layout(l: &DeckLayout) -> LocalLayout {
+    // Round buttons: 56 px, or the 44 px floor when the row is shorter. Play, Cue, then Sync.
+    let tr = l.transport;
+    let d = if tr.h >= ROUND_DIAMETER {
+        ROUND_DIAMETER
+    } else {
+        ROUND_COMPACT.min(tr.h.max(0))
+    };
+    let y = tr.y + (tr.h - d) / 2;
+    let gap = if tr.w >= d * 2 + ROUND_GAP + SYNC_GAP + 56 {
+        ROUND_GAP
+    } else {
+        PILL_GAP
+    };
+    let play = Rect::new(tr.x, y, d, d);
+    let cue = Rect::new(play.right() + gap, y, d, d);
+    let sx = cue.right() + SYNC_GAP;
+    let ph = PILL_HEIGHT.min(tr.h);
+    let sync = Rect::new(sx, tr.y + (tr.h - ph) / 2, (tr.right() - sx).max(0), ph);
+
+    // The Platter switch on top of the pitch column; the fader keeps the rest.
+    let mut pitch_area = l.pitch;
+    let platter_toggle = if pitch_area.h > PLATTER_TOGGLE_H * 3 {
+        let top = pitch_area.remove_top(PLATTER_TOGGLE_H);
+        pitch_area.remove_top(PILL_GAP);
+        let w = PLATTER_TOGGLE_W.min(top.w);
+        Rect::new(top.x + (top.w - w) / 2, top.y, w, top.h)
+    } else {
+        Rect::default()
+    };
+
+    // Pads, then a pill row of toggles if the spare height holds one and the labels fit.
+    let mut hot = l.hotcues;
+    let mut toggles = None;
+    if !hot.is_empty() {
+        let pads = HotcuePads::layout(hot, CONTROL_GAP);
+        let used = pads[HotcuePads::COUNT - 1].bottom() - hot.y;
+        if hot.h - used >= CONTROL_GAP + PILL_HEIGHT {
+            let row = Rect::new(hot.x, hot.y + used + CONTROL_GAP, hot.w, PILL_HEIGHT);
+            let cells = pill_row(row);
+            let fits = cells
+                .iter()
+                .zip(TransportButton::SECONDARY)
+                .all(|(r, b)| r.w >= transport_label(b, false).chars().count() as i32 * CHAR_W - 4);
+            if fits {
+                toggles = Some(cells);
+                hot = Rect::new(hot.x, hot.y, hot.w, used);
+            }
+        }
+    }
+
+    LocalLayout {
+        play,
+        cue,
+        sync,
+        toggles,
+        platter_toggle,
+        pitch: pitch_area,
+        hotcues: hot,
+        loops: loop_rects(l.loops),
+    }
+}
+
+/// Four pills across `row`, widths weighted by label length, `PILL_GAP` apart.
+fn pill_row(row: Rect) -> [Rect; 4] {
+    let weights =
+        TransportButton::SECONDARY.map(|b| transport_label(b, false).chars().count() as i32 + 3);
+    let total: i32 = weights.iter().sum();
+    let room = row.w - PILL_GAP * 3;
+    let mut x = row.x;
+    let mut cells = [Rect::default(); 4];
+    for (i, w) in weights.iter().enumerate() {
+        let width = if i == 3 {
+            row.right() - x
+        } else {
+            room * w / total
+        };
+        cells[i] = Rect::new(x, row.y, width, row.h);
+        x += width + PILL_GAP;
+    }
+    cells
+}
+
+/// The loop row: halve, length chip, double (a stepper), then the Loop switch. Halve and double are
+/// at least 32 px wide.
+fn loop_rects(area: Rect) -> [Rect; 4] {
+    let step_w = 36.min(area.w / 4);
+    let switch_w = (area.w / 3).max(44).min(area.w);
+    let stepper_w = (area.w - switch_w - CONTROL_GAP).max(0);
+    let seam = 4;
+    let chip_w = (stepper_w - step_w * 2 - seam * 2).max(0);
+    let halve = Rect::new(area.x, area.y, step_w, area.h);
+    let chip = Rect::new(halve.right() + seam, area.y, chip_w, area.h);
+    let double = Rect::new(chip.right() + seam, area.y, step_w, area.h);
+    let switch = Rect::new(area.right() - switch_w, area.y, switch_w, area.h);
+    [halve, chip, double, switch]
+}
+
+// Platter mode and drag, per deck, held here so no shared model changes.
+#[derive(Clone, Copy, Default)]
+struct PlatterState {
+    on: bool,
+    scratch: Option<Scratch>,
+}
+
+#[derive(Clone, Copy)]
+struct Scratch {
+    start_frame: i64,
+    start_angle: f32,
+    last_angle: f32,
+    total_angle: f32,
+    was_playing: bool,
+}
+
+thread_local! {
+    static PLATTERS: RefCell<HashMap<usize, PlatterState>> = RefCell::new(HashMap::new());
+}
+
+fn platter_state(index: usize) -> PlatterState {
+    PLATTERS.with(|p| p.borrow().get(&index).copied().unwrap_or_default())
+}
+
+fn set_platter(index: usize, f: impl FnOnce(&mut PlatterState)) {
+    PLATTERS.with(|p| f(p.borrow_mut().entry(index).or_default()));
+}
+
+/// A tooltip bubble.
+struct Tip {
+    text: String,
+    fill: Colour,
+    ink: Colour,
+}
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(6.))
+            .py(px(2.))
+            .rounded(px(4.))
+            .bg(paint(self.fill))
+            .text_color(paint(self.ink))
+            .text_size(px(MIN_TEXT_SIZE))
+            .child(self.text.clone())
+    }
+}
+
+/// A transport button drawn from a [`ButtonStyle`]: a circle or a pill with a tooltip. `down` runs
+/// on the left press, but not while the deck has no track.
+fn transport_button(
+    t: &ThemeTokens,
+    rect: Rect,
+    (label, tip): (&str, &'static str),
+    style: ButtonStyle,
+    cx: &mut Context<Shell>,
+    down: impl Fn(&mut Shell) + 'static,
+) -> Stateful<Div> {
+    let look = LookAndFeel::from_tokens(t);
+    let tip_style = look.tooltip;
+    let radius = match style.shape {
+        Shape::Round => rect.w.min(rect.h) as f32 / 2.0,
+        Shape::Pill => PILL_RADIUS,
+    };
+    let el = place(rect)
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(radius))
+        .border_1()
+        .border_color(paint(look.button.idle.border))
+        .bg(paint(style.fill))
+        .text_color(paint(style.text))
+        .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .opacity(style.alpha);
+    let el = match style.glow {
+        Some(c) => shadow(el, &look.glow(c)),
+        None => el,
+    };
+    let el = if style.hover {
+        let hover = t.surface_hover;
+        el.hover(move |s| s.bg(paint(hover)))
+    } else {
+        el
+    };
+    el.child(label.to_owned())
+        .id(SharedString::from(format!("tb-{}-{}", rect.x, rect.y)))
+        .tooltip(move |_, cx| {
+            cx.new(|_| Tip {
+                text: tip.to_owned(),
+                fill: tip_style.fill,
+                ink: tip_style.text,
+            })
+            .into()
+        })
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                down(this);
+                cx.notify();
+            }),
+        )
+}
+
 fn hotcues(
     shell: &Shell,
     index: usize,
     card: Rect,
-    l: &DeckLayout,
+    l: &LocalLayout,
+    snap: &DeckSnapshot,
     cx: &mut Context<Shell>,
 ) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let pads = HotcuePads::layout(l.hotcues, CONTROL_GAP);
     let lit = deck.hotcues.lit();
+    let look = LookAndFeel::from_tokens(t);
     let mut row = place(Rect::sized(card.w, card.h));
     for (i, rect) in pads.iter().enumerate() {
-        let cue = HotcuePads::colour(i);
-        let (fill, text, border) = if lit[i] {
-            (cue, ON_BRIGHT, cue)
-        } else {
-            (t.well, t.text_muted, t.border)
-        };
-        let pad = place(*rect)
+        let style = pad_state(t, lit[i], pad_active(snap, snap.hotcues[i]), i);
+        let mut pad = place(*rect)
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(t.control_radius))
+            .rounded(px(6.))
             .border_1()
-            .border_color(paint(border))
-            .bg(paint(fill))
-            .text_color(paint(text))
-            .text_size(px(t.type_title))
+            .border_color(paint(style.border))
+            .bg(paint(style.fill))
+            .text_color(paint(style.text))
+            .text_size(px(MIN_TEXT_SIZE))
             .font_weight(gpui::FontWeight::BOLD)
-            .child(format!("{}", i + 1))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                    let mods = Modifiers {
-                        shift: ev.modifiers.shift,
-                        alt: ev.modifiers.alt,
-                        ctrl: ev.modifiers.control,
-                    };
-                    this.decks[index].hotcues.click(i, mods);
-                    cx.notify();
-                }),
-            );
-        row = row.child(if lit[i] {
-            pad
-        } else {
+            .overflow_hidden();
+        if style.dashed {
+            pad = pad.border_dashed();
+        }
+        if let Some(c) = style.glow {
+            pad = shadow(pad, &look.glow(c));
+        }
+        if !lit[i] {
             let hover = t.surface_hover;
-            pad.hover(move |style| style.bg(paint(hover)))
-        });
-    }
-    row
-}
-
-/// The loop row: halve, the size button, double. The size button shows the loop's length and is
-/// the loop on/off switch: lit in the deck colour while looping, press to exit; idle it shows the
-/// size a press would start.
-fn loops(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
-    let t = &shell.theme;
-    let deck = &shell.decks[index];
-    let lay = LoopControls::layout(l.loops, CONTROL_GAP);
-    let accent = t.accent_for(index as i32);
-    let frame = deck.loops.frame();
-    let size_state = if frame.reloop_lit {
-        Tile::Lit(accent, t.on_accent)
-    } else {
-        Tile::Idle
-    };
-    place(Rect::sized(card.w, card.h))
-        .child(tile(
-            t,
-            lay.halve,
-            "\u{f7}2",
-            (t.type_title, Tile::Idle),
-            cx,
-            move |this| {
-                this.decks[index].loops.halve();
-            },
-        ))
-        .child(tile(
-            t,
-            lay.size,
-            &format!("LOOP {}", frame.label()),
-            (t.type_label, size_state),
-            cx,
-            move |this| {
-                this.decks[index].loops.toggle();
-            },
-        ))
-        .child(tile(
-            t,
-            lay.double,
-            "\u{d7}2",
-            (t.type_title, Tile::Idle),
-            cx,
-            move |this| {
-                this.decks[index].loops.double();
-            },
-        ))
-}
-
-/// The always-visible transport: Play (double width), Cue and SYNC, 44 px tall. SYNC is dark text
-/// on the sync green while on.
-fn transport(
-    shell: &Shell,
-    index: usize,
-    card: Rect,
-    l: &DeckLayout,
-    cx: &mut Context<Shell>,
-) -> Div {
-    let t = &shell.theme;
-    let deck = &shell.decks[index];
-    let rects = TransportPanel::layout(l.transport, CONTROL_GAP);
-    let mut row = place(Rect::sized(card.w, card.h));
-    for (i, button) in TransportButton::PRIMARY.into_iter().enumerate() {
-        let label = match button {
-            TransportButton::Play => deck.transport.play_label().to_uppercase(),
-            other => other.label().to_owned(),
-        };
-        let state = if !deck.transport.is_lit(button) {
-            Tile::Idle
-        } else if button == TransportButton::Sync {
-            Tile::Lit(SYNC_ON, ON_BRIGHT)
-        } else {
-            Tile::Lit(t.accent_for(index as i32), t.on_accent)
-        };
-        row = row.child(tile(
-            t,
-            rects[i],
-            &label,
-            (t.type_label, state),
-            cx,
-            move |this| {
-                this.decks[index].transport.press(button);
-            },
+            pad = pad.hover(move |s| s.bg(paint(hover)));
+        }
+        if let Some(tab) = style.tab {
+            pad = pad.child(
+                div()
+                    .absolute()
+                    .top(px(0.))
+                    .left(px(0.))
+                    .w_full()
+                    .h(px(PAD_TAB_H))
+                    .bg(paint(tab)),
+            );
+        }
+        row = row.child(pad.child(style.label.clone()).on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                let mods = Modifiers {
+                    shift: ev.modifiers.shift,
+                    alt: ev.modifiers.alt,
+                    ctrl: ev.modifiers.control,
+                };
+                this.decks[index].hotcues.click(i, mods);
+                cx.notify();
+            }),
         ));
     }
     row
 }
 
-/// The tab strip under the drawer: Cues, Stems, More. The open one is lit in the deck colour.
+/// The loop row: `[halve] [length] [double]` and a Loop switch. The length chip shows the loop's
+/// size (or the size a press would start). Loop in and out are left out until the engine has them.
+fn loops(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    l: &LocalLayout,
+    snap: &DeckSnapshot,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let deck = &shell.decks[index];
+    let accent = t.accent_for(index as i32);
+    let view = loop_view(&deck.loops.frame(), snap.loaded);
+    let [halve, chip, double, switch] = l.loops;
+    let alpha = |on: bool| if on { 1.0 } else { DISABLED_ALPHA };
+    let switch_state = if view.loop_lit {
+        Tile::Lit(accent, t.on_accent)
+    } else {
+        Tile::Idle
+    };
+    place(Rect::sized(card.w, card.h))
+        .child(
+            tile(
+                t,
+                halve,
+                "\u{f7}2",
+                (t.type_title, Tile::Idle),
+                cx,
+                move |this| {
+                    this.decks[index].loops.halve();
+                },
+            )
+            .opacity(alpha(view.halve_enabled)),
+        )
+        .child(
+            place(chip)
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(t.control_radius))
+                .bg(paint(t.well))
+                .border_1()
+                .border_color(paint(t.border))
+                .text_color(paint(t.text_primary))
+                .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child(view.label.clone()),
+        )
+        .child(
+            tile(
+                t,
+                double,
+                "\u{d7}2",
+                (t.type_title, Tile::Idle),
+                cx,
+                move |this| {
+                    this.decks[index].loops.double();
+                },
+            )
+            .opacity(alpha(view.double_enabled)),
+        )
+        .child(tile(
+            t,
+            switch,
+            "Loop",
+            (t.type_body, switch_state),
+            cx,
+            move |this| {
+                this.decks[index].loops.toggle();
+            },
+        ))
+}
+
+/// The always-visible transport: round Play and Cue, then Sync as a pill. Play is green and reads
+/// Pause while playing; Cue is amber while pressed.
+fn transport(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    l: &LocalLayout,
+    snap: &DeckSnapshot,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let deck = &shell.decks[index];
+    let cells = [l.play, l.cue, l.sync];
+    let mut row = place(Rect::sized(card.w, card.h));
+    for (button, rect) in TransportButton::PRIMARY.into_iter().zip(cells) {
+        let lit = deck.transport.is_lit(button);
+        let style = transport_style(t, button, lit, snap.loaded, index);
+        let label = transport_label(button, snap.playing);
+        let mut el = transport_button(
+            t,
+            rect,
+            (label, transport_tip(button)),
+            style,
+            cx,
+            move |this| {
+                this.decks[index].transport.press(button);
+            },
+        );
+        if button == TransportButton::Cue && snap.loaded {
+            // Amber while the button is held.
+            let amber = t.warning;
+            let ink = ON_BRIGHT;
+            el = el.active(move |s| s.bg(paint(amber)).text_color(paint(ink)));
+        }
+        row = row.child(el);
+    }
+    row
+}
+
+/// The tab strip under the drawer: Cues, Stems, More. The open one is lit in the deck colour; with
+/// the platter open none is, and a tap closes the platter.
 fn tabs(shell: &Shell, index: usize, l: &DeckLayout, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let mode = shell.decks[index].pad_mode;
+    let platter = platter_state(index).on;
     let mut row = place(Rect::sized(card.w, card.h));
     for (mode_i, rect) in PadMode::ALL.into_iter().zip(tab_rects(l.tabs)) {
-        let state = if mode_i == mode {
+        let state = if mode_i == mode && !platter {
             Tile::Lit(t.accent_for(index as i32), t.on_accent)
         } else {
             Tile::Idle
@@ -834,6 +1348,7 @@ fn tabs(shell: &Shell, index: usize, l: &DeckLayout, card: Rect, cx: &mut Contex
             (MIN_TEXT_SIZE, state),
             cx,
             move |this| {
+                set_platter(index, |p| p.on = false);
                 this.decks[index].pad_mode = mode_i;
             },
         ));
@@ -841,30 +1356,48 @@ fn tabs(shell: &Shell, index: usize, l: &DeckLayout, card: Rect, cx: &mut Contex
     row
 }
 
-/// The More drawer: Master, key lock, quantize, slip and the stems on/off switch.
-fn more(shell: &Shell, index: usize, l: &DeckLayout, card: Rect, cx: &mut Context<Shell>) -> Div {
+/// The toggle pills: Tempo leader, Key lock, Snap to beat, Slip, at `cells`, lit in the deck colour.
+fn toggle_pills(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    cells: &[Rect],
+    snap: &DeckSnapshot,
+    cx: &mut Context<Shell>,
+) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
-    let accent = t.accent_for(index as i32);
-    let cells = TransportPanel::secondary_layout(l.hotcues, CONTROL_GAP);
     let mut area = place(Rect::sized(card.w, card.h));
     for (button, rect) in TransportButton::SECONDARY.into_iter().zip(cells) {
-        let state = if !deck.transport.is_lit(button) {
-            Tile::Idle
-        } else {
-            Tile::Lit(button.lit_colour(t, index), t.on_accent)
-        };
-        area = area.child(tile(
+        let style = transport_style(t, button, deck.transport.is_lit(button), snap.loaded, index);
+        area = area.child(transport_button(
             t,
-            rect,
-            button.label(),
-            (t.type_body, state),
+            *rect,
+            (transport_label(button, false), transport_tip(button)),
+            style,
             cx,
             move |this| {
                 this.decks[index].transport.press(button);
             },
         ));
     }
+    area
+}
+
+/// The More drawer when the pills do not fit under the pads: the same toggles in a grid, plus the
+/// stems switch.
+fn more(
+    shell: &Shell,
+    index: usize,
+    l: &DeckLayout,
+    card: Rect,
+    snap: &DeckSnapshot,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let accent = t.accent_for(index as i32);
+    let cells = TransportPanel::secondary_layout(l.hotcues, CONTROL_GAP);
+    let area = toggle_pills(shell, index, card, &cells[..4], snap, cx);
     let live = stems_live(shell, index);
     area.child(tile(
         t,
@@ -883,7 +1416,425 @@ fn more(shell: &Shell, index: usize, l: &DeckLayout, card: Rect, cx: &mut Contex
     ))
 }
 
+/// The Platter switch at the top of the pitch column.
+fn platter_switch(
+    shell: &Shell,
+    index: usize,
+    rect: Rect,
+    cx: &mut Context<Shell>,
+) -> Stateful<Div> {
+    let t = &shell.theme;
+    let on = platter_state(index).on;
+    let style = ButtonStyle {
+        shape: Shape::Pill,
+        diameter: 0,
+        fill: if on {
+            t.accent_for(index as i32)
+        } else {
+            t.well
+        },
+        text: if on { t.on_accent } else { t.text_primary },
+        glow: on.then(|| t.accent_for(index as i32)),
+        alpha: 1.0,
+        hover: !on,
+    };
+    transport_button(
+        t,
+        rect,
+        ("Platter", "Show the platter: drag the disc to scrub"),
+        style,
+        cx,
+        move |_| set_platter(index, |p| p.on = !p.on),
+    )
+}
+
+/// The platter, in the place of the pads and loops: the disc, the played arc on its ring, the
+/// turning marker and ticks, and the static deck label in the middle. Dragging the inner 85 %
+/// scrubs through `Seek` (best effort, see the plan's risk 2); the rim band is painted but does
+/// nothing yet.
+fn platter(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    area: Rect,
+    snap: &DeckSnapshot,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let rect = platter_rect(area);
+    let geometry = platter_geometry(Rect::new(card.x + rect.x, card.y + rect.y, rect.w, rect.h));
+    let accent = t.accent_for(index as i32);
+    let seconds = if snap.file_sample_rate > 0.0 {
+        shell.decks[index].zoom.playhead_frame() as f64 / snap.file_sample_rate
+    } else {
+        0.0
+    };
+    let scene = PlatterScene {
+        deck: index,
+        accent,
+        disc: t.surface_raised,
+        track: t.border,
+        groove: t.border_strong.with_alpha(0.5),
+        tick: t.text_muted,
+        marker: t.text_primary,
+        position_frames: snap.position_frames,
+        length_frames: snap.length_frames,
+        track_seconds: seconds,
+    };
+    let canvas_el = canvas(
+        |_, _, _| (),
+        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
+            paint_platter(window, bounds, &scene);
+        },
+    )
+    .size_full();
+
+    let label_d = (geometry.label_radius * 2.0).round() as i32;
+    let letter = deck_letter(index).to_string();
+    let label = place(Rect::new(
+        (rect.w - label_d) / 2,
+        (rect.h - label_d) / 2,
+        label_d,
+        label_d,
+    ))
+    .flex()
+    .items_center()
+    .justify_center()
+    .rounded(px(label_d as f32 / 2.0))
+    .bg(paint(accent))
+    .text_color(paint(t.on_accent))
+    .text_size(px((label_d as f32 * 0.5).max(MIN_TEXT_SIZE)))
+    .font_weight(gpui::FontWeight::BOLD)
+    .child(letter);
+
+    let loaded = snap.loaded;
+    let length = snap.length_frames;
+    let per_turn = platter_frames_per_turn(snap.file_sample_rate);
+    let at = |ev_x: gpui::Pixels, ev_y: gpui::Pixels| (f32::from(ev_x), f32::from(ev_y));
+    let down = cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+        let p = at(ev.position.x, ev.position.y);
+        if loaded && zone_at(p, &geometry) == Zone::Scratch {
+            let state = this.engine.deck_snapshot(index).unwrap_or_default();
+            let angle = pointer_angle(p, &geometry);
+            // Touching the platter stops the motor; releasing starts it again.
+            if state.playing {
+                this.decks[index].transport.press(TransportButton::Play);
+            }
+            set_platter(index, |s| {
+                s.scratch = Some(Scratch {
+                    start_frame: state.position_frames,
+                    start_angle: angle,
+                    last_angle: angle,
+                    total_angle: angle,
+                    was_playing: state.playing,
+                })
+            });
+            cx.notify();
+        }
+    });
+    let moved = cx.listener(move |this, ev: &MouseMoveEvent, _, cx| {
+        let Some(mut s) = platter_state(index).scratch else {
+            return;
+        };
+        if !ev.dragging() {
+            return;
+        }
+        let angle = pointer_angle(at(ev.position.x, ev.position.y), &geometry);
+        s.total_angle += angle_delta(s.last_angle, angle);
+        s.last_angle = angle;
+        set_platter(index, |p| p.scratch = Some(s));
+        let target = scratch_target(
+            s.start_frame,
+            s.start_angle,
+            s.total_angle,
+            per_turn,
+            length,
+        );
+        if length > 0 {
+            // `Seek` takes a fraction of the track; `seek_at(x, 1.0)` sends x clamped to 0..1.
+            this.decks[index]
+                .overview
+                .seek_at(target as f64 / length as f64, 1.0);
+        }
+        cx.notify();
+    });
+    let release = cx.listener(move |this, _: &gpui::MouseUpEvent, _, cx| {
+        end_scratch(this, index);
+        cx.notify();
+    });
+    let release_out = cx.listener(move |this, _: &gpui::MouseUpEvent, _, cx| {
+        end_scratch(this, index);
+        cx.notify();
+    });
+
+    place(rect)
+        .child(canvas_el)
+        .child(label)
+        .on_mouse_down(MouseButton::Left, down)
+        .on_mouse_move(moved)
+        .on_mouse_up(MouseButton::Left, release)
+        .on_mouse_up_out(MouseButton::Left, release_out)
+}
+
+/// Ends a scratch: the deck plays again if it was playing when the platter was touched.
+fn end_scratch(shell: &mut Shell, index: usize) {
+    if let Some(s) = platter_state(index).scratch {
+        set_platter(index, |p| p.scratch = None);
+        if s.was_playing {
+            shell.decks[index].transport.press(TransportButton::Play);
+        }
+    }
+}
+
+/// Track frames per marker turn: the same 1.8 s the disc turns in.
+fn platter_frames_per_turn(file_sample_rate: f64) -> f64 {
+    SECONDS_PER_TURN * file_sample_rate
+}
+
 /// A colour with its alpha replaced by `alpha` (GPUI keeps the RGB of the source colour).
 fn accent_with_alpha(colour: gpui::Rgba, alpha: f32) -> gpui::Rgba {
     gpui::Rgba { a: alpha, ..colour }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use om_ui::theme::{parse_theme, BUILTIN_THEMES};
+    use om_ui::widgets::deck::deck_controls_layout_for;
+
+    fn theme(id: &str) -> ThemeTokens {
+        let (_, json) = BUILTIN_THEMES
+            .iter()
+            .find(|(file, _)| file.contains(id))
+            .expect("built-in theme");
+        parse_theme(json).expect("theme parses").tokens
+    }
+
+    fn themes() -> [ThemeTokens; 2] {
+        [theme("dark"), theme("daylight")]
+    }
+
+    #[test]
+    fn play_and_cue_are_56_px_circles_and_the_toggles_are_pills() {
+        let t = theme("dark");
+        for b in [TransportButton::Play, TransportButton::Cue] {
+            let s = transport_style(&t, b, false, true, 0);
+            assert_eq!((s.shape, s.diameter), (Shape::Round, 56), "{b:?}");
+        }
+        for b in [
+            TransportButton::Sync,
+            TransportButton::Master,
+            TransportButton::KeyLock,
+            TransportButton::Quantize,
+            TransportButton::Slip,
+        ] {
+            assert_eq!(transport_style(&t, b, false, true, 0).shape, Shape::Pill);
+        }
+    }
+
+    #[test]
+    fn lit_states_use_the_documented_fills() {
+        let t = theme("dark");
+        let play = transport_style(&t, TransportButton::Play, true, true, 1);
+        assert_eq!(play.fill, t.meter_low);
+        assert!(play.glow.is_some());
+        assert_eq!(transport_label(TransportButton::Play, true), "Pause");
+        assert_eq!(transport_label(TransportButton::Play, false), "Play");
+        assert_eq!(
+            transport_style(&t, TransportButton::Cue, true, true, 0).fill,
+            t.warning
+        );
+        assert_eq!(
+            transport_style(&t, TransportButton::Sync, true, true, 0).fill,
+            SYNC_ON
+        );
+        let slip = transport_style(&t, TransportButton::Slip, true, true, 2);
+        assert_eq!(slip.fill, t.accent_for(2));
+        let idle = transport_style(&t, TransportButton::Slip, false, true, 2);
+        assert_eq!(idle.fill, t.well);
+        assert!(idle.glow.is_none() && idle.hover);
+    }
+
+    #[test]
+    fn a_deck_without_a_track_is_dimmed_with_no_hover_or_glow() {
+        let t = theme("dark");
+        for b in TransportButton::ALL {
+            let s = transport_style(&t, b, true, false, 0);
+            assert_eq!(s.alpha, 0.4);
+            assert!(!s.hover && s.glow.is_none(), "{b:?}");
+        }
+    }
+
+    #[test]
+    fn words_are_plain_and_master_stays_findable() {
+        assert_eq!(
+            transport_label(TransportButton::Master, false),
+            "Tempo leader"
+        );
+        assert_eq!(
+            transport_label(TransportButton::Quantize, false),
+            "Snap to beat"
+        );
+        assert!(transport_tip(TransportButton::Master).contains("master"));
+    }
+
+    #[test]
+    fn empty_pads_are_dashed_and_say_set_with_no_colour() {
+        let t = theme("dark");
+        let p = pad_state(&t, false, false, 3);
+        assert!(p.dashed);
+        assert_eq!(p.label, "Set");
+        assert!(p.tab.is_none() && p.glow.is_none());
+        assert_eq!(p.fill, t.well);
+    }
+
+    #[test]
+    fn set_pads_take_the_cue_colour_at_85_percent_with_a_tab() {
+        let t = theme("dark");
+        let p = pad_state(&t, true, false, 2);
+        assert!(!p.dashed);
+        assert_eq!(p.label, "Cue 3");
+        assert!((p.fill.alpha() - 0.85).abs() < 0.01);
+        assert_eq!(p.tab, Some(HotcuePads::colour(2)));
+        assert!(p.glow.is_none());
+        let active = pad_state(&t, true, true, 2);
+        assert!((active.fill.alpha() - 1.0).abs() < 0.01);
+        assert!(active.glow.is_some());
+    }
+
+    #[test]
+    fn pad_text_reads_at_4_5_to_1_on_every_cue_colour_in_both_themes() {
+        for t in themes() {
+            for i in 0..8 {
+                for active in [false, true] {
+                    let p = pad_state(&t, true, active, i);
+                    let ground = over(p.fill, pad_ground(&t));
+                    let ratio = contrast_ratio(p.text, ground);
+                    assert!(ratio >= 4.5, "pad {i} active {active}: {ratio:.2}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn daylight_darkens_the_cue_colours_and_dark_does_not() {
+        let [dark, light] = themes();
+        assert_eq!(pad_colour(&dark, 0), HotcuePads::colour(0));
+        assert!(
+            relative_luminance(pad_colour(&light, 2)) < relative_luminance(HotcuePads::colour(2))
+        );
+    }
+
+    #[test]
+    fn a_pad_is_active_only_while_playing_just_after_its_cue() {
+        let s = DeckSnapshot {
+            playing: true,
+            file_sample_rate: 1000.0,
+            position_frames: 1100,
+            ..DeckSnapshot::default()
+        };
+        assert!(pad_active(&s, Some(1000)));
+        assert!(!pad_active(&s, Some(2000)), "cue ahead");
+        assert!(!pad_active(&s, Some(100)), "long passed");
+        assert!(!pad_active(&s, None));
+        let paused = DeckSnapshot {
+            playing: false,
+            ..s
+        };
+        assert!(!pad_active(&paused, Some(1000)));
+    }
+
+    #[test]
+    fn loop_view_shows_the_length_and_lights_with_the_loop() {
+        let frame = LoopFrame {
+            size_lit: [false; 8],
+            reloop_lit: true,
+            length_beats: 8.0,
+        };
+        let v = loop_view(&frame, true);
+        assert_eq!(v.label, frame.label());
+        assert!(v.loop_lit && v.halve_enabled && v.double_enabled);
+        let idle = LoopFrame {
+            reloop_lit: false,
+            length_beats: 0.0,
+            ..frame
+        };
+        assert!(!loop_view(&idle, true).loop_lit);
+        assert!(!loop_view(&idle, false).halve_enabled);
+    }
+
+    fn controls(w: i32, h: i32, mode: PadMode) -> DeckLayout {
+        deck_controls_layout_for(Rect::sized(w, h), &theme("dark"), mode)
+    }
+
+    fn all_rects(l: &DeckLayout, lay: &LocalLayout) -> Vec<Rect> {
+        let mut v = vec![lay.play, lay.cue, lay.sync, lay.pitch, lay.hotcues, l.tabs];
+        v.extend(lay.loops);
+        if !lay.platter_toggle.is_empty() {
+            v.push(lay.platter_toggle);
+        }
+        if let Some(cells) = lay.toggles {
+            v.extend(cells);
+        }
+        v.retain(|r| !r.is_empty());
+        v
+    }
+
+    #[test]
+    fn local_rects_stay_inside_the_card_and_never_overlap_at_any_size() {
+        for (w, h) in [(290, 262), (290, 330), (560, 420), (400, 700)] {
+            let card = Rect::sized(w, h);
+            let l = controls(w, h, PadMode::Cues);
+            let lay = local_layout(&l);
+            let rects = all_rects(&l, &lay);
+            for (i, a) in rects.iter().enumerate() {
+                assert!(card.contains(a), "{w}x{h}: {a:?} escapes");
+                for b in &rects[i + 1..] {
+                    assert!(!a.intersects(b), "{w}x{h}: {a:?} overlaps {b:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn round_buttons_are_56_px_when_the_row_allows_and_never_below_44() {
+        let mut l = controls(290, 262, PadMode::Cues);
+        l.transport = Rect::new(10, 10, 230, 60);
+        let lay = local_layout(&l);
+        assert_eq!((lay.play.w, lay.play.h), (56, 56));
+        assert_eq!(lay.cue.x - lay.play.right(), 24);
+        assert_eq!(lay.sync.x - lay.cue.right(), 12);
+        l.transport = Rect::new(10, 10, 230, 44);
+        let lay = local_layout(&l);
+        assert_eq!((lay.play.w, lay.play.h), (44, 44));
+        assert!(lay.sync.h >= 32 && lay.sync.w >= 44, "{:?}", lay.sync);
+    }
+
+    #[test]
+    fn halve_and_double_keep_a_32_px_hit_target() {
+        let l = controls(290, 262, PadMode::Cues);
+        let lay = local_layout(&l);
+        assert!(lay.loops[0].w >= 32 && lay.loops[2].w >= 32);
+        assert!(lay.loops[3].w >= 44 && lay.loops.iter().all(|r| r.h >= 32));
+    }
+
+    #[test]
+    fn the_toggle_row_appears_only_when_36_px_of_height_is_spare() {
+        let tall = local_layout(&controls(420, 700, PadMode::Cues));
+        assert!(tall.toggles.is_some(), "{tall:?}");
+        let short = local_layout(&controls(290, 262, PadMode::Cues));
+        assert!(short.toggles.is_none());
+        // Without the row the pads keep the whole area.
+        assert_eq!(short.hotcues, controls(290, 262, PadMode::Cues).hotcues);
+    }
+
+    #[test]
+    fn the_platter_drawer_covers_pads_and_loops_without_touching_the_transport() {
+        let l = controls(290, 262, PadMode::Cues);
+        let d = drawer_rect(&l);
+        assert!(d.contains(&l.hotcues) && d.contains(&l.loops));
+        assert!(!d.intersects(&l.transport) && !d.intersects(&l.tabs));
+        let s = controls(290, 262, PadMode::Stems);
+        assert!(drawer_rect(&s).contains(&s.stems));
+    }
 }
