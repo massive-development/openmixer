@@ -237,6 +237,34 @@ fn playhead(window: &mut Window, bounds: Bounds<Pixels>, x: f64, height: f32) {
     );
 }
 
+/// Diagonal hatch lines over a loop, as one filled path of 2 px wide parallelograms.
+fn paint_hatch(
+    window: &mut Window,
+    bounds: Bounds<Pixels>,
+    span: (f32, f32),
+    h: f32,
+    colour: Rgba,
+) {
+    let lines =
+        om_ui::waveform::loop_hatch_lines(span.0, span.1, h, om_ui::waveform::LOOP_HATCH_SPACING);
+    if lines.is_empty() {
+        return;
+    }
+    let at = |x: f32, y: f32| point(bounds.origin.x + px(x), bounds.origin.y + px(y));
+    let half = om_ui::waveform::LOOP_HATCH_WIDTH / 2.0;
+    let mut builder = PathBuilder::fill();
+    for ((bx, by), (tx, ty)) in lines {
+        builder.move_to(at(bx - half, by));
+        builder.line_to(at(bx + half, by));
+        builder.line_to(at(tx + half, ty));
+        builder.line_to(at(tx - half, ty));
+        builder.close();
+    }
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, colour);
+    }
+}
+
 /// Everything the zoomed strip draws on its canvas (the cue flags and number labels are elements
 /// over it).
 pub struct ZoomScene {
@@ -321,6 +349,35 @@ pub fn paint_zoom(window: &mut Window, bounds: Bounds<Pixels>, scene: &ZoomScene
             width,
             h,
             with_alpha(om_ui::waveform::GRID_COLOUR, alpha),
+        );
+    }
+
+    if let (Some((x0, x1, looping)), WaveStyle::Colour) = (scene.loop_span, style()) {
+        // The loop green is close to the mid band green: a top bar and a hatch set it apart.
+        let (a, b) = (
+            x0.clamp(0.0, f64::from(w)) as f32,
+            x1.clamp(0.0, f64::from(w)) as f32,
+        );
+        let edge = if looping {
+            om_ui::waveform::LOOP_EDGE_ALPHA
+        } else {
+            om_ui::waveform::LOOP_IDLE_EDGE_ALPHA
+        };
+        quad(
+            window,
+            bounds,
+            a,
+            0.0,
+            b - a,
+            om_ui::waveform::LOOP_TOP_BAR_HEIGHT,
+            with_alpha(LOOP_COLOUR, edge),
+        );
+        paint_hatch(
+            window,
+            bounds,
+            (a, b),
+            h,
+            with_alpha(LOOP_COLOUR, om_ui::waveform::LOOP_HATCH_ALPHA),
         );
     }
 
@@ -470,4 +527,56 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
     }
 
     playhead(window, bounds, m.playhead_x, h);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use om_analysis::{demo_loop, AudioClip, NullAnalysisContext, WaveformBuilder};
+
+    fn demo_columns(count: usize) -> Vec<(f32, ColumnShape)> {
+        let clip = AudioClip::new(demo_loop(64.0, 124.0, 44_100.0), 44_100.0);
+        let data = WaveformBuilder::default()
+            .build(&clip, &NullAnalysisContext)
+            .expect("not cancelled");
+        let points = &data.overview().points;
+        let shapes = overview_shapes(points, count, reference_peak(points), true);
+        shapes
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (i as f32 * 2.0 + 1.0, s))
+            .collect()
+    }
+
+    fn palette(style: WaveStyle) -> Palette {
+        Palette::new(style, om_ui::theme::ThemeTokens::builtin_dark().well)
+    }
+
+    #[test]
+    fn a_strip_is_at_most_25_paths_and_three_band_is_three() {
+        let columns = demo_columns(300);
+        let origin = point(px(0.0), px(0.0));
+        for style in [WaveStyle::Colour, WaveStyle::Mono, WaveStyle::ColourBlind] {
+            let n = column_paths(&columns, origin, 48.0, &palette(style), true).len();
+            assert!((2..=25).contains(&n), "{style:?}: {n} paths");
+        }
+        let three = column_paths(&columns, origin, 48.0, &palette(WaveStyle::ThreeBand), true);
+        assert_eq!(three.len(), 3);
+        let grey = column_paths(&columns, origin, 48.0, &palette(WaveStyle::Colour), false);
+        assert_eq!(grey.len(), 1, "no spectrum: one silhouette");
+    }
+
+    #[test]
+    fn style_or_theme_changes_invalidate_the_overview() {
+        let bounds = [0.0, 0.0, 600.0, 48.0];
+        let base = overview_key(7, bounds, WaveStyle::Colour, true);
+        assert_eq!(base, overview_key(7, bounds, WaveStyle::Colour, true));
+        assert_ne!(base, overview_key(7, bounds, WaveStyle::Mono, true));
+        assert_ne!(base, overview_key(7, bounds, WaveStyle::Colour, false));
+        assert_ne!(base, overview_key(8, bounds, WaveStyle::Colour, true));
+        assert_ne!(
+            base,
+            overview_key(7, [0.0, 0.0, 601.0, 48.0], WaveStyle::Colour, true)
+        );
+    }
 }
