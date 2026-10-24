@@ -95,7 +95,13 @@ pub struct ThemeTokens {
     pub surface_raised: Colour,
     pub surface_hover: Colour,
     pub well: Colour,
+    /// Decorative hairline between and around surfaces. Deliberately quiet (about 1.4:1); anything
+    /// that must be *found* (a control's outline, a marker) uses `border_strong` (>= 3:1).
     pub border: Colour,
+    /// Outline of an interactive control; WCAG 1.4.11 non-text contrast (>= 3:1) on every surface.
+    pub border_strong: Colour,
+    /// Keyboard focus ring; >= 3:1 on every surface.
+    pub focus_ring: Colour,
     pub highlight: Colour,
     pub shadow: Colour,
     pub text_primary: Colour,
@@ -108,6 +114,16 @@ pub struct ThemeTokens {
     pub meter_high: Colour,
     /// The Record button's dot and the recording state (armed or running).
     pub record_red: Colour,
+    /// Semantic colours (chrome, markers and state; never a deck identity and never waveform).
+    /// Cue point and "main" marker.
+    pub cue: Colour,
+    /// Loop region and loop-active state.
+    pub loop_mark: Colour,
+    /// Sync engaged.
+    pub sync_on: Colour,
+    pub warning: Colour,
+    /// Clip, error and record.
+    pub danger: Colour,
     pub master: Colour,
     /// Waveform band colours (bass / mids / highs).
     /// The OpenMixer signature colour (E1). Reserved for brand marks and the "now" cues (the
@@ -129,6 +145,9 @@ pub struct ThemeTokens {
     pub gap: i32,
     pub pad: i32,
     pub inner_gap: i32,
+    /// Smallest size of a button or pad, and of any mouse-only target (px).
+    pub min_target: f32,
+    pub min_pointer_target: f32,
     pub card_radius: f32,
     pub control_radius: f32,
 
@@ -244,6 +263,12 @@ pub struct ThemeTokens {
     pub motion_fast_ms: f32,
     pub motion_base_ms: f32,
 
+    /// Interface font family (registered by the front end) and whether numerals are tabular.
+    pub font_family: String,
+    pub tabular_numerals: bool,
+    /// Reduced-motion preference: transitions collapse to zero length and glow pulses stop.
+    pub reduced_motion: bool,
+
     /// Scales the alpha of surface, raised and hover (glass strength).
     pub surface_opacity: f32,
     /// Default backdrop opacity before a window asks for less.
@@ -254,55 +279,67 @@ impl ThemeTokens {
     /// The built-in dark theme. Also the fallback for anything a theme file leaves out.
     pub fn builtin_dark() -> Self {
         Self {
-            backdrop_top: Colour::from_argb(0xFF12_1020),
-            backdrop_bottom: Colour::from_argb(0xFF08_0710),
-            glow_cool: Colour::from_argb(0x304C_C9F0),
-            glow_warm: Colour::from_argb(0x28FF_8F5A),
-            surface: Colour::from_argb(0x14FF_FFFF),
-            surface_raised: Colour::from_argb(0x1FFF_FFFF),
-            surface_hover: Colour::from_argb(0x2EFF_FFFF),
-            well: Colour::from_argb(0x5900_0000),
-            border: Colour::from_argb(0x1FFF_FFFF),
+            // Opaque palette: contrast no longer depends on what sits behind a surface.
+            backdrop_top: Colour::from_argb(0xFF0B_0D12),
+            backdrop_bottom: Colour::from_argb(0xFF0B_0D12),
+            glow_cool: Colour::from_argb(0x0F00_C2FF),
+            glow_warm: Colour::from_argb(0x0AFF_6B35),
+            surface: Colour::from_argb(0xFF12_151C),
+            surface_raised: Colour::from_argb(0xFF1A_1F2B),
+            surface_hover: Colour::from_argb(0xFF1C_222E),
+            well: Colour::from_argb(0xFF07_090D),
+            border: Colour::from_argb(0xFF2A_3142),
+            border_strong: Colour::from_argb(0xFF5F_6A85),
+            focus_ring: Colour::from_argb(0xFFF2_F4F8),
             highlight: Colour::from_argb(0x26FF_FFFF),
             shadow: Colour::from_argb(0x6600_0000),
-            text_primary: Colour::from_argb(0xF2F4_F6FB),
-            text_secondary: Colour::from_argb(0xA6C9_D1E3),
-            text_muted: Colour::from_argb(0x6BC9_D1E3),
-            on_accent: Colour::from_argb(0xFF08_0710),
-            meter_low: Colour::from_argb(0xFF34_D399),
-            meter_mid: Colour::from_argb(0xFFFB_BF24),
-            meter_high: Colour::from_argb(0xFFF4_3F5E),
-            record_red: Colour::from_argb(0xFFE5_3935),
+            text_primary: Colour::from_argb(0xFFF2_F4F8),
+            text_secondary: Colour::from_argb(0xFFA9_B1C3),
+            text_muted: Colour::from_argb(0xFF80_89A0),
+            on_accent: Colour::from_argb(0xFF0B_0D12),
+            meter_low: Colour::from_argb(0xFF2E_E59D),
+            meter_mid: Colour::from_argb(0xFFFF_C83D),
+            meter_high: Colour::from_argb(0xFFFF_3B4E),
+            record_red: Colour::from_argb(0xFFFF_3B4E),
+            cue: Colour::from_argb(0xFFFF_6B35),
+            loop_mark: Colour::from_argb(0xFF2E_E59D),
+            sync_on: Colour::from_argb(0xFF19_D3A2),
+            warning: Colour::from_argb(0xFFFF_C83D),
+            danger: Colour::from_argb(0xFFFF_3B4E),
             master: Colour::from_argb(0xFFE2_E8F0),
-            popup: Colour::from_argb(0xF014_1926),
+            popup: Colour::from_argb(0xFF1A_1F2B),
             cap_top: Colour::from_argb(0xFF2C_3446),
             cap_bottom: Colour::from_argb(0xFF16_1B26),
             drop_target: Colour::from_argb(0x402A_6F9E),
-            brand: Colour::from_argb(0xFFFF_8F5A),
-            readout: Colour::from_argb(0xFFF7_F3EC),
-            readout_dim: Colour::from_argb(0xFF9A_A0B4),
+            brand: Colour::from_argb(0xFFFF_6B35),
+            readout: Colour::from_argb(0xFFF2_F4F8),
+            readout_dim: Colour::from_argb(0xFFA9_B1C3),
             accents: builtin_accents(),
 
-            gap: 12,
-            pad: 12,
+            // Spacing scale 4/8/12/16/24/32: card pad and card gap 16, in-group 8.
+            gap: 16,
+            pad: 16,
             inner_gap: 8,
+            min_target: 44.0,
+            min_pointer_target: 32.0,
             card_radius: 14.0,
             control_radius: 8.0,
 
-            type_small: 11.0,
+            // Type scale 12/14/16/20/28/40; nothing below 12.
+            type_small: 12.0,
             type_caption: 12.0,
-            type_body: 13.0,
-            type_label: 14.0,
-            type_title: 16.0,
-            type_heading: 17.0,
-            type_mono: 15.0,
-            type_readout: 22.0,
-            type_readout_small: 14.0,
+            type_body: 14.0,
+            type_label: 16.0,
+            type_title: 20.0,
+            type_heading: 20.0,
+            type_mono: 16.0,
+            type_readout: 40.0,
+            type_readout_small: 28.0,
 
             deck_header_height: 52.0,
             deck_overview_height: 40.0,
             deck_transport_height: 32.0,
-            deck_row_height: 30.0,
+            deck_row_height: 40.0,
             deck_pitch_width: 84.0,
             deck_min_zoom_height: 60.0,
             deck_readout_width: 78.0,
@@ -318,7 +355,7 @@ impl ThemeTokens {
             mixer_button_height: 26.0,
             mixer_meter_width: 12.0,
             mixer_master_width: 92.0,
-            mixer_tab_height: 28.0,
+            mixer_tab_height: 32.0,
             mixer_crossfader_height: 46.0,
             mixer_cue_height: 46.0,
             meter_floor_db: -48.0,
@@ -341,12 +378,12 @@ impl ThemeTokens {
             meter_segment_gap: 1.0,
             meter_hold_tick_height: 2.0,
 
-            library_row_height: 26.0,
-            library_header_height: 26.0,
+            library_row_height: 32.0,
+            library_header_height: 32.0,
             library_sidebar_width: 190.0,
-            library_toolbar_height: 34.0,
+            library_toolbar_height: 40.0,
             library_button_width: 78.0,
-            library_sidebar_row_height: 24.0,
+            library_sidebar_row_height: 32.0,
             library_rating_dot: 5.0,
             library_search_min_width: 160.0,
             library_compat_alpha: 0.22,
@@ -356,7 +393,7 @@ impl ThemeTokens {
             settings_panel_width: 760.0,
             settings_panel_height: 540.0,
             settings_tab_height: 32.0,
-            settings_row_height: 30.0,
+            settings_row_height: 32.0,
             settings_label_width: 150.0,
             settings_button_width: 96.0,
             settings_dim_alpha: 0.55,
@@ -385,6 +422,10 @@ impl ThemeTokens {
             shadow_offset_y: 6.0,
             motion_fast_ms: 90.0,
             motion_base_ms: 180.0,
+
+            font_family: DEFAULT_FONT_FAMILY.to_owned(),
+            tabular_numerals: true,
+            reduced_motion: false,
 
             surface_opacity: 1.0,
             backdrop_opacity: 1.0,
@@ -421,11 +462,18 @@ impl ThemeTokens {
     }
 }
 
+/// Family name of the bundled interface font (Inter, SIL OFL 1.1; see `resources/fonts`).
+pub const DEFAULT_FONT_FAMILY: &str = "Inter";
+
+/// The spacing scale (px): 4, 8, 12, 16, 24, 32. Layout values come from here.
+pub const SPACE_SCALE: [f32; 6] = [4.0, 8.0, 12.0, 16.0, 24.0, 32.0];
+
+/// Deck identity colours A..D: chrome only (never the waveform), always paired with the deck letter.
 const BUILTIN_ACCENTS: [Colour; 4] = [
-    Colour::from_argb(0xFF4C_C9F0),
-    Colour::from_argb(0xFFB7_94F6),
-    Colour::from_argb(0xFF5F_D6A4),
-    Colour::from_argb(0xFFE3_D26F),
+    Colour::from_argb(0xFF00_C2FF),
+    Colour::from_argb(0xFFFF_4D8D),
+    Colour::from_argb(0xFFB3_88FF),
+    Colour::from_argb(0xFFC6_F135),
 ];
 
 /// Bass red through orange, green, cyan and blue to violet, then a wash toward white for the air.

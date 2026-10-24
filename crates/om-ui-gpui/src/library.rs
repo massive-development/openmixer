@@ -627,6 +627,11 @@ impl LibraryPanel {
         self.browser.cancel_stems_selected(&mut h.stems)
     }
 
+    /// Stem jobs queued or running; the toolbar offers Cancel only while this is above zero.
+    pub fn stems_in_flight(&self) -> usize {
+        self.hub.borrow().stems.in_flight()
+    }
+
     /// Queues the selected rows for analysis.
     pub fn prep_selected(&mut self) -> usize {
         let mut h = self.hub.borrow_mut();

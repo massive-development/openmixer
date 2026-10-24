@@ -1,10 +1,11 @@
-//! The sampler strip: eight pads (a 4x2 grid) and a control column for the selected pad (mode,
-//! load and clear, gain and pitch steppers). Pads light while playing. A pad is pressed by a click
+//! The sampler drawer: collapsed it is a narrow PADS handle beside the library; open it shows eight
+//! pads (a 4x2 grid) and a control column for the selected pad (mode and stop, load and clear,
+//! gain and pitch steppers). Pads light while playing. A pad is pressed by a click
 //! or its digit key (1 to 8) while the strip has focus; a gate pad is held until the button or key
 //! comes up. Models come from `om-ui`'s `SamplerBinding`; the layout from `widgets::sampler_strip`.
 
 use crate::app::Shell;
-use crate::controls::{button, caption};
+use crate::controls::{button, caption, mark};
 use crate::paint::{paint, place, skin};
 use crate::text_entry::{apply_key, EntryKey};
 use gpui::{
@@ -13,7 +14,7 @@ use gpui::{
 };
 use om_engine::sampler::PadMode;
 use om_ui::geometry::Rect;
-use om_ui::sampler_binding::{mode_hint, mode_label, pad_for_key, PadView};
+use om_ui::sampler_binding::{mode_label, pad_for_key, PadView};
 use om_ui::style::LookAndFeel;
 use om_ui::theme::Colour;
 use om_ui::widgets::sampler_strip::{sampler_strip_layout, SamplerStripLayout};
@@ -121,8 +122,41 @@ impl Shell {
     }
 }
 
-/// The sampler strip drawn at `card`. `focus` takes the keys while the strip is clicked.
+/// The collapsed drawer: a handle that opens the sampler when clicked. The digit keys still play
+/// pads while it has focus.
+fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Context<Shell>) -> Div {
+    let t = &shell.theme;
+    let look = LookAndFeel::from_tokens(t);
+    let hover = look.button.hover.fill;
+    skin(place(card), &look.button.idle)
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(4.))
+        .text_size(px(t.type_caption.max(12.0)))
+        .hover(move |style| style.bg(paint(hover)))
+        .track_focus(&focus)
+        .child("PADS")
+        .child("+")
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                this.sampler_open = true;
+                if let Some(focus) = this.sampler_focus.clone() {
+                    window.focus(&focus);
+                }
+                cx.notify();
+            }),
+        )
+}
+
+/// The sampler drawn at `card`: the handle while collapsed, else the pads and their controls.
+/// `focus` takes the keys while the strip is clicked.
 pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Context<Shell>) -> Div {
+    if !shell.sampler_open {
+        return collapsed_handle(shell, card, focus, cx);
+    }
     let t = &shell.theme;
     let look = LookAndFeel::from_tokens(t);
     let accent = look.accent;
@@ -170,12 +204,10 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         format!("Path: {}|", shell.sampler.path(selected))
     } else if let Some((message, _)) = &shell.sampler_status {
         message.clone()
+    } else if pads[selected].loaded {
+        format!("{} {}", pads[selected].key, pads[selected].name)
     } else {
-        format!(
-            "{} - {}",
-            shell.sampler.caption(),
-            mode_hint(pads[selected].mode)
-        )
+        format!("{} empty", pads[selected].key)
     };
     let error = shell.sampler_status.as_ref().is_some_and(|(_, e)| *e);
     root = root.child(caption(t, l.caption, &text).text_color(paint(if error {
@@ -183,6 +215,9 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     } else {
         t.text_primary
     })));
+    root = root.child(button(t, l.close, "HIDE", false, accent, cx, |this| {
+        this.sampler_open = false;
+    }));
 
     for (index, pad) in pads.iter().enumerate() {
         root = root.child(pad_tile(
@@ -204,57 +239,41 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         cx,
         |this| this.sampler_cycle_mode(),
     ));
-    root = root.child(button(
-        t,
-        l.stop_all,
-        "Stop all",
-        false,
-        accent,
-        cx,
-        |this| this.sampler.stop_all(),
-    ));
+    root = root.child(button(t, l.stop_all, "STOP", false, accent, cx, |this| {
+        this.sampler.stop_all()
+    }));
     root = root.child(button(
         t,
         l.load,
-        "Load",
+        "LOAD",
         shell.sampler_editing,
         accent,
         cx,
         |this| this.sampler_begin_path(),
     ));
-    root = root.child(button(t, l.clear, "Clear", false, accent, cx, |this| {
+    root = root.child(button(t, l.clear, "CLEAR", false, accent, cx, |this| {
         this.sampler_clear_selected()
     }));
-    root = root.child(button(
-        t,
-        l.gain_down,
-        "Gain -",
-        false,
-        accent,
-        cx,
-        |this| this.sampler_step_gain(-GAIN_STEP),
-    ));
-    root = root.child(button(t, l.gain_up, "Gain +", false, accent, cx, |this| {
+    // Gain and pitch steppers: `-`, the name and value between, `+`.
+    let gain = format!("GAIN {}%", (pads[selected].gain * 100.0).round() as i32);
+    let pitch = format!(
+        "PITCH {}",
+        om_ui::format::signed_fixed(f64::from(pads[selected].pitch), 0)
+    );
+    root = root.child(button(t, l.gain_down, "-", false, accent, cx, |this| {
+        this.sampler_step_gain(-GAIN_STEP)
+    }));
+    root = root.child(mark(t, l.gain_value, &gain));
+    root = root.child(button(t, l.gain_up, "+", false, accent, cx, |this| {
         this.sampler_step_gain(GAIN_STEP)
     }));
-    root = root.child(button(
-        t,
-        l.pitch_down,
-        "Pitch -",
-        false,
-        accent,
-        cx,
-        |this| this.sampler_step_pitch(-PITCH_STEP),
-    ));
-    root = root.child(button(
-        t,
-        l.pitch_up,
-        "Pitch +",
-        false,
-        accent,
-        cx,
-        |this| this.sampler_step_pitch(PITCH_STEP),
-    ));
+    root = root.child(button(t, l.pitch_down, "-", false, accent, cx, |this| {
+        this.sampler_step_pitch(-PITCH_STEP)
+    }));
+    root = root.child(mark(t, l.pitch_value, &pitch));
+    root = root.child(button(t, l.pitch_up, "+", false, accent, cx, |this| {
+        this.sampler_step_pitch(PITCH_STEP)
+    }));
     root
 }
 

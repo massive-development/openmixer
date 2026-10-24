@@ -320,8 +320,7 @@ fn module_layout_has_no_overlaps_across_sizes() {
         let bounds = Rect::sized(w, h);
         let layout = MixerPanel::module_layout(bounds, &theme);
         let parts: Vec<(&str, Rect)> = vec![
-            ("tab mixer", layout.tabs[0]),
-            ("tab fx", layout.tabs[1]),
+            ("fx toggle", layout.fx),
             ("master", layout.master),
             ("crossfader", layout.crossfader),
             ("cue", layout.cue),
@@ -363,7 +362,6 @@ fn strip_children_fit_and_do_not_overlap_at_the_default_slot_size() {
             ("filter", s.filter),
             ("pfl", s.pfl),
             ("fx", s.fx),
-            ("fader caption", s.fader_caption),
             ("fader", s.fader),
             ("meter", s.meter),
         ];
@@ -379,6 +377,10 @@ fn strip_children_fit_and_do_not_overlap_at_the_default_slot_size() {
             assert!(strip_rect.contains(r), "strip {c}: {name} clipped");
         }
         assert!(s.fader.h >= 80, "the fader needs real travel, not a sliver");
+        assert!(
+            s.trim.h >= 32 && s.filter.h >= 32 && s.pfl.h >= 32,
+            "controls are at least 32 px"
+        );
     }
 }
 

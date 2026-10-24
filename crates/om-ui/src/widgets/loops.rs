@@ -35,15 +35,28 @@ pub struct LoopFrame {
     pub length_beats: f64,
 }
 
-/// Button rectangles of the loop row.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoopLayout {
-    pub sizes: [Rect; 8],
-    pub halve: Rect,
-    pub double: Rect,
-    pub exit: Rect,
-    pub reloop: Rect,
+impl LoopFrame {
+    /// Text of the size button: the loop's length, or the length a press would start while idle.
+    pub fn label(&self) -> String {
+        if self.length_beats > 0.0 {
+            crate::widgets::deck_header::loop_label(self.length_beats)
+        } else {
+            SIZE_NAMES[DEFAULT_SIZE_INDEX].to_owned()
+        }
+    }
 }
+
+/// Button rectangles of the loop row: halve, the size readout (also the loop on/off button),
+/// double.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoopLayout {
+    pub halve: Rect,
+    pub size: Rect,
+    pub double: Rect,
+}
+
+/// Index in [`SIZES`] of the loop the size button starts when none is set: 4 beats.
+pub const DEFAULT_SIZE_INDEX: usize = 4;
 
 impl LoopFrame {
     /// The frame for one deck snapshot, read against the deck's grid. Pure: no engine access.
@@ -112,30 +125,32 @@ impl LoopControls {
         self.binding.send(DeckParam::LoopReloop, 1.0)
     }
 
-    /// Two rows: the size buttons on top, the actions below. `gap` between buttons and rows.
+    /// One row: halve and double (40 px each, over the 32 px floor) around the size button, which
+    /// takes the rest.
     pub fn layout(area: Rect, gap: i32) -> LoopLayout {
         let mut area = area;
-        let row_h = (area.h - gap) / 2;
-        let mut top = area.remove_top(row_h);
-        area.remove_top(gap);
-        let w = (top.w - gap * 7) / 8;
-        let sizes = std::array::from_fn(|_| {
-            let r = top.remove_left(w);
-            top.remove_left(gap);
-            r
-        });
-        let cell = (area.w - gap * 3) / 4;
-        let mut actions = (0..4).map(|_| {
-            let r = area.remove_left(cell);
-            area.remove_left(gap);
-            r
-        });
+        let side = 40.min(area.w / 3);
+        let halve = area.remove_left(side);
+        area.remove_left(gap);
+        let double = area.remove_right(side);
+        area.remove_right(gap);
         LoopLayout {
-            sizes,
-            halve: actions.next().unwrap_or_default(),
-            double: actions.next().unwrap_or_default(),
-            exit: actions.next().unwrap_or_default(),
-            reloop: actions.next().unwrap_or_default(),
+            halve,
+            size: area,
+            double,
+        }
+    }
+
+    /// The size button: exits an active loop, re-enters the last one, or starts a loop of
+    /// `SIZES[DEFAULT_SIZE_INDEX]` beats when none is set. Returns whether it sent.
+    pub fn toggle(&self) -> bool {
+        let state = self.binding.state();
+        if state.looping {
+            self.exit()
+        } else if state.loop_valid() {
+            self.reloop()
+        } else {
+            self.press_size(DEFAULT_SIZE_INDEX)
         }
     }
 }
@@ -155,5 +170,31 @@ mod tests {
             assert_eq!(text.parse::<om_core::ParamId>(), Ok(id), "{text}");
         }
         assert_eq!(loop_param(0.25).to_string(), "loop.quantized.0.25");
+    }
+
+    #[test]
+    fn the_loop_row_is_halve_size_double_with_the_size_in_the_middle() {
+        let l = LoopControls::layout(Rect::new(0, 0, 200, 36), 6);
+        assert!(l.halve.right() < l.size.x && l.size.right() < l.double.x);
+        assert!(l.halve.w >= 32 && l.double.w >= 32 && l.size.w >= 64);
+        assert_eq!(l.size.h, 36);
+    }
+
+    #[test]
+    fn the_size_label_follows_the_loop_or_offers_the_default() {
+        let idle = LoopFrame {
+            size_lit: [false; 8],
+            reloop_lit: false,
+            length_beats: 0.0,
+        };
+        assert_eq!(idle.label(), "4");
+        assert_eq!(
+            LoopFrame {
+                length_beats: 0.25,
+                ..idle
+            }
+            .label(),
+            "1/4"
+        );
     }
 }

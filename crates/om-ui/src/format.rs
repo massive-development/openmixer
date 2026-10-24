@@ -19,6 +19,23 @@ pub fn decibels(db: f64) -> String {
     format!("{} dB", signed_fixed(db, 1))
 }
 
+/// Whole decibels with a sign: `+6 dB`, `0 dB`, `-12 dB`.
+pub fn whole_decibels(db: f64) -> String {
+    format!("{} dB", signed_fixed(db.round(), 0))
+}
+
+/// Lowest EQ value the engine treats as a kill, in dB (see `ThreeBandEq::MIN_DB`).
+pub const EQ_KILL_DB: f64 = -48.0;
+
+/// An EQ band's value: `KILL` at the floor, else whole signed decibels.
+pub fn eq_band(db: f64) -> String {
+    if db <= EQ_KILL_DB + 0.5 {
+        "KILL".to_owned()
+    } else {
+        whole_decibels(db)
+    }
+}
+
 /// Linear gain shown as dB; silence reads as `-inf dB`.
 pub fn gain_as_decibels(linear: f64) -> String {
     if linear <= 0.0 {
@@ -73,6 +90,22 @@ mod tests {
         assert_eq!(decibels(-12.04), "-12.0 dB");
         assert_eq!(decibels(0.0), "0.0 dB");
         assert_eq!(decibels(-0.01), "0.0 dB");
+    }
+
+    #[test]
+    fn whole_decibels_are_signed_and_never_negative_zero() {
+        assert_eq!(whole_decibels(6.2), "+6 dB");
+        assert_eq!(whole_decibels(0.0), "0 dB");
+        assert_eq!(whole_decibels(-0.4), "0 dB");
+        assert_eq!(whole_decibels(-12.5), "-13 dB");
+    }
+
+    #[test]
+    fn a_band_at_the_floor_reads_kill() {
+        assert_eq!(eq_band(-48.0), "KILL");
+        assert_eq!(eq_band(-47.6), "KILL");
+        assert_eq!(eq_band(-40.0), "-40 dB");
+        assert_eq!(eq_band(3.0), "+3 dB");
     }
 
     #[test]

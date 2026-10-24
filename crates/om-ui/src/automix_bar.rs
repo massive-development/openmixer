@@ -13,12 +13,30 @@ pub const BAR_HEIGHT: i32 = 32;
 
 /// Widths of the bar's fixed-size parts, in pixels. The window lays the bar out with these; the
 /// tests check that the row still fits at the minimum window width.
-pub const STATE_WIDTH: f32 = 80.0;
+pub const STATE_WIDTH: f32 = 96.0;
 pub const PROGRESS_WIDTH: f32 = 48.0;
-pub const REMAINING_WIDTH: f32 = 72.0;
+pub const REMAINING_WIDTH: f32 = 88.0;
+/// The toggle's label: automix is named once, in capitals, like the other controls.
+pub const TOGGLE_LABEL: &str = "AUTO";
 /// Gap between the row's items, and its left and right padding.
 pub const ROW_GAP: f32 = 4.0;
 pub const ROW_PADDING: f32 = 10.0;
+
+/// The buttons the bar offers right now. Only what does something is drawn: an Off automix shows
+/// just its toggle, a transition shows Skip and Cancel, and so on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AutomixActions {
+    pub start: bool,
+    pub skip: bool,
+    pub cancel: bool,
+}
+
+impl AutomixActions {
+    /// How many buttons are offered.
+    pub fn count(&self) -> usize {
+        usize::from(self.start) + usize::from(self.skip) + usize::from(self.cancel)
+    }
+}
 
 /// What the bar shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +66,26 @@ pub struct AutomixBar {
 }
 
 impl AutomixBar {
+    /// The buttons worth drawing: those whose `can_*` flag is set. Start now is left out while a
+    /// pick is already armed or loading, since Skip and Cancel are what the DJ wants then.
+    pub fn actions(&self) -> AutomixActions {
+        AutomixActions {
+            start: self.can_start && !self.can_skip,
+            skip: self.can_skip,
+            cancel: self.can_cancel,
+        }
+    }
+
+    /// True while there is something to read besides the toggle: a plan, a transition or an error.
+    pub fn has_detail(&self) -> bool {
+        self.enabled || !self.error.is_empty()
+    }
+
+    /// True while the progress bar and the beats left mean something.
+    pub fn shows_progress(&self) -> bool {
+        self.enabled && !self.remaining.is_empty()
+    }
+
     pub fn new(snapshot: &AutomixSnapshot, prefs: &AutomixPrefs) -> Self {
         // The running flag, not the preference: the controller can turn itself off (an underrun,
         // repeated load failures) and the bar says so with the reason in `error`.
@@ -271,25 +309,69 @@ mod tests {
         }
     }
 
-    /// A rough width of the bar's row with the widest labels: 6 px per glyph at the small type
-    /// size, 28 px of chip padding, border and margin. It must fit the strip at the minimum
-    /// window width, next to the Record button and the Settings reserve (96 px in the window).
+    fn bar(state: AutomixState, enabled: bool) -> AutomixBar {
+        let mut snapshot = snap(state);
+        snapshot.enabled = enabled;
+        AutomixBar::new(
+            &snapshot,
+            &AutomixPrefs {
+                enabled,
+                ..Default::default()
+            },
+        )
+    }
+
+    #[test]
+    fn an_off_automix_offers_nothing_but_its_toggle() {
+        let off = bar(AutomixState::Armed, false);
+        assert_eq!(off.actions(), AutomixActions::default());
+        assert!(!off.has_detail());
+        assert!(!off.shows_progress());
+    }
+
+    #[test]
+    fn each_state_offers_only_the_buttons_that_do_something() {
+        let idle = bar(AutomixState::Idle, true).actions();
+        assert_eq!(
+            idle,
+            AutomixActions {
+                start: true,
+                skip: false,
+                cancel: false
+            }
+        );
+        let armed = bar(AutomixState::Armed, true).actions();
+        assert_eq!(
+            armed,
+            AutomixActions {
+                start: false,
+                skip: true,
+                cancel: true
+            },
+            "an armed pick is skipped or cancelled; starting is the transition's own job"
+        );
+        let running = bar(AutomixState::Transitioning, true).actions();
+        assert!(!running.start && running.skip && running.cancel);
+        assert_eq!(running.count(), 2);
+        assert!(bar(AutomixState::Transitioning, true).shows_progress());
+    }
+
+    /// The compact row, widest case: toggle, state, next track, progress with beats left and the
+    /// three buttons. It must fit the strip at the minimum window width, next to the Record
+    /// button and the Settings reserve (96 px in the window).
     #[test]
     fn the_row_fits_the_minimum_window_width() {
-        const GLYPH: f32 = 6.0;
+        const GLYPH: f32 = 7.0;
         const CHIP: f32 = 28.0;
-        let widest_style = STYLE_LABELS.iter().map(|l| l.len()).max().unwrap_or(0);
-        let chips = [2, widest_style, "16 beats".len(), "Start now".len(), 6, 4];
+        let chips = ["AUTO".len(), "Start".len(), "Skip".len(), "Cancel".len()];
         let chip_width: f32 = chips.iter().map(|n| *n as f32 * GLYPH + CHIP).sum();
-        let label = "Automix".len() as f32 * GLYPH;
-        // label, On, style, length, state, next, progress group, Start now, Skip, Cancel
-        let items = 10.0;
+        let items = 7.0;
+        // The next-track text is flexible; give it a floor of 160 px.
         let width = 2.0 * ROW_PADDING
-            + label
             + chip_width
             + STATE_WIDTH
+            + 160.0
             + PROGRESS_WIDTH
-            + ROW_GAP
             + REMAINING_WIDTH
             + (items - 1.0) * ROW_GAP;
         let (min_width, _) = crate::main_layout::MIN_WINDOW;

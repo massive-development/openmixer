@@ -164,9 +164,9 @@ fn mixer_sits_between_the_decks_and_the_library_is_below() {
     assert!(!sampler.intersects(&library) && !sampler.intersects(&mixer));
 }
 
-/// Window sizes the app must lay out cleanly: the common ones and the 1024x640 minimum
+/// Window sizes the app must lay out cleanly: the common ones and the 1280x720 minimum
 /// (`MIN_WINDOW`; the window cannot be resized below it).
-const WINDOWS: [(i32, i32); 3] = [(1280, 800), (1024, 640), (1920, 1080)];
+const WINDOWS: [(i32, i32); 3] = [(1280, 800), (1280, 720), (1920, 1080)];
 
 #[test]
 fn library_band_is_below_decks_and_mixer_at_every_window_size() {
@@ -205,7 +205,7 @@ fn library_band_is_below_decks_and_mixer_at_every_window_size() {
             if a.kind.is_deck() {
                 let card = Rect::sized(a.bounds.w, a.bounds.h);
                 let l = deck_controls_layout(card, &t);
-                let parts = [l.pitch, l.hotcues, l.loops, l.transport, l.stems];
+                let parts = [l.pitch, l.hotcues, l.loops, l.transport, l.tabs, l.stems];
                 for (i, p) in parts.iter().enumerate() {
                     assert!(
                         card.contains(p),
@@ -232,7 +232,7 @@ fn deck_controls_and_stage_fit_without_overlap_at_every_window_size() {
     use om_ui::widgets::deck::deck_controls_layout;
     use om_ui::widgets::stage::stage_layout;
     let theme = om_ui::theme::ThemeTokens::builtin_dark();
-    for (width, height) in [(1280, 800), (1024, 640), (1920, 1080)] {
+    for (width, height) in [(1280, 800), (1280, 720), (1920, 1080)] {
         let area = R::new(0, 48, width, height - 48);
         let spec = LayoutSpec::standard(2);
         for cell in compute_layout(&spec, area, 8) {
@@ -241,8 +241,8 @@ fn deck_controls_and_stage_fit_without_overlap_at_every_window_size() {
             match &cell.kind {
                 CellKind::Deck(_) => {
                     let l = deck_controls_layout(card, &theme);
-                    assert!(l.stems.h > 0, "{width}x{height}: no stems row");
-                    parts = vec![l.pitch, l.hotcues, l.loops, l.transport, l.stems];
+                    assert!(l.tabs.h >= 32, "{width}x{height}: no tab strip");
+                    parts = vec![l.pitch, l.hotcues, l.loops, l.transport, l.tabs];
                 }
                 CellKind::Slot(name) if name == STAGE_SLOT => {
                     let layouts = stage_layout(card, &theme, 2);

@@ -2,7 +2,7 @@
 //! out with om-ui's `MainLayout` rectangles, owns the om-ui widget models, and ticks the engine's
 //! control side once per frame.
 
-use crate::controls::release_on;
+use crate::controls::{button, release_on};
 use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControls, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
@@ -25,8 +25,8 @@ use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{
-    channel_of_slot, visible_cells, CellKind, LayoutSpec, PlacedCell, LIBRARY_SLOT, MIN_WINDOW,
-    MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
+    channel_of_slot, visible_cells, CellKind, LayoutPlan, LayoutState, PlacedCell, LIBRARY_SLOT,
+    MIN_WINDOW, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
 };
 use om_ui::meter::meter_params;
 use om_ui::sample_bank::SampleBank;
@@ -42,6 +42,8 @@ use std::time::Instant;
 const BANNER_HEIGHT: i32 = 28;
 /// Width the Settings button takes at the right end of the header strip.
 const SETTINGS_BUTTON_RESERVE: i32 = 96;
+/// Width the PERFORM toggle takes in the header strip, left of the Settings button.
+const PERFORM_RESERVE: i32 = 104;
 
 /// Reads the device's figures for the debug panel. Called on the UI thread once per frame.
 pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
@@ -90,6 +92,8 @@ pub struct Shell {
     pub(crate) mixer: MixerPanel,
     /// The control being dragged, if any.
     pub(crate) drag: Option<Drag>,
+    /// The knob under the pointer, if any: it shows its value in a popup.
+    pub(crate) hovered: Option<crate::drag::Target>,
     /// The settings overlay's state, when the window was given settings.
     pub(crate) settings: Option<SettingsState>,
     /// The library browser, when the window was given the library.
@@ -115,6 +119,10 @@ pub struct Shell {
     pub(crate) sampler_editing: bool,
     /// The last sampler action's outcome: its text, and whether it is an error.
     pub(crate) sampler_status: Option<(String, bool)>,
+    /// Performance mode: the library band is hidden and the waveform stage grows.
+    pub(crate) performance: bool,
+    /// The sampler drawer is open (collapsed it is a narrow handle beside the library).
+    pub(crate) sampler_open: bool,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -132,9 +140,18 @@ pub fn load_theme() -> ThemeTokens {
     registry.current().clone()
 }
 
-/// Cells for a window `area` (banner excluded), in draw order.
-pub fn cells_for(engine_decks: usize, area: Rect, gap: i32) -> Vec<PlacedCell> {
-    visible_cells(&LayoutSpec::standard(engine_decks), engine_decks, area, gap)
+/// Cells for a window of `window` size whose layout area (banner and top bar excluded) is `area`,
+/// in draw order. A window under [`MIN_WINDOW`] shows two decks and no sampler rather than
+/// shrinking its controls (see [`LayoutPlan::for_window`]).
+pub fn cells_for(
+    engine_decks: usize,
+    window: (i32, i32),
+    area: Rect,
+    gap: i32,
+    state: LayoutState,
+) -> Vec<PlacedCell> {
+    let plan = LayoutPlan::for_window(engine_decks, window, gap, state);
+    visible_cells(&plan.spec, plan.decks, area, gap)
 }
 
 impl Shell {
@@ -182,6 +199,7 @@ impl Shell {
             decks,
             mixer,
             drag: None,
+            hovered: None,
             settings,
             library,
             library_focus: None,
@@ -195,6 +213,8 @@ impl Shell {
             sampler_focus: None,
             sampler_editing: false,
             sampler_status: None,
+            performance: false,
+            sampler_open: false,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -202,6 +222,15 @@ impl Shell {
             frames_out,
             frame_stats: std::env::var_os("OPENMIXER_FRAME_STATS")
                 .map(|_| crate::frame_stats::FrameStats::default()),
+        }
+    }
+
+    /// The layout state the user has chosen: performance mode and the sampler drawer.
+    pub(crate) fn layout_state(&self) -> LayoutState {
+        LayoutState {
+            performance: self.performance,
+            sampler_open: self.sampler_open,
+            sampler_visible: true,
         }
     }
 
@@ -277,6 +306,9 @@ impl Shell {
             }
         }
         for deck in &mut self.decks {
+            // Before refresh: the zoomed view follows the smoothed playhead, not the raw
+            // once-per-audio-buffer position.
+            deck.zoom.advance_playhead(now);
             deck.refresh(false);
         }
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
@@ -417,12 +449,14 @@ impl Render for Shell {
         let height = f32::from(viewport.height) as i32;
         let banner = self.options.banner.clone();
         let banner_h = if banner.is_some() { BANNER_HEIGHT } else { 0 };
-        // The header strip holds the automix bar (left) and the Settings button (right).
-        let header_reserve = if self.settings.is_some() {
+        // The header strip holds the automix bar (left), the Record button, the PERFORM toggle and
+        // the Settings button (right).
+        let settings_reserve = if self.settings.is_some() {
             SETTINGS_BUTTON_RESERVE
         } else {
             0
         };
+        let header_reserve = settings_reserve + PERFORM_RESERVE;
         let header_h =
             if self.settings.is_some() || self.options.automix.is_some() || self.options.record {
                 HEADER_HEIGHT
@@ -442,18 +476,20 @@ impl Render for Shell {
             div()
                 .size_full()
                 .relative()
+                .font(crate::font::interface_font(&self.theme))
                 .bg(paint(self.theme.backdrop_top))
                 .text_color(paint(self.theme.text_primary))
                 .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
                     // `r` toggles recording unless a text field or the settings card takes the key.
                     let keys = &ev.keystroke;
-                    if keys.key == "r"
-                        && !(keys.modifiers.control
-                            || keys.modifiers.platform
-                            || keys.modifiers.alt)
-                        && !this.typing()
-                    {
+                    let plain =
+                        !(keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt);
+                    if keys.key == "r" && plain && !this.typing() {
                         this.press_record();
+                        cx.notify();
+                    } else if keys.key == "tab" && plain && !this.typing() {
+                        // Tab toggles performance mode, like the PERFORM button.
+                        this.performance = !this.performance;
                         cx.notify();
                     }
                 }))
@@ -474,11 +510,7 @@ impl Render for Shell {
                 .map(|s| s.prefs.automix.clone())
                 .unwrap_or_default();
             let t = self.theme.clone();
-            let reserve = if self.settings.is_some() {
-                SETTINGS_BUTTON_RESERVE
-            } else {
-                0
-            };
+            let reserve = header_reserve;
             let record_at = self.record_rect(width, banner_h, reserve);
             let bar_width = match record_at {
                 Some(_) => om_ui::record_bar::automix_width(width, reserve),
@@ -486,6 +518,24 @@ impl Render for Shell {
             };
             root = root.child(crate::automix_bar::automix_bar_view(
                 &t, &snapshot, &prefs, bar_width, banner_h, cx,
+            ));
+        }
+        if header_h > 0 {
+            let t = self.theme.clone();
+            let rect = Rect::new(
+                width - settings_reserve - PERFORM_RESERVE + 6,
+                banner_h + 3,
+                PERFORM_RESERVE - 12,
+                header_h - 6,
+            );
+            root = root.child(button(
+                &t,
+                rect,
+                "PERFORM",
+                self.performance,
+                t.accent_for(0),
+                cx,
+                |this| this.performance = !this.performance,
             ));
         }
         if let Some(rect) = self.record_rect(width, banner_h, header_reserve) {
@@ -507,7 +557,8 @@ impl Render for Shell {
                     .child(text),
             );
         }
-        for cell in cells_for(self.engine.num_decks(), area, gap) {
+        let state = self.layout_state();
+        for cell in cells_for(self.engine.num_decks(), (area.w, height), area, gap, state) {
             root = root.child(self.cell_view(&cell, cx));
         }
         if let Some(status) = self.options.debug.clone() {
@@ -544,6 +595,7 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
     let frames_out = Arc::new(AtomicU64::new(0));
     let counter = Arc::clone(&frames_out);
     Application::new().run(move |cx: &mut App| {
+        crate::font::register(cx);
         let requested = std::env::var("OPENMIXER_WINDOW")
             .ok()
             .and_then(|text| crate::window_size::parse_size(&text));

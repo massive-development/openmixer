@@ -1,5 +1,5 @@
-//! Geometry of the sampler strip: a caption line, a 4x2 grid of pads on the left and a control
-//! column on the right (mode, load and clear, gain and pitch steppers). Sized by fractions of the
+//! Geometry of the sampler drawer: a caption line with a hide button, a 4x2 grid of pads on the
+//! left and a control column on the right (mode and stop, load and clear, gain and pitch steppers). Sized by fractions of the
 //! card, so it fits the library band at the smallest window. Geometry only; the gpui layer draws
 //! the strip and wires it to [`crate::sampler_binding::SamplerBinding`].
 
@@ -17,6 +17,8 @@ pub const GRID_COLS: usize = 4;
 pub struct SamplerStripLayout {
     /// The caption line: the selected pad, or the path field while one is open.
     pub caption: Rect,
+    /// Hides the drawer (it collapses to a handle beside the library).
+    pub close: Rect,
     pub grid: [Rect; PADS],
     pub mode: Rect,
     /// Fades every voice out.
@@ -24,17 +26,26 @@ pub struct SamplerStripLayout {
     pub load: Rect,
     pub clear: Rect,
     pub gain_down: Rect,
+    /// Between the buttons: the stepper's name and value.
+    pub gain_value: Rect,
     pub gain_up: Rect,
     pub pitch_down: Rect,
+    pub pitch_value: Rect,
     pub pitch_up: Rect,
 }
+
+/// Width of the hide button, in px.
+pub const CLOSE_WIDTH: i32 = 48;
+/// Width of a stepper's `-` and `+` buttons, in px.
+pub const STEP_BUTTON_WIDTH: i32 = 32;
 
 /// Places the strip inside `bounds` (the card's cell).
 pub fn sampler_strip_layout(bounds: Rect, theme: &ThemeTokens) -> SamplerStripLayout {
     let gap = theme.inner_gap.clamp(2, 6);
     let mut area = bounds.reduced(px(theme.pad as f32).max(2), px(theme.pad as f32).max(2));
     let caption_h = px(theme.type_caption * 1.5).min(area.h).max(0);
-    let caption = area.remove_top(caption_h);
+    let mut caption = area.remove_top(caption_h);
+    let close = caption.remove_right(CLOSE_WIDTH.min(caption.w / 3));
     area.remove_top(gap.min(area.h));
 
     // Control column on the right, about a third of the body; the grid takes the rest.
@@ -87,25 +98,31 @@ pub fn sampler_strip_layout(bounds: Rect, theme: &ThemeTokens) -> SamplerStripLa
     );
     let gain_row = next_row(&mut rows_left);
     let pitch_row = next_row(&mut rows_left);
+    // A stepper is `-`, the name and value, `+`.
     let stepper = |row: Rect| {
-        let w = ((row.w - gap) / 2).max(0);
+        let b = STEP_BUTTON_WIDTH.min(row.w / 4);
+        let mid = (row.w - 2 * b - 2 * gap).max(0);
         (
-            Rect::new(row.x, row.y, w, row.h),
-            Rect::new(row.x + w + gap, row.y, (row.w - w - gap).max(0), row.h),
+            Rect::new(row.x, row.y, b, row.h),
+            Rect::new(row.x + b + gap, row.y, mid, row.h),
+            Rect::new(row.x + row.w - b, row.y, b, row.h),
         )
     };
-    let (gain_down, gain_up) = stepper(gain_row);
-    let (pitch_down, pitch_up) = stepper(pitch_row);
+    let (gain_down, gain_value, gain_up) = stepper(gain_row);
+    let (pitch_down, pitch_value, pitch_up) = stepper(pitch_row);
     SamplerStripLayout {
         caption,
+        close,
         grid,
         mode,
         stop_all,
         load,
         clear,
         gain_down,
+        gain_value,
         gain_up,
         pitch_down,
+        pitch_value,
         pitch_up,
     }
 }
@@ -124,7 +141,7 @@ mod tests {
     }
 
     fn parts(l: &SamplerStripLayout) -> Vec<Rect> {
-        let mut v = vec![l.caption];
+        let mut v = vec![l.caption, l.close];
         v.extend(l.grid);
         v.extend([
             l.mode,
@@ -132,8 +149,10 @@ mod tests {
             l.load,
             l.clear,
             l.gain_down,
+            l.gain_value,
             l.gain_up,
             l.pitch_down,
+            l.pitch_value,
             l.pitch_up,
         ]);
         v
