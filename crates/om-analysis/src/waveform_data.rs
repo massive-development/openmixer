@@ -1,17 +1,19 @@
 //! Multi-resolution waveform for overview and zoomed deck displays. Level 0 is the finest; each
 //! further level merges [`LEVEL_FACTOR`] points, down to roughly [`OVERVIEW_POINTS`]. Each point
-//! holds the full-band peak range plus loudness, spectral centroid and spread for colouring.
+//! holds the full-band peak range plus loudness and the peak of the low, mid and high band.
 //! Immutable after building. The JSON payload is base64 of 6 bytes per base-level point.
 
-use crate::spectrum::{pool, Moment, CENTROID_OCTAVES, SPREAD_MAX_OCTAVES};
 use crate::waveform_codec::{
-    decode_points, encode_points, legacy_points, BYTES_PER_POINT, LEGACY_BYTES_PER_POINT,
+    decode_points, encode_points, legacy_points, legacy_v2_points, BYTES_PER_POINT,
+    LEGACY_BYTES_PER_POINT,
 };
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
 
-pub const WAVEFORM_FORMAT_VERSION: i64 = 2;
+pub const WAVEFORM_FORMAT_VERSION: i64 = 3;
+/// The centroid and spread format: read only, mapped to band peaks through a model.
+pub const SPECTRAL_FORMAT_VERSION: i64 = 2;
 /// The first format: three band levels per point and no spectrum.
 pub const LEGACY_FORMAT_VERSION: i64 = 1;
 pub const LEVEL_FACTOR: usize = 4;
@@ -24,39 +26,44 @@ pub struct WaveformPoint {
     pub max: f32,
     /// RMS over the point's analysis window, in [0, 1].
     pub loudness: f32,
-    /// Spectral centroid on the log-frequency axis, in [0, 1] (see `CENTROID_MIN_HZ`).
-    pub centroid: f32,
-    /// Standard deviation of log frequency, in [0, 1] of `SPREAD_MAX_OCTAVES`.
-    pub spread: f32,
+    /// Peak of the low (below about 200 Hz), mid and high (above about 3 kHz) band, each at most
+    /// the full-band peak: `peak * sqrt(energy share of the band)`.
+    pub low: f32,
+    pub mid: f32,
+    pub high: f32,
 }
 
 impl WaveformPoint {
-    pub(crate) fn moment(&self) -> Moment {
-        let spread = self.spread * SPREAD_MAX_OCTAVES;
-        Moment {
-            energy: self.loudness * self.loudness,
-            mean: self.centroid * CENTROID_OCTAVES,
-            variance: spread * spread,
-        }
+    /// The loudest sample of the point.
+    pub fn peak(&self) -> f32 {
+        self.min.abs().max(self.max.abs()).min(1.0)
     }
 
-    pub(crate) fn from_moment(min: f32, max: f32, m: Moment) -> Self {
-        Self {
-            min,
-            max,
-            loudness: m.energy.max(0.0).sqrt().min(1.0),
-            centroid: (m.mean / CENTROID_OCTAVES).clamp(0.0, 1.0),
-            spread: (m.variance.max(0.0).sqrt() / SPREAD_MAX_OCTAVES).clamp(0.0, 1.0),
-        }
-    }
-
-    /// Merges equal-length points: widest range, loudness as RMS, centroid weighted by energy and
-    /// spread as the pooled deviation. A pyramid level and a strip column use this same rule.
+    /// Merges equal-length points: widest range, band peaks held at their maximum (peak hold, as
+    /// the full-band range does), loudness as RMS. A pyramid level and a strip column use this
+    /// same rule.
     pub fn merge(points: &[WaveformPoint]) -> Self {
-        let (min, max) = points.iter().fold((1.0f32, -1.0f32), |(lo, hi), p| {
-            (lo.min(p.min), hi.max(p.max))
-        });
-        Self::from_moment(min, max, pool(points.iter().map(|p| (1.0, p.moment()))))
+        let mut merged = Self {
+            min: 1.0,
+            max: -1.0,
+            ..Self::default()
+        };
+        let mut energy = 0.0f32;
+        for p in points {
+            merged.min = merged.min.min(p.min);
+            merged.max = merged.max.max(p.max);
+            merged.low = merged.low.max(p.low);
+            merged.mid = merged.mid.max(p.mid);
+            merged.high = merged.high.max(p.high);
+            energy += p.loudness * p.loudness;
+        }
+        if points.is_empty() {
+            merged.min = 0.0;
+            merged.max = 0.0;
+        } else {
+            merged.loudness = (energy / points.len() as f32).sqrt().min(1.0);
+        }
+        merged
     }
 }
 
@@ -169,6 +176,18 @@ impl WaveformData {
             WAVEFORM_FORMAT_VERSION,
             BYTES_PER_POINT,
             decode_points,
+        )
+    }
+
+    /// A format 2 payload (spectral centroid and spread) with band peaks estimated from a
+    /// Gaussian model of the spectrum, for display while the format 3 analysis rebuilds. `None`
+    /// for any other version or a damaged payload.
+    pub fn from_v2_json(json: &str) -> Option<Self> {
+        Self::parse(
+            json,
+            SPECTRAL_FORMAT_VERSION,
+            BYTES_PER_POINT,
+            legacy_v2_points,
         )
     }
 
