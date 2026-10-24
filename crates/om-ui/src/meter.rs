@@ -14,6 +14,7 @@ pub fn meter_params(t: &ThemeTokens) -> MeterParams {
         floor_db: t.meter_floor_db,
         clip_level: t.meter_clip_level,
         release_seconds: t.meter_release_seconds,
+        release_db_per_second: MeterParams::default().release_db_per_second,
         hold_seconds: t.meter_hold_seconds,
         clip_seconds: t.meter_clip_seconds,
     }
@@ -257,6 +258,7 @@ mod tests {
             floor_db: -48.0,
             clip_level: 0.99,
             release_seconds: 0.5,
+            release_db_per_second: 13.0,
             hold_seconds: 1.0,
             clip_seconds: 2.0,
         }
