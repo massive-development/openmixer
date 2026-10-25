@@ -2,13 +2,11 @@
 //! conflicts list, the MIDI monitor lines and the Save and dirty state. Toolkit-free; the gpui
 //! page renders these rows and forms. All edits go through [`om_midi::MapEditor`].
 
-use om_core::ParamId;
 use om_midi::{
     control_label, BindingDraft, Conflict, Keep, MapEditor, MapMode, Mapping, MidiEvent, MidiKind,
     MidiMapper, MonitorEntry,
 };
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -48,36 +46,10 @@ pub fn mode_label(mode: MapMode) -> &'static str {
     }
 }
 
-/// A readable target: "deck.0.play" -> "Deck 1 Play", "mixer.ch0.fader" -> "Mixer Ch 1 Fader".
-/// Numbers in the id are the router's zero-based indices and are shown one-based. An unknown id
-/// is shown as it is written.
+/// A readable target: "deck.0.play" -> "Deck 1 Play", "mixer.ch0.fader" -> "Channel 1 Fader".
+/// See [`crate::labels::param_label`].
 pub fn target_label(id: &str) -> String {
-    if ParamId::from_str(id).is_err() {
-        return id.to_owned();
-    }
-    id.split('.')
-        .map(|segment| {
-            if let Ok(n) = segment.parse::<u32>() {
-                (n + 1).to_string()
-            } else if let Some(rest) = segment.strip_prefix("ch") {
-                match rest.parse::<u32>() {
-                    Ok(n) => format!("Ch {}", n + 1),
-                    Err(_) => capitalize(segment),
-                }
-            } else {
-                capitalize(segment)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn capitalize(word: &str) -> String {
-    let mut chars = word.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
+    crate::labels::param_label(id)
 }
 
 /// "Ch1 Note 36 -> Deck 1 Play [Button]". Channel 0 reads "Any".
@@ -469,8 +441,8 @@ mod tests {
 
     #[test]
     fn target_labels_are_one_based_and_unknown_ids_pass_through() {
-        assert_eq!(target_label("mixer.ch0.fader"), "Mixer Ch 1 Fader");
-        assert_eq!(target_label("deck.1.rate"), "Deck 2 Rate");
+        assert_eq!(target_label("mixer.ch0.fader"), "Channel 1 Fader");
+        assert_eq!(target_label("deck.1.rate"), "Deck 2 Tempo");
         assert_eq!(target_label("nonsense..id"), "nonsense..id");
     }
 

@@ -6,21 +6,27 @@ use crate::preferences::AutomixPrefs;
 use crate::settings::STYLE_LABELS;
 use om_core::{AutomixSnapshot, AutomixState};
 
-/// Height of the bar, in pixels. The bar shares the header strip (the same height as the settings
-/// header), so the deck rows keep the room they had: the bar takes the strip's left part and the
-/// Settings button keeps the right.
-pub const BAR_HEIGHT: i32 = 32;
-
-/// Widths of the bar's fixed-size parts, in pixels. The window lays the bar out with these; the
-/// tests check that the row still fits at the minimum window width.
-pub const STATE_WIDTH: f32 = 96.0;
-pub const PROGRESS_WIDTH: f32 = 48.0;
-pub const REMAINING_WIDTH: f32 = 88.0;
-/// The toggle's label: automix is named once, in capitals, like the other controls.
-pub const TOGGLE_LABEL: &str = "AUTO";
+/// Widths of the bar's parts, in pixels. The window lays the bar out with these; the tests check
+/// that both rows (idle and running) fit the strip the header gives the bar at the minimum window.
+/// The caption of the segmented switch.
+pub const TOGGLE_LABEL: &str = "AUTOMIX";
+pub const LABEL_WIDTH: f32 = 52.0;
+/// The segmented Off | On switch.
+pub const SWITCH_WIDTH: f32 = 76.0;
+/// The transition length chip: a `TRANSITION` caption over `16 beats`.
+pub const LENGTH_WIDTH: f32 = 64.0;
+/// The running state word (`Loading`, `Armed`, `Mixing`).
+pub const STATE_WIDTH: f32 = 60.0;
+pub const PROGRESS_WIDTH: f32 = 40.0;
+pub const REMAINING_WIDTH: f32 = 72.0;
+pub const START_WIDTH: f32 = 44.0;
+pub const SKIP_WIDTH: f32 = 36.0;
+pub const CANCEL_WIDTH: f32 = 48.0;
+/// The next-track text shrinks to this and then clips.
+pub const NEXT_MIN_WIDTH: f32 = 100.0;
 /// Gap between the row's items, and its left and right padding.
 pub const ROW_GAP: f32 = 4.0;
-pub const ROW_PADDING: f32 = 10.0;
+pub const ROW_PADDING: f32 = 8.0;
 
 /// The buttons the bar offers right now. Only what does something is drawn: an Off automix shows
 /// just its toggle, a transition shows Skip and Cancel, and so on.
@@ -46,9 +52,11 @@ pub struct AutomixBar {
     /// The style the preference asks for.
     pub style: &'static str,
     pub length_beats: i32,
-    /// Off, Idle, Loading, Armed, Transitioning or Cleanup.
+    /// Off, Idle, Loading, Armed, Mixing or Finishing. The window shows it only while `running`.
     pub state: &'static str,
-    /// `Next: <title> · <bpm> BPM · <key>`, or `Next: none`.
+    /// A pick is loading, armed or mixing: the state word, progress, Skip and Cancel show.
+    pub running: bool,
+    /// `Next: <title> · <bpm> BPM · <key>`, or `Next: Nothing queued`.
     pub next: String,
     /// 0 to 1 through the running transition.
     pub progress: f64,
@@ -101,6 +109,11 @@ impl AutomixBar {
             style,
             length_beats: prefs.length_beats,
             state,
+            running: enabled
+                && matches!(
+                    snapshot.state,
+                    AutomixState::Loading | AutomixState::Armed | AutomixState::Transitioning
+                ),
             next: next_text(
                 &snapshot.next_track_title,
                 snapshot.next_track_bpm,
@@ -132,15 +145,15 @@ pub fn state_label(state: AutomixState, enabled: bool) -> &'static str {
         AutomixState::Idle => "Idle",
         AutomixState::Loading => "Loading",
         AutomixState::Armed => "Armed",
-        AutomixState::Transitioning => "Transitioning",
+        AutomixState::Transitioning => "Mixing",
         AutomixState::Cleanup => "Finishing",
     }
 }
 
-/// `Next: <title> · <bpm> BPM · <key>`, leaving out the parts that are unknown.
+/// `Next: <title> · <bpm> BPM · <key>` or `Next: Nothing queued`, leaving out the parts that are unknown.
 pub fn next_text(title: &str, bpm: Option<f64>, key: &str) -> String {
     if title.is_empty() {
-        return "Next: none".to_owned();
+        return "Next: Nothing queued".to_owned();
     }
     let mut text = format!("Next: {title}");
     if let Some(bpm) = bpm.filter(|b| b.is_finite() && *b > 0.0) {
@@ -150,6 +163,11 @@ pub fn next_text(title: &str, bpm: Option<f64>, key: &str) -> String {
         text.push_str(&format!(" · {key}"));
     }
     text
+}
+
+/// `Transition 16 beats`: the length the next transition runs.
+pub fn transition_text(length_beats: i32) -> String {
+    format!("Transition {length_beats} beats")
 }
 
 /// `12 beats left`, `1 beat left`, rounded to whole beats.
@@ -182,10 +200,7 @@ mod tests {
     #[test]
     fn labels_follow_the_state_and_the_switch() {
         assert_eq!(state_label(AutomixState::Armed, true), "Armed");
-        assert_eq!(
-            state_label(AutomixState::Transitioning, true),
-            "Transitioning"
-        );
+        assert_eq!(state_label(AutomixState::Transitioning, true), "Mixing");
         assert_eq!(state_label(AutomixState::Armed, false), "Off");
     }
 
@@ -196,7 +211,7 @@ mod tests {
             "Next: Night Drive · 124.0 BPM · 8A"
         );
         assert_eq!(next_text("Cue", None, ""), "Next: Cue");
-        assert_eq!(next_text("", Some(120.0), "8A"), "Next: none");
+        assert_eq!(next_text("", Some(120.0), "8A"), "Next: Nothing queued");
         assert_eq!(next_text("Cue", Some(f64::NAN), ""), "Next: Cue");
     }
 
@@ -356,29 +371,60 @@ mod tests {
         assert!(bar(AutomixState::Transitioning, true).shows_progress());
     }
 
-    /// The compact row, widest case: toggle, state, next track, progress with beats left and the
-    /// three buttons. It must fit the strip at the minimum window width, next to the Record
-    /// button and the Settings reserve (96 px in the window).
+    /// The state word, progress and the running buttons only show while a pick runs.
     #[test]
-    fn the_row_fits_the_minimum_window_width() {
-        const GLYPH: f32 = 7.0;
-        const CHIP: f32 = 28.0;
-        let chips = ["AUTO".len(), "Start".len(), "Skip".len(), "Cancel".len()];
-        let chip_width: f32 = chips.iter().map(|n| *n as f32 * GLYPH + CHIP).sum();
-        let items = 7.0;
-        // The next-track text is flexible; give it a floor of 160 px.
-        let width = 2.0 * ROW_PADDING
-            + chip_width
+    fn running_follows_the_pick() {
+        for (state, running) in [
+            (AutomixState::Idle, false),
+            (AutomixState::Loading, true),
+            (AutomixState::Armed, true),
+            (AutomixState::Transitioning, true),
+            (AutomixState::Cleanup, false),
+        ] {
+            assert_eq!(bar(state, true).running, running, "{state:?}");
+        }
+        assert!(!bar(AutomixState::Armed, false).running);
+        assert_eq!(transition_text(16), "Transition 16 beats");
+        assert_eq!(TOGGLE_LABEL, "AUTOMIX");
+    }
+
+    /// Both rows fit the strip the header gives the bar at the minimum window width: idle (switch,
+    /// transition length, next track at its minimum, Start) and running (state, progress with
+    /// beats left, Skip and Cancel; the next track gets whatever is left).
+    #[test]
+    fn both_rows_fit_the_header_at_the_minimum_window_width() {
+        let idle = 2.0 * ROW_PADDING
+            + LABEL_WIDTH
+            + SWITCH_WIDTH
+            + LENGTH_WIDTH
+            + NEXT_MIN_WIDTH
+            + START_WIDTH
+            + 4.0 * ROW_GAP;
+        let running = 2.0 * ROW_PADDING
+            + LABEL_WIDTH
+            + SWITCH_WIDTH
             + STATE_WIDTH
-            + 160.0
             + PROGRESS_WIDTH
             + REMAINING_WIDTH
-            + (items - 1.0) * ROW_GAP;
-        let (min_width, _) = crate::main_layout::MIN_WINDOW;
-        let available = crate::record_bar::automix_width(min_width, 96) as f32;
+            + SKIP_WIDTH
+            + CANCEL_WIDTH
+            + 6.0 * ROW_GAP;
+        let (min_width, min_height) = crate::main_layout::MIN_WINDOW;
+        let needs = crate::header_layout::HeaderNeeds {
+            automix: true,
+            record: true,
+            settings: true,
+            notice: false,
+        };
+        let header_h = crate::main_layout::header_height(min_height);
+        let available = crate::header_layout::header_rects(min_width, header_h, needs)
+            .automix
+            .expect("bar")
+            .w as f32;
+        assert!(idle <= available, "idle row needs {idle} px of {available}");
         assert!(
-            width <= available,
-            "bar needs about {width} px, {available} available"
+            running <= available,
+            "running row needs {running} px of {available}"
         );
     }
 

@@ -3,7 +3,7 @@
 
 use super::CAPTION_HEIGHT;
 use crate::binding::MixerBinding;
-use crate::control::Ranged;
+use crate::control::{Knob, Readout};
 use crate::geometry::Rect;
 use crate::theme::ThemeTokens;
 use om_core::param_id::MixerParam;
@@ -26,16 +26,18 @@ pub struct CueLayout {
 pub struct CueSection {
     binding: MixerBinding,
     /// Headphone blend: cue channels only (0) to master only (1). Double-click returns to 0.
-    pub mix: Ranged,
-    pub level: Ranged,
+    pub mix: Knob,
+    /// Phones volume; unity is its detent.
+    pub level: Knob,
 }
 
 impl CueSection {
     pub fn new(binding: MixerBinding) -> Self {
         let mut section = Self {
             binding,
-            mix: Ranged::new(0.0, 1.0, 0.001, 0.0),
-            level: Ranged::new(0.0, f64::from(MAX_GAIN), 0.001, 1.0),
+            mix: Knob::new(MIX_LABEL, Readout::Percent, 0.0, 1.0, 0.0),
+            level: Knob::new(LEVEL_LABEL, Readout::Gain, 0.0, f64::from(MAX_GAIN), 1.0)
+                .with_detent(),
         };
         section.pull(false, false);
         section
@@ -44,21 +46,21 @@ impl CueSection {
     pub fn pull(&mut self, mix_dragging: bool, level_dragging: bool) {
         let m = self.binding.mixer();
         if !mix_dragging {
-            self.mix.set(f64::from(m.cue_mix()));
+            self.mix.set_quiet(f64::from(m.cue_mix()));
         }
         if !level_dragging {
-            self.level.set(f64::from(m.cue_level()));
+            self.level.set_quiet(f64::from(m.cue_level()));
         }
     }
 
     pub fn mix_changed(&mut self, value: f64) -> f64 {
-        let v = self.mix.set(value);
+        let v = self.mix.range.set(value);
         self.binding.send(MixerParam::CueMix, v);
         v
     }
 
     pub fn level_changed(&mut self, value: f64) -> f64 {
-        let v = self.level.set(value);
+        let v = self.level.range.set(value);
         self.binding.send(MixerParam::CueLevel, v);
         v
     }

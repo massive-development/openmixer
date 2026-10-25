@@ -3,7 +3,7 @@
 
 use super::{px, CAPTION_HEIGHT};
 use crate::binding::{LevelSource, MixerBinding};
-use crate::control::Ranged;
+use crate::control::{Knob, Readout};
 use crate::geometry::Rect;
 use crate::meter::{column_width, MeterParams, StereoMeter};
 use crate::theme::ThemeTokens;
@@ -22,7 +22,8 @@ pub struct MasterLayout {
 
 pub struct MasterSection {
     binding: MixerBinding,
-    pub fader: Ranged,
+    /// Master gain as a knob; unity is its detent.
+    pub fader: Knob,
     pub meter: StereoMeter,
 }
 
@@ -30,7 +31,7 @@ impl MasterSection {
     pub fn new(binding: MixerBinding, meter: MeterParams) -> Self {
         let mut section = Self {
             binding,
-            fader: Ranged::new(0.0, f64::from(MAX_GAIN), 0.001, 1.0),
+            fader: Knob::new("MASTER", Readout::Gain, 0.0, f64::from(MAX_GAIN), 1.0).with_detent(),
             meter: StereoMeter::new(meter),
         };
         section.pull(false);
@@ -40,7 +41,7 @@ impl MasterSection {
     pub fn pull(&mut self, dragging: bool) {
         if !dragging {
             self.fader
-                .set(f64::from(self.binding.mixer().master_gain()));
+                .set_quiet(f64::from(self.binding.mixer().master_gain()));
         }
     }
 
@@ -53,7 +54,7 @@ impl MasterSection {
 
     /// The user moved the fader: stores and sends the gain.
     pub fn fader_changed(&mut self, value: f64) -> f64 {
-        let v = self.fader.set(value);
+        let v = self.fader.range.set(value);
         self.binding.send(MixerParam::Master, v);
         v
     }

@@ -33,7 +33,7 @@ impl MapField {
             MapField::Number => "Number",
             MapField::Min => "Min",
             MapField::Max => "Max",
-            MapField::Target => "Target id",
+            MapField::Target => "Target",
         }
     }
 
@@ -43,7 +43,7 @@ impl MapField {
             MapField::Number => "controller or note number (0-127)",
             MapField::Min => "minimum value",
             MapField::Max => "maximum value",
-            MapField::Target => "parameter id, such as mixer.ch0.fader",
+            MapField::Target => "pick a control or type its id under Advanced",
         }
     }
 }
