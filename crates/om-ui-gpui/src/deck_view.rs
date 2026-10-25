@@ -729,6 +729,8 @@ const PAD_TAB_H: f32 = 3.0;
 const DAYLIGHT_DARKEN: f32 = 0.12;
 /// Opacity of a control while it cannot act (no track loaded).
 const DISABLED_ALPHA: f32 = 0.4;
+/// Prefix of the active pad's label: a play triangle.
+const ACTIVE_GLYPH: &str = "\u{25b6}";
 /// Seconds after a cue point during which a playing deck marks that pad active. Unsourced.
 const ACTIVE_WINDOW_S: f64 = 0.25;
 /// Estimated width of one character at 12-14 px, to decide whether a toggle row fits.
@@ -877,12 +879,19 @@ pub(crate) fn pad_state(
     }
     let colour = pad_colour(t, i);
     let fill = colour.with_alpha(if active { 1.0 } else { PAD_ALPHA });
+    let text = text_on(t, over(fill, pad_ground(t)));
     PadStyle {
         fill,
-        text: text_on(t, over(fill, pad_ground(t))),
-        border: colour,
+        text,
+        // Active: an outline in the label ink (>= 4.5:1 on the fill) and a play glyph, so the state
+        // does not rest on opacity and glow alone ("never rely on colour alone", States).
+        border: if active { text } else { colour },
         dashed: false,
-        label: format!("Cue {}", i + 1),
+        label: if active {
+            format!("{ACTIVE_GLYPH} Cue {}", i + 1)
+        } else {
+            format!("Cue {}", i + 1)
+        },
         tab: Some(colour),
         glow: (active && loaded).then_some(colour),
         alpha: control_alpha(loaded),
@@ -1751,6 +1760,22 @@ mod tests {
         let active = pad_state(&t, true, true, 2, true);
         assert!((active.fill.alpha() - 1.0).abs() < 0.01);
         assert!(active.glow.is_some());
+    }
+
+    #[test]
+    fn the_active_pad_changes_label_and_outline_not_just_opacity_and_glow() {
+        // deck-controls.md States: "Active: full fill plus glow" and "Never rely on colour alone:
+        // label text and glyph change with state".
+        for t in themes() {
+            let set = pad_state(&t, true, false, 2, true);
+            let active = pad_state(&t, true, true, 2, true);
+            assert_ne!(active.label, set.label);
+            assert!(active.label.contains("Cue 3") && active.label.starts_with('\u{25b6}'));
+            assert_eq!(active.border, active.text);
+            assert_ne!(active.border, set.border);
+            let fill = over(active.fill, pad_ground(&t));
+            assert!(contrast_ratio(active.border, fill) >= 3.0);
+        }
     }
 
     #[test]
