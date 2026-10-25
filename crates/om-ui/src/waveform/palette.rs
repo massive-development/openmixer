@@ -7,7 +7,7 @@
 //! full-range column with a strong bass reads orange, not white.
 //!
 //! The strip is dark in every theme ([`WAVE_WELL`], by the user's decision), so the additive blend
-//! never runs on a light ground. Palettes are checked against it (4.5:1).
+//! never runs on a light ground. Palettes are fitted to it (3:1, WCAG 1.4.11).
 //!
 //! Painting can only afford a few distinct colours per strip (one path each), so the weights are
 //! quantised to a [`Key`] and the painter draws one shape per key ([`cap_keys`] limits how many).
@@ -59,7 +59,7 @@ impl WaveStyle {
 // (https://raw.githubusercontent.com/mixxxdj/mixxx/main/res/skins/LateNight/skin.xml). They replace
 // the plan table's #FF3B3B / #35E06A / #3D8BFF: those carry 23% to 55% in their off channels, which
 // washed 68% of the columns of a loud full-range track out to near white (measured). Brought to
-// 4.5:1 on the dark well by `Palette::new`, so the pure blue and green are lightened a little.
+// 3:1 (WCAG 1.4.11) on the dark well by `Palette::new`, so the pure blue is lightened a little.
 pub const DARK_LOW: Colour = Colour::from_argb(0xFFFF_0000);
 pub const DARK_MID: Colour = Colour::from_argb(0xFF00_8000);
 pub const DARK_HIGH: Colour = Colour::from_argb(0xFF00_00FF);
@@ -82,10 +82,15 @@ const MONO_LEVELS: [f32; 3] = [0.55, 0.75, 0.95];
 pub const WEIGHT_EXPONENT: f32 = 1.0;
 /// A silent column keeps this share of the silhouette colour's brightness.
 pub const BRIGHTNESS_FLOOR: f32 = 0.35;
-/// Contrast of a band colour against the strip well (WCAG, for the body of the waveform).
-pub const BODY_CONTRAST: f32 = 4.5;
-/// Contrast of grid lines and the playhead.
+/// Contrast of a band colour against the strip well. The waveform body is a graphical object, so
+/// WCAG 2.2 success criterion 1.4.11 Non-text Contrast applies: 3:1
+/// (https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html).
+pub const BODY_CONTRAST: f32 = 3.0;
+/// Contrast of grid lines and the playhead (also graphical objects, 1.4.11).
 pub const LINE_CONTRAST: f32 = 3.0;
+/// Contrast of text on the strip (bar numbers): WCAG 2.2 success criterion 1.4.3 Contrast
+/// (Minimum), 4.5:1 (https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
+pub const TEXT_CONTRAST: f32 = 4.5;
 /// The background of the overview and zoomed strips in every theme: the dark theme's well
 /// (resources/themes/openmixer-dark.json, `#07090D`). Kept dark in the light theme too (user
 /// decision), so the additive blend and white grid and playhead always have a dark ground.
