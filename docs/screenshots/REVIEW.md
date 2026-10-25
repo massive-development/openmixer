@@ -119,6 +119,8 @@ Not fixed: each is a design call or sits in code outside this change.
 | # | Where (image in the folder above) | Defect | Research |
 |---|---|---|---|
 | 1 | Stems page, `stems-page.png` | Each stem row has two sliders with no label (volume and filter by position only). All four stem pads use the one accent colour | deck-controls.md Layout ("stems pads as 4 labelled faders") |
+
+
 | 2 | Deck B with no track, all scenes | Play, Cue, Sync and the loop buttons are dimmed, but the eight "Set" pads and the loop pill stay at full contrast, so B reads half enabled | deck-controls.md States ("Disabled (no track): 40 percent opacity, no hover") |
 | 3 | Master meters, `meters-lit-dark.png` | The dB scale (0, -12, -24, -48) sits about 3 px from the bars and the knob; no numeric peak readout under the master | faders-meters.md Meters ("numeric peak readout under master") |
 | 4 | Library sidebar, `*-daylight.png` | The selected row ("All tracks") is white and the other rows are grey blocks, so selection reads inverted | labels-layout.md item 5 (state clear without relying on tone alone) |
@@ -126,5 +128,7 @@ Not fixed: each is a design call or sits in code outside this change.
 | 6 | Play button, all scenes | The word "Pause" fills the 44 px circle edge to edge (about 2 px spare) | deck-controls.md Buttons (56 px circle; the build uses 44) |
 | 7 | Loop pill, `cues-loop-*.png` | An odd length shows "0.4" in the pill and header chip (a demo value, not a UI bug; real loops snap to beats) | none |
 | 8 | Sampler strip, `sampler-open-*.png` | Caption above the pads repeats the selected pad's label ("1 Kick" twice); "5 Tone A" fills its pad with about 4 px to spare | labels-layout.md (low severity) |
+
+Status of the defects above (polish pass, branch `feat/ui-redesign-polish`): 1 FIXED for the labels ("Volume" and "Filter" inside each track, the filter's detent starts under the caption); the one shared accent colour stays, because no research source gives per-stem colours. 2 FIXED (pads, length chip and Loop switch dim to 40 % with no track, no hover). 3 NOT FIXED. 4 FIXED (tinted fill plus a 3 px focus-colour bar; indicator 3:1, text 4.5:1, tested in both themes; bar width and 18 % tint are unsourced and small). 5 FIXED (play glyph in the label and an ink outline on the active pad; the 0.25 s window stays unsourced). 6 FIXED (a squeezed round button uses the 12 px floor; the word is unchanged; research asks for icon + word at 56 px, which does not fit 44 px). 7 NOT FIXED (demo value). 8 caption FIXED (shows mode, pitch and gain); the `5 Tone A` label with about 4 px to spare is NOT FIXED.
 
 Checked and fine: platter on in both themes (disc, A label, position ring, marker, Platter switch lit, tabs unlit while it is open); playing sampler pad lit and readable in both themes; segmented meters, clip lamps and fader ticks in both themes; hot cue fills and the dashed "Set" pads in both themes; the stems tab layout (no clipping or overlap); the loop hatch over the waveform; the header (OPENMIXER, Automix, Notice chip, BPM, Record, Library, Settings) with no collisions; `track-preview` with a 24 s generated file (grid 124 BPM, waveform, meters).
