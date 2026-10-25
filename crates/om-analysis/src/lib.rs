@@ -29,6 +29,7 @@ mod tempo;
 mod waveform;
 mod waveform_codec;
 mod waveform_data;
+mod waveform_demo;
 
 #[cfg(test)]
 mod test_signals;
@@ -60,8 +61,10 @@ pub use tempo::{
 };
 pub use waveform::{WaveformAnalyzer, WaveformBuilder, WaveformOptions};
 pub use waveform_data::{
-    WaveformData, WaveformLevel, WaveformPoint, LEGACY_FORMAT_VERSION, WAVEFORM_FORMAT_VERSION,
+    WaveformData, WaveformLevel, WaveformPoint, LEGACY_FORMAT_VERSION, SPECTRAL_FORMAT_VERSION,
+    WAVEFORM_FORMAT_VERSION,
 };
+pub use waveform_demo::{breakdown_bars, demo_loop};
 
 /// Clamps `value` into `[lo, hi]` (never panics on odd bounds).
 pub(crate) fn jlimit(lo: f64, hi: f64, value: f64) -> f64 {

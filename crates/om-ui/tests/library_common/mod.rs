@@ -44,8 +44,9 @@ pub fn waveform_json() -> String {
                 min: -0.5,
                 max: 0.5,
                 loudness: 0.4,
-                centroid: 0.3,
-                spread: 0.2,
+                low: 0.5,
+                mid: 0.2,
+                high: 0.1,
             };
             64
         ],
