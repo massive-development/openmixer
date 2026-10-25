@@ -31,10 +31,6 @@ impl PeakMeter {
 pub struct MeterParams {
     pub floor_db: f32,
     pub clip_level: f32,
-    /// Legacy exponential time constant. No longer read by [`MeterBallistics`], which releases at
-    /// [`MeterParams::release_db_per_second`]; kept so existing struct literals and the theme
-    /// token `meter_release_seconds` still compile until they are retired.
-    pub release_seconds: f32,
     /// Release rate in dB per second: the bar falls linearly in dB (constant speed on a dB scale).
     pub release_db_per_second: f32,
     pub hold_seconds: f32,
@@ -46,7 +42,6 @@ impl Default for MeterParams {
         Self {
             floor_db: -48.0,
             clip_level: 0.99,
-            release_seconds: 0.3,
             // 20 dB per 1.5 s (docs/design/research/faders-meters.md, section 3; the figure is a
             // proposal there, derived from PPM fall times cited from secondary sources).
             release_db_per_second: 13.0,
@@ -163,7 +158,6 @@ mod tests {
         MeterParams {
             floor_db: -48.0,
             clip_level: 0.99,
-            release_seconds: 0.5,
             release_db_per_second: 13.0,
             hold_seconds: 1.0,
             clip_seconds: 2.0,
