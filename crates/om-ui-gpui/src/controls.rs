@@ -131,6 +131,29 @@ pub fn button(
     )
 }
 
+/// A transparent layer over its parent that shows `text` in a tooltip bubble while the pointer
+/// rests on it. It takes no clicks of its own, so the parent's handlers still run.
+pub(crate) fn tip_overlay(
+    t: &ThemeTokens,
+    id: impl Into<String>,
+    text: impl Into<String>,
+) -> gpui::Stateful<Div> {
+    let style = LookAndFeel::from_tokens(t).tooltip;
+    let text = text.into();
+    div()
+        .id(gpui::ElementId::Name(id.into().into()))
+        .absolute()
+        .size_full()
+        .tooltip(move |_, cx| {
+            cx.new(|_| crate::deck_view::Tip {
+                text: text.clone(),
+                fill: style.fill,
+                ink: style.text,
+            })
+            .into()
+        })
+}
+
 /// Makes `el` start a drag on `target` when pressed; a double-click resets the control to its
 /// default instead. `abs` is the control's window rectangle.
 pub fn draggable(el: Div, target: Target, abs: Rect, cx: &mut Context<Shell>) -> Div {

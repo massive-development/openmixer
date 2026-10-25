@@ -17,8 +17,8 @@ pub const BRAND_WIDTH: i32 = 112;
 pub const MASTER_BPM_WIDTH: i32 = 120;
 /// Width of the notice chip (two lines of caption text).
 pub const NOTICE_WIDTH: i32 = 240;
-/// Width of the notice chip collapsed to its icon and dismiss button.
-pub const COLLAPSED_NOTICE_WIDTH: i32 = 56;
+/// Width of the notice chip collapsed to the word "Notice" and the dismiss button.
+pub const COLLAPSED_NOTICE_WIDTH: i32 = 72;
 /// The automix bar's width the plan wants at 1280 wide; a notice chip collapses before the bar
 /// goes under it.
 pub const AUTOMIX_FLOOR: i32 = 300;
