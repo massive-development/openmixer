@@ -1118,6 +1118,19 @@ impl Render for Tip {
     }
 }
 
+/// Text size of a transport button. A round button squeezed below its nominal 56 px (the 44 px
+/// floor) takes the 12 px floor so the longest word, "Pause", keeps clear of the rim (about 10 px
+/// spare at 44 px, against about 2 px at the 14 px body size). The 56 px circle and the pills keep
+/// the body size. The spare-room figure is a measurement of the capture, not a sourced value.
+pub(crate) fn button_text_size(t: &ThemeTokens, shape: Shape, rect: Rect) -> f32 {
+    let body = t.type_body.max(MIN_TEXT_SIZE);
+    if shape == Shape::Round && rect.w.min(rect.h) < ROUND_DIAMETER {
+        MIN_TEXT_SIZE
+    } else {
+        body
+    }
+}
+
 /// A transport button drawn from a [`ButtonStyle`]: a circle or a pill with a tooltip. `down` runs
 /// on the left press, but not while the deck has no track.
 fn transport_button(
@@ -1143,7 +1156,7 @@ fn transport_button(
         .border_color(paint(look.button.idle.border))
         .bg(paint(style.fill))
         .text_color(paint(style.text))
-        .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
+        .text_size(px(button_text_size(t, style.shape, rect)))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .opacity(style.alpha);
     let el = match style.glow {
@@ -1723,6 +1736,20 @@ mod tests {
         }
         assert_eq!(control_alpha(false), 0.4);
         assert_eq!(control_alpha(true), 1.0);
+    }
+
+    #[test]
+    fn pause_keeps_clear_of_the_rim_of_a_squeezed_round_button() {
+        // deck-controls.md Buttons: Play is a 56 px circle with icon + word; the build falls to the
+        // 44 px floor when the row is tight, where the body-size word nearly touched the rim.
+        let t = theme("dark");
+        let small = Rect::new(0, 0, 44, 44);
+        let full = Rect::new(0, 0, 56, 56);
+        assert_eq!(button_text_size(&t, Shape::Round, small), MIN_TEXT_SIZE);
+        assert_eq!(button_text_size(&t, Shape::Round, full), t.type_body);
+        assert_eq!(button_text_size(&t, Shape::Pill, small), t.type_body);
+        // The word is unchanged.
+        assert_eq!(transport_label(TransportButton::Play, true), "Pause");
     }
 
     #[test]
