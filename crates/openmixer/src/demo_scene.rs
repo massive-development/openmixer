@@ -10,12 +10,13 @@ use crate::flags::DemoScene;
 
 /// Hot cue positions of the `cues` scene, in seconds. Pads 6 to 8 stay empty so the capture
 /// shows both a set and an empty pad.
-const CUE_SECONDS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.75];
-/// The `cues` loop: one beat at the demo grid's 120 BPM (beat 3). No cue sits on its edges, or the
-/// cue lines would hide the loop's edge lines.
-const LOOP_SECONDS: (f64, f64) = (1.0, 1.5);
+const CUE_SECONDS: [f64; 5] = [0.0, 0.25, 1.0, 1.5, 1.75];
+/// The `cues` loop starts on cue 3 and is shorter than the window in which the deck marks a pad
+/// active (0.25 s after the cue, `deck_view::ACTIVE_WINDOW_S`), so the playhead always sits in
+/// that window and pad 3 is steadily ACTIVE in the capture.
+const LOOP_SECONDS: (f64, f64) = (1.0, 1.2);
 /// Where the `cues` playhead starts: just inside the loop, so the hatch is under it.
-const CUES_SEEK_SECONDS: f64 = 1.1;
+const CUES_SEEK_SECONDS: f64 = 1.05;
 /// Linear trim of the `meters` scene. The demo tracks peak at 0.25, so 4.5 pushes the channel's
 /// peak past the theme's clip level (0.99) and the clip lamp latches.
 const HOT_TRIM: f32 = 4.5;
@@ -121,11 +122,10 @@ mod tests {
         let seek = plan.seek.expect("a seek");
         assert!((looping.start..looping.end).contains(&seek));
         assert!(
-            plan.cues
-                .iter()
-                .all(|(_, f)| *f != looping.start && *f != looping.end),
-            "a cue on a loop edge hides the edge"
+            plan.cues.iter().any(|(_, f)| *f == looping.start),
+            "the loop starts on a cue, so that pad is active while it plays"
         );
+        assert!(looping.end - looping.start < (0.25 * RATE) as i64);
         assert!(plan.play);
     }
 
