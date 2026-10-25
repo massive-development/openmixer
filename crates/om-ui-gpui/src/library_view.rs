@@ -422,47 +422,6 @@ pub(crate) fn sidebar_row_look(t: &ThemeTokens, selected: bool) -> SidebarRowLoo
     }
 }
 
-#[cfg(test)]
-mod sidebar_tests {
-    use super::*;
-    use om_ui::style::{contrast_ratio, over};
-    use om_ui::theme::{parse_theme, BUILTIN_THEMES};
-
-    fn themes() -> [ThemeTokens; 2] {
-        ["dark", "daylight"].map(|id| {
-            let (_, json) = BUILTIN_THEMES
-                .iter()
-                .find(|(file, _)| file.contains(id))
-                .expect("built-in theme");
-            parse_theme(json).expect("theme parses").tokens
-        })
-    }
-
-    #[test]
-    fn selection_reads_in_both_themes_at_wcag() {
-        for t in themes() {
-            let ground = over(t.well, over(t.surface, t.backdrop_bottom));
-            let sel = sidebar_row_look(&t, true);
-            let un = sidebar_row_look(&t, false);
-            let sel_fill = over(sel.fill, ground);
-            let bar = sel.bar.expect("a selected row has a bar");
-            assert!(contrast_ratio(bar, sel_fill) >= 3.0, "indicator 3:1");
-            assert!(contrast_ratio(bar, over(un.fill, ground)) >= 3.0);
-            assert!(contrast_ratio(sel.text, sel_fill) >= 4.5, "selected text");
-            assert!(
-                contrast_ratio(un.text, over(un.fill, ground)) >= 4.5,
-                "plain text"
-            );
-            assert!(un.bar.is_none());
-            // The selected text is the stronger one, so selection never reads inverted.
-            assert!(
-                contrast_ratio(sel.text, sel_fill)
-                    >= contrast_ratio(un.text, over(un.fill, ground))
-            );
-        }
-    }
-}
-
 /// One table row: click selects (shift extends), double-click loads, and the row drags as a track.
 fn track_row(
     t: &ThemeTokens,
@@ -595,4 +554,45 @@ fn action_button(
                 cx.notify();
             }),
         )
+}
+
+#[cfg(test)]
+mod sidebar_tests {
+    use super::*;
+    use om_ui::style::{contrast_ratio, over};
+    use om_ui::theme::{parse_theme, BUILTIN_THEMES};
+
+    fn themes() -> [ThemeTokens; 2] {
+        ["dark", "daylight"].map(|id| {
+            let (_, json) = BUILTIN_THEMES
+                .iter()
+                .find(|(file, _)| file.contains(id))
+                .expect("built-in theme");
+            parse_theme(json).expect("theme parses").tokens
+        })
+    }
+
+    #[test]
+    fn selection_reads_in_both_themes_at_wcag() {
+        for t in themes() {
+            let ground = over(t.well, over(t.surface, t.backdrop_bottom));
+            let sel = sidebar_row_look(&t, true);
+            let un = sidebar_row_look(&t, false);
+            let sel_fill = over(sel.fill, ground);
+            let bar = sel.bar.expect("a selected row has a bar");
+            assert!(contrast_ratio(bar, sel_fill) >= 3.0, "indicator 3:1");
+            assert!(contrast_ratio(bar, over(un.fill, ground)) >= 3.0);
+            assert!(contrast_ratio(sel.text, sel_fill) >= 4.5, "selected text");
+            assert!(
+                contrast_ratio(un.text, over(un.fill, ground)) >= 4.5,
+                "plain text"
+            );
+            assert!(un.bar.is_none());
+            // The selected text is the stronger one, so selection never reads inverted.
+            assert!(
+                contrast_ratio(sel.text, sel_fill)
+                    >= contrast_ratio(un.text, over(un.fill, ground))
+            );
+        }
+    }
 }
