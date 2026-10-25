@@ -7,8 +7,8 @@
 
 use crate::app::Shell;
 use crate::controls::{
-    button, caption, knob_face_with, mark, slider_with_popup, stereo_meter, BarState, KnobFace,
-    KnobLook,
+    button, caption, knob_face_with, mark, slider_with_popup, stereo_meter, tip_overlay, BarState,
+    KnobFace, KnobLook,
 };
 use crate::drag::Target;
 use crate::knob_paint::KnobRole;
@@ -115,19 +115,37 @@ fn channel(
         cx,
     ));
     for band in 0..3 {
+        // One framed group per band, so the name (its kill switch) and the knob read as a pair.
+        let (k, e) = (lay.kill[band], lay.eq[band]);
+        let (x0, x1) = (k.x.min(e.x), k.right().max(e.right()));
+        let (y0, y1) = (k.y.min(e.y), k.bottom().max(e.bottom()));
+        out.push(
+            place(Rect::new(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2))
+                .bg(paint(t.well))
+                .border_1()
+                .border_color(paint(t.border))
+                .rounded(px(t.control_radius)),
+        );
         // The band's name is its kill switch: lit while the band is killed.
         let killed = strip.is_killed(band);
-        out.push(button(
-            t,
-            lay.kill[band],
-            &strip.eq[band].label,
-            killed,
-            accent,
-            cx,
-            move |this| {
-                this.mixer.strips[ch].kill_pressed(band);
-            },
-        ));
+        out.push(
+            button(
+                t,
+                k,
+                &strip.eq[band].label,
+                killed,
+                accent,
+                cx,
+                move |this| {
+                    this.mixer.strips[ch].kill_pressed(band);
+                },
+            )
+            .child(tip_overlay(
+                t,
+                format!("kill-{ch}-{band}"),
+                format!("Kill {} band", strip.eq[band].label),
+            )),
+        );
         out.push(knob_view(
             shell,
             lay.eq[band],

@@ -1074,10 +1074,10 @@ fn set_platter(index: usize, f: impl FnOnce(&mut PlatterState)) {
 }
 
 /// A tooltip bubble.
-struct Tip {
-    text: String,
-    fill: Colour,
-    ink: Colour,
+pub(crate) struct Tip {
+    pub(crate) text: String,
+    pub(crate) fill: Colour,
+    pub(crate) ink: Colour,
 }
 
 impl Render for Tip {
