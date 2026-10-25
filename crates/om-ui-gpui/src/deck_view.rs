@@ -21,7 +21,7 @@ use gpui::{
 };
 use om_core::DeckSnapshot;
 use om_ui::geometry::Rect;
-use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
+use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES, STEM_SLIDER_LABELS};
 use om_ui::style::LookAndFeel;
 use om_ui::style::{contrast_ratio, over, relative_luminance};
 use om_ui::theme::Colour;
@@ -418,14 +418,17 @@ fn stems(
                 shell.decks[index].stems.solo(stem);
             },
         ));
-        parts.push(slider(
-            t,
-            pad.volume,
-            (f64::from(state.gain), 0.0, MAX_VOLUME),
-            Target::StemVolume(index, stem),
-            abs(pad.volume),
-            cx,
-        ));
+        parts.push(
+            slider(
+                t,
+                pad.volume,
+                (f64::from(state.gain), 0.0, MAX_VOLUME),
+                Target::StemVolume(index, stem),
+                abs(pad.volume),
+                cx,
+            )
+            .child(slider_caption(t, STEM_SLIDER_LABELS[0])),
+        );
         let mut filter = slider(
             t,
             pad.filter,
@@ -435,14 +438,16 @@ fn stems(
             cx,
         )
         .child(
+            // The centre detent sits under the caption.
             place(Rect::new(
                 pad.filter.w / 2,
-                5,
+                CAPTION_H,
                 1,
-                (pad.filter.h - 10).max(1),
+                (pad.filter.h - CAPTION_H - 3).max(1),
             ))
             .bg(paint(t.text_secondary.with_alpha(0.7))),
-        );
+        )
+        .child(slider_caption(t, STEM_SLIDER_LABELS[1]));
         if dragging == Some(Target::StemFilter(index, stem)) {
             filter = filter.child(
                 div()
@@ -459,6 +464,20 @@ fn stems(
         parts.push(filter);
     }
     parts
+}
+
+/// Height of a stem slider's caption line; the filter's centre detent starts below it.
+const CAPTION_H: i32 = 17;
+
+/// A slider's name, top-left inside its track, 12 px, never taking a click.
+fn slider_caption(t: &ThemeTokens, text: &str) -> Div {
+    div()
+        .absolute()
+        .top(px(1.))
+        .left(px(5.))
+        .text_size(px(MIN_TEXT_SIZE))
+        .text_color(paint(t.text_secondary))
+        .child(text.to_owned())
 }
 
 /// The overview: the whole track in the three bands, played part dimmed, with the playhead, hot
@@ -1237,18 +1256,16 @@ fn loops(
         Tile::Idle
     };
     place(Rect::sized(card.w, card.h))
-        .child(
-            tile(
-                t,
-                halve,
-                "\u{f7}2",
-                (t.type_title, step_state(view.halve_enabled)),
-                cx,
-                move |this| {
-                    this.decks[index].loops.halve();
-                },
-            ),
-        )
+        .child(tile(
+            t,
+            halve,
+            "\u{f7}2",
+            (t.type_title, step_state(view.halve_enabled)),
+            cx,
+            move |this| {
+                this.decks[index].loops.halve();
+            },
+        ))
         .child(
             place(chip)
                 .flex()
@@ -1264,18 +1281,16 @@ fn loops(
                 .opacity(control_alpha(snap.loaded))
                 .child(view.label.clone()),
         )
-        .child(
-            tile(
-                t,
-                double,
-                "\u{d7}2",
-                (t.type_title, step_state(view.double_enabled)),
-                cx,
-                move |this| {
-                    this.decks[index].loops.double();
-                },
-            ),
-        )
+        .child(tile(
+            t,
+            double,
+            "\u{d7}2",
+            (t.type_title, step_state(view.double_enabled)),
+            cx,
+            move |this| {
+                this.decks[index].loops.double();
+            },
+        ))
         .child(tile(
             t,
             switch,

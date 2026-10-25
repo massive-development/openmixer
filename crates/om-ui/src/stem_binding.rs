@@ -19,6 +19,10 @@ use crate::binding::{deliver, DeckBinding};
 /// Stem names as the pads show them, in stem index order (the cache writes the same order).
 pub const STEM_NAMES: [&str; STEM_COUNT] = ["Drums", "Bass", "Vocals", "Other"];
 
+/// Captions of a stem row's two sliders, volume first (deck-controls.md Layout: "stems pads as 4
+/// labelled faders"; plain full words, labels-layout.md).
+pub const STEM_SLIDER_LABELS: [&str; 2] = ["Volume", "Filter"];
+
 /// Half-width of the filter's centre detent: a position this close to 0 snaps to exactly 0 (no
 /// filtering), so the neutral point is easy to find by hand.
 pub const FILTER_DETENT: f64 = 0.06;
@@ -301,6 +305,12 @@ fn flag(on: bool) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn both_stem_sliders_have_a_distinct_plain_word_caption() {
+        let [volume, filter] = super::STEM_SLIDER_LABELS;
+        assert_eq!((volume, filter), ("Volume", "Filter"));
+    }
+
     use super::*;
 
     #[test]
