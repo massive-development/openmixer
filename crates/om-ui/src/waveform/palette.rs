@@ -218,6 +218,34 @@ impl Palette {
         from_rgb(rgb(c).map(|v| v * BRIGHTNESS_FLOOR))
     }
 
+    /// `c` as drawn in the already-played part of the track: darkened toward the well, by as much as
+    /// [`PLAYED_BRIGHTNESS`](super::PLAYED_BRIGHTNESS) allows (plan; Mixxx's played overlay is
+    /// black at alpha 0.73, `PlayedOverlayColor #bb000000` in the LateNight skin) but never below
+    /// [`LINE_CONTRAST`] against the well (WCAG 1.4.11), so the played part keeps its hue and stays
+    /// readable. A colour already at the floor is unchanged.
+    pub fn played(&self, c: Colour) -> Colour {
+        let (from, to) = (rgb(self.well), rgb(c));
+        let at = |f: f32| from_rgb(lerp(from, to, f));
+        let floor = super::PLAYED_BRIGHTNESS;
+        if contrast_ratio(at(floor), self.well) >= LINE_CONTRAST {
+            return at(floor);
+        }
+        if contrast_ratio(c, self.well) < LINE_CONTRAST {
+            return c;
+        }
+        // The dimmest share of the colour that still meets the floor (contrast rises with it).
+        let (mut lo, mut hi) = (floor, 1.0f32);
+        for _ in 0..8 {
+            let mid = (lo + hi) / 2.0;
+            if contrast_ratio(at(mid), self.well) >= LINE_CONTRAST {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        at(hi)
+    }
+
     /// The colour a bucket is drawn with.
     pub fn bucket_colour(&self, key: Key) -> Colour {
         self.colour(key.weights())

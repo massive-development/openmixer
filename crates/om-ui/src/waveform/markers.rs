@@ -30,18 +30,21 @@ pub const CUE_FLAG_HEIGHT: f32 = 16.0;
 pub const CUE_LINE_WIDTH: f32 = 2.0;
 pub const CUE_NUMBER_SIZE: f32 = 12.0;
 /// The main cue point (not one of the numbered hot cues).
-pub const MAIN_CUE_COLOUR: Colour = Colour::from_argb(0xFFFF_6B35);
-/// Hot cue 1..=8 colours; further cues repeat the cycle. Chosen to stay apart from the three
-/// band colours (blue, orange, white) and from the loop green.
+pub const MAIN_CUE_COLOUR: Colour = Colour::from_argb(0xFFFF_9C78);
+/// Hot cue 1..=8 colours; further cues repeat the cycle. Each keeps its hue family and is lightened
+/// just enough that it is at least 60 degrees of hue from, or 0.25 relative luminance away from,
+/// each of the three band colours (red, green, blue; the plan's disjointness rule, asserted in the
+/// tests). The main cue follows the same rule. Hot cue 1 pink, 2 yellow, 3 green, 4 cyan, 5 violet,
+/// 6 magenta-pink, 7 lime, 8 sky blue.
 pub const CUE_PALETTE: [Colour; 8] = [
-    Colour::from_argb(0xFFFF_4D6D),
+    Colour::from_argb(0xFFFF_98AA),
     Colour::from_argb(0xFFFF_D23F),
     Colour::from_argb(0xFF4D_D964),
     Colour::from_argb(0xFF22_D3EE),
-    Colour::from_argb(0xFF8B_7BFF),
-    Colour::from_argb(0xFFFF_6EC7),
+    Colour::from_argb(0xFF99_8BFF),
+    Colour::from_argb(0xFFFF_91D4),
     Colour::from_argb(0xFFB6_E83A),
-    Colour::from_argb(0xFF3D_8BFF),
+    Colour::from_argb(0xFF56_9AFF),
 ];
 /// Text on a cue flag.
 pub const CUE_TEXT_COLOUR: Colour = Colour::from_argb(0xFF0B_0D12);
@@ -309,7 +312,7 @@ mod tests {
                 assert_ne!(a, b);
             }
         }
-        assert_eq!(MAIN_CUE_COLOUR.argb(), 0xFFFF_6B35);
+        assert_eq!(MAIN_CUE_COLOUR.argb(), 0xFFFF_9C78);
         assert_eq!(cue_colour(0), CUE_PALETTE[0]);
         assert_eq!(cue_colour(8), CUE_PALETTE[0], "cycles");
     }
@@ -368,11 +371,7 @@ mod tests {
         }
     }
 
-    // Plan gate (Task 8d). The cue palette predates the red/green/blue bands and fails it for 7 of
-    // 9 colours; recolouring it is a design choice the plan does not make, so the gate is ignored
-    // and the question reported.
     #[test]
-    #[ignore = "cue palette overlaps the band hues; see report"]
     fn cue_colours_keep_clear_of_the_band_hues() {
         // Plan: a cue colour is at least 60 degrees of hue from the three band hues, or differs
         // in luminance by 0.25. Reported by name so a failure says which cue.
