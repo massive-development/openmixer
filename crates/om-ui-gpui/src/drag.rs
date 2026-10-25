@@ -5,6 +5,7 @@
 
 use crate::app::Shell;
 use crate::controls::{key_step, wheel_step};
+use crate::fader_paint::FaderLaw;
 use crate::knob_paint::{dragged_value, snap_with_bypass};
 use gpui::Point;
 use om_engine::sampler::{MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
@@ -128,7 +129,12 @@ impl Shell {
         } else if drag.vertical {
             let frac =
                 (axis_of(pos, true) - f64::from(drag.rect.y)) / f64::from(drag.rect.h.max(1));
-            max - frac.clamp(0.0, 1.0) * (max - min)
+            let travel = 1.0 - frac.clamp(0.0, 1.0);
+            match fader_law(drag.target) {
+                // The cap position goes through the taper; the stored value stays linear gain.
+                Some(law) => f64::from(law.gain_at(travel as f32)),
+                None => min + travel * (max - min),
+            }
         } else {
             let frac =
                 (axis_of(pos, false) - f64::from(drag.rect.x)) / f64::from(drag.rect.w.max(1));
@@ -342,6 +348,15 @@ impl Shell {
     }
 }
 
+/// The taper a dragged fader follows from cap position to stored gain; None for the linear ones.
+fn fader_law(target: Target) -> Option<FaderLaw> {
+    match target {
+        Target::Channel(_) => Some(FaderLaw::Channel),
+        Target::Master => Some(FaderLaw::Master),
+        _ => None,
+    }
+}
+
 fn knob_range(knob: &om_ui::control::Knob) -> (f64, f64) {
     (knob.range.min, knob.range.max)
 }
@@ -416,6 +431,44 @@ mod tests {
         assert!((f64::from(engine.mixer().fader(0)) - min).abs() < 1e-3);
         shell.end_drag();
         assert!(shell.drag.is_none());
+    }
+
+    #[test]
+    fn a_channel_fader_with_the_taper_gives_unity_at_the_top() {
+        let (mut shell, engine) = shell();
+        let track = Rect::new(100, 100, 20, 200);
+        shell.begin_drag(Target::Channel(0), track, at(110.0, 100.0));
+        assert!((engine.mixer().fader(0) - 1.0).abs() < 1e-6, "top is 0 dB");
+        // Halfway down the travel is -30 dB on the dB-linear part of the law, not -6 dB.
+        shell.drag_move(at(110.0, 200.0));
+        let g = engine.mixer().fader(0);
+        let db = 20.0 * g.log10();
+        assert!((db + 30.0).abs() < 0.5, "{db} dB");
+        shell.drag_move(at(110.0, 300.0));
+        assert_eq!(engine.mixer().fader(0), 0.0);
+    }
+
+    #[test]
+    fn a_stored_half_gain_still_reads_minus_six_db() {
+        let (mut shell, engine) = shell();
+        engine.mixer().set_fader(0, 0.5);
+        shell.mixer.refresh(0.0, engine.mixer(), false);
+        let v = shell.mixer.strips[0].fader.value();
+        assert!((v - 0.5).abs() < 1e-6, "the stored value is untouched");
+        assert_eq!(om_ui::control::Readout::Gain.text(v), "-6 dB");
+        // Only the cap moves: -6 dB sits high on the taper.
+        let pos = crate::fader_paint::FaderLaw::Channel.pos_of(v as f32);
+        assert!(pos > 0.85 && pos < 0.95, "{pos}");
+    }
+
+    #[test]
+    fn a_double_click_resets_a_tapered_fader_to_its_stored_default() {
+        let (mut shell, engine) = shell();
+        engine.mixer().set_fader(0, 0.3);
+        shell.mixer.refresh(0.0, engine.mixer(), false);
+        let default = shell.mixer.strips[0].fader.default;
+        assert!(shell.reset_target(Target::Channel(0)));
+        assert!((f64::from(engine.mixer().fader(0)) - default).abs() < 1e-6);
     }
 
     #[test]

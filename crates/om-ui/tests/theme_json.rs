@@ -94,7 +94,7 @@ fn parses_mixer_metrics_and_meter_ballistics() {
     assert!(parse_theme(r##"{ "id": "t.bad", "mixer": { "meterHoldTickHeight": 99 } }"##).is_err());
     assert_close(p.tokens.mixer_cue_height, dark().mixer_cue_height);
     assert!(parse_theme(r##"{ "id": "t.bad", "mixer": { "meterClipLevel": 3 } }"##).is_err());
-    assert!(parse_theme(r##"{ "id": "t.bad", "mixer": { "meterReleaseSeconds": 0 } }"##).is_err());
+    assert!(parse_theme(r##"{ "id": "t.bad", "mixer": { "meterHoldSeconds": -1 } }"##).is_err());
 }
 
 #[test]
@@ -228,5 +228,34 @@ fn both_built_in_themes_define_every_waveform_key() {
             assert!(!section[key].is_null(), "missing waveform.{key}");
         }
         assert!(parse_theme(json).expect("parses").warnings.is_empty());
+    }
+}
+
+#[test]
+fn meter_colours_keep_three_to_one_on_their_well_in_every_built_in_theme() {
+    // WCAG 1.4.11 (non-text contrast, 3:1) for the lit meter zones, daylight amber included
+    // (faders-meters research, risk 7). The well is a translucent tint over the card over the
+    // backdrop.
+    use om_ui::style::{contrast_ratio, over};
+    for (name, json) in [
+        (
+            "dark",
+            include_str!("../../../resources/themes/openmixer-dark.json"),
+        ),
+        (
+            "daylight",
+            include_str!("../../../resources/themes/openmixer-daylight.json"),
+        ),
+    ] {
+        let t = parse_theme(json).expect("parses").tokens;
+        let well = over(t.well, over(t.surface, t.backdrop_bottom));
+        for (zone, colour) in [
+            ("low", t.meter_low),
+            ("mid", t.meter_mid),
+            ("high", t.meter_high),
+        ] {
+            let ratio = contrast_ratio(colour, well);
+            assert!(ratio >= 3.0, "{name} {zone}: {ratio:.2}:1 on the well");
+        }
     }
 }

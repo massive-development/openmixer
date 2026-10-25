@@ -222,17 +222,23 @@ pub fn slider_with_popup(
         return fader_paint::crossfader(t, rect, pos, accent, target, abs, popup_text, cx);
     }
     if vertical {
-        // The stored value stays linear; Linear is today's cap travel (plan Phase 2 default). The
-        // tapered laws are wired at the call sites in Phase 5.
-        let law = FaderLaw::Linear {
-            max_gain: max as f32,
+        // The stored value stays linear gain; the law only places the cap (and drag.rs maps the
+        // pointer back through the same law). Other vertical sliders keep the linear travel.
+        let (law, face): (_, fn(FaderLaw) -> FaderFace) = match target {
+            Target::Master => (FaderLaw::Master, FaderFace::master),
+            Target::Channel(_) => (FaderLaw::Channel, FaderFace::channel),
+            _ => (
+                FaderLaw::Linear {
+                    max_gain: max as f32,
+                },
+                FaderFace::channel,
+            ),
         };
-        let face = if target == Target::Master {
-            FaderFace::master(law)
-        } else {
-            FaderFace::channel(law)
+        let face = face(law);
+        let pos = match law {
+            FaderLaw::Linear { .. } => fraction(value, min, max) as f32,
+            tapered => tapered.pos_of(value as f32),
         };
-        let pos = fraction(value, min, max) as f32;
         return fader_paint::fader(t, rect, &face, pos, accent, target, abs, popup_text, cx);
     }
     // Other horizontal sliders (stems, phones) keep the plain track and thumb.

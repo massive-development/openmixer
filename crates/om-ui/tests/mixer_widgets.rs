@@ -20,7 +20,6 @@ fn meter_params() -> MeterParams {
     MeterParams {
         floor_db: -48.0,
         clip_level: 0.99,
-        release_seconds: 0.5,
         release_db_per_second: 13.0,
         hold_seconds: 1.0,
         clip_seconds: 2.0,

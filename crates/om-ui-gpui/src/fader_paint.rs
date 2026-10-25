@@ -348,6 +348,12 @@ impl FaderGeometry {
         (self.h - self.cap_h).max(0)
     }
 
+    /// The rectangle a drag maps the pointer over (local coordinates): the cap's centre travels its
+    /// full height, so the cap stays under the pointer instead of drifting by half its height.
+    pub fn drag_rect(&self) -> Rect {
+        Rect::new(0, self.cap_h / 2, self.w, self.travel())
+    }
+
     /// Top of the cap at position `pos`.
     pub fn cap_y(&self, pos: f32) -> i32 {
         ((1.0 - pos.clamp(0.0, 1.0)) * self.travel() as f32).round() as i32
@@ -519,7 +525,7 @@ pub fn fader(
     if let Some(text) = popup_text {
         root = root.child(popup_chip(t, rect.w, text));
     }
-    draggable(root, target, abs, cx)
+    draggable(root, target, drag_abs(abs, plan.geometry.drag_rect()), cx)
 }
 
 /// Crossfader cap size (R section 3; a proposal) and slot thickness.
@@ -555,6 +561,12 @@ impl CrossfaderGeometry {
 
     pub fn travel(&self) -> i32 {
         (self.w - self.cap_w).max(0)
+    }
+
+    /// The rectangle a drag maps the pointer over (local coordinates): the cap's centre line
+    /// travels its full width.
+    pub fn drag_rect(&self) -> Rect {
+        Rect::new(self.cap_w / 2, 0, self.travel(), self.h)
     }
 
     pub fn cap_x(&self, pos: f32) -> i32 {
@@ -647,7 +659,13 @@ pub fn crossfader(
     if let Some(text) = popup_text {
         root = root.child(popup_chip(t, rect.w, text));
     }
-    draggable(root, target, abs, cx)
+    draggable(root, target, drag_abs(abs, plan.geometry.drag_rect()), cx)
+}
+
+/// The window rectangle a drag maps the pointer over: `local` (from a geometry's `drag_rect`)
+/// placed inside the control at `abs`.
+fn drag_abs(abs: Rect, local: Rect) -> Rect {
+    Rect::new(abs.x + local.x, abs.y + local.y, local.w, local.h)
 }
 
 /// A value popup centred above a fader `width` px wide. No pointer handling.
@@ -682,6 +700,25 @@ mod tests {
         FaderLaw::Linear { max_gain: 1.0 },
         FaderLaw::Linear { max_gain: 2.0 },
     ];
+
+    #[test]
+    fn the_drag_rect_puts_the_cap_centre_under_the_pointer() {
+        let face = FaderFace::channel(FaderLaw::Channel);
+        let g = FaderGeometry::new(40, 200, &face);
+        let drag = g.drag_rect();
+        for pos in [0.0_f32, 0.25, 0.5, 1.0] {
+            // A pointer at the drag rect's fraction `pos` from the bottom is the cap's centre.
+            let pointer_y = drag.y + ((1.0 - pos) * drag.h as f32).round() as i32;
+            let centre = g.cap_y(pos) + g.cap_h / 2;
+            assert_eq!(pointer_y, centre, "pos {pos}");
+        }
+        let x = CrossfaderGeometry::new(120, 24);
+        let drag = x.drag_rect();
+        for pos in [0.0_f32, 0.5, 1.0] {
+            let pointer_x = drag.x + (pos * drag.w as f32).round() as i32;
+            assert_eq!(pointer_x, x.mark_x(pos), "pos {pos}");
+        }
+    }
 
     #[test]
     fn channel_law_pos_one_is_unity_and_pos_zero_is_silent() {

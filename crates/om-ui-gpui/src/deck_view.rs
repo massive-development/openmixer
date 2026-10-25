@@ -7,6 +7,7 @@
 use crate::app::Shell;
 use crate::controls::slider;
 use crate::drag::Target;
+use crate::fader_paint;
 use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place, shadow, skin};
 use crate::platter_paint::{
@@ -633,33 +634,31 @@ pub(crate) fn zoom(
     )
 }
 
-/// Pitch fader metrics (px): the readout strip on top, a 28 px thumb (the old one was 12) and an
-/// 8 px track (was 4).
+/// Pitch fader metrics (px): the readout strip on top, then the fader (cap, centre notch and
+/// half-range ticks from `fader_paint`) at `PITCH_FADER_W` wide, centred in the column.
 const PITCH_READOUT_H: i32 = 20;
-const PITCH_THUMB_H: i32 = 28;
-const PITCH_THUMB_W: i32 = 44;
-const PITCH_TRACK_W: i32 = 8;
+const PITCH_FADER_W: i32 = 48;
 
 fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let deck = &shell.decks[index];
     let area = l.pitch;
     let range = deck.pitch.range();
-    let value = deck.pitch.fader_value();
     // Top of the track is the fastest rate.
-    let frac = ((1.0 + range - value) / (2.0 * range)).clamp(0.0, 1.0);
-    let travel = (area.h - PITCH_READOUT_H - PITCH_THUMB_H).max(1);
-    let thumb_y = PITCH_READOUT_H + (frac * f64::from(travel)) as i32;
-    let centre_y = PITCH_READOUT_H + PITCH_THUMB_H / 2 + travel / 2;
-    // The pointer position along this rectangle maps to the thumb's centre.
-    let abs_pitch = Rect::new(
-        card.x + area.x,
-        card.y + area.y + PITCH_READOUT_H + PITCH_THUMB_H / 2,
-        area.w,
-        travel,
+    let pos = fader_paint::pitch_pos(deck.pitch.fader_value(), range);
+    let w = PITCH_FADER_W.min(area.w);
+    let local = Rect::new(
+        (area.w - w) / 2,
+        PITCH_READOUT_H,
+        w,
+        (area.h - PITCH_READOUT_H).max(1),
     );
-    let mid_x = area.w / 2;
-
+    let abs = Rect::new(
+        card.x + area.x + local.x,
+        card.y + area.y + local.y,
+        w,
+        local.h,
+    );
     place(area)
         .child(
             place(Rect::new(0, 0, area.w, PITCH_READOUT_H))
@@ -669,41 +668,17 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
                 .text_size(px(t.type_label))
                 .child(deck.pitch.readout()),
         )
-        .child(
-            place(Rect::new(
-                mid_x - PITCH_TRACK_W / 2,
-                PITCH_READOUT_H + PITCH_THUMB_H / 2,
-                PITCH_TRACK_W,
-                travel,
-            ))
-            .bg(paint(t.well))
-            .rounded(px(PITCH_TRACK_W as f32 / 2.)),
-        )
-        // The 0 % mark, wider than the thumb so it shows beside it.
-        .child(place(Rect::new(mid_x - 26, centre_y, 52, 2)).bg(paint(t.text_secondary)))
-        .child(
-            place(Rect::new(
-                mid_x - PITCH_THUMB_W / 2,
-                thumb_y,
-                PITCH_THUMB_W,
-                PITCH_THUMB_H,
-            ))
-            .bg(paint(t.surface_raised))
-            .border_1()
-            .border_color(paint(t.text_secondary))
-            .rounded(px(t.control_radius))
-            .child(
-                place(Rect::new(6, PITCH_THUMB_H / 2 - 1, PITCH_THUMB_W - 14, 2))
-                    .bg(paint(t.accent_for(index as i32))),
-            ),
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                this.begin_drag(Target::Pitch(index), abs_pitch, ev.position);
-                cx.notify();
-            }),
-        )
+        .child(fader_paint::fader(
+            t,
+            local,
+            &fader_paint::FaderFace::pitch(),
+            pos,
+            t.accent_for(index as i32),
+            Target::Pitch(index),
+            abs,
+            None,
+            cx,
+        ))
 }
 
 // ---------------------------------------------------------------------------------------------
