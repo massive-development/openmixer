@@ -16,6 +16,7 @@ use crate::paint::{paint, place};
 use gpui::{prelude::*, px, Context, Div, FontWeight};
 use om_ui::control::{Knob, Readout};
 use om_ui::geometry::Rect;
+use om_ui::labels::channel_labels;
 use om_ui::meter::MeterBar;
 use om_ui::theme::Colour;
 use om_ui::widgets::channel::{channel_letter, ChannelStrip, ASSIGN_LABELS};
@@ -168,7 +169,7 @@ fn channel(
     out.push(button(
         t,
         lay.pfl,
-        "PFL",
+        channel_labels().cue,
         strip.pfl,
         accent,
         cx,
