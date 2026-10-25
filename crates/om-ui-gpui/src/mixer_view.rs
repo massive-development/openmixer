@@ -445,3 +445,68 @@ pub(crate) fn fx_page(
     out.push(caption(t, lay.beat, fx.beat_label()));
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fader_paint::{FaderFace, FaderLaw, FaderPlan};
+    use crate::knob_paint::knob_geometry;
+    use om_ui::main_layout::{channel_slot, page_for, CellKind, LayoutState};
+    use om_ui::theme::ThemeTokens;
+
+    const SIZES: [(i32, i32); 4] = [(1280, 720), (1280, 800), (1920, 1080), (2560, 1440)];
+
+    /// The channel strip card the standard page gives channel `ch` at a window size.
+    fn strip_card(size: (i32, i32), ch: usize) -> Rect {
+        let t = ThemeTokens::builtin_dark();
+        let needs = om_ui::header_layout::HeaderNeeds {
+            automix: true,
+            record: true,
+            settings: true,
+            notice: false,
+        };
+        let page = page_for(2, size, 0, t.gap, LayoutState::default(), needs);
+        let want = CellKind::Slot(channel_slot(ch));
+        let cell = page.cells.iter().find(|c| c.kind == want).expect("strip");
+        Rect::sized(cell.bounds.w, cell.bounds.h)
+    }
+
+    fn cap(rect: Rect, role: KnobRole) -> f32 {
+        knob_geometry(rect.w as f32, rect.h as f32, 0.0, role).cap_diameter()
+    }
+
+    /// knobs.md section 3: trim, EQ and filter caps are 32 px (28 at the least). At 1280 wide the
+    /// strip must give the 32 px cap, not the 30 px the old width left.
+    #[test]
+    fn strip_knobs_get_the_researched_cap_sizes() {
+        let t = ThemeTokens::builtin_dark();
+        for size in SIZES {
+            let lay = ChannelStrip::layout(strip_card(size, 0), &t);
+            let full = size.1 >= 800;
+            let want = if full { 31.99 } else { 28.0 };
+            for (name, c) in [
+                ("trim", cap(lay.trim, KnobRole::Wide)),
+                ("filter", cap(lay.filter, KnobRole::Wide)),
+                ("high", cap(lay.eq[2], KnobRole::Band)),
+                ("mid", cap(lay.eq[1], KnobRole::Band)),
+                ("low", cap(lay.eq[0], KnobRole::Band)),
+            ] {
+                assert!(c >= want, "{size:?}: {name} cap {c}");
+            }
+        }
+    }
+
+    /// faders-meters.md section 3: major ticks are labelled. The channel fader needs 58 px for its
+    /// labels; the strip must supply it at 1280 wide.
+    #[test]
+    fn the_channel_fader_prints_its_tick_labels_at_every_window_size() {
+        let t = ThemeTokens::builtin_dark();
+        for size in SIZES {
+            let lay = ChannelStrip::layout(strip_card(size, 1), &t);
+            assert!(lay.fader.w >= 58, "{size:?}: fader {} px wide", lay.fader.w);
+            let face = FaderFace::channel(FaderLaw::Channel);
+            let plan = FaderPlan::new(lay.fader.w, lay.fader.h, &face, 0.5);
+            assert!(!plan.labels.is_empty(), "{size:?}: no tick labels");
+        }
+    }
+}
