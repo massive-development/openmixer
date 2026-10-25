@@ -762,26 +762,17 @@ pub(crate) fn transport_style(
     }
 }
 
-/// Text of a transport button: sentence case words (research table); Play reads Pause while playing.
+/// Text of a transport button (`om-ui` owns the words); Play reads Pause while playing.
 pub(crate) fn transport_label(button: TransportButton, playing: bool) -> &'static str {
     match button {
         TransportButton::Play if playing => "Pause",
-        TransportButton::Play => "Play",
-        TransportButton::Cue => "Cue",
-        TransportButton::Sync => "Sync",
-        TransportButton::Master => "Tempo leader",
-        TransportButton::KeyLock => "Key lock",
-        TransportButton::Quantize => "Snap to beat",
-        TransportButton::Slip => "Slip",
+        other => other.label(),
     }
 }
 
-/// Tooltip text; Master keeps its old name for people who search for it.
+/// Tooltip text; Master's keeps its old name for people who search for it.
 pub(crate) fn transport_tip(button: TransportButton) -> &'static str {
-    match button {
-        TransportButton::Master => "Other decks follow this deck's tempo (master)",
-        other => other.tooltip(),
-    }
+    button.tooltip()
 }
 
 /// How one hotcue pad is drawn.
