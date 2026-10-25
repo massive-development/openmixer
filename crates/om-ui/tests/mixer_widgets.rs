@@ -315,7 +315,7 @@ fn assert_no_overlap(parts: &[(&str, Rect)], context: &str) {
 #[test]
 fn module_layout_has_no_overlaps_across_sizes() {
     let theme = ThemeTokens::builtin_dark();
-    for (w, h) in [(220, 280), (270, 300), (330, 420)] {
+    for (w, h) in [(220, 280), (245, 262), (270, 300), (330, 420)] {
         let context = format!("module {w}x{h}");
         let bounds = Rect::sized(w, h);
         let layout = MixerPanel::module_layout(bounds, &theme);
@@ -330,6 +330,29 @@ fn module_layout_has_no_overlaps_across_sizes() {
             assert!(bounds.contains(r), "{context}: {name} clipped");
         }
     }
+}
+
+/// The module sections get what their research specs need at the smallest window's module size:
+/// a master fader with labelled ticks, 36 px headphone caps, a wide crossfader and a visible switch.
+#[test]
+fn module_sections_get_their_researched_sizes_at_the_smallest_module() {
+    use om_ui::widgets::{crossfader::CrossfaderSection, cue::CueSection, master::MasterSection};
+    let theme = ThemeTokens::builtin_dark();
+    let l = MixerPanel::module_layout(Rect::sized(245, 262), &theme);
+    let master = MasterSection::layout(l.master, &theme);
+    assert!(master.meter_labels && master.fader.h >= 120, "{master:?}");
+    let cue = CueSection::layout(l.cue, &theme);
+    assert!(
+        cue.mix.w >= 45 && cue.mix.h >= 45,
+        "36 px cap needs 45 px: {cue:?}"
+    );
+    let xf = CrossfaderSection::layout(l.crossfader, &theme);
+    assert!(
+        xf.slider.w >= 180,
+        "the crossfader is wide: {}",
+        xf.slider.w
+    );
+    assert!(xf.curve.iter().all(|r| r.h >= 28));
 }
 
 /// The cell the standard layout gives a named slot at the default window size.

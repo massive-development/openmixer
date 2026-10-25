@@ -47,7 +47,6 @@ impl Target {
                 | Target::Eq(..)
                 | Target::FxMix
                 | Target::FxParam(_)
-                | Target::Master
                 | Target::CueMix
                 | Target::CueLevel
                 | Target::SamplerGain
@@ -574,9 +573,30 @@ mod tests {
         assert!(v > 0.01 && v < 0.2, "{v}");
     }
 
+    /// Master is a fader (faders-meters.md section 3 master anatomy): it follows the pointer through
+    /// the master taper, unity at 3/4 of the travel and +6 dB (stored 2.0) at the top.
     #[test]
-    fn master_and_cue_are_knobs() {
-        for target in [Target::Master, Target::CueMix, Target::CueLevel] {
+    fn the_master_is_a_tapered_fader() {
+        assert!(!Target::Master.is_knob());
+        let (mut shell, engine) = shell();
+        let track = Rect::new(100, 100, 60, 200);
+        shell.begin_drag(Target::Master, track, at(110.0, 100.0));
+        assert!(
+            (engine.mixer().master_gain() - 2.0).abs() < 1e-3,
+            "top is +6 dB"
+        );
+        shell.drag_move(at(110.0, 150.0));
+        assert!(
+            (engine.mixer().master_gain() - 1.0).abs() < 1e-3,
+            "3/4 up is unity"
+        );
+        shell.drag_move(at(110.0, 300.0));
+        assert_eq!(engine.mixer().master_gain(), 0.0);
+    }
+
+    #[test]
+    fn cue_controls_are_knobs() {
+        for target in [Target::CueMix, Target::CueLevel] {
             assert!(target.is_knob(), "{target:?}");
         }
         assert!(!Target::Channel(0).is_knob());
