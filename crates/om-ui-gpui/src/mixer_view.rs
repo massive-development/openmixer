@@ -7,17 +7,20 @@
 
 use crate::app::Shell;
 use crate::controls::{
-    button, caption, knob_face, mark, slider_with_popup, stereo_meter, BarState, KnobFace,
+    button, caption, knob_face_with, mark, slider_with_popup, stereo_meter, BarState, KnobFace,
+    KnobLook,
 };
 use crate::drag::Target;
+use crate::knob_paint::KnobRole;
 use crate::paint::{paint, place};
 use gpui::{prelude::*, px, Context, Div, FontWeight};
 use om_ui::control::{Knob, Readout};
 use om_ui::geometry::Rect;
 use om_ui::meter::MeterBar;
+use om_ui::theme::Colour;
 use om_ui::widgets::channel::{channel_letter, ChannelStrip, ASSIGN_LABELS};
 use om_ui::widgets::crossfader::{CrossfaderSection, CURVE_LABELS};
-use om_ui::widgets::cue::{CueSection, LEVEL_LABEL, MIX_LABEL};
+use om_ui::widgets::cue::CueSection;
 use om_ui::widgets::fx_panel::FxPanel;
 use om_ui::widgets::master::MasterSection;
 use om_ui::widgets::mixer::{MixerPanel, Page};
@@ -108,7 +111,7 @@ fn channel(
         &strip.trim,
         Target::Trim(ch),
         card,
-        true,
+        (true, KnobRole::Wide, Some(accent)),
         cx,
     ));
     for band in 0..3 {
@@ -131,7 +134,7 @@ fn channel(
             &strip.eq[band],
             Target::Eq(ch, band),
             card,
-            false,
+            (false, KnobRole::Band, Some(accent)),
             cx,
         ));
     }
@@ -141,7 +144,7 @@ fn channel(
         &strip.filter,
         Target::Filter(ch),
         card,
-        true,
+        (true, KnobRole::Wide, Some(accent)),
         cx,
     ));
     out.push(button(
@@ -202,15 +205,15 @@ fn channel(
     out
 }
 
-/// A knob at `rect` for `model`. `labelled` prints its name on the body; the value is in the
-/// popup (while dragged or hovered).
+/// A knob at `rect` for `model`. `labelled` prints its name beside or below it; `role` sizes the
+/// cap; `accent` colours its value arc. The value is in the popup (while dragged or hovered).
 fn knob_view(
     shell: &Shell,
     rect: Rect,
     model: &Knob,
     target: Target,
     card: Rect,
-    labelled: bool,
+    (labelled, role, accent): (bool, KnobRole, Option<Colour>),
     cx: &mut Context<Shell>,
 ) -> Div {
     let abs = Rect::new(card.x + rect.x, card.y + rect.y, rect.w, rect.h);
@@ -220,7 +223,7 @@ fn knob_view(
     } else {
         ""
     };
-    knob_face(
+    knob_face_with(
         &shell.theme,
         rect,
         KnobFace {
@@ -230,36 +233,33 @@ fn knob_view(
             active: shell.shows_value(target),
         },
         (model.value(), model.range.min, model.range.max),
-        target,
-        abs,
+        (target, abs),
+        KnobLook {
+            role,
+            accent,
+            dragging: shell.is_dragging(target),
+            disabled: false,
+        },
         cx,
     )
 }
 
-/// Master fader and stereo meter under the MASTER caption.
+/// Master level knob and stereo meter under the MASTER caption.
 fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = MasterSection::layout(bounds, t);
-    let abs = Rect::new(
-        card.x + lay.fader.x,
-        card.y + lay.fader.y,
-        lay.fader.w,
-        lay.fader.h,
-    );
     let m = &shell.mixer.master;
-    let popup = shell
-        .is_dragging(Target::Master)
-        .then(|| Readout::Gain.text(m.fader.value()));
     let bars = [bar_state(&m.meter.left), bar_state(&m.meter.right)];
     vec![
         caption(t, lay.title, "MASTER"),
-        slider_with_popup(
-            t,
+        // The caption above already names it, so the knob prints no label of its own.
+        knob_view(
+            shell,
             lay.fader,
-            (m.fader.value(), m.fader.min, m.fader.max),
+            &m.fader,
             Target::Master,
-            abs,
-            popup.as_deref(),
+            card,
+            (false, KnobRole::Cue, Some(t.accent_for(0))),
             cx,
         ),
         stereo_meter(t, lay.meter, lay.meter_labels, bars, cx, |this| {
@@ -322,36 +322,27 @@ fn cue(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<
     let t = &shell.theme;
     let lay = CueSection::layout(bounds, t);
     let c = &shell.mixer.cue;
-    let abs = |r: Rect| Rect::new(card.x + r.x, card.y + r.y, r.w, r.h);
-    let percent = |v: f64| Readout::Percent.text(v);
-    let mix_popup = shell
-        .is_dragging(Target::CueMix)
-        .then(|| percent(c.mix.value()));
-    let level_popup = shell
-        .is_dragging(Target::CueLevel)
-        .then(|| Readout::Gain.text(c.level.value()));
+    let accent = Some(t.accent_for(0));
     vec![
         caption(t, lay.caption, "PHONES"),
-        slider_with_popup(
-            t,
+        knob_view(
+            shell,
             lay.mix,
-            (c.mix.value(), c.mix.min, c.mix.max),
+            &c.mix,
             Target::CueMix,
-            abs(lay.mix),
-            mix_popup.as_deref(),
+            card,
+            (true, KnobRole::Cue, accent),
             cx,
         ),
-        mark(t, lay.mix, MIX_LABEL),
-        slider_with_popup(
-            t,
+        knob_view(
+            shell,
             lay.level,
-            (c.level.value(), c.level.min, c.level.max),
+            &c.level,
             Target::CueLevel,
-            abs(lay.level),
-            level_popup.as_deref(),
+            card,
+            (true, KnobRole::Cue, accent),
             cx,
         ),
-        mark(t, lay.level, LEVEL_LABEL),
     ]
 }
 
@@ -415,7 +406,7 @@ pub(crate) fn fx_page(
             &fx.mix,
             Target::FxMix,
             card,
-            true,
+            (true, KnobRole::Fx, Some(accent)),
             cx,
         ));
     }
@@ -427,7 +418,7 @@ pub(crate) fn fx_page(
                 param,
                 Target::FxParam(i),
                 card,
-                true,
+                (true, KnobRole::Fx, Some(accent)),
                 cx,
             ));
         }

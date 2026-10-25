@@ -7,6 +7,7 @@ use crate::app::Shell;
 use crate::controls::{key_step, wheel_step};
 use crate::knob_paint::{dragged_value, snap_with_bypass};
 use gpui::Point;
+use om_engine::sampler::{MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
 use om_ui::geometry::Rect;
 
 /// A control that a drag can change.
@@ -25,6 +26,10 @@ pub enum Target {
     CueLevel,
     FxMix,
     FxParam(usize),
+    /// The selected sampler pad's gain (linear, unity detent).
+    SamplerGain,
+    /// The selected sampler pad's pitch in semitones (0 detent).
+    SamplerPitch,
     /// A stem's volume slider (deck, stem).
     StemVolume(usize, usize),
     /// A stem's filter slider, horizontal with a centre detent (deck, stem).
@@ -44,6 +49,8 @@ impl Target {
                 | Target::Master
                 | Target::CueMix
                 | Target::CueLevel
+                | Target::SamplerGain
+                | Target::SamplerPitch
         )
     }
 }
@@ -174,7 +181,8 @@ impl Shell {
     /// level mark unity; the cue mix has none.
     pub(crate) fn detent_of(&self, target: Target) -> Option<f64> {
         match target {
-            Target::Master | Target::CueLevel => Some(1.0),
+            Target::Master | Target::CueLevel | Target::SamplerGain => Some(1.0),
+            Target::SamplerPitch => Some(0.0),
             _ => self.knob_of(target).and_then(|k| k.detent),
         }
     }
@@ -211,10 +219,12 @@ impl Shell {
     fn default_of(&self, target: Target) -> Option<f64> {
         match target {
             Target::Channel(c) => Some(self.mixer.strips[c].fader.default),
-            Target::Master => Some(self.mixer.master.fader.default),
+            Target::Master => Some(self.mixer.master.fader.range.default),
             Target::Crossfader => Some(self.mixer.crossfader.slider.default),
-            Target::CueMix => Some(self.mixer.cue.mix.default),
-            Target::CueLevel => Some(self.mixer.cue.level.default),
+            Target::CueMix => Some(self.mixer.cue.mix.range.default),
+            Target::CueLevel => Some(self.mixer.cue.level.range.default),
+            Target::SamplerGain => Some(1.0),
+            Target::SamplerPitch => Some(0.0),
             Target::Pitch(_) | Target::StemVolume(..) | Target::StemFilter(..) => None,
             knob => self.knob_of(knob).map(|k| k.range.default),
         }
@@ -246,6 +256,8 @@ impl Shell {
             Target::CueLevel => self.mixer.cue.level.value(),
             Target::FxMix => self.mixer.fx.mix.value(),
             Target::FxParam(i) => self.mixer.fx.params[i].value(),
+            Target::SamplerGain => f64::from(self.sampler_selected_pad().gain),
+            Target::SamplerPitch => f64::from(self.sampler_selected_pad().pitch),
             Target::StemVolume(d, s) => f64::from(self.decks[d].stems.stems()[s].gain),
             Target::StemFilter(d, s) => f64::from(self.decks[d].stems.stems()[s].filter),
         }
@@ -261,7 +273,7 @@ impl Shell {
                 self.mixer.strips[c].fader.min,
                 self.mixer.strips[c].fader.max,
             ),
-            Target::Master => (self.mixer.master.fader.min, self.mixer.master.fader.max),
+            Target::Master => knob_range(&self.mixer.master.fader),
             Target::Crossfader => (
                 self.mixer.crossfader.slider.min,
                 self.mixer.crossfader.slider.max,
@@ -269,10 +281,15 @@ impl Shell {
             Target::Trim(c) => knob_range(&self.mixer.strips[c].trim),
             Target::Filter(c) => knob_range(&self.mixer.strips[c].filter),
             Target::Eq(c, b) => knob_range(&self.mixer.strips[c].eq[b]),
-            Target::CueMix => (self.mixer.cue.mix.min, self.mixer.cue.mix.max),
-            Target::CueLevel => (self.mixer.cue.level.min, self.mixer.cue.level.max),
+            Target::CueMix => knob_range(&self.mixer.cue.mix),
+            Target::CueLevel => knob_range(&self.mixer.cue.level),
             Target::FxMix => knob_range(&self.mixer.fx.mix),
             Target::FxParam(i) => knob_range(&self.mixer.fx.params[i]),
+            Target::SamplerGain => (0.0, f64::from(MAX_PAD_GAIN)),
+            Target::SamplerPitch => (
+                -f64::from(MAX_PITCH_SEMITONES),
+                f64::from(MAX_PITCH_SEMITONES),
+            ),
             Target::StemVolume(..) => (0.0, om_ui::stem_binding::MAX_VOLUME),
             Target::StemFilter(..) => (-1.0, 1.0),
         }
@@ -313,6 +330,8 @@ impl Shell {
             Target::FxParam(i) => {
                 self.mixer.fx.param_changed(i, value);
             }
+            Target::SamplerGain => self.sampler_set_gain(value as f32),
+            Target::SamplerPitch => self.sampler_set_pitch(value as f32),
             Target::StemVolume(d, s) => {
                 self.decks[d].stems.set_volume(s, value);
             }
@@ -517,6 +536,47 @@ mod tests {
         assert_eq!(shell.detent_of(Target::CueLevel), Some(1.0));
         assert_eq!(shell.detent_of(Target::CueMix), None);
         assert_eq!(shell.detent_of(Target::Eq(0, 0)), Some(0.0));
+    }
+
+    #[test]
+    fn sampler_gain_and_pitch_are_knobs_over_the_selected_pad() {
+        for target in [Target::SamplerGain, Target::SamplerPitch] {
+            assert!(target.is_knob(), "{target:?}");
+        }
+        let (mut shell, engine) = shell();
+        assert_eq!(shell.detent_of(Target::SamplerGain), Some(1.0));
+        assert_eq!(shell.detent_of(Target::SamplerPitch), Some(0.0));
+        let pad = shell.sampler.selected();
+        // A drag moves the selected pad only.
+        let knob = Rect::new(0, 0, 40, 40);
+        shell.begin_drag(Target::SamplerGain, knob, at(20.0, 300.0));
+        shell.drag_move(at(20.0, 200.0));
+        shell.end_drag();
+        let g = engine.snapshot().sampler.pads[pad].gain;
+        assert!(g > 1.0 && g <= MAX_PAD_GAIN, "{g}");
+        assert_eq!(engine.snapshot().sampler.pads[(pad + 1) % 8].gain, 1.0);
+        assert!(shell.reset_target(Target::SamplerGain));
+        assert_eq!(engine.snapshot().sampler.pads[pad].gain, 1.0);
+        assert!(shell.reset_target(Target::SamplerPitch));
+        assert_eq!(engine.snapshot().sampler.pads[pad].pitch, 0.0);
+    }
+
+    #[test]
+    fn the_sampler_setters_clamp_to_the_engine_limits() {
+        let (mut shell, engine) = shell();
+        let pad = shell.sampler.selected();
+        shell.sampler_set_gain(9.0);
+        assert_eq!(engine.snapshot().sampler.pads[pad].gain, MAX_PAD_GAIN);
+        shell.sampler_set_gain(-1.0);
+        assert_eq!(engine.snapshot().sampler.pads[pad].gain, 0.0);
+        shell.sampler_set_pitch(99.0);
+        assert_eq!(
+            engine.snapshot().sampler.pads[pad].pitch,
+            MAX_PITCH_SEMITONES
+        );
+        shell.sampler_set_pitch(-3.0);
+        assert_eq!(engine.snapshot().sampler.pads[pad].pitch, -3.0);
+        assert_eq!(shell.sampler_selected_pad().pitch, -3.0);
     }
 
     #[test]

@@ -1,18 +1,20 @@
 //! The sampler drawer: collapsed it is a narrow PADS handle beside the library; open it shows eight
 //! pads (a 4x2 grid) and a control column for the selected pad (mode and stop, load and clear,
-//! gain and pitch steppers). Pads light while playing. A pad is pressed by a click
+//! gain and pitch knobs). Pads light while playing. A pad is pressed by a click
 //! or its digit key (1 to 8) while the strip has focus; a gate pad is held until the button or key
 //! comes up. Models come from `om-ui`'s `SamplerBinding`; the layout from `widgets::sampler_strip`.
 
 use crate::app::Shell;
-use crate::controls::{button, caption, mark};
+use crate::controls::{button, caption, knob_face_with, KnobFace, KnobLook};
+use crate::drag::Target;
+use crate::knob_paint::KnobRole;
 use crate::paint::{paint, place, skin};
 use crate::text_entry::{apply_key, EntryKey};
 use gpui::{
     prelude::*, px, Context, Div, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
     MouseDownEvent, MouseUpEvent,
 };
-use om_engine::sampler::PadMode;
+use om_engine::sampler::{PadMode, MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
 use om_ui::geometry::Rect;
 use om_ui::sampler_binding::{mode_label, pad_for_key, PadView};
 use om_ui::style::LookAndFeel;
@@ -21,10 +23,6 @@ use om_ui::widgets::sampler_strip::{sampler_strip_layout, SamplerStripLayout};
 
 /// Velocity of a click or key press on a pad (a full-scale hit leaves headroom for the master).
 const PRESS_VELOCITY: f32 = 0.9;
-/// Gain step of the steppers (linear).
-const GAIN_STEP: f32 = 0.1;
-/// Pitch step of the steppers (semitones).
-const PITCH_STEP: f32 = 1.0;
 /// How many characters of a sample name fit on a pad.
 const PAD_NAME_CHARS: usize = 8;
 
@@ -95,20 +93,24 @@ impl Shell {
         };
     }
 
-    /// Steps the selected pad's gain by `delta` (linear).
-    pub(crate) fn sampler_step_gain(&mut self, delta: f32) {
+    /// The selected pad as the window draws it (gain and pitch live per pad).
+    pub(crate) fn sampler_selected_pad(&self) -> PadView {
         let pad = self.sampler.selected();
-        let gain = self.sampler.pads()[pad].gain + delta;
+        self.sampler.pads().swap_remove(pad)
+    }
+
+    /// Sets the selected pad's gain (linear; the engine clamps it to its ceiling).
+    pub(crate) fn sampler_set_gain(&mut self, gain: f32) {
+        let pad = self.sampler.selected();
         if let Err(error) = self.sampler.set_gain(pad, gain) {
             self.sampler_status = Some((error.to_string(), true));
         }
     }
 
-    /// Steps the selected pad's pitch by `delta` semitones.
-    pub(crate) fn sampler_step_pitch(&mut self, delta: f32) {
+    /// Sets the selected pad's pitch in semitones (the engine clamps it to its limit).
+    pub(crate) fn sampler_set_pitch(&mut self, semitones: f32) {
         let pad = self.sampler.selected();
-        let pitch = self.sampler.pads()[pad].pitch + delta;
-        if let Err(error) = self.sampler.set_pitch(pad, pitch) {
+        if let Err(error) = self.sampler.set_pitch(pad, semitones) {
             self.sampler_status = Some((error.to_string(), true));
         }
     }
@@ -260,26 +262,55 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     root = root.child(button(t, l.clear, "Clear", false, accent, cx, |this| {
         this.sampler_clear_selected()
     }));
-    // Gain and pitch steppers: `-`, the name and value between, `+`.
-    let gain = format!("GAIN {}%", (pads[selected].gain * 100.0).round() as i32);
-    let pitch = format!(
-        "PITCH {}",
-        om_ui::format::signed_fixed(f64::from(pads[selected].pitch), 0)
+    // Gain and pitch knobs over the selected pad, each across its row (the layout's stepper cells
+    // merged); disabled while the pad is empty.
+    let pad = &pads[selected];
+    let gain_text = om_ui::control::Readout::Gain.text(f64::from(pad.gain));
+    let pitch_text = format!(
+        "{} st",
+        om_ui::format::signed_fixed(f64::from(pad.pitch), 0)
     );
-    root = root.child(button(t, l.gain_down, "-", false, accent, cx, |this| {
-        this.sampler_step_gain(-GAIN_STEP)
-    }));
-    root = root.child(mark(t, l.gain_value, &gain));
-    root = root.child(button(t, l.gain_up, "+", false, accent, cx, |this| {
-        this.sampler_step_gain(GAIN_STEP)
-    }));
-    root = root.child(button(t, l.pitch_down, "-", false, accent, cx, |this| {
-        this.sampler_step_pitch(-PITCH_STEP)
-    }));
-    root = root.child(mark(t, l.pitch_value, &pitch));
-    root = root.child(button(t, l.pitch_up, "+", false, accent, cx, |this| {
-        this.sampler_step_pitch(PITCH_STEP)
-    }));
+    let row = |a: Rect, b: Rect| Rect::new(a.x, a.y, b.right() - a.x, a.h);
+    let knobs = [
+        (
+            row(l.gain_down, l.gain_up),
+            ("GAIN", &gain_text, Some(1.0)),
+            (f64::from(pad.gain), 0.0, f64::from(MAX_PAD_GAIN)),
+            Target::SamplerGain,
+        ),
+        (
+            row(l.pitch_down, l.pitch_up),
+            ("PITCH", &pitch_text, Some(0.0)),
+            (
+                f64::from(pad.pitch),
+                -f64::from(MAX_PITCH_SEMITONES),
+                f64::from(MAX_PITCH_SEMITONES),
+            ),
+            Target::SamplerPitch,
+        ),
+    ];
+    for (rect, (label, readout, detent), range, target) in knobs {
+        let abs = Rect::new(card.x + rect.x, card.y + rect.y, rect.w, rect.h);
+        root = root.child(knob_face_with(
+            t,
+            rect,
+            KnobFace {
+                label,
+                readout,
+                detent,
+                active: shell.shows_value(target),
+            },
+            range,
+            (target, abs),
+            KnobLook {
+                role: KnobRole::Sampler,
+                accent: Some(accent),
+                dragging: shell.is_dragging(target),
+                disabled: !pad.loaded,
+            },
+            cx,
+        ));
+    }
     root
 }
 
