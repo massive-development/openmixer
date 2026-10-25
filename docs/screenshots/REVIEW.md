@@ -93,3 +93,38 @@ Scene: `tools/screenshots.sh settings-mapping` runs `--demo-map --settings=mappi
 | Below the fold | scrolls, not visible in the capture | The edit form, the Apply and Learn buttons, the monitor panel and the status line sit below the table inside the scrolling page. The capture stops at the conflicts row. |
 | Narrow window (900x600) | not captured | The card is 720 px wide and shrinks to the window; the page scrolls. Not looked at in a picture. |
 | Confirm steps (Reset, close with unsaved edits) | not captured | Covered by state tests in `settings_view/mapping.rs`. |
+
+## Staged-state scenes (states never seen on screen, recaptured on the merged redesign, 2026-10-25)
+
+These scenes use `--demo-scene=NAME` (DEMO / TEST ONLY: `flags::DemoScene`, `demo_scene.rs`, `SceneOptions` in `app.rs`). They stage state the other demo flags cannot: a drawer, a tab, the platter, a pad press, cues, a loop, playback, a hot trim. All run on `--mock-device`, the scratch library and temporary preferences. The mock device still renders the engine into memory, so a playing deck lights the meters though nothing is audible. The script writes to `$OUT_DIR` (default `/tmp/om-scenes`, never `docs/screenshots` unless `OUT_DIR=docs/screenshots` is set) and captures the newest window that appeared after it started its own process (checked with a second 1280x800 window open). PNGs are not committed. Captures reviewed from the merged build (PR #115 base), folder `/tmp/claude-1000/-home-brandon-projects-openmixer/f729f710-31a7-4d1e-a553-72f1f7b40305/scratchpad/scene-new/`.
+
+| Scene | Run | Shows |
+|---|---|---|
+| `sampler-open-dark`, `-daylight` | `tools/screenshots.sh sampler-open-dark` | Drawer open, 8 pads loaded, pad 8 Bass (a latching loop pad) playing, pad 1 selected |
+| `cues-loop-dark`, `-daylight` | `tools/screenshots.sh cues-loop-dark` | Deck A: cues 1 to 5 set, a short loop starting on cue 3 (shorter than the 0.25 s active window) so pad 3 is steadily ACTIVE, loop hatch on the waveforms |
+| `meters-lit-dark`, `-daylight` | `tools/screenshots.sh meters-lit-dark` | Deck A looped over the whole track at trim 4.5: segmented channel and master meters lit, clip lamps latched |
+| `platter-dark`, `-daylight` | `tools/screenshots.sh platter-dark` | Deck A playing from 8 s with the platter on: disc, deck letter, position ring, marker |
+| `stems-page` (dark) | `tools/screenshots.sh stems-page` | Deck A on its STEMS tab, mock separator's stems loaded |
+| `track-preview` (dark) | `OPENMIXER_DEMO_TRACK=/path/to/song.flac tools/screenshots.sh track-preview` | Deck A plays your file from 25 percent; waits 15 s (`SHOT_DELAY=N`) for analysis and the waveform. Symlinked into the scratch folder, never copied; shows as `0-demo-track`, untagged files show no artist |
+
+### Fixed while capturing
+- Lit transport labels (Pause, Cue, Sync) used near-black ink on every fill. On the daylight theme Play's green is dark, so "Pause" measured 2.5:1 (`cues-loop-daylight`, first capture). The ink is now the better of the candidates, as `text_on` already does for pads (`deck_view.rs::transport_style`, test `lit_transport_labels_read_at_4_5_to_1_in_both_themes`). Cites labels-layout.md item 5 (4.5:1). After the fix the label is white and readable.
+
+### Seen in the earlier (pre-merge) captures and gone now
+Loop band under the waveform (now a visible green hatch with edge lines, `cues-loop-*`), no active pad state, no "Set" labels, unsegmented meters, no fader ticks, unlabelled GAIN knob contrast, daylight waveform and bar-number contrast (the lanes are dark wells in both themes), empty deck B lane overlay. None reproduces; the earlier table is dropped.
+
+### Defects in the recaptured scenes
+Not fixed: each is a design call or sits in code outside this change.
+
+| # | Where (image in the folder above) | Defect | Research |
+|---|---|---|---|
+| 1 | Stems page, `stems-page.png` | Each stem row has two sliders with no label (volume and filter by position only). All four stem pads use the one accent colour | deck-controls.md Layout ("stems pads as 4 labelled faders") |
+| 2 | Deck B with no track, all scenes | Play, Cue, Sync and the loop buttons are dimmed, but the eight "Set" pads and the loop pill stay at full contrast, so B reads half enabled | deck-controls.md States ("Disabled (no track): 40 percent opacity, no hover") |
+| 3 | Master meters, `meters-lit-dark.png` | The dB scale (0, -12, -24, -48) sits about 3 px from the bars and the knob; no numeric peak readout under the master | faders-meters.md Meters ("numeric peak readout under master") |
+| 4 | Library sidebar, `*-daylight.png` | The selected row ("All tracks") is white and the other rows are grey blocks, so selection reads inverted | labels-layout.md item 5 (state clear without relying on tone alone) |
+| 5 | Active cue pad, `cues-loop-dark.png`, `-daylight.png` | Pad 3 (ACTIVE) differs from set pads only by full opacity and a faint glow; at a glance it is hard to tell from pads 1, 2, 4 | deck-controls.md States ("full fill plus glow"); the window length is marked unsourced in `deck_view.rs` (`ACTIVE_WINDOW_S`) |
+| 6 | Play button, all scenes | The word "Pause" fills the 44 px circle edge to edge (about 2 px spare) | deck-controls.md Buttons (56 px circle; the build uses 44) |
+| 7 | Loop pill, `cues-loop-*.png` | An odd length shows "0.4" in the pill and header chip (a demo value, not a UI bug; real loops snap to beats) | none |
+| 8 | Sampler strip, `sampler-open-*.png` | Caption above the pads repeats the selected pad's label ("1 Kick" twice); "5 Tone A" fills its pad with about 4 px to spare | labels-layout.md (low severity) |
+
+Checked and fine: platter on in both themes (disc, A label, position ring, marker, Platter switch lit, tabs unlit while it is open); playing sampler pad lit and readable in both themes; segmented meters, clip lamps and fader ticks in both themes; hot cue fills and the dashed "Set" pads in both themes; the stems tab layout (no clipping or overlap); the loop hatch over the waveform; the header (OPENMIXER, Automix, Notice chip, BPM, Record, Library, Settings) with no collisions; `track-preview` with a 24 s generated file (grid 124 BPM, waveform, meters).

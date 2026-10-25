@@ -746,9 +746,9 @@ pub(crate) fn transport_style(
     let accent = t.accent_for(deck as i32);
     let (fill, text, glow) = match (button, lit) {
         (_, false) => (t.well, t.text_primary, None),
-        (TransportButton::Sync, true) => (SYNC_ON, ON_BRIGHT, Some(SYNC_ON)),
-        (TransportButton::Play, true) => (t.meter_low, ON_BRIGHT, Some(t.meter_low)),
-        (TransportButton::Cue, true) => (t.warning, ON_BRIGHT, Some(t.warning)),
+        (TransportButton::Sync, true) => (SYNC_ON, text_on(t, SYNC_ON), Some(SYNC_ON)),
+        (TransportButton::Play, true) => (t.meter_low, text_on(t, t.meter_low), Some(t.meter_low)),
+        (TransportButton::Cue, true) => (t.warning, text_on(t, t.warning), Some(t.warning)),
         (_, true) => (accent, t.on_accent, Some(accent)),
     };
     ButtonStyle {
@@ -1033,6 +1033,11 @@ thread_local! {
 
 fn platter_state(index: usize) -> PlatterState {
     PLATTERS.with(|p| p.borrow().get(&index).copied().unwrap_or_default())
+}
+
+/// DEMO / TEST ONLY (`--demo-scene=platter`): switches the deck's platter on.
+pub(crate) fn stage_platter(index: usize) {
+    set_platter(index, |p| p.on = true);
 }
 
 fn set_platter(index: usize, f: impl FnOnce(&mut PlatterState)) {
@@ -1595,6 +1600,27 @@ mod tests {
             TransportButton::Slip,
         ] {
             assert_eq!(transport_style(&t, b, false, true, 0).shape, Shape::Pill);
+        }
+    }
+
+    #[test]
+    fn lit_transport_labels_read_at_4_5_to_1_in_both_themes() {
+        // The daylight Play green is dark: near-black ink on it measured 2.5:1 in the staged
+        // `cues-loop-daylight` capture. The ink is now the better of the candidates (labels-layout.md
+        // item 5: text 4.5:1).
+        for t in themes() {
+            for b in [
+                TransportButton::Play,
+                TransportButton::Cue,
+                TransportButton::Sync,
+            ] {
+                let s = transport_style(&t, b, true, true, 0);
+                assert!(
+                    contrast_ratio(s.text, s.fill) >= 4.5,
+                    "{b:?}: {}",
+                    contrast_ratio(s.text, s.fill)
+                );
+            }
         }
     }
 
