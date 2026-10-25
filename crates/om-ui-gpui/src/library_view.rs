@@ -146,7 +146,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     };
     for line in sidebar {
         let node = line.node.clone();
-        let lit = line.selected;
+        let look = sidebar_row_look(&t, line.selected);
         let playlist = (node.kind == SidebarKind::Playlist).then_some(node.playlist_id);
         tree = tree.child(
             div()
@@ -155,12 +155,21 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
                 .items_center()
                 .pl(px(4. + 12. * line.depth as f32))
                 .rounded(px(3.))
-                .bg(paint(if lit { t.surface_raised } else { t.well }))
-                .text_color(paint(if lit {
-                    t.text_primary
-                } else {
-                    t.text_secondary
-                }))
+                .relative()
+                .bg(paint(look.fill))
+                .text_color(paint(look.text))
+                .when(look.bar.is_some(), |el| {
+                    el.child(
+                        div()
+                            .absolute()
+                            .left(px(0.))
+                            .top(px(2.))
+                            .bottom(px(2.))
+                            .w(px(SIDEBAR_BAR_W))
+                            .rounded(px(1.5))
+                            .bg(paint(look.bar.unwrap_or(look.fill))),
+                    )
+                })
                 .child(line.node.label.clone())
                 // Tracks dropped on a playlist are added to it.
                 .when_some(playlist, |el, id| {
@@ -378,6 +387,80 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .child(status_line)
         .child(header)
         .child(table)
+}
+
+/// Width of the selection bar at a sidebar row's left edge (px). Unsourced; small.
+const SIDEBAR_BAR_W: f32 = 3.0;
+/// Share of the focus colour mixed into a selected sidebar row's fill. Unsourced; small.
+const SIDEBAR_SELECT_TINT: f32 = 0.18;
+
+/// How a sidebar row is drawn. Selection is a tinted fill plus a bar in the focus colour (so it
+/// does not rest on tone alone, labels-layout.md item 5), and primary text against secondary.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SidebarRowLook {
+    pub fill: om_ui::theme::Colour,
+    pub text: om_ui::theme::Colour,
+    /// The selection indicator, drawn on the left edge; `None` when not selected.
+    pub bar: Option<om_ui::theme::Colour>,
+}
+
+pub(crate) fn sidebar_row_look(t: &ThemeTokens, selected: bool) -> SidebarRowLook {
+    if !selected {
+        return SidebarRowLook {
+            fill: t.well,
+            text: t.text_secondary,
+            bar: None,
+        };
+    }
+    SidebarRowLook {
+        fill: om_ui::theme::Colour::mix(&[
+            (t.well, 1.0 - SIDEBAR_SELECT_TINT),
+            (t.focus_ring, SIDEBAR_SELECT_TINT),
+        ]),
+        text: t.text_primary,
+        bar: Some(t.focus_ring),
+    }
+}
+
+#[cfg(test)]
+mod sidebar_tests {
+    use super::*;
+    use om_ui::style::{contrast_ratio, over};
+    use om_ui::theme::{parse_theme, BUILTIN_THEMES};
+
+    fn themes() -> [ThemeTokens; 2] {
+        ["dark", "daylight"].map(|id| {
+            let (_, json) = BUILTIN_THEMES
+                .iter()
+                .find(|(file, _)| file.contains(id))
+                .expect("built-in theme");
+            parse_theme(json).expect("theme parses").tokens
+        })
+    }
+
+    #[test]
+    fn selection_reads_in_both_themes_at_wcag() {
+        for t in themes() {
+            let ground = over(t.well, over(t.surface, t.backdrop_bottom));
+            let sel = sidebar_row_look(&t, true);
+            let un = sidebar_row_look(&t, false);
+            let sel_fill = over(sel.fill, ground);
+            let bar = sel.bar.expect("a selected row has a bar");
+            assert!(contrast_ratio(bar, sel_fill) >= 3.0, "indicator 3:1");
+            assert!(contrast_ratio(bar, over(un.fill, ground)) >= 3.0);
+            assert!(contrast_ratio(sel.text, sel_fill) >= 4.5, "selected text");
+            assert!(
+                contrast_ratio(un.text, over(un.fill, ground)) >= 4.5,
+                "plain text"
+            );
+            assert!(un.bar.is_none());
+            // The selected text is the stronger one, so selection never reads inverted.
+            assert!(
+                contrast_ratio(sel.text, sel_fill)
+                    >= contrast_ratio(un.text, over(un.fill, ground))
+            );
+        }
+    }
 }
 
 /// One table row: click selects (shift extends), double-click loads, and the row drags as a track.
