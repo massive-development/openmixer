@@ -1,7 +1,8 @@
 //! Builds [`WaveformData`] from a clip: the peak range of each block of `samples_per_point`
-//! samples, plus loudness, spectral centroid and spread from an overlapping FFT. FFT frames are
-//! `hop` apart and each point blends the two frames around its centre, so colour changes smoothly
-//! along the strip. Stateless and thread-safe. [`WaveformAnalyzer`] wraps it for the job service
+//! samples, plus loudness and the peak of the low, mid and high band from an overlapping FFT. FFT
+//! frames are `hop` apart and each point blends the two frames around its centre, so the band
+//! balance changes smoothly along the strip. A band's peak is the point's peak times the square
+//! root of the band's energy share. Stateless and thread-safe. [`WaveformAnalyzer`] wraps it for the job service
 //! (id "waveform").
 
 use crate::spectrum::{pool, FrameAnalyzer, Moment};
@@ -38,14 +39,36 @@ fn peak_range(block: &[f32]) -> (f32, f32) {
         .fold((1.0f32, -1.0f32), |(lo, hi), &x| (lo.min(x), hi.max(x)))
 }
 
-/// The blend of the frames around `centre` (a sample index), weighted by closeness.
-fn blend_frames(frames: &[Moment], centre: f64, frame_size: usize, hop: usize) -> Moment {
+/// What one FFT frame says about the audio around it.
+#[derive(Debug, Clone, Copy)]
+struct Frame {
+    moment: Moment,
+    /// Energy share of the low, mid and high band.
+    bands: [f32; 3],
+}
+
+/// Loudness (mean square) and band shares of the blend of the frames around `centre` (a sample
+/// index), weighted by closeness. The band shares blend by energy, so a loud frame outweighs a
+/// quiet neighbour.
+fn blend_frames(frames: &[Frame], centre: f64, frame_size: usize, hop: usize) -> (f32, [f32; 3]) {
     let position = ((centre - frame_size as f64 / 2.0) / hop as f64).max(0.0);
     let last = frames.len() - 1;
     let first = (position.floor() as usize).min(last);
     let second = (first + 1).min(last);
     let into = (position - first as f64).clamp(0.0, 1.0) as f32;
-    pool([(1.0 - into, frames[first]), (into, frames[second])])
+    let parts = [(1.0 - into, frames[first]), (into, frames[second])];
+    let energy = pool(parts.map(|(w, f)| (w, f.moment))).energy;
+    let mut bands = [0.0f32; 3];
+    for (w, f) in parts {
+        for (b, share) in bands.iter_mut().zip(f.bands) {
+            *b += w * f.moment.energy * share;
+        }
+    }
+    let total: f32 = bands.iter().sum();
+    if total > 0.0 {
+        bands = bands.map(|b| b / total);
+    }
+    (energy, bands)
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -58,11 +81,11 @@ impl WaveformBuilder {
         Self { options }
     }
 
-    fn frame_moments(
+    fn analyse_frames(
         &self,
         clip: &AudioClip,
         context: &dyn AnalysisContext,
-    ) -> Option<(FrameAnalyzer, Vec<Moment>)> {
+    ) -> Option<(FrameAnalyzer, Vec<Frame>)> {
         let (order, hop) = (self.options.fft_order, self.options.hop);
         let mut analyzer = FrameAnalyzer::new(order, hop, clip.sample_rate);
         let count = analyzer.num_frames(clip.samples.len());
@@ -74,7 +97,9 @@ impl WaveformBuilder {
                 }
                 context.set_progress(FFT_PROGRESS * index as f32 / count as f32);
             }
-            frames.push(analyzer.frame(&clip.samples, index));
+            let moment = analyzer.frame(&clip.samples, index);
+            let bands = analyzer.frame_bands(&clip.samples, index);
+            frames.push(Frame { moment, bands });
         }
         Some((analyzer, frames))
     }
@@ -83,7 +108,7 @@ impl WaveformBuilder {
     pub fn build(&self, clip: &AudioClip, context: &dyn AnalysisContext) -> Option<WaveformData> {
         let total = clip.samples.len();
         let block = self.options.samples_per_point.max(1);
-        let (analyzer, frames) = self.frame_moments(clip, context)?;
+        let (analyzer, frames) = self.analyse_frames(clip, context)?;
         let mut base = WaveformLevel {
             samples_per_point: block,
             points: Vec::with_capacity(total / block + 1),
@@ -93,10 +118,19 @@ impl WaveformBuilder {
                 return None;
             }
             let centre = (index * block) as f64 + chunk.len() as f64 / 2.0;
-            let moment = blend_frames(&frames, centre, analyzer.frame_size(), analyzer.hop());
+            let (energy, shares) =
+                blend_frames(&frames, centre, analyzer.frame_size(), analyzer.hop());
             let (min, max) = peak_range(chunk);
-            base.points
-                .push(WaveformPoint::from_moment(min, max, moment));
+            let peak = min.abs().max(max.abs()).min(1.0);
+            let [low, mid, high] = shares.map(|share| peak * share.sqrt());
+            base.points.push(WaveformPoint {
+                min,
+                max,
+                loudness: energy.max(0.0).sqrt().min(1.0),
+                low,
+                mid,
+                high,
+            });
         }
         context.set_progress(1.0);
         Some(WaveformData::new(clip.sample_rate, total as i64, base))
@@ -114,9 +148,10 @@ impl Analyzer for WaveformAnalyzer {
         "waveform"
     }
 
-    /// 2: spectral points (format 2); version 1 entries read as missing.
+    /// 3: band peak points (format 3); version 2 and 1 entries read as missing (the library still
+    /// draws them until this runs).
     fn version(&self) -> i32 {
-        2
+        3
     }
 
     fn analyze(&self, clip: &AudioClip, context: &dyn AnalysisContext) -> Option<String> {

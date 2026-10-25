@@ -68,12 +68,15 @@ pub enum DemoScene {
     Meters,
     /// Deck A on its STEMS tab (pair with `--mock-stems` so the stems are live).
     Stems,
+    /// Deck A plays with the platter switched on.
+    Platter,
     /// Deck A plays the file named by `OPENMIXER_DEMO_TRACK`, so a real track can be previewed.
     Track,
 }
 
 /// The scene names `--demo-scene=` accepts.
-const SCENES: [(&str, DemoScene); 5] = [
+const SCENES: [(&str, DemoScene); 6] = [
+    ("platter", DemoScene::Platter),
     ("sampler", DemoScene::Sampler),
     ("cues", DemoScene::Cues),
     ("meters", DemoScene::Meters),
@@ -90,7 +93,9 @@ pub fn demo_scene(args: &[String]) -> Result<Option<DemoScene>, String> {
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(name))
         .map(|(_, scene)| Some(*scene))
-        .ok_or_else(|| format!("unknown demo scene {name:?} (sampler, cues, meters, stems, track)"))
+        .ok_or_else(|| {
+            format!("unknown demo scene {name:?} (sampler, cues, meters, stems, platter, track)")
+        })
 }
 
 /// The environment variable that names an audio file for `--demo-scene=track`.
@@ -164,7 +169,7 @@ mod tests {
             demo_scene(&args(&["--mock-device", "--demo-scene=CUES"])),
             Ok(Some(DemoScene::Cues))
         );
-        assert!(demo_scene(&args(&["--demo-scene=platter"])).is_err());
+        assert!(demo_scene(&args(&["--demo-scene=turntable"])).is_err());
         assert!(demo_run(&args(&["--demo-scene=meters"])));
     }
 

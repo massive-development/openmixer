@@ -6,10 +6,7 @@
 use crate::geometry::Rect;
 use om_core::RecordSnapshot;
 
-/// Width of the Record button, in pixels.
-pub const RECORD_WIDTH: i32 = 200;
-/// Gap between the Record button and its neighbours.
-pub const RECORD_GAP: i32 = 8;
+pub use crate::header_layout::RECORD_WIDTH;
 
 /// What the button shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -88,21 +85,43 @@ pub fn dropped_text(frames: u64) -> String {
     }
 }
 
-/// Where the button sits in a header strip of `window_width`, left of a Settings button that
-/// reserves `settings_reserve` pixels at the right edge. `None` when the strip is too narrow.
+/// Where the button sits in a header strip of `window_width` with `header_height` px, left of a
+/// Settings button that reserves `settings_reserve` pixels (0 for none) at the right edge, at
+/// `header_top`. A thin wrapper over [`crate::header_layout::header_rects`]; `None` when the strip is
+/// too narrow.
 pub fn record_rect(
     window_width: i32,
     header_top: i32,
     header_height: i32,
     settings_reserve: i32,
 ) -> Option<Rect> {
-    let x = window_width - settings_reserve - RECORD_GAP - RECORD_WIDTH;
-    (x >= 0).then(|| Rect::new(x, header_top, RECORD_WIDTH, header_height))
+    let rects = crate::header_layout::header_rects(
+        window_width,
+        header_height,
+        crate::header_layout::HeaderNeeds {
+            automix: true,
+            record: true,
+            settings: settings_reserve > 0,
+            notice: false,
+        },
+    );
+    let at = rects.record?;
+    (at.x >= rects.brand.right()).then(|| Rect::new(at.x, header_top + at.y, at.w, at.h))
 }
 
-/// The width left to the automix bar once the Record button has its place.
+/// The width left to the automix bar when the strip has a Record button and a Settings button.
 pub fn automix_width(window_width: i32, settings_reserve: i32) -> i32 {
-    (window_width - settings_reserve - RECORD_WIDTH - 2 * RECORD_GAP).max(0)
+    let rects = crate::header_layout::header_rects(
+        window_width,
+        crate::main_layout::HEADER_HEIGHT_SHORT,
+        crate::header_layout::HeaderNeeds {
+            automix: true,
+            record: true,
+            settings: settings_reserve > 0,
+            notice: false,
+        },
+    );
+    rects.automix.map_or(0, |r| r.w)
 }
 
 #[cfg(test)]
@@ -159,24 +178,16 @@ mod tests {
         assert_eq!(dropped_text(1), "1 frame dropped");
     }
 
-    /// The button never overlaps the Settings button or the (shrunk) automix bar, at the sizes the
-    /// window is tested at. The deck area starts below the header, so MainLayout is unaffected.
+    /// The wrappers agree with the header layout: the button sits right of the automix bar, left
+    /// of the toggle and Settings, and a strip too narrow for it has none.
     #[test]
-    fn the_button_fits_the_header_at_the_test_sizes() {
-        const SETTINGS_RESERVE: i32 = 96;
-        for (w, h) in [(900, 600), (1024, 640), (1280, 800), (1920, 1080)] {
-            let record = record_rect(w, 0, 32, SETTINGS_RESERVE).expect("fits");
-            let automix = Rect::new(0, 0, automix_width(w, SETTINGS_RESERVE), 32);
-            let settings = Rect::new(w - SETTINGS_RESERVE, 0, SETTINGS_RESERVE, 32);
-            for (a, b) in [(record, automix), (record, settings), (automix, settings)] {
-                assert!(
-                    a.x + a.w <= b.x || b.x + b.w <= a.x,
-                    "{w}x{h}: {a:?} vs {b:?}"
-                );
-            }
-            assert!(record.x + record.w <= w);
-            assert!(automix.w > 300, "{w}x{h}: automix keeps room");
+    fn the_button_sits_right_of_the_automix_bar() {
+        for (w, h) in [(1024, 640), (1280, 800), (1920, 1080)] {
+            let header_h = crate::main_layout::header_height(h);
+            let record = record_rect(w, 0, header_h, 96).expect("fits");
+            assert!(record.x >= automix_width(w, 96) && record.right() <= w - 96);
+            assert_eq!(record.w, RECORD_WIDTH);
         }
-        assert!(record_rect(200, 0, 32, 96).is_none());
+        assert!(record_rect(200, 0, 36, 96).is_none());
     }
 }

@@ -8,6 +8,7 @@
 //! ```
 
 use crate::geometry::Rect;
+use crate::header_layout::{header_rects, HeaderNeeds, HeaderRects};
 use serde_json::{json, Map, Value};
 
 /// Name of the mixer module slot: page tabs, master, crossfader and headphone cue, between the decks'
@@ -17,15 +18,17 @@ pub const MIXER_SLOT: &str = "mixer";
 pub const LIBRARY_SLOT: &str = "library";
 /// Prefix of a channel strip's slot name; the channel number follows (`channel:0`).
 pub const CHANNEL_SLOT_PREFIX: &str = "channel:";
-/// Share of the deck rows' width one channel strip takes in the standard layout.
-pub const CHANNEL_WEIGHT: f32 = 0.15;
+/// Share of the deck rows' width one channel strip takes in the standard layout (13% of the
+/// window's width, never below [`CHANNEL_MIN_WIDTH`]).
+pub const CHANNEL_WEIGHT: f32 = 0.13;
+/// A channel strip is never narrower than this, in px.
+pub const CHANNEL_MIN_WIDTH: i32 = 112;
 /// Share of the deck rows' width the stage and the controls below it take.
 pub const CENTRE_WEIGHT: f32 = 1.0;
 /// Name of the waveform stage: the decks' headers, overviews and zoomed waveforms, across the top.
 pub const STAGE_SLOT: &str = "stage";
-/// Share of the deck rows' height the waveform stage takes in the standard layout: about 36% of
-/// a 720 px window once the 32 px top bar and the gaps are taken off.
-pub const STAGE_SHARE: f32 = 0.53;
+/// Share of the deck rows' height the waveform stage takes in the standard layout.
+pub const STAGE_SHARE: f32 = 0.50;
 /// The same share in performance mode, when the library band is gone and the stage grows.
 pub const PERFORMANCE_STAGE_SHARE: f32 = 0.62;
 /// Height the deck controls row needs (transport, hotcues, loops and the stems row), in px. On a
@@ -34,8 +37,47 @@ pub const CONTROLS_MIN_HEIGHT: i32 = 262;
 /// Smallest window the layout is designed for. Below it the layout degrades (see
 /// [`LayoutPlan::for_window`]) instead of shrinking its controls.
 pub const MIN_WINDOW: (i32, i32) = (1280, 720);
-/// Height of the top bar (automix, Record, Settings), in px.
-pub const TOP_BAR_HEIGHT: i32 = 32;
+/// Height of the header strip in a window at least 900 px tall, in px.
+pub const HEADER_HEIGHT_TALL: i32 = 40;
+/// Height of the header strip in a shorter window, in px.
+pub const HEADER_HEIGHT_SHORT: i32 = 36;
+
+/// Window width under which the library drops its Genre and Added columns and narrows the sidebar.
+pub const COMPACT_WINDOW_WIDTH: i32 = 1400;
+
+/// Sizes of the library browser's parts, in px (plan, Rect contract).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LibraryMetrics {
+    pub row_h: i32,
+    pub header_h: i32,
+    pub toolbar_h: i32,
+    pub sidebar_w: i32,
+}
+
+/// Library sizes for a window: rows 28 px (24 under 900 px tall), header 28, toolbar 36, sidebar
+/// 170 (160 under 1400 px wide). The plan's contract names only `window_h`; the sidebar rule needs
+/// the width too.
+pub fn library_metrics(window_w: i32, window_h: i32) -> LibraryMetrics {
+    LibraryMetrics {
+        row_h: if window_h < 900 { 24 } else { 28 },
+        header_h: 28,
+        toolbar_h: 36,
+        sidebar_w: if window_w < COMPACT_WINDOW_WIDTH {
+            160
+        } else {
+            170
+        },
+    }
+}
+
+/// The header strip's height for a window `window_h` px tall.
+pub fn header_height(window_h: i32) -> i32 {
+    if window_h >= 900 {
+        HEADER_HEIGHT_TALL
+    } else {
+        HEADER_HEIGHT_SHORT
+    }
+}
 /// Smallest the library band may get, in px: toolbar, header and a handful of rows.
 pub const LIBRARY_MIN_HEIGHT: i32 = 150;
 /// Width of the sampler drawer while collapsed, in px: a handle that opens it.
@@ -47,8 +89,9 @@ pub const SAMPLER_WEIGHT: f32 = 0.34;
 /// Share of the window height the deck rows take in the standard layout; the library band gets
 /// the rest (about 28% of the window).
 pub const DECK_ROWS_SHARE: f32 = 0.71;
-/// Share of a row's width the mixer module takes between the decks' controls.
-pub const MIXER_WEIGHT: f32 = 0.6;
+/// Share of a deck card's width the mixer module takes between the decks' controls (deck cards
+/// weigh 1.0).
+pub const MIXER_WEIGHT: f32 = 0.72;
 
 /// Slot name of channel `index`'s strip.
 pub fn channel_slot(index: usize) -> String {
@@ -156,6 +199,9 @@ pub struct CellSpec {
     pub kind: CellKind,
     /// Share of the row width.
     pub weight: f32,
+    /// Smallest width in px (0 = none). A cell that its share would leave narrower takes this
+    /// instead, and the cells without a floor give up the difference.
+    pub min_width: i32,
 }
 
 impl CellKind {
@@ -169,6 +215,7 @@ impl CellSpec {
         Self {
             kind: CellKind::Deck(index),
             weight: 1.0,
+            min_width: 0,
         }
     }
 
@@ -176,7 +223,14 @@ impl CellSpec {
         Self {
             kind: CellKind::Slot(name.to_owned()),
             weight,
+            min_width: 0,
         }
+    }
+
+    /// The same cell with a floor of `min_width` px.
+    pub fn with_min_width(mut self, min_width: i32) -> Self {
+        self.min_width = min_width;
+        self
     }
 
     /// A cell holding stacked rows.
@@ -184,6 +238,7 @@ impl CellSpec {
         Self {
             kind: CellKind::Rows(rows),
             weight,
+            min_width: 0,
         }
     }
 
@@ -265,9 +320,14 @@ impl LayoutSpec {
             ],
             CENTRE_WEIGHT,
         );
-        let mut top = vec![CellSpec::slot(&channel_slot(0), CHANNEL_WEIGHT), centre];
+        let mut top = vec![
+            CellSpec::slot(&channel_slot(0), CHANNEL_WEIGHT).with_min_width(CHANNEL_MIN_WIDTH),
+            centre,
+        ];
         if num_decks > 1 {
-            top.push(CellSpec::slot(&channel_slot(1), CHANNEL_WEIGHT));
+            top.push(
+                CellSpec::slot(&channel_slot(1), CHANNEL_WEIGHT).with_min_width(CHANNEL_MIN_WIDTH),
+            );
         }
         let deck_share = if state.performance {
             1.0
@@ -287,7 +347,8 @@ impl LayoutSpec {
                     .flat_map(|d| {
                         [
                             CellSpec::deck(d),
-                            CellSpec::slot(&channel_slot(d), CHANNEL_WEIGHT),
+                            CellSpec::slot(&channel_slot(d), CHANNEL_WEIGHT)
+                                .with_min_width(CHANNEL_MIN_WIDTH),
                         ]
                     })
                     .collect(),
@@ -460,9 +521,19 @@ fn parse_cell(value: &Value) -> Result<CellSpec, LayoutError> {
             ))
         }
     };
+    let min_width = match obj.get("minWidth") {
+        None => 0,
+        Some(v) => v
+            .as_u64()
+            .and_then(|m| i32::try_from(m).ok())
+            .ok_or(LayoutError::Malformed(
+                "cell minWidth must be a non-negative integer",
+            ))?,
+    };
     Ok(CellSpec {
         kind,
         weight: weight as f32,
+        min_width,
     })
 }
 
@@ -474,70 +545,71 @@ fn cell_json(cell: &CellSpec) -> Value {
         CellKind::Rows(rows) => obj.insert("rows".to_owned(), rows_json(rows)),
     };
     obj.insert("weight".to_owned(), json!(f64::from(cell.weight)));
+    if cell.min_width > 0 {
+        obj.insert("minWidth".to_owned(), json!(cell.min_width));
+    }
     Value::Object(obj)
 }
 
-/// Splits `length` by weights with `gap` between parts. The last part absorbs rounding. Returns
+/// Splits `length` by weights with `gap` between parts: a part that its share leaves below its
+/// floor takes the floor, and the rest is shared out again among the others. Pixels left over by
+/// rounding go to the parts that lost the most (so equal weights differ by at most 1 px). Returns
 /// `(position, size)` per part. Single precision.
-fn split(length: i32, weights: &[f32], gap: i32) -> Vec<(i32, i32)> {
-    let total: f32 = weights.iter().sum();
-    let n = weights.len();
-    let usable = (length - gap * (n as i32 - 1)).max(0) as f32;
-    let mut parts = Vec::with_capacity(n);
-    let mut pos = 0;
-    for (i, w) in weights.iter().enumerate() {
-        let size = if i == n - 1 {
-            (length - pos).max(0)
-        } else {
-            (usable * w / total) as i32
-        };
-        parts.push((pos, size));
-        pos += size + gap;
-    }
-    parts
-}
-
-/// Like [`split`], with a floor per part: a part that its share leaves below its floor takes the
-/// floor, and the rest is shared out again among the others.
 fn split_with_floors(length: i32, weights: &[f32], floors: &[i32], gap: i32) -> Vec<(i32, i32)> {
     let n = weights.len();
     let usable = (length - gap * (n as i32 - 1)).max(0);
     let mut fixed: Vec<Option<i32>> = vec![None; n];
-    loop {
+    let ideal = loop {
         let taken: i32 = fixed.iter().flatten().sum();
         let free_weight: f32 = (0..n)
             .filter(|&i| fixed[i].is_none())
             .map(|i| weights[i])
             .sum();
         if free_weight <= 0.0 {
-            break;
+            break fixed
+                .iter()
+                .map(|f| f.unwrap_or(0) as f32)
+                .collect::<Vec<f32>>();
         }
-        let share = |i: usize| ((usable - taken).max(0) as f32 * weights[i] / free_weight) as i32;
-        match (0..n).find(|&i| fixed[i].is_none() && share(i) < floors[i]) {
+        let share = |i: usize| (usable - taken).max(0) as f32 * weights[i] / free_weight;
+        match (0..n).find(|&i| fixed[i].is_none() && share(i) < floors[i] as f32) {
             Some(i) => fixed[i] = Some(floors[i]),
             None => {
-                return place_parts(length, gap, n, |i| fixed[i].unwrap_or_else(|| share(i)));
+                break (0..n)
+                    .map(|i| fixed[i].map_or_else(|| share(i), |f| f as f32))
+                    .collect::<Vec<f32>>()
             }
         }
+    };
+    let mut sizes: Vec<i32> = ideal.iter().map(|v| v.floor() as i32).collect();
+    let mut leftover = usable - sizes.iter().sum::<i32>();
+    let mut by_loss: Vec<usize> = (0..n).filter(|&i| fixed[i].is_none()).collect();
+    by_loss.sort_by(|&a, &b| {
+        let (fa, fb) = (ideal[a].fract(), ideal[b].fract());
+        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for i in by_loss.into_iter().cycle().take(n * 2) {
+        if leftover <= 0 {
+            break;
+        }
+        sizes[i] += 1;
+        leftover -= 1;
     }
-    place_parts(length, gap, n, |i| fixed[i].unwrap_or(0))
-}
-
-/// Lays `n` parts of the given sizes along `length` with `gap` between them; the last part takes
-/// whatever is left, so rounding never leaves a seam at the end.
-fn place_parts(length: i32, gap: i32, n: usize, size: impl Fn(usize) -> i32) -> Vec<(i32, i32)> {
-    let mut parts = Vec::with_capacity(n);
+    if leftover != 0 {
+        // Only floors were placed (or the floors overshoot): the last part takes the difference.
+        if let Some(last) = sizes.last_mut() {
+            *last = (*last + leftover).max(0);
+        }
+    }
     let mut pos = 0;
-    for i in 0..n {
-        let s = if i == n - 1 {
-            (length - pos).max(0)
-        } else {
-            size(i)
-        };
-        parts.push((pos, s));
-        pos += s + gap;
-    }
-    parts
+    sizes
+        .into_iter()
+        .map(|size| {
+            let part = (pos, size);
+            pos += size + gap;
+            part
+        })
+        .collect()
 }
 
 /// Splits `area` by row heights and cell weights with `gap` between neighbours.
@@ -551,7 +623,11 @@ pub fn compute_layout(spec: &LayoutSpec, area: Rect, gap: i32) -> Vec<PlacedCell
     let mut placed = Vec::new();
     for (r, row) in spec.rows.iter().enumerate() {
         let weights: Vec<f32> = row.cells.iter().map(|c| c.weight).collect();
-        for (c, (x, w)) in split(area.w, &weights, gap).into_iter().enumerate() {
+        let min_widths: Vec<i32> = row.cells.iter().map(|c| c.min_width).collect();
+        for (c, (x, w)) in split_with_floors(area.w, &weights, &min_widths, gap)
+            .into_iter()
+            .enumerate()
+        {
             let (y, h) = row_parts[r];
             let bounds = Rect::new(area.x + x, area.y + y, w, h);
             match &row.cells[c].kind {
@@ -588,10 +664,49 @@ pub fn visible_cells(
         .collect()
 }
 
+/// The whole main window: the header strip's parts and every placed cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Page {
+    pub header: HeaderRects,
+    /// The decks and slots, in draw order, all inside [`Page::area`].
+    pub cells: Vec<PlacedCell>,
+    /// The window under the header strip and left of the debug column. The cells end a `gap`
+    /// above its bottom edge, so no card touches the window's border.
+    pub area: Rect,
+}
+
+/// Lays out a `window` (width, height): the header strip (see [`header_height`]) and, under it, the
+/// layout for `state`, with `engine_decks` decks, `gap` between cells and `debug_w` px kept free
+/// at the right for the debug column. A deck the engine lacks is skipped.
+pub fn page_for(
+    engine_decks: usize,
+    window: (i32, i32),
+    debug_w: i32,
+    gap: i32,
+    state: LayoutState,
+    header: HeaderNeeds,
+) -> Page {
+    let header_h = header_height(window.1);
+    let rects = header_rects(window.0, header_h, header);
+    let area = Rect::new(
+        0,
+        header_h,
+        (window.0 - debug_w).max(0),
+        (window.1 - header_h).max(0),
+    );
+    // The bottom margin keeps the library and sampler cards off the window's edge.
+    let layout_area = Rect::new(area.x, area.y, area.w, (area.h - gap).max(0));
+    let plan = LayoutPlan::for_window(engine_decks, (area.w, window.1), gap, state);
+    Page {
+        header: rects,
+        cells: visible_cells(&plan.spec, plan.decks, layout_area, gap),
+        area,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record_bar::{automix_width, record_rect};
 
     #[test]
     fn rows_need_cells_and_a_positive_height() {
@@ -608,37 +723,214 @@ mod tests {
         assert!(LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":-1}]}]}"#).is_err());
     }
 
-    /// At the test sizes the cells sit under the header strip (automix bar, Record button and the
-    /// Settings button, all in y `0..HEADER`), stay inside the window and never overlap each other.
-    #[test]
-    fn the_cells_clear_the_header_strip_and_each_other_at_the_test_sizes() {
-        const HEADER: i32 = 32;
-        const SETTINGS_RESERVE: i32 = 96;
-        const GAP: i32 = 8;
-        let spec = LayoutSpec::standard(2);
-        for (w, h) in [(900, 600), (1024, 640), (1280, 800), (1920, 1080)] {
-            let header = [
-                Rect::new(0, 0, automix_width(w, SETTINGS_RESERVE), HEADER),
-                record_rect(w, 0, HEADER, SETTINGS_RESERVE).expect("the record button fits"),
-                Rect::new(w - SETTINGS_RESERVE, 0, SETTINGS_RESERVE, HEADER),
-            ];
-            let cells = compute_layout(&spec, Rect::new(0, HEADER, w, h - HEADER), GAP);
-            for cell in &cells {
-                let b = cell.bounds;
-                assert!(
-                    b.y >= HEADER && b.x >= 0 && b.x + b.w <= w && b.y + b.h <= h,
-                    "{w}x{h}: {b:?}"
-                );
-                for strip in &header {
-                    assert!(!overlaps(b, *strip), "{w}x{h}: {b:?} over {strip:?}");
-                }
+    const SIZES: [(i32, i32); 4] = [(1280, 720), (1280, 800), (1920, 1080), (2560, 1440)];
+    const GAP: i32 = 12;
+    const FULL: HeaderNeeds = HeaderNeeds {
+        automix: true,
+        record: true,
+        settings: true,
+        notice: false,
+    };
+
+    /// Every state the page has: library or performance mode, sampler open or collapsed.
+    fn states() -> Vec<LayoutState> {
+        let mut states = Vec::new();
+        for performance in [false, true] {
+            for sampler_open in [false, true] {
+                states.push(LayoutState {
+                    performance,
+                    sampler_open,
+                    sampler_visible: true,
+                });
             }
-            for (i, a) in cells.iter().enumerate() {
-                for b in &cells[i + 1..] {
-                    assert!(!overlaps(a.bounds, b.bounds), "{w}x{h}: {a:?} vs {b:?}");
+        }
+        states
+    }
+
+    fn page(decks: usize, size: (i32, i32), state: LayoutState) -> Page {
+        page_for(decks, size, 0, GAP, state, FULL)
+    }
+
+    fn cell(page: &Page, kind: CellKind) -> Rect {
+        page.cells
+            .iter()
+            .find(|c| c.kind == kind)
+            .unwrap_or_else(|| panic!("no {kind:?} cell"))
+            .bounds
+    }
+
+    fn slot(name: &str) -> CellKind {
+        CellKind::Slot(name.into())
+    }
+
+    #[test]
+    fn cells_sit_under_the_header_inside_the_area_and_never_overlap() {
+        for (w, h) in SIZES {
+            for decks in [2, 4] {
+                for state in states() {
+                    let page = page(decks, (w, h), state);
+                    let header_h = header_height(h);
+                    assert_eq!(page.area, Rect::new(0, header_h, w, h - header_h));
+                    let bar = page.header.all();
+                    for (i, a) in page.cells.iter().enumerate() {
+                        let b = a.bounds;
+                        assert!(
+                            page.area.contains(&b),
+                            "{w}x{h} {state:?}: {:?} leaves the area",
+                            a.kind
+                        );
+                        assert!(b.y >= header_h);
+                        for part in &bar {
+                            assert!(!overlaps(b, *part), "{w}x{h}: {b:?} over {part:?}");
+                        }
+                        for other in &page.cells[i + 1..] {
+                            assert!(
+                                !overlaps(b, other.bounds),
+                                "{w}x{h} {state:?}: {:?} vs {:?}",
+                                a.kind,
+                                other.kind
+                            );
+                        }
+                    }
                 }
             }
         }
+    }
+
+    #[test]
+    fn strips_stage_and_cards_line_up() {
+        for (w, h) in SIZES {
+            for state in states() {
+                let page = page(2, (w, h), state);
+                let stage = cell(&page, slot(STAGE_SLOT));
+                let (s0, s1) = (
+                    cell(&page, slot(&channel_slot(0))),
+                    cell(&page, slot(&channel_slot(1))),
+                );
+                let (d0, d1) = (
+                    cell(&page, CellKind::Deck(0)),
+                    cell(&page, CellKind::Deck(1)),
+                );
+                let mixer = cell(&page, slot(MIXER_SLOT));
+                for strip in [s0, s1] {
+                    assert_eq!(strip.y, stage.y, "{w}x{h}: strip top is the stage top");
+                    assert_eq!(strip.bottom(), d0.bottom(), "{w}x{h}: strip bottom");
+                    assert!(strip.w >= CHANNEL_MIN_WIDTH, "{w}x{h}: strip {}", strip.w);
+                }
+                assert_eq!((d0.bottom(), mixer.bottom()), (d1.bottom(), d0.bottom()));
+                assert!((s0.w - s1.w).abs() <= 1, "{w}x{h}: strips differ");
+                assert!(
+                    (d0.w - d1.w).abs() <= 1,
+                    "{w}x{h}: decks {} vs {}",
+                    d0.w,
+                    d1.w
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_library_keeps_a_margin_above_the_window_bottom() {
+        for (w, h) in SIZES {
+            for decks in [2, 4] {
+                for open in [false, true] {
+                    let state = LayoutState::default().with_sampler_open(open);
+                    let page = page(decks, (w, h), state);
+                    assert_eq!(cell(&page, slot(LIBRARY_SLOT)).bottom(), h - GAP);
+                    assert_eq!(cell(&page, slot(SAMPLER_SLOT)).bottom(), h - GAP);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_short_window_keeps_the_controls_and_the_library_and_squeezes_the_stage() {
+        let short = page(2, (1280, 720), LayoutState::default());
+        assert!(cell(&short, CellKind::Deck(0)).h >= CONTROLS_MIN_HEIGHT);
+        assert!(cell(&short, slot(LIBRARY_SLOT)).h >= LIBRARY_MIN_HEIGHT);
+        let tall = page(2, (1280, 800), LayoutState::default());
+        assert!(
+            cell(&tall, slot(STAGE_SLOT)).h > cell(&short, slot(STAGE_SLOT)).h,
+            "the stage gives up height first"
+        );
+    }
+
+    #[test]
+    fn the_standard_proportions_follow_the_design() {
+        for (w, h) in [(1280, 800), (1920, 1080), (2560, 1440)] {
+            let page = page(2, (w, h), LayoutState::default());
+            let stage = cell(&page, slot(STAGE_SLOT));
+            let deck = cell(&page, CellKind::Deck(0));
+            let rows = (deck.bottom() - stage.y) as f32;
+            let stage_share = stage.h as f32 / rows;
+            assert!(
+                (0.45..=0.55).contains(&stage_share),
+                "{w}x{h}: stage {stage_share}"
+            );
+            let mixer = cell(&page, slot(MIXER_SLOT)).w as f32 / w as f32;
+            assert!((0.18..=0.26).contains(&mixer), "{w}x{h}: mixer {mixer}");
+            let strip = cell(&page, slot(&channel_slot(0))).w as f32 / w as f32;
+            assert!((0.07..=0.13).contains(&strip), "{w}x{h}: strip {strip}");
+        }
+        // At 720 the controls floor takes the height, so the stage is a little under half.
+        let short = page(2, (1280, 720), LayoutState::default());
+        let stage = cell(&short, slot(STAGE_SLOT));
+        let rows = (cell(&short, CellKind::Deck(0)).bottom() - stage.y) as f32;
+        assert!((0.40..=0.55).contains(&(stage.h as f32 / rows)));
+    }
+
+    #[test]
+    fn performance_mode_grows_the_stage_and_drops_the_band() {
+        let normal = page(2, (1920, 1080), LayoutState::default());
+        let perf = page(
+            2,
+            (1920, 1080),
+            LayoutState {
+                performance: true,
+                ..LayoutState::default()
+            },
+        );
+        assert!(cell(&perf, slot(STAGE_SLOT)).h > cell(&normal, slot(STAGE_SLOT)).h + 100);
+        assert!(perf
+            .cells
+            .iter()
+            .all(|c| c.kind != slot(LIBRARY_SLOT) && c.kind != slot(SAMPLER_SLOT)));
+        assert_eq!(cell(&perf, CellKind::Deck(0)).bottom(), 1080 - GAP);
+    }
+
+    #[test]
+    fn the_debug_column_is_kept_out_of_the_area() {
+        let page = page_for(2, (1920, 1080), 300, GAP, LayoutState::default(), FULL);
+        assert_eq!(page.area.w, 1620);
+        assert!(page.cells.iter().all(|c| c.bounds.right() <= 1620));
+        assert_eq!(page.header.bar.w, 1920, "the header spans the window");
+    }
+
+    #[test]
+    fn library_metrics_follow_the_window() {
+        let tall = library_metrics(1920, 1080);
+        assert_eq!(
+            (tall.row_h, tall.header_h, tall.toolbar_h, tall.sidebar_w),
+            (28, 28, 36, 170)
+        );
+        let small = library_metrics(1280, 720);
+        assert_eq!((small.row_h, small.sidebar_w), (24, 160));
+        assert_eq!(library_metrics(1280, 800).row_h, 24);
+        assert_eq!(library_metrics(1400, 900).row_h, 28);
+        assert_eq!(library_metrics(1400, 900).sidebar_w, 170);
+    }
+
+    #[test]
+    fn a_cell_floor_round_trips_through_json() {
+        let spec = LayoutSpec::standard(2);
+        let parsed = LayoutSpec::from_json(&spec.to_json()).expect("round trip");
+        assert_eq!(parsed, spec);
+        assert!(spec.to_json().contains("\"minWidth\":112"));
+        let plain = LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":0}]}]}"#).expect("parses");
+        assert_eq!(plain.rows[0].cells[0].min_width, 0);
+        assert!(
+            LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":0,"minWidth":-1}]}]}"#).is_err()
+        );
     }
 
     fn overlaps(a: Rect, b: Rect) -> bool {
@@ -730,48 +1022,19 @@ mod tests {
     }
 
     #[test]
-    fn the_standard_proportions_follow_the_design() {
-        // About 36% stage, 30% deck controls, 28% library of a 720 px window.
-        let (w, h) = MIN_WINDOW;
-        let area = Rect::new(0, TOP_BAR_HEIGHT, w, h - TOP_BAR_HEIGHT);
-        let placed = compute_layout(
-            &LayoutPlan::for_window(2, MIN_WINDOW, 12, LayoutState::default()).spec,
-            area,
-            12,
-        );
-        let height = |kind: CellKind| {
-            placed
-                .iter()
-                .find(|c| c.kind == kind)
-                .expect("cell")
-                .bounds
-                .h as f32
-                / h as f32
-        };
-        let stage = height(CellKind::Slot(STAGE_SLOT.into()));
-        let library = height(CellKind::Slot(LIBRARY_SLOT.into()));
-        assert!((0.27..=0.40).contains(&stage), "stage {stage}");
-        assert!((0.24..=0.32).contains(&library), "library {library}");
-        let tall = LayoutPlan::for_window(2, (1920, 1080), 12, LayoutState::default());
-        let area = Rect::new(0, TOP_BAR_HEIGHT, 1920, 1080 - TOP_BAR_HEIGHT);
-        let cells = compute_layout(&tall.spec, area, 12);
-        let h = |kind: CellKind| {
-            cells
-                .iter()
-                .find(|c| c.kind == kind)
-                .expect("cell")
-                .bounds
-                .h as f32
-                / 1080.0
-        };
-        assert!((0.34..=0.40).contains(&h(CellKind::Slot(STAGE_SLOT.into()))));
-        assert!((0.28..=0.34).contains(&h(CellKind::Deck(0))));
-        assert!((0.25..=0.31).contains(&h(CellKind::Slot(LIBRARY_SLOT.into()))));
+    fn split_shares_the_rounding_and_never_loses_a_pixel() {
+        let parts = split_with_floors(100, &[1.0, 1.0, 1.0], &[0, 0, 0], 0);
+        assert_eq!(parts, vec![(0, 34), (34, 33), (67, 33)]);
+        let parts = split_with_floors(101, &[1.0, 1.0], &[0, 0], 1);
+        assert_eq!(parts.iter().map(|p| p.1).sum::<i32>(), 100);
+        assert_eq!(parts[1].0 + parts[1].1, 101);
     }
 
     #[test]
-    fn split_gives_the_last_part_the_rounding() {
-        let parts = split(100, &[1.0, 1.0, 1.0], 0);
-        assert_eq!(parts, vec![(0, 33), (33, 33), (66, 34)]);
+    fn a_floor_wins_over_a_small_share() {
+        let parts = split_with_floors(1000, &[0.1, 1.0, 0.1], &[112, 0, 112], 8);
+        assert_eq!(parts[0].1, 112);
+        assert_eq!(parts[2].1, 112);
+        assert_eq!(parts[1].1, 1000 - 16 - 224);
     }
 }

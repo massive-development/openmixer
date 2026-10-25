@@ -19,6 +19,8 @@ const CUES_SEEK_SECONDS: f64 = 1.1;
 /// Linear trim of the `meters` scene. The demo tracks peak at 0.25, so 4.5 pushes the channel's
 /// peak past the theme's clip level (0.99) and the clip lamp latches.
 const HOT_TRIM: f32 = 4.5;
+/// Where the `platter` scene starts, in seconds.
+const PLATTER_START_SECONDS: f64 = 8.0;
 /// Where the `track` scene starts, as a fraction of the track (past the intro).
 const TRACK_START: f64 = 0.25;
 
@@ -59,6 +61,12 @@ pub fn deck_plan(scene: DemoScene, length: i64, rate: f64) -> DeckPlan {
             }),
             seek: Some(0),
             trim: Some(HOT_TRIM),
+            play: true,
+            ..DeckPlan::default()
+        },
+        // Plays on from a few seconds in, so the platter's position ring has an arc to show.
+        DemoScene::Platter => DeckPlan {
+            seek: Some(at(PLATTER_START_SECONDS)),
             play: true,
             ..DeckPlan::default()
         },
@@ -128,6 +136,13 @@ mod tests {
         // Demo tracks peak at 0.25; the clip level is 0.99.
         assert!(0.25 * plan.trim.expect("a trim") >= 0.99);
         assert!(plan.play);
+    }
+
+    #[test]
+    fn platter_scene_plays_on_from_inside_the_track() {
+        let plan = deck_plan(DemoScene::Platter, 64 * 44_100, RATE);
+        assert_eq!(plan.seek, Some(8 * 44_100));
+        assert!(plan.play && plan.looping.is_none() && plan.trim.is_none());
     }
 
     #[test]

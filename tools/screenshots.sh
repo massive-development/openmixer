@@ -16,9 +16,9 @@
 # track-preview                 deck A plays your own file: OPENMIXER_DEMO_TRACK=/path/to/song.flac
 #                               tools/screenshots.sh track-preview (linked into a scratch folder, never
 #                               copied; waits SHOT_DELAY, default 15 s, for the analysis and waveform)
-# There is no platter scene: this branch has no platter (it lives in the deck-controls branch).
+# platter-{dark,daylight}       deck A playing with the platter toggled on
 # Scenes: main-dark main-daylight main-stems debug-panel settings-audio settings-appearance
-# settings-midi settings-library main-automix main-record settings-recording settings-mapping (default: all). main-automix runs the automix demo
+# settings-midi settings-library main-automix main-record settings-recording settings-mapping main-waveform (default: all). main-waveform is the demo loop on deck A after the analysis finishes (OPENMIXER_WAVE_STYLE picks the style; OUT_DIR overrides the output folder). main-automix runs the automix demo
 # (--demo-automix: click tracks, automix on, deck A playing) and is captured after a delay. main-stems loads deck A's track with its stems
 # (the mock separator, --mock-stems) so the stem pads are live.
 # main-dark also shows the library browser (the demo library is loaded in every scene).
@@ -121,6 +121,7 @@ declare -A scenes=(
   [settings-midi]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=midi"
   [settings-library]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=library"
   [main-automix]="OPENMIXER_THEME=openmixer.dark -- --demo-automix"
+  [main-waveform]="OPENMIXER_THEME=openmixer.dark -- --demo-library"
   [main-record]="OPENMIXER_THEME=openmixer.dark -- --demo-record"
   [sampler-open-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=sampler"
   [sampler-open-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-scene=sampler"
@@ -129,6 +130,8 @@ declare -A scenes=(
   [meters-lit-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=meters"
   [meters-lit-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-scene=meters"
   [stems-page]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=stems"
+  [platter-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=platter"
+  [platter-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-scene=platter"
   [track-preview]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=track"
   [settings-recording]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=recording"
   # The Mapping tab over the three fixture controller maps (--demo-map: temp map file, mock MIDI).
@@ -137,6 +140,7 @@ declare -A scenes=(
 # Seconds to wait before a scene is captured (the automix demo deck plays from the start).
 declare -A delays=(
   [main-automix]=19
+  [main-waveform]=8
   [main-record]=4
   [sampler-open-dark]=3
   [sampler-open-daylight]=3
@@ -145,10 +149,12 @@ declare -A delays=(
   [meters-lit-dark]=3
   [meters-lit-daylight]=3
   [stems-page]=3
+  [platter-dark]=3
+  [platter-daylight]=3
   [track-preview]=15
 )
 # track-preview needs OPENMIXER_DEMO_TRACK, so it is not in the default set.
-order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording settings-mapping sampler-open-dark sampler-open-daylight cues-loop-dark cues-loop-daylight meters-lit-dark meters-lit-daylight stems-page)
+order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording settings-mapping sampler-open-dark sampler-open-daylight cues-loop-dark cues-loop-daylight meters-lit-dark meters-lit-daylight stems-page platter-dark platter-daylight)
 (( $# )) && order=("$@")
 for name in "${order[@]}"; do
   [[ -n "${scenes[$name]:-}" ]] || { echo "unknown scene: $name"; exit 2; }

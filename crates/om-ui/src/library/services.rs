@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use om_analysis::{
     hash_file_content, make_engine_grid, AnalysisService, Analyzer, AnalyzerRegistry, BpmResult,
     FileClipSource, ResultCache, SqliteResultCache, WaveformData, LEGACY_FORMAT_VERSION,
+    SPECTRAL_FORMAT_VERSION,
 };
 use om_engine::grid::BeatGrid;
 use om_library::{
@@ -391,11 +392,17 @@ impl LibraryServices {
         self.cached(&track_hash(track), id)
     }
 
-    /// A format 1 waveform as a colourless silhouette, shown while the spectral one rebuilds.
+    /// An older waveform shown while the current one rebuilds: format 2 with modelled band peaks,
+    /// else format 1 as a colourless silhouette.
     fn legacy_silhouette(&self, hash: &str) -> Option<WaveformData> {
         let cache = self.cache.as_ref()?;
-        let json = cache.find(hash, "waveform", LEGACY_FORMAT_VERSION as i32)?;
-        WaveformData::silhouette_from_v1_json(&json)
+        let v2 = cache
+            .find(hash, "waveform", SPECTRAL_FORMAT_VERSION as i32)
+            .and_then(|json| WaveformData::from_v2_json(&json));
+        v2.or_else(|| {
+            let json = cache.find(hash, "waveform", LEGACY_FORMAT_VERSION as i32)?;
+            WaveformData::silhouette_from_v1_json(&json)
+        })
     }
 
     fn cached(&self, hash: &str, id: &str) -> Option<String> {

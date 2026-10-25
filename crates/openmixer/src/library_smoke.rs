@@ -90,6 +90,22 @@ pub fn write_sweep_track(
     })
 }
 
+/// Length of the demo loop track: long enough for its four-bar breakdown (16 bars or more).
+const LOOP_SECONDS: f64 = 64.0;
+/// Tempo of the demo loop track.
+const LOOP_BPM: f64 = 124.0;
+
+/// The synthetic kick/bass/hat loop (`om_analysis::demo_loop`) as a WAV, so the demo waveform has
+/// real shape.
+pub fn write_loop_track(path: &Path, tags: &[(&str, &str)]) -> io::Result<()> {
+    let rate = f64::from(RATE);
+    let samples = om_analysis::demo_loop(LOOP_SECONDS, LOOP_BPM, rate);
+    write_pcm(path, LOOP_SECONDS, tags, move |n| {
+        let s = samples.get(n as usize).copied().unwrap_or(0.0);
+        (s * f32::from(i16::MAX)) as i16
+    })
+}
+
 /// A click track at `bpm`: a broadband percussive hit (deterministic noise over a 180 Hz body,
 /// 12 ms decay) on every beat. The BPM analysis needs transients like these to find a grid.
 /// Used by the automix demo, whose tracks must be analysed before automix can queue them.
@@ -191,16 +207,18 @@ pub fn ingest_generated_plus(
     for i in 0..TRACKS {
         let (low, high) = DEMO_SWEEPS[i % DEMO_SWEEPS.len()];
         let (artist, genre) = DEMO_TAGS[i % DEMO_TAGS.len()];
-        write_sweep_track(
-            &music.join(format!("smoke_{i}.wav")),
-            low,
-            high,
-            &[
-                ("INAM", &format!("smoke_{i}")),
-                ("IART", artist),
-                ("IGNR", genre),
-            ],
-        )?;
+        let path = music.join(format!("smoke_{i}.wav"));
+        let tags = [
+            ("INAM", format!("smoke_{i}")),
+            ("IART", artist.to_owned()),
+            ("IGNR", genre.to_owned()),
+        ];
+        let tags = tags.each_ref().map(|(k, v)| (*k, v.as_str()));
+        if i == 0 {
+            write_loop_track(&path, &tags)?;
+        } else {
+            write_sweep_track(&path, low, high, &tags)?;
+        }
     }
     watch_and_wait(services, &music, TRACKS + extra)
 }
