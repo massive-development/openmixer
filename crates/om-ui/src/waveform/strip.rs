@@ -5,7 +5,7 @@
 //! colour buckets are capped over the whole cached strip, so a column keeps its colour while it
 //! scrolls. Pure.
 
-use super::bands::{column_shapes, ColumnShape};
+use super::bands::{column_shapes, ColumnShape, Reference};
 use super::Column;
 use super::{overview_column, plan_strip, strip_column, strip_for, StripCache, StripPlan, View};
 use om_analysis::{WaveformLevel, WaveformPoint};
@@ -22,8 +22,8 @@ pub struct StripSource<'level> {
     pub level: &'level WaveformLevel,
     pub height_px: i32,
     pub length_frames: i64,
-    /// The track's [`super::reference_peak`].
-    pub reference: f32,
+    /// The track's [`Reference`].
+    pub reference: Reference,
     pub spectral: bool,
 }
 
@@ -117,7 +117,7 @@ impl StripSlot {
 pub fn overview_shapes(
     points: &[WaveformPoint],
     count: usize,
-    reference: f32,
+    reference: impl Into<Reference>,
     spectral: bool,
 ) -> Vec<ColumnShape> {
     let data: Vec<Option<Column>> = (0..count)
@@ -164,7 +164,7 @@ mod tests {
             level,
             height_px,
             length_frames: 512_000,
-            reference: 1.0,
+            reference: 1.0.into(),
             spectral: true,
         }
     }

@@ -19,8 +19,8 @@ use om_analysis::{
 use om_ui::style::over;
 use om_ui::theme::{parse_theme, parse_theme_file, Colour, ThemeTokens};
 use om_ui::waveform::{
-    column_shapes, overview_column, reference_peak, shape_px, strip_column, strip_well, weights,
-    Band, ColumnShape, Palette, WaveStyle,
+    column_shapes, overview_column, shape_px, strip_column, strip_well, weights, Band, ColumnShape,
+    Palette, Reference, WaveStyle,
 };
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -164,6 +164,12 @@ fn draw_column(
             bar(image, shape_px(shape.bands.get(band), h), colour);
         }
     } else {
+        // The peak outline as a translucent shadow behind the body (the painter's 0.35).
+        bar(
+            image,
+            shape_px(shape.silhouette, h),
+            palette.silhouette.with_alpha(0.35),
+        );
         bar(
             image,
             shape_px(shape.body, h),
@@ -174,7 +180,7 @@ fn draw_column(
 
 fn shapes_for(
     data: &WaveformData,
-    reference: f32,
+    reference: Reference,
     count: usize,
     pick: impl Fn(usize) -> Option<om_ui::waveform::Column>,
 ) -> Vec<ColumnShape> {
@@ -225,7 +231,7 @@ fn render(
     let height = OVERVIEW_HEIGHT + STRIP_SPOTS.len() * (STRIP_HEIGHT + GAP) + GAP + KEY_HEIGHT;
     let mut image = Image::new(o.width, height, well);
     let points = &data.overview().points;
-    let reference = reference_peak(points);
+    let reference = Reference::of(points);
     let spectral = data.has_spectrum();
 
     let overview = shapes_for(data, reference, o.width, |i| {
@@ -272,13 +278,14 @@ fn distance(a: Colour, b: Colour) -> f32 {
 /// steady sections of the overview (both columns tall, heights within 0.05).
 fn report(name: &str, data: &WaveformData, width: usize, palette: &Palette) {
     let points = &data.overview().points;
-    let reference = reference_peak(points);
+    let reference = Reference::of(points);
     let columns: Vec<_> = (0..width)
         .map(|i| overview_column(points, i, width))
         .collect();
     let shapes = shapes_for(data, reference, width, |i| Some(columns[i]));
     let audible: Vec<usize> = (0..width).filter(|&i| columns[i].peak > 0.02).collect();
     let n = audible.len().max(1) as f32;
+    let body_full = audible.iter().filter(|&&i| shapes[i].body >= 1.0).count();
     let full = audible
         .iter()
         .filter(|&&i| shapes[i].silhouette >= 1.0)
@@ -310,9 +317,10 @@ fn report(name: &str, data: &WaveformData, width: usize, palette: &Palette) {
             .unwrap_or(0.0)
     };
     println!(
-        "  {name}: {} audible overview columns; full height {:.1}%, washed out {:.1}%, adjacent colour step median {:.3} p95 {:.3} ({} steady pairs)",
+        "  {name}: {} audible overview columns; outline full height {:.1}%, body full height {:.1}%, washed out {:.1}%, adjacent colour step median {:.3} p95 {:.3} ({} steady pairs)",
         audible.len(),
         100.0 * full as f32 / n,
+        100.0 * body_full as f32 / n,
         100.0 * washed as f32 / n,
         at(50),
         at(95),

@@ -19,8 +19,8 @@ use om_analysis::{
 };
 use om_ui::theme::{Colour, ThemeTokens};
 use om_ui::waveform::{
-    column_shapes, column_tiles, reference_peak, strip_column, strip_well, BandStrip, Column,
-    ColumnShape, Palette, StripSource, View, WaveStyle, COLOUR_SMOOTH_RADIUS, STRIP_STEP_PX,
+    column_shapes, column_tiles, strip_column, strip_well, BandStrip, Column, ColumnShape, Palette,
+    Reference, StripSource, View, WaveStyle, COLOUR_SMOOTH_RADIUS, STRIP_STEP_PX,
 };
 
 const RATE: f64 = 44_100.0;
@@ -52,7 +52,7 @@ fn strip(data: &WaveformData, length: i64, v: &View) -> BandStrip {
         level,
         height_px: 96,
         length_frames: length,
-        reference: reference_peak(&data.overview().points),
+        reference: Reference::of(&data.overview().points),
         spectral: true,
     };
     BandStrip::render(&src, v)
@@ -138,7 +138,7 @@ fn percentile(v: &mut [f32], p: usize) -> f32 {
 /// columns tall, heights within 0.05), over a 2000 column stretch from the middle of the track.
 fn adjacent(data: &WaveformData, length: i64) -> ((f32, f32), usize) {
     let points = &data.overview().points;
-    let reference = reference_peak(points);
+    let reference = Reference::of(points);
     let palette = Palette::new(WaveStyle::Colour, strip_well(&ThemeTokens::builtin_dark()));
     let fpp = 8.0 * RATE / WIDTH;
     let step = STRIP_STEP_PX * fpp;
@@ -167,7 +167,7 @@ fn adjacent(data: &WaveformData, length: i64) -> ((f32, f32), usize) {
 /// between adjacent columns, and the share of columns whose colour moves by more than 0.3 (detail
 /// that a smoothing would hide).
 fn smoothing_effect(data: &WaveformData, length: i64, radius: usize) -> (f32, f32) {
-    let reference = reference_peak(&data.overview().points);
+    let reference = Reference::of(&data.overview().points);
     let palette = Palette::new(WaveStyle::Colour, strip_well(&ThemeTokens::builtin_dark()));
     let fpp = 8.0 * RATE / WIDTH;
     let step = STRIP_STEP_PX * fpp;

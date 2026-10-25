@@ -363,6 +363,42 @@ fn capping_merges_the_rarest_key_into_its_nearest() {
 }
 
 #[test]
+fn the_played_part_keeps_its_hue_and_the_non_text_contrast_floor() {
+    let well = strip_well(&dark());
+    for style in [WaveStyle::Colour, WaveStyle::ColourBlind, WaveStyle::Mono] {
+        let p = Palette::new(style, well);
+        for (low, mid, high) in [
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (1.0, 0.5, 0.2),
+            (1.0, 1.0, 1.0),
+            (0.2, 0.9, 0.9),
+        ] {
+            let c = colour_of(&p, low, mid, high);
+            let dim = p.played(c);
+            let ratio = contrast_ratio(dim, well);
+            eprintln!("{style:?} {low} {mid} {high}: {c:?} -> {dim:?} ({ratio:.2}:1)");
+            assert!(
+                relative_luminance(dim) <= relative_luminance(c) + 1e-6,
+                "never brighter"
+            );
+            if contrast_ratio(c, well) >= 3.0 {
+                assert!(ratio >= 3.0 - 0.05, "{style:?}: {ratio:.2}");
+            }
+            if saturation(c) > 0.3 {
+                assert!(
+                    angle(hue(dim), hue(c)) < 6.0,
+                    "hue kept: {} vs {}",
+                    hue(dim),
+                    hue(c)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn style_names_round_trip() {
     for style in WaveStyle::ALL {
         assert_eq!(WaveStyle::from_name(style.name()), Some(style));

@@ -4,11 +4,10 @@
 //! so quiet and loud tracks fill the strip alike.
 //!
 //! The analysis stores the peak of each band per point (format 3), so a band's height is read, not
-//! modelled. Body and silhouette are both `compress(peak / reference)`: Mixxx draws its unscaled
-//! envelope as a 0.4 alpha shadow only where per-band gains make the scaled signal shorter
-//! (rgbsignal.frag), and at unity gain there is none. An RMS body (waveform.md section 4) left a
-//! thick grey halo on loud material (measured on a real track), so it is not used. Colour never
-//! changes a height: the same column in any style is as tall.
+//! modelled. The silhouette is the peak, `compress(peak / peak reference)`; the body is the RMS,
+//! `compress(loudness / RMS reference)`, never taller (waveform.md section 4 suggests RMS as an
+//! inner core; Mixxx's rgbsignal.frag draws an unscaled envelope outside the scaled signal as a 0.4
+//! alpha shadow). Colour never changes a height: the same column in any style is as tall.
 
 use super::palette::{weights, Key, MAX_BUCKETS};
 use super::{cap_keys, Column};
@@ -28,6 +27,8 @@ pub const PLAYED_BRIGHTNESS: f32 = 0.45;
 pub const REFERENCE_PERCENTILE: f32 = 95.0;
 /// The reference never falls below this, so near-silent tracks are not blown up into noise.
 pub const MIN_REFERENCE_PEAK: f32 = 0.1;
+/// The same floor for the RMS reference. UNSOURCED, kept small.
+pub const MIN_REFERENCE_LOUDNESS: f32 = 0.05;
 /// Share of the strip's half-height a full-scale column reaches, leaving a margin top and bottom.
 pub const FILL: f32 = 0.94;
 /// A column that has any height is drawn at least this far from the centre line, in px.
@@ -79,6 +80,48 @@ pub fn reference_peak(points: &[WaveformPoint]) -> f32 {
     peaks[rank.min(peaks.len() - 1)].max(MIN_REFERENCE_PEAK)
 }
 
+/// Height references of a track: the peak that maps to a full-height outline, and the RMS that
+/// maps to a full-height body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Reference {
+    pub peak: f32,
+    pub loudness: f32,
+}
+
+impl Reference {
+    /// From the overview level's points.
+    pub fn of(points: &[WaveformPoint]) -> Self {
+        Self {
+            peak: reference_peak(points),
+            loudness: reference_loudness(points),
+        }
+    }
+}
+
+/// One value for both (for tests and callers with a single scale).
+impl From<f32> for Reference {
+    fn from(v: f32) -> Self {
+        Self {
+            peak: v,
+            loudness: v,
+        }
+    }
+}
+
+/// The RMS that maps to a full-height body: the [`REFERENCE_PERCENTILE`] of the points' RMS, at
+/// least [`MIN_REFERENCE_LOUDNESS`]. On a limited master the peaks sit at full scale everywhere
+/// (a measured track had 39.4% of its columns at full height whatever the peak percentile), and
+/// the RMS keeps the dynamics (5.2% full height, p95/p20 2.31 on the same track).
+pub fn reference_loudness(points: &[WaveformPoint]) -> f32 {
+    if points.is_empty() {
+        return 1.0;
+    }
+    let mut v: Vec<f32> = points.iter().map(|p| p.loudness).collect();
+    v.sort_by(f32::total_cmp);
+    let rank = ((REFERENCE_PERCENTILE / 100.0) * (v.len() - 1) as f32).round() as usize;
+    v[rank.min(v.len() - 1)].max(MIN_REFERENCE_LOUDNESS)
+}
+
 /// Band heights of one column. `reference` is the track's [`reference_peak`]. A column without
 /// spectrum (`spectral` false) puts its whole height in the low slot, which the caller paints grey.
 pub fn band_heights(c: &Column, reference: f32, spectral: bool) -> BandHeights {
@@ -102,7 +145,7 @@ pub fn band_heights(c: &Column, reference: f32, spectral: bool) -> BandHeights {
 pub struct ColumnShape {
     /// Full-band peak height, 0..=1 of the half-height: the outline.
     pub silhouette: f32,
-    /// Height of the coloured body (equal to the silhouette; see the module docs).
+    /// Height of the coloured body: the RMS height, at most `silhouette`.
     pub body: f32,
     /// For the nested three-band style.
     pub bands: BandHeights,
@@ -112,13 +155,13 @@ pub struct ColumnShape {
 }
 
 /// The shape of a column. Without spectrum the key is the zero key (grey).
-pub fn column_shape(c: &Column, reference: f32, spectral: bool) -> ColumnShape {
-    let reference = reference.max(f32::EPSILON);
-    let silhouette = compress(c.peak / reference);
+pub fn column_shape(c: &Column, reference: impl Into<Reference>, spectral: bool) -> ColumnShape {
+    let reference: Reference = reference.into();
+    let silhouette = compress(c.peak / reference.peak.max(f32::EPSILON));
     ColumnShape {
         silhouette,
-        body: silhouette,
-        bands: band_heights(c, reference, spectral),
+        body: compress(c.loudness / reference.loudness.max(f32::EPSILON)).min(silhouette),
+        bands: band_heights(c, reference.peak, spectral),
         weights: if spectral { weights(c) } else { [0.0; 3] },
     }
 }
@@ -137,9 +180,10 @@ pub const COLOUR_SMOOTH_RADIUS: usize = 2;
 /// immediate neighbours, never on what part of the track is on screen.
 pub fn column_shapes(
     columns: &[Option<Column>],
-    reference: f32,
+    reference: impl Into<Reference>,
     spectral: bool,
 ) -> Vec<ColumnShape> {
+    let reference: Reference = reference.into();
     let mut shapes: Vec<ColumnShape> = columns
         .iter()
         .map(|c| {

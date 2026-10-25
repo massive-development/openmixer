@@ -6,8 +6,8 @@
 
 use om_analysis::{demo_loop, AudioClip, NullAnalysisContext, WaveformBuilder, WaveformData};
 use om_ui::waveform::{
-    column_tiles, overview_shapes, reference_peak, strip_well, BandStrip, Palette, StripSource,
-    View, WaveStyle,
+    column_tiles, overview_shapes, strip_well, BandStrip, Palette, Reference, StripSource, View,
+    WaveStyle,
 };
 use std::time::{Duration, Instant};
 
@@ -39,7 +39,7 @@ fn measure() -> Measured {
     let (data, length) = six_minutes();
     let started = Instant::now();
     let points = &data.overview().points;
-    let reference = reference_peak(points);
+    let reference = Reference::of(points);
     let overviews: Vec<_> = (0..2)
         .map(|_| overview_shapes(points, OVERVIEW_PX / 2, reference, true))
         .collect();
