@@ -5,7 +5,8 @@
 //! colour buckets are capped over the whole cached strip, so a column keeps its colour while it
 //! scrolls. Pure.
 
-use super::bands::{cap_shapes, column_shape, ColumnShape};
+use super::bands::{column_shapes, ColumnShape};
+use super::Column;
 use super::{overview_column, plan_strip, strip_column, strip_for, StripCache, StripPlan, View};
 use om_analysis::{WaveformLevel, WaveformPoint};
 
@@ -42,21 +43,23 @@ impl BandStrip {
     pub fn render(src: &StripSource, view: &View) -> Self {
         let cache = strip_for(view, src.height_px);
         let step_frames = STRIP_STEP_PX * view.frames_per_pixel;
-        let first_frame =
+        // Columns sit on a grid of whole steps from frame 0 (Mixxx snaps the first drawn frame to
+        // a whole multiple of the per-pixel increment the same way), so a column's content is a
+        // function of its position in the track, not of where the strip happens to start.
+        let raw_first =
             cache.centre_frame - f64::from(cache.width_px) * 0.5 * view.frames_per_pixel;
-        let count = (f64::from(cache.width_px) / STRIP_STEP_PX).ceil() as usize;
-        let mut columns: Vec<ColumnShape> = (0..count)
+        let first_frame = (raw_first / step_frames).floor() * step_frames;
+        let count = (f64::from(cache.width_px) / STRIP_STEP_PX).ceil() as usize + 1;
+        let data: Vec<Option<Column>> = (0..count)
             .map(|i| {
                 let frame = first_frame + i as f64 * step_frames;
                 if frame + step_frames <= 0.0 || frame >= src.length_frames as f64 {
-                    return ColumnShape::default();
+                    return None;
                 }
                 strip_column(src.level, frame.max(0.0), step_frames)
-                    .map(|c| column_shape(&c, src.reference, src.spectral))
-                    .unwrap_or_default()
             })
             .collect();
-        cap_shapes(&mut columns);
+        let columns = column_shapes(&data, src.reference, src.spectral);
         Self {
             cache,
             first_frame,
@@ -117,11 +120,10 @@ pub fn overview_shapes(
     reference: f32,
     spectral: bool,
 ) -> Vec<ColumnShape> {
-    let mut shapes: Vec<ColumnShape> = (0..count)
-        .map(|i| column_shape(&overview_column(points, i, count), reference, spectral))
+    let data: Vec<Option<Column>> = (0..count)
+        .map(|i| Some(overview_column(points, i, count)))
         .collect();
-    cap_shapes(&mut shapes);
-    shapes
+    column_shapes(&data, reference, spectral)
 }
 
 #[cfg(test)]
@@ -172,7 +174,7 @@ mod tests {
         let l = level(2000);
         let v = view(128_000);
         let s = BandStrip::render(&source(&l, 1, 120), &v);
-        assert_eq!(s.columns.len(), (400.0 * 3.0 / STRIP_STEP_PX) as usize);
+        assert_eq!(s.columns.len(), (400.0 * 3.0 / STRIP_STEP_PX) as usize + 1);
         let visible = s.visible(&v);
         assert!(
             visible.len() >= 200 && visible.len() <= 205,
@@ -276,28 +278,5 @@ mod tests {
         assert!(overview_shapes(&[], 10, 1.0, true)
             .iter()
             .all(|b| *b == ColumnShape::default()));
-    }
-
-    #[test]
-    fn a_strip_caches_a_capped_key_per_column_and_keeps_it_while_scrolling() {
-        let l = level(4000);
-        let v = view(256_000);
-        let s = BandStrip::render(&source(&l, 1, 120), &v);
-        let mut keys: Vec<_> = s.columns.iter().map(|c| c.key).collect();
-        keys.sort();
-        keys.dedup();
-        assert!(keys.len() <= crate::waveform::MAX_BUCKETS);
-        // The same strip serves a scrolled view: a column's key does not depend on the window.
-        let a = s.visible(&v);
-        let b = s.visible(&View {
-            centre_frame: 256_000 + 640,
-            ..v
-        });
-        let key_at = |list: &[(f32, ColumnShape)], x: f32| {
-            list.iter()
-                .min_by(|p, q| (p.0 - x).abs().total_cmp(&(q.0 - x).abs()))
-                .map(|c| c.1.key)
-        };
-        assert_eq!(key_at(&a, 150.0), key_at(&b, 145.0));
     }
 }

@@ -19,8 +19,8 @@ use om_analysis::{
 use om_ui::style::over;
 use om_ui::theme::{parse_theme, parse_theme_file, Colour, ThemeTokens};
 use om_ui::waveform::{
-    bucket_runs, cap_shapes, column_shape, overview_column, reference_peak, shape_px, strip_column,
-    strip_well, weights, Band, ColumnShape, Palette, WaveStyle, KEY_LEVELS, MAX_BUCKETS,
+    column_shapes, overview_column, reference_peak, shape_px, strip_column, strip_well, weights,
+    Band, ColumnShape, Palette, WaveStyle,
 };
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -33,8 +33,6 @@ const STRIP_SPOTS: [f64; 3] = [0.2, 0.5, 0.8];
 const SYNTHETIC_SECONDS: f64 = 64.0;
 const SYNTHETIC_BPM: f64 = 124.0;
 const RATE: f64 = 44_100.0;
-/// Alpha of the silhouette layer (the painter's `SILHOUETTE_ALPHA`).
-const SILHOUETTE_ALPHA: f32 = 0.35;
 
 struct Options {
     out: PathBuf,
@@ -168,13 +166,8 @@ fn draw_column(
     } else {
         bar(
             image,
-            shape_px(shape.silhouette, h),
-            palette.silhouette.with_alpha(SILHOUETTE_ALPHA),
-        );
-        bar(
-            image,
             shape_px(shape.body, h),
-            palette.bucket_colour(shape.key),
+            palette.colour(shape.weights),
         );
     }
 }
@@ -185,15 +178,8 @@ fn shapes_for(
     count: usize,
     pick: impl Fn(usize) -> Option<om_ui::waveform::Column>,
 ) -> Vec<ColumnShape> {
-    let mut shapes: Vec<ColumnShape> = (0..count)
-        .map(|i| {
-            pick(i)
-                .map(|c| column_shape(&c, reference, data.has_spectrum()))
-                .unwrap_or_default()
-        })
-        .collect();
-    cap_shapes(&mut shapes);
-    shapes
+    let columns: Vec<_> = (0..count).map(pick).collect();
+    column_shapes(&columns, reference, data.has_spectrum())
 }
 
 fn draw_shapes(
@@ -275,26 +261,16 @@ fn render(
     image
 }
 
-/// How many columns of the overview fall in each bucket, most used first.
-fn histogram(data: &WaveformData, width: usize) -> Vec<(om_ui::waveform::Key, usize)> {
-    let points = &data.overview().points;
-    let reference = reference_peak(points);
-    let shapes = shapes_for(data, reference, width, |i| {
-        Some(overview_column(points, i, width))
-    });
-    let keys: Vec<_> = shapes.iter().map(|s| s.key).collect();
-    let mut counts: Vec<_> = bucket_runs(&keys)
-        .into_iter()
-        .map(|(k, ranges)| (k, ranges.iter().map(|r| r.len()).sum()))
-        .collect();
-    counts.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
-    counts
+fn distance(a: Colour, b: Colour) -> f32 {
+    let rgb = |c: Colour| [16, 8, 0].map(|sh| ((c.argb() >> sh) & 0xFF) as f32 / 255.0);
+    let (a, b) = (rgb(a), rgb(b));
+    (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>().sqrt()
 }
 
-/// The plan's gates on this track, as numbers: columns at full height, columns within 0.12
-/// (linear RGB) of their exact colour once bucketed, and how many columns read as washed out
-/// (saturation under 0.25).
-fn gates(data: &WaveformData, width: usize, palette: &Palette) {
+/// The gates on this track, as numbers: overview columns at full height, columns that read as
+/// washed out (saturation under 0.25), and the colour difference between adjacent columns in
+/// steady sections of the overview (both columns tall, heights within 0.05).
+fn report(name: &str, data: &WaveformData, width: usize, palette: &Palette) {
     let points = &data.overview().points;
     let reference = reference_peak(points);
     let columns: Vec<_> = (0..width)
@@ -307,54 +283,41 @@ fn gates(data: &WaveformData, width: usize, palette: &Palette) {
         .iter()
         .filter(|&&i| shapes[i].silhouette >= 1.0)
         .count();
-    let lin = |c: Colour| {
-        let a = c.argb();
-        [16, 8, 0].map(|s| {
-            let v = ((a >> s) & 0xFF) as f32 / 255.0;
-            if v <= 0.040_45 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            }
+    let washed = audible
+        .iter()
+        .filter(|&&i| {
+            let c = palette.colour(weights(&columns[i]));
+            let rgb = [16, 8, 0].map(|sh| ((c.argb() >> sh) & 0xFF) as f32 / 255.0);
+            let max = rgb.iter().cloned().fold(0.0, f32::max);
+            let min = rgb.iter().cloned().fold(1.0, f32::min);
+            max > 0.0 && (max - min) / max < 0.25
         })
+        .count();
+    let mut steps: Vec<f32> = shapes
+        .windows(2)
+        .filter(|w| {
+            w[0].silhouette >= 0.3
+                && w[1].silhouette >= 0.3
+                && (w[0].silhouette - w[1].silhouette).abs() <= 0.05
+        })
+        .map(|w| distance(palette.colour(w[0].weights), palette.colour(w[1].weights)))
+        .collect();
+    steps.sort_by(f32::total_cmp);
+    let at = |p: usize| {
+        steps
+            .get(steps.len().saturating_sub(1) * p / 100)
+            .copied()
+            .unwrap_or(0.0)
     };
-    let (mut close, mut washed) = (0, 0);
-    for &i in &audible {
-        let exact = palette.colour(weights(&columns[i]));
-        let (a, b) = (lin(exact), lin(palette.bucket_colour(shapes[i].key)));
-        let d: f32 = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>().sqrt();
-        close += usize::from(d <= 0.12);
-        let rgb = [16, 8, 0].map(|sh| ((exact.argb() >> sh) & 0xFF) as f32 / 255.0);
-        let (max, min) = (
-            rgb.iter().cloned().fold(0.0, f32::max),
-            rgb.iter().cloned().fold(1.0, f32::min),
-        );
-        washed += usize::from(max > 0.0 && (max - min) / max < 0.25);
-    }
     println!(
-        "    gates over {} audible columns: full height {:.1}% (plan < 5%), within 0.12 of exact colour {:.1}% (plan >= 95%), washed out {:.1}%",
+        "  {name}: {} audible overview columns; full height {:.1}%, washed out {:.1}%, adjacent colour step median {:.3} p95 {:.3} ({} steady pairs)",
         audible.len(),
         100.0 * full as f32 / n,
-        100.0 * close as f32 / n,
-        100.0 * washed as f32 / n
+        100.0 * washed as f32 / n,
+        at(50),
+        at(95),
+        steps.len()
     );
-}
-
-fn report(name: &str, data: &WaveformData, width: usize, palette: &Palette) {
-    gates(data, width, palette);
-    let counts = histogram(data, width);
-    println!(
-        "  {name}: {} buckets of {MAX_BUCKETS} (levels 0..{KEY_LEVELS} as low/mid/high), columns per bucket:",
-        counts.len()
-    );
-    let line: Vec<String> = counts
-        .iter()
-        .map(|(k, n)| {
-            let [l, m, h] = k.levels();
-            format!("{l}{m}{h}:{n}")
-        })
-        .collect();
-    println!("    {}", line.join(" "));
 }
 
 fn analyse(clip: &AudioClip, label: &str) -> Result<WaveformData, String> {

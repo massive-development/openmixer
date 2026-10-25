@@ -10,7 +10,7 @@
 //! thick grey halo on loud material (measured on a real track), so it is not used. Colour never
 //! changes a height: the same column in any style is as tall.
 
-use super::palette::{bucket_key, weights, Key, MAX_BUCKETS};
+use super::palette::{weights, Key, MAX_BUCKETS};
 use super::{cap_keys, Column};
 use om_analysis::WaveformPoint;
 use std::ops::Range;
@@ -106,8 +106,9 @@ pub struct ColumnShape {
     pub body: f32,
     /// For the nested three-band style.
     pub bands: BandHeights,
-    /// The colour bucket (before [`cap_keys`] merges rare ones).
-    pub key: Key,
+    /// Colour weights of the three bands (see [`super::weights`]); the colour is drawn per column
+    /// from these.
+    pub weights: [f32; 3],
 }
 
 /// The shape of a column. Without spectrum the key is the zero key (grey).
@@ -118,21 +119,78 @@ pub fn column_shape(c: &Column, reference: f32, spectral: bool) -> ColumnShape {
         silhouette,
         body: silhouette,
         bands: band_heights(c, reference, spectral),
-        key: if spectral {
-            bucket_key(weights(c))
-        } else {
-            Key::default()
-        },
+        weights: if spectral { weights(c) } else { [0.0; 3] },
     }
 }
 
-/// Limits the colour buckets of `shapes` to [`MAX_BUCKETS`], merging the rarest into the nearest.
-pub fn cap_shapes(shapes: &mut [ColumnShape]) {
-    let mut keys: Vec<Key> = shapes.iter().map(|s| s.key).collect();
-    cap_keys(&mut keys, MAX_BUCKETS);
-    for (shape, key) in shapes.iter_mut().zip(keys) {
-        shape.key = key;
+/// Columns either side of a column whose band weights are averaged into its colour. Colour only:
+/// heights are never smoothed, so kicks and hats keep their shape. UNSOURCED: Mixxx colours every
+/// pixel from its own window with no smoothing. 2 is the smallest radius that met the flicker
+/// gates set before the change (p95 colour step between adjacent steady columns <= 0.15 with at
+/// most 1% of columns changing colour by more than 0.3): on a real loud 207 s track radius 0 gave
+/// 0.237, radius 1 0.175, radius 2 0.137 (0.1% of columns moved), radius 4 0.091 (3.3% moved).
+pub const COLOUR_SMOOTH_RADIUS: usize = 2;
+
+/// The shapes of a run of columns (`None` for no data). Heights come from the column alone; the
+/// colour weights are averaged over [`COLOUR_SMOOTH_RADIUS`] columns either side (only columns
+/// that have data and sound), so a column's look depends on its own position in the track and its
+/// immediate neighbours, never on what part of the track is on screen.
+pub fn column_shapes(
+    columns: &[Option<Column>],
+    reference: f32,
+    spectral: bool,
+) -> Vec<ColumnShape> {
+    let mut shapes: Vec<ColumnShape> = columns
+        .iter()
+        .map(|c| {
+            c.as_ref()
+                .map(|c| column_shape(c, reference, spectral))
+                .unwrap_or_default()
+        })
+        .collect();
+    if !spectral {
+        return shapes;
     }
+    let own: Vec<Option<[f32; 3]>> = shapes
+        .iter()
+        .map(|s| (s.weights != [0.0; 3]).then_some(s.weights))
+        .collect();
+    for (i, shape) in shapes.iter_mut().enumerate() {
+        if own[i].is_none() {
+            continue;
+        }
+        let lo = i.saturating_sub(COLOUR_SMOOTH_RADIUS);
+        let hi = (i + COLOUR_SMOOTH_RADIUS + 1).min(own.len());
+        let mut mean = [0.0f32; 3];
+        let mut n = 0.0;
+        for w in own[lo..hi].iter().flatten() {
+            for (m, v) in mean.iter_mut().zip(w) {
+                *m += v;
+            }
+            n += 1.0;
+        }
+        shape.weights = mean.map(|m| m / n);
+    }
+    shapes
+}
+
+/// Pixel tiles for columns whose centres are `centres` (ascending, evenly spaced): `(left, width)`
+/// in whole pixels, each tile starting where the previous one ends, so painted neighbours leave no
+/// seam at any fractional scroll offset. Mixxx snaps its columns to the pixel grid the same way
+/// (qRound of the first visual frame).
+pub fn column_tiles(centres: &[f32]) -> Vec<(i32, i32)> {
+    if centres.len() < 2 {
+        return centres.iter().map(|c| (c.round() as i32 - 1, 2)).collect();
+    }
+    let half = (centres[1] - centres[0]) / 2.0;
+    let lefts: Vec<i32> = centres.iter().map(|c| (c - half).round() as i32).collect();
+    let last = (centres[centres.len() - 1] + half).round() as i32;
+    (0..lefts.len())
+        .map(|i| {
+            let right = lefts.get(i + 1).copied().unwrap_or(last);
+            (lefts[i], (right - lefts[i]).max(1))
+        })
+        .collect()
 }
 
 /// Half-height in px of a column of `height` (0..=1) in a strip `strip_h` tall: zero for no
@@ -156,6 +214,13 @@ pub fn runs(keys: &[Key]) -> Vec<(Key, Range<usize>)> {
         }
     }
     out
+}
+
+/// The columns a run is drawn through, first and last inclusive: its own columns plus the first
+/// column of the next run, which the next run starts on, so neighbouring shapes share an edge and
+/// leave no gap. `n` is the number of columns.
+pub fn run_span(range: &Range<usize>, n: usize) -> (usize, usize) {
+    (range.start, range.end.min(n.saturating_sub(1)))
 }
 
 /// The runs of `keys` grouped by key, at most [`MAX_BUCKETS`] distinct keys (rarer ones merged into
@@ -225,7 +290,7 @@ mod tests {
         let h = band_heights(&c, 1.0, false);
         assert!(h.low > 0.0);
         assert_eq!((h.mid, h.high), (0.0, 0.0));
-        assert_eq!(column_shape(&c, 1.0, false).key, Key::default());
+        assert_eq!(column_shape(&c, 1.0, false).weights, [0.0; 3]);
     }
 
     #[test]
@@ -255,7 +320,7 @@ mod tests {
             let other = column_shape(&column(0.7, low, mid, high), 0.9, true);
             assert_eq!(other.silhouette, shape.silhouette);
             assert_eq!(other.body, shape.body);
-            assert_ne!(other.key, shape.key, "only the colour changes");
+            assert_ne!(other.weights, shape.weights, "only the colour changes");
         }
         assert!((shape.silhouette - compress(0.7 / 0.9)).abs() < 1e-6);
     }
@@ -347,6 +412,21 @@ mod tests {
             .all(|w| w[0].0 != w[1].0 && w[0].1.end == w[1].1.start));
         assert_eq!(r[0].1.start, 0);
         assert_eq!(r.last().unwrap().1.end, 1000);
+    }
+
+    #[test]
+    fn tiles_cover_the_columns_with_no_seam_at_any_scroll_offset() {
+        for offset in [0.0f32, 0.25, 0.5, 0.9, 3.37] {
+            let centres: Vec<f32> = (0..200).map(|i| offset + 1.0 + i as f32 * 2.0).collect();
+            let tiles = column_tiles(&centres);
+            assert_eq!(tiles.len(), centres.len());
+            for pair in tiles.windows(2) {
+                assert_eq!(pair[0].0 + pair[0].1, pair[1].0, "seam at offset {offset}");
+            }
+            assert!(tiles.iter().all(|t| (1..=3).contains(&t.1)), "{tiles:?}");
+        }
+        assert!(column_tiles(&[]).is_empty());
+        assert_eq!(column_tiles(&[10.0]).len(), 1);
     }
 
     #[test]

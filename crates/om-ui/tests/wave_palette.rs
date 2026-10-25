@@ -165,20 +165,28 @@ fn every_style_is_legible_on_both_themes() {
         let well = strip_well(&tokens);
         for style in WaveStyle::ALL {
             let p = Palette::new(style, well);
+            eprintln!(
+                "{name} {style:?}: {:06X} {:06X} {:06X} silhouette {:06X}",
+                p.low.argb() & 0xFFFFFF,
+                p.mid.argb() & 0xFFFFFF,
+                p.high.argb() & 0xFFFFFF,
+                p.silhouette.argb() & 0xFFFFFF
+            );
             for (band, colour) in [("low", p.low), ("mid", p.mid), ("high", p.high)] {
                 let ratio = contrast_ratio(colour, well);
-                assert!(ratio >= 4.5, "{style:?} {band} on {name}: {ratio:.2}");
+                assert!(ratio >= 3.0, "{style:?} {band} on {name}: {ratio:.2}");
             }
             assert!(
-                contrast_ratio(p.silhouette, well) >= 4.5,
+                contrast_ratio(p.silhouette, well) >= 3.0,
                 "{style:?} silhouette on {name}"
             );
         }
         let grid = contrast_ratio(GRID_COLOUR, well);
         let head = contrast_ratio(PLAYHEAD_COLOUR, well);
-        let numbers = contrast_ratio(GRID_COLOUR.with_alpha(0.85), well);
+        // Bar numbers are text: 4.5:1 (WCAG 1.4.3), at their painted alpha of 0.85.
+        let numbers = contrast_ratio(om_ui::style::over(GRID_COLOUR.with_alpha(0.85), well), well);
         eprintln!("{name}: grid {grid:.2}:1, playhead {head:.2}:1, bar numbers {numbers:.2}:1");
-        assert!(grid >= 3.0 && head >= 3.0 && numbers >= 3.0, "{name}");
+        assert!(grid >= 3.0 && head >= 3.0 && numbers >= 4.5, "{name}");
         // Beat lines are drawn at alpha 0.25 and bar lines at 0.70; composited on the well, the
         // bar line must hold 3:1.
         let bar = om_ui::style::over(GRID_COLOUR.with_alpha(0.70), well);

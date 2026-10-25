@@ -1,12 +1,13 @@
 //! The pure part of the waveform frame budget on a six minute demo loop: building the overview
 //! columns of two decks, rendering the cached zoomed strips, and the per-frame scroll path
-//! (`visible()` plus the bucket runs). Numbers are printed (`-- --nocapture`). The always-on test
+//! (`visible()`, the pixel tiles and one colour per column). Numbers are printed (`-- --nocapture`). The always-on test
 //! asserts with 5 times headroom in release builds only (debug builds print); the strict plan
 //! numbers (50 ms build, 0.3 ms per strip per frame) are `--ignored`, run by hand with `--release`.
 
 use om_analysis::{demo_loop, AudioClip, NullAnalysisContext, WaveformBuilder, WaveformData};
 use om_ui::waveform::{
-    bucket_runs, overview_shapes, reference_peak, BandStrip, StripSource, View, MAX_BUCKETS,
+    column_tiles, overview_shapes, reference_peak, strip_well, BandStrip, Palette, StripSource,
+    View, WaveStyle,
 };
 use std::time::{Duration, Instant};
 
@@ -30,10 +31,8 @@ fn six_minutes() -> (WaveformData, i64) {
 struct Measured {
     build: Duration,
     frame: Duration,
-    paths: usize,
-    vertices: usize,
+    quads: usize,
     columns: usize,
-    runs: usize,
 }
 
 fn measure() -> Measured {
@@ -64,35 +63,34 @@ fn measure() -> Measured {
     let build = started.elapsed();
     std::hint::black_box((&overviews, &strips));
 
-    // One frame of scrolling, per strip: the visible window and its bucket runs.
+    // One frame of scrolling, per strip: the visible window, its tiles and a colour per column.
+    let palette = Palette::new(
+        WaveStyle::Colour,
+        strip_well(&om_ui::theme::ThemeTokens::builtin_dark()),
+    );
     let strip = &strips[0];
     let mut frame = Duration::MAX;
-    let (mut paths, mut vertices, mut columns, mut runs) = (0, 0, 0, 0);
+    let (mut quads, mut columns) = (0, 0);
     for attempt in 0..50 {
         let v = view(length / 3 + attempt * 400);
         let started = Instant::now();
         let visible = strip.visible(&v);
-        let keys: Vec<_> = visible.iter().map(|(_, c)| c.key).collect();
-        let groups = bucket_runs(&keys);
+        let centres: Vec<f32> = visible.iter().map(|(x, _)| *x).collect();
+        let tiles = column_tiles(&centres);
+        let colours: Vec<_> = visible
+            .iter()
+            .map(|(_, c)| palette.colour(c.weights))
+            .collect();
         frame = frame.min(started.elapsed());
-        paths = groups.len() + 1;
+        std::hint::black_box((&tiles, &colours));
+        quads = tiles.len();
         columns = visible.len();
-        runs = groups.iter().map(|(_, r)| r.len()).sum();
-        // Silhouette: two vertices per column; each run adds one shared edge column.
-        vertices = 2 * columns
-            + groups
-                .iter()
-                .flat_map(|(_, r)| r)
-                .map(|r| 2 * (r.len() + 1))
-                .sum::<usize>();
     }
     Measured {
         build,
         frame,
-        paths,
-        vertices,
+        quads,
         columns,
-        runs,
     }
 }
 
@@ -100,17 +98,10 @@ fn measure() -> Measured {
 fn the_waveform_stays_inside_its_budget() {
     let m = measure();
     println!(
-        "waveform budget: build {:?} (limit {BUILD_LIMIT:?}), scroll frame {:?} per strip (limit {FRAME_LIMIT:?}), {} paths, {} vertices for {} columns in {} runs",
-        m.build, m.frame, m.paths, m.vertices, m.columns, m.runs
+        "waveform budget: build {:?} (limit {BUILD_LIMIT:?}), scroll frame {:?} per strip (limit {FRAME_LIMIT:?}), {} quads for {} columns",
+        m.build, m.frame, m.quads, m.columns
     );
-    assert!(m.paths <= MAX_BUCKETS + 1, "{} paths", m.paths);
-    // Plan: at most 2 * (columns + 2 * buckets) vertices when runs are long; every run adds one
-    // shared edge column, so the exact bound is in runs.
-    assert!(
-        m.vertices <= 4 * (m.columns + m.runs),
-        "{} vertices",
-        m.vertices
-    );
+    assert_eq!(m.quads, m.columns, "one quad per column");
     if !cfg!(debug_assertions) {
         assert!(m.build < BUILD_LIMIT * HEADROOM, "build {:?}", m.build);
         assert!(m.frame < FRAME_LIMIT * HEADROOM, "frame {:?}", m.frame);
