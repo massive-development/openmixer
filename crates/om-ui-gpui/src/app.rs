@@ -51,6 +51,17 @@ pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
 /// Width of the `--debug-panel` column on the right.
 const DEBUG_WIDTH: i32 = 300;
 
+/// DEMO / TEST ONLY (`--demo-scene`): window state staged for screenshots. All off by default.
+#[derive(Debug, Clone, Default)]
+pub struct SceneOptions {
+    /// Start with the sampler drawer open.
+    pub sampler_open: bool,
+    /// Start with deck A on its STEMS tab.
+    pub stems_tab: bool,
+    /// Press this sampler pad once its sample has loaded.
+    pub press_pad: Option<usize>,
+}
+
 /// What the caller decides before the window opens.
 pub struct RunOptions {
     /// Quit after this many rendered frames and return (`--smoke`). `None` runs until closed.
@@ -79,6 +90,8 @@ pub struct RunOptions {
     pub automix: Option<crate::automix_bar::AutomixSnapshotFn>,
     /// Shows the Record button in the header and the `r` key (the window sends `record.toggle`).
     pub record: bool,
+    /// Demo only: staged window state for screenshots.
+    pub scene: SceneOptions,
 }
 
 /// The root view. Owns the widget models and the handles they read from.
@@ -123,6 +136,8 @@ pub struct Shell {
     pub(crate) performance: bool,
     /// The sampler drawer is open (collapsed it is a narrow handle beside the library).
     pub(crate) sampler_open: bool,
+    /// Demo only: a sampler pad to press once its sample has loaded.
+    pending_pad: Option<usize>,
     options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -173,6 +188,7 @@ impl Shell {
             .take()
             .map(|hub| LibraryPanel::new(hub, Arc::clone(&engine)));
         let deck_count = engine.num_decks();
+        let scene = options.scene.clone();
         let sampler = SamplerBinding::new(
             Arc::clone(&engine),
             Some(router.clone() as Arc<dyn CommandSink>),
@@ -185,11 +201,15 @@ impl Shell {
         );
         let decks = (0..engine.num_decks())
             .map(|index| {
-                DeckWidget::new(DeckBinding::typed(
+                let mut deck = DeckWidget::new(DeckBinding::typed(
                     Arc::clone(&engine),
                     Arc::clone(&router),
                     index,
-                ))
+                ));
+                if scene.stems_tab && index == 0 {
+                    deck.pad_mode = om_ui::widgets::deck::PadMode::Stems;
+                }
+                deck
             })
             .collect();
         Self {
@@ -214,7 +234,8 @@ impl Shell {
             sampler_editing: false,
             sampler_status: None,
             performance: false,
-            sampler_open: false,
+            sampler_open: scene.sampler_open,
+            pending_pad: scene.press_pad,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -313,6 +334,12 @@ impl Shell {
         }
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
         self.sampler.prune_pending();
+        if let Some(pad) = self.pending_pad {
+            if self.sampler.pads().get(pad).is_some_and(|p| p.loaded) {
+                self.sampler.press(pad, 1.0);
+                self.pending_pad = None;
+            }
+        }
         self.frames += 1;
         self.frames_out.store(self.frames, Ordering::Relaxed);
         if let (Some(out), Some(panel)) = (&self.options.library_rows_out, &self.library) {

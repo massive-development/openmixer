@@ -287,6 +287,10 @@ mod tests {
 
     /// A shell over a real two-deck engine and router, with no window.
     fn shell() -> (Shell, Arc<DjEngine>) {
+        shell_with_scene(crate::app::SceneOptions::default())
+    }
+
+    fn shell_with_scene(scene: crate::app::SceneOptions) -> (Shell, Arc<DjEngine>) {
         let (engine, _audio) = DjEngine::new(2);
         let engine = Arc::new(engine);
         let router = Arc::new(ParameterRouter::new());
@@ -303,6 +307,7 @@ mod tests {
             library_rows_out: None,
             demo_grid_bpm: None,
             samples: None,
+            scene,
         };
         let shell = Shell::new(
             Arc::clone(&engine),
@@ -312,6 +317,22 @@ mod tests {
             Arc::new(AtomicU64::new(0)),
         );
         (shell, engine)
+    }
+
+    #[test]
+    fn a_demo_scene_stages_the_drawer_and_the_stems_tab_and_nothing_by_default() {
+        use om_ui::widgets::deck::PadMode;
+        let (plain, _) = shell();
+        assert!(!plain.sampler_open);
+        assert_eq!(plain.decks[0].pad_mode, PadMode::Cues);
+        let (staged, _) = shell_with_scene(crate::app::SceneOptions {
+            sampler_open: true,
+            stems_tab: true,
+            press_pad: None,
+        });
+        assert!(staged.sampler_open);
+        assert_eq!(staged.decks[0].pad_mode, PadMode::Stems);
+        assert_eq!(staged.decks[1].pad_mode, PadMode::Cues, "only deck A");
     }
 
     fn at(x: f32, y: f32) -> gpui::Point<gpui::Pixels> {
