@@ -10,14 +10,16 @@
 //! `Cargo.lock`. Filled paths avoid that.
 
 use crate::paint::paint;
-use gpui::{fill, point, px, size, Bounds, Path, PathBuilder, Pixels, Point, Rgba, Window};
+use gpui::{
+    fill, point, px, size, Bounds, ContentMask, Path, PathBuilder, Pixels, Point, Rgba, Window,
+};
 use om_analysis::WaveformData;
 use om_ui::theme::Colour;
 use om_ui::waveform::{
-    column_tiles, overview_shapes, played_edge, playhead_rect, reference_peak, shape_px, Band,
-    BandStrip, ColumnShape, OverviewMarkers, Palette, StripSlot, StripSource, View, WaveStyle,
+    column_tiles, overview_shapes, played_edge, playhead_rect, shape_px, Band, BandStrip,
+    ColumnShape, OverviewMarkers, Palette, Reference, StripSlot, StripSource, View, WaveStyle,
     BAR_LINE_WIDTH, BEAT_LINE_WIDTH, LOOP_COLOUR, LOOP_EDGE_WIDTH, OVERVIEW_CUE_TICK_WIDTH,
-    OVERVIEW_TICK_ALPHA, OVERVIEW_TICK_HEIGHT, PLAYED_BRIGHTNESS, PLAYHEAD_COLOUR, PLAYHEAD_HALO,
+    OVERVIEW_TICK_ALPHA, OVERVIEW_TICK_HEIGHT, PLAYHEAD_COLOUR, PLAYHEAD_HALO,
     PLAYHEAD_HALO_COLOUR, PLAYHEAD_WIDTH,
 };
 use om_ui::widgets::deck::GridLine;
@@ -63,14 +65,12 @@ pub fn with_alpha(colour: Colour, alpha: f32) -> Rgba {
     }
 }
 
-/// Alpha of the dark overlay that takes a played region down to [`PLAYED_BRIGHTNESS`].
-fn played_overlay_alpha() -> f32 {
-    1.0 - PLAYED_BRIGHTNESS
-}
+/// Alpha of the translucent peak outline (plan, Rendering model 3).
+const SILHOUETTE_ALPHA: f32 = 0.35;
 
 struct Cached {
     track: usize,
-    reference: f32,
+    reference: Reference,
 }
 
 #[derive(Default)]
@@ -102,14 +102,14 @@ thread_local! {
 }
 
 /// The track's reference peak, computed once per loaded waveform.
-fn reference_for(deck: usize, data: &Arc<WaveformData>) -> f32 {
+fn reference_for(deck: usize, data: &Arc<WaveformData>) -> Reference {
     let track = track_id(data);
     REFERENCES.with(|cache| {
         let mut cache = cache.borrow_mut();
         match cache.get(&deck) {
             Some(c) if c.track == track => c.reference,
             _ => {
-                let reference = reference_peak(&data.overview().points);
+                let reference = Reference::of(&data.overview().points);
                 cache.insert(deck, Cached { track, reference });
                 reference
             }
@@ -155,11 +155,12 @@ fn runs_path(runs: &[&[(f32, f32)]], origin: Point<Pixels>, mid: f32) -> Option<
     }
 }
 
-/// One thing a strip draws: a filled path or a column quad (x, y, width, height relative to the
-/// strip, and its colour).
+/// One thing a strip draws: a filled path (colour, alpha) or a column quad (x, y, width, height
+/// relative to the strip, and its colour). Colours are the unplayed ones; the played part is
+/// derived when painting ([`Palette::played`]).
 enum Layer {
-    Path(Rgba, Path<Pixels>),
-    Quad([f32; 4], Rgba),
+    Path(Colour, f32, Path<Pixels>),
+    Quad([f32; 4], Colour),
 }
 
 /// The layers of a strip, back to front. Colour, mono and colour-blind styles draw one quad per
@@ -197,30 +198,73 @@ fn column_layers(
             vec![(palette.silhouette, shape)]
         };
         for (colour, shape) in draw {
-            out.extend(
-                runs_path(&[&shape], origin, mid).map(|p| Layer::Path(with_alpha(colour, 1.0), p)),
-            );
+            out.extend(runs_path(&[&shape], origin, mid).map(|p| Layer::Path(colour, 1.0, p)));
         }
         return out;
     }
+    // The peak outline behind the bodies, as a translucent shadow (Mixxx draws its unscaled
+    // envelope outside the scaled signal at alpha 0.4; the plan says 0.35).
+    let outline: Vec<(f32, f32)> = columns
+        .iter()
+        .map(|(x, c)| (*x, shape_px(c.silhouette, height)))
+        .collect();
+    out.extend(
+        runs_path(&[&outline], origin, mid)
+            .map(|p| Layer::Path(palette.silhouette, SILHOUETTE_ALPHA, p)),
+    );
     let centres: Vec<f32> = columns.iter().map(|(x, _)| *x).collect();
     for ((left, width), (_, c)) in column_tiles(&centres).into_iter().zip(columns) {
         let half = shape_px(c.body, height);
         if half > 0.0 {
             out.push(Layer::Quad(
                 [left as f32, mid - half, width as f32, 2.0 * half],
-                with_alpha(palette.colour(c.weights), 1.0),
+                palette.colour(c.weights),
             ));
         }
     }
     out
 }
 
-fn paint_layers(window: &mut Window, bounds: Bounds<Pixels>, layers: &[Layer]) {
+/// Paints `layers`; the part left of `played_x` (strip pixels) is drawn in the played colours.
+fn paint_layers(
+    window: &mut Window,
+    bounds: Bounds<Pixels>,
+    layers: &[Layer],
+    palette: &Palette,
+    played_x: f32,
+) {
+    let mask = |from: f32, to: f32| {
+        Some(ContentMask {
+            bounds: Bounds::new(
+                point(bounds.origin.x + px(from), bounds.origin.y),
+                size(px((to - from).max(0.0)), bounds.size.height),
+            ),
+        })
+    };
+    let width = f32::from(bounds.size.width);
+    let split = played_x.clamp(0.0, width);
     for layer in layers {
         match layer {
-            Layer::Path(colour, path) => window.paint_path(path.clone(), *colour),
-            Layer::Quad([x, y, w, h], colour) => quad(window, bounds, *x, *y, *w, *h, *colour),
+            Layer::Path(colour, alpha, path) => {
+                if split > 0.0 {
+                    window.with_content_mask(mask(0.0, split), |w| {
+                        w.paint_path(path.clone(), with_alpha(palette.played(*colour), *alpha));
+                    });
+                }
+                if split < width {
+                    window.with_content_mask(mask(split, width), |w| {
+                        w.paint_path(path.clone(), with_alpha(*colour, *alpha));
+                    });
+                }
+            }
+            Layer::Quad([x, y, w, h], colour) => {
+                let c = if x + w / 2.0 < split {
+                    palette.played(*colour)
+                } else {
+                    *colour
+                };
+                quad(window, bounds, *x, *y, *w, *h, with_alpha(c, 1.0));
+            }
         }
     }
 }
@@ -329,20 +373,10 @@ pub fn paint_zoom(window: &mut Window, bounds: Bounds<Pixels>, scene: &ZoomScene
         });
         let palette = Palette::new(style(), scene.well);
         let layers = column_layers(&columns, bounds.origin, h, &palette, spectral);
-        paint_layers(window, bounds, &layers);
+        // The played part is left of the playhead.
+        let edge = played_edge(view, playhead_x) as f32;
+        paint_layers(window, bounds, &layers, &palette, edge);
     }
-
-    // The played part, left of the playhead, keeps 45% of its brightness.
-    let edge = played_edge(view, playhead_x) as f32;
-    quad(
-        window,
-        bounds,
-        0.0,
-        0.0,
-        edge.min(w),
-        h,
-        with_alpha(scene.well, played_overlay_alpha()),
-    );
 
     for line in &scene.grid {
         let (width, alpha) = if line.bar {
@@ -451,7 +485,7 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
                     entry.layers = column_layers(&columns, bounds.origin, h, &palette, spectral);
                     entry.key = Some(key);
                 }
-                paint_layers(window, bounds, &entry.layers);
+                paint_layers(window, bounds, &entry.layers, &palette, m.playhead_x as f32);
             });
         }
     }
@@ -505,18 +539,6 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
         );
     }
 
-    // The played part keeps 45% of its brightness.
-    let played = (m.playhead_x as f32).clamp(0.0, w);
-    quad(
-        window,
-        bounds,
-        0.0,
-        0.0,
-        played,
-        h,
-        with_alpha(scene.well, played_overlay_alpha()),
-    );
-
     // Hot cue ticks: a full-height line and a square on top, in the cue's colour.
     for (x, colour) in &m.cues {
         let x = *x as f32 - OVERVIEW_CUE_TICK_WIDTH / 2.0;
@@ -546,7 +568,7 @@ mod tests {
             .build(&clip, &NullAnalysisContext)
             .expect("not cancelled");
         let points = &data.overview().points;
-        let shapes = overview_shapes(points, count, reference_peak(points), true);
+        let shapes = overview_shapes(points, count, Reference::of(points), true);
         shapes
             .into_iter()
             .enumerate()
@@ -564,9 +586,15 @@ mod tests {
         let origin = point(px(0.0), px(0.0));
         for style in [WaveStyle::Colour, WaveStyle::Mono, WaveStyle::ColourBlind] {
             let layers = column_layers(&columns, origin, 48.0, &palette(style), true);
-            assert!(layers.iter().all(|l| matches!(l, Layer::Quad(..))));
-            assert!(layers.len() <= columns.len(), "{style:?}");
-            assert!(layers.len() > columns.len() / 2, "{style:?}");
+            // One translucent peak outline, then one quad per column.
+            let paths = layers
+                .iter()
+                .filter(|l| matches!(l, Layer::Path(..)))
+                .count();
+            let quads = layers.len() - paths;
+            assert_eq!(paths, 1, "{style:?}");
+            assert!(quads <= columns.len(), "{style:?}");
+            assert!(quads > columns.len() / 2, "{style:?}");
         }
         let three = column_layers(&columns, origin, 48.0, &palette(WaveStyle::ThreeBand), true);
         assert_eq!(three.len(), 3);
