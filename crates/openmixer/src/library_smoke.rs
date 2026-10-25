@@ -154,6 +154,38 @@ fn write_pcm(
 /// Writes [`TRACKS`] generated tracks under `root/music`, watches that folder and waits until the
 /// library holds them. Returns the track count.
 pub fn ingest_generated(services: &mut LibraryServices, root: &Path) -> Result<usize, AppError> {
+    ingest_generated_plus(services, root, 0)
+}
+
+/// File name of the user's track inside the scratch music folder (see [`link_user_track`]). The
+/// leading `0` sorts it first, so [`load_first_into_deck0`] picks it.
+pub const USER_TRACK_STEM: &str = "0-demo-track";
+
+/// DEMO ONLY (`--demo-scene=track`). Links the audio file at `source` into `root/music` as
+/// [`USER_TRACK_STEM`] with its own extension, so the library ingests it. A symbolic link, never a
+/// copy: the audio stays where it is and the scratch folder is removed on exit.
+pub fn link_user_track(root: &Path, source: &Path) -> Result<PathBuf, AppError> {
+    let source = fs::canonicalize(source)?;
+    if !source.is_file() {
+        return Err(AppError::Smoke("OPENMIXER_DEMO_TRACK is not a file"));
+    }
+    let music = root.join("music");
+    fs::create_dir_all(&music)?;
+    let name = match source.extension() {
+        Some(ext) => format!("{USER_TRACK_STEM}.{}", ext.to_string_lossy()),
+        None => USER_TRACK_STEM.to_owned(),
+    };
+    let link = music.join(name);
+    std::os::unix::fs::symlink(&source, &link)?;
+    Ok(link)
+}
+
+/// [`ingest_generated`] when `extra` more tracks (linked in beforehand) are expected too.
+pub fn ingest_generated_plus(
+    services: &mut LibraryServices,
+    root: &Path,
+    extra: usize,
+) -> Result<usize, AppError> {
     let music = root.join("music");
     fs::create_dir_all(&music)?;
     for i in 0..TRACKS {
@@ -170,7 +202,7 @@ pub fn ingest_generated(services: &mut LibraryServices, root: &Path) -> Result<u
             ],
         )?;
     }
-    watch_and_wait(services, &music, TRACKS)
+    watch_and_wait(services, &music, TRACKS + extra)
 }
 
 /// Tempos of the automix demo's click tracks: close enough that the tempo gap allows every pick.
@@ -286,6 +318,23 @@ mod tests {
         assert_eq!(&bytes[0..4], b"RIFF");
         assert_eq!(&bytes[8..12], b"WAVE");
         assert_eq!(bytes.len(), 44 + (SECONDS * f64::from(RATE)) as usize * 2);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_user_track_is_linked_not_copied() {
+        let dir = std::env::temp_dir().join(format!("om-smoke-link-{}", std::process::id()));
+        let root = dir.join("root");
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("real song.flac");
+        fs::write(&source, b"not really audio").unwrap();
+        let link = link_user_track(&root, &source).unwrap();
+        assert_eq!(link.file_name().unwrap(), "0-demo-track.flac");
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(link_user_track(&root, &dir.join("missing.wav")).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -51,7 +51,54 @@ pub const DEMO_FLAGS: [&str; 4] = [
 
 /// True when any demo flag is on the command line.
 pub fn demo_run(args: &[String]) -> bool {
-    args.iter().any(|a| DEMO_FLAGS.contains(&a.as_str()))
+    args.iter()
+        .any(|a| DEMO_FLAGS.contains(&a.as_str()) || a.starts_with("--demo-scene"))
+}
+
+/// DEMO / TEST ONLY. A staged state of the window for screenshots (`--demo-scene=NAME`): states
+/// that need engine or window setup that no other demo flag makes. Each implies the demo library
+/// (scratch folder, temporary preferences) and the mock-device banner rules of the other demos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DemoScene {
+    /// Sampler drawer open, pads loaded, the Bass loop pad playing.
+    Sampler,
+    /// Deck A: hot cues set, playing from cue 3, a one-beat loop active over the beat grid.
+    Cues,
+    /// Deck A plays its track on a loop, hot enough to clip: the meters and the clip lamp show.
+    Meters,
+    /// Deck A on its STEMS tab (pair with `--mock-stems` so the stems are live).
+    Stems,
+    /// Deck A plays the file named by `OPENMIXER_DEMO_TRACK`, so a real track can be previewed.
+    Track,
+}
+
+/// The scene names `--demo-scene=` accepts.
+const SCENES: [(&str, DemoScene); 5] = [
+    ("sampler", DemoScene::Sampler),
+    ("cues", DemoScene::Cues),
+    ("meters", DemoScene::Meters),
+    ("stems", DemoScene::Stems),
+    ("track", DemoScene::Track),
+];
+
+/// `--demo-scene=NAME`. `Ok(None)` when the flag is absent; `Err` names an unknown scene.
+pub fn demo_scene(args: &[String]) -> Result<Option<DemoScene>, String> {
+    let Some(name) = args.iter().find_map(|a| a.strip_prefix("--demo-scene=")) else {
+        return Ok(None);
+    };
+    SCENES
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map(|(_, scene)| Some(*scene))
+        .ok_or_else(|| format!("unknown demo scene {name:?} (sampler, cues, meters, stems, track)"))
+}
+
+/// The environment variable that names an audio file for `--demo-scene=track`.
+pub const DEMO_TRACK_ENV: &str = "OPENMIXER_DEMO_TRACK";
+
+/// The file named by [`DEMO_TRACK_ENV`], when it is set and not empty.
+pub fn demo_track(value: Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
+    value.filter(|v| !v.is_empty()).map(Into::into)
 }
 
 /// `--mock-stems` (or a non-empty `OPENMIXER_MOCK_STEMS`) attaches the stem service with the mock
@@ -104,6 +151,31 @@ mod tests {
         assert!(demo_run(&args(&["--demo-record"])));
         assert!(demo_run(&args(&["--demo-map"])));
         assert!(!demo_run(&args(&["--demo-map-extra", "--mock-device"])));
+    }
+
+    #[test]
+    fn demo_scene_flag_parses_names_and_rejects_unknown() {
+        assert_eq!(demo_scene(&args(&["--mock-device"])), Ok(None));
+        assert_eq!(
+            demo_scene(&args(&["--demo-scene=sampler"])),
+            Ok(Some(DemoScene::Sampler))
+        );
+        assert_eq!(
+            demo_scene(&args(&["--mock-device", "--demo-scene=CUES"])),
+            Ok(Some(DemoScene::Cues))
+        );
+        assert!(demo_scene(&args(&["--demo-scene=platter"])).is_err());
+        assert!(demo_run(&args(&["--demo-scene=meters"])));
+    }
+
+    #[test]
+    fn demo_track_needs_a_non_empty_value() {
+        assert_eq!(demo_track(None), None);
+        assert_eq!(demo_track(Some("".into())), None);
+        assert_eq!(
+            demo_track(Some("/music/a.flac".into())),
+            Some(std::path::PathBuf::from("/music/a.flac"))
+        );
     }
 
     #[test]

@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
-# Regenerates docs/screenshots/*.png from the real GPUI window (Linux, X11).
+# Captures the real GPUI window (Linux, X11) into $OUT_DIR (see below).
 #
 # Never opens an audio device or MIDI hardware: every scene runs with --mock-device. Needs the
 # GPUI build deps, a display (DISPLAY, default :0 as on WSLg) and ImageMagick
 # (`import`, `convert`, `identify`) plus `xwininfo`. Run from anywhere:  tools/screenshots.sh [scene...]
+# Output goes to $OUT_DIR, default a scratch folder (/tmp/om-scenes), never docs/screenshots: set
+# OUT_DIR=docs/screenshots only to refresh the tracked captures on purpose. Another window of the
+# same size (another agent's run) may be open: the script captures the newest window that appeared
+# after it started its own process, by id, and never one that was already there.
+# Staged-state scenes (--demo-scene, DEMO / TEST ONLY flags, see crates/openmixer/src/demo_scene.rs):
+# sampler-open-{dark,daylight}  sampler drawer open, pads loaded, the Bass loop pad playing
+# cues-loop-{dark,daylight}     deck A: cues 1-5 set, playing from cue 3, a one-beat loop and its hatch
+# meters-lit-{dark,daylight}    deck A looped and hot: channel and master meters lit, clip lamp
+# stems-page                    deck A on its STEMS tab with the mock separator's stems loaded
+# track-preview                 deck A plays your own file: OPENMIXER_DEMO_TRACK=/path/to/song.flac
+#                               tools/screenshots.sh track-preview (linked into a scratch folder, never
+#                               copied; waits SHOT_DELAY, default 15 s, for the analysis and waveform)
+# There is no platter scene: this branch has no platter (it lives in the deck-controls branch).
 # Scenes: main-dark main-daylight main-stems debug-panel settings-audio settings-appearance
 # settings-midi settings-library main-automix main-record settings-recording settings-mapping (default: all). main-automix runs the automix demo
 # (--demo-automix: click tracks, automix on, deck A playing) and is captured after a delay. main-stems loads deck A's track with its stems
@@ -13,7 +26,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-out="$root/docs/screenshots"
+out="${OUT_DIR:-${TMPDIR:-/tmp}/om-scenes}"
 work="$(mktemp -d "${TMPDIR:-/tmp}/om-shots.XXXXXX")"
 bin="$root/target/debug/openmixer"
 pid=""
@@ -40,11 +53,22 @@ if [[ -z "${SKIP_BUILD:-}" ]]; then
     cargo build -p openmixer)
 fi
 
-# The window has no title; it is the 1280x800 client window in the root tree (the app opens at
-# 1920x1080 by default, so every capture pins OPENMIXER_WINDOW=1280x800).
-find_window() {
+# The window has no title; it is a 1280x800 client window in the root tree (the app opens at
+# 1920x1080 by default, so every capture pins OPENMIXER_WINDOW=1280x800). Other 1280x800 windows
+# may be open (another agent's run), so the ids present before the app starts are remembered and
+# the newest id that is not among them is the app's window.
+list_windows() {
   xwininfo -root -tree 2>/dev/null \
-    | awk '/\(has no name\): \(\)  1280x800\+/ {print $1; exit}'
+    | awk '/\(has no name\): \(\)  1280x800\+/ {print $1}'
+}
+# find_window BEFORE: newest window id (numeric order) in list_windows that is not in BEFORE.
+find_window() {
+  local before="$1" id best="" bestn=-1
+  for id in $(list_windows); do
+    grep -qxF "$id" <<<"$before" && continue
+    if (( id > bestn )); then best="$id"; bestn=$((id)); fi
+  done
+  echo "$best"
 }
 
 # capture NAME [env VAR=VAL ...] -- [app flags...]
@@ -53,7 +77,8 @@ capture() {
   local envs=()
   while [[ "$1" != "--" ]]; do envs+=("$1"); shift; done
   shift
-  local log="$work/$name.log" win="" i
+  local log="$work/$name.log" win="" i before
+  before="$(list_windows)"
   # Temp preferences, library, config and data dirs: the user's own files are never touched.
   mkdir -p "$work/xdg-config" "$work/xdg-data" "$work/lib-$name"
   env "${envs[@]}" OPENMIXER_WINDOW=1280x800 OPENMIXER_PREFS="$work/prefs.json" OPENMIXER_LIBRARY_DB="$work/lib-$name/library.db" \
@@ -62,7 +87,7 @@ capture() {
   pid=$!
   for ((i = 0; i < 60; i++)); do   # up to 30 s for the window
     kill -0 "$pid" 2>/dev/null || { echo "$name: app exited early"; cat "$log"; return 1; }
-    win="$(find_window)"; [[ -n "$win" ]] && break
+    win="$(find_window "$before")"; [[ -n "$win" ]] && break
     sleep 0.5
   done
   [[ -n "$win" ]] || { echo "$name: no window after 30 s"; return 1; }
@@ -97,6 +122,14 @@ declare -A scenes=(
   [settings-library]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=library"
   [main-automix]="OPENMIXER_THEME=openmixer.dark -- --demo-automix"
   [main-record]="OPENMIXER_THEME=openmixer.dark -- --demo-record"
+  [sampler-open-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=sampler"
+  [sampler-open-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-scene=sampler"
+  [cues-loop-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=cues"
+  [cues-loop-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-scene=cues"
+  [meters-lit-dark]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=meters"
+  [meters-lit-daylight]="OPENMIXER_THEME=openmixer.daylight -- --demo-scene=meters"
+  [stems-page]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=stems"
+  [track-preview]="OPENMIXER_THEME=openmixer.dark -- --demo-scene=track"
   [settings-recording]="OPENMIXER_THEME=openmixer.dark -- --demo-library --settings=recording"
   # The Mapping tab over the three fixture controller maps (--demo-map: temp map file, mock MIDI).
   [settings-mapping]="OPENMIXER_THEME=openmixer.dark -- --demo-map --settings=mapping"
@@ -105,11 +138,23 @@ declare -A scenes=(
 declare -A delays=(
   [main-automix]=19
   [main-record]=4
+  [sampler-open-dark]=3
+  [sampler-open-daylight]=3
+  [cues-loop-dark]=2
+  [cues-loop-daylight]=2
+  [meters-lit-dark]=3
+  [meters-lit-daylight]=3
+  [stems-page]=3
+  [track-preview]=15
 )
-order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording settings-mapping)
+# track-preview needs OPENMIXER_DEMO_TRACK, so it is not in the default set.
+order=(main-dark main-daylight main-stems debug-panel settings-audio settings-appearance settings-midi settings-library main-automix main-record settings-recording settings-mapping sampler-open-dark sampler-open-daylight cues-loop-dark cues-loop-daylight meters-lit-dark meters-lit-daylight stems-page)
 (( $# )) && order=("$@")
 for name in "${order[@]}"; do
   [[ -n "${scenes[$name]:-}" ]] || { echo "unknown scene: $name"; exit 2; }
+  if [[ "$name" == track-preview && -z "${OPENMIXER_DEMO_TRACK:-}" ]]; then
+    echo "track-preview: set OPENMIXER_DEMO_TRACK=/path/to/an/audio/file"; exit 2
+  fi
   # shellcheck disable=SC2086
-  SHOT_DELAY="${delays[$name]:-0}" capture "$name" ${scenes[$name]}
+  SHOT_DELAY="${SHOT_DELAY:-${delays[$name]:-0}}" capture "$name" ${scenes[$name]}
 done

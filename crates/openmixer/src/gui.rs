@@ -15,7 +15,7 @@ use om_ui::preferences::Preferences;
 use om_ui::settings::{learnable_targets, AudioSettingsModel, LibraryControl, MidiPage};
 use om_ui::stems::{StemHost, StemJob, StemLabel};
 use om_ui::theme::{default_user_directory, session_theme_override, ThemeRegistry};
-use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions};
+use om_ui_gpui::app::{run, DeviceStatusFn, RunOptions, SceneOptions};
 use om_ui_gpui::debug_panel::DeviceStatus;
 use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
@@ -28,6 +28,7 @@ use openmixer::automix_queue::LibraryQueue;
 use openmixer::automix_service::AutomixRunner;
 use openmixer::automix_settings::{apply_automix_prefs, queue_source, AppAutomixSettings};
 use openmixer::composition::{load_themes, AppComposition, DECKS};
+use openmixer::flags::DemoScene;
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
 use openmixer::record_service::AppRecordHost;
@@ -57,7 +58,29 @@ pub fn main(args: &[String]) -> ExitCode {
     // `--demo-record`: the demo library, and a recording started at once into a scratch folder, so
     // the header shows a live Record button (see docs/screenshots/REVIEW.md). Never the user's folder.
     let demo_record = args.iter().any(|a| a == "--demo-record");
-    let demo = args.iter().any(|a| a == "--demo-library") || automix_demo || demo_record;
+    // `--demo-scene=NAME` (DEMO / TEST ONLY): a staged state for screenshots, on the demo library
+    // (see `openmixer::demo_scene` and `flags::DemoScene`).
+    let scene = match openmixer::flags::demo_scene(args) {
+        Ok(scene) => scene,
+        Err(message) => {
+            eprintln!("openmixer: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let user_track =
+        openmixer::flags::demo_track(std::env::var_os(openmixer::flags::DEMO_TRACK_ENV));
+    if scene == Some(DemoScene::Track) && user_track.is_none() {
+        eprintln!(
+            "openmixer: --demo-scene=track needs {} set to an audio file",
+            openmixer::flags::DEMO_TRACK_ENV
+        );
+        return ExitCode::FAILURE;
+    }
+    let mock_stems = openmixer::flags::mock_stems(args) || scene == Some(DemoScene::Stems);
+    let demo = args.iter().any(|a| a == "--demo-library")
+        || automix_demo
+        || demo_record
+        || scene.is_some();
     // Every demo flag saves preferences into the scratch folder, never the user's file.
     let demo_run = openmixer::flags::demo_run(args);
     let start_tab = match openmixer::flags::settings_tab(args) {
@@ -75,7 +98,7 @@ pub fn main(args: &[String]) -> ExitCode {
     if let Err(error) = composition.attach_library(library_path) {
         eprintln!("openmixer: library unavailable: {error}");
     }
-    if let Err(error) = composition.attach_stems(openmixer::flags::mock_stems(args)) {
+    if let Err(error) = composition.attach_stems(mock_stems) {
         eprintln!("openmixer: stems unavailable: {error}");
     }
     // MIDI: the system backend on a real run; a mock controller under --mock-device and --smoke, so
@@ -176,6 +199,14 @@ pub fn main(args: &[String]) -> ExitCode {
                 library_smoke::ingest_demo_automix(&mut services, root).and_then(|count| {
                     library_smoke::queue_all_for_analysis(&mut services).map(|_| count)
                 })
+            } else if let (Some(DemoScene::Track), Some(source)) = (scene, &user_track) {
+                // The user's file is linked into the scratch folder (never copied) and ingested
+                // with the generated tracks; it sorts first, so deck A loads it.
+                library_smoke::link_user_track(root, source)
+                    .and_then(|_| library_smoke::ingest_generated_plus(&mut services, root, 1))
+                    .and_then(|count| {
+                        library_smoke::queue_all_for_analysis(&mut services).map(|_| count)
+                    })
             } else {
                 library_smoke::ingest_generated(&mut services, root)
             };
@@ -216,6 +247,9 @@ pub fn main(args: &[String]) -> ExitCode {
             smoke_error = Some(error);
         }
     }
+    if let (Some(scene), None) = (scene, &smoke_error) {
+        openmixer::demo_scene::apply(scene, &engine);
+    }
     if automix_demo && smoke_error.is_none() {
         // The tracks must be analysed before deck A plays, or automix finds no candidate on its
         // first tick and drops the run.
@@ -229,7 +263,7 @@ pub fn main(args: &[String]) -> ExitCode {
     }
     // `--demo-library --mock-stems`: separate deck A's track through the mock so its stem pads are
     // live in the screenshots. Failures only say so on stderr; the demo runs without stems.
-    if demo && openmixer::flags::mock_stems(args) && smoke_error.is_none() {
+    if demo && mock_stems && smoke_error.is_none() {
         if let Some(hub) = &library {
             if let Err(error) = demo_stems(&mut hub.borrow_mut(), &engine) {
                 eprintln!("openmixer: demo stems: {error}");
@@ -363,7 +397,9 @@ pub fn main(args: &[String]) -> ExitCode {
         library_rows_out: smoke.then(|| Arc::clone(&rows_out)),
         // The demo's tracks are sweeps with no tempo: give deck A a fixed grid once its
         // analysis lands, so screenshots show beat ticks.
-        demo_grid_bpm: demo.then_some(120.0),
+        // (Not for a real track: its own analysis supplies the grid.)
+        demo_grid_bpm: (demo && scene != Some(DemoScene::Track)).then_some(120.0),
+        scene: scene_options(scene),
         samples,
         on_frame: Some(automix_frame),
         automix: Some(automix_read),
@@ -524,6 +560,24 @@ fn demo_stems(hub: &mut LibraryHub, engine: &DjEngine) -> Result<(), String> {
         .toggle_stems(engine, &hub.services, 0)
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+/// The window-side part of a demo scene (DEMO / TEST ONLY): the drawer, the tab and the pad that
+/// the scene stages. The deck-side part is `openmixer::demo_scene`.
+fn scene_options(scene: Option<DemoScene>) -> SceneOptions {
+    match scene {
+        // Pad 8 is the Bass loop: it latches, so it is still playing when the capture is taken.
+        Some(DemoScene::Sampler) => SceneOptions {
+            sampler_open: true,
+            press_pad: Some(7),
+            ..SceneOptions::default()
+        },
+        Some(DemoScene::Stems) => SceneOptions {
+            stems_tab: true,
+            ..SceneOptions::default()
+        },
+        _ => SceneOptions::default(),
+    }
 }
 
 /// A seed for the automix queue's shuffle: the wall clock's nanoseconds, so each run differs.
