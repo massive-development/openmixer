@@ -1,9 +1,12 @@
-//! Band heights for the zoomed strip and the overview, computed once and reused while the view
-//! scrolls. The zoomed strip is [`CACHE_VIEWS`] views wide, so scrolling is a change of offset
-//! until the playhead leaves the middle third ([`plan_strip`] decides). The painting layer draws
-//! one filled shape per band from these columns instead of a quad per pixel. Pure.
+//! Column shapes (heights and colour bucket) for the zoomed strip and the overview, computed once
+//! and reused while the view scrolls. The zoomed strip is [`CACHE_VIEWS`] views wide, so scrolling
+//! is a change of offset until the playhead leaves the middle third ([`plan_strip`] decides). The
+//! painting layer draws a few filled shapes from these columns instead of a quad per pixel. The
+//! colour buckets are capped over the whole cached strip, so a column keeps its colour while it
+//! scrolls. Pure.
 
-use super::bands::{band_heights, BandHeights};
+use super::bands::{column_shapes, ColumnShape};
+use super::Column;
 use super::{overview_column, plan_strip, strip_column, strip_for, StripCache, StripPlan, View};
 use om_analysis::{WaveformLevel, WaveformPoint};
 
@@ -24,7 +27,7 @@ pub struct StripSource<'level> {
     pub spectral: bool,
 }
 
-/// One cached strip: band heights for columns of [`STRIP_STEP_PX`] across `CACHE_VIEWS` views.
+/// One cached strip: shapes of columns of [`STRIP_STEP_PX`] across `CACHE_VIEWS` views.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BandStrip {
     pub cache: StripCache,
@@ -32,7 +35,7 @@ pub struct BandStrip {
     pub first_frame: f64,
     /// Frames one column spans.
     pub step_frames: f64,
-    pub columns: Vec<BandHeights>,
+    pub columns: Vec<ColumnShape>,
 }
 
 impl BandStrip {
@@ -40,20 +43,23 @@ impl BandStrip {
     pub fn render(src: &StripSource, view: &View) -> Self {
         let cache = strip_for(view, src.height_px);
         let step_frames = STRIP_STEP_PX * view.frames_per_pixel;
-        let first_frame =
+        // Columns sit on a grid of whole steps from frame 0 (Mixxx snaps the first drawn frame to
+        // a whole multiple of the per-pixel increment the same way), so a column's content is a
+        // function of its position in the track, not of where the strip happens to start.
+        let raw_first =
             cache.centre_frame - f64::from(cache.width_px) * 0.5 * view.frames_per_pixel;
-        let count = (f64::from(cache.width_px) / STRIP_STEP_PX).ceil() as usize;
-        let columns = (0..count)
+        let first_frame = (raw_first / step_frames).floor() * step_frames;
+        let count = (f64::from(cache.width_px) / STRIP_STEP_PX).ceil() as usize + 1;
+        let data: Vec<Option<Column>> = (0..count)
             .map(|i| {
                 let frame = first_frame + i as f64 * step_frames;
                 if frame + step_frames <= 0.0 || frame >= src.length_frames as f64 {
-                    return BandHeights::default();
+                    return None;
                 }
                 strip_column(src.level, frame.max(0.0), step_frames)
-                    .map(|c| band_heights(&c, src.reference, src.spectral))
-                    .unwrap_or_default()
             })
             .collect();
+        let columns = column_shapes(&data, src.reference, src.spectral);
         Self {
             cache,
             first_frame,
@@ -64,7 +70,7 @@ impl BandStrip {
 
     /// The columns that touch `view`, with the x of each column's centre in view pixels. Sub-pixel
     /// accurate, so a slow scroll moves smoothly.
-    pub fn visible(&self, view: &View) -> Vec<(f32, BandHeights)> {
+    pub fn visible(&self, view: &View) -> Vec<(f32, ColumnShape)> {
         if self.columns.is_empty() || self.step_frames <= 0.0 {
             return Vec::new();
         }
@@ -107,16 +113,17 @@ impl StripSlot {
     }
 }
 
-/// Band heights of `count` columns across the whole track, for the overview.
-pub fn overview_bands(
+/// Shapes of `count` columns across the whole track, for the overview.
+pub fn overview_shapes(
     points: &[WaveformPoint],
     count: usize,
     reference: f32,
     spectral: bool,
-) -> Vec<BandHeights> {
-    (0..count)
-        .map(|i| band_heights(&overview_column(points, i, count), reference, spectral))
-        .collect()
+) -> Vec<ColumnShape> {
+    let data: Vec<Option<Column>> = (0..count)
+        .map(|i| Some(overview_column(points, i, count)))
+        .collect();
+    column_shapes(&data, reference, spectral)
 }
 
 #[cfg(test)]
@@ -134,8 +141,9 @@ mod tests {
                         min: -peak,
                         max: peak,
                         loudness: peak * 0.7,
-                        centroid: 0.2,
-                        spread: 0.05,
+                        low: peak,
+                        mid: peak * 0.1,
+                        high: 0.0,
                     }
                 })
                 .collect(),
@@ -166,7 +174,7 @@ mod tests {
         let l = level(2000);
         let v = view(128_000);
         let s = BandStrip::render(&source(&l, 1, 120), &v);
-        assert_eq!(s.columns.len(), (400.0 * 3.0 / STRIP_STEP_PX) as usize);
+        assert_eq!(s.columns.len(), (400.0 * 3.0 / STRIP_STEP_PX) as usize + 1);
         let visible = s.visible(&v);
         assert!(
             visible.len() >= 200 && visible.len() <= 205,
@@ -223,9 +231,9 @@ mod tests {
             .filter(|(x, _)| *x < 190.0)
             .collect();
         assert!(!left.is_empty());
-        assert!(left.iter().all(|(_, h)| *h == BandHeights::default()));
+        assert!(left.iter().all(|(_, h)| *h == ColumnShape::default()));
         let right = s.visible(&v).into_iter().find(|(x, _)| *x > 220.0).unwrap();
-        assert!(right.1.low > 0.0, "the track itself has height");
+        assert!(right.1.silhouette > 0.0, "the track itself has height");
     }
 
     #[test]
@@ -262,13 +270,13 @@ mod tests {
     }
 
     #[test]
-    fn overview_bands_cover_the_whole_track() {
+    fn overview_shapes_cover_the_whole_track() {
         let l = level(1000);
-        let bands = overview_bands(&l.points, 100, 1.0, true);
-        assert_eq!(bands.len(), 100);
-        assert!(bands.iter().all(|b| b.low > 0.0));
-        assert!(overview_bands(&[], 10, 1.0, true)
+        let shapes = overview_shapes(&l.points, 100, 1.0, true);
+        assert_eq!(shapes.len(), 100);
+        assert!(shapes.iter().all(|b| b.silhouette > 0.0 && b.body > 0.0));
+        assert!(overview_shapes(&[], 10, 1.0, true)
             .iter()
-            .all(|b| *b == BandHeights::default()));
+            .all(|b| *b == ColumnShape::default()));
     }
 }

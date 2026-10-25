@@ -27,7 +27,7 @@ use om_ui::theme::Colour;
 use om_ui::theme::ThemeTokens;
 use om_ui::waveform::{
     cue_flags, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_LINE_WIDTH,
-    CUE_NUMBER_SIZE, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
+    CUE_NUMBER_SIZE, CUE_STACK_STEP, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
 };
 use om_ui::widgets::deck::{
     deck_controls_layout_for, deck_layout_for, tab_rects, DeckLayout, PadMode, CONTROL_GAP,
@@ -475,7 +475,7 @@ pub(crate) fn overview(
         deck: index,
         wave: shell.library.as_ref().and_then(|p| p.waveform(index)),
         markers: deck.overview.markers(width),
-        well: t.well,
+        well: om_ui::waveform::strip_well(t),
     };
 
     let canvas_el = canvas(
@@ -493,7 +493,7 @@ pub(crate) fn overview(
     };
     place(area)
         .overflow_hidden()
-        .bg(paint(t.well))
+        .bg(paint(om_ui::waveform::WAVE_WELL))
         .rounded(px(t.control_radius))
         .child(canvas_el)
         .on_mouse_down(
@@ -546,7 +546,7 @@ pub(crate) fn zoom(
         length_frames: shell.engine.deck(index).length_frames(),
         grid: grid.clone(),
         loop_span: loop_region.as_ref().map(|r| (r.x0, r.x1, r.looping)),
-        well: t.well,
+        well: om_ui::waveform::strip_well(t),
     };
 
     let strip = canvas(
@@ -559,7 +559,7 @@ pub(crate) fn zoom(
 
     let mut el = place(area)
         .overflow_hidden()
-        .bg(paint(t.well))
+        .bg(paint(om_ui::waveform::WAVE_WELL))
         .rounded(px(t.control_radius))
         .child(strip);
 
@@ -606,7 +606,7 @@ pub(crate) fn zoom(
                 div()
                     .absolute()
                     .left(px(flag.x))
-                    .top(px(0.))
+                    .top(px(f32::from(flag.row) * CUE_STACK_STEP))
                     .w(px(CUE_FLAG_WIDTH))
                     .h(px(CUE_FLAG_HEIGHT))
                     .flex()

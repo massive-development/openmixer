@@ -1,33 +1,54 @@
 //! Painting the waveforms: thin code over `om_ui::waveform`, which decides every colour, height
-//! and position. A strip is three filled shapes (one per band, low at the back) instead of a quad
-//! per pixel column, and the band heights come from a strip cached across frames. The overview's
-//! shapes are cached whole and cloned each frame. Scrolling the zoomed strip rebuilds only the
-//! three shapes from the cached heights.
+//! and position. A strip is a handful of filled shapes instead of a quad per pixel column: the
+//! peak silhouette, then one shape per colour bucket made of the runs of columns in that bucket
+//! (at most 25 paths), or three nested shapes in the three-band style. The shapes come from a
+//! strip cached across frames; the overview's are cached whole and cloned each frame. Scrolling the
+//! zoomed strip rebuilds only the shapes from the cached heights and keys.
 //!
 //! GPUI 0.2.2 can paint an image (`Window::paint_image`), but building a `RenderImage` needs the
 //! `image` crate's `Frame`, which gpui does not re-export; a direct dependency would change
-//! `Cargo.lock`. Filled paths avoid that and keep the cost at three shapes per strip.
+//! `Cargo.lock`. Filled paths avoid that.
 
 use crate::paint::paint;
 use gpui::{fill, point, px, size, Bounds, Path, PathBuilder, Pixels, Point, Rgba, Window};
 use om_analysis::WaveformData;
 use om_ui::theme::Colour;
 use om_ui::waveform::{
-    band_colours, overview_bands, played_edge, playhead_rect, reference_peak, Band, BandHeights,
-    BandStrip, OverviewMarkers, StripSlot, StripSource, View, BAR_LINE_WIDTH, BEAT_LINE_WIDTH,
-    LOOP_COLOUR, LOOP_EDGE_WIDTH, OVERVIEW_CUE_TICK_WIDTH, OVERVIEW_TICK_ALPHA,
-    OVERVIEW_TICK_HEIGHT, PLAYED_BRIGHTNESS, PLAYHEAD_COLOUR, PLAYHEAD_HALO, PLAYHEAD_HALO_COLOUR,
-    PLAYHEAD_WIDTH,
+    column_tiles, overview_shapes, played_edge, playhead_rect, reference_peak, shape_px, Band,
+    BandStrip, ColumnShape, OverviewMarkers, Palette, StripSlot, StripSource, View, WaveStyle,
+    BAR_LINE_WIDTH, BEAT_LINE_WIDTH, LOOP_COLOUR, LOOP_EDGE_WIDTH, OVERVIEW_CUE_TICK_WIDTH,
+    OVERVIEW_TICK_ALPHA, OVERVIEW_TICK_HEIGHT, PLAYED_BRIGHTNESS, PLAYHEAD_COLOUR, PLAYHEAD_HALO,
+    PLAYHEAD_HALO_COLOUR, PLAYHEAD_WIDTH,
 };
 use om_ui::widgets::deck::GridLine;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Share of the strip's half-height a full-scale band reaches, leaving a margin top and bottom.
-const FILL: f32 = 0.94;
-/// A band that has any height is drawn at least this far from the centre line, in px.
-const MIN_HALF_PX: f32 = 0.75;
+/// Environment variable that picks the style until a setting exists.
+pub const STYLE_ENV: &str = "OPENMIXER_WAVE_STYLE";
+
+thread_local! {
+    static STYLE: Cell<Option<WaveStyle>> = const { Cell::new(None) };
+}
+
+/// The style waveforms are drawn in: [`set_style`], else `OPENMIXER_WAVE_STYLE`, else Colour.
+pub fn style() -> WaveStyle {
+    STYLE.with(|cell| {
+        cell.get().unwrap_or_else(|| {
+            let from_env = std::env::var(STYLE_ENV)
+                .ok()
+                .and_then(|name| WaveStyle::from_name(&name))
+                .unwrap_or_default();
+            cell.set(Some(from_env));
+            from_env
+        })
+    })
+}
+
+pub fn set_style(style: WaveStyle) {
+    STYLE.with(|cell| cell.set(Some(style)));
+}
 
 /// Identity of a loaded waveform: its address. A reload gives a different `Arc`.
 pub fn track_id(data: &Arc<WaveformData>) -> usize {
@@ -54,8 +75,24 @@ struct Cached {
 
 #[derive(Default)]
 struct Overview {
-    key: Option<(usize, [f32; 4])>,
-    paths: Vec<(Colour, Path<Pixels>)>,
+    key: Option<OverviewKey>,
+    layers: Vec<Layer>,
+}
+
+/// What an overview's cached shapes were built for. A different style gives a different key (the strip background is the same in every theme).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverviewKey {
+    track: usize,
+    bounds: [f32; 4],
+    style: WaveStyle,
+}
+
+pub fn overview_key(track: usize, bounds: [f32; 4], style: WaveStyle) -> OverviewKey {
+    OverviewKey {
+        track,
+        bounds,
+        style,
+    }
 }
 
 thread_local! {
@@ -90,57 +127,102 @@ fn quad(window: &mut Window, bounds: Bounds<Pixels>, x: f32, y: f32, w: f32, h: 
     ));
 }
 
-/// One closed shape mirrored about `mid`: the top edge left to right, then the bottom edge back.
-/// `None` when the band has no height anywhere.
-fn band_path(columns: &[(f32, f32)], origin: Point<Pixels>, mid: f32) -> Option<Path<Pixels>> {
-    if columns.len() < 2 || columns.iter().all(|(_, h)| *h <= 0.0) {
-        return None;
-    }
+/// Closed shapes mirrored about `mid`, one per run: the top edge left to right, then the bottom
+/// edge back. Runs with no height anywhere are skipped; `None` when nothing is left.
+fn runs_path(runs: &[&[(f32, f32)]], origin: Point<Pixels>, mid: f32) -> Option<Path<Pixels>> {
     let at = |x: f32, y: f32| point(origin.x + px(x), origin.y + px(y));
     let mut builder = PathBuilder::fill();
-    let (x0, h0) = columns[0];
-    builder.move_to(at(x0, mid - h0));
-    for &(x, h) in &columns[1..] {
-        builder.line_to(at(x, mid - h));
+    let mut any = false;
+    for columns in runs {
+        if columns.len() < 2 || columns.iter().all(|(_, h)| *h <= 0.0) {
+            continue;
+        }
+        any = true;
+        let (x0, h0) = columns[0];
+        builder.move_to(at(x0, mid - h0));
+        for &(x, h) in &columns[1..] {
+            builder.line_to(at(x, mid - h));
+        }
+        for &(x, h) in columns.iter().rev() {
+            builder.line_to(at(x, mid + h));
+        }
+        builder.close();
     }
-    for &(x, h) in columns.iter().rev() {
-        builder.line_to(at(x, mid + h));
+    if any {
+        builder.build().ok()
+    } else {
+        None
     }
-    builder.close();
-    builder.build().ok()
 }
 
-/// The three band shapes, back to front, with the colour each is filled with.
-fn band_paths(
-    columns: &[(f32, BandHeights)],
+/// One thing a strip draws: a filled path or a column quad (x, y, width, height relative to the
+/// strip, and its colour).
+enum Layer {
+    Path(Rgba, Path<Pixels>),
+    Quad([f32; 4], Rgba),
+}
+
+/// The layers of a strip, back to front. Colour, mono and colour-blind styles draw one quad per
+/// column, tiled on whole pixels, each in its own colour from the column's band weights: colour
+/// is never quantised into shared buckets, because a bucket boundary between neighbouring columns
+/// shows as flicker. The three-band style draws three nested paths; a waveform without spectrum is
+/// one grey silhouette path.
+fn column_layers(
+    columns: &[(f32, ColumnShape)],
     origin: Point<Pixels>,
     height: f32,
+    palette: &Palette,
     spectral: bool,
-) -> Vec<(Colour, Path<Pixels>)> {
+) -> Vec<Layer> {
     let mid = height / 2.0;
-    let half = mid * FILL;
-    let colours = band_colours(spectral);
-    Band::ALL
-        .into_iter()
-        .zip(colours)
-        .filter_map(|(band, colour)| {
-            let shape: Vec<(f32, f32)> = columns
-                .iter()
-                .map(|(x, h)| {
-                    let v = h.get(band);
-                    (
-                        *x,
-                        if v > 0.0 {
-                            (v * half).max(MIN_HALF_PX)
-                        } else {
-                            0.0
-                        },
-                    )
+    let mut out = Vec::new();
+    if !spectral || palette.style == WaveStyle::ThreeBand {
+        let draw: Vec<(Colour, Vec<(f32, f32)>)> = if spectral {
+            Band::ALL
+                .into_iter()
+                .zip(palette.bands())
+                .map(|(band, colour)| {
+                    let shape = columns
+                        .iter()
+                        .map(|(x, c)| (*x, shape_px(c.bands.get(band), height)))
+                        .collect();
+                    (colour, shape)
                 })
+                .collect()
+        } else {
+            let shape = columns
+                .iter()
+                .map(|(x, c)| (*x, shape_px(c.silhouette, height)))
                 .collect();
-            band_path(&shape, origin, mid).map(|p| (colour, p))
-        })
-        .collect()
+            vec![(palette.silhouette, shape)]
+        };
+        for (colour, shape) in draw {
+            out.extend(
+                runs_path(&[&shape], origin, mid).map(|p| Layer::Path(with_alpha(colour, 1.0), p)),
+            );
+        }
+        return out;
+    }
+    let centres: Vec<f32> = columns.iter().map(|(x, _)| *x).collect();
+    for ((left, width), (_, c)) in column_tiles(&centres).into_iter().zip(columns) {
+        let half = shape_px(c.body, height);
+        if half > 0.0 {
+            out.push(Layer::Quad(
+                [left as f32, mid - half, width as f32, 2.0 * half],
+                with_alpha(palette.colour(c.weights), 1.0),
+            ));
+        }
+    }
+    out
+}
+
+fn paint_layers(window: &mut Window, bounds: Bounds<Pixels>, layers: &[Layer]) {
+    for layer in layers {
+        match layer {
+            Layer::Path(colour, path) => window.paint_path(path.clone(), *colour),
+            Layer::Quad([x, y, w, h], colour) => quad(window, bounds, *x, *y, *w, *h, *colour),
+        }
+    }
 }
 
 fn playhead(window: &mut Window, bounds: Bounds<Pixels>, x: f64, height: f32) {
@@ -163,6 +245,34 @@ fn playhead(window: &mut Window, bounds: Bounds<Pixels>, x: f64, height: f32) {
         height,
         paint(PLAYHEAD_COLOUR),
     );
+}
+
+/// Diagonal hatch lines over a loop, as one filled path of 2 px wide parallelograms.
+fn paint_hatch(
+    window: &mut Window,
+    bounds: Bounds<Pixels>,
+    span: (f32, f32),
+    h: f32,
+    colour: Rgba,
+) {
+    let lines =
+        om_ui::waveform::loop_hatch_lines(span.0, span.1, h, om_ui::waveform::LOOP_HATCH_SPACING);
+    if lines.is_empty() {
+        return;
+    }
+    let at = |x: f32, y: f32| point(bounds.origin.x + px(x), bounds.origin.y + px(y));
+    let half = om_ui::waveform::LOOP_HATCH_WIDTH / 2.0;
+    let mut builder = PathBuilder::fill();
+    for ((bx, by), (tx, ty)) in lines {
+        builder.move_to(at(bx - half, by));
+        builder.line_to(at(bx + half, by));
+        builder.line_to(at(tx + half, ty));
+        builder.line_to(at(tx - half, ty));
+        builder.close();
+    }
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, colour);
+    }
 }
 
 /// Everything the zoomed strip draws on its canvas (the cue flags and number labels are elements
@@ -212,14 +322,14 @@ pub fn paint_zoom(window: &mut Window, bounds: Bounds<Pixels>, scene: &ZoomScene
             reference: reference_for(scene.deck, data),
             spectral,
         };
-        let columns: Vec<(f32, BandHeights)> = STRIPS.with(|slots| {
+        let columns: Vec<(f32, ColumnShape)> = STRIPS.with(|slots| {
             let mut slots = slots.borrow_mut();
             let strip: &BandStrip = slots.entry(scene.deck).or_default().get(&src, view);
             strip.visible(view)
         });
-        for (colour, path) in band_paths(&columns, bounds.origin, h, spectral) {
-            window.paint_path(path, paint(colour));
-        }
+        let palette = Palette::new(style(), scene.well);
+        let layers = column_layers(&columns, bounds.origin, h, &palette, spectral);
+        paint_layers(window, bounds, &layers);
     }
 
     // The played part, left of the playhead, keeps 45% of its brightness.
@@ -248,6 +358,35 @@ pub fn paint_zoom(window: &mut Window, bounds: Bounds<Pixels>, scene: &ZoomScene
             width,
             h,
             with_alpha(om_ui::waveform::GRID_COLOUR, alpha),
+        );
+    }
+
+    if let (Some((x0, x1, looping)), WaveStyle::Colour) = (scene.loop_span, style()) {
+        // The loop green is close to the mid band green: a top bar and a hatch set it apart.
+        let (a, b) = (
+            x0.clamp(0.0, f64::from(w)) as f32,
+            x1.clamp(0.0, f64::from(w)) as f32,
+        );
+        let edge = if looping {
+            om_ui::waveform::LOOP_EDGE_ALPHA
+        } else {
+            om_ui::waveform::LOOP_IDLE_EDGE_ALPHA
+        };
+        quad(
+            window,
+            bounds,
+            a,
+            0.0,
+            b - a,
+            om_ui::waveform::LOOP_TOP_BAR_HEIGHT,
+            with_alpha(LOOP_COLOUR, edge),
+        );
+        paint_hatch(
+            window,
+            bounds,
+            (a, b),
+            h,
+            with_alpha(LOOP_COLOUR, om_ui::waveform::LOOP_HATCH_ALPHA),
         );
     }
 
@@ -289,9 +428,11 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
     if let Some(data) = &scene.wave {
         let points = &data.overview().points;
         if !points.is_empty() && w >= 2.0 {
-            let key = (
+            let palette = Palette::new(style(), scene.well);
+            let key = overview_key(
                 track_id(data),
                 [f32::from(bounds.origin.x), f32::from(bounds.origin.y), w, h],
+                palette.style,
             );
             OVERVIEWS.with(|cache| {
                 let mut cache = cache.borrow_mut();
@@ -300,19 +441,17 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
                     let spectral = data.has_spectrum();
                     let count = (w / 2.0).ceil() as usize;
                     let step = w / count as f32;
-                    let heights =
-                        overview_bands(points, count, reference_for(scene.deck, data), spectral);
-                    let columns: Vec<(f32, BandHeights)> = heights
+                    let shapes =
+                        overview_shapes(points, count, reference_for(scene.deck, data), spectral);
+                    let columns: Vec<(f32, ColumnShape)> = shapes
                         .into_iter()
                         .enumerate()
-                        .map(|(i, hts)| ((i as f32 + 0.5) * step, hts))
+                        .map(|(i, shape)| ((i as f32 + 0.5) * step, shape))
                         .collect();
-                    entry.paths = band_paths(&columns, bounds.origin, h, spectral);
+                    entry.layers = column_layers(&columns, bounds.origin, h, &palette, spectral);
                     entry.key = Some(key);
                 }
-                for (colour, path) in &entry.paths {
-                    window.paint_path(path.clone(), paint(*colour));
-                }
+                paint_layers(window, bounds, &entry.layers);
             });
         }
     }
@@ -394,4 +533,79 @@ pub fn paint_overview(window: &mut Window, bounds: Bounds<Pixels>, scene: &Overv
     }
 
     playhead(window, bounds, m.playhead_x, h);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use om_analysis::{demo_loop, AudioClip, NullAnalysisContext, WaveformBuilder};
+
+    fn demo_columns(count: usize) -> Vec<(f32, ColumnShape)> {
+        let clip = AudioClip::new(demo_loop(64.0, 124.0, 44_100.0), 44_100.0);
+        let data = WaveformBuilder::default()
+            .build(&clip, &NullAnalysisContext)
+            .expect("not cancelled");
+        let points = &data.overview().points;
+        let shapes = overview_shapes(points, count, reference_peak(points), true);
+        shapes
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (i as f32 * 2.0 + 1.0, s))
+            .collect()
+    }
+
+    fn palette(style: WaveStyle) -> Palette {
+        Palette::new(style, om_ui::theme::ThemeTokens::builtin_dark().well)
+    }
+
+    #[test]
+    fn colour_styles_draw_one_quad_per_column_and_three_band_draws_three_paths() {
+        let columns = demo_columns(300);
+        let origin = point(px(0.0), px(0.0));
+        for style in [WaveStyle::Colour, WaveStyle::Mono, WaveStyle::ColourBlind] {
+            let layers = column_layers(&columns, origin, 48.0, &palette(style), true);
+            assert!(layers.iter().all(|l| matches!(l, Layer::Quad(..))));
+            assert!(layers.len() <= columns.len(), "{style:?}");
+            assert!(layers.len() > columns.len() / 2, "{style:?}");
+        }
+        let three = column_layers(&columns, origin, 48.0, &palette(WaveStyle::ThreeBand), true);
+        assert_eq!(three.len(), 3);
+        let grey = column_layers(&columns, origin, 48.0, &palette(WaveStyle::Colour), false);
+        assert_eq!(grey.len(), 1, "no spectrum: one silhouette");
+    }
+
+    #[test]
+    fn neighbouring_quads_tile_with_no_gap() {
+        let columns = demo_columns(300);
+        let layers = column_layers(
+            &columns,
+            point(px(0.0), px(0.0)),
+            48.0,
+            &palette(WaveStyle::Colour),
+            true,
+        );
+        let quads: Vec<[f32; 4]> = layers
+            .iter()
+            .filter_map(|l| match l {
+                Layer::Quad(r, _) => Some(*r),
+                Layer::Path(..) => None,
+            })
+            .collect();
+        for pair in quads.windows(2) {
+            assert!(pair[0][0] + pair[0][2] <= pair[1][0] + 1e-3, "overlap");
+        }
+    }
+
+    #[test]
+    fn a_style_change_invalidates_the_overview() {
+        let bounds = [0.0, 0.0, 600.0, 48.0];
+        let base = overview_key(7, bounds, WaveStyle::Colour);
+        assert_eq!(base, overview_key(7, bounds, WaveStyle::Colour));
+        assert_ne!(base, overview_key(7, bounds, WaveStyle::Mono));
+        assert_ne!(base, overview_key(8, bounds, WaveStyle::Colour));
+        assert_ne!(
+            base,
+            overview_key(7, [0.0, 0.0, 601.0, 48.0], WaveStyle::Colour)
+        );
+    }
 }
