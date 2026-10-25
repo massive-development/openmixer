@@ -51,17 +51,7 @@ pub fn stats_text(stats: &AudioStats, setup_error: &str) -> String {
             setup_error.to_owned()
         };
     }
-    format!(
-        "Output {:.1} ms, round trip {:.1} ms at {} Hz / {} samples\nCPU {:.0}% (peak {:.2} ms of {:.2} ms), xruns {}",
-        stats.output_latency_ms,
-        stats.round_trip_latency_ms,
-        stats.sample_rate.round() as i64,
-        stats.buffer_size,
-        stats.cpu_load * 100.0,
-        stats.max_callback_us / 1000.0,
-        stats.budget_us / 1000.0,
-        stats.xrun_count,
-    )
+    crate::labels::audio_stats_text(stats)
 }
 
 /// The audio page: device choices from the model, output pair choices from the stored preferences.
@@ -75,10 +65,10 @@ impl<'a> AudioSettingsPage<'a> {
         Self { prefs, model }
     }
 
-    /// Output pairs of the open device: `channels / 2` pairs, labelled "Out 1+2", "Out 3+4"...
+    /// Output pairs of the open device: `channels / 2` pairs, labelled "Outputs 1-2", "Outputs 3-4"...
     pub fn pair_labels(&self) -> Vec<String> {
         (0..self.model.output_channels() / 2)
-            .map(|p| format!("Out {}+{}", 2 * p + 1, 2 * p + 2))
+            .map(crate::labels::output_pair_label)
             .collect()
     }
 
@@ -231,7 +221,7 @@ mod tests {
         let mut prefs = Preferences::default();
         let mut audio = FakeAudio::new();
         let page = AudioSettingsPage::new(&mut prefs, &mut audio);
-        assert_eq!(page.pair_labels(), vec!["Out 1+2", "Out 3+4"]);
+        assert_eq!(page.pair_labels(), vec!["Outputs 1-2", "Outputs 3-4"]);
     }
 
     #[test]
@@ -308,8 +298,8 @@ mod tests {
     #[test]
     fn stats_show_latency_load_and_xruns_for_a_running_device() {
         let text = stats_text(&running(), "");
-        assert!(text.contains("Output 5.3 ms, round trip 10.6 ms at 48000 Hz / 256 samples"));
-        assert!(text.contains("CPU 25% (peak 1.50 ms of 5.33 ms), xruns 2"));
+        assert!(text.contains("Latency 5.3 ms, round trip 10.6 ms at 48000 Hz / 256 samples"));
+        assert!(text.contains("CPU 25% (peak 1.50 ms of 5.33 ms), dropouts 2"));
     }
 
     #[test]
@@ -383,7 +373,7 @@ mod tests {
         let mut model = Model;
         {
             let page = AudioSettingsPage::new(&mut prefs, &mut model);
-            assert_eq!(page.pair_labels(), vec!["Out 1+2", "Out 3+4"]);
+            assert_eq!(page.pair_labels(), vec!["Outputs 1-2", "Outputs 3-4"]);
             assert_eq!(
                 page.shown_cue_pair(),
                 None,

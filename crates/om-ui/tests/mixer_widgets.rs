@@ -20,7 +20,7 @@ fn meter_params() -> MeterParams {
     MeterParams {
         floor_db: -48.0,
         clip_level: 0.99,
-        release_seconds: 0.5,
+        release_db_per_second: 13.0,
         hold_seconds: 1.0,
         clip_seconds: 2.0,
     }
@@ -241,8 +241,8 @@ fn master_and_cue_sliders_reach_the_engine_ceiling() {
         "MIDI-set values above 1.5 must display"
     );
     assert!((panel.cue.level.value() - 2.0).abs() < 1e-6);
-    assert!((panel.master.fader.max - 2.0).abs() < 1e-6);
-    assert!((panel.cue.level.max - 2.0).abs() < 1e-6);
+    assert!((panel.master.fader.range.max - 2.0).abs() < 1e-6);
+    assert!((panel.cue.level.range.max - 2.0).abs() < 1e-6);
     panel.master.fader_changed(1.9);
     assert!((rig.engine.mixer().master_gain() - 1.9).abs() < 1e-6);
 }
@@ -389,7 +389,8 @@ fn mixer_module_is_wide_enough_at_the_default_window_size() {
     let slot = slot_cell(2, "mixer");
     assert!(slot.w >= 200, "mixer module is {} px wide", slot.w);
     assert!(
-        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w >= 140,
+        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w
+            >= om_ui::main_layout::CHANNEL_MIN_WIDTH,
         "a channel strip needs room for three EQ knobs and the fader"
     );
 }
@@ -645,4 +646,23 @@ fn setting_the_rack_knobs_matches_the_descriptor_defaults_when_unrefreshed() {
             .params()
             .len()
     );
+}
+
+#[test]
+fn master_and_cue_are_knobs_with_unity_detents() {
+    let rig = Rig::new(2);
+    let mut master = om_ui::widgets::master::MasterSection::new(mixer(&rig), meter_params());
+    assert_eq!(master.fader.detent, Some(1.0));
+    assert!(master.fader.at_rest(), "master rests on unity");
+    assert_eq!(master.fader.label, "MASTER");
+    master.fader_changed(1.5);
+    assert!(!master.fader.at_rest());
+
+    let mut cue = om_ui::widgets::cue::CueSection::new(mixer(&rig));
+    assert_eq!(cue.mix.detent, None);
+    assert_eq!(cue.mix.range.default, 0.0);
+    assert_eq!(cue.level.detent, Some(1.0), "phones level marks unity");
+    assert!(cue.level.at_rest());
+    assert!(cue.level_changed(1.01) <= f64::from(om_engine::mixer::MAX_GAIN));
+    assert_eq!(cue.mix_changed(2.0), 1.0, "mix stays in 0..1");
 }

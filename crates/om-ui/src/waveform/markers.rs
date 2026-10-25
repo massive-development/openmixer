@@ -30,18 +30,21 @@ pub const CUE_FLAG_HEIGHT: f32 = 16.0;
 pub const CUE_LINE_WIDTH: f32 = 2.0;
 pub const CUE_NUMBER_SIZE: f32 = 12.0;
 /// The main cue point (not one of the numbered hot cues).
-pub const MAIN_CUE_COLOUR: Colour = Colour::from_argb(0xFFFF_6B35);
-/// Hot cue 1..=8 colours; further cues repeat the cycle. Chosen to stay apart from the three
-/// band colours (blue, orange, white) and from the loop green.
+pub const MAIN_CUE_COLOUR: Colour = Colour::from_argb(0xFFFF_9C78);
+/// Hot cue 1..=8 colours; further cues repeat the cycle. Each keeps its hue family and is lightened
+/// just enough that it is at least 60 degrees of hue from, or 0.25 relative luminance away from,
+/// each of the three band colours (red, green, blue; the plan's disjointness rule, asserted in the
+/// tests). The main cue follows the same rule. Hot cue 1 pink, 2 yellow, 3 green, 4 cyan, 5 violet,
+/// 6 magenta-pink, 7 lime, 8 sky blue.
 pub const CUE_PALETTE: [Colour; 8] = [
-    Colour::from_argb(0xFFFF_4D6D),
+    Colour::from_argb(0xFFFF_98AA),
     Colour::from_argb(0xFFFF_D23F),
     Colour::from_argb(0xFF4D_D964),
     Colour::from_argb(0xFF22_D3EE),
-    Colour::from_argb(0xFF8B_7BFF),
-    Colour::from_argb(0xFFFF_6EC7),
+    Colour::from_argb(0xFF99_8BFF),
+    Colour::from_argb(0xFFFF_91D4),
     Colour::from_argb(0xFFB6_E83A),
-    Colour::from_argb(0xFF3D_8BFF),
+    Colour::from_argb(0xFF56_9AFF),
 ];
 /// Text on a cue flag.
 pub const CUE_TEXT_COLOUR: Colour = Colour::from_argb(0xFF0B_0D12);
@@ -54,6 +57,22 @@ pub const LOOP_IDLE_FILL_ALPHA: f32 = 0.07;
 pub const LOOP_EDGE_WIDTH: f32 = 2.0;
 pub const LOOP_EDGE_ALPHA: f32 = 1.0;
 pub const LOOP_IDLE_EDGE_ALPHA: f32 = 0.45;
+
+// Loop region in the Colour style: the loop green is close to the mid band green, so a loop also
+// gets a top bar and a diagonal hatch (plan, Palettes: 3 px bar, 2 px lines at 6 px spacing, alpha
+// 0.12).
+pub const LOOP_TOP_BAR_HEIGHT: f32 = 3.0;
+pub const LOOP_HATCH_WIDTH: f32 = 2.0;
+pub const LOOP_HATCH_SPACING: f32 = 6.0;
+pub const LOOP_HATCH_ALPHA: f32 = 0.12;
+/// Loops narrower than this get no hatch.
+pub const LOOP_HATCH_MIN_SPAN_PX: f32 = 8.0;
+/// Coincident cue flags stack at this offset (the flag height).
+pub const CUE_STACK_STEP: f32 = 16.0;
+/// Flags closer than this share a row only if they are further apart.
+pub const CUE_STACK_RANGE: f32 = 18.0;
+/// Rows of stacked flags: a 32 px strip (the smallest) fits two.
+pub const CUE_ROWS: u8 = 2;
 
 // Overview.
 /// Height of an overview bar tick, in px.
@@ -77,24 +96,70 @@ pub struct CueFlag {
     pub colour: Colour,
     /// The number shown on the tab (1-based).
     pub label: String,
+    /// Vertical slot of the tab (0 at the top, [`CUE_STACK_STEP`] px per row): flags within
+    /// [`CUE_STACK_RANGE`] px of an earlier one sit one row lower.
+    pub row: u8,
 }
 
 /// Flags for the cues whose line or tab touches a strip `width` px wide. Unset cues are `None`.
 pub fn cue_flags(xs: &[Option<f64>], width: f64) -> Vec<CueFlag> {
-    xs.iter()
-        .enumerate()
-        .filter_map(|(index, x)| {
-            let x = (*x)?;
-            let on_screen =
-                x + f64::from(CUE_FLAG_WIDTH) >= 0.0 && x - f64::from(CUE_LINE_WIDTH) <= width;
-            on_screen.then(|| CueFlag {
-                index,
-                x: x as f32,
-                colour: cue_colour(index),
-                label: (index + 1).to_string(),
+    let mut flags: Vec<CueFlag> = Vec::new();
+    for (index, x) in xs.iter().enumerate() {
+        let Some(x) = *x else { continue };
+        let on_screen =
+            x + f64::from(CUE_FLAG_WIDTH) >= 0.0 && x - f64::from(CUE_LINE_WIDTH) <= width;
+        if !on_screen {
+            continue;
+        }
+        // The first row no earlier flag within range occupies; the last row is shared when full.
+        let row = (0..CUE_ROWS)
+            .find(|row| {
+                !flags.iter().any(|f| {
+                    f.row == *row && (f64::from(f.x) - x).abs() < f64::from(CUE_STACK_RANGE)
+                })
             })
-        })
-        .collect()
+            .unwrap_or(CUE_ROWS - 1);
+        flags.push(CueFlag {
+            index,
+            x: x as f32,
+            colour: cue_colour(index),
+            label: (index + 1).to_string(),
+            row,
+        });
+    }
+    flags
+}
+
+/// Diagonal hatch lines for a loop spanning `x0..x1` in a strip `height` px tall: one segment
+/// (bottom point, top point) every `spacing` px along the span, at 45 degrees, clipped to the loop.
+/// Empty for spans under [`LOOP_HATCH_MIN_SPAN_PX`].
+pub fn loop_hatch_lines(
+    x0: f32,
+    x1: f32,
+    height: f32,
+    spacing: f32,
+) -> Vec<((f32, f32), (f32, f32))> {
+    if x1 - x0 < LOOP_HATCH_MIN_SPAN_PX || spacing <= 0.0 || height <= 0.0 {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    // A line leaves the bottom edge at `start` and rises to the right.
+    let mut start = x0 - height;
+    while start < x1 {
+        let (mut bottom, mut top) = ((start, height), (start + height, 0.0));
+        // Clip to the span: slide each end along the line to x0 / x1.
+        if bottom.0 < x0 {
+            bottom = (x0, height - (x0 - start));
+        }
+        if top.0 > x1 {
+            top = (x1, height - (x1 - start));
+        }
+        if top.0 > bottom.0 {
+            lines.push((bottom, top));
+        }
+        start += spacing;
+    }
+    lines
 }
 
 /// The loop in the zoomed strip.
@@ -247,7 +312,7 @@ mod tests {
                 assert_ne!(a, b);
             }
         }
-        assert_eq!(MAIN_CUE_COLOUR.argb(), 0xFFFF_6B35);
+        assert_eq!(MAIN_CUE_COLOUR.argb(), 0xFFFF_9C78);
         assert_eq!(cue_colour(0), CUE_PALETTE[0]);
         assert_eq!(cue_colour(8), CUE_PALETTE[0], "cycles");
     }
@@ -261,6 +326,95 @@ mod tests {
         assert_eq!(flags[0].colour, cue_colour(0));
         assert_eq!(flags[1].index, 3);
         assert!(cue_flags(&[None; 8], 800.0).is_empty());
+    }
+
+    #[test]
+    fn bar_numbers_keep_their_room_at_every_zoom_and_width() {
+        for width in [1280.0f32, 1920.0] {
+            for seconds in crate::waveform::ZOOM_SECONDS {
+                let bar_px = width * (60.0 / 124.0 * 4.0) / seconds as f32;
+                let step = bar_label_step(bar_px);
+                assert!(
+                    step as f32 * bar_px >= BAR_NUMBER_MIN_SPACING_PX
+                        || bar_px >= BAR_NUMBER_MIN_SPACING_PX,
+                    "{width} px over {seconds} s: step {step}"
+                );
+            }
+        }
+        assert_eq!(bar_number(0.0, 4), Some(1), "numbers start at 1");
+    }
+
+    #[test]
+    fn loop_hatch_stays_inside_the_loop() {
+        assert!(loop_hatch_lines(10.0, 17.0, 96.0, LOOP_HATCH_SPACING).is_empty());
+        let lines = loop_hatch_lines(100.0, 220.0, 96.0, LOOP_HATCH_SPACING);
+        assert!(lines.len() > 10);
+        for ((bx, by), (tx, ty)) in &lines {
+            assert!(
+                *bx >= 100.0 - 1e-3 && *tx <= 220.0 + 1e-3 && bx < tx,
+                "{bx} {tx}"
+            );
+            assert!((0.0..=96.0).contains(by) && (0.0..=96.0).contains(ty));
+            assert!(((tx - bx) - (by - ty)).abs() < 1e-3, "45 degrees");
+        }
+    }
+
+    #[test]
+    fn coincident_cues_stack_in_rows_inside_the_strip() {
+        let flags = cue_flags(&[Some(100.0), Some(110.0), Some(300.0)], 800.0);
+        assert_eq!(flags[0].row, 0);
+        assert_eq!(flags[1].row, 1, "within 18 px of cue 1");
+        assert_eq!(flags[2].row, 0);
+        for f in &flags {
+            // A 32 px strip is the smallest the zoomed waveform shows.
+            assert!(f32::from(f.row) * CUE_STACK_STEP + CUE_FLAG_HEIGHT <= 32.0);
+        }
+    }
+
+    #[test]
+    fn cue_colours_keep_clear_of_the_band_hues() {
+        // Plan: a cue colour is at least 60 degrees of hue from the three band hues, or differs
+        // in luminance by 0.25. Reported by name so a failure says which cue.
+        let bands = [
+            crate::waveform::DARK_LOW,
+            crate::waveform::DARK_MID,
+            crate::waveform::DARK_HIGH,
+        ];
+        let mut close = Vec::new();
+        for (i, cue) in CUE_PALETTE.iter().chain([&MAIN_CUE_COLOUR]).enumerate() {
+            for band in bands {
+                let hue_gap = {
+                    let d = (hue_of(*cue) - hue_of(band)).rem_euclid(360.0);
+                    d.min(360.0 - d)
+                };
+                let lum_gap = (crate::style::relative_luminance(*cue)
+                    - crate::style::relative_luminance(band))
+                .abs();
+                if hue_gap < 60.0 && lum_gap < 0.25 {
+                    close.push((i, band));
+                }
+            }
+        }
+        eprintln!("cue colours too close to a band hue: {close:?}");
+        assert!(close.is_empty(), "{close:?}");
+    }
+
+    fn hue_of(c: Colour) -> f32 {
+        let a = c.argb();
+        let [r, g, b] = [16, 8, 0].map(|s| ((a >> s) & 0xFF) as f32 / 255.0);
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        let d = max - min;
+        if d <= 0.0 {
+            return 0.0;
+        }
+        let h = if max == r {
+            ((g - b) / d).rem_euclid(6.0)
+        } else if max == g {
+            (b - r) / d + 2.0
+        } else {
+            (r - g) / d + 4.0
+        };
+        h * 60.0
     }
 
     #[test]

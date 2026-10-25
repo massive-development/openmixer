@@ -197,6 +197,8 @@ pub struct RowView {
     /// How strongly the row stands out: key and tempo both fit, key only, or neither.
     pub mix: MixLevel,
     pub selected: bool,
+    /// The deck this track is loaded into, if any (the row takes that deck's accent).
+    pub on_deck: Option<usize>,
     /// Drag payload for the row (the library track id).
     pub drag: String,
 }
@@ -453,6 +455,8 @@ impl LibraryPanel {
             compatible: self.browser.model.is_compatible(&track),
             mix: self.browser.model.mix_level(&track),
             selected: self.browser.selected_rows().contains(&row),
+            on_deck: (0..self.engine.num_decks())
+                .find(|&deck| self.loaded_track_id(deck) == Some(track.id)),
             drag: describe_track_drag(track.id),
         })
     }

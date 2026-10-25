@@ -261,7 +261,7 @@ fn the_pairs_survive_a_device_change_and_the_page_reads_them() {
         ..Preferences::default()
     };
     let mut page = AudioSettingsPage::new(&mut prefs, &mut model);
-    assert_eq!(page.pair_labels(), vec!["Out 1+2", "Out 3+4"]);
+    assert_eq!(page.pair_labels(), vec!["Outputs 1-2", "Outputs 3-4"]);
     assert_eq!(page.shown_cue_pair(), Some(0));
     page.set_output_device("Mock Output").expect("same device");
     assert!(

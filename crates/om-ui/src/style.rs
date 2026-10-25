@@ -50,6 +50,13 @@ pub struct KnobStyle {
     pub fill: Colour,
     pub label: ControlStyle,
     pub readout: ControlStyle,
+    /// The unlit arc a rotary knob's value arc runs along. Derived from `border_strong` (60% on a
+    /// dark surface, full on a light one; see the knob spec), so themes need no new key.
+    pub track: Colour,
+    /// The pointer line on a rotary knob's cap.
+    pub pointer: Colour,
+    /// The arc and pointer of a knob in its kill zone.
+    pub kill: Colour,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -216,6 +223,13 @@ impl LookAndFeel {
                     t.control_radius,
                     t.type_caption,
                 ),
+                track: if t.surface.brightness() < 0.5 {
+                    t.border_strong.with_multiplied_alpha(0.6)
+                } else {
+                    t.border_strong
+                },
+                pointer: t.text_primary,
+                kill: t.danger,
             },
             fader: FaderStyle {
                 track: shape(
@@ -852,6 +866,21 @@ mod tests {
     }
 
     #[test]
+    fn knob_arc_colours_derive_from_existing_tokens() {
+        let dark_tokens = builtin("dark");
+        let dark = LookAndFeel::from_tokens(&dark_tokens);
+        assert_eq!(dark.knob.pointer, dark_tokens.text_primary);
+        assert_eq!(dark.knob.kill, dark_tokens.danger);
+        assert_eq!(
+            dark.knob.track,
+            dark_tokens.border_strong.with_multiplied_alpha(0.6)
+        );
+        let day_tokens = builtin("daylight");
+        let day = LookAndFeel::from_tokens(&day_tokens);
+        assert_eq!(day.knob.track, day_tokens.border_strong);
+    }
+
+    #[test]
     fn switching_theme_changes_every_control_style() {
         let dark = LookAndFeel::from_tokens(&builtin("dark"));
         let day = LookAndFeel::from_tokens(&builtin("daylight"));
@@ -859,6 +888,7 @@ mod tests {
             assert_ne!(a, b, "{name} did not change between themes");
         }
         assert_ne!(dark.knob.fill, day.knob.fill);
+        assert_ne!(dark.knob.track, day.knob.track);
         assert_ne!(dark.meter.well, day.meter.well);
         assert_ne!(dark.drop_target, day.drop_target);
         assert_ne!(dark.separator.colour, day.separator.colour);

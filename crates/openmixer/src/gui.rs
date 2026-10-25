@@ -148,7 +148,7 @@ pub fn main(args: &[String]) -> ExitCode {
     let (output, banner) = if mock {
         (
             mock_output(),
-            Some("Mock device: silent, no audio output (--mock-device).".to_owned()),
+            Some(om_ui::labels::notice_text(om_ui::labels::Notice::Demo).to_owned()),
         )
     } else {
         let cpal = SharedOutput::new(OutputSettings::new(Box::new(CpalBackend)));
@@ -161,7 +161,7 @@ pub fn main(args: &[String]) -> ExitCode {
                 );
                 (
                     mock_output(),
-                    Some("No audio device: running silent on the mock device.".to_owned()),
+                    Some(om_ui::labels::notice_text(om_ui::labels::Notice::NoDevice).to_owned()),
                 )
             }
         }
@@ -570,6 +570,10 @@ fn scene_options(scene: Option<DemoScene>) -> SceneOptions {
         Some(DemoScene::Sampler) => SceneOptions {
             sampler_open: true,
             press_pad: Some(7),
+            ..SceneOptions::default()
+        },
+        Some(DemoScene::Platter) => SceneOptions {
+            platter: true,
             ..SceneOptions::default()
         },
         Some(DemoScene::Stems) => SceneOptions {

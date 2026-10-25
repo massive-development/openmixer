@@ -288,8 +288,16 @@ pub fn device_rows(status: &DeviceStatus) -> Vec<(String, String)> {
     ]
 }
 
-/// Every control-surface value the models read, as `(id, value)` in router id form.
-pub fn parameter_rows(engine: &DjEngine, unknown: usize) -> Vec<(String, String)> {
+/// Every control-surface value the models read, as `(label, id, value)`: the label in words (the
+/// id itself where it has none), the id in router form for the developer.
+pub fn parameter_rows(engine: &DjEngine, unknown: usize) -> Vec<(String, String, String)> {
+    parameter_values(engine, unknown)
+        .into_iter()
+        .map(|(id, value)| (om_ui::labels::param_label(&id), id, value))
+        .collect()
+}
+
+fn parameter_values(engine: &DjEngine, unknown: usize) -> Vec<(String, String)> {
     let mut rows = Vec::new();
     let mixer = engine.mixer();
     rows.push(("router.unknown".to_owned(), unknown.to_string()));
@@ -387,7 +395,21 @@ mod tests {
         let (engine, _audio) = DjEngine::new(2);
         engine.mixer().set_master_gain(0.25);
         let rows = parameter_rows(&engine, 3);
-        let get = |id: &str| rows.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone());
+        let get = |id: &str| {
+            rows.iter()
+                .find(|(_, k, _)| k == id)
+                .map(|(_, _, v)| v.clone())
+        };
+        let label = |id: &str| {
+            rows.iter()
+                .find(|(_, k, _)| k == id)
+                .map(|(l, _, _)| l.clone())
+        };
+        assert_eq!(label("deck.1.rate").as_deref(), Some("Deck 2 Tempo"));
+        assert_eq!(
+            label("router.unknown").as_deref(),
+            Some("Unrouted messages")
+        );
         assert_eq!(get("router.unknown").as_deref(), Some("3"));
         assert_eq!(get("mixer.master").as_deref(), Some("0.250"));
         assert_eq!(get("deck.1.rate").as_deref(), Some("1.0000"));
