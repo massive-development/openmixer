@@ -128,6 +128,8 @@ enum Tile {
     Idle,
     /// Lit: this fill with this text colour, and a glow.
     Lit(om_ui::theme::Colour, om_ui::theme::Colour),
+    /// No track: idle colours at [`DISABLED_ALPHA`], no hover.
+    Disabled,
 }
 
 /// A pressable box: `label` at `size` (never below the 12 px floor), lit or idle, calling
@@ -142,7 +144,7 @@ fn tile(
 ) -> Div {
     let look = LookAndFeel::from_tokens(t);
     let (fill, text) = match state {
-        Tile::Idle => (look.button.idle.fill, look.button.idle.text),
+        Tile::Idle | Tile::Disabled => (look.button.idle.fill, look.button.idle.text),
         Tile::Lit(fill, text) => (fill, text),
     };
     let el = place(rect)
@@ -161,6 +163,7 @@ fn tile(
             let hover = look.button.hover.fill;
             el.hover(move |style| style.bg(paint(hover)))
         }
+        Tile::Disabled => el.opacity(DISABLED_ALPHA),
     };
     el.child(label.to_owned()).on_mouse_down(
         MouseButton::Left,
@@ -786,6 +789,19 @@ pub(crate) struct PadStyle {
     /// Colour tab along the top edge of a set pad.
     pub tab: Option<Colour>,
     pub glow: Option<Colour>,
+    /// 1.0, or [`DISABLED_ALPHA`] while the deck has no track.
+    pub alpha: f32,
+    /// Whether the pad lightens under the pointer (never while disabled).
+    pub hover: bool,
+}
+
+/// Opacity of any deck control: full, or [`DISABLED_ALPHA`] with no track loaded.
+pub(crate) fn control_alpha(loaded: bool) -> f32 {
+    if loaded {
+        1.0
+    } else {
+        DISABLED_ALPHA
+    }
 }
 
 /// What a pad sits on, for contrast: the well over the surface over the backdrop.
@@ -820,7 +836,13 @@ fn text_on(t: &ThemeTokens, fill: Colour) -> Colour {
 
 /// The look of pad `i`. Empty: dashed border, "Set", no colour. Set: its cue colour at 85 % with the
 /// name and a 3 px tab. Active (playing from it): opaque with a glow.
-pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> PadStyle {
+pub(crate) fn pad_state(
+    t: &ThemeTokens,
+    set: bool,
+    active: bool,
+    i: usize,
+    loaded: bool,
+) -> PadStyle {
     if !set {
         return PadStyle {
             fill: t.well,
@@ -830,6 +852,8 @@ pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> P
             label: "Set".to_owned(),
             tab: None,
             glow: None,
+            alpha: control_alpha(loaded),
+            hover: loaded,
         };
     }
     let colour = pad_colour(t, i);
@@ -841,7 +865,9 @@ pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> P
         dashed: false,
         label: format!("Cue {}", i + 1),
         tab: Some(colour),
-        glow: active.then_some(colour),
+        glow: (active && loaded).then_some(colour),
+        alpha: control_alpha(loaded),
+        hover: false,
     }
 }
 
@@ -1136,7 +1162,7 @@ fn hotcues(
     let look = LookAndFeel::from_tokens(t);
     let mut row = place(Rect::sized(card.w, card.h));
     for (i, rect) in pads.iter().enumerate() {
-        let style = pad_state(t, lit[i], pad_active(snap, snap.hotcues[i]), i);
+        let style = pad_state(t, lit[i], pad_active(snap, snap.hotcues[i]), i, snap.loaded);
         let mut pad = place(*rect)
             .flex()
             .items_center()
@@ -1155,7 +1181,8 @@ fn hotcues(
         if let Some(c) = style.glow {
             pad = shadow(pad, &look.glow(c));
         }
-        if !lit[i] {
+        pad = pad.opacity(style.alpha);
+        if style.hover {
             let hover = t.surface_hover;
             pad = pad.hover(move |s| s.bg(paint(hover)));
         }
@@ -1201,8 +1228,10 @@ fn loops(
     let accent = t.accent_for(index as i32);
     let view = loop_view(&deck.loops.frame(), snap.loaded);
     let [halve, chip, double, switch] = l.loops;
-    let alpha = |on: bool| if on { 1.0 } else { DISABLED_ALPHA };
-    let switch_state = if view.loop_lit {
+    let step_state = |on: bool| if on { Tile::Idle } else { Tile::Disabled };
+    let switch_state = if !snap.loaded {
+        Tile::Disabled
+    } else if view.loop_lit {
         Tile::Lit(accent, t.on_accent)
     } else {
         Tile::Idle
@@ -1213,13 +1242,12 @@ fn loops(
                 t,
                 halve,
                 "\u{f7}2",
-                (t.type_title, Tile::Idle),
+                (t.type_title, step_state(view.halve_enabled)),
                 cx,
                 move |this| {
                     this.decks[index].loops.halve();
                 },
-            )
-            .opacity(alpha(view.halve_enabled)),
+            ),
         )
         .child(
             place(chip)
@@ -1233,6 +1261,7 @@ fn loops(
                 .text_color(paint(t.text_primary))
                 .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
+                .opacity(control_alpha(snap.loaded))
                 .child(view.label.clone()),
         )
         .child(
@@ -1240,13 +1269,12 @@ fn loops(
                 t,
                 double,
                 "\u{d7}2",
-                (t.type_title, Tile::Idle),
+                (t.type_title, step_state(view.double_enabled)),
                 cx,
                 move |this| {
                     this.decks[index].loops.double();
                 },
-            )
-            .opacity(alpha(view.double_enabled)),
+            ),
         )
         .child(tile(
             t,
@@ -1658,6 +1686,22 @@ mod tests {
     }
 
     #[test]
+    fn pads_and_the_loop_row_dim_with_no_track_like_the_transport() {
+        // deck-controls.md States: "Disabled (no track): 40% opacity, no hover, no pointer".
+        for t in themes() {
+            for (set, active) in [(false, false), (true, false), (true, true)] {
+                let off = pad_state(&t, set, active, 1, false);
+                assert_eq!(off.alpha, DISABLED_ALPHA);
+                assert!(!off.hover && off.glow.is_none());
+                let on = pad_state(&t, set, active, 1, true);
+                assert_eq!(on.alpha, 1.0);
+            }
+        }
+        assert_eq!(control_alpha(false), 0.4);
+        assert_eq!(control_alpha(true), 1.0);
+    }
+
+    #[test]
     fn words_are_plain_and_master_stays_findable() {
         assert_eq!(
             transport_label(TransportButton::Master, false),
@@ -1673,7 +1717,7 @@ mod tests {
     #[test]
     fn empty_pads_are_dashed_and_say_set_with_no_colour() {
         let t = theme("dark");
-        let p = pad_state(&t, false, false, 3);
+        let p = pad_state(&t, false, false, 3, true);
         assert!(p.dashed);
         assert_eq!(p.label, "Set");
         assert!(p.tab.is_none() && p.glow.is_none());
@@ -1683,13 +1727,13 @@ mod tests {
     #[test]
     fn set_pads_take_the_cue_colour_at_85_percent_with_a_tab() {
         let t = theme("dark");
-        let p = pad_state(&t, true, false, 2);
+        let p = pad_state(&t, true, false, 2, true);
         assert!(!p.dashed);
         assert_eq!(p.label, "Cue 3");
         assert!((p.fill.alpha() - 0.85).abs() < 0.01);
         assert_eq!(p.tab, Some(HotcuePads::colour(2)));
         assert!(p.glow.is_none());
-        let active = pad_state(&t, true, true, 2);
+        let active = pad_state(&t, true, true, 2, true);
         assert!((active.fill.alpha() - 1.0).abs() < 0.01);
         assert!(active.glow.is_some());
     }
@@ -1699,7 +1743,7 @@ mod tests {
         for t in themes() {
             for i in 0..8 {
                 for active in [false, true] {
-                    let p = pad_state(&t, true, active, i);
+                    let p = pad_state(&t, true, active, i, true);
                     let ground = over(p.fill, pad_ground(&t));
                     let ratio = contrast_ratio(p.text, ground);
                     assert!(ratio >= 4.5, "pad {i} active {active}: {ratio:.2}");
