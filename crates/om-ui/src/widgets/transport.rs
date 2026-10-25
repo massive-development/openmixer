@@ -49,11 +49,11 @@ impl TransportButton {
     pub const fn label(self) -> &'static str {
         match self {
             TransportButton::Play => "Play",
-            TransportButton::Cue => "CUE",
-            TransportButton::Sync => "SYNC",
-            TransportButton::Master => "Master",
+            TransportButton::Cue => "Cue",
+            TransportButton::Sync => "Sync",
+            TransportButton::Master => "Tempo leader",
             TransportButton::KeyLock => "Key lock",
-            TransportButton::Quantize => "Quantize",
+            TransportButton::Quantize => "Snap to beat",
             TransportButton::Slip => "Slip",
         }
     }
@@ -81,8 +81,8 @@ impl TransportButton {
         match self {
             TransportButton::Play => "Play / pause",
             TransportButton::Cue => "Stop and return to start",
-            TransportButton::Sync => "Follow the sync leader",
-            TransportButton::Master => "Make this deck the sync master",
+            TransportButton::Sync => "Follow the tempo leader",
+            TransportButton::Master => "Other decks follow this deck's tempo (master)",
             TransportButton::KeyLock => "Key lock: tempo changes keep the pitch",
             TransportButton::Quantize => "Quantize loop starts to the beat grid",
             TransportButton::Slip => "Slip mode: the track keeps running under loops and scratches",
@@ -187,4 +187,27 @@ impl TransportPanel {
 /// Rounded pixel height of the transport row for a theme.
 pub fn transport_height(theme: &ThemeTokens) -> i32 {
     px(theme.deck_transport_height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn words_are_plain_and_the_old_master_name_stays_findable() {
+        let words: Vec<_> = TransportButton::ALL.iter().map(|b| b.label()).collect();
+        assert_eq!(
+            words,
+            [
+                "Play",
+                "Cue",
+                "Sync",
+                "Tempo leader",
+                "Key lock",
+                "Snap to beat",
+                "Slip"
+            ]
+        );
+        assert!(TransportButton::Master.tooltip().contains("master"));
+    }
 }
