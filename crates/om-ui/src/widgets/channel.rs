@@ -6,6 +6,7 @@ use super::px;
 use crate::binding::{assign_from_index, assign_index, LevelSource, MixerBinding};
 use crate::control::{Knob, Ranged, Readout};
 use crate::geometry::Rect;
+use crate::labels::channel_labels;
 use crate::meter::{column_width, MeterParams, StereoMeter};
 use crate::theme::ThemeTokens;
 use om_core::param_id::{ChannelParam, EqBand};
@@ -15,10 +16,14 @@ use om_dsp::CrossfaderAssign;
 pub const BANDS: usize = 3;
 pub const EQ_BANDS: [EqBand; BANDS] = [EqBand::Low, EqBand::Mid, EqBand::High];
 /// Band names as printed on the strip, in engine order. The label is also the kill switch.
-pub const EQ_LABELS: [&str; BANDS] = ["LOW", "MID", "HI"];
+pub const EQ_LABELS: [&str; BANDS] = [
+    channel_labels().low,
+    channel_labels().mid,
+    channel_labels().high,
+];
 /// Knob labels: printed once, 2 to 6 letters.
-pub const TRIM_LABEL: &str = "GAIN";
-pub const FILTER_LABEL: &str = "FILTER";
+pub const TRIM_LABEL: &str = channel_labels().gain;
+pub const FILTER_LABEL: &str = channel_labels().filter;
 /// Crossfader assignment switch, indexed by [`CrossfaderAssign`] index: Thru, Left, Right. On
 /// screen it reads A | THRU | B, the sides the crossfader's ends name.
 pub const ASSIGN_LABELS: [&str; 3] = ["THRU", "A", "B"];
@@ -334,7 +339,7 @@ mod tests {
 
     #[test]
     fn labels_are_short_and_read_a_thru_b() {
-        assert_eq!(EQ_LABELS, ["LOW", "MID", "HI"]);
+        assert_eq!(EQ_LABELS, ["LOW", "MID", "HIGH"]);
         assert_eq!(ASSIGN_LABELS, ["THRU", "A", "B"]);
         for label in EQ_LABELS
             .iter()
