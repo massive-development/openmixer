@@ -2,7 +2,7 @@
 //! out with om-ui's `MainLayout` rectangles, owns the om-ui widget models, and ticks the engine's
 //! control side once per frame.
 
-use crate::controls::{button, release_on};
+use crate::controls::release_on;
 use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControls, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
@@ -11,7 +11,7 @@ use crate::library_view::library_card;
 use crate::mixer_view::{channel_card, mixer_card};
 use crate::paint::{paint, place};
 use crate::sampler_view::sampler_card;
-use crate::settings_view::{SettingsOptions, SettingsState, HEADER_HEIGHT};
+use crate::settings_view::{SettingsOptions, SettingsState};
 use crate::stage_view::stage_card;
 use gpui::{
     div, prelude::*, px, size, App, Application, AsyncApp, Bounds, Context, FocusHandle,
@@ -25,8 +25,8 @@ use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{
-    channel_of_slot, visible_cells, CellKind, LayoutPlan, LayoutState, PlacedCell, LIBRARY_SLOT,
-    MIN_WINDOW, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
+    channel_of_slot, page_for, visible_cells, CellKind, LayoutPlan, LayoutState, PlacedCell,
+    LIBRARY_SLOT, MIN_WINDOW, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
 };
 use om_ui::meter::meter_params;
 use om_ui::sample_bank::SampleBank;
@@ -37,13 +37,6 @@ use om_ui::widgets::mixer::MixerPanel;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-
-/// Height of the banner strip shown above the layout (no audio device, and so on).
-const BANNER_HEIGHT: i32 = 28;
-/// Width the Settings button takes at the right end of the header strip.
-const SETTINGS_BUTTON_RESERVE: i32 = 96;
-/// Width the PERFORM toggle takes in the header strip, left of the Settings button.
-const PERFORM_RESERVE: i32 = 104;
 
 /// Reads the device's figures for the debug panel. Called on the UI thread once per frame.
 pub type DeviceStatusFn = Arc<dyn Fn() -> DeviceStatus + Send + Sync>;
@@ -123,7 +116,11 @@ pub struct Shell {
     pub(crate) performance: bool,
     /// The sampler drawer is open (collapsed it is a narrow handle beside the library).
     pub(crate) sampler_open: bool,
-    options: RunOptions,
+    /// The header's notice chip was dismissed (it stays gone for the session).
+    pub(crate) notice_dismissed: bool,
+    /// The window's size in px, as the last frame saw it (the library sizes itself from it).
+    pub(crate) window_size: (i32, i32),
+    pub(crate) options: RunOptions,
     started: Instant,
     last_tick: f64,
     frames: u64,
@@ -215,6 +212,8 @@ impl Shell {
             sampler_status: None,
             performance: false,
             sampler_open: false,
+            notice_dismissed: false,
+            window_size: (0, 0),
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -244,19 +243,6 @@ impl Shell {
     }
 
     /// Frames rendered so far.
-    /// Where the Record button sits in the header strip; `None` when the window shows none.
-    pub(crate) fn record_rect(
-        &self,
-        width: i32,
-        top: i32,
-        reserve: i32,
-    ) -> Option<om_ui::geometry::Rect> {
-        if !self.options.record {
-            return None;
-        }
-        om_ui::record_bar::record_rect(width, top, HEADER_HEIGHT, reserve)
-    }
-
     pub fn frames(&self) -> u64 {
         self.frames
     }
@@ -333,10 +319,15 @@ impl Shell {
         let playing: Vec<bool> = (0..self.engine.num_decks())
             .map(|deck| self.engine.deck(deck).is_playing())
             .collect();
-        let mut lines = vec![("Device".to_owned(), String::new())];
-        lines.extend(device_rows(status));
-        lines.push((String::new(), String::new()));
-        lines.push(("Parameters".to_owned(), String::new()));
+        let blank = |label: &str| (label.to_owned(), String::new(), String::new());
+        let mut lines = vec![blank("Developer"), blank("Device")];
+        lines.extend(
+            device_rows(status)
+                .into_iter()
+                .map(|(label, value)| (label, String::new(), value)),
+        );
+        lines.push(blank(""));
+        lines.push(blank("Parameters"));
         lines.extend(parameter_rows(&self.engine, self.router.unknown_count()));
         let mut body = div()
             .id("debug-scroll")
@@ -347,11 +338,18 @@ impl Shell {
             .gap(px(2.))
             .text_size(px(t.type_caption))
             .child(decks_section(t, &self.deck_controls, &playing, cx));
-        for (label, value) in lines {
+        for (label, id, value) in lines {
             let row = div()
                 .flex()
-                .justify_between()
+                .gap(px(6.))
                 .child(div().text_color(paint(t.text_secondary)).child(label))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .text_color(paint(t.text_muted))
+                        .child(id),
+                )
                 .child(div().text_color(paint(t.text_primary)).child(value));
             body = body.child(row);
         }
@@ -410,7 +408,7 @@ impl Shell {
             CellKind::Rows(_) => place(cell.bounds),
             CellKind::Slot(name) => {
                 let title = if name == LIBRARY_SLOT {
-                    "Library not available (see the terminal for the reason)".to_owned()
+                    "Library could not open. Open Settings > Library.".to_owned()
                 } else {
                     name.clone()
                 };
@@ -447,30 +445,22 @@ impl Render for Shell {
         let viewport = window.viewport_size();
         let width = f32::from(viewport.width) as i32;
         let height = f32::from(viewport.height) as i32;
-        let banner = self.options.banner.clone();
-        let banner_h = if banner.is_some() { BANNER_HEIGHT } else { 0 };
-        // The header strip holds the automix bar (left), the Record button, the PERFORM toggle and
-        // the Settings button (right).
-        let settings_reserve = if self.settings.is_some() {
-            SETTINGS_BUTTON_RESERVE
-        } else {
-            0
-        };
-        let header_reserve = settings_reserve + PERFORM_RESERVE;
-        let header_h =
-            if self.settings.is_some() || self.options.automix.is_some() || self.options.record {
-                HEADER_HEIGHT
-            } else {
-                0
-            };
-        let top = banner_h + header_h;
         let debug_w = if self.options.debug.is_some() {
             DEBUG_WIDTH
         } else {
             0
         };
-        let area = Rect::new(0, top, (width - debug_w).max(0), (height - top).max(0));
         let gap = self.theme.gap;
+        self.window_size = (width, height);
+        let page = page_for(
+            self.engine.num_decks(),
+            (width, height),
+            debug_w,
+            gap,
+            self.layout_state(),
+            self.header_needs(),
+        );
+        let top = page.area.y;
 
         let mut root = release_on(
             div()
@@ -499,67 +489,9 @@ impl Render for Shell {
                 })),
             cx,
         );
-        if let Some(header) = self.header(banner_h, width, cx) {
-            root = root.child(header);
-        }
-        if let Some(read) = self.options.automix.clone() {
-            let snapshot = read();
-            let prefs = self
-                .settings
-                .as_ref()
-                .map(|s| s.prefs.automix.clone())
-                .unwrap_or_default();
-            let t = self.theme.clone();
-            let reserve = header_reserve;
-            let record_at = self.record_rect(width, banner_h, reserve);
-            let bar_width = match record_at {
-                Some(_) => om_ui::record_bar::automix_width(width, reserve),
-                None => (width - reserve).max(0),
-            };
-            root = root.child(crate::automix_bar::automix_bar_view(
-                &t, &snapshot, &prefs, bar_width, banner_h, cx,
-            ));
-        }
-        if header_h > 0 {
-            let t = self.theme.clone();
-            let rect = Rect::new(
-                width - settings_reserve - PERFORM_RESERVE + 6,
-                banner_h + 3,
-                PERFORM_RESERVE - 12,
-                header_h - 6,
-            );
-            root = root.child(button(
-                &t,
-                rect,
-                "PERFORM",
-                self.performance,
-                t.accent_for(0),
-                cx,
-                |this| this.performance = !this.performance,
-            ));
-        }
-        if let Some(rect) = self.record_rect(width, banner_h, header_reserve) {
-            let snapshot = self.engine.recorder().snapshot();
-            let t = self.theme.clone();
-            root = root.child(crate::record_button::record_button(&t, &snapshot, rect, cx));
-        }
-        if let Some(text) = banner {
-            root = root.child(
-                place(Rect::new(0, 0, width, BANNER_HEIGHT))
-                    .bg(paint(self.theme.popup))
-                    .border_b_1()
-                    .border_color(paint(self.theme.border))
-                    .text_color(paint(self.theme.text_primary))
-                    .text_size(px(self.theme.type_caption))
-                    .flex()
-                    .items_center()
-                    .px(px(14.))
-                    .child(text),
-            );
-        }
-        let state = self.layout_state();
-        for cell in cells_for(self.engine.num_decks(), (area.w, height), area, gap, state) {
-            root = root.child(self.cell_view(&cell, cx));
+        root = root.child(self.header_strip(&page.header, cx));
+        for cell in &page.cells {
+            root = root.child(self.cell_view(cell, cx));
         }
         if let Some(status) = self.options.debug.clone() {
             let focus = self

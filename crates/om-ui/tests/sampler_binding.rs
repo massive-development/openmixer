@@ -154,7 +154,9 @@ fn the_pad_view_reads_the_snapshot_and_names_loaded_pads() {
     assert_eq!(pads[0].name, "Empty");
     assert!(!pads[0].loaded && !pads[0].playing);
     assert!(pads[0].selected);
-    assert!(binding.caption().starts_with("Pad 1 (1): empty"));
+    assert!(binding.caption().starts_with("Empty: drop a sample"));
+    binding.select(3);
+    assert_eq!(binding.caption(), "Pad 4  One-shot  +0.0 st  50%");
 }
 
 #[test]
