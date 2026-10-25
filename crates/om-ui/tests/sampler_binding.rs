@@ -156,7 +156,7 @@ fn the_pad_view_reads_the_snapshot_and_names_loaded_pads() {
     assert!(pads[0].selected);
     assert!(binding.caption().starts_with("Empty: drop a sample"));
     binding.select(3);
-    assert_eq!(binding.caption(), "Pad 4  One-shot  +0.0 st  50%");
+    assert_eq!(binding.caption(), "One-shot  +0.0 st  50%");
 }
 
 #[test]
