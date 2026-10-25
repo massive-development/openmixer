@@ -17,10 +17,10 @@ use gpui::{prelude::*, px, Context, Div, FontWeight};
 use om_ui::control::{Knob, Readout};
 use om_ui::geometry::Rect;
 use om_ui::labels::channel_labels;
-use om_ui::meter::MeterBar;
+use om_ui::meter::{MeterBar, MeterScale};
 use om_ui::theme::Colour;
 use om_ui::widgets::channel::{channel_letter, ChannelStrip, ASSIGN_LABELS};
-use om_ui::widgets::crossfader::{CrossfaderSection, CURVE_LABELS};
+use om_ui::widgets::crossfader::{CrossfaderSection, CURVE_LABELS, CURVE_TIPS};
 use om_ui::widgets::cue::CueSection;
 use om_ui::widgets::fx_panel::FxPanel;
 use om_ui::widgets::master::MasterSection;
@@ -263,22 +263,33 @@ fn knob_view(
     )
 }
 
-/// Master level knob and stereo meter under the MASTER caption.
+/// The master section: the MASTER caption, the tapered master fader (+6 dB at the top, unity at
+/// 3/4) beside its taller stereo meter, and the held peak in dB under them.
 fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = MasterSection::layout(bounds, t);
     let m = &shell.mixer.master;
     let bars = [bar_state(&m.meter.left), bar_state(&m.meter.right)];
+    let fader_abs = Rect::new(
+        card.x + lay.fader.x,
+        card.y + lay.fader.y,
+        lay.fader.w,
+        lay.fader.h,
+    );
+    let popup = shell
+        .is_dragging(Target::Master)
+        .then(|| Readout::Gain.text(m.fader.value()));
+    let peak = bars[0].hold.max(bars[1].hold);
+    let peak_text = MeterScale::from_tokens(t).peak_text(peak);
     vec![
         caption(t, lay.title, "MASTER"),
-        // The caption above already names it, so the knob prints no label of its own.
-        knob_view(
-            shell,
+        slider_with_popup(
+            t,
             lay.fader,
-            &m.fader,
+            (m.fader.value(), m.fader.range.min, m.fader.range.max),
             Target::Master,
-            card,
-            (false, KnobRole::Cue, Some(t.accent_for(0))),
+            fader_abs,
+            popup.as_deref(),
             cx,
         ),
         stereo_meter(t, lay.meter, lay.meter_labels, bars, cx, |this| {
@@ -286,10 +297,12 @@ fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> V
             meter.left.click();
             meter.right.click();
         }),
+        mark(t, lay.readout, &peak_text),
     ]
 }
 
-/// The crossfader, with A and B printed at its ends, and the curve switch beside it.
+/// The crossfader: A and B outside the ends of a wide fader, and under it both curves as buttons
+/// with the engine's curve lit.
 fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = CrossfaderSection::layout(bounds, t);
@@ -300,9 +313,10 @@ fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) 
         lay.slider.w,
         lay.slider.h,
     );
-    let end = lay.slider.h.min(lay.slider.w / 4);
-    let selected = x.selected_curve().min(CURVE_LABELS.len() - 1);
-    vec![
+    let selected = x.selected_curve();
+    let accent = t.accent_for(0);
+    let mut out = vec![
+        mark(t, lay.a_mark, "A"),
         slider_with_popup(
             t,
             lay.slider,
@@ -312,38 +326,39 @@ fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) 
             None,
             cx,
         ),
-        mark(
-            t,
-            Rect::new(lay.slider.x, lay.slider.y, end, lay.slider.h),
-            "A",
-        ),
-        mark(
-            t,
-            Rect::new(lay.slider.right() - end, lay.slider.y, end, lay.slider.h),
-            "B",
-        ),
-        button(
-            t,
-            lay.curve,
-            CURVE_LABELS[selected],
-            false,
-            t.accent_for(0),
-            cx,
-            |this| {
-                this.mixer.crossfader.curve_cycled();
-            },
-        ),
-    ]
+        mark(t, lay.b_mark, "B"),
+    ];
+    for (i, label) in CURVE_LABELS.iter().enumerate() {
+        out.push(
+            button(
+                t,
+                lay.curve[i],
+                label,
+                selected == i,
+                accent,
+                cx,
+                move |this| {
+                    this.mixer.crossfader.curve_pressed(i);
+                },
+            )
+            .child(tip_overlay(
+                t,
+                format!("curve-{i}"),
+                CURVE_TIPS[i].to_owned(),
+            )),
+        );
+    }
+    out
 }
 
-/// Headphone cue blend and phones level, side by side under one PHONES caption.
+/// Headphone cue blend and phones level, stacked under one HEADPHONES caption.
 fn cue(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
     let t = &shell.theme;
     let lay = CueSection::layout(bounds, t);
     let c = &shell.mixer.cue;
     let accent = Some(t.accent_for(0));
     vec![
-        caption(t, lay.caption, "PHONES"),
+        caption(t, lay.caption, "HEADPHONES"),
         knob_view(
             shell,
             lay.mix,
