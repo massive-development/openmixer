@@ -11,6 +11,9 @@
 //!   `destroy` exactly once and never uses it afterwards. An instance is used by one thread at a
 //!   time but may move between threads.
 //! - `process(instance, samples, frames)` processes one mono buffer of `frames` samples in place.
+//! - `process` runs on the real-time audio thread: it must not allocate, lock, block or do I/O.
+//!   `create`, `destroy` and `info` run on the control thread, possibly while other instances of
+//!   the same plugin are processing, so any state they share needs its own synchronisation.
 //! - No function may unwind: a plugin catches its own panics (Rust aborts on a panic that reaches an
 //!   `extern "C"` boundary). The host still runs every call under `catch_unwind`.
 //! - The library is never unloaded while an instance lives: an [`Instance`] holds the library.
