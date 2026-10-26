@@ -386,8 +386,9 @@ impl LookAndFeel {
                     0.0,
                     t.type_body,
                 ),
+                // Between the row and the hover colour, so hovering an alternate row still shows.
                 row_alt: shape(
-                    t.surface_hover_scaled(),
+                    Colour::mix(&[(t.surface_scaled(), 0.5), (t.surface_hover_scaled(), 0.5)]),
                     t.text_primary,
                     t.border,
                     0.0,
@@ -1112,6 +1113,12 @@ mod tests {
             let look = LookAndFeel::from_tokens(&t);
             assert_ne!(look.toggle.on.fill, look.toggle.off.fill, "{id}");
             assert_ne!(look.table.row.fill, look.table.row_alt.fill, "{id}");
+            assert_ne!(look.table.row_alt.fill, t.surface_hover, "{id}: hover hidden");
+            assert_ne!(
+                look.table.row_alt.fill,
+                t.surface_hover_scaled(),
+                "{id}: hover hidden"
+            );
             assert_ne!(look.table.row.fill, look.table.row_selected.fill, "{id}");
         }
     }
