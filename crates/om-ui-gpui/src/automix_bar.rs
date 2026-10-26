@@ -17,6 +17,7 @@ use om_ui::automix_bar::{
 use om_ui::geometry::Rect;
 use om_ui::preferences::AutomixPrefs;
 use om_ui::settings::LENGTH_CHOICES;
+use om_ui::style::LookAndFeel;
 use om_ui::theme::ThemeTokens;
 
 /// Reads the automix snapshot on the window thread (the service is shared, so this is cheap).
@@ -59,19 +60,21 @@ fn bar_chip(
     on_press(chip, cx, press)
 }
 
-/// The segmented Off | On switch: the lit half is the state.
+/// The segmented Off | On switch: the lit half is the state. Both halves, the divider and the
+/// frame come from the theme's toggle style.
 fn segmented_switch(t: &ThemeTokens, enabled: bool, height: f32, cx: &mut Context<Shell>) -> Div {
-    let accent = t.accents.first().copied().unwrap_or(t.surface_raised);
+    let toggle = LookAndFeel::from_tokens(t).toggle;
     let half = |label: &str, lit: bool, target: bool, cx: &mut Context<Shell>| {
+        let style = if lit { toggle.on } else { toggle.off };
         let el = div()
             .flex()
             .flex_1()
             .h_full()
             .items_center()
             .justify_center()
-            .bg(paint(if lit { accent } else { t.surface_raised }))
-            .text_color(paint(if lit { t.on_accent } else { t.text_secondary }))
-            .text_size(px(t.type_small))
+            .bg(paint(style.fill))
+            .text_color(paint(style.text))
+            .text_size(px(style.font_size))
             .child(label.to_owned());
         on_press(el, cx, move |this| {
             this.settings_mut(|s| s.automix_set_enabled(target))
@@ -82,11 +85,18 @@ fn segmented_switch(t: &ThemeTokens, enabled: bool, height: f32, cx: &mut Contex
         .flex_none()
         .w(px(SWITCH_WIDTH))
         .h(px(height))
-        .rounded(px(t.control_radius))
+        .rounded(px(toggle.on.radius))
         .border_1()
-        .border_color(paint(t.border))
+        .border_color(paint(toggle.on.border))
         .overflow_hidden()
         .child(half("Off", !enabled, false, cx))
+        .child(
+            div()
+                .flex_none()
+                .w(px(toggle.knob.border_width.round().max(1.0)))
+                .h_full()
+                .bg(paint(toggle.knob.fill)),
+        )
         .child(half("On", enabled, true, cx))
 }
 
