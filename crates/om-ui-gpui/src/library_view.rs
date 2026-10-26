@@ -18,7 +18,7 @@ use om_ui::geometry::Rect;
 use om_ui::library::{column_shown, columns, sort_glyph, MixLevel, SortGlyph, SEARCH_PLACEHOLDER};
 use om_ui::main_layout::{header_height, library_metrics};
 use om_ui::sidebar::SidebarKind;
-use om_ui::style::{ControlStyle, LookAndFeel};
+use om_ui::style::{gutter_width, ControlStyle, LookAndFeel};
 use om_ui::theme::ThemeTokens;
 
 /// Inner padding of the library card.
@@ -373,12 +373,16 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .child(om_ui::labels::library_status(&status, count));
 
     let look = LookAndFeel::from_tokens(&t);
+    // While the list scrolls, header and rows both leave a gutter for the scroll bar.
+    let thumb = scroll_thumb(count, visible, top, rows_h);
+    let gutter = gutter_width(thumb.is_some(), look.scroll_bar.width);
+    let list_w = bounds.w as f32 - sidebar_w - 2.0 * PAD;
     // Column header: a click sorts by the column.
     let mut header = div()
         .absolute()
         .left(px(sidebar_w + PAD))
         .top(px(PAD / 2. + toolbar_h + header_h))
-        .w(px(bounds.w as f32 - sidebar_w - 2.0 * PAD))
+        .w(px(list_w - gutter))
         .h(px(header_h))
         .flex()
         .items_center()
@@ -414,8 +418,9 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .absolute()
         .left(px(sidebar_w + PAD))
         .top(px(PAD / 2. + toolbar_h + header_h * 2.))
-        .w(px(bounds.w as f32 - sidebar_w - 2.0 * PAD))
+        .w(px(list_w))
         .h(px(rows_h))
+        .pr(px(gutter))
         .flex()
         .flex_col()
         .overflow_hidden()
@@ -438,10 +443,9 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     for row in rows {
         table = table.child(track_row(&t, row, row_h, window_w, cx));
     }
-    if let Some((offset, length)) = scroll_thumb(count, visible, top, rows_h) {
+    if let Some((offset, length)) = thumb {
         let bar = look.scroll_bar;
         let thumb = bar.thumb;
-        let hover = bar.thumb_hover.fill;
         table = table.child(
             div()
                 .absolute()
@@ -452,16 +456,15 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
                 .bg(paint(bar.track.fill))
                 .rounded(px(bar.track.radius))
                 .child(
+                    // Display-only: the wheel and keys scroll; the thumb is not draggable.
                     div()
-                        .id("library-scroll-thumb")
                         .absolute()
                         .top(px(offset))
                         .left(px(0.))
                         .w(px(bar.width))
                         .h(px(length))
                         .bg(paint(thumb.fill))
-                        .rounded(px(thumb.radius))
-                        .hover(move |style| style.bg(paint(hover))),
+                        .rounded(px(thumb.radius)),
                 ),
         );
     }

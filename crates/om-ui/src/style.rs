@@ -520,6 +520,15 @@ impl LookAndFeel {
     }
 }
 
+/// Width to reserve beside a table for its scroll bar: the bar's width while it is shown, else 0.
+pub fn gutter_width(shown: bool, bar_width: f32) -> f32 {
+    if shown {
+        bar_width
+    } else {
+        0.0
+    }
+}
+
 /// Of the primary text colour and the on-accent colour, the one that reads better on `fill`
 /// (judged over the darker backdrop end). For marks with no caption, such as a scroll thumb.
 fn best_text(fill: Colour, t: &ThemeTokens) -> Colour {
@@ -1105,5 +1114,11 @@ mod tests {
             assert_ne!(look.table.row.fill, look.table.row_alt.fill, "{id}");
             assert_ne!(look.table.row.fill, look.table.row_selected.fill, "{id}");
         }
+    }
+
+    #[test]
+    fn scroll_gutter_is_reserved_only_while_the_bar_is_shown() {
+        assert_eq!(gutter_width(true, 10.7), 10.7);
+        assert_eq!(gutter_width(false, 10.7), 0.0);
     }
 }

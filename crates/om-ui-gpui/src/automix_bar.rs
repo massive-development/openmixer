@@ -90,6 +90,7 @@ fn segmented_switch(t: &ThemeTokens, enabled: bool, height: f32, cx: &mut Contex
         .border_color(paint(toggle.on.border))
         .overflow_hidden()
         .child(half("Off", !enabled, false, cx))
+        // The divider reuses the knob style: its fill, and its border width as the line width.
         .child(
             div()
                 .flex_none()
