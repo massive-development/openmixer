@@ -13,7 +13,7 @@ pub fn meter_params(t: &ThemeTokens) -> MeterParams {
     MeterParams {
         floor_db: t.meter_floor_db,
         clip_level: t.meter_clip_level,
-        release_seconds: t.meter_release_seconds,
+        release_db_per_second: MeterParams::default().release_db_per_second,
         hold_seconds: t.meter_hold_seconds,
         clip_seconds: t.meter_clip_seconds,
     }
@@ -71,6 +71,16 @@ impl MeterScale {
     /// The dB a bar proportion stands for; the inverse of [`MeterScale::proportion`].
     pub fn db_at(&self, proportion: f32) -> f32 {
         self.floor_db + proportion.clamp(0.0, 1.0) * -self.floor_db
+    }
+
+    /// The numeric peak readout under the master meter (`faders-meters.md` section 3): the held
+    /// peak at `hold` (a bar proportion) in dB with one decimal, `-inf` while the bar is empty.
+    pub fn peak_text(&self, hold: f32) -> String {
+        if hold <= 0.0 {
+            "-inf".to_owned()
+        } else {
+            format!("{:.1}", self.db_at(hold))
+        }
     }
 
     /// The colour band a bar proportion falls in.
@@ -252,11 +262,23 @@ mod tests {
 
     const FRAME: f32 = 1.0 / 30.0;
 
+    #[test]
+    fn the_peak_readout_is_one_decimal_db_or_minus_inf() {
+        let scale = MeterScale {
+            floor_db: -48.0,
+            mid_db: -12.0,
+            high_db: -3.0,
+        };
+        assert_eq!(scale.peak_text(0.0), "-inf");
+        assert_eq!(scale.peak_text(1.0), "0.0");
+        assert_eq!(scale.peak_text(scale.proportion(-2.3)), "-2.3");
+    }
+
     fn params() -> MeterParams {
         MeterParams {
             floor_db: -48.0,
             clip_level: 0.99,
-            release_seconds: 0.5,
+            release_db_per_second: 13.0,
             hold_seconds: 1.0,
             clip_seconds: 2.0,
         }
@@ -266,7 +288,7 @@ mod tests {
     fn defaults_come_from_the_theme() {
         let p = meter_params(&ThemeTokens::builtin_dark());
         assert!(p.floor_db < 0.0);
-        assert!(p.release_seconds > 0.0);
+        assert!(p.release_db_per_second > 0.0);
         assert!(p.clip_level > 0.5);
     }
 

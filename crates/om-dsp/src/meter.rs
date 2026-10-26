@@ -31,7 +31,8 @@ impl PeakMeter {
 pub struct MeterParams {
     pub floor_db: f32,
     pub clip_level: f32,
-    pub release_seconds: f32,
+    /// Release rate in dB per second: the bar falls linearly in dB (constant speed on a dB scale).
+    pub release_db_per_second: f32,
     pub hold_seconds: f32,
     pub clip_seconds: f32,
 }
@@ -41,7 +42,9 @@ impl Default for MeterParams {
         Self {
             floor_db: -48.0,
             clip_level: 0.99,
-            release_seconds: 0.3,
+            // 20 dB per 1.5 s (docs/design/research/faders-meters.md, section 3; the figure is a
+            // proposal there, derived from PPM fall times cited from secondary sources).
+            release_db_per_second: 13.0,
             hold_seconds: 1.0,
             clip_seconds: 2.0,
         }
@@ -81,8 +84,8 @@ impl MeterBallistics {
         let before = (self.level_proportion, self.peak_proportion, self.clipping);
 
         let target = Self::proportion_of(linear_peak, self.params.floor_db);
-        let fall = (-dt_seconds.max(0.0) / self.params.release_seconds.max(1e-3)).exp();
-        self.level_proportion = target.max(self.level_proportion * fall);
+        let fall = self.fall_per(dt_seconds);
+        self.level_proportion = target.max(self.level_proportion - fall);
         if self.level_proportion < SNAP_TO_ZERO {
             self.level_proportion = 0.0;
         }
@@ -93,11 +96,19 @@ impl MeterBallistics {
         } else if self.hold_remaining > 0.0 {
             self.hold_remaining -= dt_seconds;
         } else {
-            self.peak_proportion = self.level_proportion.max(self.peak_proportion * fall);
+            self.peak_proportion = self.level_proportion.max(self.peak_proportion - fall);
         }
 
         self.update_clip(linear_peak, dt_seconds);
         before != (self.level_proportion, self.peak_proportion, self.clipping)
+    }
+
+    /// How far a bar falls in `dt_seconds`, as a proportion of the scale (constant dB per second).
+    fn fall_per(&self, dt_seconds: f32) -> f32 {
+        if self.params.floor_db >= 0.0 {
+            return 1.0;
+        }
+        dt_seconds.max(0.0) * self.params.release_db_per_second.max(0.0) / -self.params.floor_db
     }
 
     pub fn reset_clip(&mut self) {
@@ -147,7 +158,7 @@ mod tests {
         MeterParams {
             floor_db: -48.0,
             clip_level: 0.99,
-            release_seconds: 0.5,
+            release_db_per_second: 13.0,
             hold_seconds: 1.0,
             clip_seconds: 2.0,
         }
@@ -178,18 +189,46 @@ mod tests {
     }
 
     #[test]
-    fn attack_is_instant_and_release_is_exponential() {
+    fn attack_stays_instant() {
         let mut m = MeterBallistics::new(params());
         m.update(0.5, FRAME);
-        let top = m.level();
         assert!(approx(
-            top,
+            m.level(),
             MeterBallistics::proportion_of(0.5, -48.0),
             1e-6
         ));
+        m.update(1.0, FRAME);
+        assert!(
+            approx(m.level(), 1.0, 1e-6),
+            "a louder peak is shown at once"
+        );
+    }
 
-        m.update(0.0, 0.5); // one release time constant
-        assert!(approx(m.level(), top * (-1.0_f32).exp(), 1e-4));
+    #[test]
+    fn release_is_13_db_per_second() {
+        // Plan 2026-10-24-ui-faders-meters, Task 1.5: from 0 dB with silence, 1 s later the level
+        // is within 0.5 dB of -13 dB.
+        let mut m = MeterBallistics::new(params());
+        m.update(1.0, FRAME);
+        for _ in 0..30 {
+            m.update(0.0, FRAME);
+        }
+        let db = -48.0 + m.level() * 48.0;
+        assert!(approx(db, -13.0, 0.5), "after 1 s the bar reads {db} dB");
+    }
+
+    #[test]
+    fn release_is_constant_speed_on_a_db_scale() {
+        let mut m = MeterBallistics::new(params());
+        m.update(1.0, FRAME);
+        m.update(0.0, 0.5);
+        let first = m.level();
+        m.update(0.0, 0.5);
+        let second = m.level();
+        assert!(
+            approx(1.0 - first, first - second, 1e-4),
+            "same drop each half second"
+        );
         for _ in 0..300 {
             m.update(0.0, FRAME);
         }
@@ -231,6 +270,20 @@ mod tests {
 
         m.update(0.9, FRAME); // a new higher peak re-arms the hold
         assert!(m.peak_hold() > held);
+    }
+
+    #[test]
+    fn hold_is_one_second_then_the_tick_falls() {
+        let mut m = MeterBallistics::new(params());
+        m.update(1.0, FRAME);
+        for _ in 0..29 {
+            m.update(0.0, FRAME); // 0.97 s
+        }
+        assert!(approx(m.peak_hold(), 1.0, 1e-6), "held for a second");
+        for _ in 0..30 {
+            m.update(0.0, FRAME);
+        }
+        assert!(m.peak_hold() < 0.95, "falls after the hold");
     }
 
     #[test]

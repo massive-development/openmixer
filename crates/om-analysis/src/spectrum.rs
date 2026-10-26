@@ -16,6 +16,12 @@ const TILT_REFERENCE_HZ: f64 = 1000.0;
 /// slope of music so hats and vocals move the centroid.
 const TILT_EXPONENT: f64 = 0.5;
 const SILENT_ENERGY: f64 = 1e-12;
+/// Edges of the waveform's three bands (our own choice, not taken from any product).
+pub const LOW_EDGE_HZ: f64 = 200.0;
+pub const HIGH_EDGE_HZ: f64 = 3000.0;
+/// Each crossover is a raised cosine in log frequency, this many octaves either side of the edge,
+/// so the energy of a bin is shared out smoothly between neighbouring bands.
+pub const CROSSOVER_HALF_OCTAVES: f64 = 0.25;
 
 /// Energy (mean square) with the mean and variance of log frequency, in octaves, it carries.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -76,6 +82,32 @@ pub struct FrameAnalyzer {
     stft: MagnitudeStft,
     magnitudes: Vec<f32>,
     terms: Vec<(usize, BinTerm)>,
+    /// Per bin, the share of its power that goes to the low, mid and high band (sums to 1).
+    band_weights: Vec<[f32; 3]>,
+    /// What `magnitudes` holds: the samples' address and length and the frame index, so a
+    /// [`Self::frame`] followed by [`Self::frame_bands`] of the same frame transforms once.
+    transformed: Option<(usize, usize, usize)>,
+}
+
+/// Weight of the part above `edge_hz` in a raised-cosine crossover of +/- [`CROSSOVER_HALF_OCTAVES`]
+/// (0 well below the edge, 1 well above, 0.5 at it).
+fn crossover_above(hz: f64, edge_hz: f64) -> f64 {
+    let octaves = (hz / edge_hz).log2();
+    let x = ((octaves / CROSSOVER_HALF_OCTAVES + 1.0) / 2.0).clamp(0.0, 1.0);
+    0.5 - 0.5 * (std::f64::consts::PI * x).cos()
+}
+
+fn band_weights_at(hz: f64) -> [f32; 3] {
+    if hz <= 0.0 {
+        return [1.0, 0.0, 0.0];
+    }
+    let above_low = crossover_above(hz, LOW_EDGE_HZ);
+    let above_high = crossover_above(hz, HIGH_EDGE_HZ);
+    [
+        (1.0 - above_low) as f32,
+        (above_low * (1.0 - above_high)) as f32,
+        above_high as f32,
+    ]
 }
 
 impl FrameAnalyzer {
@@ -99,10 +131,25 @@ impl FrameAnalyzer {
                     })
             })
             .collect();
+        let band_weights = (0..stft.num_bins())
+            .map(|bin| band_weights_at(stft.bin_hz(bin, sample_rate)))
+            .collect();
         Self {
             stft,
             magnitudes: Vec::new(),
             terms,
+            band_weights,
+            transformed: None,
+        }
+    }
+
+    /// Fills `magnitudes` for frame `index`, unless they already hold exactly that frame.
+    fn transform(&mut self, samples: &[f32], index: usize) {
+        let key = (samples.as_ptr() as usize, samples.len(), index);
+        if self.transformed != Some(key) {
+            self.stft
+                .compute_frame(samples, index, &mut self.magnitudes);
+            self.transformed = Some(key);
         }
     }
 
@@ -120,8 +167,7 @@ impl FrameAnalyzer {
 
     /// The moment of frame `index`. Energy is the Hann-weighted mean square over the whole band.
     pub fn frame(&mut self, samples: &[f32], index: usize) -> Moment {
-        self.stft
-            .compute_frame(samples, index, &mut self.magnitudes);
+        self.transform(samples, index);
         let m = &self.magnitudes;
         let last = m.len() - 1;
         let sum_sq: f32 =
@@ -147,5 +193,25 @@ impl FrameAnalyzer {
             mean,
             variance: (wxx / w - mean * mean).max(0.0),
         }
+    }
+
+    /// Energy share of frame `index` in the low, mid and high band: the bin powers weighted by the
+    /// crossovers, over the total. Sums to 1, or all zero for a silent frame. Shares the FFT with
+    /// [`Self::frame`] when called for the same frame.
+    pub(crate) fn frame_bands(&mut self, samples: &[f32], index: usize) -> [f32; 3] {
+        self.transform(samples, index);
+        let mut sums = [0.0f32; 3];
+        let mut total = 0.0f32;
+        for (m, w) in self.magnitudes.iter().zip(&self.band_weights) {
+            let power = m * m;
+            total += power;
+            for (sum, weight) in sums.iter_mut().zip(w) {
+                *sum += power * weight;
+            }
+        }
+        if f64::from(total) <= SILENT_ENERGY {
+            return [0.0; 3];
+        }
+        sums.map(|v| v / total)
     }
 }

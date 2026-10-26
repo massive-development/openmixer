@@ -2,6 +2,7 @@
 
 use super::chips::*;
 use super::*;
+use om_ui::labels::param_label;
 use std::time::{Duration, Instant};
 
 /// How often the input list is read again while the MIDI page is showing.
@@ -73,7 +74,7 @@ pub(super) fn midi_page(t: &ThemeTokens, settings: &SettingsState, cx: &mut Cont
     for target in settings.learn_targets() {
         let lit = settings.learning_target() == Some(target.as_str());
         let press = target.clone();
-        learn.push(chip(t, target, lit, cx, move |this| {
+        learn.push(chip(t, &param_label(target), lit, cx, move |this| {
             let target = press.clone();
             this.settings_mut(|s| s.midi_learn(&target))
         }));
@@ -135,7 +136,10 @@ impl SettingsState {
         page.learn(midi.as_ref(), target);
         self.learning = Some((target.to_owned(), generation));
         self.set_notice(
-            format!("Learning {target}: move a control on the controller. Cancel stops it."),
+            format!(
+                "Learning {}: move a control on the controller. Cancel stops it.",
+                param_label(target)
+            ),
             false,
         );
     }
@@ -189,7 +193,10 @@ impl SettingsState {
         self.learning = None;
         if midi.map_generation() == generation {
             self.set_notice(
-                format!("Learn for {target} ended: no control was received"),
+                format!(
+                    "Learn for {} ended: no control was received",
+                    param_label(&target)
+                ),
                 true,
             );
             return;
@@ -200,7 +207,8 @@ impl SettingsState {
             Ok((file, changed)) => {
                 self.set_notice(
                     format!(
-                        "Learned a control for {target} and saved to {}",
+                        "Learned a control for {} and saved to {}",
+                        param_label(&target),
                         file.display()
                     ),
                     false,
@@ -210,7 +218,10 @@ impl SettingsState {
                 }
             }
             Err(error) => self.set_notice(
-                format!("Learned a control for {target}, but the map was not saved: {error}"),
+                format!(
+                    "Learned a control for {}, but the map was not saved: {error}",
+                    param_label(&target)
+                ),
                 true,
             ),
         }
@@ -382,7 +393,7 @@ mod tests {
 
         s.midi_learn("deck.0.play");
         assert_eq!(s.learning_target(), Some("deck.0.play"));
-        assert!(s.notice.text.starts_with("Learning deck.0.play"));
+        assert!(s.notice.text.starts_with("Learning Deck 1 Play"));
 
         // The service learns a control: the map changes and the learn ends.
         *fake.learning.lock().unwrap() = None;
@@ -392,7 +403,7 @@ mod tests {
         assert!(s
             .notice
             .text
-            .starts_with("Learned a control for deck.0.play and saved to "));
+            .starts_with("Learned a control for Deck 1 Play and saved to "));
         assert_eq!(changes.get(), 1, "the saved map file is the preference");
 
         s.midi_learn("deck.0.play");
@@ -456,7 +467,7 @@ mod tests {
         assert!(s.notice.error);
         assert_eq!(
             s.notice.text,
-            "Learned a control for deck.0.play, but the map was not saved: disk full"
+            "Learned a control for Deck 1 Play, but the map was not saved: disk full"
         );
         assert!(s.prefs.midi.map_file.is_empty());
         assert_eq!(changes.get(), 0);

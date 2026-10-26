@@ -15,19 +15,12 @@ use gpui::{
     MouseDownEvent, Render, ScrollWheelEvent, Window,
 };
 use om_ui::geometry::Rect;
-use om_ui::library::{columns, MixLevel, SEARCH_PLACEHOLDER};
+use om_ui::library::{column_shown, columns, sort_glyph, MixLevel, SortGlyph, SEARCH_PLACEHOLDER};
+use om_ui::main_layout::{header_height, library_metrics};
 use om_ui::sidebar::SidebarKind;
 use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::ThemeTokens;
 
-/// Height of one table row and one sidebar line.
-pub const ROW_HEIGHT: f32 = 20.0;
-/// Width of the sidebar tree.
-const SIDEBAR_WIDTH: f32 = 170.0;
-/// Height of the toolbar (search box and buttons).
-const TOOLBAR_HEIGHT: f32 = 34.0;
-/// Height of the table's column header.
-const HEADER_HEIGHT: f32 = 18.0;
 /// Inner padding of the library card.
 const PAD: f32 = 6.0;
 
@@ -61,6 +54,18 @@ fn with_library<R>(this: &mut Shell, f: impl FnOnce(&mut LibraryPanel) -> R) -> 
 /// Draws the library card in `bounds` (window coordinates, the bottom layout slot).
 pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) -> Div {
     let t: ThemeTokens = shell.theme.clone();
+    let (window_w, window_h) = shell.window_size;
+    let metrics = library_metrics(window_w, window_h);
+    let (row_h, header_h, toolbar_h, sidebar_w) = (
+        metrics.row_h as f32,
+        metrics.header_h as f32,
+        metrics.toolbar_h as f32,
+        metrics.sidebar_w as f32,
+    );
+    // Toolbar buttons are as tall as the header's controls.
+    let button_h = (header_height(window_h) - 6) as f32;
+    // The playlist buttons: three rows of one table row's height, under the tree.
+    let actions_h = 3.0 * row_h + 2.0 * 4.0 + 8.0;
     let focus: FocusHandle = shell
         .library_focus
         .get_or_insert_with(|| cx.focus_handle())
@@ -100,12 +105,12 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
             div()
                 .p(px(PAD))
                 .text_color(paint(t.text_secondary))
-                .child("Library not available (see the terminal for the reason)"),
+                .child("Library could not open. Open Settings > Library."),
         );
     };
 
-    let rows_h = bounds.h as f32 - TOOLBAR_HEIGHT - HEADER_HEIGHT - 2.0 * PAD;
-    panel.visible_rows = (rows_h / ROW_HEIGHT).floor().max(1.0) as usize;
+    let rows_h = bounds.h as f32 - toolbar_h - header_h - 2.0 * PAD;
+    panel.visible_rows = (rows_h / row_h).floor().max(1.0) as usize;
     let count = panel.row_count();
     let visible = panel.visible_rows;
     let top = panel.table_top.min(count.saturating_sub(visible));
@@ -127,8 +132,8 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .absolute()
         .left(px(0.))
         .top(px(0.))
-        .w(px(SIDEBAR_WIDTH))
-        .h(px(bounds.h as f32))
+        .w(px(sidebar_w))
+        .h(px((bounds.h as f32 - actions_h).max(0.)))
         .flex()
         .flex_col()
         .p(px(4.))
@@ -141,21 +146,30 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     };
     for line in sidebar {
         let node = line.node.clone();
-        let lit = line.selected;
+        let look = sidebar_row_look(&t, line.selected);
         let playlist = (node.kind == SidebarKind::Playlist).then_some(node.playlist_id);
         tree = tree.child(
             div()
-                .h(px(ROW_HEIGHT))
+                .h(px(row_h))
                 .flex()
                 .items_center()
                 .pl(px(4. + 12. * line.depth as f32))
                 .rounded(px(3.))
-                .bg(paint(if lit { t.surface_raised } else { t.well }))
-                .text_color(paint(if lit {
-                    t.text_primary
-                } else {
-                    t.text_secondary
-                }))
+                .relative()
+                .bg(paint(look.fill))
+                .text_color(paint(look.text))
+                .when(look.bar.is_some(), |el| {
+                    el.child(
+                        div()
+                            .absolute()
+                            .left(px(0.))
+                            .top(px(2.))
+                            .bottom(px(2.))
+                            .w(px(SIDEBAR_BAR_W))
+                            .rounded(px(1.5))
+                            .bg(paint(look.bar.unwrap_or(look.fill))),
+                    )
+                })
                 .child(line.node.label.clone())
                 // Tracks dropped on a playlist are added to it.
                 .when_some(playlist, |el, id| {
@@ -179,19 +193,38 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .absolute()
         .left(px(0.))
         .bottom(px(0.))
-        .w(px(SIDEBAR_WIDTH))
+        .w(px(sidebar_w))
         .p(px(4.))
         .flex()
-        .flex_wrap()
+        .flex_col()
         .gap(px(4.))
-        .child(action_button(&t, "New", cx, |p| p.begin_new_playlist()))
-        .child(action_button(&t, "Rename", cx, |p| {
-            p.begin_rename_playlist()
-        }))
-        .child(action_button(&t, "Delete", cx, |p| p.delete_playlist()))
-        .child(action_button(&t, "Remove tracks", cx, |p| {
-            p.remove_selected_from_playlist();
-        }));
+        .child(
+            div()
+                .flex()
+                .gap(px(4.))
+                .child(action_button(&t, row_h, "New", cx, |p| {
+                    p.begin_new_playlist()
+                }))
+                .child(action_button(&t, row_h, "Rename", cx, |p| {
+                    p.begin_rename_playlist()
+                })),
+        )
+        .child(action_button(
+            &t,
+            row_h,
+            om_ui::labels::DELETE_PLAYLIST,
+            cx,
+            |p| p.delete_playlist(),
+        ))
+        .child(action_button(
+            &t,
+            row_h,
+            om_ui::labels::REMOVE_FROM_PLAYLIST,
+            cx,
+            |p| {
+                p.remove_selected_from_playlist();
+            },
+        ));
 
     // Toolbar: search box, load buttons, analyse, status line.
     let search_label = if let Some(prompt) = name_prompt.clone() {
@@ -205,7 +238,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     };
     let search_box = div()
         .flex_1()
-        .h(px(TOOLBAR_HEIGHT - 4.))
+        .h(px(button_h))
         .px(px(6.))
         .flex()
         .items_center()
@@ -236,25 +269,37 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         );
     let mut toolbar = div()
         .absolute()
-        .left(px(SIDEBAR_WIDTH + PAD))
+        .left(px(sidebar_w + PAD))
         .top(px(PAD / 2.))
-        .w(px(bounds.w as f32 - SIDEBAR_WIDTH - 2.0 * PAD))
-        .h(px(TOOLBAR_HEIGHT))
+        .w(px(bounds.w as f32 - sidebar_w - 2.0 * PAD))
+        .h(px(toolbar_h))
         .flex()
         .items_center()
         .gap(px(4.))
         .child(search_box);
-    toolbar = toolbar.child(action_button(&t, "Analyse", cx, |p| {
+    toolbar = toolbar.child(action_button(&t, button_h, "Analyse", cx, |p| {
         p.prep_selected();
     }));
-    toolbar = toolbar.child(action_button(&t, "Stems", cx, |p| {
-        p.prepare_stems();
-    }));
+    toolbar = toolbar.child(action_button(
+        &t,
+        button_h,
+        om_ui::labels::SPLIT_STEMS,
+        cx,
+        |p| {
+            p.prepare_stems();
+        },
+    ));
     // Cancel is only worth a button while stem jobs are queued or running.
     if stems_running {
-        toolbar = toolbar.child(action_button(&t, "Cancel stems", cx, |p| {
-            p.cancel_stems_selected();
-        }));
+        toolbar = toolbar.child(action_button(
+            &t,
+            button_h,
+            om_ui::labels::CANCEL_STEMS,
+            cx,
+            |p| {
+                p.cancel_stems_selected();
+            },
+        ));
     }
 
     let status_colour = if status_error {
@@ -264,40 +309,37 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     };
     let status_line = div()
         .absolute()
-        .left(px(SIDEBAR_WIDTH + PAD))
-        .top(px(PAD / 2. + TOOLBAR_HEIGHT))
-        .w(px(bounds.w as f32 - SIDEBAR_WIDTH - 2.0 * PAD))
-        .h(px(HEADER_HEIGHT))
+        .left(px(sidebar_w + PAD))
+        .top(px(PAD / 2. + toolbar_h))
+        .w(px(bounds.w as f32 - sidebar_w - 2.0 * PAD))
+        .h(px(header_h))
         .flex()
         .items_center()
         .text_color(paint(status_colour))
         .overflow_hidden()
-        .child(format!("{status}   {count} in view"));
+        .child(om_ui::labels::library_status(&status, count));
 
     // Column header: a click sorts by the column.
     let mut header = div()
         .absolute()
-        .left(px(SIDEBAR_WIDTH + PAD))
-        .top(px(PAD / 2. + TOOLBAR_HEIGHT + HEADER_HEIGHT))
-        .w(px(bounds.w as f32 - SIDEBAR_WIDTH - 2.0 * PAD))
-        .h(px(HEADER_HEIGHT))
+        .left(px(sidebar_w + PAD))
+        .top(px(PAD / 2. + toolbar_h + header_h))
+        .w(px(bounds.w as f32 - sidebar_w - 2.0 * PAD))
+        .h(px(header_h))
         .flex()
         .items_center()
         .overflow_hidden()
         .text_color(paint(t.text_secondary));
-    for column in columns() {
+    for column in columns().iter().filter(|c| column_shown(c, window_w)) {
         let id = column.id;
         let mut title = column.title.to_owned();
-        if let Some((sorted, ascending)) = sort {
-            if sorted == id {
-                title.push_str(if ascending { " ^" } else { " v" });
-            }
+        match sort_glyph(sort, id) {
+            SortGlyph::Up => title.push_str(" \u{25B2}"),
+            SortGlyph::Down => title.push_str(" \u{25BC}"),
+            SortGlyph::None => {}
         }
         header = header.child(
-            div()
-                .w(px(column.width as f32))
-                .flex_none()
-                .overflow_hidden()
+            sized_cell(column.width, column.numeric)
                 .child(title)
                 .on_mouse_down(
                     MouseButton::Left,
@@ -312,16 +354,16 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     // Track rows.
     let mut table = div()
         .absolute()
-        .left(px(SIDEBAR_WIDTH + PAD))
-        .top(px(PAD / 2. + TOOLBAR_HEIGHT + HEADER_HEIGHT * 2.))
-        .w(px(bounds.w as f32 - SIDEBAR_WIDTH - 2.0 * PAD))
+        .left(px(sidebar_w + PAD))
+        .top(px(PAD / 2. + toolbar_h + header_h * 2.))
+        .w(px(bounds.w as f32 - sidebar_w - 2.0 * PAD))
         .h(px(rows_h))
         .flex()
         .flex_col()
         .overflow_hidden()
-        .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, _, cx| {
-            let dy = f32::from(ev.delta.pixel_delta(px(ROW_HEIGHT)).y);
-            let lines = (-dy / ROW_HEIGHT).round() as isize;
+        .on_scroll_wheel(cx.listener(move |this, ev: &ScrollWheelEvent, _, cx| {
+            let dy = f32::from(ev.delta.pixel_delta(px(row_h)).y);
+            let lines = (-dy / row_h).round() as isize;
             if lines != 0 {
                 with_library(this, |p| p.scroll_rows(lines));
                 cx.notify();
@@ -330,13 +372,13 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     if count == 0 {
         table = table.child(
             div()
-                .h(px(ROW_HEIGHT))
+                .h(px(row_h))
                 .text_color(paint(t.text_secondary))
                 .child("No tracks match"),
         );
     }
     for row in rows {
-        table = table.child(track_row(&t, row, cx));
+        table = table.child(track_row(&t, row, row_h, window_w, cx));
     }
 
     root.child(tree)
@@ -347,12 +389,54 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .child(table)
 }
 
+/// Width of the selection bar at a sidebar row's left edge (px). Unsourced; small.
+const SIDEBAR_BAR_W: f32 = 3.0;
+/// Share of the focus colour mixed into a selected sidebar row's fill. Unsourced; small.
+const SIDEBAR_SELECT_TINT: f32 = 0.18;
+
+/// How a sidebar row is drawn. Selection is a tinted fill plus a bar in the focus colour (so it
+/// does not rest on tone alone, labels-layout.md item 5), and primary text against secondary.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SidebarRowLook {
+    pub fill: om_ui::theme::Colour,
+    pub text: om_ui::theme::Colour,
+    /// The selection indicator, drawn on the left edge; `None` when not selected.
+    pub bar: Option<om_ui::theme::Colour>,
+}
+
+pub(crate) fn sidebar_row_look(t: &ThemeTokens, selected: bool) -> SidebarRowLook {
+    if !selected {
+        return SidebarRowLook {
+            fill: t.well,
+            text: t.text_secondary,
+            bar: None,
+        };
+    }
+    SidebarRowLook {
+        fill: om_ui::theme::Colour::mix(&[
+            (t.well, 1.0 - SIDEBAR_SELECT_TINT),
+            (t.focus_ring, SIDEBAR_SELECT_TINT),
+        ]),
+        text: t.text_primary,
+        bar: Some(t.focus_ring),
+    }
+}
+
 /// One table row: click selects (shift extends), double-click loads, and the row drags as a track.
-fn track_row(t: &ThemeTokens, row: RowView, cx: &mut Context<Shell>) -> AnyElement {
+fn track_row(
+    t: &ThemeTokens,
+    row: RowView,
+    row_h: f32,
+    window_w: i32,
+    cx: &mut Context<Shell>,
+) -> AnyElement {
     let row_index = row.row;
     let label = row.cells.first().cloned().unwrap_or_default();
     let background = if row.selected {
         paint(t.surface_raised)
+    } else if let Some(deck) = row.on_deck {
+        // The track on a deck: that deck's accent at 18% (plan).
+        paint(t.accent_for(deck as i32).with_alpha(PLAYING_ROW_ALPHA))
     } else if row.compatible {
         // The Camelot tint: the master colour, translucent, over the row. Key and tempo both
         // fitting is stronger than the key alone.
@@ -367,21 +451,28 @@ fn track_row(t: &ThemeTokens, row: RowView, cx: &mut Context<Shell>) -> AnyEleme
         paint(t.surface)
     };
     let mut line = div()
-        .h(px(ROW_HEIGHT))
+        .h(px(row_h))
         .flex_none()
         .flex()
         .items_center()
         .overflow_hidden()
         .bg(background)
-        .text_color(paint(t.text_primary));
-    for (column, cell) in columns().iter().zip(row.cells.iter()) {
-        line = line.child(
-            div()
-                .w(px(column.width as f32))
-                .flex_none()
-                .overflow_hidden()
-                .child(cell.clone()),
-        );
+        .text_color(paint(t.text_primary))
+        .when(!row.selected, |el| {
+            let hover = t.surface_hover;
+            el.hover(move |style| style.bg(paint(hover)))
+        });
+    for (column, cell) in columns()
+        .iter()
+        .zip(row.cells.iter())
+        .filter(|(c, _)| column_shown(c, window_w))
+    {
+        let text = if column.title == "Rating" {
+            cell.replace('*', "\u{2605}").replace('-', "\u{2606}")
+        } else {
+            cell.clone()
+        };
+        line = line.child(sized_cell(column.width, column.numeric).child(text));
     }
     let payload = TrackDragPayload {
         description: row.drag.clone(),
@@ -415,15 +506,34 @@ fn track_row(t: &ThemeTokens, row: RowView, cx: &mut Context<Shell>) -> AnyEleme
         .into_any_element()
 }
 
+/// Opacity of the deck accent behind the track loaded on a deck (plan, Task 5).
+const PLAYING_ROW_ALPHA: f32 = 0.18;
+
+/// A table cell: fixed `width` px, or flexible when 0; numbers are right-aligned.
+fn sized_cell(width: i32, numeric: bool) -> Div {
+    let cell = div().overflow_hidden().whitespace_nowrap().px(px(4.));
+    let cell = if width > 0 {
+        cell.w(px(width as f32)).flex_none()
+    } else {
+        cell.flex_1().min_w(px(0.))
+    };
+    if numeric {
+        cell.flex().justify_end()
+    } else {
+        cell
+    }
+}
+
 /// A toolbar button that runs `on_press` on the panel.
 fn action_button(
     t: &ThemeTokens,
+    button_h: f32,
     label: &str,
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut LibraryPanel) + 'static,
 ) -> Div {
     div()
-        .h(px(TOOLBAR_HEIGHT - 4.))
+        .h(px(button_h))
         .px(px(10.))
         .flex()
         .items_center()
@@ -444,4 +554,45 @@ fn action_button(
                 cx.notify();
             }),
         )
+}
+
+#[cfg(test)]
+mod sidebar_tests {
+    use super::*;
+    use om_ui::style::{contrast_ratio, over};
+    use om_ui::theme::{parse_theme, BUILTIN_THEMES};
+
+    fn themes() -> [ThemeTokens; 2] {
+        ["dark", "daylight"].map(|id| {
+            let (_, json) = BUILTIN_THEMES
+                .iter()
+                .find(|(file, _)| file.contains(id))
+                .expect("built-in theme");
+            parse_theme(json).expect("theme parses").tokens
+        })
+    }
+
+    #[test]
+    fn selection_reads_in_both_themes_at_wcag() {
+        for t in themes() {
+            let ground = over(t.well, over(t.surface, t.backdrop_bottom));
+            let sel = sidebar_row_look(&t, true);
+            let un = sidebar_row_look(&t, false);
+            let sel_fill = over(sel.fill, ground);
+            let bar = sel.bar.expect("a selected row has a bar");
+            assert!(contrast_ratio(bar, sel_fill) >= 3.0, "indicator 3:1");
+            assert!(contrast_ratio(bar, over(un.fill, ground)) >= 3.0);
+            assert!(contrast_ratio(sel.text, sel_fill) >= 4.5, "selected text");
+            assert!(
+                contrast_ratio(un.text, over(un.fill, ground)) >= 4.5,
+                "plain text"
+            );
+            assert!(un.bar.is_none());
+            // The selected text is the stronger one, so selection never reads inverted.
+            assert!(
+                contrast_ratio(sel.text, sel_fill)
+                    >= contrast_ratio(un.text, over(un.fill, ground))
+            );
+        }
+    }
 }

@@ -28,30 +28,6 @@ impl Shell {
         }
     }
 
-    /// The header strip with the Settings button, when the window has settings.
-    pub(crate) fn header(&self, y: i32, width: i32, cx: &mut Context<Shell>) -> Option<Div> {
-        self.settings.as_ref()?;
-        let t = self.theme.clone();
-        let button = chip(&t, "Settings", false, cx, |this| this.open_settings());
-        Some(
-            place(Rect::new(0, y, width, HEADER_HEIGHT))
-                .bg(paint(t.popup))
-                .border_b_1()
-                .border_color(paint(t.border))
-                .flex()
-                .justify_between()
-                .items_center()
-                .px(px(14.))
-                .child(
-                    div()
-                        .text_size(px(t.type_caption))
-                        .text_color(paint(t.text_secondary))
-                        .child("OpenMixer"),
-                )
-                .child(button),
-        )
-    }
-
     pub(crate) fn open_settings(&mut self) {
         if let Some(settings) = self.settings.as_mut() {
             settings.refresh_lists();
