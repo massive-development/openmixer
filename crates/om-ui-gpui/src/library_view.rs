@@ -74,7 +74,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     );
     // Toolbar buttons are as tall as the header's controls.
     let button_h = (header_height(window_h) - 6) as f32;
-    // The playlist buttons: three rows of one table row's height, under the tree.
+    // The playlist buttons: four rows of one table row's height, under the tree.
     let actions_h = 4.0 * row_h + 3.0 * 4.0 + 8.0;
     let focus: FocusHandle = shell
         .library_focus
