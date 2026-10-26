@@ -423,3 +423,42 @@ fn a_track_that_never_gets_analysed_is_given_up_on_after_three_submissions() {
         "not submitted a fourth time"
     );
 }
+
+#[test]
+fn a_big_unanalysed_playlist_submits_a_capped_batch_per_pick() {
+    let lib = shared_library();
+    let tracks: Vec<i64> = (0..100).map(|n| add(&lib, n, None, "")).collect();
+    let pl = playlist_of(&lib, &tracks);
+    let mut q = shared_queue(&lib, pl);
+    let cap = openmixer::automix_queue::MAX_SUBMISSIONS_PER_PICK;
+    assert!(q.next_track(None).is_none());
+    let first: Vec<i64> = lib
+        .prep_queue()
+        .all()
+        .unwrap()
+        .iter()
+        .map(|e| e.track_id)
+        .collect();
+    assert_eq!(first, tracks[..cap].to_vec());
+    assert!(q.next_track(None).is_none());
+    assert_eq!(lib.prep_queue().all().unwrap().len(), cap * 2);
+}
+
+#[test]
+fn the_give_up_notice_is_capped() {
+    let lib = shared_library();
+    let tracks: Vec<i64> = (0..6).map(|n| add(&lib, n, None, "")).collect();
+    let pl = playlist_of(&lib, &tracks);
+    let mut q = shared_queue(&lib, pl);
+    let dao = lib.prep_queue();
+    for _ in 0..3 {
+        assert!(q.next_track(None).is_none());
+        for &t in &tracks {
+            dao.set_status(t, PrepStatus::Failed, "corrupt").unwrap();
+        }
+    }
+    assert!(q.next_track(None).is_none());
+    let msg = q.last_error().unwrap();
+    assert!(msg.starts_with("6 tracks could not be analysed"), "{msg}");
+    assert!(msg.len() < 80, "{msg}");
+}
