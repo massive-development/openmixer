@@ -21,7 +21,7 @@ use gpui::{
 };
 use om_core::DeckSnapshot;
 use om_ui::geometry::Rect;
-use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
+use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES, STEM_SLIDER_LABELS};
 use om_ui::style::LookAndFeel;
 use om_ui::style::{contrast_ratio, over, relative_luminance};
 use om_ui::theme::Colour;
@@ -128,6 +128,8 @@ enum Tile {
     Idle,
     /// Lit: this fill with this text colour, and a glow.
     Lit(om_ui::theme::Colour, om_ui::theme::Colour),
+    /// No track: idle colours at [`DISABLED_ALPHA`], no hover.
+    Disabled,
 }
 
 /// A pressable box: `label` at `size` (never below the 12 px floor), lit or idle, calling
@@ -142,7 +144,7 @@ fn tile(
 ) -> Div {
     let look = LookAndFeel::from_tokens(t);
     let (fill, text) = match state {
-        Tile::Idle => (look.button.idle.fill, look.button.idle.text),
+        Tile::Idle | Tile::Disabled => (look.button.idle.fill, look.button.idle.text),
         Tile::Lit(fill, text) => (fill, text),
     };
     let el = place(rect)
@@ -161,6 +163,7 @@ fn tile(
             let hover = look.button.hover.fill;
             el.hover(move |style| style.bg(paint(hover)))
         }
+        Tile::Disabled => el.opacity(DISABLED_ALPHA),
     };
     el.child(label.to_owned()).on_mouse_down(
         MouseButton::Left,
@@ -415,14 +418,17 @@ fn stems(
                 shell.decks[index].stems.solo(stem);
             },
         ));
-        parts.push(slider(
-            t,
-            pad.volume,
-            (f64::from(state.gain), 0.0, MAX_VOLUME),
-            Target::StemVolume(index, stem),
-            abs(pad.volume),
-            cx,
-        ));
+        parts.push(
+            slider(
+                t,
+                pad.volume,
+                (f64::from(state.gain), 0.0, MAX_VOLUME),
+                Target::StemVolume(index, stem),
+                abs(pad.volume),
+                cx,
+            )
+            .child(slider_caption(t, STEM_SLIDER_LABELS[0])),
+        );
         let mut filter = slider(
             t,
             pad.filter,
@@ -432,14 +438,16 @@ fn stems(
             cx,
         )
         .child(
+            // The centre detent sits under the caption.
             place(Rect::new(
                 pad.filter.w / 2,
-                5,
+                CAPTION_H,
                 1,
-                (pad.filter.h - 10).max(1),
+                (pad.filter.h - CAPTION_H - 3).max(1),
             ))
             .bg(paint(t.text_secondary.with_alpha(0.7))),
-        );
+        )
+        .child(slider_caption(t, STEM_SLIDER_LABELS[1]));
         if dragging == Some(Target::StemFilter(index, stem)) {
             filter = filter.child(
                 div()
@@ -456,6 +464,20 @@ fn stems(
         parts.push(filter);
     }
     parts
+}
+
+/// Height of a stem slider's caption line; the filter's centre detent starts below it.
+const CAPTION_H: i32 = 17;
+
+/// A slider's name, top-left inside its track, 12 px, never taking a click.
+fn slider_caption(t: &ThemeTokens, text: &str) -> Div {
+    div()
+        .absolute()
+        .top(px(1.))
+        .left(px(5.))
+        .text_size(px(MIN_TEXT_SIZE))
+        .text_color(paint(t.text_secondary))
+        .child(text.to_owned())
 }
 
 /// The overview: the whole track in the three bands, played part dimmed, with the playhead, hot
@@ -707,6 +729,8 @@ const PAD_TAB_H: f32 = 3.0;
 const DAYLIGHT_DARKEN: f32 = 0.12;
 /// Opacity of a control while it cannot act (no track loaded).
 const DISABLED_ALPHA: f32 = 0.4;
+/// Prefix of the active pad's label: a play triangle.
+const ACTIVE_GLYPH: &str = "\u{25b6}";
 /// Seconds after a cue point during which a playing deck marks that pad active. Unsourced.
 const ACTIVE_WINDOW_S: f64 = 0.25;
 /// Estimated width of one character at 12-14 px, to decide whether a toggle row fits.
@@ -746,9 +770,9 @@ pub(crate) fn transport_style(
     let accent = t.accent_for(deck as i32);
     let (fill, text, glow) = match (button, lit) {
         (_, false) => (t.well, t.text_primary, None),
-        (TransportButton::Sync, true) => (SYNC_ON, ON_BRIGHT, Some(SYNC_ON)),
-        (TransportButton::Play, true) => (t.meter_low, ON_BRIGHT, Some(t.meter_low)),
-        (TransportButton::Cue, true) => (t.warning, ON_BRIGHT, Some(t.warning)),
+        (TransportButton::Sync, true) => (SYNC_ON, text_on(t, SYNC_ON), Some(SYNC_ON)),
+        (TransportButton::Play, true) => (t.meter_low, text_on(t, t.meter_low), Some(t.meter_low)),
+        (TransportButton::Cue, true) => (t.warning, text_on(t, t.warning), Some(t.warning)),
         (_, true) => (accent, t.on_accent, Some(accent)),
     };
     ButtonStyle {
@@ -786,6 +810,19 @@ pub(crate) struct PadStyle {
     /// Colour tab along the top edge of a set pad.
     pub tab: Option<Colour>,
     pub glow: Option<Colour>,
+    /// 1.0, or [`DISABLED_ALPHA`] while the deck has no track.
+    pub alpha: f32,
+    /// Whether the pad lightens under the pointer (never while disabled).
+    pub hover: bool,
+}
+
+/// Opacity of any deck control: full, or [`DISABLED_ALPHA`] with no track loaded.
+pub(crate) fn control_alpha(loaded: bool) -> f32 {
+    if loaded {
+        1.0
+    } else {
+        DISABLED_ALPHA
+    }
 }
 
 /// What a pad sits on, for contrast: the well over the surface over the backdrop.
@@ -820,7 +857,13 @@ fn text_on(t: &ThemeTokens, fill: Colour) -> Colour {
 
 /// The look of pad `i`. Empty: dashed border, "Set", no colour. Set: its cue colour at 85 % with the
 /// name and a 3 px tab. Active (playing from it): opaque with a glow.
-pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> PadStyle {
+pub(crate) fn pad_state(
+    t: &ThemeTokens,
+    set: bool,
+    active: bool,
+    i: usize,
+    loaded: bool,
+) -> PadStyle {
     if !set {
         return PadStyle {
             fill: t.well,
@@ -830,18 +873,29 @@ pub(crate) fn pad_state(t: &ThemeTokens, set: bool, active: bool, i: usize) -> P
             label: "Set".to_owned(),
             tab: None,
             glow: None,
+            alpha: control_alpha(loaded),
+            hover: loaded,
         };
     }
     let colour = pad_colour(t, i);
     let fill = colour.with_alpha(if active { 1.0 } else { PAD_ALPHA });
+    let text = text_on(t, over(fill, pad_ground(t)));
     PadStyle {
         fill,
-        text: text_on(t, over(fill, pad_ground(t))),
-        border: colour,
+        text,
+        // Active: an outline in the label ink (>= 4.5:1 on the fill) and a play glyph, so the state
+        // does not rest on opacity and glow alone ("never rely on colour alone", States).
+        border: if active { text } else { colour },
         dashed: false,
-        label: format!("Cue {}", i + 1),
+        label: if active {
+            format!("{ACTIVE_GLYPH} Cue {}", i + 1)
+        } else {
+            format!("Cue {}", i + 1)
+        },
         tab: Some(colour),
-        glow: active.then_some(colour),
+        glow: (active && loaded).then_some(colour),
+        alpha: control_alpha(loaded),
+        hover: false,
     }
 }
 
@@ -1035,6 +1089,11 @@ fn platter_state(index: usize) -> PlatterState {
     PLATTERS.with(|p| p.borrow().get(&index).copied().unwrap_or_default())
 }
 
+/// DEMO / TEST ONLY (`--demo-scene=platter`): switches the deck's platter on.
+pub(crate) fn stage_platter(index: usize) {
+    set_platter(index, |p| p.on = true);
+}
+
 fn set_platter(index: usize, f: impl FnOnce(&mut PlatterState)) {
     PLATTERS.with(|p| f(p.borrow_mut().entry(index).or_default()));
 }
@@ -1056,6 +1115,19 @@ impl Render for Tip {
             .text_color(paint(self.ink))
             .text_size(px(MIN_TEXT_SIZE))
             .child(self.text.clone())
+    }
+}
+
+/// Text size of a transport button. A round button squeezed below its nominal 56 px (the 44 px
+/// floor) takes the 12 px floor so the longest word, "Pause", keeps clear of the rim (about 10 px
+/// spare at 44 px, against about 2 px at the 14 px body size). The 56 px circle and the pills keep
+/// the body size. The spare-room figure is a measurement of the capture, not a sourced value.
+pub(crate) fn button_text_size(t: &ThemeTokens, shape: Shape, rect: Rect) -> f32 {
+    let body = t.type_body.max(MIN_TEXT_SIZE);
+    if shape == Shape::Round && rect.w.min(rect.h) < ROUND_DIAMETER {
+        MIN_TEXT_SIZE
+    } else {
+        body
     }
 }
 
@@ -1084,7 +1156,7 @@ fn transport_button(
         .border_color(paint(look.button.idle.border))
         .bg(paint(style.fill))
         .text_color(paint(style.text))
-        .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
+        .text_size(px(button_text_size(t, style.shape, rect)))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .opacity(style.alpha);
     let el = match style.glow {
@@ -1131,7 +1203,7 @@ fn hotcues(
     let look = LookAndFeel::from_tokens(t);
     let mut row = place(Rect::sized(card.w, card.h));
     for (i, rect) in pads.iter().enumerate() {
-        let style = pad_state(t, lit[i], pad_active(snap, snap.hotcues[i]), i);
+        let style = pad_state(t, lit[i], pad_active(snap, snap.hotcues[i]), i, snap.loaded);
         let mut pad = place(*rect)
             .flex()
             .items_center()
@@ -1150,7 +1222,8 @@ fn hotcues(
         if let Some(c) = style.glow {
             pad = shadow(pad, &look.glow(c));
         }
-        if !lit[i] {
+        pad = pad.opacity(style.alpha);
+        if style.hover {
             let hover = t.surface_hover;
             pad = pad.hover(move |s| s.bg(paint(hover)));
         }
@@ -1196,26 +1269,25 @@ fn loops(
     let accent = t.accent_for(index as i32);
     let view = loop_view(&deck.loops.frame(), snap.loaded);
     let [halve, chip, double, switch] = l.loops;
-    let alpha = |on: bool| if on { 1.0 } else { DISABLED_ALPHA };
-    let switch_state = if view.loop_lit {
+    let step_state = |on: bool| if on { Tile::Idle } else { Tile::Disabled };
+    let switch_state = if !snap.loaded {
+        Tile::Disabled
+    } else if view.loop_lit {
         Tile::Lit(accent, t.on_accent)
     } else {
         Tile::Idle
     };
     place(Rect::sized(card.w, card.h))
-        .child(
-            tile(
-                t,
-                halve,
-                "\u{f7}2",
-                (t.type_title, Tile::Idle),
-                cx,
-                move |this| {
-                    this.decks[index].loops.halve();
-                },
-            )
-            .opacity(alpha(view.halve_enabled)),
-        )
+        .child(tile(
+            t,
+            halve,
+            "\u{f7}2",
+            (t.type_title, step_state(view.halve_enabled)),
+            cx,
+            move |this| {
+                this.decks[index].loops.halve();
+            },
+        ))
         .child(
             place(chip)
                 .flex()
@@ -1228,21 +1300,19 @@ fn loops(
                 .text_color(paint(t.text_primary))
                 .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
+                .opacity(control_alpha(snap.loaded))
                 .child(view.label.clone()),
         )
-        .child(
-            tile(
-                t,
-                double,
-                "\u{d7}2",
-                (t.type_title, Tile::Idle),
-                cx,
-                move |this| {
-                    this.decks[index].loops.double();
-                },
-            )
-            .opacity(alpha(view.double_enabled)),
-        )
+        .child(tile(
+            t,
+            double,
+            "\u{d7}2",
+            (t.type_title, step_state(view.double_enabled)),
+            cx,
+            move |this| {
+                this.decks[index].loops.double();
+            },
+        ))
         .child(tile(
             t,
             switch,
@@ -1599,6 +1669,27 @@ mod tests {
     }
 
     #[test]
+    fn lit_transport_labels_read_at_4_5_to_1_in_both_themes() {
+        // The daylight Play green is dark: near-black ink on it measured 2.5:1 in the staged
+        // `cues-loop-daylight` capture. The ink is now the better of the candidates (labels-layout.md
+        // item 5: text 4.5:1).
+        for t in themes() {
+            for b in [
+                TransportButton::Play,
+                TransportButton::Cue,
+                TransportButton::Sync,
+            ] {
+                let s = transport_style(&t, b, true, true, 0);
+                assert!(
+                    contrast_ratio(s.text, s.fill) >= 4.5,
+                    "{b:?}: {}",
+                    contrast_ratio(s.text, s.fill)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn lit_states_use_the_documented_fills() {
         let t = theme("dark");
         let play = transport_style(&t, TransportButton::Play, true, true, 1);
@@ -1632,6 +1723,36 @@ mod tests {
     }
 
     #[test]
+    fn pads_and_the_loop_row_dim_with_no_track_like_the_transport() {
+        // deck-controls.md States: "Disabled (no track): 40% opacity, no hover, no pointer".
+        for t in themes() {
+            for (set, active) in [(false, false), (true, false), (true, true)] {
+                let off = pad_state(&t, set, active, 1, false);
+                assert_eq!(off.alpha, DISABLED_ALPHA);
+                assert!(!off.hover && off.glow.is_none());
+                let on = pad_state(&t, set, active, 1, true);
+                assert_eq!(on.alpha, 1.0);
+            }
+        }
+        assert_eq!(control_alpha(false), 0.4);
+        assert_eq!(control_alpha(true), 1.0);
+    }
+
+    #[test]
+    fn pause_keeps_clear_of_the_rim_of_a_squeezed_round_button() {
+        // deck-controls.md Buttons: Play is a 56 px circle with icon + word; the build falls to the
+        // 44 px floor when the row is tight, where the body-size word nearly touched the rim.
+        let t = theme("dark");
+        let small = Rect::new(0, 0, 44, 44);
+        let full = Rect::new(0, 0, 56, 56);
+        assert_eq!(button_text_size(&t, Shape::Round, small), MIN_TEXT_SIZE);
+        assert_eq!(button_text_size(&t, Shape::Round, full), t.type_body);
+        assert_eq!(button_text_size(&t, Shape::Pill, small), t.type_body);
+        // The word is unchanged.
+        assert_eq!(transport_label(TransportButton::Play, true), "Pause");
+    }
+
+    #[test]
     fn words_are_plain_and_master_stays_findable() {
         assert_eq!(
             transport_label(TransportButton::Master, false),
@@ -1647,7 +1768,7 @@ mod tests {
     #[test]
     fn empty_pads_are_dashed_and_say_set_with_no_colour() {
         let t = theme("dark");
-        let p = pad_state(&t, false, false, 3);
+        let p = pad_state(&t, false, false, 3, true);
         assert!(p.dashed);
         assert_eq!(p.label, "Set");
         assert!(p.tab.is_none() && p.glow.is_none());
@@ -1657,15 +1778,31 @@ mod tests {
     #[test]
     fn set_pads_take_the_cue_colour_at_85_percent_with_a_tab() {
         let t = theme("dark");
-        let p = pad_state(&t, true, false, 2);
+        let p = pad_state(&t, true, false, 2, true);
         assert!(!p.dashed);
         assert_eq!(p.label, "Cue 3");
         assert!((p.fill.alpha() - 0.85).abs() < 0.01);
         assert_eq!(p.tab, Some(HotcuePads::colour(2)));
         assert!(p.glow.is_none());
-        let active = pad_state(&t, true, true, 2);
+        let active = pad_state(&t, true, true, 2, true);
         assert!((active.fill.alpha() - 1.0).abs() < 0.01);
         assert!(active.glow.is_some());
+    }
+
+    #[test]
+    fn the_active_pad_changes_label_and_outline_not_just_opacity_and_glow() {
+        // deck-controls.md States: "Active: full fill plus glow" and "Never rely on colour alone:
+        // label text and glyph change with state".
+        for t in themes() {
+            let set = pad_state(&t, true, false, 2, true);
+            let active = pad_state(&t, true, true, 2, true);
+            assert_ne!(active.label, set.label);
+            assert!(active.label.contains("Cue 3") && active.label.starts_with('\u{25b6}'));
+            assert_eq!(active.border, active.text);
+            assert_ne!(active.border, set.border);
+            let fill = over(active.fill, pad_ground(&t));
+            assert!(contrast_ratio(active.border, fill) >= 3.0);
+        }
     }
 
     #[test]
@@ -1673,7 +1810,7 @@ mod tests {
         for t in themes() {
             for i in 0..8 {
                 for active in [false, true] {
-                    let p = pad_state(&t, true, active, i);
+                    let p = pad_state(&t, true, active, i, true);
                     let ground = over(p.fill, pad_ground(&t));
                     let ratio = contrast_ratio(p.text, ground);
                     assert!(ratio >= 4.5, "pad {i} active {active}: {ratio:.2}");

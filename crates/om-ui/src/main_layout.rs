@@ -20,7 +20,7 @@ pub const LIBRARY_SLOT: &str = "library";
 pub const CHANNEL_SLOT_PREFIX: &str = "channel:";
 /// Share of the deck rows' width one channel strip takes in the standard layout (13% of the
 /// window's width, never below [`CHANNEL_MIN_WIDTH`]).
-pub const CHANNEL_WEIGHT: f32 = 0.13;
+pub const CHANNEL_WEIGHT: f32 = 0.14;
 /// A channel strip is never narrower than this, in px.
 pub const CHANNEL_MIN_WIDTH: i32 = 112;
 /// Share of the deck rows' width the stage and the controls below it take.
@@ -853,6 +853,30 @@ mod tests {
             cell(&tall, slot(STAGE_SLOT)).h > cell(&short, slot(STAGE_SLOT)).h,
             "the stage gives up height first"
         );
+    }
+
+    /// The strip contract: at the smallest window the strip's inner width holds three 32 px EQ caps
+    /// (each needs cap + 2 x (3 px gap + 1.25 px half stroke) = 41 px, knobs.md section 3) and a
+    /// fader wide enough for its tick labels beside the labelled meter (faders-meters.md section 3).
+    #[test]
+    fn a_strip_holds_three_full_size_eq_caps_and_a_labelled_fader() {
+        let t = crate::theme::ThemeTokens::builtin_dark();
+        let pad = t.mixer_pad_x as i32;
+        for (w, h) in SIZES {
+            let page = page(2, (w, h), LayoutState::default());
+            for ch in 0..2 {
+                let strip = cell(&page, slot(&channel_slot(ch)));
+                let inner = strip.w - 2 * pad;
+                assert!(inner >= 3 * 41, "{w}x{h}: {inner} px for three EQ caps");
+                let need = t.mixer_fader_width as i32
+                    + crate::widgets::channel::STRIP_GAP
+                    + crate::meter::column_width(t.mixer_meter_width, true);
+                assert!(
+                    inner >= need,
+                    "{w}x{h}: {inner} px < {need} for the fader group"
+                );
+            }
+        }
     }
 
     #[test]

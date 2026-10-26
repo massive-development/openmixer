@@ -207,7 +207,8 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     } else if let Some((message, _)) = &shell.sampler_status {
         message.clone()
     } else if pads[selected].loaded {
-        format!("{} {}", pads[selected].key, pads[selected].name)
+        // Mode, pitch and gain: the pad shows its own name.
+        shell.sampler.caption()
     } else {
         om_ui::sampler_binding::EMPTY_PAD_HINT.to_owned()
     };

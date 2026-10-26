@@ -110,21 +110,26 @@ impl MixerPanel {
         &self.binding
     }
 
-    /// Layout of the mixer module: the FX toggle on top, the crossfader row at the foot, the
-    /// headphone row above it and the master section in what is left.
+    /// Layout of the mixer module: the crossfader block at the foot; above it the master fader and
+    /// meter in a column on the left, and on the right the FX toggle at the top and the headphone
+    /// knobs at the bottom (`faders-meters.md` section 3 master anatomy, `labels-layout.md`
+    /// section 4 wireframe: master, headphones, crossfader, curve).
     pub fn module_layout(bounds: Rect, theme: &ThemeTokens) -> ModuleLayout {
         let gap = theme.inner_gap;
         let mut area = bounds;
-        let mut top = area.remove_top(FX_TOGGLE_HEIGHT);
-        let fx = top.remove_left(FX_TOGGLE_WIDTH.min(top.w));
-        area.remove_top(gap);
         let crossfader = area.remove_bottom(CrossfaderSection::height_for(bounds.w, theme));
         area.remove_bottom(gap);
-        let cue = area.remove_bottom(CUE_HEIGHT);
-        area.remove_bottom(gap);
+        let master = area.remove_left(super::master::width_for(theme).min(area.w));
+        let mut right = area;
+        let pad = theme.mixer_pad_x as i32;
+        let mut inset = right.reduced(pad.min(right.w / 2), 0);
+        let mut top = inset.remove_top(FX_TOGGLE_HEIGHT);
+        let fx = top.remove_left(FX_TOGGLE_WIDTH.min(top.w));
+        right.remove_top(FX_TOGGLE_HEIGHT + gap);
+        let cue = right.remove_bottom(CUE_HEIGHT);
         ModuleLayout {
             fx,
-            master: area,
+            master,
             crossfader,
             cue,
         }
