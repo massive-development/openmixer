@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use super::control::import_summary;
 use super::services::{LibraryEvent, LibraryServices};
 use super::track_loader::LoadError;
-use super::track_source::{PlaylistSource, PrepQueueSource,SearchTrackSource, TrackSource};
+use super::track_source::{PlaylistSource, PrepQueueSource, SearchTrackSource, TrackSource};
 use super::track_table::TrackTableModel;
 use crate::settings::SettingsResult;
 use crate::sidebar::{build_sidebar, SidebarKind, SidebarNode};
@@ -726,8 +726,8 @@ impl LibraryBrowser {
         let source: Box<dyn TrackSource> = if self.on_queue() {
             let entries = services.prep_queue().list().unwrap_or_default();
             Box::new(PrepQueueSource::new(services.library_handle(), entries))
-        } else if let Some(entries) = playlist_order
-            .and_then(|id| services.library().playlists().entries(id).ok())
+        } else if let Some(entries) =
+            playlist_order.and_then(|id| services.library().playlists().entries(id).ok())
         {
             let ids = entries.iter().map(|e| e.track_id).collect();
             Box::new(PlaylistSource::new(services.library_handle(), ids))

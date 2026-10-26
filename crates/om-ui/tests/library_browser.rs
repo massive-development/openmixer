@@ -863,9 +863,7 @@ fn dropping_a_track_on_another_row_reorders_the_open_playlist() {
 
     // Drag the last row onto the first: it takes the first place.
     let dragged = rig.row(2).id;
-    assert!(rig
-        .browser
-        .move_track_to_row(&mut rig.services, dragged, 0));
+    assert!(rig.browser.move_track_to_row(&mut rig.services, dragged, 0));
     let (positions, order) = entry_order(&mut rig, id);
     assert_eq!(positions, [0, 1, 2]);
     assert_eq!(order, [tracks[2], tracks[0], tracks[1]]);
@@ -882,7 +880,10 @@ fn dropping_a_track_on_another_row_reorders_the_open_playlist() {
     rig.browser
         .select_sidebar(&rig.services, SidebarKind::AllTracks, 0, "");
     assert!(!rig.browser.move_track_to_row(&mut rig.services, dragged, 1));
-    assert_eq!(entry_order(&mut rig, id).1, [tracks[2], tracks[0], tracks[1]]);
+    assert_eq!(
+        entry_order(&mut rig, id).1,
+        [tracks[2], tracks[0], tracks[1]]
+    );
 }
 
 #[test]
@@ -919,7 +920,10 @@ fn new_folder_nests_under_parent() {
 #[test]
 fn playlist_moves_between_folders() {
     let mut rig = BrowserRig::new();
-    let a = rig.browser.new_folder(&mut rig.services, None, "A").unwrap();
+    let a = rig
+        .browser
+        .new_folder(&mut rig.services, None, "A")
+        .unwrap();
     let b = rig
         .browser
         .new_folder(&mut rig.services, Some(a), "B")
