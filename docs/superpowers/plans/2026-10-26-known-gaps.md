@@ -171,7 +171,7 @@
 * \[ ] **Step 3:** Implement `abi.rs` and `PluginLoader::load` (the only `unsafe` in the crate; add a `// SAFETY:` comment on each block). Keep `SHARED\_LIBRARY\_EXTENSIONS`. Run; expect PASS.
 * \[ ] **Step 4:** Plugins page lists loaded vs skipped-with-reason (existing page already shows skipped; change the text only). Update the stub doc comment at the top of `loader.rs`. Commit `feat: load C-ABI plugins from shared libraries`.
 
-\### Task 10: Sync docs (last)
+### Task 10: Sync docs (last)
 
 Runs after every other task has merged, so each doc line is edited once.
 
