@@ -71,7 +71,7 @@ pub(super) fn plugins_page(
         .child(note(
             t,
             &format!(
-                "Plugin folder: {}. Shared-library plugins in it are reported, not loaded (dynamic loading is not decided). {} plugin theme(s) are in Appearance.",
+                "Plugin folder: {}. Shared-library (C ABI) plugins in it are loaded; any that fail are listed with the reason. {} plugin theme(s) are in Appearance.",
                 settings.prefs.effective_plugin_folder().display(),
                 settings.plugin_theme_count()
             ),
