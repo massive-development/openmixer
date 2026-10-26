@@ -94,8 +94,8 @@ impl PluginSink for PluginRegistry {
         PluginRegistry::unload_all(self);
     }
 
-    /// Loads the shared libraries in `folder` and the built-in plugins. Shared libraries are
-    /// reported as errors until dynamic loading is decided (see `om_plugins::PluginLoader`).
+    /// Loads the shared libraries in `folder` (C-ABI plugins, see `om_plugins::PluginLoader`) and
+    /// the built-in plugins. A library that fails to load is reported in the errors.
     fn load_folder(&mut self, folder: &Path) -> PluginLoad {
         let mut errors = Vec::new();
         let loaded = self.load_directory(folder, &mut errors);
@@ -267,7 +267,7 @@ mod tests {
             1,
             "only the library, not the text file"
         );
-        assert!(loaded.errors[0].contains("not supported"));
+        assert!(loaded.errors[0].contains("gain.so"), "{:?}", loaded.errors);
         assert!(loaded.themes.is_empty());
     }
 
