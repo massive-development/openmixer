@@ -291,6 +291,82 @@ impl LibraryBrowser {
         }
     }
 
+    /// Creates a folder under `parent` (`None` = top level). `None` (with the reason in the status
+    /// line) for a blank name, a parent that is not a folder, or a library error. The selection is
+    /// kept, since folders are not selectable.
+    pub fn new_folder(
+        &mut self,
+        services: &mut LibraryServices,
+        parent: Option<i64>,
+        name: &str,
+    ) -> Option<i64> {
+        let name = name.trim();
+        if name.is_empty() {
+            self.set_status("Name the folder first".to_owned(), true);
+            return None;
+        }
+        match services.library().playlists().create(name, parent, true) {
+            Ok(id) => {
+                self.playlists_changed(services);
+                self.set_status(format!("Created folder {name}"), false);
+                Some(id)
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't create the folder: {error}"), true);
+                None
+            }
+        }
+    }
+
+    /// Moves a playlist or folder under `new_parent` (`None` = top level) at `index` (clamped).
+    /// A folder cannot go into itself or its own descendants. Returns whether it moved.
+    pub fn move_playlist(
+        &mut self,
+        services: &mut LibraryServices,
+        id: i64,
+        new_parent: Option<i64>,
+        index: i32,
+    ) -> bool {
+        match services
+            .library()
+            .playlists()
+            .move_node(id, new_parent, index)
+        {
+            Ok(()) => {
+                self.playlists_changed(services);
+                true
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't move the playlist: {error}"), true);
+                false
+            }
+        }
+    }
+
+    /// Moves one playlist entry to `new_index` (clamped to the ends), keeping positions dense.
+    /// Returns whether it moved.
+    pub fn move_entry(
+        &mut self,
+        services: &mut LibraryServices,
+        entry_id: i64,
+        new_index: i32,
+    ) -> bool {
+        match services
+            .library()
+            .playlists()
+            .move_entry(entry_id, new_index)
+        {
+            Ok(()) => {
+                self.playlists_changed(services);
+                true
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't reorder the playlist: {error}"), true);
+                false
+            }
+        }
+    }
+
     /// Renames the playlist shown. Returns whether it was renamed.
     pub fn rename_selected_playlist(&mut self, services: &mut LibraryServices, name: &str) -> bool {
         let Some(id) = self.selected_playlist() else {
