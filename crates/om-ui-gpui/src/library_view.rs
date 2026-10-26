@@ -372,6 +372,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .overflow_hidden()
         .child(om_ui::labels::library_status(&status, count));
 
+    let look = LookAndFeel::from_tokens(&t);
     // Column header: a click sorts by the column.
     let mut header = div()
         .absolute()
@@ -382,7 +383,11 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .flex()
         .items_center()
         .overflow_hidden()
-        .text_color(paint(t.text_secondary));
+        .bg(paint(look.table.header.fill))
+        .text_color(paint(look.table.header.text))
+        .text_size(px(look.table.header.font_size))
+        .border_b(px(look.table.divider.thickness.round().max(1.0)))
+        .border_color(paint(look.table.divider.colour));
     for column in columns().iter().filter(|c| column_shown(c, window_w)) {
         let id = column.id;
         let mut title = column.title.to_owned();
@@ -432,6 +437,33 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     }
     for row in rows {
         table = table.child(track_row(&t, row, row_h, window_w, cx));
+    }
+    if let Some((offset, length)) = scroll_thumb(count, visible, top, rows_h) {
+        let bar = look.scroll_bar;
+        let thumb = bar.thumb;
+        let hover = bar.thumb_hover.fill;
+        table = table.child(
+            div()
+                .absolute()
+                .top(px(0.))
+                .right(px(0.))
+                .w(px(bar.width))
+                .h(px(rows_h))
+                .bg(paint(bar.track.fill))
+                .rounded(px(bar.track.radius))
+                .child(
+                    div()
+                        .id("library-scroll-thumb")
+                        .absolute()
+                        .top(px(offset))
+                        .left(px(0.))
+                        .w(px(bar.width))
+                        .h(px(length))
+                        .bg(paint(thumb.fill))
+                        .rounded(px(thumb.radius))
+                        .hover(move |style| style.bg(paint(hover))),
+                ),
+        );
     }
 
     root.child(tree)
@@ -485,8 +517,9 @@ fn track_row(
 ) -> AnyElement {
     let row_index = row.row;
     let label = row.cells.first().cloned().unwrap_or_default();
+    let look = LookAndFeel::from_tokens(t);
     let background = if row.selected {
-        paint(t.surface_raised)
+        paint(look.table.row_selected.fill)
     } else if let Some(deck) = row.on_deck {
         // The track on a deck: that deck's accent at 18% (plan).
         paint(t.accent_for(deck as i32).with_alpha(PLAYING_ROW_ALPHA))
@@ -500,8 +533,10 @@ fn track_row(
             0.16
         };
         tint
+    } else if row_index % 2 == 1 {
+        paint(look.table.row_alt.fill)
     } else {
-        paint(t.surface)
+        paint(look.table.row.fill)
     };
     let mut line = div()
         .h(px(row_h))
@@ -510,7 +545,8 @@ fn track_row(
         .items_center()
         .overflow_hidden()
         .bg(background)
-        .text_color(paint(t.text_primary))
+        .text_color(paint(look.table.row.text))
+        .text_size(px(look.table.row.font_size))
         .when(!row.selected, |el| {
             let hover = t.surface_hover;
             el.hover(move |style| style.bg(paint(hover)))
@@ -569,6 +605,53 @@ fn track_row(
             })
         })
         .into_any_element()
+}
+
+/// Smallest thumb length (px) so a long list still leaves something to see.
+const MIN_THUMB: f32 = 16.0;
+
+/// Where the scroll thumb sits in a track of `track_h` px: `(offset, length)`, or `None` when the
+/// whole list fits.
+pub(crate) fn scroll_thumb(
+    count: usize,
+    visible: usize,
+    top: usize,
+    track_h: f32,
+) -> Option<(f32, f32)> {
+    if count <= visible || visible == 0 || track_h <= 0.0 {
+        return None;
+    }
+    let length = (track_h * visible as f32 / count as f32)
+        .max(MIN_THUMB)
+        .min(track_h);
+    let max_top = (count - visible) as f32;
+    let offset = (track_h - length) * (top as f32 / max_top).clamp(0.0, 1.0);
+    Some((offset, length))
+}
+
+#[cfg(test)]
+mod scroll_thumb_tests {
+    use super::scroll_thumb;
+
+    #[test]
+    fn no_thumb_when_the_list_fits() {
+        assert_eq!(scroll_thumb(5, 10, 0, 100.0), None);
+    }
+
+    #[test]
+    fn thumb_spans_the_track_from_top_to_bottom() {
+        let (o0, len) = scroll_thumb(100, 10, 0, 200.0).unwrap();
+        assert_eq!(o0, 0.0);
+        assert_eq!(len, 20.0);
+        let (o1, _) = scroll_thumb(100, 10, 90, 200.0).unwrap();
+        assert!((o1 + len - 200.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn thumb_never_shrinks_below_the_minimum() {
+        let (_, len) = scroll_thumb(100_000, 10, 0, 200.0).unwrap();
+        assert!(len >= 16.0);
+    }
 }
 
 /// Opacity of the deck accent behind the track loaded on a deck (plan, Task 5).

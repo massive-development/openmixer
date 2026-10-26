@@ -102,6 +102,33 @@ pub struct SeparatorStyle {
     pub thickness: f32,
 }
 
+/// Scroll bar: a track with a thumb that brightens under the pointer. `width` is in px.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollBarStyle {
+    pub track: ControlStyle,
+    pub thumb: ControlStyle,
+    pub thumb_hover: ControlStyle,
+    pub width: f32,
+}
+
+/// Table chrome: column header, plain and alternate rows, the selected row and the divider.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TableStyle {
+    pub header: ControlStyle,
+    pub row: ControlStyle,
+    pub row_alt: ControlStyle,
+    pub row_selected: ControlStyle,
+    pub divider: SeparatorStyle,
+}
+
+/// On/off switch: the two track states and the knob that marks the state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ToggleStyle {
+    pub off: ControlStyle,
+    pub on: ControlStyle,
+    pub knob: ControlStyle,
+}
+
 /// BPM, key and time numerals: big and bright, with a dimmer unit label.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReadoutStyle {
@@ -146,6 +173,9 @@ pub struct LookAndFeel {
     pub panel: ControlStyle,
     pub panel_caption: ControlStyle,
     pub separator: SeparatorStyle,
+    pub scroll_bar: ScrollBarStyle,
+    pub table: TableStyle,
+    pub toggle: ToggleStyle,
     /// Tint for a drop target under a dragged track.
     pub drop_target: Colour,
     /// Font size of the body text used in panels and tooltips.
@@ -323,6 +353,81 @@ impl LookAndFeel {
                 colour: t.border,
                 thickness: t.border_width,
             },
+            scroll_bar: ScrollBarStyle {
+                track: shape(
+                    t.well,
+                    t.text_secondary,
+                    t.border,
+                    t.bar_radius,
+                    t.type_caption,
+                ),
+                thumb: shape(
+                    t.text_muted,
+                    best_text(t.text_muted, t),
+                    t.border_strong,
+                    t.bar_radius,
+                    t.type_caption,
+                ),
+                thumb_hover: shape(
+                    t.text_secondary,
+                    best_text(t.text_secondary, t),
+                    t.border_strong,
+                    t.bar_radius,
+                    t.type_caption,
+                ),
+                width: t.min_pointer_target / 3.0,
+            },
+            table: TableStyle {
+                header: shape(raised, t.text_secondary, t.border, 0.0, t.type_small),
+                row: shape(
+                    t.surface_scaled(),
+                    t.text_primary,
+                    t.border,
+                    0.0,
+                    t.type_body,
+                ),
+                row_alt: shape(
+                    t.surface_hover_scaled(),
+                    t.text_primary,
+                    t.border,
+                    0.0,
+                    t.type_body,
+                ),
+                row_selected: shape(
+                    Colour::mix(&[(t.surface_raised_scaled(), 0.8), (t.focus_ring, 0.2)]),
+                    t.text_primary,
+                    t.focus_ring,
+                    0.0,
+                    t.type_body,
+                ),
+                divider: SeparatorStyle {
+                    colour: t.border,
+                    thickness: t.border_width,
+                },
+            },
+            toggle: ToggleStyle {
+                off: shape(
+                    t.well,
+                    t.text_secondary,
+                    t.border_strong,
+                    t.control_radius,
+                    t.type_small,
+                ),
+                on: shape(
+                    accent,
+                    t.on_accent,
+                    t.border_strong,
+                    t.control_radius,
+                    t.type_small,
+                ),
+                knob: shape(
+                    t.text_primary,
+                    best_text(t.text_primary, t),
+                    t.border_strong,
+                    t.control_radius,
+                    t.type_small,
+                ),
+            },
             drop_target: t.drop_target,
             body_size: t.type_body,
             inset_small: t.inset_small,
@@ -401,7 +506,36 @@ impl LookAndFeel {
             ("text_field.focus", self.text_field.focus),
             ("panel", self.panel),
             ("panel.caption", self.panel_caption),
+            ("scroll_bar.track", self.scroll_bar.track),
+            ("scroll_bar.thumb", self.scroll_bar.thumb),
+            ("scroll_bar.thumb_hover", self.scroll_bar.thumb_hover),
+            ("table.header", self.table.header),
+            ("table.row", self.table.row),
+            ("table.row_alt", self.table.row_alt),
+            ("table.row_selected", self.table.row_selected),
+            ("toggle.off", self.toggle.off),
+            ("toggle.on", self.toggle.on),
+            ("toggle.knob", self.toggle.knob),
         ]
+    }
+}
+
+/// Of the primary text colour and the on-accent colour, the one that reads better on `fill`
+/// (judged over the darker backdrop end). For marks with no caption, such as a scroll thumb.
+fn best_text(fill: Colour, t: &ThemeTokens) -> Colour {
+    let ratio = |text: Colour| {
+        [t.backdrop_top, t.backdrop_bottom]
+            .into_iter()
+            .map(|b| {
+                let ground = over(fill, b);
+                contrast_ratio(over(text, ground), ground)
+            })
+            .fold(f32::MAX, f32::min)
+    };
+    if ratio(t.text_primary) >= ratio(t.on_accent) {
+        t.text_primary
+    } else {
+        t.on_accent
     }
 }
 
@@ -903,5 +1037,73 @@ mod tests {
             assert!(style.radius >= 0.0, "{name} has a negative radius");
         }
         assert_eq!(look.lit_button(look.accent).fill, look.accent);
+    }
+
+    #[test]
+    fn every_theme_gives_scroll_table_toggle_readable_contrast() {
+        let added = [
+            "scroll_bar.track",
+            "scroll_bar.thumb",
+            "scroll_bar.thumb_hover",
+            "table.header",
+            "table.row",
+            "table.row_alt",
+            "table.row_selected",
+            "toggle.off",
+            "toggle.on",
+            "toggle.knob",
+        ];
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            let entries = look.entries();
+            for name in added {
+                let (_, style) = entries
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .unwrap_or_else(|| panic!("{id}: entries() lacks {name}"));
+                let ratio = worst_contrast(style, &t);
+                assert!(ratio >= 3.0, "{id}: {name} contrast {ratio:.2} < 3.0");
+            }
+            // Body rows hold the body-text floor.
+            for (name, style) in [
+                ("table.row", look.table.row),
+                ("table.row_alt", look.table.row_alt),
+                ("table.row_selected", look.table.row_selected),
+            ] {
+                let ratio = worst_contrast(&style, &t);
+                assert!(ratio >= 4.5, "{id}: {name} body contrast {ratio:.2} < 4.5");
+            }
+            assert!(look.scroll_bar.width >= 4.0, "{id}: scroll bar too thin");
+        }
+    }
+
+    #[test]
+    fn thumb_is_visible_against_track() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            for bd in [t.backdrop_top, t.backdrop_bottom] {
+                let ground = over(look.scroll_bar.track.fill, over(t.surface_scaled(), bd));
+                for (name, thumb) in [
+                    ("thumb", look.scroll_bar.thumb),
+                    ("thumb_hover", look.scroll_bar.thumb_hover),
+                ] {
+                    let r = contrast_ratio(over(thumb.fill, ground), ground);
+                    assert!(r >= 3.0, "{id}: {name} on track {r:.2} < 3.0");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn toggle_states_and_table_rows_differ() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            assert_ne!(look.toggle.on.fill, look.toggle.off.fill, "{id}");
+            assert_ne!(look.table.row.fill, look.table.row_alt.fill, "{id}");
+            assert_ne!(look.table.row.fill, look.table.row_selected.fill, "{id}");
+        }
     }
 }
