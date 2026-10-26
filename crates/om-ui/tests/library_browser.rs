@@ -885,7 +885,10 @@ fn dropping_a_track_on_another_row_reorders_the_open_playlist() {
 }
 
 fn playlist_with(rig: &mut BrowserRig, name: &str, tracks: &[i64]) -> i64 {
-    let id = rig.browser.create_playlist(&mut rig.services, name).unwrap();
+    let id = rig
+        .browser
+        .create_playlist(&mut rig.services, name)
+        .unwrap();
     for &t in tracks {
         rig.services
             .library()

@@ -1113,7 +1113,10 @@ mod tests {
             let look = LookAndFeel::from_tokens(&t);
             assert_ne!(look.toggle.on.fill, look.toggle.off.fill, "{id}");
             assert_ne!(look.table.row.fill, look.table.row_alt.fill, "{id}");
-            assert_ne!(look.table.row_alt.fill, t.surface_hover, "{id}: hover hidden");
+            assert_ne!(
+                look.table.row_alt.fill, t.surface_hover,
+                "{id}: hover hidden"
+            );
             assert_ne!(
                 look.table.row_alt.fill,
                 t.surface_hover_scaled(),
