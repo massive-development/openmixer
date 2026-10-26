@@ -121,6 +121,8 @@ pub struct Shell {
     deck_art: Option<DeckArtwork>,
     /// The cover each deck card draws, built once per change (gpui hashes the bytes of a new one).
     pub(crate) art_images: Vec<Option<Arc<gpui::Image>>>,
+    /// The cover bytes each `art_images` entry was built from (compared by pointer).
+    art_sources: Vec<Option<Arc<[u8]>>>,
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
     /// The last stems action's failure per deck, shown in the stems caption until the next action.
     pub(crate) stem_errors: Vec<Option<String>>,
@@ -151,15 +153,19 @@ pub struct Shell {
     frame_stats: Option<crate::frame_stats::FrameStats>,
 }
 
-/// The theme the window uses: the active theme of a registry loaded with the built-ins.
-/// The gpui image for a deck's cover, keeping `current` while the bytes are the same (so the image
-/// is not rebuilt, and rehashed, every tick).
-fn cover_image(view: &ArtworkView, current: Option<Arc<gpui::Image>>) -> Option<Arc<gpui::Image>> {
+/// The gpui image for a deck's cover, keeping `current` while the view still holds the same bytes
+/// (the same `Arc`, remembered in `source`), so the image is not rebuilt and rehashed every tick.
+fn cover_image(
+    view: &ArtworkView,
+    source: &mut Option<Arc<[u8]>>,
+    current: Option<Arc<gpui::Image>>,
+) -> Option<Arc<gpui::Image>> {
     let ArtworkView::Image { data, .. } = view else {
+        *source = None;
         return None;
     };
-    if let Some(image) = current {
-        if image.bytes.as_slice() == &data[..] {
+    if let (Some(image), Some(known)) = (current, source.as_ref()) {
+        if Arc::ptr_eq(known, data) {
             return Some(image);
         }
     }
@@ -168,9 +174,11 @@ fn cover_image(view: &ArtworkView, current: Option<Arc<gpui::Image>>) -> Option<
     } else {
         gpui::ImageFormat::Jpeg
     };
+    *source = Some(Arc::clone(data));
     Some(Arc::new(gpui::Image::from_bytes(format, data.to_vec())))
 }
 
+/// The theme the window uses: the active theme of a registry loaded with the built-ins.
 pub fn load_theme() -> ThemeTokens {
     let mut registry = ThemeRegistry::new();
     registry.load_builtins();
@@ -259,6 +267,7 @@ impl Shell {
             shown_info: vec![TrackInfo::default(); deck_count],
             deck_art,
             art_images: vec![None; deck_count],
+            art_sources: vec![None; deck_count],
             shown_waveform: vec![None; deck_count],
             stem_errors: vec![None; deck_count],
             sampler,
@@ -353,7 +362,7 @@ impl Shell {
         if let Some(art) = self.deck_art.as_mut() {
             art.pump();
             for (index, slot) in self.art_images.iter_mut().enumerate() {
-                *slot = cover_image(art.view(index), slot.take());
+                *slot = cover_image(art.view(index), &mut self.art_sources[index], slot.take());
             }
         }
         for deck in &mut self.decks {
