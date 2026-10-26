@@ -25,6 +25,8 @@ pub struct IngestSummary {
     pub restored: usize,
     pub missing: usize,
     pub failed: usize,
+    /// Tracks put on the prep queue for analysis by this scan.
+    pub enqueued: usize,
 }
 
 impl AddAssign for IngestSummary {
@@ -36,6 +38,7 @@ impl AddAssign for IngestSummary {
         self.restored += o.restored;
         self.missing += o.missing;
         self.failed += o.failed;
+        self.enqueued += o.enqueued;
     }
 }
 
@@ -114,7 +117,9 @@ impl<'a> Ingestor<'a> {
                 }
                 seen.insert(path_text(&path));
                 summary.scanned += 1;
-                match self.ingest_file(&path) {
+                let (outcome, queued) = self.ingest_file(&path);
+                summary.enqueued += usize::from(queued);
+                match outcome {
                     Outcome::Added => summary.added += 1,
                     Outcome::Updated => summary.updated += 1,
                     Outcome::Unchanged => summary.unchanged += 1,
@@ -128,47 +133,54 @@ impl<'a> Ingestor<'a> {
         Ok(())
     }
 
-    fn ingest_file(&self, file: &Path) -> Outcome {
+    /// The outcome, and whether the track was put on the prep queue.
+    fn ingest_file(&self, file: &Path) -> (Outcome, bool) {
+        let done = |outcome| (outcome, false);
         let tracks = self.library.tracks();
         let trackfiles = self.library.track_files();
         // A failed lookup is not "new file": it would duplicate or clobber rows.
         let Ok(existing) = tracks.find_by_path(&path_text(file)) else {
-            return Outcome::Failed;
+            return done(Outcome::Failed);
         };
         let state = match &existing {
             Some(track) => match trackfiles.find(track.id) {
                 Ok(state) => state,
-                Err(_) => return Outcome::Failed,
+                Err(_) => return done(Outcome::Failed),
             },
             None => None,
         };
         // why: stamped before hashing, so an edit during the read is caught by the next scan
         let Some(stamp) = stamp_of(file) else {
-            return Outcome::Failed;
+            return done(Outcome::Failed);
         };
         let unchanged =
             state.filter(|s| s.mtime_ms == stamp.mtime_ms && s.size_bytes == stamp.size_bytes);
         match (unchanged, existing) {
-            (Some(state), Some(_)) if !state.missing => Outcome::Unchanged,
+            (Some(state), Some(_)) if !state.missing => done(Outcome::Unchanged),
             (Some(_), Some(track)) => match trackfiles.set_missing(track.id, false) {
-                Ok(()) => Outcome::Restored,
-                Err(_) => Outcome::Failed,
+                Ok(()) => done(Outcome::Restored),
+                Err(_) => done(Outcome::Failed),
             },
             (_, existing) => self.refresh(file, existing, stamp),
         }
     }
 
-    fn refresh(&self, file: &Path, existing: Option<TrackRecord>, stamp: FileStamp) -> Outcome {
+    fn refresh(
+        &self,
+        file: &Path,
+        existing: Option<TrackRecord>,
+        stamp: FileStamp,
+    ) -> (Outcome, bool) {
         let hash = match om_analysis::hash_file_content(file) {
             Some(hash) if !hash.is_empty() => hash,
-            _ => return Outcome::Failed,
+            _ => return (Outcome::Failed, false),
         };
         let Some(reader) = self.readers.find(file) else {
-            return Outcome::Failed;
+            return (Outcome::Failed, false);
         };
         let mut meta = TrackMetadata::default();
         if reader.read(file, &mut meta).is_err() {
-            return Outcome::Failed;
+            return (Outcome::Failed, false);
         }
 
         let mut record = to_record(file, &meta, hash.clone());
@@ -180,28 +192,37 @@ impl<'a> Ingestor<'a> {
         }
 
         match self.commit_record(&record, stamp, meta.artwork.as_ref()) {
-            Ok(()) if existing.is_some() => Outcome::Updated,
-            Ok(()) => Outcome::Added,
-            Err(_) => Outcome::Failed,
+            Ok(queued) if existing.is_some() => (Outcome::Updated, queued),
+            Ok(queued) => (Outcome::Added, queued),
+            Err(_) => (Outcome::Failed, false),
         }
     }
 
     /// Upserts the row, its file state and its cover in one transaction, so a failure leaves none
     /// of them behind. A cover over [`MAX_ARTWORK_BYTES`] is skipped, and any cover stored from an
-    /// earlier read is removed, since the file no longer matches it.
+    /// earlier read is removed, since the file no longer matches it. A track with no BPM and no
+    /// prep queue row yet is queued in the same transaction (returns true then); a track that was
+    /// queued before, whatever its result, is left alone so a file that cannot be analysed is not
+    /// retried on every scan.
     fn commit_record(
         &self,
         record: &TrackRecord,
         stamp: FileStamp,
         artwork: Option<&Artwork>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let tx = Transaction::begin(self.library.database())?;
         let id = self.library.tracks().upsert_by_path(record)?;
         self.library
             .track_files()
             .set(id, stamp.mtime_ms, stamp.size_bytes)?;
         self.store_artwork(id, &record.path, artwork)?;
-        tx.commit()
+        let queue = self.library.prep_queue();
+        let queued = record.bpm.is_none() && queue.find(id)?.is_none();
+        if queued {
+            queue.enqueue(id)?;
+        }
+        tx.commit()?;
+        Ok(queued)
     }
 
     fn store_artwork(&self, id: i64, path: &str, artwork: Option<&Artwork>) -> Result<()> {
