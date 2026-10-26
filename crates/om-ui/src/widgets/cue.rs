@@ -9,8 +9,13 @@ use crate::theme::ThemeTokens;
 use om_core::param_id::MixerParam;
 use om_engine::mixer::MAX_GAIN;
 
-/// Height of the phones row: the PHONES caption and a 32 px slider row, in px.
-pub const CUE_HEIGHT: i32 = CAPTION_HEIGHT + 32;
+/// Height of one knob row: the 36 px cue cap (`knobs.md` section 3) plus its track ring, 2 x (3 px
+/// gap + 1.25 px half stroke) = 8.5 px, rounded up to 44, and 2 px of air (unsourced, small).
+pub const KNOB_ROW_HEIGHT: i32 = 46;
+/// Gap between the two knob rows, in px.
+pub const KNOB_ROW_GAP: i32 = 4;
+/// Height of the headphone section: the caption and the MIX and VOL knobs stacked, in px.
+pub const CUE_HEIGHT: i32 = CAPTION_HEIGHT + 2 * KNOB_ROW_HEIGHT + KNOB_ROW_GAP;
 /// Short names printed inside the two sliders.
 pub const MIX_LABEL: &str = "MIX";
 pub const LEVEL_LABEL: &str = "VOL";
@@ -66,15 +71,15 @@ impl CueSection {
     }
 
     pub fn layout(bounds: Rect, theme: &ThemeTokens) -> CueLayout {
-        let mut area = bounds.reduced(theme.pad, 0);
+        let mut area = bounds.reduced(theme.mixer_pad_x as i32, 0);
         let caption = area.remove_top(CAPTION_HEIGHT);
-        let half = (area.w - theme.inner_gap) / 2;
-        let mix = area.remove_left(half);
-        area.remove_left(theme.inner_gap);
+        let mix = area.remove_top(KNOB_ROW_HEIGHT);
+        area.remove_top(KNOB_ROW_GAP);
+        let level = area.remove_top(KNOB_ROW_HEIGHT);
         CueLayout {
             caption,
             mix,
-            level: area,
+            level,
         }
     }
 }
@@ -84,11 +89,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_sliders_share_the_row_under_one_caption() {
+    fn two_knob_rows_stack_under_one_caption_with_room_for_a_36px_cap() {
         let theme = ThemeTokens::builtin_dark();
-        let l = CueSection::layout(Rect::sized(213, CUE_HEIGHT), &theme);
-        assert!(l.caption.bottom() <= l.mix.y);
-        assert!(!l.mix.intersects(&l.level));
-        assert!(l.mix.h >= 32 && l.level.h >= 32);
+        for w in [96, 111, 213] {
+            let l = CueSection::layout(Rect::sized(w, CUE_HEIGHT), &theme);
+            assert!(l.caption.bottom() <= l.mix.y);
+            assert!(!l.mix.intersects(&l.level));
+            assert!(l.level.bottom() <= CUE_HEIGHT);
+            // 36 px cap + 2 x (3 px gap + 1.25 px half stroke) must fit the row's height.
+            assert!(l.mix.h >= 45 && l.level.h >= 45, "{w}");
+        }
     }
 }

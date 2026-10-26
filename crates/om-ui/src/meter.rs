@@ -73,6 +73,16 @@ impl MeterScale {
         self.floor_db + proportion.clamp(0.0, 1.0) * -self.floor_db
     }
 
+    /// The numeric peak readout under the master meter (`faders-meters.md` section 3): the held
+    /// peak at `hold` (a bar proportion) in dB with one decimal, `-inf` while the bar is empty.
+    pub fn peak_text(&self, hold: f32) -> String {
+        if hold <= 0.0 {
+            "-inf".to_owned()
+        } else {
+            format!("{:.1}", self.db_at(hold))
+        }
+    }
+
     /// The colour band a bar proportion falls in.
     pub fn zone(&self, proportion: f32) -> MeterZone {
         let db = self.db_at(proportion);
@@ -251,6 +261,18 @@ mod tests {
     use super::*;
 
     const FRAME: f32 = 1.0 / 30.0;
+
+    #[test]
+    fn the_peak_readout_is_one_decimal_db_or_minus_inf() {
+        let scale = MeterScale {
+            floor_db: -48.0,
+            mid_db: -12.0,
+            high_db: -3.0,
+        };
+        assert_eq!(scale.peak_text(0.0), "-inf");
+        assert_eq!(scale.peak_text(1.0), "0.0");
+        assert_eq!(scale.peak_text(scale.proportion(-2.3)), "-2.3");
+    }
 
     fn params() -> MeterParams {
         MeterParams {
