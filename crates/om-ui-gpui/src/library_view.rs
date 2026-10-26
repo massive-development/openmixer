@@ -29,6 +29,8 @@ const PAD: f32 = 6.0;
 #[derive(Clone)]
 pub struct TrackDragPayload {
     pub description: String,
+    /// The table row the drag started on (told apart from other rows of the same track).
+    pub row: usize,
     pub label: String,
     /// The style the drag preview is drawn in (the theme's tooltip style).
     pub preview: ControlStyle,
@@ -568,6 +570,7 @@ fn track_row(
     }
     let payload = TrackDragPayload {
         description: row.drag.clone(),
+        row: row_index,
         label,
         preview: LookAndFeel::from_tokens(t).tooltip,
     };
@@ -581,7 +584,7 @@ fn track_row(
     line.id(("library-row", row_index))
         .drag_over::<TrackDragPayload>(move |style, _, _, _| style.bg(drop_target))
         .on_drop(cx.listener(move |this, payload: &TrackDragPayload, _, cx| {
-            with_library(this, |p| p.drop_on_row(row_index, &payload.description));
+            with_library(this, |p| p.drop_on_row(payload.row, row_index));
             cx.notify();
         }))
         .on_mouse_down(

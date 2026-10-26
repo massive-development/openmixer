@@ -227,9 +227,9 @@ pub enum KeyOutcome {
 /// A playlist name being typed in the search box's place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameEntry {
-    /// `Some(id)` renames that playlist; `None` names a new one.
+    /// `Some(id)` renames that playlist or folder; `None` names a new one.
     pub rename: Option<i64>,
-    /// Names a new folder (top level) instead of a playlist.
+    /// A folder (new at the top level, or the one renamed) instead of a playlist.
     pub folder: bool,
     pub text: String,
 }
@@ -238,7 +238,11 @@ impl NameEntry {
     /// What the box shows while the name is typed.
     pub fn prompt(&self) -> String {
         let what = if self.rename.is_some() {
-            "Rename playlist"
+            if self.folder {
+                "Rename folder"
+            } else {
+                "Rename playlist"
+            }
         } else if self.folder {
             "New folder"
         } else {
@@ -365,24 +369,31 @@ impl LibraryPanel {
             .move_playlist(&mut h.services, playlist_id, folder, i32::MAX)
     }
 
-    /// A track dropped on table row `row`: reorders the open playlist.
-    pub fn drop_on_row(&mut self, row: usize, description: &str) -> bool {
-        let Some(id) = parse_track_drag(description) else {
-            return false;
-        };
+    /// The track on table row `source_row` dropped on row `target_row`: reorders the open
+    /// playlist (the dragged row, not just its track, so duplicates stay apart).
+    pub fn drop_on_row(&mut self, source_row: usize, target_row: usize) -> bool {
         let mut h = self.hub.borrow_mut();
-        self.browser.move_track_to_row(&mut h.services, id, row)
+        self.browser
+            .move_track_to_row(&mut h.services, source_row, target_row)
     }
 
-    /// Starts renaming the playlist shown; the status line says so when none is.
+    /// Starts renaming the selected folder, else the playlist shown; the status line says so when
+    /// there is neither.
     pub fn begin_rename_playlist(&mut self) {
-        match self.browser.selected_playlist() {
-            Some(id) => {
+        let target = match self.browser.selected_folder() {
+            Some(folder) => Some((folder.playlist_id, true, folder.label.clone())),
+            None => self
+                .browser
+                .selected_playlist()
+                .map(|id| (id, false, self.browser.selected_node().label.clone())),
+        };
+        match target {
+            Some((id, folder, text)) => {
                 self.search_active = false;
                 self.name_entry = Some(NameEntry {
                     rename: Some(id),
-                    folder: false,
-                    text: self.browser.selected_node().label.clone(),
+                    folder,
+                    text,
                 });
             }
             None => {
@@ -522,7 +533,9 @@ impl LibraryPanel {
         walk(
             self.browser.sidebar_nodes(),
             0,
-            self.browser.selected_node(),
+            self.browser
+                .selected_folder()
+                .unwrap_or_else(|| self.browser.selected_node()),
             &mut out,
         );
         out
