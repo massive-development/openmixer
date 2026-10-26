@@ -229,6 +229,8 @@ pub enum KeyOutcome {
 pub struct NameEntry {
     /// `Some(id)` renames that playlist; `None` names a new one.
     pub rename: Option<i64>,
+    /// Names a new folder (top level) instead of a playlist.
+    pub folder: bool,
     pub text: String,
 }
 
@@ -237,6 +239,8 @@ impl NameEntry {
     pub fn prompt(&self) -> String {
         let what = if self.rename.is_some() {
             "Rename playlist"
+        } else if self.folder {
+            "New folder"
         } else {
             "New playlist"
         };
@@ -338,8 +342,36 @@ impl LibraryPanel {
         self.search_active = false;
         self.name_entry = Some(NameEntry {
             rename: None,
+            folder: false,
             text: String::new(),
         });
+    }
+
+    /// Starts naming a new top-level folder; playlists are dragged into it afterwards.
+    pub fn begin_new_folder(&mut self) {
+        self.search_active = false;
+        self.name_entry = Some(NameEntry {
+            rename: None,
+            folder: true,
+            text: String::new(),
+        });
+    }
+
+    /// A playlist dropped on a folder (`Some(id)`) or on the Playlists heading (`None`): it goes
+    /// last in that folder. Refusals (into itself or a descendant) show in the status line.
+    pub fn drop_playlist_on(&mut self, playlist_id: i64, folder: Option<i64>) -> bool {
+        let mut h = self.hub.borrow_mut();
+        self.browser
+            .move_playlist(&mut h.services, playlist_id, folder, i32::MAX)
+    }
+
+    /// A track dropped on table row `row`: reorders the open playlist.
+    pub fn drop_on_row(&mut self, row: usize, description: &str) -> bool {
+        let Some(id) = parse_track_drag(description) else {
+            return false;
+        };
+        let mut h = self.hub.borrow_mut();
+        self.browser.move_track_to_row(&mut h.services, id, row)
     }
 
     /// Starts renaming the playlist shown; the status line says so when none is.
@@ -349,6 +381,7 @@ impl LibraryPanel {
                 self.search_active = false;
                 self.name_entry = Some(NameEntry {
                     rename: Some(id),
+                    folder: false,
                     text: self.browser.selected_node().label.clone(),
                 });
             }
@@ -409,6 +442,10 @@ impl LibraryPanel {
                     Some(_) => self
                         .browser
                         .rename_selected_playlist(&mut h.services, &entry.text),
+                    None if entry.folder => self
+                        .browser
+                        .new_folder(&mut h.services, None, &entry.text)
+                        .is_some(),
                     None => self
                         .browser
                         .create_playlist(&mut h.services, &entry.text)

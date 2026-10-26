@@ -172,6 +172,8 @@ pub fn loop_label(beats: f32) -> String {
 pub const LOOP_CAPTION: &str = "LOOP (beats)";
 /// Library action: deletes the selected playlist.
 pub const DELETE_PLAYLIST: &str = "Delete playlist";
+/// Library action: names and creates a playlist folder.
+pub const NEW_FOLDER: &str = "New folder";
 /// Library action: takes the selected tracks out of the playlist, keeping them in the library.
 pub const REMOVE_FROM_PLAYLIST: &str = "Remove from playlist";
 /// Library action: separates the selected tracks into stems.

@@ -34,6 +34,14 @@ pub struct TrackDragPayload {
     pub preview: ControlStyle,
 }
 
+/// The payload of a sidebar playlist or folder drag: dropped on a folder, it moves in.
+#[derive(Clone)]
+pub struct PlaylistDragPayload {
+    pub id: i64,
+    pub label: String,
+    pub preview: ControlStyle,
+}
+
 /// The floating label shown under the pointer while a track is dragged.
 pub struct DragPreview {
     label: String,
@@ -65,7 +73,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
     // Toolbar buttons are as tall as the header's controls.
     let button_h = (header_height(window_h) - 6) as f32;
     // The playlist buttons: three rows of one table row's height, under the tree.
-    let actions_h = 3.0 * row_h + 2.0 * 4.0 + 8.0;
+    let actions_h = 4.0 * row_h + 3.0 * 4.0 + 8.0;
     let focus: FocusHandle = shell
         .library_focus
         .get_or_insert_with(|| cx.focus_handle())
@@ -144,12 +152,29 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         c.a = 0.35;
         c
     };
-    for line in sidebar {
+    let preview = LookAndFeel::from_tokens(&t).tooltip;
+    for (index, line) in sidebar.into_iter().enumerate() {
         let node = line.node.clone();
         let look = sidebar_row_look(&t, line.selected);
         let playlist = (node.kind == SidebarKind::Playlist).then_some(node.playlist_id);
+        // Playlists and folders drag; folders (`Some`) and the Playlists heading (`None`, the top
+        // level) accept the drop.
+        let draggable =
+            matches!(node.kind, SidebarKind::Playlist | SidebarKind::Folder).then(|| {
+                PlaylistDragPayload {
+                    id: node.playlist_id,
+                    label: node.label.clone(),
+                    preview,
+                }
+            });
+        let folder_target = match node.kind {
+            SidebarKind::Folder => Some(Some(node.playlist_id)),
+            SidebarKind::PlaylistGroup => Some(None),
+            _ => None,
+        };
         tree = tree.child(
             div()
+                .id(("sidebar-row", index))
                 .h(px(row_h))
                 .flex()
                 .items_center()
@@ -178,6 +203,27 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
                             with_library(this, |p| p.drop_on_playlist(id, &payload.description));
                             cx.notify();
                         }))
+                })
+                // Playlists and folders dropped on a folder move into it.
+                .when_some(folder_target, |el, folder| {
+                    el.drag_over::<PlaylistDragPayload>(move |style, _, _, _| style.bg(drop_target))
+                        .on_drop(
+                            cx.listener(move |this, payload: &PlaylistDragPayload, _, cx| {
+                                with_library(this, |p| p.drop_playlist_on(payload.id, folder));
+                                cx.notify();
+                            }),
+                        )
+                })
+                .when_some(draggable, |el, payload| {
+                    el.on_drag(
+                        payload,
+                        |payload: &PlaylistDragPayload, _, _, cx: &mut App| {
+                            cx.new(|_| DragPreview {
+                                label: payload.label.clone(),
+                                style: payload.preview,
+                            })
+                        },
+                    )
                 })
                 .on_mouse_down(
                     MouseButton::Left,
@@ -209,6 +255,13 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
                     p.begin_rename_playlist()
                 })),
         )
+        .child(action_button(
+            &t,
+            row_h,
+            om_ui::labels::NEW_FOLDER,
+            cx,
+            |p| p.begin_new_folder(),
+        ))
         .child(action_button(
             &t,
             row_h,
@@ -479,7 +532,19 @@ fn track_row(
         label,
         preview: LookAndFeel::from_tokens(t).tooltip,
     };
+    let drop_target = {
+        let mut c = paint(t.master);
+        c.a = 0.35;
+        c
+    };
+    // A track dropped on another row of the open playlist takes that row's place (the browser
+    // refuses it anywhere else).
     line.id(("library-row", row_index))
+        .drag_over::<TrackDragPayload>(move |style, _, _, _| style.bg(drop_target))
+        .on_drop(cx.listener(move |this, payload: &TrackDragPayload, _, cx| {
+            with_library(this, |p| p.drop_on_row(row_index, &payload.description));
+            cx.notify();
+        }))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, _, cx| {

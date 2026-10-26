@@ -18,7 +18,7 @@ pub use services::{
     MEMORY_PATH,
 };
 pub use track_drag::{describe as describe_track_drag, parse as parse_track_drag};
-pub use track_source::{PlaylistSource, PrepQueueSource,SearchTrackSource, TrackSource};
+pub use track_source::{PlaylistSource, PrepQueueSource, SearchTrackSource, TrackSource};
 pub use track_table::{
     column_shown, columns, rating_stars, sort_glyph, Column, SortGlyph, TrackTableModel,
     MAX_CACHED_PAGES, PAGE_SIZE, STEMS_COLUMN,
