@@ -47,6 +47,10 @@ type GridCheck = Box<dyn Fn(&TrackRecord) -> bool>;
 const GRID_CHECK_CAP: usize = 50;
 /// Times one unanalysed track is put on the prep queue before automix gives up on it.
 const MAX_ANALYSIS_SUBMISSIONS: u32 = 3;
+/// Most unanalysed tracks one pick puts on (or checks in) the prep queue.
+pub const MAX_SUBMISSIONS_PER_PICK: usize = 8;
+/// Most track ids the give-up notice names.
+const NOTICE_IDS: usize = 3;
 type Clock = Box<dyn Fn() -> i64>;
 
 pub struct LibraryQueue {
@@ -148,7 +152,8 @@ impl LibraryQueue {
         &self.source
     }
 
-    /// The database error of the last call, if it failed.
+    /// The last call's database error, or a short capped notice naming tracks automix gave up
+    /// analysing (cleared by the next call that has neither).
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
     }
@@ -162,10 +167,16 @@ impl LibraryQueue {
     /// queue the app's `PrepQueue` pumps). A track already waiting there is left alone; one whose
     /// entry finished (or vanished) without making it analysed is submitted again, up to
     /// [`MAX_ANALYSIS_SUBMISSIONS`] times, then given up on.
+    ///
+    /// At most [`MAX_SUBMISSIONS_PER_PICK`] tracks touch the database per call (never-submitted
+    /// ones first), so a big unanalysed playlist cannot stall the window thread; the rest follow
+    /// on later picks.
     fn request_analysis(&mut self, ids: &[i64]) {
         self.pending.clear();
         self.given_up.clear();
         let dao = self.library.prep_queue();
+        let mut fresh = Vec::new();
+        let mut retry = Vec::new();
         for &id in ids {
             let count = self.submissions.get(&id).copied().unwrap_or(0);
             if count >= MAX_ANALYSIS_SUBMISSIONS {
@@ -173,6 +184,18 @@ impl LibraryQueue {
                 continue;
             }
             self.pending.push(id);
+            if count == 0 {
+                fresh.push(id);
+            } else {
+                retry.push(id);
+            }
+        }
+        for id in fresh
+            .into_iter()
+            .chain(retry)
+            .take(MAX_SUBMISSIONS_PER_PICK)
+        {
+            let count = self.submissions.get(&id).copied().unwrap_or(0);
             let waiting = matches!(
                 dao.find(id),
                 Ok(Some(e)) if matches!(e.status, PrepStatus::Queued | PrepStatus::Running)
@@ -345,10 +368,18 @@ impl AutomixQueue for LibraryQueue {
         match self.pick(current) {
             Ok(pick) => {
                 self.last_error = (!self.given_up.is_empty()).then(|| {
-                    let ids: Vec<String> = self.given_up.iter().map(i64::to_string).collect();
+                    let n = self.given_up.len();
+                    let ids: Vec<String> = self
+                        .given_up
+                        .iter()
+                        .take(NOTICE_IDS)
+                        .map(i64::to_string)
+                        .collect();
+                    let more = if n > NOTICE_IDS { ", ..." } else { "" };
                     format!(
-                        "gave up analysing after {MAX_ANALYSIS_SUBMISSIONS} tries: track {}",
-                        ids.join(", ")
+                        "{n} track{} could not be analysed (#{}{more})",
+                        if n == 1 { "" } else { "s" },
+                        ids.join(", #")
                     )
                 });
                 pick
