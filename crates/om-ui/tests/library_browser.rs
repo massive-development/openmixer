@@ -790,3 +790,118 @@ fn an_unreadable_watch_folder_list_is_shown_in_the_status_line() {
     );
     assert!(rig.browser.sidebar_nodes()[2].children.is_empty());
 }
+
+/// Entry positions of playlist `id`, in order, plus the track ids they hold.
+fn entry_order(rig: &mut BrowserRig, id: i64) -> (Vec<i32>, Vec<i64>) {
+    let entries = rig.services.library().playlists().entries(id).unwrap();
+    (
+        entries.iter().map(|e| e.position).collect(),
+        entries.iter().map(|e| e.track_id).collect(),
+    )
+}
+
+#[test]
+fn entry_moves_to_first_last_and_clamped_index() {
+    let mut rig = BrowserRig::new();
+    let id = rig
+        .browser
+        .create_playlist(&mut rig.services, "Set")
+        .unwrap();
+    let tracks = rig.ids.clone();
+    for &t in &tracks[..3] {
+        rig.services
+            .library()
+            .playlists()
+            .add_track(id, t, -1)
+            .unwrap();
+    }
+    let entry = |rig: &mut BrowserRig, n: usize| {
+        rig.services.library().playlists().entries(id).unwrap()[n].id
+    };
+
+    let last = entry(&mut rig, 2);
+    assert!(rig.browser.move_entry(&mut rig.services, last, 0));
+    let (positions, order) = entry_order(&mut rig, id);
+    assert_eq!(positions, [0, 1, 2]);
+    assert_eq!(order, [tracks[2], tracks[0], tracks[1]]);
+
+    let first = entry(&mut rig, 0);
+    assert!(rig.browser.move_entry(&mut rig.services, first, 2));
+    let (positions, order) = entry_order(&mut rig, id);
+    assert_eq!(positions, [0, 1, 2]);
+    assert_eq!(order, [tracks[0], tracks[1], tracks[2]]);
+
+    let first = entry(&mut rig, 0);
+    assert!(rig.browser.move_entry(&mut rig.services, first, 99));
+    let (positions, order) = entry_order(&mut rig, id);
+    assert_eq!(positions, [0, 1, 2], "out of range clamps, no gaps");
+    assert_eq!(order, [tracks[1], tracks[2], tracks[0]]);
+
+    assert!(!rig.browser.move_entry(&mut rig.services, 9999, 0));
+    assert!(rig.browser.status_is_error());
+}
+
+#[test]
+fn new_folder_nests_under_parent() {
+    let mut rig = BrowserRig::new();
+    assert_eq!(rig.browser.new_folder(&mut rig.services, None, " "), None);
+    assert!(rig.browser.status_is_error());
+    let sets = rig
+        .browser
+        .new_folder(&mut rig.services, None, " Sets ")
+        .expect("created");
+    let friday = rig
+        .browser
+        .new_folder(&mut rig.services, Some(sets), "Friday")
+        .expect("nested");
+    let plain = rig
+        .browser
+        .create_playlist(&mut rig.services, "Plain")
+        .unwrap();
+    assert_eq!(
+        rig.browser
+            .new_folder(&mut rig.services, Some(plain), "Bad"),
+        None,
+        "a playlist cannot hold folders"
+    );
+
+    let group = rig.browser.sidebar_nodes()[1].clone();
+    assert_eq!(group.children[0].label, "Sets");
+    assert_eq!(group.children[0].kind, SidebarKind::Folder);
+    assert_eq!(group.children[0].children[0].playlist_id, friday);
+    assert_eq!(group.children[0].children[0].kind, SidebarKind::Folder);
+}
+
+#[test]
+fn playlist_moves_between_folders() {
+    let mut rig = BrowserRig::new();
+    let a = rig.browser.new_folder(&mut rig.services, None, "A").unwrap();
+    let b = rig
+        .browser
+        .new_folder(&mut rig.services, Some(a), "B")
+        .unwrap();
+    let p = rig.browser.create_playlist(&mut rig.services, "P").unwrap();
+    let q = rig.browser.create_playlist(&mut rig.services, "Q").unwrap();
+
+    assert!(rig.browser.move_playlist(&mut rig.services, p, Some(a), 0));
+    assert!(rig.browser.move_playlist(&mut rig.services, q, Some(a), 0));
+    let group = rig.browser.sidebar_nodes()[1].clone();
+    assert_eq!(group.children.len(), 1, "both left the top level");
+    let labels: Vec<&str> = group.children[0]
+        .children
+        .iter()
+        .map(|n| n.label.as_str())
+        .collect();
+    assert_eq!(labels, ["Q", "P", "B"]);
+
+    // Back out to the top level.
+    assert!(rig.browser.move_playlist(&mut rig.services, p, None, 0));
+    assert_eq!(rig.browser.sidebar_nodes()[1].children[0].label, "P");
+
+    // A folder cannot go into itself or its own descendant, and nothing changes.
+    let before = rig.browser.sidebar_nodes().to_vec();
+    assert!(!rig.browser.move_playlist(&mut rig.services, a, Some(b), 0));
+    assert!(!rig.browser.move_playlist(&mut rig.services, a, Some(a), 0));
+    assert!(rig.browser.status_is_error());
+    assert_eq!(rig.browser.sidebar_nodes(), before.as_slice());
+}
