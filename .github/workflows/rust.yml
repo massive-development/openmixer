@@ -4,6 +4,8 @@ name: Rust
 on:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"
 
 concurrency:
   group: rust-${{ github.ref }}
@@ -147,3 +149,43 @@ jobs:
             echo "ERROR: ASIO SDK file name found in the tracked tree"
             exit 1
           fi
+
+  # Weekly (and on demand) 10-minute soaks. Ignored by default, so they never run in the PR gate.
+  soak:
+    name: soak (10-minute, ignored tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: github.event_name != 'pull_request' && github.event_name != 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+          components: rustfmt, clippy
+
+      - name: Install Linux audio dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
+          # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
+            libvulkan-dev libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: soak (om-audio, 10 minutes)
+        run: cargo test -p om-audio --test soak -- --ignored --nocapture
+
+      - name: ui gate (openmixer, 10 minutes)
+        run: cargo test -p openmixer --test ui_gate -- --ignored
