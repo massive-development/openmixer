@@ -177,7 +177,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 4 | Library and data | 🟡 Done except play history, artwork persistence and FTS |
 | 5 | User interface | 🟡 Partial: design tokens (25) and stem pads (30) open; decks, mixer and settings partial |
 | 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); the mapping editor (36) is in at logic and view level (Settings > Mapping, MIDI learn into it; not verified with hardware); controller maps (34) and HID (35) are open |
-| 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; Automix is in (planner, controller, library queue, Automix settings page, main-window bar; not heard, mock device only); stem separation is unproven and stem transitions are open |
+| 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; Automix is in (planner, controller, library queue, Automix settings page, main-window bar; not heard, mock device only); stem separation is unproven; stem transitions are tested on the engine, not heard |
 | 8 | Pro features (recording, broadcast, DVS, video) | 🟡 Partial: mix recording (master-output WAV, ids, prefs, Recording settings tab, header Record button and `r` shortcut; not heard); broadcast, DVS and video not started |
 | 9 | Release | ⬜ Not started |
 
@@ -205,7 +205,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 **Known gaps, honestly listed:**
 
-- Automix is not verified by ear (mock device only). It asks the prep queue to analyse tracks it had to skip as not analysed (up to 3 times per track, then it gives up and reports via `last_error`); that retry loop is not heard by ear. Stem features still open: stem transitions (Todo 39) and the stem separation backend (Todo 19)
+- Automix is not verified by ear (mock device only). It asks the prep queue to analyse tracks it had to skip as not analysed (up to 3 times per track, then it gives up and reports via `last_error`); that retry loop is not heard by ear. Stem transitions (Todo 39) are tested on the engine but not heard; the stem separation backend (Todo 19) is still open
 - The stems ONNX Runtime backend (Todo 19); the separator interface and the licence-gated downloads are done
 - HID (Todo 35) and plug-and-play controller maps (Todo 34). The mapping editor (Todo 36) is done at logic and view level; it is not verified with hardware
 - Dynamic plugin loading (Todo 10a): shared libraries load over a versioned C ABI (`PluginLoader::load`, ADR in `docs/spikes/DECISIONS.md`) and are tested with in-tree plugins only; nothing third-party has been tried. Plugins must catch their own panics, and the vtable has no prepare, sample-rate or parameters yet
