@@ -154,7 +154,6 @@ mod mixer_keys {
         "meterMidDb" => meter_mid_db: -96.0, 0.0;
         "meterHighDb" => meter_high_db: -96.0, 0.0;
         "meterClipLevel" => meter_clip_level: 0.1, 1.0;
-        "meterReleaseSeconds" => meter_release_seconds: 0.01, 10.0;
         "meterHoldSeconds" => meter_hold_seconds: 0.0, 10.0;
         "meterClipSeconds" => meter_clip_seconds: 0.0, 30.0;
         "titleHeight" => mixer_title_height: 0.0, MAX_PX;
@@ -710,9 +709,23 @@ fn read_floats(
             }
         }
     }
-    warn_unknown(section, keys, &format!("{name}."), warnings);
+    let known: Vec<&str> = keys
+        .iter()
+        .copied()
+        .chain(
+            RETIRED_KEYS
+                .iter()
+                .filter(|(s, _)| *s == name)
+                .map(|(_, k)| *k),
+        )
+        .collect();
+    warn_unknown(section, &known, &format!("{name}."), warnings);
     Ok(())
 }
+
+/// Keys that older theme files carry and no token reads any more: (section, key). They are
+/// accepted without a warning so those files keep loading quietly.
+const RETIRED_KEYS: [(&str, &str); 1] = [("mixer", "meterReleaseSeconds")];
 
 #[cfg(test)]
 mod tests {
@@ -732,6 +745,17 @@ mod tests {
         assert_eq!(parse_colour_hex("#1122"), None);
         assert_eq!(parse_colour_hex(""), None);
         assert_eq!(parse_colour_hex("#GG0000"), None);
+    }
+
+    #[test]
+    fn a_theme_with_the_retired_release_key_loads_without_a_warning() {
+        let old =
+            r#"{"id":"t.old","name":"T","mixer":{"meterReleaseSeconds":0.3,"meterMidDb":-12}}"#;
+        let parsed = parse_theme(old).expect("parses");
+        assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+        assert_eq!(parsed.tokens.meter_mid_db, -12.0);
+        let typo = r#"{"id":"t.typo","name":"T","mixer":{"meterReleaseSecs":0.3}}"#;
+        assert_eq!(parse_theme(typo).expect("parses").warnings.len(), 1);
     }
 
     #[test]

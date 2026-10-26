@@ -191,7 +191,6 @@ pub struct ThemeTokens {
     pub meter_mid_db: f32,
     pub meter_high_db: f32,
     pub meter_clip_level: f32,
-    pub meter_release_seconds: f32,
     pub meter_hold_seconds: f32,
     pub meter_clip_seconds: f32,
     pub mixer_title_height: f32,
@@ -241,6 +240,7 @@ pub struct ThemeTokens {
     pub disabled_alpha: f32,
 
     // Waveform colour (`waveform` section): the hue curve and the limits that keep it legible.
+    // unused since the band palette; remove in a theme cleanup
     /// Hue curve over the centroid axis (0..1, log frequency); positions rise strictly.
     pub wave_stops: Vec<WaveStop>,
     /// Ceiling on saturation after the spread and curve scales (0..1).
@@ -359,14 +359,13 @@ impl ThemeTokens {
             mixer_crossfader_height: 46.0,
             mixer_cue_height: 46.0,
             meter_floor_db: -48.0,
-            meter_mid_db: -18.0,
-            meter_high_db: -6.0,
+            meter_mid_db: -12.0,
+            meter_high_db: -3.0,
             meter_clip_level: 0.99,
-            meter_release_seconds: 0.3,
             meter_hold_seconds: 1.0,
             meter_clip_seconds: 2.0,
             mixer_title_height: 22.0,
-            mixer_fader_width: 40.0,
+            mixer_fader_width: 58.0,
             mixer_curve_width: 128.0,
             mixer_fx_box_width: 150.0,
             mixer_fx_enable_width: 56.0,
@@ -500,6 +499,20 @@ fn builtin_accents() -> Vec<Colour> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_meter_zones_start_at_minus_12_and_minus_3_db() {
+        // docs/design/research/faders-meters.md section 3 (a proposal there, kept small).
+        let t = ThemeTokens::builtin_dark();
+        assert_eq!((t.meter_mid_db, t.meter_high_db), (-12.0, -3.0));
+        // The shipped theme files agree, daylight included.
+        for (name, json) in crate::theme::builtin::BUILTIN_THEMES {
+            let parsed = crate::theme::json::parse_theme(json).expect("parses");
+            let t = parsed.tokens;
+            assert_eq!((t.meter_mid_db, t.meter_high_db), (-12.0, -3.0), "{name}");
+            assert!(parsed.warnings.is_empty(), "{name}: {:?}", parsed.warnings);
+        }
+    }
 
     #[test]
     fn colour_alpha_round_trips_through_eight_bits() {

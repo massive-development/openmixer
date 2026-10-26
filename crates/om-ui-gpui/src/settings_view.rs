@@ -50,8 +50,6 @@ pub type AudioStatsFn = Arc<dyn Fn() -> AudioStats + Send + Sync>;
 const CARD_WIDTH: i32 = 720;
 const CARD_HEIGHT: i32 = 540;
 const CARD_MARGIN: i32 = 24;
-/// Height of the header strip above the layout, with the Settings button.
-pub const HEADER_HEIGHT: i32 = 32;
 
 /// Copies the plugin themes into a window's theme registry.
 pub type ThemeSync = Box<dyn Fn(&mut ThemeRegistry)>;
@@ -182,6 +180,11 @@ pub struct SettingsState {
 }
 
 impl SettingsState {
+    /// The audio readout now, when the window was given one.
+    pub(crate) fn audio_snapshot(&self) -> Option<AudioStats> {
+        self.audio_stats.as_ref().map(|read| read())
+    }
+
     pub fn new(options: SettingsOptions) -> Self {
         let has_audio = options.audio.is_some();
         let mut state = Self {

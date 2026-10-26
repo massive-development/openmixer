@@ -20,7 +20,7 @@ fn meter_params() -> MeterParams {
     MeterParams {
         floor_db: -48.0,
         clip_level: 0.99,
-        release_seconds: 0.5,
+        release_db_per_second: 13.0,
         hold_seconds: 1.0,
         clip_seconds: 2.0,
     }
@@ -241,8 +241,8 @@ fn master_and_cue_sliders_reach_the_engine_ceiling() {
         "MIDI-set values above 1.5 must display"
     );
     assert!((panel.cue.level.value() - 2.0).abs() < 1e-6);
-    assert!((panel.master.fader.max - 2.0).abs() < 1e-6);
-    assert!((panel.cue.level.max - 2.0).abs() < 1e-6);
+    assert!((panel.master.fader.range.max - 2.0).abs() < 1e-6);
+    assert!((panel.cue.level.range.max - 2.0).abs() < 1e-6);
     panel.master.fader_changed(1.9);
     assert!((rig.engine.mixer().master_gain() - 1.9).abs() < 1e-6);
 }
@@ -315,7 +315,7 @@ fn assert_no_overlap(parts: &[(&str, Rect)], context: &str) {
 #[test]
 fn module_layout_has_no_overlaps_across_sizes() {
     let theme = ThemeTokens::builtin_dark();
-    for (w, h) in [(220, 280), (270, 300), (330, 420)] {
+    for (w, h) in [(220, 280), (245, 262), (270, 300), (330, 420)] {
         let context = format!("module {w}x{h}");
         let bounds = Rect::sized(w, h);
         let layout = MixerPanel::module_layout(bounds, &theme);
@@ -330,6 +330,29 @@ fn module_layout_has_no_overlaps_across_sizes() {
             assert!(bounds.contains(r), "{context}: {name} clipped");
         }
     }
+}
+
+/// The module sections get what their research specs need at the smallest window's module size:
+/// a master fader with labelled ticks, 36 px headphone caps, a wide crossfader and a visible switch.
+#[test]
+fn module_sections_get_their_researched_sizes_at_the_smallest_module() {
+    use om_ui::widgets::{crossfader::CrossfaderSection, cue::CueSection, master::MasterSection};
+    let theme = ThemeTokens::builtin_dark();
+    let l = MixerPanel::module_layout(Rect::sized(245, 262), &theme);
+    let master = MasterSection::layout(l.master, &theme);
+    assert!(master.meter_labels && master.fader.h >= 120, "{master:?}");
+    let cue = CueSection::layout(l.cue, &theme);
+    assert!(
+        cue.mix.w >= 45 && cue.mix.h >= 45,
+        "36 px cap needs 45 px: {cue:?}"
+    );
+    let xf = CrossfaderSection::layout(l.crossfader, &theme);
+    assert!(
+        xf.slider.w >= 180,
+        "the crossfader is wide: {}",
+        xf.slider.w
+    );
+    assert!(xf.curve.iter().all(|r| r.h >= 28));
 }
 
 /// The cell the standard layout gives a named slot at the default window size.
@@ -389,7 +412,8 @@ fn mixer_module_is_wide_enough_at_the_default_window_size() {
     let slot = slot_cell(2, "mixer");
     assert!(slot.w >= 200, "mixer module is {} px wide", slot.w);
     assert!(
-        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w >= 140,
+        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w
+            >= om_ui::main_layout::CHANNEL_MIN_WIDTH,
         "a channel strip needs room for three EQ knobs and the fader"
     );
 }
@@ -645,4 +669,23 @@ fn setting_the_rack_knobs_matches_the_descriptor_defaults_when_unrefreshed() {
             .params()
             .len()
     );
+}
+
+#[test]
+fn master_and_cue_are_knobs_with_unity_detents() {
+    let rig = Rig::new(2);
+    let mut master = om_ui::widgets::master::MasterSection::new(mixer(&rig), meter_params());
+    assert_eq!(master.fader.detent, Some(1.0));
+    assert!(master.fader.at_rest(), "master rests on unity");
+    assert_eq!(master.fader.label, "MASTER");
+    master.fader_changed(1.5);
+    assert!(!master.fader.at_rest());
+
+    let mut cue = om_ui::widgets::cue::CueSection::new(mixer(&rig));
+    assert_eq!(cue.mix.detent, None);
+    assert_eq!(cue.mix.range.default, 0.0);
+    assert_eq!(cue.level.detent, Some(1.0), "phones level marks unity");
+    assert!(cue.level.at_rest());
+    assert!(cue.level_changed(1.01) <= f64::from(om_engine::mixer::MAX_GAIN));
+    assert_eq!(cue.mix_changed(2.0), 1.0, "mix stays in 0..1");
 }

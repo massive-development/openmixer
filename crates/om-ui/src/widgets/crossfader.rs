@@ -1,5 +1,6 @@
-//! Crossfader slider with its curve switch (Linear / Power). Routes `mixer.crossfader` and
-//! `mixer.crossfader.curve`; the selector mirrors the engine.
+//! Crossfader: a wide horizontal fader with A and B printed outside its ends, and a two-state curve
+//! switch (Linear / Power) under it. Routes `mixer.crossfader` and `mixer.crossfader.curve`; the
+//! selector mirrors the engine. Spec: `docs/design/research/faders-meters.md` section 3.
 
 use crate::binding::{curve_from_index, curve_index, MixerBinding};
 use crate::control::Ranged;
@@ -8,23 +9,34 @@ use crate::theme::ThemeTokens;
 use om_core::param_id::MixerParam;
 use om_dsp::CrossfaderCurve;
 
-/// The curve switch's labels, indexed like [`curve_index`]: Linear, Power.
-pub const CURVE_LABELS: [&str; 2] = ["LIN", "PWR"];
+/// The curve switch's labels, indexed like [`curve_index`]: Linear, Power. Spelled in full
+/// (`labels-layout.md` section 1: "if kept, `Linear` / `Power` in full").
+pub const CURVE_LABELS: [&str; 2] = ["Linear", "Power"];
 pub const CURVE_TIPS: [&str; 2] = [
     "Straight blend between the two sides",
     "Constant-power blend: no volume dip in the middle",
 ];
-/// Height of the crossfader row (a primary control), in px.
-pub const CROSSFADER_HEIGHT: i32 = 44;
-/// Width of the curve switch beside the slider, in px.
-pub const CURVE_SWITCH_WIDTH: i32 = 48;
+/// Height of the fader row: the cap is 20 px tall (spec) inside a 28 px hit area, in px.
+pub const FADER_ROW_HEIGHT: i32 = 28;
+/// Width reserved at each end for the A and B letters, which sit outside the fader so they never
+/// meet its end ticks, in px.
+pub const END_MARK_WIDTH: i32 = 16;
+/// Height of the curve switch row (the minimum hit size of `labels-layout.md` section 5), in px.
+pub const CURVE_ROW_HEIGHT: i32 = 28;
+/// Gap between the fader row and the curve switch, in px.
+pub const ROW_GAP: i32 = 6;
+/// Height of the crossfader section: the fader row, a gap and the curve switch, in px.
+pub const CROSSFADER_HEIGHT: i32 = FADER_ROW_HEIGHT + ROW_GAP + CURVE_ROW_HEIGHT;
 
-/// Rectangles of the crossfader section: the slider, and one switch that cycles the curve. The
-/// section carries no caption; the A and B ends are printed on the slider itself.
+/// Rectangles of the crossfader section: the slider with A and B beside its ends, and under it one
+/// button per curve (both always visible, the engine's curve lit). No caption.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CrossfaderLayout {
+    pub a_mark: Rect,
     pub slider: Rect,
-    pub curve: Rect,
+    pub b_mark: Rect,
+    /// Indexed like [`curve_index`].
+    pub curve: [Rect; 2],
 }
 
 pub struct CrossfaderSection {
@@ -75,24 +87,31 @@ impl CrossfaderSection {
         self.curve
     }
 
-    /// The curve switch: moves to the other curve and mirrors the engine's answer.
+    /// Moves to the other curve and mirrors the engine's answer.
     pub fn curve_cycled(&mut self) -> Option<CrossfaderCurve> {
         self.curve_pressed((self.curve + 1) % CURVE_LABELS.len())
     }
 
-    /// Height the section needs: one row.
+    /// Height the section needs: the fader row, a gap and the curve switch.
     pub fn height_for(_width: i32, _theme: &ThemeTokens) -> i32 {
         CROSSFADER_HEIGHT
     }
 
     /// Rectangles of the section for a `bounds` card.
     pub fn layout(bounds: Rect, theme: &ThemeTokens) -> CrossfaderLayout {
-        let mut area = bounds.reduced(theme.pad, 0);
-        let curve = area.remove_right(CURVE_SWITCH_WIDTH.min(area.w / 3));
-        area.remove_right(theme.inner_gap.min(area.w));
+        let mut area = bounds.reduced(theme.mixer_pad_x as i32, 0);
+        let mut row = area.remove_top(FADER_ROW_HEIGHT);
+        area.remove_top(ROW_GAP);
+        let a_mark = row.remove_left(END_MARK_WIDTH);
+        let b_mark = row.remove_right(END_MARK_WIDTH);
+        let mut switch = area.remove_top(CURVE_ROW_HEIGHT);
+        let half = switch.w / 2;
+        let first = switch.remove_left(half).reduced(1, 0);
         CrossfaderLayout {
-            slider: area,
-            curve,
+            a_mark,
+            slider: row,
+            b_mark,
+            curve: [first, switch.reduced(1, 0)],
         }
     }
 }
@@ -102,22 +121,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_layout_has_a_slider_and_a_curve_switch_side_by_side() {
+    fn the_fader_is_the_wide_control_with_a_and_b_outside_its_ends() {
         let theme = ThemeTokens::builtin_dark();
-        for w in [200, 213, 320] {
+        let pad = theme.mixer_pad_x as i32;
+        for w in [200, 233, 320] {
             let l = CrossfaderSection::layout(Rect::sized(w, CROSSFADER_HEIGHT), &theme);
-            assert!(
-                l.slider.w > l.curve.w,
-                "{w}: the slider is the main control"
-            );
-            assert!(!l.slider.intersects(&l.curve));
-            assert!(l.curve.h >= 32 && l.slider.h >= 32);
+            assert!(l.slider.w >= w - 2 * END_MARK_WIDTH - 2 * pad, "{w}");
+            assert!(l.a_mark.right() <= l.slider.x, "{w}: A meets the fader");
+            assert!(l.slider.right() <= l.b_mark.x, "{w}: B meets the fader");
+            assert!(l.slider.h >= 28, "{w}: the cap's hit area");
         }
     }
 
     #[test]
-    fn curve_labels_are_short_codes() {
+    fn both_curves_are_visible_buttons_under_the_fader() {
+        let theme = ThemeTokens::builtin_dark();
+        let l = CrossfaderSection::layout(Rect::sized(233, CROSSFADER_HEIGHT), &theme);
+        for r in l.curve {
+            assert!(r.h >= 28 && r.w >= 48, "a curve button is {}x{}", r.w, r.h);
+            assert!(r.y >= l.slider.bottom(), "the switch sits under the fader");
+        }
+        assert!(!l.curve[0].intersects(&l.curve[1]));
+        assert!(l.curve[0].x < l.curve[1].x, "Linear left of Power");
+    }
+
+    #[test]
+    fn curve_labels_are_whole_words() {
         assert_eq!(CURVE_LABELS.len(), CURVE_TIPS.len());
-        assert!(CURVE_LABELS.iter().all(|l| l.len() == 3));
+        assert_eq!(CURVE_LABELS, ["Linear", "Power"]);
     }
 }

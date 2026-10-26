@@ -5,36 +5,32 @@ use om_analysis::{WaveformLevel, WaveformPoint};
 
 mod bands;
 mod clock;
-// The spectral-centroid rainbow: superseded by the three fixed bands in `bands`, kept for the
-// tuning example and its tests. The GPUI layer no longer paints with it.
-mod colour;
-mod hue;
 mod markers;
+mod palette;
 mod strip;
 mod zoom;
 
 pub use bands::*;
 pub use clock::PlayheadClock;
-pub use colour::{hsl_to_colour, is_audible, loudness_level, wave_colour, wave_hsl, Hsl};
-pub use hue::{hue_span, overview_hues, HUE_SPAN_COLUMNS, HUE_SPAN_PERCENTILES};
 pub use markers::*;
+pub use palette::*;
 pub use strip::*;
 pub use zoom::*;
 
 /// The cached strip is three views wide: one visible, one of margin each side.
 pub const CACHE_VIEWS: i32 = 3;
 
-/// One pixel column: the loudest peak of the points under it, and their merged spectrum.
+/// One pixel column: the loudest peak of the points under it, their RMS and the peak of each band.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Column {
     /// Loudest sample, 0..=1.
     pub peak: f32,
     /// RMS, 0..=1.
     pub loudness: f32,
-    /// Spectral centroid on the stored log axis, 0..=1.
-    pub centroid: f32,
-    /// Spectral spread, 0..=1 of `SPREAD_MAX_OCTAVES`.
-    pub spread: f32,
+    /// Loudest low, mid and high band peak, each at most `peak`.
+    pub low: f32,
+    pub mid: f32,
+    pub high: f32,
 }
 
 /// Folds the points a pixel column covers into one, with the same rule the pyramid levels use, so
@@ -45,10 +41,11 @@ pub fn column(points: &[WaveformPoint]) -> Column {
     }
     let merged = WaveformPoint::merge(points);
     Column {
-        peak: merged.min.abs().max(merged.max.abs()).min(1.0),
+        peak: merged.peak(),
         loudness: merged.loudness,
-        centroid: merged.centroid,
-        spread: merged.spread,
+        low: merged.low,
+        mid: merged.mid,
+        high: merged.high,
     }
 }
 
@@ -178,21 +175,29 @@ pub fn strip_for(view: &View, height_px: i32) -> StripCache {
 mod tests {
     use super::*;
 
-    fn point(peak: f32, loudness: f32, centroid: f32, spread: f32) -> WaveformPoint {
+    fn point(peak: f32, loudness: f32, low: f32, mid: f32, high: f32) -> WaveformPoint {
         WaveformPoint {
             min: -peak,
             max: peak,
             loudness,
-            centroid,
-            spread,
+            low,
+            mid,
+            high,
         }
     }
 
     #[test]
-    fn column_takes_the_loudest_peak_and_merges_the_spectrum() {
-        let c = column(&[point(0.2, 0.1, 0.2, 0.0), point(0.9, 0.3, 0.8, 0.0)]);
+    fn column_takes_the_loudest_peak_and_holds_the_band_peaks() {
+        let c = column(&[
+            point(0.2, 0.1, 0.2, 0.0, 0.0),
+            point(0.9, 0.3, 0.1, 0.0, 0.8),
+        ]);
         assert_eq!(c.peak, 0.9);
-        assert!(c.centroid > 0.5, "the louder point pulls the centroid");
+        assert_eq!(
+            (c.low, c.mid, c.high),
+            (0.2, 0.0, 0.8),
+            "peak hold per band"
+        );
         assert!((c.loudness - (0.5f32 * (0.01 + 0.09)).sqrt()).abs() < 1e-5);
         assert_eq!(column(&[]), Column::default());
     }
