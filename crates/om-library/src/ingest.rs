@@ -8,6 +8,7 @@ use crate::database::Transaction;
 use crate::error::{LibraryError, Result};
 use crate::library::Library;
 use crate::metadata::{Artwork, MetadataReaderRegistry, TrackMetadata};
+use crate::prep_queue_dao::PrepStatus;
 use crate::track_record::TrackRecord;
 use std::collections::HashSet;
 use std::fs;
@@ -184,14 +185,17 @@ impl<'a> Ingestor<'a> {
         }
 
         let mut record = to_record(file, &meta, hash.clone());
+        let mut content_changed = false;
         if let Some(old) = &existing {
             merge_fill_only(old, file, &mut record);
             if analysis_still_valid(old, &hash) {
                 carry_analysis(old, &mut record);
+            } else {
+                content_changed = true;
             }
         }
 
-        match self.commit_record(&record, stamp, meta.artwork.as_ref()) {
+        match self.commit_record(&record, stamp, meta.artwork.as_ref(), content_changed) {
             Ok(queued) if existing.is_some() => (Outcome::Updated, queued),
             Ok(queued) => (Outcome::Added, queued),
             Err(_) => (Outcome::Failed, false),
@@ -200,15 +204,17 @@ impl<'a> Ingestor<'a> {
 
     /// Upserts the row, its file state and its cover in one transaction, so a failure leaves none
     /// of them behind. A cover over [`MAX_ARTWORK_BYTES`] is skipped, and any cover stored from an
-    /// earlier read is removed, since the file no longer matches it. A track with no BPM and no
-    /// prep queue row yet is queued in the same transaction (returns true then); a track that was
-    /// queued before, whatever its result, is left alone so a file that cannot be analysed is not
-    /// retried on every scan.
+    /// earlier read is removed, since the file no longer matches it. A track with no BPM is queued
+    /// in the same transaction (returns true then) when it has no prep queue row, or when its
+    /// content changed and its row is finished (done, failed or cancelled), since the old result
+    /// no longer applies. A queued or running row is left alone, and so is a row of a track whose
+    /// content did not change, so a file that cannot be analysed is not retried on every scan.
     fn commit_record(
         &self,
         record: &TrackRecord,
         stamp: FileStamp,
         artwork: Option<&Artwork>,
+        content_changed: bool,
     ) -> Result<bool> {
         let tx = Transaction::begin(self.library.database())?;
         let id = self.library.tracks().upsert_by_path(record)?;
@@ -217,7 +223,14 @@ impl<'a> Ingestor<'a> {
             .set(id, stamp.mtime_ms, stamp.size_bytes)?;
         self.store_artwork(id, &record.path, artwork)?;
         let queue = self.library.prep_queue();
-        let queued = record.bpm.is_none() && queue.find(id)?.is_none();
+        let queued = record.bpm.is_none()
+            && match queue.find(id)? {
+                None => true,
+                Some(row) => {
+                    content_changed
+                        && !matches!(row.status, PrepStatus::Queued | PrepStatus::Running)
+                }
+            };
         if queued {
             queue.enqueue(id)?;
         }
