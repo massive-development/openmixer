@@ -19,6 +19,10 @@ symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm
 thiserror.workspace = true
 tracing.workspace = true
 
+[features]
+# Optional decode fallback: runs the `ffmpeg` executable (not linked) for formats symphonia lacks.
+ffmpeg = []
+
 [dev-dependencies]
 assert_no_alloc = "1.1"
 om-testing.workspace = true
