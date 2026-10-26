@@ -205,17 +205,17 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 **Known gaps, honestly listed:**
 
-- Automix is not verified by ear (mock device only); its queue skips tracks that are not analysed yet instead of waiting for them. Stem features still open: stem transitions (Todo 39) and the stem separation backend (Todo 19)
+- Automix is not verified by ear (mock device only). It asks the prep queue to analyse tracks it had to skip as not analysed (up to 3 times per track, then it gives up and reports via `last_error`); that retry loop is not heard by ear. Stem features still open: stem transitions (Todo 39) and the stem separation backend (Todo 19)
 - The stems ONNX Runtime backend (Todo 19); the separator interface and the licence-gated downloads are done
 - HID (Todo 35) and plug-and-play controller maps (Todo 34). The mapping editor (Todo 36) is done at logic and view level; it is not verified with hardware
-- Dynamic plugin loading: plugins are in-process only; the loading choice is open in `docs/spikes/DECISIONS.md`
+- Dynamic plugin loading (Todo 10a): shared libraries load over a versioned C ABI (`PluginLoader::load`, ADR in `docs/spikes/DECISIONS.md`) and are tested with in-tree plugins only; nothing third-party has been tried. Plugins must catch their own panics, and the vtable has no prepare, sample-rate or parameters yet
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: later. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer, and nobody has checked the window by eye
-- LookAndFeel (25): `om_ui::style` derives every control style from the tokens and the gpui controls draw from it; scroll bars, tables and toggles are not restyled yet, and the window has not been checked by eye. See "Styling a control" in `agents.md`. The debug panel's per-deck load and play (26a) is wired
-- FFmpeg decode backend (Todo 8b, optional, open)
-- Library: artwork is not stored (no artwork table); FTS is not used (LIKE only); there is no play-history table (only a `play_count` column)
-- Saving engine hotcues back to the library is not confirmed
-- Auto-enqueue after a library scan; playlist editing
+- LookAndFeel (25): `om_ui::style` derives every control style from the tokens and the gpui controls draw from it; the library table, its scroll thumb and the automix switch draw from the new scroll bar, table and toggle styles; the platter switch, toggle pills, MIDI toggles, settings page and debug column are still on the old paths, and the window has not been checked by eye. See "Styling a control" in `agents.md`. The debug panel's per-deck load and play (26a) is wired
+- FFmpeg decode backend (Todo 8b, optional `ffmpeg` cargo feature, off by default): wired only into the sampler's `Sample::load`; decks, stems and analysis have no fallback, and the real-ffmpeg tests have not run (ffmpeg is not installed in the dev environment)
+- Cover art shows in the deck card header only (PNG and JPEG; no track detail view; the cache is not invalidated on rescan); not seen on a display
+- Playlist editing (Todo 28): reorder by dragging a track onto a row, a top-level New folder and nesting by drag are built; the gpui drag and drop is compile-checked only, not seen on a display. A track added twice to one playlist can reorder the wrong entry
+- The weekly `soak` CI job (the two 10-minute soaks) has not run yet
 - macOS: `soak_short` exceeds its xrun budget on hosted runners (that CI leg is non-blocking)
 - The headphone-cue second stream is unproven (it failed on WSLg)
 - The window-opening `--smoke` (without `--headless`) is not run in CI
