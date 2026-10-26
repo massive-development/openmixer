@@ -1,8 +1,9 @@
 //! The library-backed automix queue over an in-memory library with generated tracks.
 
 use om_automix::queue::{AutomixQueue, QueueConfig, QueueTrack, SkipReason};
-use om_library::{core_migrations, Library, OpenMode, TrackRecord};
+use om_library::{core_migrations, Library, OpenMode, PrepStatus, TrackRecord};
 use openmixer::automix_queue::{LibraryQueue, QueueSource};
+use std::sync::Arc;
 
 const HOUR: i64 = 3_600_000;
 const NOW: i64 = 1_000_000_000_000;
@@ -351,4 +352,74 @@ fn a_fifteen_track_playlist_keeps_playing_when_it_wraps() {
 
 fn ids_drawn(q: &mut LibraryQueue, n: usize) -> Vec<Option<i64>> {
     (0..n).map(|_| q.next_track(None).map(|t| t.id)).collect()
+}
+
+fn playlist_of(lib: &Library, ids: &[i64]) -> i64 {
+    let pl = lib.playlists().create("Set", None, false).unwrap();
+    for (i, t) in ids.iter().enumerate() {
+        lib.playlists().add_track(pl, *t, i as i32).unwrap();
+    }
+    pl
+}
+
+#[allow(clippy::arc_with_non_send_sync)]
+fn shared_library() -> Arc<Library> {
+    Arc::new(library())
+}
+
+fn shared_queue(lib: &Arc<Library>, pl: i64) -> LibraryQueue {
+    LibraryQueue::shared(
+        Arc::clone(lib),
+        QueueSource::Playlist(pl),
+        QueueConfig::default(),
+        1,
+    )
+    .with_clock(|| NOW)
+}
+
+#[test]
+fn queue_submits_unanalysed_tracks_once() {
+    let lib = shared_library();
+    let a = add(&lib, 1, None, "");
+    let b = add(&lib, 2, None, "");
+    let pl = playlist_of(&lib, &[a, b]);
+    let mut q = shared_queue(&lib, pl);
+    for _ in 0..3 {
+        assert!(q.next_track(None).is_none());
+    }
+    let queued: Vec<i64> = lib
+        .prep_queue()
+        .all()
+        .unwrap()
+        .iter()
+        .map(|e| e.track_id)
+        .collect();
+    assert_eq!(queued, vec![a, b], "each id once");
+    assert_eq!(q.pending_analysis(), &[a, b]);
+    // Analysis finished for b: the next call returns it.
+    lib.tracks().set_analysis(b, 125.0, "", "8A").unwrap();
+    assert_eq!(q.next_track(None).unwrap().id, b);
+}
+
+#[test]
+fn a_track_that_never_gets_analysed_is_given_up_on_after_three_submissions() {
+    let lib = shared_library();
+    let a = add(&lib, 1, None, "");
+    let pl = playlist_of(&lib, &[a]);
+    let mut q = shared_queue(&lib, pl);
+    let dao = lib.prep_queue();
+    for _ in 0..3 {
+        assert!(q.next_track(None).is_none());
+        assert_eq!(q.pending_analysis(), &[a]);
+        // The analysis fails: the entry settles without a BPM.
+        dao.set_status(a, PrepStatus::Failed, "corrupt").unwrap();
+    }
+    assert!(q.next_track(None).is_none());
+    assert!(q.pending_analysis().is_empty(), "no longer waited on");
+    assert!(q.last_error().unwrap().contains(&a.to_string()));
+    assert_eq!(
+        dao.find(a).unwrap().unwrap().status,
+        PrepStatus::Failed,
+        "not submitted a fourth time"
+    );
 }
