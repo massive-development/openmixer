@@ -46,6 +46,7 @@ use om_ui::widgets::stem_pads::stem_pad_layout;
 use om_ui::widgets::transport::{TransportButton, TransportPanel};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Card for deck `index`, drawn at `card` (window coordinates).
 pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
@@ -254,6 +255,7 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
                 .font_weight(gpui::FontWeight::BOLD)
                 .child(text.letter.to_string()),
         )
+        .child(cover(shell, index, l.header.h.min(COVER_MAX), &look))
         .child(
             div()
                 .flex_1()
@@ -304,6 +306,32 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
                         .child(text.elapsed),
                 ),
         )
+}
+
+/// Largest side of the cover tile in the deck header.
+const COVER_MAX: i32 = 44;
+
+/// The deck's cover art, square, or a token-coloured placeholder when the track has none (or its
+/// image cannot be decoded: gpui then shows nothing inside the same tile).
+fn cover(shell: &Shell, index: usize, side: i32, look: &LookAndFeel) -> Div {
+    let t = &shell.theme;
+    let tile = div()
+        .flex_none()
+        .w(px(side as f32))
+        .h(px(side as f32))
+        .overflow_hidden()
+        .rounded(px(t.control_radius))
+        .border_1()
+        .border_color(paint(look.button.disabled.border))
+        .bg(paint(look.button.disabled.fill));
+    match shell.art_images.get(index).and_then(Option::as_ref) {
+        Some(image) => tile.child(
+            gpui::img(Arc::clone(image))
+                .size_full()
+                .object_fit(gpui::ObjectFit::Cover),
+        ),
+        None => tile,
+    }
 }
 
 /// Whether the deck plays from stems; also tells the stem model which track is loaded.
