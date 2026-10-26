@@ -112,6 +112,41 @@ impl TrackSource for PrepQueueSource {
     }
 }
 
+/// A playlist in its own order, one row per entry (a track added twice shows twice). The ids are
+/// the snapshot the browser took when it built the source.
+pub struct PlaylistSource {
+    library: Arc<Library>,
+    track_ids: Vec<i64>,
+}
+
+impl PlaylistSource {
+    pub fn new(library: Arc<Library>, track_ids: Vec<i64>) -> Self {
+        Self { library, track_ids }
+    }
+}
+
+impl TrackSource for PlaylistSource {
+    fn count(&mut self) -> usize {
+        self.track_ids.len()
+    }
+
+    fn fetch(&mut self, offset: usize, limit: usize) -> Result<Vec<TrackRecord>, String> {
+        let end = self.track_ids.len().min(offset.saturating_add(limit));
+        self.track_ids
+            .get(offset.min(end)..end)
+            .unwrap_or_default()
+            .iter()
+            .map(|&id| {
+                self.library
+                    .tracks()
+                    .find_by_id(id)
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| format!("track {id} is missing"))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

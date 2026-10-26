@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use super::control::import_summary;
 use super::services::{LibraryEvent, LibraryServices};
 use super::track_loader::LoadError;
-use super::track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
+use super::track_source::{PlaylistSource, PrepQueueSource,SearchTrackSource, TrackSource};
 use super::track_table::TrackTableModel;
 use crate::settings::SettingsResult;
 use crate::sidebar::{build_sidebar, SidebarKind, SidebarNode};
@@ -367,6 +367,39 @@ impl LibraryBrowser {
         }
     }
 
+    /// A track dragged from the open playlist and dropped on table row `target_row`: its entry
+    /// takes the place of the entry that row shows. False (nothing moves) outside a playlist, for
+    /// a row that does not exist, while a search or sort hides the playlist's own order, or when
+    /// the entry is already there.
+    pub fn move_track_to_row(
+        &mut self,
+        services: &mut LibraryServices,
+        track_id: i64,
+        target_row: usize,
+    ) -> bool {
+        let (Some(playlist), Some(target)) = (
+            self.playlist_order_shown(),
+            self.model.row_at(target_row as isize).map(|t| t.id),
+        ) else {
+            return false;
+        };
+        let entries = match services.library().playlists().entries(playlist) {
+            Ok(entries) => entries,
+            Err(error) => {
+                self.set_status(format!("Couldn't read the playlist: {error}"), true);
+                return false;
+            }
+        };
+        let from = entries.iter().find(|e| e.track_id == track_id);
+        let to = entries.iter().find(|e| e.track_id == target);
+        match (from, to) {
+            (Some(from), Some(to)) if from.position != to.position => {
+                self.move_entry(services, from.id, to.position)
+            }
+            _ => false,
+        }
+    }
+
     /// Renames the playlist shown. Returns whether it was renamed.
     pub fn rename_selected_playlist(&mut self, services: &mut LibraryServices, name: &str) -> bool {
         let Some(id) = self.selected_playlist() else {
@@ -673,6 +706,14 @@ impl LibraryBrowser {
         self.apply_query(services);
     }
 
+    /// The open playlist's id while the table shows it in its own order, which is while no search
+    /// text or header sort is applied. Only then do rows line up with entries and can be reordered.
+    pub fn playlist_order_shown(&self) -> Option<i64> {
+        (self.search_text.trim().is_empty() && self.sort_field.is_empty())
+            .then(|| self.selected_playlist())
+            .flatten()
+    }
+
     fn on_queue(&self) -> bool {
         self.selected.kind == SidebarKind::PrepQueue
     }
@@ -681,9 +722,15 @@ impl LibraryBrowser {
     fn apply_query(&mut self, services: &LibraryServices) {
         self.search_pending = false;
         self.stale = false;
+        let playlist_order = self.playlist_order_shown();
         let source: Box<dyn TrackSource> = if self.on_queue() {
             let entries = services.prep_queue().list().unwrap_or_default();
             Box::new(PrepQueueSource::new(services.library_handle(), entries))
+        } else if let Some(entries) = playlist_order
+            .and_then(|id| services.library().playlists().entries(id).ok())
+        {
+            let ids = entries.iter().map(|e| e.track_id).collect();
+            Box::new(PlaylistSource::new(services.library_handle(), ids))
         } else {
             Box::new(SearchTrackSource::new(
                 services.search(),
