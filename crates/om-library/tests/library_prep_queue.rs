@@ -735,15 +735,24 @@ fn scan_does_not_requeue_a_track_that_already_has_a_result() {
         .set_status(id, PrepStatus::Failed, "undecodable")
         .unwrap();
 
-    // The file changes, so it is re-read, but its failed entry must not be queued again.
-    let more = write_wav(&tmp.path().join("a.wav"), 2.0, &Tags::default(), 220.0);
-    assert!(more.exists());
+    // Only the mtime moves: re-read, same content, so the failed entry is left alone.
+    common::touch(&file, 1_000_000);
     let (again, _) = scan(&lib, tmp.path());
     assert_eq!(again.updated, 1);
     assert_eq!(again.enqueued, 0);
     assert_eq!(
         lib.prep_queue().find(id).unwrap().unwrap().status,
         PrepStatus::Failed
+    );
+
+    // The content changes: the old result no longer applies, so it is queued again.
+    let _ = write_wav(&tmp.path().join("a.wav"), 2.0, &Tags::default(), 220.0);
+    let (changed, _) = scan(&lib, tmp.path());
+    assert_eq!(changed.updated, 1);
+    assert_eq!(changed.enqueued, 1);
+    assert_eq!(
+        lib.prep_queue().find(id).unwrap().unwrap().status,
+        PrepStatus::Queued
     );
 }
 
