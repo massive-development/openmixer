@@ -32,6 +32,7 @@ use om_ui::main_layout::{
 use om_ui::meter::meter_params;
 use om_ui::sample_bank::SampleBank;
 use om_ui::sampler_binding::SamplerBinding;
+use om_ui::style::LookAndFeel;
 use om_ui::theme::{ThemeRegistry, ThemeTokens};
 use om_ui::widgets::deck::{DeckWidget, TrackInfo, WaveformMeta};
 use om_ui::widgets::mixer::MixerPanel;
@@ -396,6 +397,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> gpui::Div {
         let t = &self.theme;
+        let look = LookAndFeel::from_tokens(t);
         let playing: Vec<bool> = (0..self.engine.num_decks())
             .map(|deck| self.engine.deck(deck).is_playing())
             .collect();
@@ -422,21 +424,25 @@ impl Shell {
             let row = div()
                 .flex()
                 .gap(px(6.))
-                .child(div().text_color(paint(t.text_secondary)).child(label))
+                .child(
+                    div()
+                        .text_color(paint(look.panel_caption.text))
+                        .child(label),
+                )
                 .child(
                     div()
                         .flex_1()
                         .overflow_hidden()
-                        .text_color(paint(t.text_muted))
+                        .text_color(paint(look.popup_hint.text))
                         .child(id),
                 )
-                .child(div().text_color(paint(t.text_primary)).child(value));
+                .child(div().text_color(paint(look.popup.text)).child(value));
             body = body.child(row);
         }
         place(bounds)
-            .bg(paint(t.popup))
+            .bg(paint(look.popup.fill))
             .border_1()
-            .border_color(paint(t.border))
+            .border_color(paint(look.popup.border))
             .p(px(6.))
             .overflow_hidden()
             .track_focus(&focus)
@@ -456,9 +462,9 @@ impl Shell {
                     .w_full()
                     .h(px(14.))
                     .px(px(6.))
-                    .bg(paint(t.popup))
-                    .text_size(px(t.type_small))
-                    .text_color(paint(t.text_muted))
+                    .bg(paint(look.popup_hint.fill))
+                    .text_size(px(look.popup_hint.font_size))
+                    .text_color(paint(look.popup_hint.text))
                     .child("scroll the list for more  v"),
             )
     }
