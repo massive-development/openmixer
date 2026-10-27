@@ -8,6 +8,9 @@ Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for kno
 
 - Main window, dark theme: ![Main window, dark](docs/screenshots/main-dark.png)
 - Main window, daylight theme: ![Main window, daylight](docs/screenshots/main-daylight.png)
+- Deck looped, meters lit: ![Meters lit, dark](docs/screenshots/meters-lit-dark.png)
+- Sampler drawer open: ![Sampler open, dark](docs/screenshots/sampler-open-dark.png)
+- Stems tab: ![Stems page](docs/screenshots/stems-page.png)
 
 ## Mission
 
