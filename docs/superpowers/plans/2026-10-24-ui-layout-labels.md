@@ -1,5 +1,7 @@
 # UI layout, labels and type: implementation plan
 
+Status: merged in PR #115 (polish in PR #116).
+
 Date 2026-10-24, branch `feat/ui-redesign`. Inputs: `docs/design/research/labels-layout.md` (its screenshot critique is stale; section 1 below re-judges from the fresh `docs/screenshots/main-dark.png`), `docs/design/E1-brand.md`.
 
 **Ownership.** This plan owns `crates/om-ui-gpui/src/{app,library_view,sampler_view,automix_bar,debug_panel,font}.rs`, `settings_view/*`, the label and format code (`om-ui/src/{format,mapping_editor,automix_bar,record_bar,main_layout}.rs`, `om-ui/src/settings/{audio,midi}.rs`, new `om-ui/src/labels.rs`, `om-ui/src/header_layout.rs`), theme tokens (`om-ui/src/theme/*`) and the layout rect code. **It must land first for layout.** Other plans (deck cards, mixer strips, stage) consume the rects defined in "Rect contract" and must not edit `main_layout.rs`.
