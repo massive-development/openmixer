@@ -42,7 +42,7 @@ Remaining observations (not fixed):
 
 ## Sampler strip (Wave 7 P4, 2026-10-20)
 
-The sampler strip sits in the library band, right of the library, in every main-window scene. `--demo-library` loads eight generated samples so the pads are full. Two captures were checked by eye (`sampler-dark.png` and `sampler-daylight.png` beside this file): pad names, the caption, the mode and gain/pitch controls all fit and read at 1280x800, the selected pad carries the accent border, and daylight contrast is fine.
+The sampler strip sits in the library band, right of the library, in every main-window scene. `--demo-library` loads eight generated samples so the pads are full. Two captures were checked by eye (`sampler-dark.png` and `sampler-daylight.png`, recaptured on 2026-10-27 as `sampler-open-dark.png` and `sampler-open-daylight.png`, beside this file): pad names, the caption, the mode and gain/pitch controls all fit and read at 1280x800, the selected pad carries the accent border, and daylight contrast is fine.
 
 | Item | Status | Notes |
 |------|--------|-------|
