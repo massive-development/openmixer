@@ -12,7 +12,7 @@ use om_automix::queue::{
     in_tempo_gate, select_next, AutomixQueue, Order, QueueConfig, QueueRng, QueueTrack, SkipReason,
     SplitMix64,
 };
-use om_library::{Library, SearchEngine, TrackRecord};
+use om_library::{Library, PrepStatus, SearchEngine, TrackRecord};
 use om_ui::library::SearchFeed;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -45,6 +45,12 @@ type GridCheck = Box<dyn Fn(&TrackRecord) -> bool>;
 
 /// Most beat-grid checks one shuffled pick may make (each check can hit the analysis cache).
 const GRID_CHECK_CAP: usize = 50;
+/// Times one unanalysed track is put on the prep queue before automix gives up on it.
+const MAX_ANALYSIS_SUBMISSIONS: u32 = 3;
+/// Most unanalysed tracks one pick puts on (or checks in) the prep queue.
+pub const MAX_SUBMISSIONS_PER_PICK: usize = 8;
+/// Most track ids the give-up notice names.
+const NOTICE_IDS: usize = 3;
 type Clock = Box<dyn Fn() -> i64>;
 
 pub struct LibraryQueue {
@@ -60,6 +66,12 @@ pub struct LibraryQueue {
     cursor: usize,
     skips: Vec<(i64, SkipReason)>,
     last_error: Option<String>,
+    /// How often each unanalysed track went onto the prep queue this session.
+    submissions: HashMap<i64, u32>,
+    /// Skipped as unanalysed by the last call and still worth waiting for.
+    pending: Vec<i64>,
+    /// Skipped as unanalysed by the last call, given up on after [`MAX_ANALYSIS_SUBMISSIONS`].
+    given_up: Vec<i64>,
 }
 
 impl LibraryQueue {
@@ -87,6 +99,9 @@ impl LibraryQueue {
             cursor: 0,
             skips: Vec::new(),
             last_error: None,
+            submissions: HashMap::new(),
+            pending: Vec::new(),
+            given_up: Vec::new(),
         }
     }
 
@@ -137,9 +152,58 @@ impl LibraryQueue {
         &self.source
     }
 
-    /// The database error of the last call, if it failed.
+    /// The last call's database error, or a short capped notice naming tracks automix gave up
+    /// analysing (cleared by the next call that has neither).
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
+    }
+
+    /// Tracks the last call skipped as unanalysed that analysis may still deliver.
+    pub fn pending_analysis(&self) -> &[i64] {
+        &self.pending
+    }
+
+    /// Puts the unanalysed tracks the last selection skipped on the prep queue (the persisted
+    /// queue the app's `PrepQueue` pumps). A track already waiting there is left alone; one whose
+    /// entry finished (or vanished) without making it analysed is submitted again, up to
+    /// [`MAX_ANALYSIS_SUBMISSIONS`] times, then given up on.
+    ///
+    /// At most [`MAX_SUBMISSIONS_PER_PICK`] tracks touch the database per call (never-submitted
+    /// ones first), so a big unanalysed playlist cannot stall the window thread; the rest follow
+    /// on later picks.
+    fn request_analysis(&mut self, ids: &[i64]) {
+        self.pending.clear();
+        self.given_up.clear();
+        let dao = self.library.prep_queue();
+        let mut fresh = Vec::new();
+        let mut retry = Vec::new();
+        for &id in ids {
+            let count = self.submissions.get(&id).copied().unwrap_or(0);
+            if count >= MAX_ANALYSIS_SUBMISSIONS {
+                self.given_up.push(id);
+                continue;
+            }
+            self.pending.push(id);
+            if count == 0 {
+                fresh.push(id);
+            } else {
+                retry.push(id);
+            }
+        }
+        for id in fresh
+            .into_iter()
+            .chain(retry)
+            .take(MAX_SUBMISSIONS_PER_PICK)
+        {
+            let count = self.submissions.get(&id).copied().unwrap_or(0);
+            let waiting = matches!(
+                dao.find(id),
+                Ok(Some(e)) if matches!(e.status, PrepStatus::Queued | PrepStatus::Running)
+            );
+            if !waiting && dao.enqueue(id).is_ok() {
+                self.submissions.insert(id, count + 1);
+            }
+        }
     }
 
     fn candidates(&self) -> Result<Vec<TrackRecord>, String> {
@@ -287,6 +351,7 @@ impl LibraryQueue {
             }
         }
         self.skips = selection.skipped;
+        self.request_analysis(&selection.needs_analysis);
         if in_order {
             if let Some(pick) = &selection.pick {
                 if let Some(at) = tracks.iter().position(|t| t.id == pick.id) {
@@ -302,7 +367,21 @@ impl AutomixQueue for LibraryQueue {
     fn next_track(&mut self, current: Option<&QueueTrack>) -> Option<QueueTrack> {
         match self.pick(current) {
             Ok(pick) => {
-                self.last_error = None;
+                self.last_error = (!self.given_up.is_empty()).then(|| {
+                    let n = self.given_up.len();
+                    let ids: Vec<String> = self
+                        .given_up
+                        .iter()
+                        .take(NOTICE_IDS)
+                        .map(i64::to_string)
+                        .collect();
+                    let more = if n > NOTICE_IDS { ", ..." } else { "" };
+                    format!(
+                        "{n} track{} could not be analysed (#{}{more})",
+                        if n == 1 { "" } else { "s" },
+                        ids.join(", #")
+                    )
+                });
                 pick
             }
             Err(error) => {

@@ -31,12 +31,12 @@ pub const ASSIGN_LABELS: [&str; 3] = ["THRU", "A", "B"];
 pub const KILL_TOLERANCE_DB: f64 = 0.01;
 
 /// Gap between the strip's rows, in px.
-pub const STRIP_GAP: i32 = 6;
+pub const STRIP_GAP: i32 = 8;
 /// Height of the gain and filter knobs (a full-width bar), in px.
-pub const WIDE_KNOB_HEIGHT: i32 = 40;
+pub const WIDE_KNOB_HEIGHT: i32 = 44;
 /// Height of a band's label (its kill switch) and of its knob, in px.
 pub const BAND_LABEL_HEIGHT: i32 = 28;
-pub const BAND_KNOB_HEIGHT: i32 = 56;
+pub const BAND_KNOB_HEIGHT: i32 = 60;
 /// Height of the PFL and FX row (primary controls), in px.
 pub const PRIMARY_HEIGHT: i32 = 44;
 /// Height of the crossfader assignment switch, in px.
@@ -237,7 +237,7 @@ impl ChannelStrip {
         for i in 0..BANDS {
             let band = BANDS - 1 - i;
             kill[band] = labels.remove_left(cell).reduced(1, 0);
-            eq[band] = knobs.remove_left(cell).reduced(1, 0);
+            eq[band] = knobs.remove_left(cell);
         }
 
         // Filter, full width.
@@ -304,7 +304,7 @@ impl StripMetrics {
     /// The rows on a short window: every control stays at least 32 px (the band label 28, being
     /// text over the knob it belongs to) rather than shrinking further.
     pub const COMPACT: Self = Self {
-        wide_knob: 32,
+        wide_knob: 36,
         band_label: 28,
         band_knob: 40,
         primary: 36,

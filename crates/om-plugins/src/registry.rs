@@ -1,8 +1,8 @@
 //! Loads plugins and keeps what they register: stages, MIDI maps, parameter targets and themes.
 //! Control thread only.
 //!
-//! Plugins are in-process ([`PluginRegistry::add_plugin`]) until the dynamic-loading decision is
-//! made (see [`crate::loader`]). The rules: ids are unique, a second
+//! Plugins are added in-process ([`PluginRegistry::add_plugin`]) or loaded from a shared library
+//! over the C ABI ([`PluginRegistry::load_library`], see [`crate::loader`]). The rules: ids are unique, a second
 //! registration of a stage, map, prefix or theme id is refused, and unloading removes everything
 //! the plugin registered, then calls its `on_unload`.
 
@@ -198,7 +198,7 @@ impl PluginRegistry {
         Ok(())
     }
 
-    /// Loads a shared-library plugin. Not supported yet: see [`crate::loader`].
+    /// Loads a shared-library plugin over the C ABI (see [`crate::loader`]) and adds it.
     pub fn load_library(&mut self, path: &Path) -> Result<(), PluginError> {
         let plugin = PluginLoader::load(path)?;
         self.add_plugin(plugin)

@@ -30,10 +30,10 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 19:** stem separation is built but unproven on real audio. `om-stems` has `OrtInference` (ONNX Runtime, feature `onnx`, tensor names and shapes checked at load), `HtDemucsPipeline` (segmenting, resampling, overlap-add), `StemService` (worker, cache, library index) and the app side `StemsHost` (model install, service created on first submit). The real htdemucs export (`tools/export_htdemucs.py`) has not been run or checked against the contract, the toy ONNX fixture is the only ONNX test, and nothing has been verified by ear. Open: the export and a real-model run, then a listening check. L
 - **Todo 37:** done at engine level (Wave 7 S5): `StemMixer` and stem-mode decks, tested without audio. Stem transitions (39) are done and tested on the engine; not heard. L
 - **Todo 30:** done at logic and view level (Wave 7 S6/S7): stem pads in the deck card, cached stems auto-load (`stems.autoLoad`), Load/Stems off, MIDI stem targets. Not checked by ear; mock device only. Transitions are Todo 39. L
-- **Todo 38:** done at logic and view level (Wave 7 A1-A6): the Automix settings page (Todo 29), the main-window bar, the `--demo-automix` scene and the A6 safety tests. Not verified by ear (mock device only). Skip is not offered; the queue skips tracks that are not analysed yet. L
+- **Todo 38:** done at logic and view level (Wave 7 A1-A6): the Automix settings page (Todo 29), the main-window bar, the `--demo-automix` scene and the A6 safety tests. Not verified by ear (mock device only). Skip is not offered. Tracks the queue skips as not analysed are now submitted to the prep queue (once per track, up to 3 submissions, then `last_error`) and retried on later picks; not heard by ear. L
 - **Todo 40:** 8-pad sampler: the engine (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`), the sample bank (P2: `<data>/samples/sampler.json`, off-thread import, start-up apply), the pad view-model and sampler strip (P4: `om-ui::sampler_binding`, `om-ui-gpui::sampler_view`) and the soak and UI gate scenarios (P5) are built, at logic and view level. Not heard, and the window was checked on screenshots only, not by eye. Open: the user's listening and by-eye check; a per-pad mode and gain on MIDI; learn for pad settings. M
-- **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Showing artwork in the UI is not built.
-- **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. Scroll bars, tables and toggles are not restyled, and the window is not checked by eye. M
+- **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Cover art is shown in the deck card header (loaded on a worker, 16-entry cache, PNG and JPEG only, placeholder otherwise); there is no track detail view, the cache is not invalidated on rescan, and it has not been seen on a display. A library scan also enqueues new unanalysed tracks and changed tracks with a finished prep row for analysis.
+- **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. `ScrollBarStyle`, `TableStyle` and `ToggleStyle` exist; the library table, its display-only scroll thumb and the automix Off|On switch draw from them. The platter switch, toggle pills, MIDI toggles, settings page and debug column scrolling are still on the old paths, and nothing is checked by eye. S
 - **Todo 26a:** done: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding`. It is still removed once Wave 5 replaces it.
 
 ### (B) Quality and verification debt
@@ -43,17 +43,17 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 7 / 13:** headphone-cue second stream failed on WSLg ("Invalid argument"), cause not isolated. M, verify on native Linux with two devices.
 - **Todo 32:** no real MIDI device has been used; the ALSA backend is only smoke-tested. S, needs hardware.
 - **Wave 1 CI:** macOS and Windows legs are `continue-on-error`. macOS `soak_short` exceeds its xrun budget on shared runners; the Windows `file_url` fix is not confirmed by a run. S-M
-- **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. Add a scheduled job. S
+- **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. A weekly scheduled `soak` job in the rust.yml workflow now runs both; it has not run yet, so the result is unknown. S
 - **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
 - **Wave 1 CI:** the `check` job now builds and lints the GPUI crate with the rest of the workspace; it has not run on a clean runner since the merge. S
 
 ### (C) Smaller gaps
 
-- **Todo 10a:** plugin dynamic loading: open decision; `PluginLoader` reports every shared library as unsupported. S for the decision, L to implement
+- **Todo 10a:** plugin dynamic loading: built over a versioned C ABI (`libloading`, `PluginVTable`, `openmixer_plugin_entry`, `PluginLoader::load`; ADR in `docs/spikes/DECISIONS.md`). Not tried with a third-party plugin. Plugins must catch their own panics (a panic across `extern "C"` aborts); the vtable has no prepare, sample-rate or parameters yet. M
 - **Todo 35:** HID layer: not started. L
 - **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
-- **Todo 8b:** FFmpeg decode backend: not started (optional). M
-- **Todo 28:** playlist editing UI: new, rename, delete (second press), add by drop on a sidebar playlist and remove tracks are built (`LibraryBrowser`, sidebar buttons); not checked by eye. Open: nested folders and reordering entries in a playlist. S
+- **Todo 8b:** FFmpeg decode backend (optional): the `ffmpeg` cargo feature in `om-engine` (off by default) runs the `ffmpeg` binary (override `OPENMIXER_FFMPEG`) for files symphonia reports unsupported, wired only into `Sample::load` (sampler). Decks, stems and analysis have no fallback; the real-ffmpeg tests never ran (ffmpeg is not installed in the dev environment). M
+- **Todo 28:** playlist editing UI: new, rename, delete (second press), add by drop on a sidebar playlist and remove tracks are built (`LibraryBrowser`, sidebar buttons); not checked by eye. Also built: reorder (drag a track onto a row of an open playlist, only while unsorted and unsearched), New folder (top level) and nesting by dragging a playlist or folder onto a folder, with a cycle guard pinned by test. The gpui drag and drop is compile-checked only, not seen on a display. Known edge: a track added twice to one playlist can reorder the wrong entry. S
 
 Escape on the settings overlay is done (`settings_view.rs`, the `escape` key handler); it is not a gap, only the by-eye check is open.
 
@@ -191,7 +191,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
   - Metadata reader registry; RIFF INFO tags and duration
   - Tags for MP3/FLAC/M4A via `lofty`; front cover stored in `artwork` (up to 512 KiB, no re-encoding)
   - Recursive ingest and watch folders
-  - Open: polling watch folders only; artwork is not shown in the UI
+  - Open: polling watch folders only; cover art shows in the deck card header only
 
 - [x] **Todo 22:** Import (iTunes/Rekordbox XML)
   - Importer registry (extension point)

@@ -47,7 +47,6 @@ impl Target {
                 | Target::Eq(..)
                 | Target::FxMix
                 | Target::FxParam(_)
-                | Target::Master
                 | Target::CueMix
                 | Target::CueLevel
                 | Target::SamplerGain
@@ -378,6 +377,10 @@ mod tests {
 
     /// A shell over a real two-deck engine and router, with no window.
     fn shell() -> (Shell, Arc<DjEngine>) {
+        shell_with_scene(crate::app::SceneOptions::default())
+    }
+
+    fn shell_with_scene(scene: crate::app::SceneOptions) -> (Shell, Arc<DjEngine>) {
         let (engine, _audio) = DjEngine::new(2);
         let engine = Arc::new(engine);
         let router = Arc::new(ParameterRouter::new());
@@ -394,6 +397,7 @@ mod tests {
             library_rows_out: None,
             demo_grid_bpm: None,
             samples: None,
+            scene,
         };
         let shell = Shell::new(
             Arc::clone(&engine),
@@ -403,6 +407,23 @@ mod tests {
             Arc::new(AtomicU64::new(0)),
         );
         (shell, engine)
+    }
+
+    #[test]
+    fn a_demo_scene_stages_the_drawer_and_the_stems_tab_and_nothing_by_default() {
+        use om_ui::widgets::deck::PadMode;
+        let (plain, _) = shell();
+        assert!(!plain.sampler_open);
+        assert_eq!(plain.decks[0].pad_mode, PadMode::Cues);
+        let (staged, _) = shell_with_scene(crate::app::SceneOptions {
+            sampler_open: true,
+            stems_tab: true,
+            platter: false,
+            press_pad: None,
+        });
+        assert!(staged.sampler_open);
+        assert_eq!(staged.decks[0].pad_mode, PadMode::Stems);
+        assert_eq!(staged.decks[1].pad_mode, PadMode::Cues, "only deck A");
     }
 
     fn at(x: f32, y: f32) -> gpui::Point<gpui::Pixels> {
@@ -574,9 +595,30 @@ mod tests {
         assert!(v > 0.01 && v < 0.2, "{v}");
     }
 
+    /// Master is a fader (faders-meters.md section 3 master anatomy): it follows the pointer through
+    /// the master taper, unity at 3/4 of the travel and +6 dB (stored 2.0) at the top.
     #[test]
-    fn master_and_cue_are_knobs() {
-        for target in [Target::Master, Target::CueMix, Target::CueLevel] {
+    fn the_master_is_a_tapered_fader() {
+        assert!(!Target::Master.is_knob());
+        let (mut shell, engine) = shell();
+        let track = Rect::new(100, 100, 60, 200);
+        shell.begin_drag(Target::Master, track, at(110.0, 100.0));
+        assert!(
+            (engine.mixer().master_gain() - 2.0).abs() < 1e-3,
+            "top is +6 dB"
+        );
+        shell.drag_move(at(110.0, 150.0));
+        assert!(
+            (engine.mixer().master_gain() - 1.0).abs() < 1e-3,
+            "3/4 up is unity"
+        );
+        shell.drag_move(at(110.0, 300.0));
+        assert_eq!(engine.mixer().master_gain(), 0.0);
+    }
+
+    #[test]
+    fn cue_controls_are_knobs() {
+        for target in [Target::CueMix, Target::CueLevel] {
             assert!(target.is_knob(), "{target:?}");
         }
         assert!(!Target::Channel(0).is_knob());

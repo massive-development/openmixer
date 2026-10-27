@@ -1,5 +1,5 @@
-//! Plugin registry cases. Loading the example plugin from a shared library is covered by
-//! `examples/plugins/gain-plugin/tests`, and the loader stub is tested here instead.
+//! Plugin registry cases. Loading a real shared-library plugin is covered by `dynamic_load.rs`; the
+//! in-process example plugin by `examples/plugins/gain-plugin/tests`.
 
 use om_core::{ParameterRouter, ParameterTarget};
 use om_engine::{ChannelInput, Mixer, MixerControl, ProcessStage};
@@ -314,13 +314,14 @@ fn invalid_libraries_are_rejected() {
     std::fs::write(&not_lib, "nope").expect("write");
     assert!(reg.load_library(&not_lib).is_err());
 
-    // A folder with a shared library in it: the stub refuses it and says so. The count is 1.
+    // A folder of files named like shared libraries that are not: each is refused with its path.
     let example = dir.path().join("libgain.so");
     std::fs::write(&example, "placeholder").expect("write");
     let mut errors = Vec::new();
     assert_eq!(reg.load_directory(dir.path(), &mut errors), 0);
     assert_eq!(errors.len(), 2, "one per shared library file found");
-    assert!(errors[0].contains("not supported"));
+    assert!(errors[0].contains("libgain.so"), "{errors:?}");
+    assert!(errors[1].contains("om_not_a_plugin.so"), "{errors:?}");
 }
 
 /// Tries to register every engine namespace as a parameter prefix and records the refusals.

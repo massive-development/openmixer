@@ -1,4 +1,5 @@
-#![forbid(unsafe_code)]
+// `unsafe` is denied everywhere but the two modules that load shared libraries (`abi`, `loader`).
+#![deny(unsafe_code)]
 
 //! Plugin API, registry and stage catalog.
 //!
@@ -8,13 +9,18 @@
 //! ([`PluginRegistry::apply_midi_map`]), the parameter router ([`PluginRegistry::bind_router`]) and
 //! the theme list ([`PluginRegistry::themes`]).
 //!
-//! Plugins are in-process for now. Shared-library loading is a documented stub in [`loader`].
+//! A plugin is in-process, or a shared library exporting the C ABI in [`abi`]: [`PluginLoader`]
+//! loads it and adapts it to [`Plugin`].
 
+#[allow(unsafe_code)]
+pub mod abi;
 mod api;
 mod catalog;
+#[allow(unsafe_code)]
 mod loader;
 mod registry;
 
+pub use abi::{PluginVTable, PLUGIN_ABI_VERSION};
 pub use api::{Plugin, PluginError, PluginHost, PluginInfo, StageFactory, StageKind, API_VERSION};
 pub use catalog::{InsertAt, InsertPoint, InsertRefused, StageCatalog};
 pub use loader::{builtin_plugins, PluginLoader, SHARED_LIBRARY_EXTENSIONS};
