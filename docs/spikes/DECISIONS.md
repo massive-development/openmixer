@@ -165,17 +165,17 @@ Date: 2026-10-19. The Rust workspace is the whole project. The C++ sources, CMak
 - **CI:** the progress heatmap check (`progress-check`, which `tools/progress_heatmap.py --check` backs) and the ASIO SDK guard (`legal-guards`: a `git grep` for `asiodrv` and `ASIO SDK` over every tracked file outside `docs/`, `.github/`, `*.md` and `NOTICE`, which name the rule; then a file-name check on tracked paths for `iasiodrv`, `asiosdk` and `asiodrivers`).
 - **Licence check:** `cargo deny` (the `deny` job) covers the Rust dependency licences. Signing is still a pre-release decision.
 - **Gitignore:** the old C++ build outputs (`/build/`, `/build-*/`, `/_deps/`, `/CMakeFiles/`) are ignored via `.gitignore`.
-- **Not verified:** the merged `check` job (GPUI now builds there; see the GPUI integration section above) has not yet run on a clean runner.
+- **Verified 2026-10-27:** the merged `check` job (GPUI builds there; see the GPUI integration section above) has passed on hosted `ubuntu-latest` runners in later PR runs (for example run 40398196325, 2026-10-26).
 
 ## CI status by platform
 
-Date: 2026-10-19. Run 39296306022 on PR #66. Linux is the required signal; macOS and Windows legs are `continue-on-error` in `rust.yml` until Windows and macOS support lands.
+Date: 2026-10-19. Run 39296306022 on PR #66. Updated 2026-10-27: CI is Linux only now. The `check` matrix in `rust.yml` is `ubuntu-latest`; the macOS and Windows legs were removed and return in the porting phase. The Windows and macOS entries below are the findings of the 2026-10-19 run, kept as the root causes to fix then.
 
-- **ubuntu-latest:** green (fmt, clippy, test, `cargo deny`, legal guards, progress heatmap).
-- **windows-latest:** `om-library` `file_url` tests asserted `/` separators, but `native_separators` returns `\` on Windows by design. Fixed in the test (expectations go through a platform helper); the fix is not yet confirmed by a CI run. fmt, clippy and the other test binaries already passed on this leg, so no other Windows work is known.
-- **macos-latest:** `om-audio` `soak_short` failed on its xrun budget (23 xruns against a budget of 5, max callback 38.7 ms against 5.3 ms). The test is timing-based and the hosted runner is shared, so the budget is not loosened. Later (Windows and macOS support): run the soak on a dedicated macOS CoreAudio device and set the budget per platform from measured numbers.
+- **ubuntu-latest:** green (fmt, clippy, test, `cargo deny`, legal guards, progress heatmap). Still green on hosted runners on later PR runs (for example run 40398196325, 2026-10-26, every job including `onnx`). Only `pull_request` runs exist in the history; no scheduled run yet.
+- **windows-latest (2026-10-19, leg since removed):** `om-library` `file_url` tests asserted `/` separators, but `native_separators` returns `\` on Windows by design. Fixed in the test (expectations go through a platform helper); the fix was never confirmed by a CI run (the leg is gone). fmt, clippy and the other test binaries already passed on this leg, so no other Windows work is known.
+- **macos-latest (2026-10-19, leg since removed):** `om-audio` `soak_short` failed on its xrun budget (23 xruns against a budget of 5, max callback 38.7 ms against 5.3 ms). The test is timing-based and the hosted runner is shared, so the budget is not loosened. Later (Windows and macOS support): run the soak on a dedicated macOS CoreAudio device and set the budget per platform from measured numbers.
 - **Build deps:** `rubberband-sys` (bindgen) needs `libclang`. The workflow installs `libclang-dev` only on Linux. The macOS and Windows legs compiled without a failure in the build step, so no LLVM install was needed in this run. Later (Windows and macOS support): keep an eye on bindgen when the Windows toolchain or the audio backends change.
-- **GUI:** GPUI builds in the Linux `check` job (no separate job any more); not yet verified on a clean runner.
+- **GUI:** GPUI builds in the Linux `check` job (no separate job any more); the job has passed on hosted (clean) runners since the merge (PR runs from 2026-10-23 to 2026-10-26).
 
 ## Main window layout: waveform stage (2026-10-21)
 

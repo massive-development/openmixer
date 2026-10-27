@@ -19,7 +19,7 @@ Runs alongside everything else; not gated on a wave (ADR 0005, `docs/PRODUCT.md`
 - **E2a Progressive waveform (M):** play at once and let the waveform fill in while the file is read, like a buffering video: the analyser publishes partial `WaveformData` as it decodes, the strips draw what exists and show the rest as a dim placeholder, and BPM, key and the grid land when their analysis finishes. Today the waveform arrives all at once when the whole analysis is done (the deck itself already plays immediately).
 - **E9 Smoothness (M):** measure first: frame times on a release build with real music, four decks and stems, at the display refresh rate (a frame-time overlay and a headless frame-time test). Then fix what the numbers show: per-frame work in the waveform strips, redraw only what changed, smooth animation of faders and meters, no flicker on state changes. Done when no frame goes over the budget in `docs/PRODUCT.md` over a ten-minute set.
   - Measured 2026-10-21 (`OPENMIXER_FRAME_STATS=1`, WSLg, `--demo-automix`, decks playing): release 60 fps, no hitches after start-up; debug 12 fps (the unoptimised GPUI window). The view builds in about 0.5 ms, so the cost is in painting. Fixed: dev builds now optimise dependencies and the view crates (`.cargo/config.toml`), giving about 59 fps with an occasional 33 ms frame. Not measured yet: real tracks, four decks, stems, the scrolling zoomed waveform on a real GPU. Paints about 3,000 quads a frame even when nothing moves (one per waveform pixel column): cache the strips if the numbers on real hardware need it. Start-up and track loads show one to five hitches in the first window.
-- **E10 Spectrum waveform (L):** design in `docs/superpowers/specs/2026-10-23-spectrum-waveform-design.md`. Built, awaiting the maintainer on real music and a real display: FFT analysis to loudness, centroid and spread per point (`om-analysis`, format version 2, old cache entries rebuild), the pure colour function and per-theme hue curve (`om-ui::waveform`, `waveform` theme section), the overview and zoomed strip on it, the hue-range guard, cost tests, and the tuning tool (`cargo run -p om-ui --example wave_strips -- TRACK...`). Open: add two or three more full reference tracks (heavy bass, vocal-led, sparse), re-run the tool and `OPENMIXER_REFERENCE_TRACKS=<folder> cargo test -p om-ui --test wave_colour reference` (no `wave_colour` test target or `OPENMIXER_REFERENCE_TRACKS` reader exists in the tree yet, so this command does not run today), then confirm or move `MIN_HUE_SPAN_DEGREES`; tune the curve by eye. Bar numbers and structure hints stay with E2, progressive fill-in with E2a.
+- **E10 Spectrum waveform (L):** design in `docs/superpowers/specs/2026-10-23-spectrum-waveform-design.md`. Built, awaiting the maintainer on real music and a real display: FFT analysis to loudness, centroid and spread per point (`om-analysis`, format version 2, old cache entries rebuild), the pure colour function and per-theme hue curve (`om-ui::waveform`, `waveform` theme section), the overview and zoomed strip on it, the palette tests (`cargo test -p om-ui --test wave_palette`), the flicker tests (`--test wave_flicker`), the cost tests (`--test wave_budget`; the strict-numbers variant is `#[ignore]`, run it with `--release -- --ignored --nocapture`), and the tuning tool (`cargo run --release -p om-ui --example wave_strips -- TRACK...`, or `--synthetic`). Open: run the tool on two or three more full reference tracks (heavy bass, vocal-led, sparse) and look at the PNGs, run the real-track flicker check (`TRACK=<audio file> cargo test -p om-ui --test wave_flicker adjacent_columns_and_height_reference_on_a_real_track -- --ignored --nocapture`), and tune the curve by eye. There is no hue-span guard or reference-folder test in the tree (the old `wave_colour` test, `OPENMIXER_REFERENCE_TRACKS` and `MIN_HUE_SPAN_DEGREES` no longer exist), so a hue-range check on real tracks would have to be written first. Bar numbers and structure hints stay with E2, progressive fill-in with E2a.
 
 ## Before Wave 7
 
@@ -35,7 +35,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 40:** 8-pad sampler: the engine (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`), the sample bank (P2: `<data>/samples/sampler.json`, off-thread import, start-up apply), the pad view-model and sampler strip (P4: `om-ui::sampler_binding`, `om-ui-gpui::sampler_view`) and the soak and UI gate scenarios (P5) are built, at logic and view level. Not heard. The staged screenshots were checked by eye (`docs/screenshots/REVIEW.md`); a live display has not been checked. Open: the user's listening and by-eye check; a per-pad mode and gain on MIDI; learn for pad settings. M
 - **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Cover art is shown in the deck card header (loaded on a worker, 16-entry cache, PNG and JPEG only, placeholder otherwise); there is no track detail view, the cache is not invalidated on rescan, and it has not been seen on a display. A library scan also enqueues new unanalysed tracks and changed tracks with a finished prep row for analysis.
 - **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. `ScrollBarStyle`, `TableStyle` and `ToggleStyle` exist; the library table, its display-only scroll thumb and the automix Off|On switch draw from them. The platter switch, toggle pills, MIDI toggles, settings page and debug column scrolling are still on the old paths, and nothing is checked on a live display. S
-- **Todo 26a:** done: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding`. It is still removed once Wave 5 replaces it.
+- **Todo 26a:** partial: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding` (tests: `track_loader`, `debug_panel::play_toggles_between_zero_and_one`). Faders, EQ and meters are not widgets on it (the raw parameter list shows their values as text). It is still removed once Wave 5 replaces it.
 
 ### (B) Quality and verification debt
 
@@ -46,7 +46,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Wave 1 CI:** the check matrix is Linux only; the macOS and Windows legs are not in `rust.yml` until the porting phase. S-M
 - **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. A weekly scheduled `soak` job in the rust.yml workflow now runs both; it has not run yet (no scheduled run is in the workflow history), so the result is unknown. S
 - **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
-- **Wave 1 CI:** the `check` job now builds and lints the GPUI crate with the rest of the workspace; it has not run on a clean runner since the merge. S
+- **Wave 1 CI:** the `check` job now builds and lints the GPUI crate with the rest of the workspace; it has passed on hosted (clean) `ubuntu-latest` runners in PR runs since the merge (for example run 40398196325, 2026-10-26, all jobs green). Only `pull_request` runs exist; nothing scheduled has run. S
 
 ### (C) Smaller gaps
 
@@ -64,7 +64,7 @@ Escape on the settings overlay is done (`settings_view.rs`, the `escape` key han
 - Listening: stem seams and clicks, mute and solo, bass swap, key-lock with stems; sampler latency, clicks, loop latch and gate.
 - An Automix transition on real decks: phase, EQ and bass swap, echo-out, and how cancel feels with real MIDI fader jitter. Decide whether Automix stays enabled across restarts.
 - The GPUI window by eye at 900x600 and smaller, in both themes, on a real display (the E1 glow and the E3 row tint are guesses from software-render screenshots).
-- The `onnx` CI job on a clean runner.
+- The `onnx` CI job is green on hosted runners (run 40398196325, 2026-10-26); it is still `continue-on-error` in `rust.yml`, so decide whether to make it blocking.
 - The macOS and Windows porting phase (root causes in `docs/spikes/DECISIONS.md`).
 
 ## Spikes (done)
@@ -113,7 +113,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
 
-- [x] **Todo 26a:** Minimal debug panel (pulled forward from Wave 5)
+- [ ] **Todo 26a:** Minimal debug panel (partial) (pulled forward from Wave 5)
   - 2 decks: per-deck path load (refused on a playing deck unless forced) and play/pause, plus device figures and the raw parameter list
   - Not yet: faders, EQ knobs and level meters on the panel; the panel is replaced by Wave 5 UI
 
@@ -143,7 +143,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 
 - [ ] **Todo 8b:** FFmpeg decode backend (optional, after the above)
 
-- [x] **Todo 13:** Engine soak test (10-minute headless mix)
+- [ ] **Todo 13:** Engine soak test (10-minute headless mix; partial: the `#[ignore]` test exists and a weekly CI job is defined, but no 10-minute run has been recorded)
   - Soak mix scenario in `crates/om-audio/tests/soak.rs`
   - Performance verification: zero xruns, no audio-thread allocation
 
