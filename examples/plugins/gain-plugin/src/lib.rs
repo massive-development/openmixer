@@ -3,9 +3,9 @@
 //! Example plugin: a gain stage (`example.gain`), a parameter target (`example.gain` = the gain
 //! value), a MIDI map (`example.gain-knob`, CC 1 to the gain) and a theme.
 //!
-//! The example was a shared library dropped into a plugin folder. Dynamic loading is not
-//! implemented (see `om_plugins::PluginLoader`), so this crate is linked into the application or
-//! loaded in-process by a test: `PluginRegistry::add_plugin(Box::new(GainPlugin::new()))`.
+//! This is the in-process example: it is linked into the application or loaded by a test with
+//! `PluginRegistry::add_plugin(Box::new(GainPlugin::new()))`. The shared-library (C ABI) example is
+//! `examples/plugins/gain-plugin-cdylib`.
 
 use om_core::ParameterTarget;
 use om_engine::ProcessStage;

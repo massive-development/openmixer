@@ -30,6 +30,8 @@ om-ui-gpui = { workspace = true, optional = true }
 default = ["gui"]
 # Real stem separation through ONNX Runtime (see om-stems). Off by default: no runtime, no network.
 onnx = ["om-stems/onnx"]
+# Decode fallback that runs the `ffmpeg` executable for formats symphonia lacks (see om-engine). Off by default.
+ffmpeg = ["om-engine/ffmpeg"]
 # The window. Off (`--no-default-features`) leaves only the headless flags: --smoke and --version.
 gui = ["dep:om-ui-gpui"]
 

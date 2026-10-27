@@ -3,13 +3,14 @@
 
 mod common;
 
-use common::TempDir;
+use common::{write_wav, Tags, TempDir};
 use om_analysis::{
     AnalysisContext, AnalysisService, Analyzer, AnalyzerRegistry, AudioClip, BeatGridModel,
     BpmResult, ClipSource, KeyResult, MemoryClipSource, MusicalKey,
 };
 use om_library::{
-    core_migrations, Library, OpenMode, PrepEntry, PrepOptions, PrepQueue, PrepStatus, TrackRecord,
+    core_migrations, IngestSummary, Ingestor, Library, MetadataReaderRegistry, OpenMode, PrepEntry,
+    PrepOptions, PrepQueue, PrepStatus, TrackRecord,
 };
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -681,4 +682,86 @@ fn prep_queue_cancel_then_reenqueue_while_running_takes_effect() {
     f.replace(Arc::new(FakeAnalyzer::new("waveform", "{}".into())));
     assert!(q.pump_until_idle(WAIT));
     assert_eq!(f.status_of(a), PrepStatus::Done);
+}
+
+fn scan(lib: &Library, folder: &std::path::Path) -> (IngestSummary, bool) {
+    let readers = MetadataReaderRegistry::with_defaults();
+    let mut summary = IngestSummary::default();
+    let ok = Ingestor::new(lib, &readers)
+        .ingest_folder(folder, &mut summary, &|| false)
+        .is_ok();
+    (summary, ok)
+}
+
+#[test]
+fn scan_enqueues_new_unanalysed_tracks_once() {
+    let lib = Library::open(":memory:", OpenMode::ReadWrite, core_migrations()).unwrap();
+    let tmp = TempDir::new().unwrap();
+    for (i, name) in ["a.wav", "b.wav", "c.wav"].iter().enumerate() {
+        write_wav(
+            &tmp.path().join(name),
+            1.0,
+            &Tags::default(),
+            220.0 + i as f32 * 110.0,
+        );
+    }
+
+    let (first, ok) = scan(&lib, tmp.path());
+    assert!(ok);
+    assert_eq!(first.added, 3);
+    assert_eq!(first.enqueued, 3);
+    assert_eq!(lib.prep_queue().all().unwrap().len(), 3);
+
+    let (second, ok) = scan(&lib, tmp.path());
+    assert!(ok);
+    assert_eq!(second.unchanged, 3);
+    assert_eq!(second.enqueued, 0);
+    assert_eq!(lib.prep_queue().all().unwrap().len(), 3);
+}
+
+#[test]
+fn scan_does_not_requeue_a_track_that_already_has_a_result() {
+    let lib = Library::open(":memory:", OpenMode::ReadWrite, core_migrations()).unwrap();
+    let tmp = TempDir::new().unwrap();
+    let file = write_wav(&tmp.path().join("a.wav"), 1.0, &Tags::default(), 220.0);
+    assert_eq!(scan(&lib, tmp.path()).0.enqueued, 1);
+    let id = lib
+        .tracks()
+        .find_by_path(&file.to_string_lossy())
+        .unwrap()
+        .unwrap()
+        .id;
+    lib.prep_queue()
+        .set_status(id, PrepStatus::Failed, "undecodable")
+        .unwrap();
+
+    // Only the mtime moves: re-read, same content, so the failed entry is left alone.
+    common::touch(&file, 1_000_000);
+    let (again, _) = scan(&lib, tmp.path());
+    assert_eq!(again.updated, 1);
+    assert_eq!(again.enqueued, 0);
+    assert_eq!(
+        lib.prep_queue().find(id).unwrap().unwrap().status,
+        PrepStatus::Failed
+    );
+
+    // The content changes: the old result no longer applies, so it is queued again.
+    let _ = write_wav(&tmp.path().join("a.wav"), 2.0, &Tags::default(), 220.0);
+    let (changed, _) = scan(&lib, tmp.path());
+    assert_eq!(changed.updated, 1);
+    assert_eq!(changed.enqueued, 1);
+    assert_eq!(
+        lib.prep_queue().find(id).unwrap().unwrap().status,
+        PrepStatus::Queued
+    );
+}
+
+#[test]
+fn scan_of_missing_folder_enqueues_nothing() {
+    let lib = Library::open(":memory:", OpenMode::ReadWrite, core_migrations()).unwrap();
+    let tmp = TempDir::new().unwrap();
+    let (summary, ok) = scan(&lib, &tmp.path().join("nope"));
+    assert!(!ok);
+    assert_eq!(summary.enqueued, 0);
+    assert!(lib.prep_queue().all().unwrap().is_empty());
 }

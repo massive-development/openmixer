@@ -1,0 +1,26 @@
+[package]
+name = "gain-plugin-cdylib"
+description = "Example OpenMixer C-ABI plugin: a fixed half-gain stage in a shared library"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# No dependencies: a C-ABI plugin needs only the table layout (mirrored in src/lib.rs), so it builds
+# in seconds and is not tied to the host's compiler or crate versions.
+
+[lib]
+crate-type = ["cdylib"]
+
+# The workspace forbids unsafe code. A C-ABI plugin needs `#[no_mangle]` and raw-pointer access at
+# the boundary, so this crate denies it and allows it only on the exported functions.
+[lints.rust]
+unsafe_code = "deny"
+
+[features]
+# Variants used by `crates/om-plugins/tests/dynamic_load.rs` to exercise the host's error paths.
+bad-abi = []
+no-entry = []
+panic-in-create = []
