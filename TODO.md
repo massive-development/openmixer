@@ -50,7 +50,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 ### (C) Smaller gaps
 
-- **Todo 10a:** plugin dynamic loading: built over a versioned C ABI (`libloading`, `PluginVTable`, `openmixer_plugin_entry`, `PluginLoader::load`; ADR in `docs/spikes/DECISIONS.md`). Not tried with a third-party plugin. Plugins must catch their own panics (a panic across `extern "C"` aborts); the vtable has no prepare, sample-rate or parameters yet. M
+- **Todo 10a:** plugin dynamic loading: built over a versioned C ABI (`libloading`, `PluginVTable`, `openmixer_plugin_entry`, `PluginLoader::load`; ADR in `docs/spikes/DECISIONS.md`). ABI version 2 adds `prepare(sample_rate, max_block)`, parameter enumerate/get/set and a status return from `process`; version 1 plugins still load (no prepare, no parameters). It is tried with a plugin built from `crates/om-plugins/include/openmixer_plugin.h` alone (`examples/plugins/param-plugin-cdylib`), not yet with a plugin from another language or a real third party. Plugins must catch their own panics (a panic across `extern "C"` aborts) and report a fault; the host contains that and passes the audio through. M
 - **Todo 35:** HID layer: not started. L
 - **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
 - **Todo 8b:** FFmpeg decode backend (optional): the `ffmpeg` cargo feature in `om-engine` (off by default) runs the `ffmpeg` binary (override `OPENMIXER_FFMPEG`) for files symphonia reports unsupported, wired only into `Sample::load` (sampler). Decks, stems and analysis have no fallback; the real-ffmpeg tests never ran (ffmpeg is not installed in the dev environment). M
