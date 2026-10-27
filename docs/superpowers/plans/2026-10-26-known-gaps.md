@@ -1,5 +1,7 @@
 # Known Gaps Implementation Plan
 
+Status: tasks 2-9 merged in PR #117; task 10 (sync docs) is this docs pass, not yet merged.
+
 > \*\*For agentic workers:\*\* REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended). Steps use checkbox (`- \[ ]`) syntax for tracking.
 
 **Goal:** Close the known gaps that can be built and verified headlessly: a scheduled soak job, automix and auto-enqueue analysis handling, playlist reorder and folders in the UI, artwork display, restyled scroll bars, tables and toggles, an FFmpeg decode fallback, and C-ABI plugin loading, then one docs sync.

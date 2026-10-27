@@ -1,5 +1,7 @@
 # UI waveform redesign: fixed band hues, peak silhouette, readable markers
 
+Status: merged in PR #115 (polish in PR #116).
+
 > For the engineer: work test-first (superpowers:test-driven-development), one task per commit, `cargo fmt` + `cargo clippy -p om-analysis -p om-ui -p om-ui-gpui --all-targets` clean before each commit. Do NOT touch `Cargo.lock` (it has an unrelated local diff) and add NO new crate dependencies. Research basis: `docs/design/research/waveform.md` (read it first, sections 2 and 3).
 
 ## Goal

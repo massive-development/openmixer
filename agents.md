@@ -169,12 +169,13 @@ All changes — including those by AI agents and maintainers — land through a 
    - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
-4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
-6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
-7. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
-8. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
-9. Release PR description: list the included PRs (number + Todo), the testing they already had, and the revert command. Merge with `--merge` so a batch can be undone with `git revert -m 1 <merge commit>`.
+4. Docs match the repo before the PR opens: check `README.md` (status, screenshots, build notes), `docs/PROGRESS.md`, `TODO.md` and any doc the change touches against the current code, and fix stale claims in the same PR. Outdated docs send people to rebuild or fix what already exists or is in flight.
+5. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
+6. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
+7. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
+8. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
+9. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
+10. Release PR description: list the included PRs (number + Todo), the testing they already had, and the revert command. Merge with `--merge` so a batch can be undone with `git revert -m 1 <merge commit>`.
 
 ## Rust Standards & Memory Safety (required)
 
