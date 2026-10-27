@@ -81,7 +81,7 @@ Scenes: `tools/screenshots.sh main-record` runs `--demo-record`: the demo librar
 | Record button while idle | not captured | Drawn as an outline with the label `Record`; the capture budget was spent on the recording state. |
 | Recording settings tab (`settings-recording.png`) | fits | Folder (Change folder / Use default, the path field opens below), the three format chips, the low-disk toggle and the status line. Nothing overlaps at 1280x800. |
 | Dropped-frames badge | not captured | Shown as `!N` in the button when frames were dropped; the mock device drops none. |
-| Narrow windows (900x600) | layout test only | The header strip and the cells are checked by `the_cells_clear_the_header_strip_and_each_other_at_the_test_sizes` (om-ui) and the button's rect test in `record_bar.rs`. Not looked at in a picture. |
+| Narrow windows (900x600) | layout test only | The header strip is checked by the header layout tests (`om-ui` `header_layout.rs`, "parts do not overlap") and the button's rect test in `record_bar.rs`. (This line once named a test, `the_cells_clear_the_header_strip_and_each_other_at_the_test_sizes`, that is not in the tree.) Not looked at in a picture. |
 
 ## Mapping (Todo 36, `settings-mapping`, 2026-10-20)
 

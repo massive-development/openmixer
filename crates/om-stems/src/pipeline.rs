@@ -47,7 +47,7 @@ pub struct SegmentOutput {
     pub spec: Option<Vec<f32>>,
 }
 
-/// The neural network. Implemented by `OrtSeparator` (feature `onnx`) and by fakes in tests.
+/// The neural network. Implemented by `OrtInference` (feature `onnx`) and by fakes in tests.
 pub trait StemInference: Send {
     fn run(
         &mut self,

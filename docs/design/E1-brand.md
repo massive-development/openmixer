@@ -43,8 +43,7 @@ All tokens have defaults in `ThemeTokens::builtin_dark`, so older theme files st
 
 ## Not done yet
 
-- Tabular (fixed-width) numerals so a ticking clock does not shimmer: needs a font choice and a check that gpui exposes font features.
-- A bundled typeface (today the system default), and letter-spacing for captions.
+- Letter-spacing for captions. (Done since this doc was written: the Inter interface font is bundled, and `tnum` tabular numerals are applied from the theme, `om-ui-gpui::font`.)
 - Card lift on the cards themselves, glow on knobs, faders, pads and tabs, the brand mark in the header, ember on the playhead.
 - Animating the two motion durations (they are tokens only).
-- Everything has been checked by contrast tests only; nobody has looked at it on a real display in a dark room.
+- Checked by contrast tests and on the staged screenshots (`docs/screenshots/REVIEW.md`); nobody has looked at it on a real display in a dark room.
