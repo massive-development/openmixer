@@ -193,7 +193,9 @@ The snapshot carries each channel's crossfader assignment (`mixer.ch<N>.xfader`)
 
 ## Not yet covered by tests
 
-GPUI paint and layout tests that do not exist yet. Each is covered at model level only (the logic behind the widget is tested in `om-ui`). A line is removed when its test lands.
+GPUI paint and layout tests still missing. Each is covered at model level only (the logic behind the widget is tested in `om-ui`). A line is removed when its test lands.
+
+Headless GPUI tests work: `crates/om-ui-gpui/src/headless_tests.rs` uses `#[gpui::test]` with gpui's `test-support` feature (a dev-dependency of `om-ui-gpui` only; `cargo deny` is unaffected) and runs with no display. It renders the real `Shell` over a two-deck engine at 1280x800 and 900x600, reads each cell's laid-out bounds back through a debug selector (`app::cell_view`, a no-op in release builds), and checks: every cell renders at the layout's bounds, the key cells (decks, stage, mixer, both channel strips) are present, inside the window and do not overlap, a resize relayouts, and the knob, fader and meter painters plan non-empty geometry inside each rendered channel strip. Pixels are not compared. The items below are the paint behaviours this first set does not cover.
 
 - Todo 25 (LookAndFeel): the gpui controls' paint is not checked by eye; a theme switch repaints live components (the style layer is tested, the paint is not).
 - Todo 27 (mixer widgets): the meter bar paints, and clicking the clip indicator clears it; the stereo meter feeds each side separately.
