@@ -1,5 +1,7 @@
 # Just-in-Time Analyzer Implementation Plan
 
+> **Status (checked 2026-10-27): not built.** No step is ticked, and `git log` shows the plan was added once (commit 33c0e50) with no follow-up. None of its new files or crates exist (`om-net`, `om-analysis/src/incremental.rs`, `stream_job.rs`, `om-engine/src/deck/stream.rs`), and `StreamSource`, `HttpSpool` and `IncrementalAnalyzer` appear nowhere in `crates/`. It was not superseded by other work either: the open need is `TODO.md` item E2a (progressive waveform). The "synchronous today" list below was accurate on 2026-10-21 and has not been re-checked.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Load and play a track the moment its first bytes are readable, and analyse it in one streaming pass that follows the data (local file, growing download, HTTP), so waveform, BPM and key appear as the data arrives and our code never adds a wait.

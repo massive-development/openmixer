@@ -176,7 +176,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | Wave | Focus | Status |
 |------|-------|--------|
 | 1 | Foundation, build system, CI, test harness | ✅ Done |
-| 2 | Audio engine (device, decks, mixer, FX, sync, MIDI input, soak gate) | 🟡 Partial: the debug panel (26a) is partial; FFmpeg (8b) is optional and sampler-only; the 10-minute soak is on the weekly CI job, not yet run |
+| 2 | Audio engine (device, decks, mixer, FX, sync, MIDI input, soak gate) | 🟡 Partial: the debug panel (26a) is partial (no faders, EQ or meters on it); FFmpeg (8b) is optional and sampler-only; the 10-minute soak is on the weekly CI job, not yet run |
 | 3 | Analysis pipeline | 🟡 Partial: stem separation runs on the mock separator; the htdemucs export and a real-model run (19) are open |
 | 4 | Library and data | 🟡 Done except crates and tags, the Traktor and Serato importers, smart filters and ranking |
 | 5 | User interface | 🟡 Partial: LookAndFeel (25) is partly restyled; decks, mixer and settings partial; stem pads (30) done at logic and view level |
@@ -219,7 +219,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - FFmpeg decode backend (Todo 8b, optional `ffmpeg` cargo feature, off by default): wired only into the sampler's `Sample::load`; decks, stems and analysis have no fallback. CI runs the fake-ffmpeg tests only; the real-ffmpeg tests skip where no ffmpeg is installed, and neither the dev environment nor CI has one
 - Cover art shows in the deck card header only (PNG and JPEG; no track detail view; the cache is not invalidated on rescan); not seen on a display
 - Playlist editing (Todo 28): reorder by dragging a track onto a row, a top-level New folder and nesting by drag are built; the gpui drag and drop is compile-checked only, not seen on a display
-- The weekly `soak` CI job (the two 10-minute soaks, `.github/workflows/rust.yml`, Sunday 03:00 UTC) has not run yet: no scheduled run is in the workflow history
+- The weekly `soak` CI job (the two 10-minute soaks, `.github/workflows/rust.yml`, Sunday 03:00 UTC) has not run yet: `gh run list --event schedule` is empty (checked 2026-10-27), so the result is unknown
 - CI is Linux only; macOS and Windows legs are not in the check matrix
 - The headphone-cue second stream is unproven (it failed on WSLg)
 - The window-opening `--smoke` (without `--headless`) is not run in CI
