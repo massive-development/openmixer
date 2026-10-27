@@ -52,7 +52,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 
 - **Todo 10a:** plugin dynamic loading: built over a versioned C ABI (`libloading`, `PluginVTable`, `openmixer_plugin_entry`, `PluginLoader::load`; ADR in `docs/spikes/DECISIONS.md`). Not tried with a third-party plugin. Plugins must catch their own panics (a panic across `extern "C"` aborts); the vtable has no prepare, sample-rate or parameters yet. M
 - **Todo 35:** HID layer: not started. L
-- **Todo 34:** plug-and-play controller maps: `fixtures/controllers` holds test fixtures only. M (needs hardware to verify)
+- **Todo 34:** plug-and-play controller maps. Built without hardware: the schema check (`check_map`), selection by port name (`select_map`), two original generic maps in `resources/controllers/` (8 knob 8 pad; 2 deck 4 channel mixer) and trace replay tests (`crates/om-midi/tests/controller_maps.rs`). Needs a real device (maintainer): confirm the maps against real class-compliant controllers (CC numbers, channels, pad notes, encoder modes, pitch bend centring), the real port-name strings the OS reports on Linux, macOS and Windows (extend `normalize_device_name` if they differ), and the engine ranges for `filter`, `trim` and `eq` (the maps send 0 to 1). No maps for named commercial controllers exist: each would be written clean-room from the MIDI spec plus a hardware trace the maintainer records. M
 - **Todo 8b:** FFmpeg decode backend (optional): the `ffmpeg` cargo feature in `om-engine` (off by default) runs the `ffmpeg` binary (override `OPENMIXER_FFMPEG`) for files symphonia reports unsupported, wired only into `Sample::load` (sampler). Decks, stems and analysis have no fallback; the real-ffmpeg tests never ran (ffmpeg is not installed in the dev environment). M
 - **Todo 28:** playlist editing UI: new, rename, delete (second press), add by drop on a sidebar playlist and remove tracks are built (`LibraryBrowser`, sidebar buttons); not checked by eye. Also built: reorder (drag a track onto a row of an open playlist, only while unsorted and unsearched), New folder (top level) and nesting by dragging a playlist or folder onto a folder, with a cycle guard pinned by test. The gpui drag and drop is compile-checked only, not seen on a display. A track added twice to one playlist is handled per entry (`dragging_a_duplicate_row_moves_that_entry` in `crates/om-ui/tests/library_browser.rs`). S
 
@@ -66,6 +66,7 @@ Escape on the settings overlay is done (`settings_view.rs`, the `escape` key han
 - The GPUI window by eye at 900x600 and smaller, in both themes, on a real display (the E1 glow and the E3 row tint are guesses from software-render screenshots).
 - The `onnx` CI job is green on hosted runners (run 40398196325, 2026-10-26); it is still `continue-on-error` in `rust.yml`, so decide whether to make it blocking.
 - The macOS and Windows porting phase (root causes in `docs/spikes/DECISIONS.md`).
+- Todo 34: plug a real class-compliant controller in, load the generic map from `resources/controllers/`, record its port name and a trace, and check every control moves the right parameter (see Todo 34 in section C).
 
 ## Spikes (done)
 
@@ -252,7 +253,7 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 ## Wave 6: Hardware I/O
 
 - Todos 32/33 moved to Wave 2
-- [ ] **Todo 34:** Plug-and-play controller maps (`fixtures/controllers` holds only test fixtures)
+- [ ] **Todo 34:** Plug-and-play controller maps (generic maps, schema check, port-name selection and replay tests done; real-device verification and named-controller maps open, see section C)
 - [ ] **Todo 35:** HID layer
 - [x] **Todo 36:** Mapping editor UI (logic and view level: edit, undo, conflicts, learn, save and import in the Mapping tab; not verified with hardware)
 
