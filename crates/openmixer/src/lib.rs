@@ -16,6 +16,7 @@ pub use error::AppError;
 pub mod composition;
 pub mod control_timer;
 pub mod demo_map;
+pub mod demo_scene;
 pub mod engine_state;
 pub mod library_smoke;
 pub mod midi;

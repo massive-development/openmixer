@@ -369,13 +369,8 @@ impl SamplerBinding {
             .next()
             .map(|c| c.to_uppercase().chain(mode_chars).collect())
             .unwrap_or_default();
-        format!(
-            "{}  {}  {:+.1} st  {:.0}%",
-            view.name,
-            mode,
-            view.pitch,
-            view.gain * 100.0
-        )
+        // The pad already shows its own name, so the caption keeps to what the pad does not.
+        format!("{}  {:+.1} st  {:.0}%", mode, view.pitch, view.gain * 100.0)
     }
 
     fn send(&self, id: ParamId, value: f64) -> bool {

@@ -1,5 +1,6 @@
-//! The plugin API a plugin implements and the services the host offers it. Plugins are in-process trait objects (see
-//! `docs/spikes/DECISIONS.md`, "Plugins: in-process only").
+//! The plugin API a plugin implements and the services the host offers it. Plugins are trait objects: in-process,
+//! or a shared library behind the C ABI adapted by the loader (see `docs/spikes/DECISIONS.md`, "Plugins: in-process
+//! only" and "Plugins: C ABI dynamic loading").
 
 use om_core::ParameterTarget;
 use om_engine::ProcessStage;
@@ -47,9 +48,15 @@ pub enum PluginError {
     UnknownMap(String),
     #[error("MIDI map {name}: {reason}")]
     InvalidMap { name: String, reason: String },
-    /// The loader stub: see [`crate::loader::PluginLoader`].
-    #[error("dynamic loading is not supported yet: {0}")]
-    DynamicLoadingUnsupported(String),
+    /// A shared library built for another C ABI version (see [`crate::abi::PLUGIN_ABI_VERSION`]).
+    #[error("plugin ABI version {found}, the host speaks {expected}")]
+    BadAbi { found: u32, expected: u32 },
+    /// A shared library that does not export `openmixer_plugin_entry`. Holds the path.
+    #[error("{0}: no openmixer_plugin_entry symbol")]
+    MissingEntry(String),
+    /// A file that is not a loadable library, or a plugin whose table or calls failed.
+    #[error("{path}: {reason}")]
+    InvalidLibrary { path: String, reason: String },
     #[error("cannot read {path}: {reason}")]
     Io { path: String, reason: String },
 }

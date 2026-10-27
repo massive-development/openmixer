@@ -48,7 +48,7 @@
   "mixer": { "knobHeight": 70, "buttonHeight": 26, "meterWidth": 12, "masterWidth": 92, "tabHeight": 32,
              "crossfaderHeight": 46, "cueHeight": 46, "meterFloorDb": -48, "meterMidDb": -12, "meterHighDb": -3,
              "meterClipLevel": 0.99, "meterHoldSeconds": 1.0, "meterClipSeconds": 2.0,
-             "titleHeight": 22, "faderWidth": 40, "curveWidth": 128, "fxBoxWidth": 150, "fxEnableWidth": 56, "pageButtonWidth": 80, "padX": 6, "padY": 10, "accentDot": 8, "meterHoldTickHeight": 2,
+             "titleHeight": 22, "faderWidth": 58, "curveWidth": 128, "fxBoxWidth": 150, "fxEnableWidth": 56, "pageButtonWidth": 80, "padX": 6, "padY": 10, "accentDot": 8, "meterHoldTickHeight": 2,
              "meterSegment": 4, "meterSegmentGap": 1 },
   "library": { "rowHeight": 32, "headerHeight": 32, "sidebarWidth": 190, "toolbarHeight": 40, "buttonWidth": 78,
                "sidebarRowHeight": 32, "ratingDot": 5, "searchMinWidth": 160, "compatAlpha": 0.22, "stripeAlpha": 0.04, "dropAlpha": 0.18 },

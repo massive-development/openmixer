@@ -108,6 +108,9 @@ pub struct Selection {
     pub pick: Option<QueueTrack>,
     /// Every candidate that was skipped for a hard reason, with the reason.
     pub skipped: Vec<(i64, SkipReason)>,
+    /// Ids skipped as [`SkipReason::NotAnalysed`], in candidate order: the host should get them
+    /// analysed.
+    pub needs_analysis: Vec<i64>,
 }
 
 /// The host's queue: the next track to play, or `None` when nothing qualifies.
@@ -130,12 +133,14 @@ pub fn select_next(
     rng: &mut dyn QueueRng,
 ) -> Selection {
     let mut skipped = Vec::new();
+    let mut needs_analysis = Vec::new();
     let mut eligible: Vec<&QueueTrack> = Vec::new();
     for track in candidates {
         if recent.contains(&track.id) || current.is_some_and(|c| c.id == track.id) {
             skipped.push((track.id, SkipReason::Recent));
         } else if !track.analysed() {
             skipped.push((track.id, SkipReason::NotAnalysed));
+            needs_analysis.push(track.id);
         } else if !in_tempo_gate(current, track, cfg.tempo_gate) {
             // Not a skip to report: the track is fine, only the tempo does not suit this style.
         } else {
@@ -165,6 +170,7 @@ pub fn select_next(
     Selection {
         pick: pick.cloned(),
         skipped,
+        needs_analysis,
     }
 }
 
@@ -372,6 +378,20 @@ mod tests {
             &mut SplitMix64(1),
         );
         assert!(far.pick.is_none(), "no track in the window: nothing picked");
+    }
+
+    #[test]
+    fn unanalysed_candidates_are_reported_for_analysis() {
+        let candidates = vec![pool()[3].clone(), pool()[4].clone(), pool()[5].clone()];
+        let sel = select_next(
+            &candidates,
+            None,
+            &HashSet::new(),
+            &cfg(Order::InOrder, false),
+            &mut SplitMix64(1),
+        );
+        assert_eq!(sel.needs_analysis, vec![4, 6]);
+        assert_eq!(sel.pick.unwrap().id, 5);
     }
 
     #[test]

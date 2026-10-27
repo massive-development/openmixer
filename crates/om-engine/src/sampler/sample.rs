@@ -27,6 +27,9 @@ pub enum SamplerError {
     BadRate(f64),
     #[error("cannot read sample: {0}")]
     Source(#[from] SourceError),
+    #[cfg(feature = "ffmpeg")]
+    #[error("{0}")]
+    Ffmpeg(#[from] crate::decode_ffmpeg::DecodeError),
     #[error("the sampler command queue is full")]
     QueueFull,
 }
@@ -90,7 +93,14 @@ impl Sample {
         if !(engine_rate.is_finite() && engine_rate >= 1.0) {
             return Err(SamplerError::BadRate(engine_rate));
         }
-        let mut reader = SourceReader::open(path)?;
+        let mut reader = match SourceReader::open(path) {
+            Ok(reader) => reader,
+            #[cfg(feature = "ffmpeg")]
+            Err(SourceError::Unsupported(why)) => {
+                return Self::load_with_ffmpeg(path, engine_rate, why)
+            }
+            Err(e) => return Err(e.into()),
+        };
         let info = reader.info();
         let src_rate = info.sample_rate;
         let max_frames = ((MAX_SAMPLE_SECONDS * src_rate) as usize).min(MAX_SAMPLE_BYTES / 8);
@@ -113,6 +123,27 @@ impl Sample {
             data = resample(&data, src_rate, engine_rate);
         }
         Self::from_interleaved(name, engine_rate, data)
+    }
+
+    /// Fallback for a format symphonia does not support (`why` is its error). Without a usable
+    /// ffmpeg the original error is returned unchanged.
+    #[cfg(feature = "ffmpeg")]
+    fn load_with_ffmpeg(path: &Path, engine_rate: f64, why: String) -> Result<Self, SamplerError> {
+        use crate::decode_ffmpeg::{decode_with_ffmpeg, DecodeError};
+        // ffmpeg resamples to a whole rate; fractional engine rates are rounded.
+        let rate = engine_rate.round() as u32;
+        match decode_with_ffmpeg(path, rate) {
+            Ok(audio) => {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("sample")
+                    .to_owned();
+                Self::from_interleaved(name, f64::from(audio.sample_rate), audio.samples)
+            }
+            Err(DecodeError::FfmpegMissing) => Err(SourceError::Unsupported(why).into()),
+            Err(e) => Err(SamplerError::Ffmpeg(e)),
+        }
     }
 
     /// Interleaved stereo data.

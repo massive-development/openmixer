@@ -5,6 +5,7 @@
 //! engine and writes through the string-id control surface, so it can be driven and tested headless.
 //! The gpui front end renders these models.
 
+pub mod artwork_binding;
 pub mod automix_bar;
 pub mod binding;
 pub mod control;

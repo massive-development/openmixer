@@ -10,6 +10,8 @@ mod alloc_guard;
 pub mod callback;
 pub mod deck;
 pub mod deck_control;
+#[cfg(feature = "ffmpeg")]
+pub mod decode_ffmpeg;
 pub mod dj_engine;
 pub mod fx;
 pub mod fx_routing;

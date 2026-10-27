@@ -365,7 +365,7 @@ impl ThemeTokens {
             meter_hold_seconds: 1.0,
             meter_clip_seconds: 2.0,
             mixer_title_height: 22.0,
-            mixer_fader_width: 40.0,
+            mixer_fader_width: 58.0,
             mixer_curve_width: 128.0,
             mixer_fx_box_width: 150.0,
             mixer_fx_enable_width: 56.0,
