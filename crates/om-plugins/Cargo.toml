@@ -7,13 +7,16 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
-[lints]
-workspace = true
+# The workspace forbids unsafe code. This crate denies it and allows it only in `abi.rs` and
+# `loader.rs`, the shared-library loader (see `src/lib.rs`).
+[lints.rust]
+unsafe_code = "deny"
 
 [dependencies]
 om-core.workspace = true
 om-engine.workspace = true
 om-midi.workspace = true
+libloading = "0.8"
 serde_json.workspace = true
 thiserror.workspace = true
 

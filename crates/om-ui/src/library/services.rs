@@ -134,6 +134,7 @@ struct Outbox {
 }
 
 pub struct LibraryServices {
+    db_path: String,
     on_error: Option<ErrorHandler>,
     outbox: Rc<RefCell<Outbox>>,
     /// Errors raised on the scan thread; moved to the outbox by `pump`.
@@ -247,6 +248,7 @@ impl LibraryServices {
         }
 
         let services = Self {
+            db_path: options.db_path.clone(),
             on_error,
             outbox,
             scan_errors,
@@ -281,6 +283,12 @@ impl LibraryServices {
 
     pub fn library(&self) -> &Library {
         &self.library
+    }
+
+    /// The library file's path (`:memory:` for an in-memory library), for workers that open their
+    /// own read-only connection.
+    pub fn db_path(&self) -> &str {
+        &self.db_path
     }
 
     /// A search engine over this library, owning its own handle to the database.

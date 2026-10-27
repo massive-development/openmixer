@@ -227,8 +227,10 @@ pub enum KeyOutcome {
 /// A playlist name being typed in the search box's place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameEntry {
-    /// `Some(id)` renames that playlist; `None` names a new one.
+    /// `Some(id)` renames that playlist or folder; `None` names a new one.
     pub rename: Option<i64>,
+    /// A folder (new at the top level, or the one renamed) instead of a playlist.
+    pub folder: bool,
     pub text: String,
 }
 
@@ -236,7 +238,13 @@ impl NameEntry {
     /// What the box shows while the name is typed.
     pub fn prompt(&self) -> String {
         let what = if self.rename.is_some() {
-            "Rename playlist"
+            if self.folder {
+                "Rename folder"
+            } else {
+                "Rename playlist"
+            }
+        } else if self.folder {
+            "New folder"
         } else {
             "New playlist"
         };
@@ -338,18 +346,54 @@ impl LibraryPanel {
         self.search_active = false;
         self.name_entry = Some(NameEntry {
             rename: None,
+            folder: false,
             text: String::new(),
         });
     }
 
-    /// Starts renaming the playlist shown; the status line says so when none is.
+    /// Starts naming a new top-level folder; playlists are dragged into it afterwards.
+    pub fn begin_new_folder(&mut self) {
+        self.search_active = false;
+        self.name_entry = Some(NameEntry {
+            rename: None,
+            folder: true,
+            text: String::new(),
+        });
+    }
+
+    /// A playlist dropped on a folder (`Some(id)`) or on the Playlists heading (`None`): it goes
+    /// last in that folder. Refusals (into itself or a descendant) show in the status line.
+    pub fn drop_playlist_on(&mut self, playlist_id: i64, folder: Option<i64>) -> bool {
+        let mut h = self.hub.borrow_mut();
+        self.browser
+            .move_playlist(&mut h.services, playlist_id, folder, i32::MAX)
+    }
+
+    /// The track on table row `source_row` dropped on row `target_row`: reorders the open
+    /// playlist (the dragged row, not just its track, so duplicates stay apart).
+    pub fn drop_on_row(&mut self, source_row: usize, target_row: usize) -> bool {
+        let mut h = self.hub.borrow_mut();
+        self.browser
+            .move_track_to_row(&mut h.services, source_row, target_row)
+    }
+
+    /// Starts renaming the selected folder, else the playlist shown; the status line says so when
+    /// there is neither.
     pub fn begin_rename_playlist(&mut self) {
-        match self.browser.selected_playlist() {
-            Some(id) => {
+        let target = match self.browser.selected_folder() {
+            Some(folder) => Some((folder.playlist_id, true, folder.label.clone())),
+            None => self
+                .browser
+                .selected_playlist()
+                .map(|id| (id, false, self.browser.selected_node().label.clone())),
+        };
+        match target {
+            Some((id, folder, text)) => {
                 self.search_active = false;
                 self.name_entry = Some(NameEntry {
                     rename: Some(id),
-                    text: self.browser.selected_node().label.clone(),
+                    folder,
+                    text,
                 });
             }
             None => {
@@ -409,6 +453,10 @@ impl LibraryPanel {
                     Some(_) => self
                         .browser
                         .rename_selected_playlist(&mut h.services, &entry.text),
+                    None if entry.folder => self
+                        .browser
+                        .new_folder(&mut h.services, None, &entry.text)
+                        .is_some(),
                     None => self
                         .browser
                         .create_playlist(&mut h.services, &entry.text)
@@ -485,7 +533,9 @@ impl LibraryPanel {
         walk(
             self.browser.sidebar_nodes(),
             0,
-            self.browser.selected_node(),
+            self.browser
+                .selected_folder()
+                .unwrap_or_else(|| self.browser.selected_node()),
             &mut out,
         );
         out

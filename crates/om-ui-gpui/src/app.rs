@@ -21,6 +21,7 @@ use om_analysis::WaveformData;
 use om_core::ParameterRouter;
 use om_core::{CommandSink, ParameterTarget};
 use om_engine::DjEngine;
+use om_ui::artwork_binding::{ArtworkLoader, ArtworkView, DeckArtwork};
 use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
 use om_ui::geometry::Rect;
@@ -116,6 +117,12 @@ pub struct Shell {
     pub(crate) deck_controls: DeckControls,
     /// What each deck card last showed, so the widgets only change on a real change.
     shown_info: Vec<TrackInfo>,
+    /// Cover art per deck, loaded on a worker; present with the library.
+    deck_art: Option<DeckArtwork>,
+    /// The cover each deck card draws, built once per change (gpui hashes the bytes of a new one).
+    pub(crate) art_images: Vec<Option<Arc<gpui::Image>>>,
+    /// The cover bytes each `art_images` entry was built from (compared by pointer).
+    art_sources: Vec<Option<Arc<[u8]>>>,
     shown_waveform: Vec<Option<Arc<WaveformData>>>,
     /// The last stems action's failure per deck, shown in the stems caption until the next action.
     pub(crate) stem_errors: Vec<Option<String>>,
@@ -144,6 +151,31 @@ pub struct Shell {
     frames_out: Arc<AtomicU64>,
     /// Frame-time measurement, on when `OPENMIXER_FRAME_STATS` is set.
     frame_stats: Option<crate::frame_stats::FrameStats>,
+}
+
+/// The gpui image for a deck's cover, keeping `current` while the view still holds the same bytes
+/// (the same `Arc`, remembered in `source`), so the image is not rebuilt and rehashed every tick.
+fn cover_image(
+    view: &ArtworkView,
+    source: &mut Option<Arc<[u8]>>,
+    current: Option<Arc<gpui::Image>>,
+) -> Option<Arc<gpui::Image>> {
+    let ArtworkView::Image { data, .. } = view else {
+        *source = None;
+        return None;
+    };
+    if let (Some(image), Some(known)) = (current, source.as_ref()) {
+        if Arc::ptr_eq(known, data) {
+            return Some(image);
+        }
+    }
+    let format = if view.is_png() {
+        gpui::ImageFormat::Png
+    } else {
+        gpui::ImageFormat::Jpeg
+    };
+    *source = Some(Arc::clone(data));
+    Some(Arc::new(gpui::Image::from_bytes(format, data.to_vec())))
 }
 
 /// The theme the window uses: the active theme of a registry loaded with the built-ins.
@@ -187,6 +219,10 @@ impl Shell {
             .take()
             .map(|hub| LibraryPanel::new(hub, Arc::clone(&engine)));
         let deck_count = engine.num_decks();
+        let deck_art = library.as_ref().map(|panel| {
+            let path = panel.hub().borrow().services.db_path().to_owned();
+            DeckArtwork::new(ArtworkLoader::for_library_file(&path), deck_count)
+        });
         let scene = options.scene.clone();
         let sampler = SamplerBinding::new(
             Arc::clone(&engine),
@@ -229,6 +265,9 @@ impl Shell {
             debug_focus: None,
             deck_controls: DeckControls::new(deck_count),
             shown_info: vec![TrackInfo::default(); deck_count],
+            deck_art,
+            art_images: vec![None; deck_count],
+            art_sources: vec![None; deck_count],
             shown_waveform: vec![None; deck_count],
             stem_errors: vec![None; deck_count],
             sampler,
@@ -300,6 +339,9 @@ impl Shell {
                 deck.header.set_track(info.clone());
                 self.shown_info[index] = info;
             }
+            if let Some(art) = self.deck_art.as_mut() {
+                art.follow(index, panel.loaded_track_id(index));
+            }
             let wave = panel.waveform(index);
             let changed = match (&wave, &self.shown_waveform[index]) {
                 (None, None) => false,
@@ -315,6 +357,12 @@ impl Shell {
                     deck.set_grid(Some(Arc::new(grid)));
                 }
                 self.shown_waveform[index] = wave;
+            }
+        }
+        if let Some(art) = self.deck_art.as_mut() {
+            art.pump();
+            for (index, slot) in self.art_images.iter_mut().enumerate() {
+                *slot = cover_image(art.view(index), &mut self.art_sources[index], slot.take());
             }
         }
         for deck in &mut self.decks {

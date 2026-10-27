@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use super::control::import_summary;
 use super::services::{LibraryEvent, LibraryServices};
 use super::track_loader::LoadError;
-use super::track_source::{PrepQueueSource, SearchTrackSource, TrackSource};
+use super::track_source::{PlaylistSource, PrepQueueSource, SearchTrackSource, TrackSource};
 use super::track_table::TrackTableModel;
 use crate::settings::SettingsResult;
 use crate::sidebar::{build_sidebar, SidebarKind, SidebarNode};
@@ -43,6 +43,9 @@ pub struct LibraryBrowser {
     num_decks: usize,
     nodes: Vec<SidebarNode>,
     selected: SidebarNode,
+    /// The folder last clicked in the sidebar, which Rename and Delete act on instead of the
+    /// playlist shown. Folders hold no tracks, so the table keeps showing `selected`.
+    folder: Option<SidebarNode>,
     search_text: String,
     search_pending: bool,
     stale: bool,
@@ -87,6 +90,7 @@ impl LibraryBrowser {
             num_decks,
             nodes,
             selected,
+            folder: None,
             search_text: String::new(),
             search_pending: false,
             stale: false,
@@ -117,6 +121,11 @@ impl LibraryBrowser {
 
     pub fn selected_node(&self) -> &SidebarNode {
         &self.selected
+    }
+
+    /// The folder selected in the sidebar, if one is (see [`Self::select_sidebar`]).
+    pub fn selected_folder(&self) -> Option<&SidebarNode> {
+        self.folder.as_ref()
     }
 
     pub fn search_text(&self) -> &str {
@@ -154,8 +163,9 @@ impl LibraryBrowser {
         self.search_pending = true;
     }
 
-    /// Selects a sidebar node by kind and id (playlist id), or by path for a watch folder. Groups and
-    /// unknown nodes are not selectable; returns whether the node was found.
+    /// Selects a sidebar node by kind and id (playlist id), or by path for a watch folder. Playlist
+    /// folders can be selected too, only to rename or delete them: the table keeps its tracks. The
+    /// other groups and unknown nodes are not selectable; returns whether the node was found.
     pub fn select_sidebar(
         &mut self,
         services: &LibraryServices,
@@ -163,6 +173,16 @@ impl LibraryBrowser {
         id: i64,
         path: &str,
     ) -> bool {
+        if kind == SidebarKind::Folder {
+            let folder = find_node(&self.nodes, &|n| {
+                n.kind == SidebarKind::Folder && n.playlist_id == id
+            });
+            let found = folder.is_some();
+            if found {
+                self.folder = folder;
+            }
+            return found;
+        }
         let found = find_node(&self.nodes, &|n| {
             n.is_selectable()
                 && n.kind == kind
@@ -172,6 +192,7 @@ impl LibraryBrowser {
         match found {
             Some(node) => {
                 self.selected = node;
+                self.folder = None;
                 self.apply_query(services);
                 true
             }
@@ -291,15 +312,131 @@ impl LibraryBrowser {
         }
     }
 
-    /// Renames the playlist shown. Returns whether it was renamed.
+    /// Creates a folder under `parent` (`None` = top level). `None` (with the reason in the status
+    /// line) for a blank name, a parent that is not a folder, or a library error. The selection is
+    /// kept, since folders are not selectable.
+    pub fn new_folder(
+        &mut self,
+        services: &mut LibraryServices,
+        parent: Option<i64>,
+        name: &str,
+    ) -> Option<i64> {
+        let name = name.trim();
+        if name.is_empty() {
+            self.set_status("Name the folder first".to_owned(), true);
+            return None;
+        }
+        match services.library().playlists().create(name, parent, true) {
+            Ok(id) => {
+                self.playlists_changed(services);
+                self.set_status(format!("Created folder {name}"), false);
+                Some(id)
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't create the folder: {error}"), true);
+                None
+            }
+        }
+    }
+
+    /// Moves a playlist or folder under `new_parent` (`None` = top level) at `index` (clamped).
+    /// A folder cannot go into itself or its own descendants. Returns whether it moved.
+    pub fn move_playlist(
+        &mut self,
+        services: &mut LibraryServices,
+        id: i64,
+        new_parent: Option<i64>,
+        index: i32,
+    ) -> bool {
+        match services
+            .library()
+            .playlists()
+            .move_node(id, new_parent, index)
+        {
+            Ok(()) => {
+                self.playlists_changed(services);
+                true
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't move the playlist: {error}"), true);
+                false
+            }
+        }
+    }
+
+    /// Moves one playlist entry to `new_index` (clamped to the ends), keeping positions dense.
+    /// Returns whether it moved.
+    pub fn move_entry(
+        &mut self,
+        services: &mut LibraryServices,
+        entry_id: i64,
+        new_index: i32,
+    ) -> bool {
+        match services
+            .library()
+            .playlists()
+            .move_entry(entry_id, new_index)
+        {
+            Ok(()) => {
+                self.playlists_changed(services);
+                true
+            }
+            Err(error) => {
+                self.set_status(format!("Couldn't reorder the playlist: {error}"), true);
+                false
+            }
+        }
+    }
+
+    /// The entry on table row `source_row` of the open playlist dropped on row `target_row`: it
+    /// takes the place of the entry that row shows. Rows line up with entries while the playlist's
+    /// own order is shown, so duplicates of one track are told apart by row. False (nothing
+    /// moves) outside a playlist, for a row that does not exist, while a search or sort hides the
+    /// playlist's own order, or when the entry is already there.
+    pub fn move_track_to_row(
+        &mut self,
+        services: &mut LibraryServices,
+        source_row: usize,
+        target_row: usize,
+    ) -> bool {
+        let Some(playlist) = self.playlist_order_shown() else {
+            return false;
+        };
+        let entries = match services.library().playlists().entries(playlist) {
+            Ok(entries) => entries,
+            Err(error) => {
+                self.set_status(format!("Couldn't read the playlist: {error}"), true);
+                return false;
+            }
+        };
+        match (entries.get(source_row), entries.get(target_row)) {
+            (Some(from), Some(to)) if from.position != to.position => {
+                self.move_entry(services, from.id, to.position)
+            }
+            _ => false,
+        }
+    }
+
+    /// The folder or playlist that Rename and Delete act on, with its label: the selected folder,
+    /// else the playlist shown.
+    fn rename_target(&self) -> Option<(i64, String, bool)> {
+        if let Some(folder) = &self.folder {
+            return Some((folder.playlist_id, folder.label.clone(), true));
+        }
+        self.selected_playlist()
+            .map(|id| (id, self.selected.label.clone(), false))
+    }
+
+    /// Renames the selected folder, else the playlist shown. Returns whether it was renamed.
     pub fn rename_selected_playlist(&mut self, services: &mut LibraryServices, name: &str) -> bool {
-        let Some(id) = self.selected_playlist() else {
+        let Some((id, _, is_folder)) = self.rename_target() else {
             self.set_status("Select a playlist first".to_owned(), true);
             return false;
         };
+        let noun = if is_folder { "folder" } else { "playlist" };
         let name = name.trim();
         if name.is_empty() {
-            self.set_status("Name the playlist first".to_owned(), true);
+            self.set_status(format!("Name the {noun} first"), true);
             return false;
         }
         match services.library().playlists().rename(id, name) {
@@ -309,38 +446,58 @@ impl LibraryBrowser {
                 true
             }
             Err(error) => {
-                self.set_status(format!("Couldn't rename the playlist: {error}"), true);
+                self.set_status(format!("Couldn't rename the {noun}: {error}"), true);
                 false
             }
         }
     }
 
-    /// Removes the playlist shown, on the second call for the same playlist: the first call only
-    /// says what Delete would do. The tracks stay in the library. Returns whether it was removed.
+    /// Removes the selected folder, else the playlist shown, on the second call for the same one:
+    /// the first call only says what Delete would do. The tracks stay in the library. A folder
+    /// that still holds playlists or folders is refused. Returns whether it was removed.
     pub fn delete_selected_playlist(&mut self, services: &mut LibraryServices) -> bool {
-        let Some(id) = self.selected_playlist() else {
+        let Some((id, label, is_folder)) = self.rename_target() else {
             self.set_status("Select a playlist first".to_owned(), true);
             return false;
         };
-        if self.delete_armed != Some(id) {
-            self.delete_armed = Some(id);
-            let label = self.selected.label.clone();
+        let noun = if is_folder { "folder" } else { "playlist" };
+        if is_folder
+            && self
+                .folder
+                .as_ref()
+                .is_some_and(|folder| !folder.children.is_empty())
+        {
+            self.delete_armed = None;
             self.set_status(
-                format!("Delete {label}? Press Delete again (its tracks stay in the library)"),
+                format!("{label} is not empty: move or delete what is in it first"),
                 true,
             );
+            return false;
+        }
+        if self.delete_armed != Some(id) {
+            self.delete_armed = Some(id);
+            let keep = if is_folder {
+                ""
+            } else {
+                " (its tracks stay in the library)"
+            };
+            self.set_status(format!("Delete {label}? Press Delete again{keep}"), true);
             return false;
         }
         self.delete_armed = None;
         match services.library().playlists().remove(id) {
             Ok(()) => {
-                self.selected = self.nodes.first().cloned().unwrap_or(self.selected.clone());
+                if is_folder {
+                    self.folder = None;
+                } else {
+                    self.selected = self.nodes.first().cloned().unwrap_or(self.selected.clone());
+                }
                 self.playlists_changed(services);
-                self.set_status("Deleted the playlist".to_owned(), false);
+                self.set_status(format!("Deleted the {noun}"), false);
                 true
             }
             Err(error) => {
-                self.set_status(format!("Couldn't delete the playlist: {error}"), true);
+                self.set_status(format!("Couldn't delete the {noun}: {error}"), true);
                 false
             }
         }
@@ -415,10 +572,11 @@ impl LibraryBrowser {
             self.set_status("Open a playlist to remove tracks from it".to_owned(), true);
             return 0;
         };
-        let wanted: BTreeSet<i64> = self
-            .selected_rows()
-            .into_iter()
-            .filter_map(|row| self.model.row_at(row as isize).map(|t| t.id))
+        let rows = self.selected_rows();
+        let by_row = self.playlist_order_shown().is_some();
+        let wanted: BTreeSet<i64> = rows
+            .iter()
+            .filter_map(|&row| self.model.row_at(row as isize).map(|t| t.id))
             .collect();
         if wanted.is_empty() {
             self.set_status("Select tracks to remove first".to_owned(), true);
@@ -433,7 +591,16 @@ impl LibraryBrowser {
             }
         };
         let mut removed = 0;
-        for entry in entries.iter().filter(|e| wanted.contains(&e.track_id)) {
+        // In the playlist's own order rows are entries, so only the selected entries go (a track
+        // listed twice keeps its other copy); a search or sort hides that, so go by track.
+        let doomed = entries.iter().enumerate().filter(|(row, e)| {
+            if by_row {
+                rows.contains(row)
+            } else {
+                wanted.contains(&e.track_id)
+            }
+        });
+        for (_, entry) in doomed {
             match lists.remove_entry(entry.id) {
                 Ok(()) => removed += 1,
                 Err(error) => {
@@ -594,7 +761,20 @@ impl LibraryBrowser {
         self.selected = still_there
             .or_else(|| self.nodes.first().cloned())
             .unwrap_or(wanted);
+        if let Some(folder) = self.folder.take() {
+            self.folder = find_node(&self.nodes, &|n| {
+                n.kind == SidebarKind::Folder && n.playlist_id == folder.playlist_id
+            });
+        }
         self.apply_query(services);
+    }
+
+    /// The open playlist's id while the table shows it in its own order, which is while no search
+    /// text or header sort is applied. Only then do rows line up with entries and can be reordered.
+    pub fn playlist_order_shown(&self) -> Option<i64> {
+        (self.search_text.trim().is_empty() && self.sort_field.is_empty())
+            .then(|| self.selected_playlist())
+            .flatten()
     }
 
     fn on_queue(&self) -> bool {
@@ -605,9 +785,15 @@ impl LibraryBrowser {
     fn apply_query(&mut self, services: &LibraryServices) {
         self.search_pending = false;
         self.stale = false;
+        let playlist_order = self.playlist_order_shown();
         let source: Box<dyn TrackSource> = if self.on_queue() {
             let entries = services.prep_queue().list().unwrap_or_default();
             Box::new(PrepQueueSource::new(services.library_handle(), entries))
+        } else if let Some(entries) =
+            playlist_order.and_then(|id| services.library().playlists().entries(id).ok())
+        {
+            let ids = entries.iter().map(|e| e.track_id).collect();
+            Box::new(PlaylistSource::new(services.library_handle(), ids))
         } else {
             Box::new(SearchTrackSource::new(
                 services.search(),

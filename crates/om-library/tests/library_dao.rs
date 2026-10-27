@@ -459,3 +459,32 @@ mod library_reads {
         assert!(lib.tracks().upsert_by_path(&sample_track("/x")).is_err());
     }
 }
+
+mod folder_cycles {
+    use super::*;
+
+    #[test]
+    fn move_node_into_own_descendant_is_refused() {
+        let lib = memory_library();
+        let p = lib.playlists();
+        let a = p.create("A", None, true).unwrap();
+        let b = p.create("B", Some(a), true).unwrap();
+        let c = p.create("C", Some(b), true).unwrap();
+        let top = p.create("Top", None, false).unwrap();
+
+        assert!(p.move_node(a, Some(b), 0).is_err(), "child");
+        assert!(p.move_node(a, Some(c), 0).is_err(), "grandchild");
+        assert!(p.move_node(a, Some(a), 0).is_err(), "itself");
+
+        let shape = |parent| -> Vec<(i64, i32)> {
+            p.children(parent)
+                .unwrap()
+                .iter()
+                .map(|n| (n.id, n.position))
+                .collect()
+        };
+        assert_eq!(shape(None), [(a, 0), (top, 1)]);
+        assert_eq!(shape(Some(a)), [(b, 0)]);
+        assert_eq!(shape(Some(b)), [(c, 0)]);
+    }
+}
