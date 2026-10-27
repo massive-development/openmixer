@@ -19,6 +19,16 @@ pub struct PluginInfo {
     pub version: String,
 }
 
+/// One plugin parameter: the id the plugin's parameter target accepts, and its range.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParameterInfo {
+    pub id: String,
+    pub name: String,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+}
+
 /// Where a stage is meant to sit. The host does not enforce the kind; it is reported for the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StageKind {
@@ -49,7 +59,7 @@ pub enum PluginError {
     #[error("MIDI map {name}: {reason}")]
     InvalidMap { name: String, reason: String },
     /// A shared library built for another C ABI version (see [`crate::abi::PLUGIN_ABI_VERSION`]).
-    #[error("plugin ABI version {found}, the host speaks {expected}")]
+    #[error("plugin ABI version {found}, the host speaks {min} to {expected}", min = crate::abi::PLUGIN_ABI_MIN)]
     BadAbi { found: u32, expected: u32 },
     /// A shared library that does not export `openmixer_plugin_entry`. Holds the path.
     #[error("{0}: no openmixer_plugin_entry symbol")]
@@ -96,6 +106,17 @@ pub trait Plugin: Send {
     /// The API version the plugin was built against. Checked by the host before `on_load`.
     fn api_version(&self) -> u32 {
         API_VERSION
+    }
+
+    /// The parameters the plugin's parameter target accepts (ids relative to its prefix). Empty by
+    /// default.
+    fn parameters(&self) -> Vec<ParameterInfo> {
+        Vec::new()
+    }
+
+    /// The current value of parameter `id`, or `None` when the plugin has no such parameter.
+    fn parameter(&self, _id: &str) -> Option<f64> {
+        None
     }
 
     /// Registers the plugin's stages, targets, maps and themes.

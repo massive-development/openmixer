@@ -7,7 +7,8 @@
 //! the plugin registered, then calls its `on_unload`.
 
 use crate::api::{
-    Plugin, PluginError, PluginHost, PluginInfo, StageFactory, StageKind, API_VERSION,
+    ParameterInfo, Plugin, PluginError, PluginHost, PluginInfo, StageFactory, StageKind,
+    API_VERSION,
 };
 use crate::catalog::{InsertAt, InsertPoint, StageCatalog};
 use crate::loader::{builtin_plugins, PluginLoader};
@@ -248,6 +249,21 @@ impl PluginRegistry {
 
     pub fn plugin_ids(&self) -> Vec<String> {
         self.entries.iter().map(|e| e.id.clone()).collect()
+    }
+
+    /// The parameters plugin `id` declares. Empty for an unknown plugin or one without any.
+    pub fn plugin_parameters(&self, id: &str) -> Vec<ParameterInfo> {
+        self.find(id).map(|p| p.parameters()).unwrap_or_default()
+    }
+
+    /// The current value of parameter `parameter` of plugin `id`.
+    pub fn plugin_parameter(&self, id: &str, parameter: &str) -> Option<f64> {
+        self.find(id)?.parameter(parameter)
+    }
+
+    fn find(&self, id: &str) -> Option<&dyn Plugin> {
+        let entry = self.entries.iter().find(|e| e.id == id)?;
+        Some(entry.plugin.as_ref())
     }
 
     pub fn stage_ids(&self, kind: Option<StageKind>) -> Vec<String> {
