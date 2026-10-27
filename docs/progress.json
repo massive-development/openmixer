@@ -67,7 +67,7 @@
   {
    "name": "6 Hardware",
    "items": [
-    ["34 Controller maps", "todo"],
+    ["34 Controller maps", "partial"],
     ["35 HID", "todo"],
     ["36 Map editor", "done"]
    ]

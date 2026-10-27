@@ -1,0 +1,13 @@
+{
+  "name": "Generic 8 knob 8 pad: knob sweep, pad 1 and pad 8 hits, a wrong-channel note",
+  "events": [
+    { "time": 0.00, "bytes": "B0 10 00" },
+    { "time": 0.01, "bytes": "B0 10 7F" },
+    { "time": 0.02, "bytes": "B0 17 00" },
+    { "time": 0.03, "bytes": "99 24 7F" },
+    { "time": 0.04, "bytes": "89 24 00" },
+    { "time": 0.05, "bytes": "99 2B 7F" },
+    { "time": 0.06, "bytes": "89 2B 00" },
+    { "time": 0.07, "bytes": "90 24 7F" }
+  ]
+}
