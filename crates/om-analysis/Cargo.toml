@@ -24,3 +24,7 @@ thiserror.workspace = true
 [dev-dependencies]
 om-testing.workspace = true
 tempfile.workspace = true
+
+[features]
+# Decode fallback through ffmpeg for formats symphonia rejects (see om-engine).
+ffmpeg = ["om-engine/ffmpeg"]
