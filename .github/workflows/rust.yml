@@ -26,9 +26,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read toolchain from rust-toolchain.toml
         id: tc
@@ -73,10 +73,10 @@ jobs:
 
   deny:
     name: cargo deny (licences and bans)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
@@ -92,10 +92,10 @@ jobs:
   # test is `#[ignore]`d because the 174 MB graph is not in the repository).
   onnx:
     name: onnx (linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read toolchain from rust-toolchain.toml
         id: tc
@@ -145,10 +145,10 @@ jobs:
   # The progress heatmap must match docs/progress.json (stdlib only).
   progress-check:
     name: progress heatmap is current
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check heatmap is current
         run: python3 tools/progress_heatmap.py --check
@@ -158,10 +158,10 @@ jobs:
   # File names are checked too, so a committed SDK header or driver directory fails even with no text match.
   legal-guards:
     name: legal guards (no ASIO SDK)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: No ASIO SDK in the tree
         run: |
@@ -180,11 +180,11 @@ jobs:
   # Weekly (and on demand) 10-minute soaks. Ignored by default, so they never run in the PR gate.
   soak:
     name: soak (10-minute, ignored tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     if: github.event_name != 'pull_request' && github.event_name != 'push'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read toolchain from rust-toolchain.toml
         id: tc
