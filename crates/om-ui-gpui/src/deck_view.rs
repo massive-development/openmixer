@@ -796,12 +796,13 @@ pub(crate) fn transport_style(
 ) -> ButtonStyle {
     let round = matches!(button, TransportButton::Play | TransportButton::Cue);
     let accent = t.accent_for(deck as i32);
+    let look = LookAndFeel::from_tokens(t);
     let (fill, text, glow) = match (button, lit) {
-        (_, false) => (t.well, t.text_primary, None),
+        (_, false) => (look.toggle.off.fill, look.toggle.off.text, None),
         (TransportButton::Sync, true) => (SYNC_ON, text_on(t, SYNC_ON), Some(SYNC_ON)),
         (TransportButton::Play, true) => (t.meter_low, text_on(t, t.meter_low), Some(t.meter_low)),
         (TransportButton::Cue, true) => (t.warning, text_on(t, t.warning), Some(t.warning)),
-        (_, true) => (accent, t.on_accent, Some(accent)),
+        (_, true) => (look.toggle(true, accent).fill, look.lit_text, Some(accent)),
     };
     ButtonStyle {
         shape: if round { Shape::Round } else { Shape::Pill },
@@ -1489,16 +1490,14 @@ fn platter_switch(
 ) -> Stateful<Div> {
     let t = &shell.theme;
     let on = platter_state(index).on;
+    let accent = t.accent_for(index as i32);
+    let track = LookAndFeel::from_tokens(t).toggle(on, accent);
     let style = ButtonStyle {
         shape: Shape::Pill,
         diameter: 0,
-        fill: if on {
-            t.accent_for(index as i32)
-        } else {
-            t.well
-        },
-        text: if on { t.on_accent } else { t.text_primary },
-        glow: on.then(|| t.accent_for(index as i32)),
+        fill: track.fill,
+        text: track.text,
+        glow: on.then_some(accent),
         alpha: 1.0,
         hover: !on,
     };
@@ -1674,8 +1673,8 @@ mod tests {
         parse_theme(json).expect("theme parses").tokens
     }
 
-    fn themes() -> [ThemeTokens; 2] {
-        [theme("dark"), theme("daylight")]
+    fn themes() -> [ThemeTokens; 3] {
+        [theme("dark"), theme("daylight"), theme("harbour")]
     }
 
     #[test]
@@ -1849,7 +1848,7 @@ mod tests {
 
     #[test]
     fn daylight_darkens_the_cue_colours_and_dark_does_not() {
-        let [dark, light] = themes();
+        let [dark, light, _harbour] = themes();
         assert_eq!(pad_colour(&dark, 0), HotcuePads::colour(0));
         assert!(
             relative_luminance(pad_colour(&light, 2)) < relative_luminance(HotcuePads::colour(2))

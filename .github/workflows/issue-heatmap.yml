@@ -1,0 +1,54 @@
+# Redraws the issue heatmap (tools/issue_heatmap.py) and publishes it to the `badges` branch, so the
+# README can embed it without bot commits on main:
+#   https://raw.githubusercontent.com/massive-development/openmixer/badges/issue-heatmap.svg
+# Runs on issue changes, daily, and on demand. `issues` and `schedule` events only run from the
+# default branch, so this does nothing until it is merged to main.
+name: Issue heatmap
+
+on:
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled, milestoned, demilestoned, edited, deleted]
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: issue-heatmap
+  cancel-in-progress: false
+
+jobs:
+  heatmap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render the heatmap
+        run: python3 tools/issue_heatmap.py > "$RUNNER_TEMP/issue-heatmap.svg"
+
+      - name: Publish to the badges branch
+        shell: bash
+        run: |
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          work="$RUNNER_TEMP/badges"
+          if ! git clone --quiet --depth 1 --branch badges "$remote" "$work" 2>/dev/null; then
+            mkdir "$work"
+            git -C "$work" init --quiet --initial-branch badges
+            git -C "$work" remote add origin "$remote"
+          fi
+          cp "$RUNNER_TEMP/issue-heatmap.svg" "$work/issue-heatmap.svg"
+          cd "$work"
+          git add issue-heatmap.svg
+          if git diff --cached --quiet; then
+            echo "heatmap unchanged"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "heatmap: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push origin badges
