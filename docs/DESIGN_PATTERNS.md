@@ -100,7 +100,7 @@ pub trait AudioCallback: Send {
 ### Plugin registry / extension points (in-process, or shared libraries over a C ABI)
 - **Where:** `om-plugins` (`api.rs` plugin and host traits, `registry.rs`, `catalog.rs`, `abi.rs` and `loader.rs` for C-ABI shared libraries). - **Why:** users add audio stages, MIDI maps and parameter targets without touching core and without any signing or allow-list.
 - **Reuse when:** a new feature should be replaceable: add a registration method to the owning registry, never a hardcoded path.
-- **Notes:** the design picks CLAP-first if plugins are needed. Loading a dynamic library needs `unsafe`; it is confined to `abi.rs` and `loader.rs` in `om-plugins` (the rest of the crate denies it). A loaded library is adapted to `Plugin`, so the registry has one path for both kinds. Extension points stay as traits and registries inside their crates.
+- **Notes:** dynamic loading uses a versioned C ABI, chosen over WASM and source-only plugins (see `docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). Loading a dynamic library needs `unsafe`; it is confined to `abi.rs` and `loader.rs` in `om-plugins` (the rest of the crate denies it). A loaded library is adapted to `Plugin`, so the registry has one path for both kinds. Extension points stay as traits and registries inside their crates.
 
 ### Theme tokens + theme registry (extension point)
 - **Where:** `om-ui` `theme/` (`tokens.rs` `ThemeTokens`, `json.rs` loader, `registry.rs` `ThemeRegistry`, `builtin.rs`).

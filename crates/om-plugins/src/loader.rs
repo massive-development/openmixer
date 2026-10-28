@@ -6,6 +6,11 @@
 //! plugin instance per channel. The decision is in `docs/spikes/DECISIONS.md`, "Plugins: C ABI
 //! dynamic loading".
 //!
+//! Version 2 plugins add `prepare` (forwarded by the stage's `ProcessStage::prepare`) and
+//! parameters. The adapter keeps one host-side value per parameter; setting it through the
+//! plugin's parameter target bumps a generation counter, and each stage pushes the values to its
+//! instances at the start of its next `process` (atomics only, no allocation, no lock).
+//!
 //! Lifetimes: the adapter and every stage hold the library through a shared handle, and a stage
 //! destroys its instances before letting go of it. The library unloads after the plugin is
 //! unloaded and the engine has dropped the plugin's last stage.
@@ -15,9 +20,11 @@
 //! is trusted like any other program.
 
 use crate::abi::{self, Instance, LoadedLibrary, PluginEntry, TableError, PLUGIN_ABI_VERSION};
-use crate::api::{Plugin, PluginError, PluginHost, PluginInfo, StageKind};
+use crate::api::{ParameterInfo, Plugin, PluginError, PluginHost, PluginInfo, StageKind};
+use om_core::ParameterTarget;
 use om_engine::ProcessStage;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Extensions treated as plugin libraries.
@@ -69,8 +76,14 @@ impl PluginLoader {
 
         let text = library.info().map_err(&invalid)?;
         let described = parse_info(&text).map_err(&invalid)?;
-        drop(Instance::create(&library).map_err(&invalid)?);
-        Ok(Box::new(LibraryPlugin { library, described }))
+        let mut probe = Instance::create(&library).map_err(&invalid)?;
+        let params = ParamSet::read(&library, &mut probe).map_err(&invalid)?;
+        drop(probe);
+        Ok(Box::new(LibraryPlugin {
+            library,
+            described,
+            params: Arc::new(params),
+        }))
     }
 
     /// The shared-library files in `dir` (not recursive, no symlinks). A folder that does not
@@ -100,6 +113,7 @@ struct Described {
     info: PluginInfo,
     stage_id: String,
     kind: StageKind,
+    param_prefix: String,
 }
 
 fn parse_info(text: &str) -> Result<Described, String> {
@@ -124,17 +138,123 @@ fn parse_info(text: &str) -> Result<Described, String> {
         "post" => StageKind::PostProcess,
         other => return Err(format!("info has unknown kind {other:?}")),
     };
+    let param_prefix = field("param_prefix").unwrap_or(&stage_id).to_owned();
     Ok(Described {
         info,
         stage_id,
         kind,
+        param_prefix,
     })
+}
+
+/// The parameters a plugin declared and their host-side values (`f64` bits). `generation` counts
+/// changes so a stage can tell cheaply whether to push the values to its instances.
+struct ParamSet {
+    infos: Vec<ParameterInfo>,
+    values: Vec<AtomicU64>,
+    generation: AtomicU64,
+}
+
+impl ParamSet {
+    /// Reads the declarations and the plugin's initial values (from `probe`, else the default).
+    fn read(library: &Arc<LoadedLibrary>, probe: &mut Instance) -> Result<Self, String> {
+        let infos = library
+            .param_infos()?
+            .iter()
+            .map(|text| parse_parameter(text))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (i, p) in infos.iter().enumerate() {
+            if infos[..i].iter().any(|q| q.id == p.id) {
+                return Err(format!("duplicate parameter id {:?}", p.id));
+            }
+        }
+        let values = infos
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let index = u32::try_from(i).unwrap_or(u32::MAX);
+                let start = probe
+                    .get_param(index)
+                    .filter(|v| (p.min..=p.max).contains(v))
+                    .unwrap_or(p.default);
+                AtomicU64::new(start.to_bits())
+            })
+            .collect();
+        Ok(Self {
+            infos,
+            values,
+            generation: AtomicU64::new(0),
+        })
+    }
+
+    fn value(&self, index: usize) -> f64 {
+        f64::from_bits(self.values[index].load(Ordering::Relaxed))
+    }
+
+    fn set(&self, index: usize, value: f64) {
+        let info = &self.infos[index];
+        let value = value.clamp(info.min, info.max);
+        self.values[index].store(value.to_bits(), Ordering::Relaxed);
+        self.generation.fetch_add(1, Ordering::Release);
+    }
+
+    fn index_of(&self, id: &str) -> Option<usize> {
+        self.infos.iter().position(|p| p.id == id)
+    }
+}
+
+fn parse_parameter(text: &str) -> Result<ParameterInfo, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("parameter info is not JSON: {e}"))?;
+    let string = |name: &str| {
+        value
+            .get(name)
+            .and_then(serde_json::Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("parameter has no string {name:?}"))
+    };
+    let number = |name: &str| {
+        value
+            .get(name)
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| format!("parameter has no number {name:?}"))
+    };
+    let info = ParameterInfo {
+        id: string("id")?,
+        name: string("name")?,
+        min: number("min")?,
+        max: number("max")?,
+        default: number("default")?,
+    };
+    if !(info.min <= info.max && (info.min..=info.max).contains(&info.default)) {
+        return Err(format!("parameter {:?} has an invalid range", info.id));
+    }
+    Ok(info)
+}
+
+/// The plugin's parameter target: `set_parameter` stores the clamped value for the stages.
+struct LibraryTarget {
+    params: Arc<ParamSet>,
+}
+
+impl ParameterTarget for LibraryTarget {
+    fn set_parameter(&self, id: &str, value: f64) -> bool {
+        match self.params.index_of(id) {
+            Some(index) if value.is_finite() => {
+                self.params.set(index, value);
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 /// A shared-library plugin as a [`Plugin`]. Holds the library for as long as it lives.
 struct LibraryPlugin {
     library: Arc<LoadedLibrary>,
     described: Described,
+    params: Arc<ParamSet>,
 }
 
 impl Plugin for LibraryPlugin {
@@ -142,36 +262,80 @@ impl Plugin for LibraryPlugin {
         self.described.info.clone()
     }
 
+    fn parameters(&self) -> Vec<ParameterInfo> {
+        self.params.infos.clone()
+    }
+
+    fn parameter(&self, id: &str) -> Option<f64> {
+        self.params.index_of(id).map(|i| self.params.value(i))
+    }
+
     fn on_load(&mut self, host: &mut dyn PluginHost) {
-        let library = Arc::clone(&self.library);
-        // `on_load` cannot fail: a stage id another plugin took leaves this one without a stage,
-        // which the Plugins page shows (no stage listed).
+        let (library, params) = (Arc::clone(&self.library), Arc::clone(&self.params));
+        // `on_load` cannot fail: an id another plugin took leaves this one without that
+        // registration, which the Plugins page shows (no stage listed).
         let _ = host.register_stage(
             &self.described.stage_id,
             self.described.kind,
-            Box::new(move || Box::new(LibraryStage::new(&library))),
+            Box::new(move || Box::new(LibraryStage::new(&library, &params))),
         );
+        if !self.params.infos.is_empty() {
+            let target = Arc::new(LibraryTarget {
+                params: Arc::clone(&self.params),
+            });
+            let _ = host.register_parameter_target(&self.described.param_prefix, target);
+        }
     }
 }
 
 /// A stage backed by two plugin instances, one per channel. A channel whose instance could not be
-/// created passes audio through.
+/// created, or that faulted, passes audio through.
 struct LibraryStage {
     left: Option<Instance>,
     right: Option<Instance>,
+    params: Arc<ParamSet>,
+    /// The generation of `params` last pushed to the instances.
+    seen: u64,
 }
 
 impl LibraryStage {
-    fn new(library: &Arc<LoadedLibrary>) -> Self {
-        Self {
+    fn new(library: &Arc<LoadedLibrary>, params: &Arc<ParamSet>) -> Self {
+        let mut stage = Self {
             left: Instance::create(library).ok(),
             right: Instance::create(library).ok(),
+            params: Arc::clone(params),
+            seen: u64::MAX,
+        };
+        stage.push_params();
+        stage
+    }
+
+    /// Pushes the parameter values when they changed. Atomics and plugin calls only.
+    fn push_params(&mut self) {
+        let generation = self.params.generation.load(Ordering::Acquire);
+        if generation == self.seen {
+            return;
+        }
+        self.seen = generation;
+        for index in 0..self.params.values.len() {
+            let value = self.params.value(index);
+            let index = u32::try_from(index).unwrap_or(u32::MAX);
+            for instance in [&mut self.left, &mut self.right].into_iter().flatten() {
+                instance.set_param(index, value);
+            }
         }
     }
 }
 
 impl ProcessStage for LibraryStage {
+    fn prepare(&mut self, sample_rate: f64, max_block_size: usize) {
+        for instance in [&mut self.left, &mut self.right].into_iter().flatten() {
+            instance.prepare(sample_rate, max_block_size);
+        }
+    }
+
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.push_params();
         if let Some(instance) = &mut self.left {
             instance.process(left);
         }

@@ -82,3 +82,31 @@ fn a_small_shortfall_keeps_only_the_frames_the_decoder_produced() {
     assert_eq!(clip.samples.len(), 99_000);
     assert!(clip.samples.iter().all(|s| (*s - 0.5).abs() < 1.0e-6));
 }
+
+/// Analysis reads formats symphonia rejects through the ffmpeg fallback (real ffmpeg; skips
+/// without one).
+#[cfg(feature = "ffmpeg")]
+#[test]
+fn file_source_decodes_an_opus_file_through_ffmpeg() {
+    use std::process::{Command, Stdio};
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("tone.opus");
+    let encoded = Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("sine=frequency=440:duration=2")
+        .args(["-ac", "2", "-ar", "48000", "-c:a", "libopus"])
+        .arg(&file)
+        .stdin(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if !encoded {
+        eprintln!("skipped: no ffmpeg with libopus available");
+        return;
+    }
+    let mut source = FileClipSource::new(&file);
+    let clip = source.load(&NullAnalysisContext).expect("opus decodes");
+    assert_eq!(clip.sample_rate, 48_000.0);
+    assert!(clip.samples.len() > 90_000);
+    assert!(clip.samples.iter().any(|s| s.abs() > 0.05));
+    assert!(source.content_hash().is_some());
+}

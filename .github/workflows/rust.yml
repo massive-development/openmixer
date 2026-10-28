@@ -26,9 +26,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read toolchain from rust-toolchain.toml
         id: tc
@@ -67,16 +67,16 @@ jobs:
       - name: cargo test (headless binary)
         run: cargo test -p openmixer --no-default-features
 
-      # The fake-ffmpeg tests need no ffmpeg binary.
+      # The fake-ffmpeg tests need no ffmpeg binary; the real ones skip without it.
       - name: cargo test (ffmpeg decode fallback)
-        run: cargo test -p om-engine --features ffmpeg
+        run: cargo test -p om-engine -p om-analysis --features om-engine/ffmpeg,om-analysis/ffmpeg
 
   deny:
     name: cargo deny (licences and bans)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
@@ -86,16 +86,16 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
 
-  # Non-blocking: the `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build
-  # downloads a prebuilt runtime, so it needs network). Off in the default build and in the jobs above.
-  # Remove `continue-on-error` once the first runs are green on a clean runner.
+  # The `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build downloads a
+  # prebuilt runtime, so it needs network). Off in the default build and in the jobs above. Blocking
+  # since the real htdemucs graph was checked against the contract (`htdemucs_reference.rs`; its model
+  # test is `#[ignore]`d because the 174 MB graph is not in the repository).
   onnx:
-    name: onnx (linux, non-blocking)
-    runs-on: ubuntu-latest
+    name: onnx (linux)
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read toolchain from rust-toolchain.toml
         id: tc
@@ -116,16 +116,39 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # ort-sys downloads a prebuilt ONNX Runtime from cdn.pyke.io at build time. Cache it, so most runs
+      # never touch the CDN.
+      - name: Cache the ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      # The CDN has served a file whose hash did not match once (run 40648072742). That is a bad
+      # download, not a test failure: retry it, and only it. Any other failure fails the job at once.
       - name: cargo test -p om-stems --features onnx
-        run: cargo test -p om-stems --features onnx
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if cargo test -p om-stems --features onnx 2>&1 | tee "$RUNNER_TEMP/onnx.log"; then
+              exit 0
+            fi
+            if ! grep -q 'does not match the expected hash' "$RUNNER_TEMP/onnx.log"; then
+              exit 1
+            fi
+            echo "ONNX Runtime download failed its hash check (attempt $attempt); retrying"
+            rm -rf ~/.cache/ort.pyke.io
+            sleep 20
+          done
+          exit 1
 
   # The progress heatmap must match docs/progress.json (stdlib only).
   progress-check:
     name: progress heatmap is current
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check heatmap is current
         run: python3 tools/progress_heatmap.py --check
@@ -135,10 +158,10 @@ jobs:
   # File names are checked too, so a committed SDK header or driver directory fails even with no text match.
   legal-guards:
     name: legal guards (no ASIO SDK)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: No ASIO SDK in the tree
         run: |
@@ -157,11 +180,11 @@ jobs:
   # Weekly (and on demand) 10-minute soaks. Ignored by default, so they never run in the PR gate.
   soak:
     name: soak (10-minute, ignored tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     if: github.event_name != 'pull_request' && github.event_name != 'push'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read toolchain from rust-toolchain.toml
         id: tc

@@ -20,8 +20,11 @@ mod catalog;
 mod loader;
 mod registry;
 
-pub use abi::{PluginVTable, PLUGIN_ABI_VERSION};
-pub use api::{Plugin, PluginError, PluginHost, PluginInfo, StageFactory, StageKind, API_VERSION};
+pub use abi::{PluginVTable, PluginVTableV1, PLUGIN_ABI_MIN, PLUGIN_ABI_VERSION};
+pub use api::{
+    ParameterInfo, Plugin, PluginError, PluginHost, PluginInfo, StageFactory, StageKind,
+    API_VERSION,
+};
 pub use catalog::{InsertAt, InsertPoint, InsertRefused, StageCatalog};
 pub use loader::{builtin_plugins, PluginLoader, SHARED_LIBRARY_EXTENSIONS};
 pub use om_engine::ProcessStage;

@@ -125,7 +125,7 @@ impl ModelManifest {
             size_bytes,
             license_name: HTDEMUCS_LICENSE_NAME.into(),
             license_text: HTDEMUCS_LICENSE_TEXT.into(),
-            contract: Some(ModelContract::htdemucs()),
+            contract: Some(ModelContract::htdemucs_split()),
         }
     }
 

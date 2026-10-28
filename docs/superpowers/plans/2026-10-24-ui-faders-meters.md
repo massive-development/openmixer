@@ -1,5 +1,7 @@
 # UI faders, segmented meters, pitch and crossfader marks: plan
 
+Status: merged in PR #115 (polish in PR #116).
+
 Date: 2026-10-24. Branch: `feat/ui-redesign`. Source research: `docs/design/research/faders-meters.md` (sections cited as R§n). Constraints: no new dependencies, do not touch `Cargo.lock`, ADR 0001 (conventions only, no vendor artwork).
 
 ## 0. Ownership

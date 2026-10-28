@@ -12,7 +12,11 @@ use std::time::Duration;
 
 /// Frames decoded per ring write.
 pub(super) const CHUNK_FRAMES: usize = 2048;
+/// Frames in the first chunk after a reposition: audio reaches the ring sooner, then chunks grow.
+const FIRST_CHUNK_FRAMES: usize = 256;
 const IDLE_SLEEP: Duration = Duration::from_millis(3);
+/// Poll interval while a seek or drain handshake is waiting on the other side.
+const HANDSHAKE_SLEEP: Duration = Duration::from_micros(200);
 
 pub(super) struct DecoderWorker {
     shared: Arc<Shared>,
@@ -30,6 +34,8 @@ pub(super) struct DecoderWorker {
     local_seq: u32,
     local_ring_req: u32,
     local_written: u64,
+    /// Set by a reposition; the next chunk is short so the first audio arrives sooner.
+    first_chunk: bool,
     reader_load_id: u32,
     /// Loop start the prefetch slot currently holds, or -1.
     prefetched_start: i64,
@@ -55,6 +61,7 @@ impl DecoderWorker {
             local_seq: 0,
             local_ring_req: 0,
             local_written: 0,
+            first_chunk: false,
             reader_load_id: 0,
             prefetched_start: -1,
             chunk: vec![[0.0; 2]; CHUNK_FRAMES],
@@ -78,10 +85,20 @@ impl DecoderWorker {
 
             if self.can_produce() {
                 self.produce_chunk();
+            } else if self.handshake_pending() {
+                std::thread::sleep(HANDSHAKE_SLEEP);
             } else {
                 std::thread::sleep(IDLE_SLEEP);
             }
         }
+    }
+
+    /// A seek, ring request or drain is in flight, so the next step is due within a block or two.
+    fn handshake_pending(&self) -> bool {
+        self.reader.is_some()
+            && (self.local_ack != self.shared.request_epoch.load(Acquire)
+                || self.local_ring_req != self.shared.ring_req_epoch.load(Acquire)
+                || self.local_seq != self.shared.drained_seq.load(Acquire))
     }
 
     fn take_pending_reader(&mut self) {
@@ -126,6 +143,7 @@ impl DecoderWorker {
             .end_of_stream
             .store(self.reader.is_none() || self.read_pos >= len, Relaxed);
         self.local_seq = self.local_seq.wrapping_add(1);
+        self.first_chunk = true;
         self.shared.ack_seq.store(self.local_seq, Release);
     }
 
@@ -224,7 +242,13 @@ impl DecoderWorker {
             hook();
         }
         let len = self.length();
-        let n = (len - self.read_pos).min(CHUNK_FRAMES as i64) as usize;
+        let chunk = if self.first_chunk {
+            FIRST_CHUNK_FRAMES
+        } else {
+            CHUNK_FRAMES
+        };
+        self.first_chunk = false;
+        let n = (len - self.read_pos).min(chunk as i64) as usize;
         let written = if let Some(stems) = self.stems.as_mut() {
             stems.read_frames(self.read_pos, &mut self.stem_chunk[..n]);
             let (written, _) = self
