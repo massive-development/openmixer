@@ -55,7 +55,13 @@ impl ThreeBandEq {
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         assert_eq!(left.len(), right.len(), "stereo buffers must match");
         self.refresh_coefficients();
-        for band in &mut self.bands {
+        for (band, gain) in self.bands.iter_mut().zip(self.gains) {
+            if gain == 0.0 {
+                // A flat band is the identity; clearing its history keeps stale samples from
+                // leaking out when it is next moved.
+                band.reset();
+                continue;
+            }
             band.process(0, left);
             band.process(1, right);
         }
