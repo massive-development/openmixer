@@ -1,13 +1,11 @@
 //! Shared widgets for the settings cards: chips, choice rows, notes, status lines and the text field.
 
 use super::*;
+use crate::paint::skin;
+use om_ui::style::LookAndFeel;
 
-/// The accent for lit chips: the theme's first accent colour.
-pub(super) fn accent_of(t: &ThemeTokens) -> om_ui::theme::Colour {
-    t.accents.first().copied().unwrap_or(t.surface_raised)
-}
-
-/// A flow-layout button: a labelled chip that runs `on_press` on the Shell when clicked.
+/// A flow-layout button: a labelled chip that runs `on_press` on the Shell when clicked. Lit
+/// chips are switches on; the rest are raised buttons.
 pub(crate) fn chip(
     t: &ThemeTokens,
     label: &str,
@@ -15,40 +13,44 @@ pub(crate) fn chip(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell) + 'static,
 ) -> Div {
-    div()
-        .flex()
-        .items_center()
-        .justify_center()
-        .px(px(10.))
-        .py(px(4.))
-        .mr(px(6.))
-        .mb(px(6.))
-        .rounded(px(t.control_radius))
-        .border_1()
-        .border_color(paint(t.border))
-        .bg(paint(if lit { accent_of(t) } else { t.surface_raised }))
-        .text_color(paint(if lit { t.on_accent } else { t.text_primary }))
-        .text_size(px(t.type_small))
-        .child(label.to_owned())
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-                on_press(this);
-                cx.notify();
-            }),
-        )
+    let look = LookAndFeel::from_tokens(t);
+    let style = if lit {
+        look.toggle(true, accent_of(t))
+    } else {
+        look.button.idle
+    };
+    skin(
+        div()
+            .flex()
+            .items_center()
+            .justify_center()
+            .px(px(10.))
+            .py(px(4.))
+            .mr(px(6.))
+            .mb(px(6.)),
+        &style,
+    )
+    .child(label.to_owned())
+    .on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+            on_press(this);
+            cx.notify();
+        }),
+    )
 }
 
 /// A labelled row of chips.
 pub(super) fn choice_row(t: &ThemeTokens, title: &str, chips: Div) -> Div {
+    let caption = LookAndFeel::from_tokens(t).panel_caption;
     div()
         .flex()
         .flex_col()
         .mb(px(10.))
         .child(
             div()
-                .text_color(paint(t.text_secondary))
-                .text_size(px(t.type_caption))
+                .text_color(paint(caption.text))
+                .text_size(px(caption.font_size))
                 .mb(px(4.))
                 .child(title.to_owned()),
         )
@@ -56,9 +58,10 @@ pub(super) fn choice_row(t: &ThemeTokens, title: &str, chips: Div) -> Div {
 }
 
 pub(super) fn note(t: &ThemeTokens, text: &str) -> Div {
+    let caption = LookAndFeel::from_tokens(t).panel_caption;
     div()
-        .text_color(paint(t.text_secondary))
-        .text_size(px(t.type_caption))
+        .text_color(paint(caption.text))
+        .text_size(px(caption.font_size))
         .mb(px(8.))
         .child(text.to_owned())
 }
@@ -68,10 +71,11 @@ pub(super) fn status_line(t: &ThemeTokens, notice: &Notice) -> Div {
     if notice.text.is_empty() {
         return div();
     }
+    let look = LookAndFeel::from_tokens(t);
     let colour = if notice.error {
-        t.text_primary
+        look.panel.text
     } else {
-        t.text_secondary
+        look.panel_caption.text
     };
     let text = if notice.error {
         format!("Error: {}", notice.text)
@@ -80,7 +84,7 @@ pub(super) fn status_line(t: &ThemeTokens, notice: &Notice) -> Div {
     };
     div()
         .text_color(paint(colour))
-        .text_size(px(t.type_caption))
+        .text_size(px(look.panel_caption.font_size))
         .mt(px(6.))
         .child(text)
 }
@@ -101,17 +105,16 @@ pub(super) fn entry_field(
     cx: &mut Context<Shell>,
 ) -> Option<Div> {
     let entry = settings.entry.as_ref().filter(|e| e.kind == kind)?;
-    let field = div()
-        .flex_1()
-        .overflow_hidden()
-        .px(px(8.))
-        .py(px(4.))
-        .mr(px(6.))
-        .border_1()
-        .border_color(paint(t.border))
-        .rounded(px(t.control_radius))
-        .text_color(paint(t.text_primary))
-        .child(format!("{}|", entry.text));
+    let field = skin(
+        div()
+            .flex_1()
+            .overflow_hidden()
+            .px(px(8.))
+            .py(px(4.))
+            .mr(px(6.)),
+        &LookAndFeel::from_tokens(t).text_field.focus,
+    )
+    .child(format!("{}|", entry.text));
     let line = div()
         .flex()
         .items_center()

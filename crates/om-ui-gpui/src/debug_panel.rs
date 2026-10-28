@@ -202,9 +202,9 @@ pub fn decks_section(
             div()
                 .text_size(px(t.type_caption))
                 .text_color(paint(if *error {
-                    t.text_primary
+                    look.panel.text
                 } else {
-                    t.text_secondary
+                    look.panel_caption.text
                 }))
                 .child(line),
         );
