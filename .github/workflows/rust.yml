@@ -67,9 +67,9 @@ jobs:
       - name: cargo test (headless binary)
         run: cargo test -p openmixer --no-default-features
 
-      # The fake-ffmpeg tests need no ffmpeg binary.
+      # The fake-ffmpeg tests need no ffmpeg binary; the real ones skip without it.
       - name: cargo test (ffmpeg decode fallback)
-        run: cargo test -p om-engine --features ffmpeg
+        run: cargo test -p om-engine -p om-analysis --features om-engine/ffmpeg,om-analysis/ffmpeg
 
   deny:
     name: cargo deny (licences and bans)

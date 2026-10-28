@@ -26,3 +26,6 @@ pub mod stage_view;
 pub mod text_entry;
 pub mod waveform_paint;
 pub mod window_size;
+
+#[cfg(test)]
+mod headless_tests;
