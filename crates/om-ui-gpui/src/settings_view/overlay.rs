@@ -10,7 +10,9 @@ use super::midi::*;
 use super::plugins::*;
 use super::recording::*;
 use super::*;
+use crate::paint::skin;
 use crate::text_entry::{apply_key, EntryKey};
+use om_ui::style::LookAndFeel;
 use std::time::Instant;
 
 impl Shell {
@@ -133,51 +135,49 @@ impl Shell {
         let close = chip(&t, "Close", false, cx, |this| this.close_settings());
 
         let click_focus = focus.clone();
-        let card = place(Rect::new(card_x, card_y, w, h))
-            .flex()
-            .flex_col()
-            .p(px(14.))
-            .bg(paint(t.popup))
-            .border_1()
-            .border_color(paint(t.border))
-            .rounded(px(t.control_radius))
-            .text_color(paint(t.text_primary))
-            .text_size(px(t.type_small))
-            .overflow_hidden()
-            .track_focus(&focus)
-            .child(
-                div()
-                    .text_size(px(t.type_heading))
-                    .mb(px(8.))
-                    .child("Settings"),
-            )
-            .child(tabs)
-            // The page scrolls: the Library page with the stems section is taller than the card.
-            .child(
-                div()
-                    .id("settings-page")
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .child(body),
-            )
-            .child(status)
-            .child(div().flex().justify_end().child(close))
-            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
-                let keys = &ev.keystroke;
-                if keys.modifiers.control || keys.modifiers.platform {
-                    return;
-                }
-                this.settings_key(&keys.key, keys.key_char.as_deref());
-                cx.notify();
-            }))
-            // Clicks on the card do not reach the scrim below, and the card takes the keys.
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |_, _: &MouseDownEvent, window, cx| {
-                    click_focus.focus(window);
-                    cx.stop_propagation();
-                }),
-            );
+        let popup = LookAndFeel::from_tokens(&t).popup;
+        let card = skin(
+            place(Rect::new(card_x, card_y, w, h))
+                .flex()
+                .flex_col()
+                .p(px(14.))
+                .overflow_hidden(),
+            &popup,
+        )
+        .track_focus(&focus)
+        .child(
+            div()
+                .text_size(px(t.type_heading))
+                .mb(px(8.))
+                .child("Settings"),
+        )
+        .child(tabs)
+        // The page scrolls: the Library page with the stems section is taller than the card.
+        .child(
+            div()
+                .id("settings-page")
+                .flex_1()
+                .overflow_y_scroll()
+                .child(body),
+        )
+        .child(status)
+        .child(div().flex().justify_end().child(close))
+        .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+            let keys = &ev.keystroke;
+            if keys.modifiers.control || keys.modifiers.platform {
+                return;
+            }
+            this.settings_key(&keys.key, keys.key_char.as_deref());
+            cx.notify();
+        }))
+        // Clicks on the card do not reach the scrim below, and the card takes the keys.
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |_, _: &MouseDownEvent, window, cx| {
+                click_focus.focus(window);
+                cx.stop_propagation();
+            }),
+        );
 
         let scrim = place(area)
             .bg(crate::paint::scrim(t.settings_dim_alpha))

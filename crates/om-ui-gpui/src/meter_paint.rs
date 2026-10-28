@@ -30,6 +30,8 @@ const TICK_LABELS: [&str; 5] = ["0", "-6", "-12", "-24", "-48"];
 const ZONE_EPS: f32 = 1e-3;
 /// Height of the numeric peak readout under a master meter, in px (12 px text plus a hair).
 const READOUT_H: i32 = 14;
+/// Space between the dB scale's right edge and the bars, in px. It was 3 px, which read as touching.
+const SCALE_GAP: i32 = 6;
 /// How much taller the master's clip lamp is than a channel's, in px. Unsourced: the plan asks for
 /// "taller on master" and the research gives 6 px, which is below today's 8 px channel lamp.
 const MASTER_LAMP_EXTRA: i32 = 4;
@@ -306,7 +308,7 @@ impl MeterPlan {
                     rect: Rect::new(
                         0,
                         y.clamp(0, (rect.h - 12).max(0)),
-                        (col.labels.w - 3).max(0),
+                        (col.labels.w - SCALE_GAP).max(0),
                         12,
                     ),
                     text,
@@ -799,6 +801,28 @@ mod tests {
             MeterFace::channel(&t),
         );
         assert!(none.marks.is_empty());
+    }
+
+    #[test]
+    fn the_scale_keeps_clear_of_the_bars() {
+        let t = tokens();
+        let plan = MeterPlan::new(
+            &t,
+            Rect::new(0, 0, 60, 200),
+            true,
+            bars(0.0, 0.0, false, false),
+            MeterFace::channel(&t),
+        );
+        let bar_x = plan.sides[0].well.x;
+        assert!(!plan.marks.is_empty());
+        for mark in &plan.marks {
+            let gap = bar_x - (mark.rect.x + mark.rect.w);
+            assert!(
+                gap >= SCALE_GAP,
+                "'{}' ends {gap} px from the bars",
+                mark.text
+            );
+        }
     }
 
     #[test]

@@ -176,6 +176,10 @@ pub struct LookAndFeel {
     pub scroll_bar: ScrollBarStyle,
     pub table: TableStyle,
     pub toggle: ToggleStyle,
+    /// Floating card: the settings overlay and the debug column.
+    pub popup: ControlStyle,
+    /// Muted text on a popup: footers and hints.
+    pub popup_hint: ControlStyle,
     /// Tint for a drop target under a dragged track.
     pub drop_target: Colour,
     /// Font size of the body text used in panels and tooltips.
@@ -429,6 +433,20 @@ impl LookAndFeel {
                     t.type_small,
                 ),
             },
+            popup: shape(
+                t.popup,
+                t.text_primary,
+                t.border,
+                t.control_radius,
+                t.type_small,
+            ),
+            popup_hint: shape(
+                t.popup,
+                t.text_muted,
+                t.border,
+                t.control_radius,
+                t.type_small,
+            ),
             drop_target: t.drop_target,
             body_size: t.type_body,
             inset_small: t.inset_small,
@@ -467,6 +485,19 @@ impl LookAndFeel {
             min_target: t.min_target,
             min_pointer_target: t.min_pointer_target,
             brand: t.brand,
+        }
+    }
+
+    /// A switch in state `on`: the off track, or the on track filled with the caller's `accent`.
+    pub fn toggle(&self, on: bool, accent: Colour) -> ControlStyle {
+        if on {
+            ControlStyle {
+                fill: accent,
+                text: self.lit_text,
+                ..self.toggle.on
+            }
+        } else {
+            self.toggle.off
         }
     }
 
@@ -517,6 +548,8 @@ impl LookAndFeel {
             ("toggle.off", self.toggle.off),
             ("toggle.on", self.toggle.on),
             ("toggle.knob", self.toggle.knob),
+            ("popup", self.popup),
+            ("popup.hint", self.popup_hint),
         ]
     }
 }
@@ -1124,6 +1157,30 @@ mod tests {
             );
             assert_ne!(look.table.row.fill, look.table.row_selected.fill, "{id}");
         }
+    }
+
+    #[test]
+    fn popup_text_and_hint_are_readable_in_both_themes() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            let body = worst_contrast(&look.popup, &t);
+            assert!(body >= 4.5, "{id}: popup body contrast {body:.2} < 4.5");
+            let hint = worst_contrast(&look.popup_hint, &t);
+            assert!(hint >= 3.0, "{id}: popup hint contrast {hint:.2} < 3.0");
+        }
+    }
+
+    #[test]
+    fn a_toggle_takes_the_accent_only_when_on() {
+        let t = ThemeTokens::builtin_dark();
+        let look = LookAndFeel::from_tokens(&t);
+        let accent = Colour::from_argb(0xFF38_BDF8);
+        let on = look.toggle(true, accent);
+        assert_eq!(on.fill, accent);
+        assert_eq!(on.text, look.lit_text);
+        assert_eq!(on.radius, t.control_radius);
+        assert_eq!(look.toggle(false, accent), look.toggle.off);
     }
 
     #[test]
