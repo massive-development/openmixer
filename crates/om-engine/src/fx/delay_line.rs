@@ -63,7 +63,9 @@ impl DelayLine {
         let frac = d - whole as f32;
         let b = &self.buffers[channel & 1];
         let at = |back: usize| {
-            let slot = (self.write_pos + self.size - back) % self.size;
+            // `back <= size - 1`, so one conditional subtract wraps it.
+            let s = self.write_pos + self.size - back;
+            let slot = if s >= self.size { s - self.size } else { s };
             if self.wipe.live(slot) {
                 b[slot]
             } else {
