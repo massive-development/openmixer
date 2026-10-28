@@ -11,6 +11,9 @@ pub struct TapeStopFx {
     params: ParamSet,
     history: [Vec<f32>; 2],
     written: i64,
+    /// History slot the next frame is written to; always `written % size`, kept incrementally so
+    /// the per-sample path never divides.
+    head: usize,
     read_pos: f64,
     speed: f64,
 }
@@ -21,6 +24,7 @@ impl Default for TapeStopFx {
             params: ParamSet::new(&[ParamSpec::new("time", 0.25, MAX_BEATS, 1.0).smooth(0.0)]),
             history: [Vec::new(), Vec::new()],
             written: 0,
+            head: 0,
             read_pos: 0.0,
             speed: 1.0,
         }
@@ -28,14 +32,27 @@ impl Default for TapeStopFx {
 }
 
 impl TapeStopFx {
+    /// Slot of frame `index` (`< written`): `lag` frames behind `head`, wrapped with one add. A lag
+    /// beyond the buffer is outside the design and falls back to the exact modulo.
+    fn slot(&self, index: i64, size: i64) -> usize {
+        let s = self.head as i64 - (self.written - index);
+        (if s >= 0 {
+            s
+        } else if s >= -size {
+            s + size
+        } else {
+            s.rem_euclid(size)
+        }) as usize
+    }
+
     fn read_at(&self, channel: usize, position: f64) -> f32 {
         let h = &self.history[channel];
         let size = h.len() as i64;
         let whole = position.floor() as i64;
         let frac = (position - whole as f64) as f32;
         let next = (whole + 1).min(self.written - 1);
-        let a = h[whole.rem_euclid(size) as usize];
-        let b = h[next.rem_euclid(size) as usize];
+        let a = h[self.slot(whole, size)];
+        let b = h[self.slot(next, size)];
         a + frac * (b - a)
     }
 }
@@ -65,6 +82,7 @@ impl Effect for TapeStopFx {
     /// pass `written`), so it is O(1) on the audio thread and needs no sliced clear.
     fn reset(&mut self) {
         self.written = 0;
+        self.head = 0;
         self.read_pos = 0.0;
         self.speed = 1.0;
     }
@@ -73,13 +91,17 @@ impl Effect for TapeStopFx {
         if self.history[0].is_empty() {
             return;
         }
-        let size = self.history[0].len() as i64;
+        let size = self.history[0].len();
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             self.params.tick();
-            let slot = self.written.rem_euclid(size) as usize;
-            self.history[0][slot] = *l;
-            self.history[1][slot] = *r;
+            self.history[0][self.head] = *l;
+            self.history[1][self.head] = *r;
             self.written += 1;
+            self.head = if self.head + 1 == size {
+                0
+            } else {
+                self.head + 1
+            };
             let gain = (1.0_f64).min(self.speed / SILENCE_BELOW_SPEED) as f32;
             *l = self.read_at(0, self.read_pos) * gain;
             *r = self.read_at(1, self.read_pos) * gain;
