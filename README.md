@@ -177,7 +177,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 
 ## Implementation Waves
 
-![OpenMixer progress heatmap](docs/progress-heatmap.svg)
+![OpenMixer issue heatmap](https://raw.githubusercontent.com/massive-development/openmixer/badges/issue-heatmap.svg)
 
 | Wave | Focus | Status |
 |------|-------|--------|
