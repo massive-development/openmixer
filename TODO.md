@@ -46,7 +46,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 32:** no real MIDI device has been used; the ALSA backend is only smoke-tested. S, needs hardware.
 - **Wave 1 CI:** the check matrix is Linux only; the macOS and Windows legs are not in `rust.yml` until the porting phase. S-M
 - **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. A weekly scheduled `soak` job in the rust.yml workflow now runs both; it has not run yet (no scheduled run is in the workflow history), so the result is unknown. S
-- **Todos 25-29:** the deferred GPUI paint and layout tests (see "Not yet covered by tests" in `docs/PROGRESS.md`); there is no `#[gpui::test]` in the tree. M
+- **Todos 25-29:** GPUI paint and layout tests now run headlessly (`#[gpui::test]` in `crates/om-ui-gpui/src/headless_tests.rs`, gpui `test-support` as a dev-dependency, no display needed): the shell renders at 1280x800 and 900x600 and the cell bounds, overlap and knob/fader/meter plans are asserted. Still open: the per-todo items in "Not yet covered by tests" in `docs/PROGRESS.md` (settings overlay, library toolbar, clip-click, theme-switch repaint). M
 - **Wave 1 CI:** the `check` job now builds and lints the GPUI crate with the rest of the workspace; it has passed on hosted (clean) `ubuntu-latest` runners in PR runs since the merge (for example run 40398196325, 2026-10-26, all jobs green). Only `pull_request` runs exist; nothing scheduled has run. S
 
 ### (C) Smaller gaps
