@@ -17,6 +17,7 @@ members = [
     "crates/om-testing",
     "examples/plugins/gain-plugin",
     "examples/plugins/gain-plugin-cdylib",
+    "examples/plugins/param-plugin-cdylib",
     "crates/openmixer",
 ]
 [workspace.package]

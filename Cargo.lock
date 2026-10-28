@@ -4171,6 +4171,7 @@ dependencies = [
 name = "om-plugins"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc",
  "libloading",
  "om-core",
  "om-engine",
@@ -4364,6 +4365,10 @@ dependencies = [
  "lzma-rust2",
  "ureq 3.5.0",
 ]
+
+[[package]]
+name = "param-plugin-cdylib"
+version = "0.1.0"
 
 [[package]]
 name = "parking"
