@@ -86,14 +86,14 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
 
-  # Non-blocking: the `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build
-  # downloads a prebuilt runtime, so it needs network). Off in the default build and in the jobs above.
-  # Remove `continue-on-error` once the first runs are green on a clean runner.
+  # The `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build downloads a
+  # prebuilt runtime, so it needs network). Off in the default build and in the jobs above. Blocking
+  # since the real htdemucs graph was checked against the contract (`htdemucs_reference.rs`; its model
+  # test is `#[ignore]`d because the 174 MB graph is not in the repository).
   onnx:
-    name: onnx (linux, non-blocking)
+    name: onnx (linux)
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
