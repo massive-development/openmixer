@@ -1,0 +1,257 @@
+{
+  "name": "OpenMixer Generic 2 Deck 4 Channel Mixer",
+  "version": 2,
+  "device": "Generic 4 Channel Mixer",
+  "_origin": "Original work for OpenMixer. Clean-room: written from the MIDI 1.0 specification and OpenMixer's own parameter ids only; no vendor mapping file, manual or other DJ software was consulted, copied or derived from. Licence: AGPL-3.0-only, like the repository.",
+  "_layout": "Channel strip c (0-3) on MIDI channel 1: fader CC 16+c, trim 20+c, EQ high 24+c, mid 28+c, low 32+c, filter 36+c, PFL note c. Crossfader CC 40, master 41, cue level 42, cue mix 43. Deck d (0-1): play note 48+d, sync 50+d, key lock 52+d (all toggles); pitch bend on MIDI channel d+1 is the rate.",
+  "mappings": [
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 16,
+      "target": "mixer.ch0.fader"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 20,
+      "target": "mixer.ch0.trim"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 24,
+      "target": "mixer.ch0.eq.high"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 28,
+      "target": "mixer.ch0.eq.mid"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 32,
+      "target": "mixer.ch0.eq.low"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 36,
+      "target": "mixer.ch0.filter"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 0,
+      "target": "mixer.ch0.pfl"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 17,
+      "target": "mixer.ch1.fader"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 21,
+      "target": "mixer.ch1.trim"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 25,
+      "target": "mixer.ch1.eq.high"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 29,
+      "target": "mixer.ch1.eq.mid"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 33,
+      "target": "mixer.ch1.eq.low"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 37,
+      "target": "mixer.ch1.filter"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 1,
+      "target": "mixer.ch1.pfl"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 18,
+      "target": "mixer.ch2.fader"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 22,
+      "target": "mixer.ch2.trim"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 26,
+      "target": "mixer.ch2.eq.high"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 30,
+      "target": "mixer.ch2.eq.mid"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 34,
+      "target": "mixer.ch2.eq.low"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 38,
+      "target": "mixer.ch2.filter"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 2,
+      "target": "mixer.ch2.pfl"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 19,
+      "target": "mixer.ch3.fader"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 23,
+      "target": "mixer.ch3.trim"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 27,
+      "target": "mixer.ch3.eq.high"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 31,
+      "target": "mixer.ch3.eq.mid"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 35,
+      "target": "mixer.ch3.eq.low"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 39,
+      "target": "mixer.ch3.filter"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 3,
+      "target": "mixer.ch3.pfl"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 40,
+      "target": "mixer.crossfader"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 41,
+      "target": "mixer.master"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 42,
+      "target": "mixer.cue.level"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 43,
+      "target": "mixer.cue.mix"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 48,
+      "target": "deck.0.play",
+      "mode": "toggle"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 50,
+      "target": "deck.0.sync",
+      "mode": "toggle"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 52,
+      "target": "deck.0.keylock",
+      "mode": "toggle"
+    },
+    {
+      "type": "pitchbend",
+      "channel": 1,
+      "target": "deck.0.rate",
+      "min": 0.92,
+      "max": 1.08
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 49,
+      "target": "deck.1.play",
+      "mode": "toggle"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 51,
+      "target": "deck.1.sync",
+      "mode": "toggle"
+    },
+    {
+      "type": "note",
+      "channel": 1,
+      "number": 53,
+      "target": "deck.1.keylock",
+      "mode": "toggle"
+    },
+    {
+      "type": "pitchbend",
+      "channel": 2,
+      "target": "deck.1.rate",
+      "min": 0.92,
+      "max": 1.08
+    }
+  ]
+}
