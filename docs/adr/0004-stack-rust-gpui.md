@@ -4,6 +4,15 @@
 
 Accepted (supersedes ADR 0002). The project moved from C++/JUCE to Rust; the tag `cpp-final` preserves the old code.
 
+Superseded in part (2026-10-27): the stack table and consequences below are the 2026-10-18 decision and are left as written. What changed since, checked against the tree:
+
+- **Plugins:** not "CLAP-first". The C ABI loaded with `libloading` (`om-plugins`) was chosen on 2026-10-26; see "Plugins: C ABI dynamic loading (Todo 10a)" in `docs/spikes/DECISIONS.md`.
+- **Stems:** no longer deferred. `om-stems` has an ONNX Runtime backend (`ort`, feature `onnx`, off by default); the real htdemucs model is not yet run on real audio.
+- **Workspace:** also `om-automix`, `om-stems`, `om-stretch`, `om-plugins`, `om-testing` and `om-ui-gpui`.
+- **MIDI:** `midir` is not used. The Linux backend is the ALSA sequencer (`alsa` crate, `om-midi`); macOS and Windows have none; HID (Todo 35) is not started.
+- **Not in the tree:** `criterion`, `arc-swap`, `anyhow` and a `cargo audit` run. `proptest` is used in `om-core`, `om-library` and `om-automix`.
+- **CI:** Linux only, not cross-platform from the first crate; macOS and Windows return in the porting phase (`.github/workflows/rust.yml`).
+
 ## Context
 
 ADR 0002 chose JUCE 8.x (C++) as the application framework. The product is a

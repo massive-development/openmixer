@@ -10,13 +10,17 @@
 //! Rules this file follows: no function unwinds (each body runs under `catch_unwind`), no pointer
 //! the host passes in is kept after the call, and an instance is freed only by `destroy`.
 //!
-//! Features select broken variants for the host's tests: `bad-abi` reports the next ABI version,
+//! This is a version 1 plugin on purpose: it shows that a table from before `prepare` and
+//! parameters still loads (`examples/plugins/param-plugin-cdylib` is version 2).
+//!
+//! Features select broken variants for the host's tests: `bad-abi` reports ABI version 3, which the
+//! host does not speak,
 //! `no-entry` leaves out the entry symbol, and `panic-in-create` panics inside `create`.
 
 use std::ffi::{c_char, c_void};
 use std::panic::catch_unwind;
 
-/// The ABI version this plugin was written against (`om_plugins::abi::PLUGIN_ABI_VERSION`).
+/// The ABI version this plugin was written against (`om_plugins::abi::PLUGIN_ABI_MIN`).
 const ABI_VERSION: u32 = 1;
 
 /// The gain the stage applies.
@@ -97,7 +101,7 @@ extern "C" fn process(instance: *mut c_void, samples: *mut f32, frames: usize) {
 
 static VTABLE: PluginVTable = PluginVTable {
     abi_version: if cfg!(feature = "bad-abi") {
-        ABI_VERSION + 1
+        3
     } else {
         ABI_VERSION
     },

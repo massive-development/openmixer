@@ -11,7 +11,7 @@ use crate::knob_paint::KnobRole;
 use crate::paint::{paint, place, skin};
 use crate::text_entry::{apply_key, EntryKey};
 use gpui::{
-    prelude::*, px, Context, Div, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
+    div, prelude::*, px, Context, Div, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
     MouseDownEvent, MouseUpEvent,
 };
 use om_engine::sampler::{PadMode, MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
@@ -336,11 +336,16 @@ fn pad_tile(
         look.panel
     };
     let name: String = pad.name.chars().take(PAD_NAME_CHARS).collect();
-    let label = if pad.loaded {
-        format!("{} {}", pad.key, name)
+    // A loaded pad shows its key over its name: on one line "5 Tone A" filled a 56 px pad.
+    let key = if pad.missing {
+        format!("{} !", pad.key)
     } else {
         pad.key.to_string()
     };
+    let mut text = div().flex().flex_col().items_center().child(key);
+    if pad.loaded {
+        text = text.child(name);
+    }
     let border_colour = if pad.selected { accent } else { style.border };
     let mut el = skin(
         place(rect)
@@ -351,11 +356,7 @@ fn pad_tile(
         &style,
     )
     .border_color(paint(border_colour))
-    .child(if pad.missing {
-        format!("{label} !")
-    } else {
-        label
-    })
+    .child(text)
     .on_mouse_down(
         MouseButton::Left,
         cx.listener(move |this, _: &MouseDownEvent, window, cx| {

@@ -176,6 +176,10 @@ pub struct LookAndFeel {
     pub scroll_bar: ScrollBarStyle,
     pub table: TableStyle,
     pub toggle: ToggleStyle,
+    /// Floating card: the settings overlay and the debug column.
+    pub popup: ControlStyle,
+    /// Muted text on a popup: footers and hints.
+    pub popup_hint: ControlStyle,
     /// Tint for a drop target under a dragged track.
     pub drop_target: Colour,
     /// Font size of the body text used in panels and tooltips.
@@ -429,6 +433,20 @@ impl LookAndFeel {
                     t.type_small,
                 ),
             },
+            popup: shape(
+                t.popup,
+                t.text_primary,
+                t.border,
+                t.control_radius,
+                t.type_small,
+            ),
+            popup_hint: shape(
+                t.popup,
+                t.text_muted,
+                t.border,
+                t.control_radius,
+                t.type_small,
+            ),
             drop_target: t.drop_target,
             body_size: t.type_body,
             inset_small: t.inset_small,
@@ -467,6 +485,19 @@ impl LookAndFeel {
             min_target: t.min_target,
             min_pointer_target: t.min_pointer_target,
             brand: t.brand,
+        }
+    }
+
+    /// A switch in state `on`: the off track, or the on track filled with the caller's `accent`.
+    pub fn toggle(&self, on: bool, accent: Colour) -> ControlStyle {
+        if on {
+            ControlStyle {
+                fill: accent,
+                text: self.lit_text,
+                ..self.toggle.on
+            }
+        } else {
+            self.toggle.off
         }
     }
 
@@ -517,6 +548,8 @@ impl LookAndFeel {
             ("toggle.off", self.toggle.off),
             ("toggle.on", self.toggle.on),
             ("toggle.knob", self.toggle.knob),
+            ("popup", self.popup),
+            ("popup.hint", self.popup_hint),
         ]
     }
 }
@@ -631,7 +664,7 @@ mod tests {
 
     #[test]
     fn both_builtin_themes_keep_control_text_readable() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             for (name, style) in look.entries() {
@@ -655,7 +688,7 @@ mod tests {
 
     #[test]
     fn both_builtin_themes_keep_body_text_at_aa() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             for (name, style) in [
@@ -687,7 +720,7 @@ mod tests {
     fn every_control_is_distinguishable_from_its_background_in_both_themes() {
         // Both themes are held to WCAG 1.4.11's 3:1 for non-text UI (control outlines use
         // `border_strong`; `border` is a decorative hairline and is not an outline).
-        for (id, floor) in [("dark", 3.0_f32), ("daylight", 3.0)] {
+        for (id, floor) in [("dark", 3.0_f32), ("daylight", 3.0), ("harbour", 3.0)] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             let b = &look.button;
@@ -743,7 +776,7 @@ mod tests {
 
     #[test]
     fn readouts_are_the_strongest_text_and_larger_than_body() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             let r = look.readout;
@@ -767,7 +800,7 @@ mod tests {
 
     #[test]
     fn glow_is_the_accent_and_visible_but_restrained() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             for accent in t.accents.clone() {
@@ -788,7 +821,7 @@ mod tests {
 
     #[test]
     fn brand_is_not_a_deck_accent_and_reads_on_the_backdrop() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             assert!(
                 !t.accents.contains(&t.brand),
@@ -803,7 +836,7 @@ mod tests {
 
     #[test]
     fn deck_accents_are_distinct_in_both_themes() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             for (i, a) in t.accents.iter().enumerate() {
                 for b in &t.accents[i + 1..] {
@@ -1063,7 +1096,7 @@ mod tests {
             "toggle.on",
             "toggle.knob",
         ];
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             let entries = look.entries();
@@ -1090,7 +1123,7 @@ mod tests {
 
     #[test]
     fn thumb_is_visible_against_track() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             for bd in [t.backdrop_top, t.backdrop_bottom] {
@@ -1108,7 +1141,7 @@ mod tests {
 
     #[test]
     fn toggle_states_and_table_rows_differ() {
-        for id in ["dark", "daylight"] {
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             assert_ne!(look.toggle.on.fill, look.toggle.off.fill, "{id}");
@@ -1124,6 +1157,30 @@ mod tests {
             );
             assert_ne!(look.table.row.fill, look.table.row_selected.fill, "{id}");
         }
+    }
+
+    #[test]
+    fn popup_text_and_hint_are_readable_in_both_themes() {
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            let body = worst_contrast(&look.popup, &t);
+            assert!(body >= 4.5, "{id}: popup body contrast {body:.2} < 4.5");
+            let hint = worst_contrast(&look.popup_hint, &t);
+            assert!(hint >= 3.0, "{id}: popup hint contrast {hint:.2} < 3.0");
+        }
+    }
+
+    #[test]
+    fn a_toggle_takes_the_accent_only_when_on() {
+        let t = ThemeTokens::builtin_dark();
+        let look = LookAndFeel::from_tokens(&t);
+        let accent = Colour::from_argb(0xFF38_BDF8);
+        let on = look.toggle(true, accent);
+        assert_eq!(on.fill, accent);
+        assert_eq!(on.text, look.lit_text);
+        assert_eq!(on.radius, t.control_radius);
+        assert_eq!(look.toggle(false, accent), look.toggle.off);
     }
 
     #[test]

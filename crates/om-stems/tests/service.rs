@@ -589,3 +589,79 @@ fn the_model_loads_inside_the_first_job_not_when_the_service_is_created() {
         "loaded once, by the first job"
     );
 }
+
+/// The app's real path with the real model: install from a `file://` URL (size and SHA-256 checked,
+/// licence accepted), load it through `OrtInference` with the manifest's contract, and separate a
+/// 48 kHz track through `StemService` into the cache and the library.
+/// Needs the exported graph: `OPENMIXER_HTDEMUCS_MODEL=htdemucs.onnx cargo test -p om-stems
+/// --features onnx --test service -- --ignored --nocapture` (see `tools/export_htdemucs.py`).
+#[cfg(feature = "onnx")]
+#[test]
+#[ignore = "needs the exported model: set OPENMIXER_HTDEMUCS_MODEL"]
+fn real_model_installs_and_separates_through_the_service() {
+    use om_analysis::NullAnalysisContext;
+    use om_stems::{default_threads, HtDemucsSeparator, OrtInference, UrlDownloader};
+    use sha2::{Digest, Sha256};
+
+    let Some(model) = std::env::var_os("OPENMIXER_HTDEMUCS_MODEL").map(PathBuf::from) else {
+        eprintln!("OPENMIXER_HTDEMUCS_MODEL is not set; skipping");
+        return;
+    };
+    let bytes = fs::read(&model).expect("read the model");
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let manifest = ModelManifest::htdemucs(
+        &format!("file://{}", model.display()),
+        &sha,
+        bytes.len() as u64,
+    );
+    drop(bytes);
+
+    let fx = fixture(1);
+    let weights = WeightManager::new(
+        fx.dir.path().join("models"),
+        Box::new(UrlDownloader::default()),
+    );
+    let accept = |_: &ModelManifest| true;
+    weights
+        .ensure_available(&manifest, Some(&accept), &NullAnalysisContext)
+        .expect("installs: size and SHA-256 verified");
+    assert!(weights.is_installed(&manifest));
+
+    let contract = manifest.contract_or_default();
+    let inference = OrtInference::load(
+        &weights.model_file(&manifest),
+        contract.clone(),
+        Some(default_threads()),
+    )
+    .expect("the installed graph satisfies the manifest contract");
+    let separator = HtDemucsSeparator::new("htdemucs", 1, inference, contract).expect("separator");
+    let svc = service(&fx, Arc::new(separator), None, None);
+
+    // 20 s at 48 kHz: resampled to 44.1 kHz for the model and back, three overlapping segments.
+    write_wav(&fx.tracks[0].1, 48_000, 48_000 * 20);
+    let started = std::time::Instant::now();
+    assert_eq!(finish(&svc.submit(request(&fx, 0))), JobStatus::Done);
+    let wall = started.elapsed();
+    let cpu_ticks = fs::read_to_string("/proc/self/stat")
+        .ok()
+        .and_then(|s| {
+            let rest = s.rsplit_once(')')?.1.split_whitespace().collect::<Vec<_>>();
+            Some(rest.get(11)?.parse::<u64>().ok()? + rest.get(12)?.parse::<u64>().ok()?)
+        })
+        .unwrap_or(0);
+    eprintln!(
+        "20 s of audio in {wall:?} wall, {:.1} s process CPU ({} threads)",
+        cpu_ticks as f64 / 100.0,
+        default_threads()
+    );
+    let entries = svc.cache().entries().expect("cache entries");
+    assert_eq!(entries.len(), 1, "one stem set in the cache");
+    let lib = Library::open(&fx.library, OpenMode::ReadOnly, core_migrations()).unwrap();
+    assert_eq!(
+        lib.track_stems().for_track(fx.tracks[0].0).unwrap().len(),
+        1
+    );
+}

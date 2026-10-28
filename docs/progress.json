@@ -18,12 +18,12 @@
     ["10a Plugin API", "done"],
     ["32 MIDI map", "done"],
     ["33 Trace harness", "done"],
-    ["26a Debug panel", "done"],
+    ["26a Debug panel", "partial"],
     ["13a Soak (short)", "done"],
     ["9 Key-lock", "done"],
     ["12 Sync", "done"],
     ["11 FX rack", "done"],
-    ["13 Soak (10m)", "done"]
+    ["13 Soak (10m)", "partial"]
    ]
   },
   {
@@ -67,9 +67,9 @@
   {
    "name": "6 Hardware",
    "items": [
-    ["34 Controller maps", "todo"],
+    ["34 Controller maps", "partial"],
     ["35 HID", "todo"],
-    ["36 Map editor", "partial"]
+    ["36 Map editor", "done"]
    ]
   },
   {
@@ -78,7 +78,7 @@
     ["F Foundation", "done"],
     ["37 Stem DSP", "done"],
     ["38 Automix", "done"],
-    ["39 Stem transitions", "partial"],
+    ["39 Stem transitions", "done"],
     ["40 Sampler", "partial"]
    ]
   },

@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """Export Meta's htdemucs (Demucs v4, hybrid transformer) to ONNX for OpenMixer's stem separator.
 
-STATUS: written offline against the Demucs source as remembered; it has NOT been run against a real
-htdemucs checkpoint, and the exported graph has not been loaded by OpenMixer. Only --manifest-only is
-exercised in tests/by hand. Expect to adjust the export step (torch.stft on complex tensors is the
-usual trouble spot; see "Contract" below).
+STATUS: run against the real htdemucs checkpoint (demucs 4.1.0, torch 2.14.1 CPU, onnx 1.23.2,
+onnxscript 0.7.2, opset 17). The graph loads in OpenMixer's `OrtInference` and reproduces Demucs' own
+output (see crates/om-stems/tests/htdemucs_reference.rs). The in-graph STFT variant does NOT export
+with current PyTorch ("STFT does not currently support complex types"), so this script exports the
+STFT-outside variant: Rust computes the spectrogram and inverts the result (`Spectral`).
 
-Not run in CI or by `cargo test`. Needs: python>=3.9, torch, demucs (`pip install demucs`), onnx.
+Not run in CI or by `cargo test`. Needs: python>=3.9, torch, demucs (`pip install demucs`), onnx,
+onnxscript. Run it in a throwaway virtualenv.
 
 Usage
   python3 tools/export_htdemucs.py --out htdemucs.onnx
   python3 tools/export_htdemucs.py --manifest-only htdemucs.onnx --url https://host/htdemucs.onnx
 
-Contract (must match `ModelContract::htdemucs()` in crates/om-stems/src/contract.rs)
+Contract (must match `ModelContract::htdemucs_split()` in crates/om-stems/src/contract.rs)
   input  "mix"    float32 [1, 2, 343980]   stereo 44.1 kHz segment, ALREADY normalised by OpenMixer
                                            (mean removed, divided by std; OpenMixer undoes it)
-  output "stems"  float32 [1, 4, 2, 343980] in Demucs' own source order: drums, bass, other, vocals
-  The STFT and inverse STFT are INSIDE the graph (waveform in, waveform out). OpenMixer also supports a
-  variant with the STFT outside (inputs "mix" + "z" [1,4,2048,336], outputs "stems" + "zout"
-  [1,4,4,2048,336], complex-as-channels, see crates/om-stems/src/spectral.rs), declared through the
-  manifest's `contract` object. That variant is not implemented in this script.
+  input  "z"      float32 [1, 4, 2048, 336] STFT of "mix" (n_fft 4096, hop 1024, as Demucs' `_spec`),
+                                           complex-as-channels: (left re, left im, right re, right im)
+  output "stems"  float32 [1, 4, 2, 343980] time-branch waveform, sources drums, bass, other, vocals
+  output "zout"   float32 [1, 4, 4, 2048, 336] frequency-branch spectrum, same channel layout;
+                                           OpenMixer inverts it and adds it to "stems"
 
 LICENCE: the Demucs code and htdemucs weights are MIT (Meta Platforms, Inc. and affiliates). The MIT
 licence does NOT cover the training data; MUSDB18-HQ is research-licensed. The text below is what the
@@ -71,8 +73,12 @@ def manifest_for(onnx_path: Path, url: str) -> dict:
             "sampleRate": 44100,
             "segmentSamples": SEGMENT,
             "overlap": 0.25,
+            "nFft": 4096,
+            "hop": 1024,
             "mixInput": "mix",
+            "specInput": "z",
             "stemsOutput": "stems",
+            "specOutput": "zout",
             "stemOrder": ["drums", "bass", "other", "vocals"],
         },
     }
@@ -88,32 +94,90 @@ def export(out: Path, opset: int) -> None:
     if list(model.sources) != ["drums", "bass", "other", "vocals"]:
         sys.exit(f"unexpected source order {model.sources}; update stemOrder in the manifest")
 
-    class Wrapper(torch.nn.Module):
-        """mix [1,2,N] (normalised) -> stems [1,4,2,N]. Normalisation lives in OpenMixer."""
+    class Split(torch.nn.Module):
+        """(mix, z) -> (stems, zout): Demucs' forward minus its STFT and inverse STFT."""
 
-        def __init__(self, inner):
+        def __init__(self, m):
             super().__init__()
-            self.inner = inner
+            self.m = m
 
-        def forward(self, mix):
-            return self.inner(mix)
+        def forward(self, mix, z):
+            m = self.m
+            length = mix.shape[-1]
+            x = z
+            B, _, Fq, T = x.shape
+            mean = x.mean(dim=(1, 2, 3), keepdim=True)
+            std = x.std(dim=(1, 2, 3), keepdim=True)
+            x = (x - mean) / (1e-5 + std)
+            xt = mix
+            meant = xt.mean(dim=(1, 2), keepdim=True)
+            stdt = xt.std(dim=(1, 2), keepdim=True)
+            xt = (xt - meant) / (1e-5 + stdt)
+            saved, saved_t, lengths, lengths_t = [], [], [], []
+            for idx, encode in enumerate(m.encoder):
+                lengths.append(x.shape[-1])
+                inject = None
+                if idx < len(m.tencoder):
+                    lengths_t.append(xt.shape[-1])
+                    tenc = m.tencoder[idx]
+                    xt = tenc(xt)
+                    if not tenc.empty:
+                        saved_t.append(xt)
+                    else:
+                        inject = xt
+                x = encode(x, inject)
+                if idx == 0 and m.freq_emb is not None:
+                    frs = torch.arange(x.shape[-2], device=x.device)
+                    emb = m.freq_emb(frs).t()[None, :, :, None].expand_as(x)
+                    x = x + m.freq_emb_scale * emb
+                saved.append(x)
+            if m.crosstransformer:
+                if m.bottom_channels:
+                    b, c, f, t = x.shape
+                    x = m.channel_upsampler(x.reshape(b, c, f * t))
+                    x = x.reshape(b, x.shape[1], f, t)
+                    xt = m.channel_upsampler_t(xt)
+                x, xt = m.crosstransformer(x, xt)
+                if m.bottom_channels:
+                    b, c, f, t = x.shape
+                    x = m.channel_downsampler(x.reshape(b, c, f * t))
+                    x = x.reshape(b, x.shape[1], f, t)
+                    xt = m.channel_downsampler_t(xt)
+            for idx, decode in enumerate(m.decoder):
+                skip = saved.pop(-1)
+                x, pre = decode(x, skip, lengths.pop(-1))
+                offset = m.depth - len(m.tdecoder)
+                if idx >= offset:
+                    tdec = m.tdecoder[idx - offset]
+                    length_t = lengths_t.pop(-1)
+                    if tdec.empty:
+                        xt, _ = tdec(pre[:, :, 0], None, length_t)
+                    else:
+                        skip = saved_t.pop(-1)
+                        xt, _ = tdec(xt, skip, length_t)
+            S = len(m.sources)
+            zout = x.view(B, S, -1, Fq, T) * std[:, None] + mean[:, None]
+            stems = xt.view(B, S, -1, length) * stdt[:, None] + meant[:, None]
+            return stems, zout
 
-    example = torch.zeros(1, 2, SEGMENT)
+    if not (model.cac and model.nfft == 4096 and model.hop_length == 1024):
+        sys.exit("expected htdemucs' complex-as-channels spectrogram with n_fft 4096, hop 1024")
+    frames = -(-SEGMENT // model.hop_length)
+    example_mix = torch.zeros(1, 2, SEGMENT)
+    example_z = torch.zeros(1, 4, model.nfft // 2, frames)
+    # dynamo=False: the legacy TorchScript exporter. The default exporter in recent PyTorch fails on
+    # a data-dependent assert in demucs' `pad1d`.
     torch.onnx.export(
-        Wrapper(model),
-        (example,),
+        Split(model).eval(),
+        (example_mix, example_z),
         str(out),
-        input_names=["mix"],
-        output_names=["stems"],
+        input_names=["mix", "z"],
+        output_names=["stems", "zout"],
         opset_version=opset,
         do_constant_folding=True,
+        dynamo=False,
     )
     print(f"wrote {out}", file=sys.stderr)
-    print(
-        "If the export failed on STFT/complex ops, export the time/frequency branches with the STFT "
-        "outside the graph instead and declare specInput/specOutput in the manifest contract.",
-        file=sys.stderr,
-    )
 
 
 def main() -> None:

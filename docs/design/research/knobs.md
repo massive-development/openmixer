@@ -21,7 +21,7 @@ Status: research, no code changed. Clean-room (ADR 0001): conventions only; ever
 - Value shows in a popup while dragging and on hover, never at rest; this matches what we already do. FabFilter additionally shows it in a hint bar. Hover popup plus drag popup is sufficient.
 
 ### Which parameters are knobs
-Knobs: trim/gain, 3-band EQ, filter (colour), cue mix, phones level, FX parameters and FX wet/dry, sampler gain/pitch, and master level on small layouts. Faders: channel volume, crossfader, tempo. Master is a fader or knob depending on the hardware, so knob is fine for us. This matches what `mixer_view.rs` already does for trim, EQ, filter and FX; the cue and phones controls are not yet knobs.
+Knobs: trim/gain, 3-band EQ, filter (colour), cue mix, phones level, FX parameters and FX wet/dry, sampler gain/pitch, and master level on small layouts. Faders: channel volume, crossfader, tempo. Master is a fader or knob depending on the hardware, so knob is fine for us. This matches what `mixer_view.rs` already does for trim, EQ, filter and FX; the cue and phones controls were not knobs when this was written (they are now, `fba8e4a`).
 
 ## 2. GPUI feasibility
 - gpui 0.2.2 `PathBuilder` has `stroke(width)`, `move_to`, `line_to`, `arc_to(radii, x_rot, large_arc, sweep, to)`, `rotate`, `dash_array` and `build()`; paint with `window.paint_path` inside `canvas(...)`. `waveform_paint.rs` already builds and paints fill paths this way, and `deck_view.rs` already uses `canvas`. See [Zed PathBuilder commit](https://git.secluded.site/zed/commit/c73af0a52f61106c36b64982ee016ffc1a73d7e6) for the arc addition, and `~/.cargo/registry/src/*/gpui-0.2.2/src/path_builder.rs`.

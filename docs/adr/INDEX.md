@@ -9,8 +9,9 @@ This index contains all Architecture Decision Records (ADRs) for the OpenMixer p
 | 0001 | Clean-Room Doctrine | Accepted |
 | 0002 | Technology Stack - JUCE with AGPLv3 | Superseded by ADR 0004 |
 | 0003 | Pure AGPLv3 with No Contributor CLA | Accepted |
-| 0004 | Technology Stack - Rust with GPUI | Accepted |
+| 0004 | Technology Stack - Rust with GPUI | Accepted (superseded in part, see the note in the ADR) |
 | 0005 | Experience-first product bar | Accepted |
+| 0006 | Controller map provenance | Accepted |
 
 ## ADR Templates
 
@@ -52,3 +53,5 @@ Links to relevant documents, discussions, or resources.
 - 2026-10-13 - ADRs 0001-0003 created
 - 2026-10-18 - ADR 0004 created; ADR 0002 superseded
 - 2026-10-21 - ADR 0005 created
+- 2026-10-27 - ADR 0004 marked superseded in part (plugins, stems, MIDI backend, CI scope)
+- 2026-10-28 - ADR 0006 created

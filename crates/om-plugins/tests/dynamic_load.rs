@@ -1,7 +1,11 @@
 //! Shared-library plugins over the C ABI. Each test builds a variant of
-//! `examples/plugins/gain-plugin-cdylib` with `cargo build` into the test temp dir (the crate has no
-//! dependencies, so a build takes seconds) and loads it through `PluginLoader`.
+//! `examples/plugins/gain-plugin-cdylib` (ABI version 1) or `examples/plugins/param-plugin-cdylib`
+//! (version 2: prepare and parameters; it sees only the C header) with `cargo build` into the test
+//! temp dir (the crates have no dependencies, so a build takes seconds) and loads it through
+//! `PluginLoader`.
 
+use assert_no_alloc::{assert_no_alloc, AllocDisabler};
+use om_core::{ParameterRouter, ParameterTarget};
 use om_plugins::{
     InsertAt, InsertPoint, InsertRefused, PluginError, PluginLoader, PluginRegistry, ProcessStage,
     PLUGIN_ABI_VERSION,
@@ -11,14 +15,23 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 
+// Panics on a heap allocation made inside `assert_no_alloc` on the current thread.
+#[global_allocator]
+static ALLOCATOR: AllocDisabler = AllocDisabler;
+
 const PLUGIN_ID: &str = "org.openmixer.example.cdylib-gain";
 const STAGE_ID: &str = "example.cdylib-gain";
 
 /// Builds the example cdylib with `feature` (or none) once per test run and returns the library.
 /// Fails the test with the cargo output when the build cannot run.
 fn example_library(feature: Option<&str>) -> PathBuf {
+    build_cdylib("gain-plugin-cdylib", feature)
+}
+
+/// Builds `examples/plugins/<name>` (once per test run) and returns the library.
+fn build_cdylib(name: &str, feature: Option<&str>) -> PathBuf {
     static BUILT: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
-    let key = feature.unwrap_or("default").to_owned();
+    let key = format!("{name}/{}", feature.unwrap_or("default"));
     let mut built = BUILT
         .get_or_init(Default::default)
         .lock()
@@ -27,10 +40,8 @@ fn example_library(feature: Option<&str>) -> PathBuf {
         return path.clone();
     }
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/plugins/gain-plugin-cdylib/Cargo.toml");
-    let target_dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join("gain-plugin-cdylib")
-        .join(&key);
+        .join(format!("../../examples/plugins/{name}/Cargo.toml"));
+    let target_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(&key);
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let mut cmd = Command::new(&cargo);
     cmd.arg("build")
@@ -52,8 +63,9 @@ fn example_library(feature: Option<&str>) -> PathBuf {
         String::from_utf8_lossy(&output.stderr)
     );
     let file = format!(
-        "{}gain_plugin_cdylib{}",
+        "{}{}{}",
         std::env::consts::DLL_PREFIX,
+        name.replace('-', "_"),
         std::env::consts::DLL_SUFFIX
     );
     let path = target_dir.join("debug").join(file);
@@ -163,7 +175,11 @@ fn wrong_abi_version_is_bad_abi() {
     match PluginLoader::load(&library) {
         Err(PluginError::BadAbi { found, expected }) => {
             assert_eq!(expected, PLUGIN_ABI_VERSION);
-            assert_eq!(found, PLUGIN_ABI_VERSION + 1);
+            assert_eq!(
+                found,
+                PLUGIN_ABI_VERSION + 1,
+                "the bad-abi variant reports 3"
+            );
         }
         other => panic!("expected BadAbi, got {:?}", other.err()),
     }
@@ -209,4 +225,154 @@ fn non_library_file_is_a_typed_error() {
         PluginLoader::load(&dir.path().join("missing.so")),
         Err(PluginError::Io { .. })
     ));
+}
+
+// ---- ABI version 2: prepare, parameters, contained panics ----
+
+const PARAMS_ID: &str = "org.openmixer.example.cdylib-params";
+const PARAMS_STAGE: &str = "example.cdylib-params";
+const BLOCK: usize = 256;
+
+fn params_library() -> PathBuf {
+    build_cdylib("param-plugin-cdylib", None)
+}
+
+/// Loads the params plugin into a registry and attaches its stage to fresh slots.
+fn params_registry() -> (PluginRegistry, Arc<Slots>, Arc<ParameterRouter>) {
+    let mut reg = PluginRegistry::new();
+    let router = Arc::new(ParameterRouter::new());
+    reg.bind_router(Some(Arc::clone(&router)));
+    reg.load_library(&params_library()).expect("loads");
+    let slots = attach_new_stage(&mut reg);
+    (reg, slots, router)
+}
+
+fn attach_new_stage(reg: &mut PluginRegistry) -> Arc<Slots> {
+    let slots = Arc::new(Slots::default());
+    let point: Arc<dyn InsertPoint> = slots.clone();
+    reg.attach_stage(PARAMS_STAGE, &point, InsertAt::Master, 0)
+        .expect("attaches");
+    slots
+}
+
+fn prepare_live(slots: &Slots, sample_rate: f64) {
+    let mut live = slots.live.lock().unwrap();
+    live.as_mut().expect("attached").prepare(sample_rate, BLOCK);
+}
+
+fn render(slots: &Slots, input: f32) -> (Vec<f32>, Vec<f32>) {
+    let (mut left, mut right) = (vec![input; BLOCK], vec![input; BLOCK]);
+    process_live(slots, &mut left, &mut right);
+    (left, right)
+}
+
+fn set(router: &ParameterRouter, id: &str, value: f64) -> bool {
+    router.set_parameter(&format!("{PARAMS_STAGE}.{id}"), value)
+}
+
+#[test]
+fn old_abi_version_one_plugin_is_still_accepted() {
+    // The gain example is a version 1 table: no prepare, no parameters.
+    let plugin = PluginLoader::load(&example_library(None)).expect("v1 loads");
+    assert!(plugin.parameters().is_empty());
+    assert_eq!(plugin.parameter("gain"), None);
+}
+
+#[test]
+fn parameters_are_enumerated_and_set_through_the_router() {
+    let (reg, slots, router) = params_registry();
+    let params = reg.plugin_parameters(PARAMS_ID);
+    let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(ids, ["gain", "tone", "crash"]);
+    assert_eq!(
+        (params[0].min, params[0].max, params[0].default),
+        (0.0, 2.0, 1.0)
+    );
+    assert_eq!(reg.plugin_parameter(PARAMS_ID, "gain"), Some(1.0));
+
+    assert_eq!(render(&slots, 0.5).0[0], 0.5, "default gain is 1");
+    assert!(set(&router, "gain", 0.5));
+    assert_eq!(reg.plugin_parameter(PARAMS_ID, "gain"), Some(0.5));
+    let (left, right) = render(&slots, 0.5);
+    assert!(left.iter().chain(&right).all(|&s| s == 0.25), "{left:?}");
+
+    // Values clamp to the declared range; unknown ids and non-finite values are refused.
+    assert!(set(&router, "gain", 9.0));
+    assert_eq!(reg.plugin_parameter(PARAMS_ID, "gain"), Some(2.0));
+    assert!(!set(&router, "nope", 1.0));
+    assert!(!set(&router, "gain", f64::NAN));
+    assert_eq!(reg.plugin_parameter(PARAMS_ID, "gain"), Some(2.0));
+}
+
+#[test]
+fn a_new_stage_starts_from_the_current_parameter_values() {
+    let (mut reg, _slots, router) = params_registry();
+    assert!(set(&router, "gain", 0.0));
+    let second = attach_new_stage(&mut reg);
+    assert!(render(&second, 1.0).0.iter().all(|&s| s == 0.0));
+}
+
+#[test]
+fn prepare_delivers_the_sample_rate() {
+    let (_reg, slots, router) = params_registry();
+    assert!(set(&router, "tone", 1.0));
+    for rate in [48_000.0_f64, 96_000.0] {
+        prepare_live(&slots, rate);
+        let (left, right) = render(&slots, 0.0);
+        let step = std::f64::consts::TAU * 1000.0 / rate;
+        for (n, (&l, &r)) in left.iter().zip(&right).enumerate() {
+            let want = (step * n as f64).sin() as f32;
+            assert!(
+                (l - want).abs() < 1.0e-6,
+                "{rate} Hz sample {n}: {l} vs {want}"
+            );
+            assert!(
+                (r - want).abs() < 1.0e-6,
+                "{rate} Hz sample {n}: {r} vs {want}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_panicking_process_is_contained_and_the_stage_passes_audio_through() {
+    let (mut reg, slots, router) = params_registry();
+    assert!(set(&router, "gain", 0.5));
+    assert_eq!(render(&slots, 1.0).0[0], 0.5);
+
+    // `crash` makes the plugin's process panic; the plugin catches it and reports a fault.
+    assert!(set(&router, "crash", 1.0));
+    let (left, _) = render(&slots, 1.0);
+    assert!(
+        left.iter().all(|&s| s == 1.0),
+        "the faulted instance is skipped"
+    );
+    // Later buffers keep passing through, and the host is still alive.
+    assert!(set(&router, "crash", 0.0));
+    assert!(render(&slots, 1.0).0.iter().all(|&s| s == 1.0));
+    assert_eq!(reg.plugin_ids(), vec![PARAMS_ID.to_owned()]);
+
+    // A stage made afterwards is healthy.
+    let fresh = attach_new_stage(&mut reg);
+    assert_eq!(render(&fresh, 1.0).0[0], 0.5);
+}
+
+#[test]
+fn the_audio_path_does_not_allocate() {
+    let (_reg, slots, router) = params_registry();
+    prepare_live(&slots, 48_000.0);
+    let (mut left, mut right) = (vec![0.5_f32; BLOCK], vec![0.5_f32; BLOCK]);
+    for gain in [1.0, 0.25, 1.5] {
+        assert!(set(&router, "gain", gain));
+        // Includes the parameter push at the start of the buffer.
+        assert_no_alloc(|| process_live(&slots, &mut left, &mut right));
+    }
+}
+
+#[test]
+fn unloading_the_params_plugin_removes_its_target() {
+    let (mut reg, slots, router) = params_registry();
+    assert!(reg.unload(PARAMS_ID));
+    assert!(!set(&router, "gain", 1.0));
+    slots.retired.lock().unwrap().clear();
 }

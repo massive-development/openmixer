@@ -1,5 +1,7 @@
 # Deck controls UI plan (round transport, lit toggles, named pads, loop controls, platter)
 
+Status: merged in PR #115 (polish in PR #116).
+
 Branch: `feat/ui-redesign`. Spec: `docs/design/research/deck-controls.md` (sections 2-5). Conventions only, no copied art or text (ADR 0001).
 
 **Constraints.** No new dependencies; do not touch `Cargo.lock` (it is already modified in the working tree, leave it alone, never `git add -A`). This plan OWNS `crates/om-ui-gpui/src/deck_view.rs` and the NEW `crates/om-ui-gpui/src/platter_paint.rs`. Other plans may edit `waveform_paint.rs`, `mixer_view.rs`, `app.rs`, theme tokens; do not edit them except in the "Shared-file edits" list, which goes last.

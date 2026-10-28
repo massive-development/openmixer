@@ -80,8 +80,11 @@ struct Report {
 fn run_gate(seconds: u64) -> Report {
     let scratch = Scratch::new(&format!("{seconds}s"));
     let tracks = [scratch.0.join("aurora.wav"), scratch.0.join("borealis.wav")];
-    write_tone(&tracks[0], 220.0, 12.0);
-    write_tone(&tracks[1], 330.0, 12.0);
+    // Long enough that neither deck reaches the end of its file during the run (4 s of margin), so the
+    // 10-minute gate streams ten minutes of audio. At 8 s this is the 12 s the short gate always used.
+    let track_seconds = (seconds + 4) as f64;
+    write_tone(&tracks[0], 220.0, track_seconds);
+    write_tone(&tracks[1], 330.0, track_seconds);
 
     // Preferences from a fresh file: the composition loads defaults and applies them.
     let mut composition = AppComposition::new(&scratch.0.join("preferences.json"), None);
