@@ -116,8 +116,31 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # ort-sys downloads a prebuilt ONNX Runtime from cdn.pyke.io at build time. Cache it, so most runs
+      # never touch the CDN.
+      - name: Cache the ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      # The CDN has served a file whose hash did not match once (run 40648072742). That is a bad
+      # download, not a test failure: retry it, and only it. Any other failure fails the job at once.
       - name: cargo test -p om-stems --features onnx
-        run: cargo test -p om-stems --features onnx
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if cargo test -p om-stems --features onnx 2>&1 | tee "$RUNNER_TEMP/onnx.log"; then
+              exit 0
+            fi
+            if ! grep -q 'does not match the expected hash' "$RUNNER_TEMP/onnx.log"; then
+              exit 1
+            fi
+            echo "ONNX Runtime download failed its hash check (attempt $attempt); retrying"
+            rm -rf ~/.cache/ort.pyke.io
+            sleep 20
+          done
+          exit 1
 
   # The progress heatmap must match docs/progress.json (stdlib only).
   progress-check:
