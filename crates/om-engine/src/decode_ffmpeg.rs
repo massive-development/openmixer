@@ -61,6 +61,15 @@ pub fn decode_with_ffmpeg(path: &Path, target_rate: u32) -> Result<DecodedAudio,
     run(&binary(), path, target_rate, MAX_OUTPUT_BYTES, TIMEOUT)
 }
 
+/// As [`decode_with_ffmpeg`] with a caller-chosen output cap (decks hold longer audio than samples).
+pub fn decode_with_ffmpeg_capped(
+    path: &Path,
+    target_rate: u32,
+    max_bytes: usize,
+) -> Result<DecodedAudio, DecodeError> {
+    run(&binary(), path, target_rate, max_bytes, TIMEOUT)
+}
+
 fn run(
     bin: &OsStr,
     path: &Path,
