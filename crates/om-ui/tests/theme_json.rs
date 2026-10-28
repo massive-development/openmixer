@@ -212,6 +212,7 @@ fn both_built_in_themes_define_every_waveform_key() {
     for json in [
         include_str!("../../../resources/themes/openmixer-dark.json"),
         include_str!("../../../resources/themes/openmixer-daylight.json"),
+        include_str!("../../../resources/themes/openmixer-harbour.json"),
     ] {
         let value: serde_json::Value = serde_json::from_str(json).expect("valid json");
         let section = &value["waveform"];
@@ -245,6 +246,10 @@ fn meter_colours_keep_three_to_one_on_their_well_in_every_built_in_theme() {
         (
             "daylight",
             include_str!("../../../resources/themes/openmixer-daylight.json"),
+        ),
+        (
+            "harbour",
+            include_str!("../../../resources/themes/openmixer-harbour.json"),
         ),
     ] {
         let t = parse_theme(json).expect("parses").tokens;

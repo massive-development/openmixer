@@ -1673,8 +1673,8 @@ mod tests {
         parse_theme(json).expect("theme parses").tokens
     }
 
-    fn themes() -> [ThemeTokens; 2] {
-        [theme("dark"), theme("daylight")]
+    fn themes() -> [ThemeTokens; 3] {
+        [theme("dark"), theme("daylight"), theme("harbour")]
     }
 
     #[test]
@@ -1848,7 +1848,7 @@ mod tests {
 
     #[test]
     fn daylight_darkens_the_cue_colours_and_dark_does_not() {
-        let [dark, light] = themes();
+        let [dark, light, _harbour] = themes();
         assert_eq!(pad_colour(&dark, 0), HotcuePads::colour(0));
         assert!(
             relative_luminance(pad_colour(&light, 2)) < relative_luminance(HotcuePads::colour(2))

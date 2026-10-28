@@ -40,7 +40,7 @@ fn backdrop_of(reg: &ThemeRegistry, id: &str) -> Colour {
 #[test]
 fn loads_built_in_dark_and_light() {
     let mut reg = ThemeRegistry::new();
-    assert_eq!(reg.load_builtins(), 2);
+    assert_eq!(reg.load_builtins(), 3);
     let dark = reg.find(ThemeRegistry::DEFAULT_ID).expect("dark present");
     assert_eq!(dark.source, Source::BuiltIn);
     let light = reg.find("openmixer.daylight").expect("daylight present");
@@ -99,7 +99,7 @@ fn invalid_json_is_rejected_and_leaves_registry_alone() {
     let mut reg = ThemeRegistry::new();
     reg.load_builtins();
     assert!(reg.add_json("{ nope", Source::User, "").is_err());
-    assert_eq!(reg.themes().len(), 2);
+    assert_eq!(reg.themes().len(), 3);
 }
 
 #[test]
