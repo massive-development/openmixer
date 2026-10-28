@@ -504,5 +504,8 @@ fn htdemucs_manifest_carries_the_licence_caveat_and_round_trips() {
     assert!(m.license_text.contains("MIT"));
     let parsed = ModelManifest::from_json(&m.to_json()).expect("valid");
     assert_eq!(parsed.sha256, "ab".repeat(32));
-    assert_eq!(parsed.contract_or_default(), ModelContract::htdemucs());
+    assert_eq!(
+        parsed.contract_or_default(),
+        ModelContract::htdemucs_split()
+    );
 }
