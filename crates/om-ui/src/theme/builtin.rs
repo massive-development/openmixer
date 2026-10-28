@@ -11,4 +11,8 @@ pub const BUILTIN_THEMES: &[(&str, &str)] = &[
         "openmixer-daylight.json",
         include_str!("../../../../resources/themes/openmixer-daylight.json"),
     ),
+    (
+        "openmixer-harbour.json",
+        include_str!("../../../../resources/themes/openmixer-harbour.json"),
+    ),
 ];

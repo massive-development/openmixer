@@ -12,6 +12,8 @@ Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for kno
 - Sampler drawer open: ![Sampler open, dark](docs/screenshots/sampler-open-dark.png)
 - Stems tab: ![Stems page](docs/screenshots/stems-page.png)
 
+Built-in themes: Midnight Glass (`dark`, the default), Daylight Frost (`daylight`) and Harbour Night (`harbour`). Pick one under Settings, Appearance. Harbour Night has no screenshot yet.
+
 ## Mission
 
 OpenMixer is a clean-room, legally original implementation of professional DJ software features. Our goal is a program a working DJ would choose over what they use now: djay-Pro-class capability (multi-deck mixing, effects, sync, BPM/key analysis, stem separation, Automix, controller support) with an interface that reads at a glance, all without copying any copyrighted expression from existing applications. The bar is in [docs/PRODUCT.md](docs/PRODUCT.md).
