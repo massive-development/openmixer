@@ -20,6 +20,8 @@ use std::time::Instant;
 pub const MAX_DEVICE_CHANNELS: usize = 16;
 /// Block size used when the device leaves the buffer size to the backend.
 pub const DEFAULT_BLOCK: usize = 512;
+/// Device buffer size asked for when the user has not chosen one: about 6 ms at 44.1 kHz.
+const PREFERRED_BUFFER: u32 = 256;
 
 /// Sample rates offered when the device lists its ranges (checked against them).
 pub const COMMON_RATES: [u32; 6] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
@@ -210,6 +212,16 @@ impl CpalAudioDevice {
             {
                 (BufferSize::Fixed(frames), frames as usize)
             }
+            (requested, cpal::SupportedBufferSize::Range { min, max }) => {
+                // No request, or one the device cannot honour: the nearest supported size to it, so
+                // the host's large default period does not set the latency.
+                let wanted = requested.unwrap_or(PREFERRED_BUFFER);
+                if requested.is_some() {
+                    tracing::warn!(wanted, "buffer size not supported, using the nearest");
+                }
+                let frames = wanted.clamp(*min, *max);
+                (BufferSize::Fixed(frames), frames as usize)
+            }
             (Some(frames), _) => {
                 tracing::warn!(
                     frames,
@@ -302,6 +314,16 @@ impl AudioCallback for Idle {
 }
 
 impl Render {
+    /// Audio thread. Playback minus callback time is this block plus whatever the driver and
+    /// hardware add; only the part beyond the block is device latency.
+    fn note_device_latency(&self, frames: usize, info: &OutputCallbackInfo) {
+        let stamp = info.timestamp();
+        let ahead = stamp.playback.duration_since(stamp.callback).as_secs_f64();
+        let device_frames = (ahead * self.sample_rate) as usize;
+        self.monitor
+            .set_device_latency(0, device_frames.saturating_sub(frames));
+    }
+
     /// Audio thread. Renders `data` (interleaved) in blocks of at most `self.block` frames.
     fn run(&mut self, data: &mut [f32]) {
         let started = Instant::now();
@@ -379,7 +401,10 @@ impl AudioDevice for CpalAudioDevice {
             .device
             .build_output_stream::<f32, _, _>(
                 self.config,
-                move |data: &mut [f32], _: &OutputCallbackInfo| render.run(data),
+                move |data: &mut [f32], info: &OutputCallbackInfo| {
+                    render.note_device_latency(data.len() / channels, info);
+                    render.run(data);
+                },
                 move |err: cpal::Error| match err.kind() {
                     ErrorKind::Xrun => {
                         counters.xruns.fetch_add(1, Relaxed);
