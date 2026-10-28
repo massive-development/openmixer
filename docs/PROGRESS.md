@@ -20,7 +20,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 3 | Analysis | 🟡 (htdemucs model export and app wiring, 19, open) |
 | 4 | Library | 🟡 (crates open) |
 | 5 | UI | 🟡 (LookAndFeel 25 partial (library table, scroll thumb, automix switch, platter switch, transport pills, settings chips and card, debug column restyled); stem pads 30 done at logic and view level, not checked by ear; decks, mixer and settings partial; staged screenshots checked by eye, a live display not checked) |
-| 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 36 mapping editor at logic and view level, not verified with hardware; 34 and 35 open) |
+| 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 36 mapping editor at logic and view level, not verified with hardware; 34 generic maps and selection built, not verified with a device; 35 open) |
 | 7 | Intelligence | 🟡 (37 stem DSP, 38 Automix and 39 stem transitions done at engine and logic level, not heard; 40 sampler partial) |
 | 8 | Pro surface | ⬜ |
 | 9 | Release | ⬜ |
@@ -113,7 +113,7 @@ Goal: reliable, low-latency playback of two decks through a mixer, controllable 
 
 | Todo | Entails | Done | Missing |
 |------|---------|------|---------|
-| 34 Controller maps | Plug-and-play maps for popular controllers | — | All (`fixtures/controllers` holds test fixtures only) |
+| 34 Controller maps | Plug-and-play maps | Schema check, port-name selection, two original generic maps (`resources/controllers/`), trace replay tests | Real-device verification; maps for named controllers (`fixtures/controllers` still holds test fixtures only) |
 | 35 HID layer | Non-MIDI controllers | — | All |
 | 36 Mapping editor UI | In-app learn and edit | Done at logic and view level: `om-midi::MapEditor` (add, delete, duplicate, undo and redo, conflicts, learn, save with `.bak`, import, export, reset), `om-ui::mapping_editor::MappingEditorPage`, the Mapping settings tab, `AppComposition::mapping_editor()`. Learn is polled every frame by the window pump. Not verified with hardware. Below the fold at 1280x800 (form, monitor, status) is documented in `docs/screenshots/REVIEW.md` | Hardware learn not verified; the tab's form and monitor are below the fold at 1280x800 and not in the capture |
 
