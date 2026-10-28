@@ -9,6 +9,7 @@
 #[cfg(target_os = "linux")]
 mod alsa_backend;
 mod backend;
+mod catalog;
 mod echo;
 mod editor;
 mod error;
@@ -33,6 +34,9 @@ pub use alsa_backend::AlsaBackend;
 pub use backend::{
     system_backend, MidiBackend, MidiCallback, MidiInputConnection, MidiOutputPort, MidiPortInfo,
     PortSnapshot,
+};
+pub use catalog::{
+    check_map, check_map_json, normalize_device_name, select_map, MapCandidate, MapChoice,
 };
 pub use echo::{EchoGuard, ECHO_WINDOW};
 pub use editor::{
