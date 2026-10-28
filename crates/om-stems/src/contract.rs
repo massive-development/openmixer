@@ -1,9 +1,11 @@
 //! The I/O contract between the pipeline and an exported separation model.
 //!
-//! Nothing here was checked against a real exported htdemucs graph: that export is a user step
-//! (`tools/export_htdemucs.py`) and the file is not in the repository. The contract is therefore
-//! explicit data that travels in the model manifest, and the default ([`ModelContract::htdemucs`])
-//! describes the variant `tools/export_htdemucs.py` produces:
+//! The contract is explicit data that travels in the model manifest. Two variants exist:
+//! [`ModelContract::htdemucs_split`] (STFT outside the graph) is what `tools/export_htdemucs.py`
+//! produces; it was checked against the real exported graph and Demucs' own output
+//! (`tests/htdemucs_reference.rs`). The in-graph variant below ([`ModelContract::htdemucs`], the
+//! default when a manifest has no `contract`) does not export with current PyTorch ("STFT does not
+//! currently support complex types") and is exercised only with fake models. It describes:
 //!
 //! * input `mix`, `float32 [1, 2, segment_samples]`, the stereo segment at `sample_rate`,
 //!   already normalised by the pipeline (mean removed, divided by the standard deviation);
@@ -11,11 +13,9 @@
 //! * the STFT and inverse STFT run INSIDE the exported graph (Demucs' time and frequency branches
 //!   are summed there), so no spectrogram crosses the boundary.
 //!
-//! The plan's Open Decision 2 prefers the STFT outside the graph (the graph then takes `z`,
-//! `float32 [1, 4, n_fft/2, frames]` complex-as-channels, and returns the frequency-branch
-//! spectrum too, as in the ONNX exports of `demucs.onnx`). The pipeline supports that variant via
-//! `spec_input` / `spec_output` and [`crate::Spectral`], but it is exercised only with fake
-//! models.
+//! The split variant takes `z`, `float32 [1, 4, n_fft/2, frames]` complex-as-channels, and returns
+//! the frequency-branch spectrum `zout` `[1, 4, 4, n_fft/2, frames]` next to the time-branch
+//! waveform `stems`; the pipeline inverts `zout` with [`crate::Spectral`] and adds the two.
 
 use crate::separator::StemKind;
 use serde_json::{json, Value};
@@ -67,6 +67,16 @@ impl ModelContract {
                 StemKind::Other,
                 StemKind::Vocals,
             ],
+        }
+    }
+
+    /// The variant `tools/export_htdemucs.py` produces: the STFT and inverse STFT run in Rust
+    /// ([`crate::Spectral`]), the graph takes `mix` and `z` and returns `stems` and `zout`.
+    pub fn htdemucs_split() -> Self {
+        Self {
+            spec_input: Some("z".into()),
+            spec_output: Some("zout".into()),
+            ..Self::htdemucs()
         }
     }
 
