@@ -166,7 +166,8 @@ crates/
 ├── om-testing/   # Test-only helpers shared by the crates (WAV fixtures, signal generators); dev-dependency only
 └── openmixer/    # Binary and composition root: --smoke, --mock-device, settings, plugins
 examples/plugins/gain-plugin/           # Example in-process plugin
-examples/plugins/gain-plugin-cdylib/    # Example C-ABI plugin, built as a shared library
+examples/plugins/gain-plugin-cdylib/    # Example C-ABI plugin (ABI 1), built as a shared library
+examples/plugins/param-plugin-cdylib/   # Example C-ABI plugin (ABI 2: prepare, parameters)
 fixtures/                               # Small test inputs: controller maps and traces, library exports
 resources/fonts/                        # Bundled Inter (SIL OFL 1.1) interface font
 resources/themes/                       # Built-in theme JSON
@@ -217,7 +218,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - Automix is not verified by ear (mock device only). It asks the prep queue to analyse tracks it had to skip as not analysed (up to 3 times per track, then it gives up and reports via `last_error`); that retry loop is not heard by ear. Stem transitions (Todo 39) are tested on the engine but not heard; the stem separation backend (Todo 19) is still open
 - The real htdemucs model (Todo 19): the export script is unverified against the I/O contract, and nothing has been run or listened to. The ONNX backend is behind the off-by-default `onnx` feature, and its CI job is non-blocking. The separator interface and the licence-gated downloads are done
 - HID (Todo 35) and plug-and-play controller maps (Todo 34). The mapping editor (Todo 36) is done at logic and view level; it is not verified with hardware
-- Dynamic plugin loading (Todo 10a): shared libraries load over a versioned C ABI (`PluginLoader::load`, ADR in `docs/spikes/DECISIONS.md`) and are tested with in-tree plugins only; nothing third-party has been tried. Plugins must catch their own panics, and the vtable has no prepare, sample-rate or parameters yet
+- Dynamic plugin loading (Todo 10a): shared libraries load over a versioned C ABI (`PluginLoader::load`, ADR in `docs/spikes/DECISIONS.md`) (ABI 2 has `prepare`, sample rate and parameters; ABI 1 plugins still load). They are tested with in-tree plugins, one of them built from the C header alone (`crates/om-plugins/include/openmixer_plugin.h`); nothing from another language or a real third party has been tried. Plugins must catch their own panics and report a fault; the host passes audio through for a faulted instance
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: later. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer. The staged screenshots were checked by eye (`docs/screenshots/REVIEW.md`), but no live window on a real display has been checked
 - LookAndFeel (25): `om_ui::style` derives every control style from the tokens and the gpui controls draw from it; the library table, its scroll thumb and the automix switch draw from the new scroll bar, table and toggle styles; the platter switch, transport toggle pills, settings chips (MIDI toggles included), the settings card and the debug column draw from it too; the settings mapping table, Stems and Appearance text and menus are still on the old paths, and nothing has been checked on a live display. See "Styling a control" in `agents.md`. The debug panel's per-deck load and play (26a) is wired
