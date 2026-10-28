@@ -37,7 +37,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 |------|---------|--------|
 | Repo, governance, legal | AGPLv3 licence, clean-room ADRs (ADR 0004 records the Rust + GPUI stack), contributing guide and code of conduct, asset provenance record, licence check | ✅ |
 | Build system | Cargo workspace (resolver 2, shared lints that forbid `unsafe` outside the FFI crate), `rust-toolchain.toml`, `cargo deny` licence policy | ✅ |
-| CI | `.github/workflows/rust.yml`: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, the headless and ffmpeg test runs, and `cargo deny` on Linux | ✅ Linux only (the check matrix is `ubuntu-latest`; macOS and Windows return in the porting phase, see `docs/spikes/DECISIONS.md`, 'CI status by platform'). Also a blocking `onnx` job and a weekly `soak` job (first manual run 2026-10-28, see issue #133). |
+| CI | `.github/workflows/rust.yml`: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, the headless and ffmpeg test runs, and `cargo deny` on Linux | ✅ Linux only (the check matrix is pinned to `ubuntu-24.04`, not `ubuntu-latest`, which moves to Ubuntu 26; macOS and Windows return in the porting phase, see `docs/spikes/DECISIONS.md`, 'CI status by platform'). Also a blocking `onnx` job and a weekly `soak` job (first manual run 2026-10-28, see issue #133). |
 | Test harness | `cargo test`; `openmixer --smoke` mode (prints `smoke ok`, exit 0) checked by an integration test | ✅ |
 
 **Missing:** packaging.
