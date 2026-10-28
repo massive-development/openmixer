@@ -36,7 +36,13 @@ impl TapeStopFx {
     /// beyond the buffer is outside the design and falls back to the exact modulo.
     fn slot(&self, index: i64, size: i64) -> usize {
         let s = self.head as i64 - (self.written - index);
-        (if s >= 0 { s } else if s >= -size { s + size } else { s.rem_euclid(size) }) as usize
+        (if s >= 0 {
+            s
+        } else if s >= -size {
+            s + size
+        } else {
+            s.rem_euclid(size)
+        }) as usize
     }
 
     fn read_at(&self, channel: usize, position: f64) -> f32 {
@@ -91,7 +97,11 @@ impl Effect for TapeStopFx {
             self.history[0][self.head] = *l;
             self.history[1][self.head] = *r;
             self.written += 1;
-            self.head = if self.head + 1 == size { 0 } else { self.head + 1 };
+            self.head = if self.head + 1 == size {
+                0
+            } else {
+                self.head + 1
+            };
             let gain = (1.0_f64).min(self.speed / SILENCE_BELOW_SPEED) as f32;
             *l = self.read_at(0, self.read_pos) * gain;
             *r = self.read_at(1, self.read_pos) * gain;
