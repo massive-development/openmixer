@@ -72,6 +72,8 @@ pub struct ParamSet {
     targets: Arc<[AtomicF32; MAX_PARAMS]>,
     block_targets: [f32; MAX_PARAMS],
     smoothers: [Smoother; MAX_PARAMS],
+    /// Every smoother sits on this block's target, so `tick` would change nothing.
+    settled: bool,
     len: usize,
 }
 
@@ -82,6 +84,7 @@ impl ParamSet {
             targets: Arc::new(std::array::from_fn(|_| AtomicF32::new(0.0))),
             block_targets: [0.0; MAX_PARAMS],
             smoothers: [Smoother::default(); MAX_PARAMS],
+            settled: false,
             len: 0,
         };
         for spec in specs.iter().take(MAX_PARAMS) {
@@ -146,10 +149,15 @@ impl ParamSet {
         for i in 0..self.len {
             self.block_targets[i] = self.targets[i].load();
         }
+        // A smoother on its target stays there (`step` is a fixed point), so ticking can be skipped.
+        self.settled = (0..self.len).all(|i| self.smoothers[i].current() == self.block_targets[i]);
     }
 
     /// Advance all smoothers by one sample; call once per rendered sample.
     pub fn tick(&mut self) {
+        if self.settled {
+            return;
+        }
         for i in 0..self.len {
             self.smoothers[i].step(self.block_targets[i]);
         }
