@@ -469,7 +469,18 @@ impl Shell {
             )
     }
 
+    /// One placed cell. Tagged with a debug selector (`deck:N`, `slot:NAME`) so headless tests can
+    /// read back the bounds it was laid out at; the tag is a no-op without gpui's `test-support`.
     fn cell_view(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
+        let tag = match &cell.kind {
+            CellKind::Deck(index) => format!("deck:{index}"),
+            CellKind::Slot(name) => format!("slot:{name}"),
+            CellKind::Rows(_) => "rows".to_owned(),
+        };
+        self.cell_content(cell, cx).debug_selector(|| tag)
+    }
+
+    fn cell_content(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
         let t = &self.theme;
         match &cell.kind {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
