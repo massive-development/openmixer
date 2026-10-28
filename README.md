@@ -8,6 +8,9 @@ Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for kno
 
 - Main window, dark theme: ![Main window, dark](docs/screenshots/main-dark.png)
 - Main window, daylight theme: ![Main window, daylight](docs/screenshots/main-daylight.png)
+- Deck looped, meters lit: ![Meters lit, dark](docs/screenshots/meters-lit-dark.png)
+- Sampler drawer open: ![Sampler open, dark](docs/screenshots/sampler-open-dark.png)
+- Stems tab: ![Stems page](docs/screenshots/stems-page.png)
 
 ## Mission
 
@@ -181,7 +184,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 3 | Analysis pipeline | 🟡 Partial: stem separation runs on the mock separator; the htdemucs export and a real-model run (19) are open |
 | 4 | Library and data | 🟡 Done except crates and tags, the Traktor and Serato importers, smart filters and ranking |
 | 5 | User interface | 🟡 Partial: LookAndFeel (25) is partly restyled; decks, mixer and settings partial; stem pads (30) done at logic and view level |
-| 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); the mapping editor (36) is in at logic and view level (Settings > Mapping, MIDI learn into it; not verified with hardware); controller maps (34) and HID (35) are open |
+| 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); the mapping editor (36) is in at logic and view level (Settings > Mapping, MIDI learn into it; not verified with hardware); generic controller maps (34) are built and not verified with a device, named-controller maps and HID (35) are open |
 | 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; Automix is in (planner, controller, library queue, Automix settings page, main-window bar; not heard, mock device only); stem separation is unproven; stem transitions are tested on the engine, not heard |
 | 8 | Pro features (recording, broadcast, DVS, video) | 🟡 Partial: mix recording (master-output WAV, ids, prefs, Recording settings tab, header Record button and `r` shortcut; not heard); broadcast, DVS and video not started |
 | 9 | Release | ⬜ Not started |
