@@ -98,8 +98,87 @@ fn view_code_has_no_raw_colour_literals() {
     );
 }
 
+/// Files whose controls draw every colour from a `LookAndFeel` style. They may not read a colour
+/// token off `ThemeTokens` (`t.well`, `t.text_primary`, ...); the style carries it.
+const MIGRATED: &[&str] = &[
+    "debug_panel.rs",
+    "settings_view/chips.rs",
+    "settings_view/overlay.rs",
+];
+
+/// Colour fields of `ThemeTokens` that view code must reach through `LookAndFeel` instead.
+const COLOUR_TOKENS: &[&str] = &[
+    "accent_for",
+    "accents",
+    "backdrop_top",
+    "backdrop_bottom",
+    "border",
+    "border_strong",
+    "brand",
+    "cap_top",
+    "danger",
+    "drop_target",
+    "focus_ring",
+    "on_accent",
+    "popup",
+    "readout",
+    "readout_dim",
+    "shadow",
+    "surface",
+    "surface_hover",
+    "surface_raised",
+    "text_muted",
+    "text_primary",
+    "text_secondary",
+    "warning",
+    "well",
+];
+
+/// Colour token reads (`t.well`) in `text`, as `line: text` strings. A `t.` that continues an
+/// identifier (`light.`, `look.`) is not a read of the theme.
+fn token_reads(text: &str) -> Vec<String> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim_start().starts_with("//"))
+        .filter(|(_, line)| {
+            line.match_indices("t.").any(|(at, _)| {
+                let before = line[..at].chars().next_back();
+                let starts_ident =
+                    before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.');
+                let name: String = line[at + 2..]
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                !starts_ident && COLOUR_TOKENS.contains(&name.as_str())
+            })
+        })
+        .map(|(n, line)| format!("{}: {}", n + 1, line.trim()))
+        .collect()
+}
+
+#[test]
+fn migrated_controls_read_colours_from_the_look_and_feel() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut found = Vec::new();
+    for file in MIGRATED {
+        let text = fs::read_to_string(src.join(file)).expect("migrated file readable");
+        for v in token_reads(&text) {
+            found.push(format!("{file}:{v}"));
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "theme colour tokens read directly in migrated controls (use LookAndFeel):\n{}",
+        found.join("\n")
+    );
+}
+
 #[test]
 fn the_lint_catches_what_it_claims_to_catch() {
+    assert_eq!(token_reads("    .bg(paint(t.well))").len(), 1);
+    assert_eq!(token_reads("    .bg(paint(look.popup.fill))").len(), 0);
+    assert_eq!(token_reads("    .text_size(px(t.type_small))").len(), 0);
+
     assert_eq!(violations("    .bg(gpui::rgba(0x2a_6f_9e_40))").len(), 1);
     assert_eq!(
         violations("let c = Colour::from_argb(0xFF38_BDF8);").len(),

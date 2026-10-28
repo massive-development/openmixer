@@ -716,8 +716,8 @@ mod sidebar_tests {
     use om_ui::style::{contrast_ratio, over};
     use om_ui::theme::{parse_theme, BUILTIN_THEMES};
 
-    fn themes() -> [ThemeTokens; 2] {
-        ["dark", "daylight"].map(|id| {
+    fn themes() -> [ThemeTokens; 3] {
+        ["dark", "daylight", "harbour"].map(|id| {
             let (_, json) = BUILTIN_THEMES
                 .iter()
                 .find(|(file, _)| file.contains(id))

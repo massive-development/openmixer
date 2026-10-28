@@ -24,6 +24,9 @@ pub enum SourceError {
     },
     #[error("unsupported or unreadable audio: {0}")]
     Unsupported(String),
+    #[cfg(feature = "ffmpeg")]
+    #[error(transparent)]
+    Ffmpeg(#[from] crate::decode_ffmpeg::DecodeError),
 }
 
 /// Describes a probed file. `length_frames` is exact: when the container does not state it, the
@@ -35,8 +38,105 @@ pub struct TrackInfo {
     pub channels: usize,
 }
 
-/// Stereo source frames read from a file, decoded on demand.
-pub struct SourceReader {
+/// Stereo source frames read from a file: decoded on demand by symphonia, or (with the `ffmpeg`
+/// feature, for formats symphonia rejects) decoded once by ffmpeg and held in memory.
+pub enum SourceReader {
+    Stream(Box<StreamReader>),
+    #[cfg(feature = "ffmpeg")]
+    Memory(MemoryReader),
+}
+
+/// Rate ffmpeg decodes to; the deck resamples from the source rate, so any fixed rate works.
+#[cfg(feature = "ffmpeg")]
+const FFMPEG_RATE: u32 = 48_000;
+/// Most ffmpeg PCM a deck holds (about 11 minutes of stereo `f32` at [`FFMPEG_RATE`]).
+#[cfg(feature = "ffmpeg")]
+const FFMPEG_MAX_BYTES: usize = 256 * 1024 * 1024;
+
+impl SourceReader {
+    /// Probes `path` and prepares a reader positioned at frame 0. A format symphonia rejects goes
+    /// to ffmpeg when the feature is on and ffmpeg is installed; otherwise symphonia's error stays.
+    pub fn open(path: &Path) -> Result<Self, SourceError> {
+        match StreamReader::open(path) {
+            Ok(r) => Ok(Self::Stream(Box::new(r))),
+            #[cfg(feature = "ffmpeg")]
+            Err(SourceError::Unsupported(why)) => MemoryReader::open(path, why).map(Self::Memory),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn info(&self) -> TrackInfo {
+        match self {
+            Self::Stream(r) => r.info(),
+            #[cfg(feature = "ffmpeg")]
+            Self::Memory(r) => r.info(),
+        }
+    }
+
+    /// True once a packet failed to read or decode (as opposed to the stream simply ending).
+    pub fn damaged(&self) -> bool {
+        match self {
+            Self::Stream(r) => r.damaged(),
+            #[cfg(feature = "ffmpeg")]
+            Self::Memory(_) => false,
+        }
+    }
+
+    /// Fills `dst` with stereo frames from source frame `from`; see [`StreamReader::read_stereo`].
+    pub fn read_stereo(&mut self, from: i64, dst: &mut [[f32; 2]]) -> usize {
+        match self {
+            Self::Stream(r) => r.read_stereo(from, dst),
+            #[cfg(feature = "ffmpeg")]
+            Self::Memory(r) => r.read_stereo(from, dst),
+        }
+    }
+}
+
+/// Whole file decoded by ffmpeg into stereo frames.
+#[cfg(feature = "ffmpeg")]
+pub struct MemoryReader {
+    frames: Vec<[f32; 2]>,
+}
+
+#[cfg(feature = "ffmpeg")]
+impl MemoryReader {
+    /// `why` is symphonia's error, returned when no ffmpeg is installed.
+    fn open(path: &Path, why: String) -> Result<Self, SourceError> {
+        use crate::decode_ffmpeg::{decode_with_ffmpeg_capped, DecodeError};
+        match decode_with_ffmpeg_capped(path, FFMPEG_RATE, FFMPEG_MAX_BYTES) {
+            Ok(audio) => Ok(Self {
+                frames: audio
+                    .samples
+                    .chunks_exact(2)
+                    .map(|f| [f[0], f[1]])
+                    .collect(),
+            }),
+            Err(DecodeError::FfmpegMissing) => Err(SourceError::Unsupported(why)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn info(&self) -> TrackInfo {
+        TrackInfo {
+            sample_rate: f64::from(FFMPEG_RATE),
+            length_frames: self.frames.len() as i64,
+            channels: 2,
+        }
+    }
+
+    fn read_stereo(&mut self, from: i64, dst: &mut [[f32; 2]]) -> usize {
+        let start = usize::try_from(from.max(0))
+            .unwrap_or(usize::MAX)
+            .min(self.frames.len());
+        let n = dst.len().min(self.frames.len() - start);
+        dst[..n].copy_from_slice(&self.frames[start..start + n]);
+        dst[n..].fill([0.0, 0.0]);
+        n
+    }
+}
+
+/// Symphonia-backed reader.
+pub struct StreamReader {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
     track_id: u32,
@@ -55,9 +155,9 @@ pub struct SourceReader {
     damaged: bool,
 }
 
-impl SourceReader {
+impl StreamReader {
     /// Probes `path` and prepares a reader positioned at frame 0.
-    pub fn open(path: &Path) -> Result<Self, SourceError> {
+    fn open(path: &Path) -> Result<Self, SourceError> {
         let file = File::open(path).map_err(|source| SourceError::Io {
             path: path.display().to_string(),
             source,
@@ -119,13 +219,13 @@ impl SourceReader {
         Ok(reader)
     }
 
-    pub fn info(&self) -> TrackInfo {
+    fn info(&self) -> TrackInfo {
         self.info
     }
 
     /// True once a packet failed to read or decode (as opposed to the stream simply ending). A
     /// plain end of file does not set it.
-    pub fn damaged(&self) -> bool {
+    fn damaged(&self) -> bool {
         self.damaged
     }
 
@@ -133,7 +233,7 @@ impl SourceReader {
     /// to both sides; files with more than two channels contribute their first two. Frames past
     /// the end (or that fail to decode) are silence. Returns how many frames came from the decoder;
     /// the rest of `dst` is silence and must not be mistaken for audio.
-    pub fn read_stereo(&mut self, from: i64, dst: &mut [[f32; 2]]) -> usize {
+    fn read_stereo(&mut self, from: i64, dst: &mut [[f32; 2]]) -> usize {
         let from = from.max(0);
         if from != self.pos {
             self.seek_to(from);

@@ -1,0 +1,105 @@
+{
+  "name": "OpenMixer Generic 8 Knob 8 Pad",
+  "version": 2,
+  "device": "Generic 8 Knob 8 Pad",
+  "_origin": "Original work for OpenMixer. Clean-room: written from the MIDI 1.0 specification and OpenMixer's own parameter ids only; no vendor mapping file, manual or other DJ software was consulted, copied or derived from. Licence: AGPL-3.0-only, like the repository.",
+  "_layout": "Knobs 1-8 send CC 16-23 on channel 1 (general purpose controllers 1-8). Pads 1-8 send notes 36-43 on channel 10 (the General MIDI percussion channel).",
+  "mappings": [
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 16,
+      "target": "mixer.ch0.filter"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 17,
+      "target": "mixer.ch1.filter"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 18,
+      "target": "mixer.ch2.filter"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 19,
+      "target": "mixer.ch3.filter"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 20,
+      "target": "mixer.master"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 21,
+      "target": "mixer.cue.level"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 22,
+      "target": "mixer.cue.mix"
+    },
+    {
+      "type": "cc",
+      "channel": 1,
+      "number": 23,
+      "target": "mixer.crossfader"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 36,
+      "target": "sampler.pad0.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 37,
+      "target": "sampler.pad1.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 38,
+      "target": "sampler.pad2.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 39,
+      "target": "sampler.pad3.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 40,
+      "target": "sampler.pad4.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 41,
+      "target": "sampler.pad5.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 42,
+      "target": "sampler.pad6.trigger"
+    },
+    {
+      "type": "note",
+      "channel": 10,
+      "number": 43,
+      "target": "sampler.pad7.trigger"
+    }
+  ]
+}

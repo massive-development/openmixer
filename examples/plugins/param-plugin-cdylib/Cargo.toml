@@ -1,0 +1,20 @@
+[package]
+name = "param-plugin-cdylib"
+description = "Example OpenMixer C-ABI v2 plugin with prepare and parameters, built independently of the host crates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# No dependencies, not even om-plugins: the plugin sees only the C header
+# (`crates/om-plugins/include/openmixer_plugin.h`), mirrored in src/lib.rs, as an out-of-tree plugin would.
+
+[lib]
+crate-type = ["cdylib"]
+
+# The workspace forbids unsafe code. A C-ABI plugin needs `#[no_mangle]` and raw-pointer access at
+# the boundary, so this crate denies it and allows it only on the exported functions.
+[lints.rust]
+unsafe_code = "deny"
