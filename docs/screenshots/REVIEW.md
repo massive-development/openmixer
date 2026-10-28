@@ -27,6 +27,8 @@ The first review listed 13 defects. A fix pass followed with `tools/screenshots.
 
 ## Wave 7 stem pads (`main-stems`, 2026-10-19)
 
+Superseded by the redesign: the stem pads now live on the deck's STEMS tab (`stems-page.png`). `main-stems.png` is the main window with deck A's stems loaded (library column "Ready"), so it looks like `main-dark.png`. The notes below describe the pre-redesign card.
+
 Scene: `tools/screenshots.sh main-stems` runs `--demo-library --mock-stems`: deck A's track is separated by the mock separator and its stems are loaded, so the pads are live. Deck B has no track. Three capture iterations; `main-dark` and `main-daylight` were recaptured because every deck card gained the stems row.
 
 | Found in the first capture | Status | What changed |
@@ -42,12 +44,12 @@ Remaining observations (not fixed):
 
 ## Sampler strip (Wave 7 P4, 2026-10-20)
 
-The sampler strip sits in the library band, right of the library, in every main-window scene. `--demo-library` loads eight generated samples so the pads are full. Two captures were checked by eye (`sampler-dark.png` and `sampler-daylight.png` beside this file): pad names, the caption, the mode and gain/pitch controls all fit and read at 1280x800, the selected pad carries the accent border, and daylight contrast is fine.
+The sampler strip sits in the library band, right of the library, in every main-window scene. `--demo-library` loads eight generated samples so the pads are full. Two captures were checked by eye (`sampler-dark.png` and `sampler-daylight.png`, recaptured on 2026-10-27 as `sampler-open-dark.png` and `sampler-open-daylight.png`, beside this file): pad names, the caption, the mode and gain/pitch controls all fit and read at 1280x800, the selected pad carries the accent border, and daylight contrast is fine.
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Overlaps or clipping in the strip | none seen | Both captures show every pad, the caption and all six controls inside the strip. The layout test checks the same at four window sizes. |
-| `main-dark` and `main-daylight` predate the strip | not recaptured | `tools/screenshots.sh` takes at least two captures per scene; regenerate those two scenes to refresh them. |
+| `main-dark` and `main-daylight` predate the strip | fixed | Recaptured 2026-10-27 on the redesigned UI; the sampler is the collapsed SAMPLER tab at the right of the library band, and `sampler-open-*` shows it open. |
 | Lit (playing) pad and gate hold | not captured | A capture needs a pad pressed on screen; the press path is covered by the UI gate. |
 
 ## Automix bar (Wave 7, `main-automix`, 2026-10-20)
@@ -132,3 +134,13 @@ Not fixed: each is a design call or sits in code outside this change.
 Status of the defects above (polish pass, branch `feat/ui-redesign-polish`): 1 FIXED for the labels ("Volume" and "Filter" inside each track, the filter's detent starts under the caption); the one shared accent colour stays, because no research source gives per-stem colours. 2 FIXED (pads, length chip and Loop switch dim to 40 % with no track, no hover). 3 FIXED for the scale (dB marks end 6 px from the bars, was 3; the master fader is 8 px from its meter, was 6; `meters-lit-dark` checked, and the channel meters get the same gap). The held-peak readout under the master (`0.0`, `-10.1`) was already drawn and shows in the capture. 4 FIXED (tinted fill plus a 3 px focus-colour bar; indicator 3:1, text 4.5:1, tested in both themes; bar width and 18 % tint are unsourced and small). 5 FIXED (play glyph in the label and an ink outline on the active pad; the 0.25 s window stays unsourced). 6 FIXED (a squeezed round button uses the 12 px floor; the word is unchanged; research asks for icon + word at 56 px, which does not fit 44 px). 7 NOT FIXED (demo value). 8 caption FIXED (shows mode, pitch and gain); a loaded pad now shows its key over its name (`5` / `Tone A`), so "Tone A" has about 8 px to spare each side at 1280x800 (was about 4 px on one line); `sampler-open-dark` checked. 6 is re-checked in `meters-lit-dark` and `cues-loop-dark`: "Pause" sits inside the 44 px circle with a clear rim (the 12 px floor, already on this branch).
 
 Checked and fine: platter on in both themes (disc, A label, position ring, marker, Platter switch lit, tabs unlit while it is open); playing sampler pad lit and readable in both themes; segmented meters, clip lamps and fader ticks in both themes; hot cue fills and the dashed "Set" pads in both themes; the stems tab layout (no clipping or overlap); the loop hatch over the waveform; the header (OPENMIXER, Automix, Notice chip, BPM, Record, Library, Settings) with no collisions; `track-preview` with a 24 s generated file (grid 124 BPM, waveform, meters).
+
+## Recapture of the tracked set (2026-10-27)
+
+All 21 scenes of `tools/screenshots.sh` were recaptured from HEAD with `OUT_DIR=docs/screenshots`. Why: the tracked `main-dark.png` (commit 38e00df, "refresh dark screenshot") still showed the pre-redesign window (boxed GAIN/EQ/FILTER sliders, old header), and `main-daylight.png` dated from 2026-10-23. The staged scenes listed above had never been committed. The knobs had not regressed: the rotary knobs for GAIN, HIGH/MID/LOW, FILTER and headphones MIX/VOL are in every main-window capture.
+
+Looked at by eye: `main-dark`, `main-daylight`, `main-stems`, `meters-lit-dark`, `sampler-open-dark`. The other captures were taken but not inspected.
+
+- `sampler-dark.png` and `sampler-daylight.png` are removed; `sampler-open-*` replace them.
+- `main-dark`, `main-daylight` and `main-stems` show empty waveforms: the capture is taken before the analysis finishes. `tools/screenshots.sh main-waveform` waits for it.
+- `main-stems` and `main-dark` look alike; see `stems-page` for the stems UI.
