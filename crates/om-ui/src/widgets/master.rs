@@ -14,7 +14,7 @@ use om_engine::mixer::MAX_GAIN;
 /// label gutter, so the +6 / 0 / -6 ... marks print (`faders-meters.md` section 3 master anatomy).
 pub const MASTER_FADER_WIDTH: i32 = 26 + 2 + 10 + 22;
 /// Gap between the master fader and its meter, in px.
-pub const FADER_METER_GAP: i32 = 6;
+pub const FADER_METER_GAP: i32 = 8;
 /// Height of the numeric peak readout under the meter, in px (12 px text, spec).
 pub const READOUT_HEIGHT: i32 = 16;
 /// Width the section needs: the fader, its gap and the labelled meter, plus the side padding.
