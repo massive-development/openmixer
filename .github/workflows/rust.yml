@@ -86,14 +86,14 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
 
-  # Non-blocking: the `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build
-  # downloads a prebuilt runtime, so it needs network). Off in the default build and in the jobs above.
-  # Remove `continue-on-error` once the first runs are green on a clean runner.
+  # The `onnx` feature of om-stems pulls ONNX Runtime (ort `download-binaries`: the build downloads a
+  # prebuilt runtime, so it needs network). Off in the default build and in the jobs above. Blocking
+  # since the real htdemucs graph was checked against the contract (`htdemucs_reference.rs`; its model
+  # test is `#[ignore]`d because the 174 MB graph is not in the repository).
   onnx:
-    name: onnx (linux, non-blocking)
+    name: onnx (linux)
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -116,8 +116,31 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # ort-sys downloads a prebuilt ONNX Runtime from cdn.pyke.io at build time. Cache it, so most runs
+      # never touch the CDN.
+      - name: Cache the ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      # The CDN has served a file whose hash did not match once (run 40648072742). That is a bad
+      # download, not a test failure: retry it, and only it. Any other failure fails the job at once.
       - name: cargo test -p om-stems --features onnx
-        run: cargo test -p om-stems --features onnx
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if cargo test -p om-stems --features onnx 2>&1 | tee "$RUNNER_TEMP/onnx.log"; then
+              exit 0
+            fi
+            if ! grep -q 'does not match the expected hash' "$RUNNER_TEMP/onnx.log"; then
+              exit 1
+            fi
+            echo "ONNX Runtime download failed its hash check (attempt $attempt); retrying"
+            rm -rf ~/.cache/ort.pyke.io
+            sleep 20
+          done
+          exit 1
 
   # The progress heatmap must match docs/progress.json (stdlib only).
   progress-check:
