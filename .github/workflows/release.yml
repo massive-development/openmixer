@@ -1,0 +1,105 @@
+# Builds the release binary and attaches it to the GitHub release.
+#
+#   - Pushing a tag `v*` builds it and creates the release if there is none yet (a tag with a `-`
+#     such as v0.1.0-alpha.2 is marked a pre-release).
+#   - "Run workflow" with a tag name attaches a binary to a release that already exists, for example
+#     to add one to a tag that was cut before this workflow was on the default branch.
+#   - A pull request that changes this file only builds and checks the binary; nothing is published.
+#
+# Linux x86_64 only, like the CI. macOS and Windows return in the porting phase.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach the binary to (for example v0.1.0-alpha.1)"
+        required: true
+  pull_request:
+    paths: [".github/workflows/release.yml"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  binary:
+    name: openmixer (linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.inputs.tag || (github.event_name == 'pull_request' && format('pr-{0}', github.event.number)) || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          # libclang-dev: bindgen (rubberband-sys, via om-stretch). The rest is the GPUI window.
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
+            libvulkan-dev libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked -p openmixer
+
+      - name: Check the binary starts
+        run: |
+          target/release/openmixer --version
+          target/release/openmixer --headless --smoke
+
+      - name: Package
+        id: pkg
+        shell: bash
+        run: |
+          name="openmixer-${TAG}-x86_64-linux"
+          mkdir -p "dist/$name"
+          cp target/release/openmixer LICENSE NOTICE README.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+          echo "archive=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          ls -l dist
+
+      - name: Keep the archive on pull requests
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmixer-linux-x86_64
+          path: dist/*.tar.gz*
+
+      - name: Attach to the release
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            flag=""
+            case "$TAG" in *-*) flag="--prerelease" ;; esac
+            gh release create "$TAG" $flag --verify-tag --title "$TAG" \
+              --notes "Linux x86_64 binary built by CI. Source: this tag."
+          fi
+          gh release upload "$TAG" "${{ steps.pkg.outputs.archive }}" "${{ steps.pkg.outputs.archive }}.sha256" --clobber
