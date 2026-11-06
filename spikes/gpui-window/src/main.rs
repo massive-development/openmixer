@@ -1,94 +1,75 @@
-//! THROWAWAY SPIKE (Task 6): GPUI window with a custom-painted scrolling waveform
-//! from synthetic data (2000 bars, sine mix) and an fps counter overlay.
+//! THROWAWAY SPIKE (#218): gpui-kit + cpal + midir in one binary.
+//! One gpui-component page (Button) and one custom-painted knob (canvas).
 //! Not production code; do not reuse.
-use gpui::{
-    canvas, div, fill, point, prelude::*, px, rgb, size, App, Application, Bounds, Context,
-    Window, WindowBounds, WindowOptions,
-};
-use std::time::Instant;
+use cpal::traits::HostTrait;
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::*;
 
-const BARS: usize = 2000;
-
-struct Waveform {
-    start: Instant,
-    last: Instant,
-    frames: u32,
-    fps: f32,
+struct Page {
+    info: String,
 }
 
-impl Render for Waveform {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // fps counter: recompute once per second.
-        self.frames += 1;
-        let dt = self.last.elapsed().as_secs_f32();
-        if dt >= 1.0 {
-            self.fps = self.frames as f32 / dt;
-            println!("fps {:.1}", self.fps); // spike: log so headless runs are checkable
-            self.frames = 0;
-            self.last = Instant::now();
-        }
-        // Ask for another frame immediately so we paint continuously.
-        window.request_animation_frame();
-
-        let t = self.start.elapsed().as_secs_f32();
+impl Render for Page {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let angle = 0.7_f32;
         div()
             .size_full()
             .bg(rgb(0x101418))
-            .relative()
+            .text_color(rgb(0xffffff))
+            .p_4()
+            .flex()
+            .flex_col()
+            .gap_4()
+            .child(Button::new("ok").primary().label("gpui-component button"))
+            .child(self.info.clone())
             .child(
                 canvas(
                     |_, _, _| (),
                     move |bounds, _, window, _| {
-                        let w = f32::from(bounds.size.width) / BARS as f32;
-                        let mid = f32::from(bounds.size.height) / 2.0;
-                        for i in 0..BARS {
-                            let x = i as f32 / BARS as f32 * 40.0 + t * 3.0;
-                            let a = 0.5 * (x * 1.0).sin()
-                                + 0.3 * (x * 2.7).sin()
-                                + 0.2 * (x * 7.1).sin();
-                            let h = (a.abs() * mid * 0.95).max(1.0);
-                            let origin = point(
-                                bounds.origin.x + px(i as f32 * w),
-                                bounds.origin.y + px(mid - h),
-                            );
-                            window.paint_quad(fill(
-                                Bounds::new(origin, size(px(w.max(1.0)), px(h * 2.0))),
-                                rgb(0x3fb6ff),
-                            ));
-                        }
+                        // Knob body: a rounded quad with full radius = circle.
+                        let d = f32::from(bounds.size.height.min(bounds.size.width));
+                        let body = Bounds::new(bounds.origin, size(px(d), px(d)));
+                        window.paint_quad(quad(
+                            body,
+                            px(d / 2.0),
+                            rgb(0x2a3340),
+                            px(2.0),
+                            rgb(0x3fb6ff),
+                            BorderStyle::default(),
+                        ));
+                        // Indicator dot at `angle`.
+                        let r = d / 2.0 * 0.7;
+                        let c = d / 2.0;
+                        let dot = 6.0;
+                        let p = point(
+                            bounds.origin.x + px(c + r * angle.sin() - dot / 2.0),
+                            bounds.origin.y + px(c - r * angle.cos() - dot / 2.0),
+                        );
+                        window.paint_quad(fill(
+                            Bounds::new(p, size(px(dot), px(dot))),
+                            rgb(0xffffff),
+                        ));
                     },
                 )
-                .size_full(),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .top_2()
-                    .left_2()
-                    .text_color(rgb(0xffffff))
-                    .child(format!("{:.1} fps", self.fps)),
+                .size(px(96.0)),
             )
     }
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1000.), px(400.)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            |_, cx| {
-                cx.new(|_| Waveform {
-                    start: Instant::now(),
-                    last: Instant::now(),
-                    frames: 0,
-                    fps: 0.0,
-                })
-            },
-        )
-        .unwrap();
+    let host = cpal::default_host();
+    let out = host.output_devices().map(|d| d.count()).unwrap_or(0);
+    let midi_ports = midir::MidiInput::new("spike")
+        .map(|m| m.port_count())
+        .unwrap_or(0);
+    let info = format!("cpal output devices: {out}; midir input ports: {midi_ports}");
+    println!("{info}");
+    gpui_kit::application().run(move |cx| {
+        gpui_kit::init(cx);
+        gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| {
+            cx.new(|_| Page { info })
+        })
+        .expect("failed to open window");
         cx.activate(true);
     });
 }
