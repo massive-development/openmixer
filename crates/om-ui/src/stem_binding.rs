@@ -265,6 +265,8 @@ impl StemBinding {
         let (next, mutes) = state.press(stem, current);
         *state = next;
         drop(state);
+        // `fold`, not `all`: every stem must be sent even after one send fails (no short-circuit).
+        #[allow(clippy::unnecessary_fold)]
         (0..STEM_COUNT).fold(true, |ok, s| {
             self.send(s, StemParam::Mute, flag(mutes[s])) && ok
         })
