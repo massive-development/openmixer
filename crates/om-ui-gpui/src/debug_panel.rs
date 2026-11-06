@@ -178,7 +178,7 @@ pub fn decks_section(
             cx.listener(move |this, _: &MouseDownEvent, window, cx| {
                 this.deck_controls.begin(deck);
                 if let Some(focus) = this.debug_focus.clone() {
-                    focus.focus(window);
+                    focus.focus(window, cx);
                 }
                 cx.notify();
             }),

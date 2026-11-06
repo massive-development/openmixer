@@ -12,7 +12,7 @@ use crate::library::{KeyOutcome, LibraryPanel, RowView};
 use crate::paint::{paint, place, skin};
 use gpui::{
     div, prelude::*, px, AnyElement, App, Context, Div, FocusHandle, KeyDownEvent, MouseButton,
-    MouseDownEvent, Render, ScrollWheelEvent, Window,
+    MouseDownEvent, Render, ScrollEvent, Window,
 };
 use om_ui::geometry::Rect;
 use om_ui::library::{column_shown, columns, sort_glyph, MixLevel, SortGlyph, SEARCH_PLACEHOLDER};
@@ -91,9 +91,9 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .track_focus(&focus)
         .on_mouse_down(
             MouseButton::Left,
-            cx.listener(|this, _: &MouseDownEvent, window, _| {
+            cx.listener(|this, _: &MouseDownEvent, window, cx| {
                 if let Some(focus) = this.library_focus.clone() {
-                    focus.focus(window);
+                    focus.focus(window, cx);
                 }
             }),
         )
@@ -317,7 +317,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
             cx.listener(|this, _: &MouseDownEvent, window, cx| {
                 with_library(this, |p| p.search_active = true);
                 if let Some(focus) = this.library_focus.clone() {
-                    focus.focus(window);
+                    focus.focus(window, cx);
                 }
                 cx.notify();
             }),
@@ -426,7 +426,7 @@ pub fn library_card(shell: &mut Shell, bounds: Rect, cx: &mut Context<Shell>) ->
         .flex()
         .flex_col()
         .overflow_hidden()
-        .on_scroll_wheel(cx.listener(move |this, ev: &ScrollWheelEvent, _, cx| {
+        .on_scroll(cx.listener(move |this, ev: &ScrollEvent, _, cx| {
             let dy = f32::from(ev.delta.pixel_delta(px(row_h)).y);
             let lines = (-dy / row_h).round() as isize;
             if lines != 0 {

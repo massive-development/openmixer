@@ -66,6 +66,7 @@ pub fn shadow(el: Div, style: &ShadowStyle) -> Div {
         offset: point(px(0.), px(style.offset_y)),
         blur_radius: px(style.blur),
         spread_radius: px(0.),
+        inset: false,
     }])
 }
 

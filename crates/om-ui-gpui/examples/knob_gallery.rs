@@ -3,8 +3,8 @@
 //! here; it uses the built-in dark theme, or the daylight one with `--light`).
 
 use gpui::{
-    canvas, div, point, prelude::*, px, size, App, Application, Bounds, Context, Pixels, Window,
-    WindowBounds, WindowOptions,
+    canvas, div, point, prelude::*, px, size, App, Bounds, Context, Pixels, Window, WindowBounds,
+    WindowOptions,
 };
 use om_ui::style::LookAndFeel;
 use om_ui::theme::ThemeTokens;
@@ -124,7 +124,7 @@ impl Render for Gallery {
 
 fn main() {
     let light = std::env::args().any(|a| a == "--light");
-    Application::new().run(move |cx: &mut App| {
+    gpui_kit::application().run(move |cx: &mut App| {
         let tokens = if light {
             let (_, json) = om_ui::theme::BUILTIN_THEMES
                 .iter()

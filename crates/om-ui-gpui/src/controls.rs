@@ -17,7 +17,7 @@ use crate::meter_paint;
 use crate::paint::{paint, place, shadow, skin};
 use gpui::{
     canvas, div, prelude::*, px, Bounds, Context, Div, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseUpEvent, Pixels, ScrollWheelEvent, Window,
+    MouseUpEvent, Pixels, ScrollEvent, Window,
 };
 use om_ui::geometry::Rect;
 use om_ui::style::LookAndFeel;
@@ -491,7 +491,7 @@ pub fn knob_face_with(
                     cx.notify();
                 }),
             )
-            .on_scroll_wheel(cx.listener(move |this, ev: &ScrollWheelEvent, _, cx| {
+            .on_scroll(cx.listener(move |this, ev: &ScrollEvent, _, cx| {
                 let lines = f64::from(f32::from(ev.delta.pixel_delta(px(WHEEL_LINE_PX)).y))
                     / f64::from(WHEEL_LINE_PX);
                 if lines != 0.0 {

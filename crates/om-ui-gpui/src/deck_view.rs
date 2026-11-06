@@ -671,17 +671,15 @@ pub(crate) fn zoom(
             );
     }
 
-    el.on_scroll_wheel(
-        cx.listener(move |this, ev: &gpui::ScrollWheelEvent, _, cx| {
-            let dy = f32::from(ev.delta.pixel_delta(px(16.)).y);
-            // Both decks follow one time scale.
-            let step = this.decks[index].zoom.wheel(dy);
-            for deck in &mut this.decks {
-                deck.zoom.set_zoom_step(step);
-            }
-            cx.notify();
-        }),
-    )
+    el.on_scroll(cx.listener(move |this, ev: &gpui::ScrollEvent, _, cx| {
+        let dy = f32::from(ev.delta.pixel_delta(px(16.)).y);
+        // Both decks follow one time scale.
+        let step = this.decks[index].zoom.wheel(dy);
+        for deck in &mut this.decks {
+            deck.zoom.set_zoom_step(step);
+        }
+        cx.notify();
+    }))
 }
 
 /// Pitch fader metrics (px): the readout strip on top, then the fader (cap, centre notch and
