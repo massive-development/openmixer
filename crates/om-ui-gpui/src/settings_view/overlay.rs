@@ -89,7 +89,7 @@ impl Shell {
             return None;
         }
         if std::mem::take(&mut settings.focus_pending) {
-            focus.focus(window);
+            focus.focus(window, cx);
         }
         settings.poll_learn();
         settings.poll_midi_inputs(Instant::now());
@@ -174,7 +174,7 @@ impl Shell {
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |_, _: &MouseDownEvent, window, cx| {
-                click_focus.focus(window);
+                click_focus.focus(window, cx);
                 cx.stop_propagation();
             }),
         );

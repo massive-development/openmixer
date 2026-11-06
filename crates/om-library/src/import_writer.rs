@@ -95,8 +95,7 @@ impl<'a> ImportWriter<'a> {
         let existing = playlists
             .children(parent)?
             .into_iter()
-            .filter(|s| s.name == node.name && s.is_folder == node.is_folder)
-            .next_back();
+            .rfind(|s| s.name == node.name && s.is_folder == node.is_folder);
         let id = match existing {
             Some(sibling) => sibling.id,
             None => {

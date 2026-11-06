@@ -14,8 +14,8 @@ use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState};
 use crate::stage_view::stage_card;
 use gpui::{
-    div, prelude::*, px, size, App, Application, AsyncApp, Bounds, Context, FocusHandle,
-    KeyDownEvent, Window, WindowBounds, WindowOptions,
+    div, prelude::*, px, size, App, AsyncApp, Bounds, Context, FocusHandle, KeyDownEvent, Window,
+    WindowBounds, WindowOptions,
 };
 use om_analysis::WaveformData;
 use om_core::ParameterRouter;
@@ -623,7 +623,7 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
     let theme = load_theme();
     let frames_out = Arc::new(AtomicU64::new(0));
     let counter = Arc::clone(&frames_out);
-    Application::new().run(move |cx: &mut App| {
+    gpui_kit::application().run(move |cx: &mut App| {
         crate::font::register(cx);
         let requested = std::env::var("OPENMIXER_WINDOW")
             .ok()
@@ -638,9 +638,7 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
             // A foreground timer, not the render loop: it keeps running while the window is hidden.
             cx.spawn(async move |cx: &mut AsyncApp| loop {
                 cx.background_executor().timer(CONTROL_TICK).await;
-                if cx.update(|_| hook()).is_err() {
-                    break;
-                }
+                cx.update(|_| hook());
             })
             .detach();
         }
