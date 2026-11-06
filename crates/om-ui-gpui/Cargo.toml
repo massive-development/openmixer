@@ -12,7 +12,8 @@ description = "GPUI window layer for OpenMixer: drawing and event glue over om-u
 workspace = true
 
 [dependencies]
-gpui = "=0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.10" }
+gpui-kit = { version = "=0.8.1", default-features = false }
 om-analysis.workspace = true
 om-core.workspace = true
 om-engine.workspace = true
@@ -23,4 +24,4 @@ om-midi.workspace = true
 [dev-dependencies]
 om-testing.workspace = true
 tempfile.workspace = true
-gpui = { version = "=0.2.2", features = ["test-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.10", features = ["test-support"] }

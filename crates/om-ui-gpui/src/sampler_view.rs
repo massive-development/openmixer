@@ -146,7 +146,7 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
             cx.listener(move |this, _: &MouseDownEvent, window, cx| {
                 this.sampler_open = true;
                 if let Some(focus) = this.sampler_focus.clone() {
-                    window.focus(&focus);
+                    window.focus(&focus, cx);
                 }
                 cx.notify();
             }),
@@ -360,7 +360,7 @@ fn pad_tile(
     .on_mouse_down(
         MouseButton::Left,
         cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-            window.focus(&focus);
+            window.focus(&focus, cx);
             this.sampler_press(index);
             cx.notify();
         }),
