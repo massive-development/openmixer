@@ -72,18 +72,22 @@ struct Emitter<'a> {
 }
 
 impl<'a> Emitter<'a> {
-    fn new(sink: &'a mut dyn StemSink, model_rate: f64, src_rate: f64) -> Self {
-        let resamplers = ((model_rate - src_rate).abs() > 1e-6).then(|| {
-            (0..8)
-                .map(|_| StreamResampler::new(model_rate, src_rate))
-                .collect()
-        });
-        Self {
+    fn new(sink: &'a mut dyn StemSink, model_rate: f64, src_rate: f64) -> Result<Self, StemError> {
+        let resamplers = if (model_rate - src_rate).abs() > 1e-6 {
+            Some(
+                (0..8)
+                    .map(|_| StreamResampler::new(model_rate, src_rate))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
             sink,
             resamplers,
             pending: vec![Vec::new(); 8],
             written: 0,
-        }
+        })
     }
 
     fn write_split(
@@ -193,8 +197,8 @@ impl<I: StemInference> HtDemucsPipeline<I> {
         let weights = triangular(n);
         let resample_in = (model_rate - src_rate).abs() > 1e-6;
         let mut in_resamplers = [
-            StreamResampler::new(src_rate, model_rate),
-            StreamResampler::new(src_rate, model_rate),
+            StreamResampler::new(src_rate, model_rate)?,
+            StreamResampler::new(src_rate, model_rate)?,
         ];
         let total_model = input
             .total_frames()
@@ -211,7 +215,7 @@ impl<I: StemInference> HtDemucsPipeline<I> {
         let mut mix = vec![0.0f32; 2 * n];
         let mut out = SegmentOutput::default();
         let mut block: Vec<Vec<f32>> = vec![Vec::new(); 8];
-        let mut emitter = Emitter::new(sink, model_rate, src_rate);
+        let mut emitter = Emitter::new(sink, model_rate, src_rate)?;
         let mut segment_start = 0u64;
         let mut last_progress = 0.0f32;
         let mut report = |p: f32| {

@@ -88,9 +88,10 @@ impl ChannelStrip {
         let target = self.shared.channels[self.index].trim.load();
         let step = (target - self.trim_gain) / n as f32;
         let mut g = self.trim_gain;
-        for i in 0..n {
-            self.scratch_l[i] = src_l[i] * g;
-            self.scratch_r[i] = src_r[i] * g;
+        let out = self.scratch_l[..n].iter_mut().zip(&mut self.scratch_r[..n]);
+        for ((out_l, out_r), (l, r)) in out.zip(src_l[..n].iter().zip(&src_r[..n])) {
+            *out_l = l * g;
+            *out_r = r * g;
             g += step;
         }
         self.trim_gain = target;
@@ -101,11 +102,13 @@ impl ChannelStrip {
         let step = (target - self.fader_gain) / n as f32;
         let mut g = self.fader_gain;
         let (mut peak_l, mut peak_r) = (0.0_f32, 0.0_f32);
-        for i in 0..n {
-            let l = self.scratch_l[i] * g;
-            let r = self.scratch_r[i] * g;
-            bus.master_l[i] += l;
-            bus.master_r[i] += r;
+        let src = self.scratch_l[..n].iter().zip(&self.scratch_r[..n]);
+        let dst = bus.master_l[..n].iter_mut().zip(&mut bus.master_r[..n]);
+        for ((src_l, src_r), (dst_l, dst_r)) in src.zip(dst) {
+            let l = src_l * g;
+            let r = src_r * g;
+            *dst_l += l;
+            *dst_r += r;
             peak_l = peak_l.max(l.abs());
             peak_r = peak_r.max(r.abs());
             g += step;
@@ -154,9 +157,11 @@ impl ChannelStrip {
             .process(&mut self.scratch_l[..n], &mut self.scratch_r[..n]);
 
         if self.shared.channels[self.index].pfl.load(Ordering::Relaxed) {
-            for i in 0..n {
-                bus.cue_l[i] += self.scratch_l[i];
-                bus.cue_r[i] += self.scratch_r[i];
+            let src = self.scratch_l[..n].iter().zip(&self.scratch_r[..n]);
+            let dst = bus.cue_l[..n].iter_mut().zip(&mut bus.cue_r[..n]);
+            for ((src_l, src_r), (dst_l, dst_r)) in src.zip(dst) {
+                *dst_l += src_l;
+                *dst_r += src_r;
             }
         }
         let (peak_l, peak_r) = self.mix_into_master(target, bus, n);

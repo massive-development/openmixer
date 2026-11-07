@@ -6,8 +6,6 @@
 //! Hardware is optional: the device layer is a [`MidiBackend`]; tests use [`MockBackend`] and feed
 //! bytes straight into the mapper.
 
-#[cfg(target_os = "linux")]
-mod alsa_backend;
 mod backend;
 mod catalog;
 mod echo;
@@ -20,6 +18,7 @@ mod learn;
 mod map;
 mod mapper;
 mod message;
+mod midir_backend;
 mod mock;
 mod output_router;
 mod output_rule;
@@ -29,8 +28,6 @@ mod writer;
 use om_core::sync::LockExt;
 use std::sync::{Mutex, MutexGuard};
 
-#[cfg(target_os = "linux")]
-pub use alsa_backend::AlsaBackend;
 pub use backend::{
     system_backend, MidiBackend, MidiCallback, MidiInputConnection, MidiOutputPort, MidiPortInfo,
     PortSnapshot,
@@ -51,6 +48,7 @@ pub use learn::{LearnRequest, LearnType, MidiLearn};
 pub use map::{MapMode, Mapping, MidiMap, MAP_VERSION};
 pub use mapper::{MidiMapper, MonitorEntry, MONITOR_CAPACITY};
 pub use message::{control_change, message_length, note_off, note_on, pitch_bend, program_change};
+pub use midir_backend::MidirBackend;
 pub use mock::MockBackend;
 pub use output_router::{pair_outputs, MidiOutputRouter, MidiOutputSink};
 pub use output_rule::{Blink, OutputKind, OutputMode, OutputRule};
