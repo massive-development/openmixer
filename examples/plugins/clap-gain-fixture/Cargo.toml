@@ -1,0 +1,26 @@
+[package]
+name = "clap-gain-fixture"
+description = "Test fixture: a CLAP gain effect built with clack-plugin (one parameter, a GUI stub)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+# The workspace forbids unsafe code. `clack_export_entry!` expands to an exported static, which
+# needs it, so this crate denies it and allows it only on that macro call.
+[lints.rust]
+unsafe_code = "deny"
+
+[features]
+# Variants used by `crates/om-plugins/tests/clap_host.rs` to exercise the host's fault paths.
+panic-in-process = []
+error-in-process = []
+
+[dependencies]
+clack-plugin.workspace = true
+clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "gui", "latency"] }
