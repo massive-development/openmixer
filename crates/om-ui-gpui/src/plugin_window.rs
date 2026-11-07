@@ -26,6 +26,8 @@ pub type OpenWindows = Rc<RefCell<Vec<String>>>;
 const RESIZE_POLL: Duration = Duration::from_millis(120);
 
 /// The kind of window system `handle` belongs to, and the X11 window id when it is an X11 window.
+// `c_ulong` (the Xlib window type) is `u32` on 32-bit targets, so the conversion is not always the identity.
+#[allow(clippy::useless_conversion)]
 pub(crate) fn native_of(handle: &RawWindowHandle) -> (PluginSession, Option<u64>) {
     match handle {
         RawWindowHandle::Xcb(h) => (PluginSession::X11, Some(u64::from(h.window.get()))),

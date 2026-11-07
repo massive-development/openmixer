@@ -81,7 +81,7 @@ impl Worker {
                         signals: Arc::clone(&thread_signals),
                         plugin: label.clone(),
                     },
-                    |shared| HostMain::new(shared),
+                    HostMain::new,
                     &entry,
                     &plugin_id,
                     &info,
@@ -211,10 +211,10 @@ impl Ctx {
         if due.is_empty() {
             return;
         }
-        let mut handle = self.instance.plugin_handle();
+        let handle = self.instance.plugin_handle();
         if let Some(ext) = handle.get_extension::<clack_extensions::timer::PluginTimer>() {
             for id in due {
-                ext.on_timer(&mut handle, id);
+                ext.on_timer(&handle, id);
             }
         }
     }

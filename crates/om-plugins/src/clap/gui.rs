@@ -72,6 +72,8 @@ impl ParentWindow {
     /// The parent for an X11 window handle; `None` for any other kind (Wayland has no parent).
     pub fn of(handle: &RawWindowHandle) -> Option<Self> {
         match handle {
+            // `c_ulong` is `u32` on 32-bit targets, so the conversion is not always the identity.
+            #[allow(clippy::useless_conversion)]
             RawWindowHandle::Xlib(h) => Some(ParentWindow::X11(u64::from(h.window))),
             RawWindowHandle::Xcb(h) => Some(ParentWindow::X11(u64::from(h.window.get()))),
             _ => None,
