@@ -287,7 +287,7 @@ Any change to `.github/workflows/` must be tested locally with [`act`](https://g
 - **Linux audio:** `cpal` needs ALSA development headers and `pkg-config`:
 
 ```bash
-sudo apt-get install libasound2-dev libdbus-1-dev pkg-config
+sudo apt-get install libasound2-dev pkg-config
 ```
 
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
@@ -495,7 +495,7 @@ fn device_opens_and_closes() {
 ## Common Issues
 
 ### Issue: cpal fails to build on Linux (missing `alsa.pc`)
-**Solution:** Install `libasound2-dev libdbus-1-dev pkg-config`
+**Solution:** Install `libasound2-dev pkg-config`
 
 ### Issue: `cargo deny check` fails on a licence
 **Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
