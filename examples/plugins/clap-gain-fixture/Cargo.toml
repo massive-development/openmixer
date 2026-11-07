@@ -20,6 +20,7 @@ unsafe_code = "deny"
 # Variants used by `crates/om-plugins/tests/clap_host.rs` to exercise the host's fault paths.
 panic-in-process = []
 error-in-process = []
+emit-param-change = []
 
 [dependencies]
 clack-plugin.workspace = true
