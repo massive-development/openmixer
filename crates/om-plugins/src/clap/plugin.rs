@@ -1,5 +1,6 @@
 //! A CLAP plugin as a [`Plugin`]: the registry treats it like an in-process or C-ABI plugin.
 
+use super::gui::PluginGui;
 use super::loader::ClapPluginInfo;
 use super::param_bus::{ClapTarget, ParamSet};
 use super::params::ClapParam;
@@ -96,8 +97,9 @@ impl Plugin for ClapPlugin {
                     |error| tracing::warn!(%error, plugin = %label, "cannot create CLAP instance"),
                 )
                 .ok();
-            if worker.is_none() {
-                state.set_fault(Fault::ActivationFailed);
+            match &worker {
+                Some(w) => state.set_gui(PluginGui::new(w.handle())),
+                None => state.set_fault(Fault::ActivationFailed),
             }
             Box::new(ClapStage::new(worker, state, Arc::clone(&params)))
                 as Box<dyn crate::ProcessStage>

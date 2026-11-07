@@ -1,7 +1,9 @@
 //! What the control side can read about a running stage: whether it faulted, its latency and
 //! the cost of its `process` calls. Atomics only, written from the audio thread.
 
+use super::gui::PluginGui;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Why a stage is bypassed.
@@ -49,6 +51,7 @@ pub struct StageState {
     latency: AtomicU32,
     last_ns: AtomicU64,
     max_ns: AtomicU64,
+    gui: OnceLock<PluginGui>,
 }
 
 impl StageState {
@@ -70,6 +73,15 @@ impl StageState {
     /// The longest `process` call since the stage was created.
     pub fn max_process_time(&self) -> Duration {
         Duration::from_nanos(self.max_ns.load(Ordering::Relaxed))
+    }
+
+    /// The handle to this instance's own window, when the instance was created.
+    pub fn gui(&self) -> Option<PluginGui> {
+        self.gui.get().cloned()
+    }
+
+    pub(super) fn set_gui(&self, gui: PluginGui) {
+        let _ = self.gui.set(gui);
     }
 
     pub(super) fn set_fault(&self, fault: Fault) {

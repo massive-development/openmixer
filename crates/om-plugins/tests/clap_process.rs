@@ -1,6 +1,8 @@
 //! A CLAP effect in the engine's stage chain: gain applied, no allocation on the audio path,
 //! a faulting plugin bypassed, unloading with a live stage (ADR 0007, test plan "Process", "Unload").
 
+#![cfg(feature = "clap")]
+
 mod clap_fixture;
 
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
