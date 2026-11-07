@@ -1,9 +1,8 @@
 //! Device layer: what the MIDI routers need from the host's MIDI system. Enumerate inputs and
 //! outputs, open an input with a byte callback, open an output, and report hot-plug changes.
 //!
-//! The concrete backends are [`crate::AlsaBackend`] (Linux, on the sequencer) and
-//! [`crate::MockBackend`] (tests). Platforms without a backend get [`system_backend`]'s error; a
-//! midir backend plugs in there for macOS and Windows (see `docs/spikes/DECISIONS.md`).
+//! The concrete backends are [`crate::MidirBackend`] (all platforms, on `midir`: the ALSA
+//! sequencer, CoreMIDI or WinMM) and [`crate::MockBackend`] (tests); see `docs/spikes/DECISIONS.md`.
 
 use crate::error::MidiError;
 
@@ -28,7 +27,7 @@ pub trait MidiOutputPort: Send {
 }
 
 pub trait MidiBackend: Send {
-    /// Short name for diagnostics, such as "alsa" or "mock".
+    /// Short name for diagnostics, such as "midir" or "mock".
     fn name(&self) -> &'static str;
 
     /// Input ports the host can see now.
@@ -67,20 +66,8 @@ impl PortSnapshot {
     }
 }
 
-/// The backend for this platform. On Linux it is the ALSA sequencer; it fails when the sequencer
-/// is not present (no `/dev/snd/seq`), and the app then runs without MIDI.
+/// The backend for this platform: midir. It fails when the host's MIDI system is not present (on
+/// Linux, no `/dev/snd/seq`), and the app then runs without MIDI.
 pub fn system_backend() -> Result<Box<dyn MidiBackend>, MidiError> {
-    #[cfg(target_os = "linux")]
-    {
-        Ok(Box::new(crate::alsa_backend::AlsaBackend::open()?))
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        // Documented stub. The midir backend goes here for macOS and Windows: it implements
-        // `MidiBackend` the same way (one client per routed direction, hot-plug through
-        // `refresh`). Until then these platforms run without MIDI.
-        Err(MidiError::Device(
-            "no MIDI backend for this platform yet".to_owned(),
-        ))
-    }
+    Ok(Box::new(crate::midir_backend::MidirBackend::open()?))
 }

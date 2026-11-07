@@ -115,11 +115,10 @@ Date: 2026-10-19. Crates: `om-ui::settings` (the page models), `om-ui-gpui::sett
 
 ## MIDI device layer (Todo 32)
 
-Date: 2026-10-19. Crate: `crates/om-midi` (`backend.rs`, `alsa_backend.rs`, `mock.rs`).
+Date: 2026-10-19. Crate: `crates/om-midi` (`backend.rs`, `midir_backend.rs`, `mock.rs`).
 
-- **Why not midir yet.** midir's Linux backend links `alsa` at a version that conflicts with the one cpal links, and its macOS backend pins CoreMIDI crates that clash with the gpui tree. Adopting it in the workspace now would break the build on one platform or the other.
-- **Linux: ALSA sequencer, direct.** `AlsaBackend` uses the `alsa` crate at the version already in `Cargo.lock` through cpal (`alsa = "0.11"`), so the build links one `alsa`. Inputs and outputs are sequencer clients subscribed to the device's ports. Port ids are the port names, the same strings the MIDI settings page shows. The backend has no unsafe code of its own (the `alsa` crate carries the FFI); construction and enumeration are smoke-tested and skip when `/dev/snd/seq` is absent.
-- **Other platforms: documented stub.** `om_midi::system_backend()` returns a device error outside Linux, so the app runs without MIDI there. The midir backend for macOS and Windows plugs in at that point: it implements `MidiBackend` (enumerate, open input with a byte callback, open output, `refresh` for hot-plug) and needs no change to the routers, the mapper or the feedback unit.
+- **midir on every platform (#220).** `MidirBackend` (`midir_backend.rs`) replaces the direct ALSA backend and the non-Linux stub. midir 0.11 resolves now that the workspace is on `gpui-pre` (see the #218 spike below): ALSA sequencer on Linux, CoreMIDI on macOS, WinMM on Windows, one `alsa` in the tree (shared with cpal). The crate no longer depends on `alsa` directly and has no unsafe code. Each routed direction is its own midir client named `openmixer`; inputs ignore sysex, timing and active sensing, as the old backend forwarded channel messages only.
+- **Port ids.** midir's Linux names end in the sequencer address (`Client:Port 24:0`), which changes on replug. The id (and the displayed name) is the name without that address, `Client:Port`, so saved preferences survive a replug. Ports of `Midi Through` and of the app's own `openmixer` clients are not listed. Saved ids from the old backend (the bare port name) no longer match and are re-chosen once; two identical devices share an id and the first wins.
 - **Tests never open hardware.** `MockBackend` delivers injected bytes and records sent bytes. Every routing, selection, hot-plug and feedback test runs on it.
 - **Trait boundary.** `MidiBackend` is the only thing the device-facing code knows. Input callbacks run on the backend's thread and take only the mapper's locks; feedback is evaluated on a control thread at 30 Hz, and hot-plug is checked about once a second.
 
