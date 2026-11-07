@@ -390,6 +390,16 @@ impl DjEngineAudio {
     }
 }
 
+impl DjEngineAudio {
+    /// Chooses the varispeed interpolation for every deck (default: sinc, 128 taps). An
+    /// engine-level setting with no UI. Allocates; call before the audio thread runs.
+    pub fn set_varispeed_quality(&mut self, quality: crate::deck::VarispeedQuality) {
+        for deck in &mut self.decks {
+            deck.set_varispeed_quality(quality);
+        }
+    }
+}
+
 impl AudioCallback for DjEngineAudio {
     fn prepare(&mut self, sample_rate: f64, max_block_size: usize) {
         self.max_block = max_block_size.max(1);
