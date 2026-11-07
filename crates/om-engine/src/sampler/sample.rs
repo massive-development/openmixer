@@ -1,6 +1,9 @@
 //! A decoded sample: interleaved stereo `f32` at a known rate. Decoded off the audio thread.
 
 use crate::deck::{SourceError, SourceReader};
+use crate::resample::fft_resampler;
+use audioadapter_buffers::direct::InterleavedSlice;
+use rubato::Resampler;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -10,8 +13,6 @@ pub const MAX_SAMPLE_SECONDS: f64 = 60.0;
 pub const MAX_SAMPLE_BYTES: usize = 64 * 1024 * 1024;
 
 const CHUNK_FRAMES: usize = 4096;
-/// Zero crossings each side of the resampling kernel.
-const SINC_ZERO_CROSSINGS: f64 = 12.0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SamplerError {
@@ -23,6 +24,8 @@ pub enum SamplerError {
     TooLarge,
     #[error("the file is truncated or corrupt: {0}")]
     Corrupt(String),
+    #[error("resampling failed: {0}")]
+    Resample(String),
     #[error("invalid sample rate {0}")]
     BadRate(f64),
     #[error("cannot read sample: {0}")]
@@ -120,7 +123,7 @@ impl Sample {
             .unwrap_or("sample")
             .to_owned();
         if (src_rate - engine_rate).abs() > 1.0e-6 {
-            data = resample(&data, src_rate, engine_rate);
+            data = resample(&data, src_rate, engine_rate)?;
         }
         Self::from_interleaved(name, engine_rate, data)
     }
@@ -204,47 +207,16 @@ pub(super) fn decode_all(
     Ok(data)
 }
 
-/// Windowed-sinc resampling of interleaved stereo (Blackman window, band-limited when
-/// downsampling). Offline: runs on the control thread.
-fn resample(input: &[f32], from: f64, to: f64) -> Vec<f32> {
+/// Resamples interleaved stereo with rubato's synchronous FFT resampler (whole-Hz rates; a
+/// fractional rate is rounded). Offline: runs on the control thread and allocates.
+fn resample(input: &[f32], from: f64, to: f64) -> Result<Vec<f32>, SamplerError> {
     let frames_in = input.len() / 2;
-    let out_frames = ((frames_in as f64) * to / from).round() as usize;
-    let step = from / to;
-    let cutoff = (to / from).min(1.0);
-    let support = SINC_ZERO_CROSSINGS / cutoff;
-    let mut out = Vec::with_capacity(out_frames * 2);
-    for i in 0..out_frames {
-        let center = i as f64 * step;
-        let first = (center - support).ceil().max(0.0) as usize;
-        let last = ((center + support).floor() as usize).min(frames_in.saturating_sub(1));
-        let (mut acc_l, mut acc_r, mut norm) = (0.0_f64, 0.0_f64, 0.0_f64);
-        for k in first..=last {
-            let x = k as f64 - center;
-            let w = kernel(x, cutoff, support);
-            acc_l += w * f64::from(input[k * 2]);
-            acc_r += w * f64::from(input[k * 2 + 1]);
-            norm += w;
-        }
-        if norm.abs() > 1.0e-9 {
-            acc_l /= norm;
-            acc_r /= norm;
-        }
-        out.push(acc_l as f32);
-        out.push(acc_r as f32);
-    }
-    out
-}
-
-fn kernel(x: f64, cutoff: f64, support: f64) -> f64 {
-    let sinc = if x.abs() < 1.0e-12 {
-        1.0
-    } else {
-        let a = std::f64::consts::PI * cutoff * x;
-        a.sin() / a
-    };
-    let t = (x / support).clamp(-1.0, 1.0);
-    let window = 0.42
-        + 0.5 * (std::f64::consts::PI * t).cos()
-        + 0.08 * (2.0 * std::f64::consts::PI * t).cos();
-    cutoff * sinc * window
+    let fail = |e: &dyn std::fmt::Display| SamplerError::Resample(e.to_string());
+    let mut resampler =
+        fft_resampler(from.round() as usize, to.round() as usize, 2).map_err(|e| fail(&e))?;
+    let source = InterleavedSlice::new(input, 2, frames_in).map_err(|e| fail(&e))?;
+    let out = resampler
+        .process_all(&source, frames_in, None)
+        .map_err(|e| fail(&e))?;
+    Ok(out.take_data())
 }
