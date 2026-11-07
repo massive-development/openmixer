@@ -13,9 +13,10 @@
 use crate::app::Shell;
 use crate::paint::{paint, place};
 use gpui::{
-    div, prelude::*, px, Context, Div, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent,
-    Window,
+    div, prelude::*, px, Context, Div, Entity, FocusHandle, KeyDownEvent, MouseButton,
+    MouseDownEvent, Window,
 };
+use gpui_kit::component::input::InputState;
 use mapping::{MapField, MappingConfirm};
 use om_ui::geometry::Rect;
 use om_ui::mapping_editor::MappingEditorPage;
@@ -38,7 +39,7 @@ pub(crate) mod chips;
 mod library;
 mod mapping;
 mod midi;
-mod overlay;
+pub(crate) mod overlay;
 mod plugins;
 mod recording;
 mod stems;
@@ -153,7 +154,16 @@ pub struct SettingsState {
     pub lists: PageLists,
     /// The text field, while a path is typed.
     pub entry: Option<TextEntry>,
+    /// The input that edits `entry`, made when the field opens (it needs a window).
+    pub(crate) entry_input: Option<(EntryKind, Entity<InputState>)>,
+    /// The last action's outcome. The window shows it as a toast.
     pub notice: Notice,
+    /// Counts the notices set, so a repeat of the same text is a new toast.
+    notice_serial: u64,
+    /// The `notice_serial` the window last made a toast for.
+    pub(crate) toasted_serial: u64,
+    /// The confirmation dialog the window has open, if any.
+    pub(crate) ask_shown: Option<overlay::Ask>,
     /// Set when the overlay opens, so its card takes the keys on the next frame.
     pub(crate) focus_pending: bool,
     audio: Option<Box<dyn AudioSettingsModel>>,
@@ -199,7 +209,11 @@ impl SettingsState {
             themes: options.themes,
             lists: PageLists::default(),
             entry: None,
+            entry_input: None,
             notice: Notice::default(),
+            notice_serial: 0,
+            toasted_serial: 0,
+            ask_shown: None,
             focus_pending: false,
             audio: options.audio,
             audio_stats: options.audio_stats,
@@ -275,27 +289,30 @@ impl SettingsState {
                 Ok(playlists) => self.lists.playlists = playlists,
                 Err(error) => {
                     self.lists.playlists.clear();
-                    self.notice = Notice {
-                        text: format!("Could not read playlists: {error}"),
-                        error: true,
-                    };
+                    self.set_notice(format!("Could not read playlists: {error}"), true);
                 }
             }
         }
     }
 
-    fn set_notice(&mut self, text: impl Into<String>, error: bool) {
+    /// How many notices have been set (a repeat of the same text counts again).
+    pub(crate) fn notice_serial(&self) -> u64 {
+        self.notice_serial
+    }
+
+    pub(crate) fn set_notice(&mut self, text: impl Into<String>, error: bool) {
         self.notice = Notice {
             text: text.into(),
             error,
         };
+        self.notice_serial += 1;
     }
 
     // MIDI page.
 }
 
 #[cfg(test)]
-mod fixtures {
+pub(crate) mod fixtures {
     use super::*;
     use om_ui::preferences::Preferences;
     use om_ui::theme::ThemeRegistry;
@@ -303,7 +320,7 @@ mod fixtures {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    pub(super) fn state(
+    pub(crate) fn state(
         audio: Option<Box<dyn AudioSettingsModel>>,
         changes: Rc<RefCell<usize>>,
     ) -> SettingsState {
@@ -329,7 +346,7 @@ mod fixtures {
         })
     }
 
-    pub(super) fn options(
+    pub(crate) fn options(
         midi: Option<Arc<dyn MidiPage>>,
         library: Option<Box<dyn LibraryControl>>,
         plugins: Option<Box<dyn PluginHost>>,

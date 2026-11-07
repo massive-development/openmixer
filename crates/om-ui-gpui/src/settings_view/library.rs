@@ -95,6 +95,7 @@ pub(super) fn library_page(
                 chip(t, "Add watch folder…", false, cx, |this| {
                     this.settings_mut(|s| s.begin_entry(EntryKind::WatchFolder))
                 }),
+                browse_chip(t, EntryKind::WatchFolder, cx),
                 chip(t, "Rescan now", false, cx, |this| {
                     this.settings_mut(|s| s.library_rescan())
                 }),
@@ -114,13 +115,12 @@ pub(super) fn library_page(
     column = column.child(choice_row(
         t,
         "Import a library",
-        row_of(vec![chip(
-            t,
-            "Import iTunes or Rekordbox XML…",
-            false,
-            cx,
-            |this| this.settings_mut(|s| s.begin_entry(EntryKind::ImportXml)),
-        )]),
+        row_of(vec![
+            chip(t, "Import iTunes or Rekordbox XML…", false, cx, |this| {
+                this.settings_mut(|s| s.begin_entry(EntryKind::ImportXml))
+            }),
+            browse_chip(t, EntryKind::ImportXml, cx),
+        ]),
     ));
     if let Some(field) = entry_field(t, settings, EntryKind::ImportXml, "XML file path", cx) {
         column = column.child(field);
