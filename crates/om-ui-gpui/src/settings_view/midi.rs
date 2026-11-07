@@ -49,6 +49,7 @@ pub(super) fn midi_page(t: &ThemeTokens, settings: &SettingsState, cx: &mut Cont
         chip(t, "Load map file…", false, cx, |this| {
             this.settings_mut(|s| s.begin_entry(EntryKind::MapFile))
         }),
+        browse_chip(t, EntryKind::MapFile, cx),
         chip(t, "Load the current map", false, cx, |this| {
             this.settings_mut(|s| s.midi_load_current_map())
         }),
