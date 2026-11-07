@@ -14,6 +14,7 @@ workspace = true
 om-core.workspace = true
 om-dsp.workspace = true
 om-stretch.workspace = true
+ebur128.workspace = true
 rtrb.workspace = true
 audioadapter-buffers.workspace = true
 rubato.workspace = true

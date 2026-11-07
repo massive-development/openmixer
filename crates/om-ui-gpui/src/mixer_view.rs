@@ -12,6 +12,7 @@ use crate::controls::{
 };
 use crate::drag::Target;
 use crate::knob_paint::KnobRole;
+use crate::loudness_paint::{loudness_panel, loudness_toggle};
 use crate::paint::{paint, place};
 use gpui::{prelude::*, px, Context, Div, FontWeight};
 use om_ui::control::{Knob, Readout};
@@ -55,6 +56,10 @@ pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
     }));
     root = root.children(master(shell, l.master, card, cx));
     root = root.children(cue(shell, l.cue, card, cx));
+    root = root.children(loudness_toggle(shell, l.loudness, cx));
+    if shell.loudness.is_open() {
+        root = root.child(loudness_panel(shell, l.loudness_panel, cx));
+    }
     root = root.children(crossfader(shell, l.crossfader, card, cx));
     root
 }
