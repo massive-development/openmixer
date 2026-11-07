@@ -185,16 +185,16 @@ impl Mixer {
             sampler.process(bus.master_l, bus.master_r);
         }
         let gain = self.shared.master_gain.load();
-        for i in 0..n {
-            bus.master_l[i] *= gain;
-            bus.master_r[i] *= gain;
+        for (l, r) in bus.master_l[..n].iter_mut().zip(&mut bus.master_r[..n]) {
+            *l *= gain;
+            *r *= gain;
         }
         self.master_inserts.process(bus.master_l, bus.master_r);
 
         let (mut peak_l, mut peak_r) = (0.0_f32, 0.0_f32);
-        for i in 0..n {
-            peak_l = peak_l.max(bus.master_l[i].abs());
-            peak_r = peak_r.max(bus.master_r[i].abs());
+        for (l, r) in bus.master_l[..n].iter().zip(&bus.master_r[..n]) {
+            peak_l = peak_l.max(l.abs());
+            peak_r = peak_r.max(r.abs());
         }
         self.shared.master_peak_left.push(peak_l, decay);
         self.shared.master_peak_right.push(peak_r, decay);
@@ -203,9 +203,15 @@ impl Mixer {
     fn mix_headphones(&self, bus: &mut Bus<'_>, n: usize) {
         let level = self.shared.cue_level.load();
         let mix = self.shared.cue_mix.load();
-        for i in 0..n {
-            bus.cue_l[i] = level * ((1.0 - mix) * bus.cue_l[i] + mix * bus.master_l[i]);
-            bus.cue_r[i] = level * ((1.0 - mix) * bus.cue_r[i] + mix * bus.master_r[i]);
+        let master_l = bus.master_l[..n].iter();
+        let master_r = bus.master_r[..n].iter();
+        for ((cl, cr), (ml, mr)) in bus.cue_l[..n]
+            .iter_mut()
+            .zip(&mut bus.cue_r[..n])
+            .zip(master_l.zip(master_r))
+        {
+            *cl = level * ((1.0 - mix) * *cl + mix * ml);
+            *cr = level * ((1.0 - mix) * *cr + mix * mr);
         }
     }
 }
