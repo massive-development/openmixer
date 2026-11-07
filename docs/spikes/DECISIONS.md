@@ -210,6 +210,21 @@ Date: 2026-11-06. Code: `spikes/gpui-window` (own workspace, throwaway).
 - **Built and run.** One `gpui-component` `Button` and one canvas-painted knob (`paint_quad`) compile. `cpal` device and `midir` port enumeration run in the same binary. Rendering was not verified: this WSL host has no usable GPU (EGL/Zink errors), so the window was not seen. Check on real hardware.
 - **API notes.** `use gpui_kit::*` replaces `use gpui::*`; `gpui_kit::application()` replaces `Application::new()`; windows open through `gpui_kit::open_window` after `gpui_kit::init(cx)`; `Button::primary` needs `ButtonVariants` in scope.
 
+## P5: app chrome on gpui-component (#223)
+
+Date: 2026-11-06. Code: `crates/om-ui-gpui` (`theme_bridge`, `controls`, `library_view`, `debug_panel`, `settings_view`, `app`).
+
+- **Adopted** (each deleted hand-written code): `Button` (push buttons in `controls`, the library toolbar, the debug column and the settings chips; the old skin/hover/press code is gone), `Input` (library search box, which doubles as the playlist-name box, the settings text field and the debug deck path fields; `apply_key` stays only for the sampler's path field), `DataTable` with a `TableDelegate` (the library track table; its hand-made virtualisation, scroll thumb, header and cell layout are gone, as are `table_top`, `visible_rows` and `scroll_rows` on `LibraryPanel`), `ListItem` (sidebar rows; `SidebarRowLook` is gone, its contrast test moved to `theme_bridge`), `TabBar` (settings tabs), `AlertDialog` (clear stem cache, mapping reset, leave with unsaved mapping; the inline confirm rows are gone) and `Notification` toasts (the mock-device banner, which replaces the header notice chip, and the settings status line).
+- **Wiring.** `gpui-kit` gets the `component` and `assets` features (`assets` supplies the Lucide icons the table sort arrows, dialog and toast close buttons draw; 101 SVGs, about 44 KiB). `run` calls `gpui_kit::init`, then `gpui_kit::open_window`, which wraps the shell in the base `Root` that dialogs and toasts draw into.
+- **Theming.** `theme_bridge::apply` maps om-ui tokens (and the `LookAndFeel` control styles) onto the component theme, in the dark or light scheme the surface implies, and runs again when the settings change the theme. No colour is chosen in the bridge.
+- **Stays custom:** knobs, faders, meters, waveform, platter, deck transport, the sampler pads, the record button, the layout engine, drag payloads.
+- **Not adopted, by evaluation:**
+  - `Dock`: the window is a fixed layout computed by `om-ui::main_layout` (tested rectangles, `MIN_WINDOW`, performance mode). Dock would replace that model and its tests for user-rearrangeable panels nobody asked for. Nothing to delete.
+  - `UndoHistory`: undo and redo live in the headless model (`MappingEditorPage`), where they are unit-tested; the `Input` has its own text undo. A UI-layer history would duplicate the model's.
+  - `Motion`: the component library already animates dialogs, toasts and tabs. The app's moving parts (meters, platter, playhead) are painted per frame from engine state, not tweened. Nothing to delete.
+  - `VirtualList`: used inside `DataTable` already. The remaining lists (the 150 px mapping table, the debug rows) are short and scroll with plain `overflow_y_scroll`.
+- **Behaviour changes to check on a real display:** buttons fire on click (mouse up), not mouse down; a lit button's hover and press keep its accent fill; the lit glow is kept on a wrapper; rows no longer wheel-scroll in whole-row steps; the table header sort arrows are icons, not text glyphs; `/` focuses the search box and Escape clears it. Visual parity with `docs/screenshots/` is unverified: this host has no usable GPU, and the headless tests check layout, state and events, not pixels.
+
 ## P9: real-time priority for the audio callback only (#228)
 
 Date: 2026-11-06. cpal 0.18.2 with `audio_thread_priority` 0.35 (cpal's own dependency; om-engine does not depend on it).

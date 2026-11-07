@@ -80,7 +80,7 @@ pub(super) fn recording_page(
             .unwrap_or("16-bit")
     );
     column = column.child(note(t, &status));
-    column.child(status_line(t, &settings.notice))
+    column
 }
 
 fn on_off(on: bool) -> &'static str {

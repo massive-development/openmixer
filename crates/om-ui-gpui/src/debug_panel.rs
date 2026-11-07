@@ -1,11 +1,13 @@
 //! `--debug-panel`: device, latency and CPU figures, the router's unknown-id count and a
 //! raw list of the control surface's current values. The row builder is pure and tested headless;
-//! the window only draws the rows.
+//! the window only draws the rows. The per-deck load and play controls are `gpui-component`
+//! buttons and text inputs.
 
 use crate::app::Shell;
-use crate::paint::{paint, skin};
-use crate::text_entry::{apply_key, EntryKey};
-use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent};
+use crate::controls::push_button;
+use crate::paint::paint;
+use gpui::{div, prelude::*, px, Context, Div, Entity, Window};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use om_core::param_id::DeckParam;
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
@@ -14,13 +16,14 @@ use om_ui::theme::ThemeTokens;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// The per-deck load and play controls: each deck's file path, the field being typed in, and the
-/// line that reports the last load or play.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Height of a debug-column button or path field, px.
+const CONTROL_H: f32 = 22.0;
+
+/// The per-deck load and play controls: each deck's file path field and the line that reports the
+/// last load or play. The fields are made on the first draw (they need a window).
+#[derive(Default)]
 pub struct DeckControls {
-    pub paths: Vec<String>,
-    /// The deck whose path field takes typed keys.
-    pub editing: Option<usize>,
+    paths: Vec<Option<Entity<InputState>>>,
     /// The last outcome: its text, and whether it is an error.
     pub status: Option<(String, bool)>,
 }
@@ -28,33 +31,24 @@ pub struct DeckControls {
 impl DeckControls {
     pub fn new(decks: usize) -> Self {
         Self {
-            paths: vec![String::new(); decks],
-            editing: None,
+            paths: vec![None; decks],
             status: None,
         }
     }
 
-    /// Opens the path field of `deck` for typing. Out-of-range decks are ignored.
-    pub fn begin(&mut self, deck: usize) {
-        if deck < self.paths.len() {
-            self.editing = Some(deck);
-        }
-    }
-
-    /// Routes a key to the open field, with the settings overlay's rules (see [`apply_key`]).
-    /// `None` when no field is open or the key does nothing to it. Enter and Escape close the field.
-    pub fn key(&mut self, key: &str, typed: Option<&str>) -> Option<EntryKey> {
-        let deck = self.editing?;
-        let outcome = apply_key(&mut self.paths[deck], key, typed);
-        if matches!(outcome, EntryKey::Submit | EntryKey::Cancel) {
-            self.editing = None;
-        }
-        (outcome != EntryKey::Ignored).then_some(outcome)
+    /// The path fields that exist so far (the shell asks them whether one has the keyboard).
+    pub fn inputs(&self) -> impl Iterator<Item = &Entity<InputState>> {
+        self.paths.iter().flatten()
     }
 
     /// The typed path for `deck`, trimmed. An empty path is a message, not a path.
-    pub fn path_for(&self, deck: usize) -> Result<PathBuf, String> {
-        match self.paths.get(deck).map(|p| p.trim()) {
+    pub fn path_for(&self, deck: usize, cx: &gpui::App) -> Result<PathBuf, String> {
+        let typed = self
+            .paths
+            .get(deck)
+            .and_then(Option::as_ref)
+            .map(|input| input.read(cx).value().trim().to_owned());
+        match typed.as_deref() {
             None | Some("") => Err("type a file path first".to_owned()),
             Some(path) => Ok(PathBuf::from(path)),
         }
@@ -75,10 +69,29 @@ pub fn play_value(playing: bool) -> f64 {
 }
 
 impl Shell {
+    /// Makes the path field of every deck that has none yet. Enter in a field loads its deck.
+    pub(crate) fn ensure_deck_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for deck in 0..self.deck_controls.paths.len() {
+            if self.deck_controls.paths[deck].is_some() {
+                continue;
+            }
+            let input =
+                cx.new(|cx| InputState::new(window, cx).placeholder("file path (Enter loads)"));
+            cx.subscribe(&input, move |this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.debug_load(deck, cx);
+                    cx.notify();
+                }
+            })
+            .detach();
+            self.deck_controls.paths[deck] = Some(input);
+        }
+    }
+
     /// Loads the typed path of `deck` through the library's loader. A playing deck refuses, and
     /// the refusal is shown in the status line.
-    pub(crate) fn debug_load(&mut self, deck: usize) {
-        let path = match self.deck_controls.path_for(deck) {
+    pub(crate) fn debug_load(&mut self, deck: usize, cx: &gpui::App) {
+        let path = match self.deck_controls.path_for(deck, cx) {
             Ok(path) => path,
             Err(message) => return self.deck_controls.report(message, true),
         };
@@ -114,16 +127,6 @@ impl Shell {
                 .report("the engine did not take the play command", true);
         }
     }
-
-    /// A key while the debug column has focus: an open path field takes it; Enter loads.
-    pub(crate) fn debug_key(&mut self, key: &str, typed: Option<&str>) {
-        let deck = self.deck_controls.editing;
-        if self.deck_controls.key(key, typed) == Some(EntryKey::Submit) {
-            if let Some(deck) = deck {
-                self.debug_load(deck);
-            }
-        }
-    }
 }
 
 /// The Decks section: per deck a label, Play/Pause and Load buttons, and the path field under them.
@@ -137,60 +140,34 @@ pub fn decks_section(
     let look = LookAndFeel::from_tokens(t);
     let gap = px(t.inner_gap as f32);
     let mut section = div().flex().flex_col().gap(gap);
-    for (deck, path) in controls.paths.iter().enumerate() {
+    for (deck, input) in controls.paths.iter().enumerate() {
         let is_playing = playing.get(deck).copied().unwrap_or(false);
+        let action = |label: &'static str, cx: &mut Context<Shell>| {
+            div().w(px(54.)).h(px(CONTROL_H)).child(
+                push_button(t, label, None, cx, move |this, _, cx| match label {
+                    "Load" => this.debug_load(deck, cx),
+                    _ => this.debug_toggle_play(deck),
+                })
+                .w_full()
+                .h_full(),
+            )
+        };
         let buttons = div()
             .flex()
             .items_center()
             .gap(gap)
             .child(div().flex_1().child(format!("Deck {}", deck + 1)))
-            .child(chip(
-                t,
-                if is_playing { "Pause" } else { "Play" },
-                cx,
-                move |this| this.debug_toggle_play(deck),
-            ))
-            .child(chip(t, "Load", cx, move |this| this.debug_load(deck)));
-        let editing = controls.editing == Some(deck);
-        let shown = if editing {
-            format!("{path}|")
-        } else if path.is_empty() {
-            "click to type a file path".to_owned()
-        } else {
-            path.clone()
-        };
-        let field_style = if editing {
-            look.text_field.focus
-        } else {
-            look.text_field.idle
-        };
-        let field = skin(
-            div()
-                .w_full()
-                .overflow_hidden()
-                .px(px(look.inset_large * 2.0))
-                .py(px(look.inset_small * 2.0)),
-            &field_style,
-        )
-        .child(shown)
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                this.deck_controls.begin(deck);
-                if let Some(focus) = this.debug_focus.clone() {
-                    focus.focus(window, cx);
-                }
-                cx.notify();
-            }),
-        );
-        section = section.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(look.inset_small))
-                .child(buttons)
-                .child(field),
-        );
+            .child(action(if is_playing { "Pause" } else { "Play" }, cx))
+            .child(action("Load", cx));
+        let mut block = div()
+            .flex()
+            .flex_col()
+            .gap(px(look.inset_small))
+            .child(buttons);
+        if let Some(input) = input {
+            block = block.child(div().w_full().child(Input::new(input)));
+        }
+        section = section.child(block);
     }
     if let Some((text, error)) = &controls.status {
         let line = if *error {
@@ -210,35 +187,6 @@ pub fn decks_section(
         );
     }
     section
-}
-
-/// A small push button for the debug column; `on_press` runs on the shell.
-fn chip(
-    t: &ThemeTokens,
-    label: &str,
-    cx: &mut Context<Shell>,
-    on_press: impl Fn(&mut Shell) + 'static,
-) -> Div {
-    let look = LookAndFeel::from_tokens(t);
-    let hover = look.button.hover.fill;
-    skin(
-        div()
-            .px(px(look.inset_large * 2.0))
-            .py(px(look.inset_small * 2.0))
-            .flex()
-            .items_center()
-            .justify_center(),
-        &look.button.idle,
-    )
-    .hover(move |style| style.bg(paint(hover)))
-    .child(label.to_owned())
-    .on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-            on_press(this);
-            cx.notify();
-        }),
-    )
 }
 
 /// What the window shows about the audio device. The binary fills it in from its device.
@@ -358,31 +306,6 @@ fn parameter_values(engine: &DjEngine, unknown: usize) -> Vec<(String, String)> 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_path_field_takes_typed_text_and_enter_submits_it() {
-        let mut c = DeckControls::new(2);
-        assert_eq!(c.key("a", Some("a")), None, "no field open");
-        c.begin(1);
-        assert_eq!(c.key("/", Some("/")), Some(EntryKey::Edited));
-        assert_eq!(c.key("x", Some("x")), Some(EntryKey::Edited));
-        assert_eq!(c.paths[1], "/x");
-        assert_eq!(c.paths[0], "", "other decks are untouched");
-        assert_eq!(c.key("enter", None), Some(EntryKey::Submit));
-        assert_eq!(c.editing, None, "enter closes the field");
-    }
-
-    #[test]
-    fn an_empty_path_is_a_message_and_escape_cancels() {
-        let mut c = DeckControls::new(1);
-        c.begin(0);
-        assert_eq!(c.key("escape", None), Some(EntryKey::Cancel));
-        assert_eq!(c.editing, None);
-        assert_eq!(c.path_for(0), Err("type a file path first".to_owned()));
-        c.paths[0] = "  /music/a.wav ".into();
-        assert_eq!(c.path_for(0), Ok(PathBuf::from("/music/a.wav")));
-        assert!(c.path_for(3).is_err(), "no such deck");
-    }
 
     #[test]
     fn play_toggles_between_zero_and_one() {
