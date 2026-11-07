@@ -6,6 +6,8 @@
 
 #[cfg(all(test, debug_assertions))]
 mod alloc_guard;
+#[cfg(all(test, debug_assertions))]
+mod rubato_eval;
 
 pub mod callback;
 pub mod deck;
@@ -22,6 +24,7 @@ pub mod mixer;
 pub mod output;
 pub mod quantizer;
 pub mod recorder;
+pub mod resample;
 pub mod sampler;
 pub mod slip;
 mod stage;

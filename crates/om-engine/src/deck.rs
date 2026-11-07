@@ -37,6 +37,7 @@ use std::thread::JoinHandle;
 
 pub use hotcues::NUM_CUES;
 use om_dsp::{StemMixerControl, STEM_FRAME_FLOATS};
+pub use playback::VarispeedQuality;
 pub use prefetch::LoopPrefetch;
 pub use source::{SourceError, SourceReader, TrackInfo};
 use stems::StemReaders;
@@ -65,6 +66,7 @@ pub struct DeckAudio {
     playback: Playback,
     /// Right-channel sink for mono outputs; sized in `prepare`.
     mono_sink: Vec<f32>,
+    varispeed: VarispeedQuality,
 }
 
 impl Deck {
@@ -129,6 +131,7 @@ impl Deck {
             shared: Arc::clone(&shared),
             playback: Playback::new(consumer, Arc::clone(&shared.stems)),
             mono_sink: vec![0.0; DEFAULT_MONO_SINK],
+            varispeed: VarispeedQuality::default(),
         };
         (
             Self {
@@ -446,6 +449,21 @@ impl DeckAudio {
         self.mono_sink.resize(max_block_size.max(1), 0.0);
         self.playback
             .prepare_keylock(rate as u32, max_block_size.max(1));
+        self.playback.set_varispeed_quality(self.varispeed);
+    }
+
+    /// Chooses how rate changes are interpolated (default: [`VarispeedQuality::Sinc`]). Takes
+    /// effect at once and allocates, so call it on the control thread before audio runs; `prepare`
+    /// applies the choice again.
+    pub fn set_varispeed_quality(&mut self, quality: VarispeedQuality) {
+        self.varispeed = quality;
+        self.playback.set_varispeed_quality(quality);
+    }
+
+    /// Test hook: lets the rubato path take exact unity as well.
+    #[cfg(test)]
+    pub(crate) fn force_varispeed_at_unity(&mut self, force: bool) {
+        self.playback.force_varispeed_at_unity(force);
     }
 }
 
