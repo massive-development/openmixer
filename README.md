@@ -55,7 +55,7 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt-get install pkg-config libasound2-dev
+sudo apt-get install pkg-config libasound2-dev libdbus-1-dev
 ```
 
 GPUI system dependencies are documented in `docs/spikes/gpui.md`.
