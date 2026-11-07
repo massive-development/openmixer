@@ -91,29 +91,14 @@ pub(super) fn stems_section(
             settings.prefs.stems.max_cache_gb
         ),
     ));
-    if settings.stems_confirm_clear {
-        cache = cache
-            .child(note(
-                t,
-                "Remove every prepared stem set? Running prepare jobs are cancelled.",
-            ))
-            .child(row_of(vec![
-                chip(t, "Remove stems", false, cx, |this| {
-                    this.settings_mut(|s| s.stems_clear_confirmed())
-                }),
-                chip(t, "Keep them", false, cx, |this| {
-                    this.settings_mut(|s| s.stems_clear_cancelled())
-                }),
-            ]));
-    } else {
-        cache = cache.child(row_of(vec![chip(
-            t,
-            "Clear stem cache…",
-            false,
-            cx,
-            |this| this.settings_mut(|s| s.stems_ask_clear()),
-        )]));
-    }
+    // The confirmation is a dialog (see `Shell::sync_confirm`).
+    cache = cache.child(row_of(vec![chip(
+        t,
+        "Clear stem cache…",
+        false,
+        cx,
+        |this| this.settings_mut(|s| s.stems_ask_clear()),
+    )]));
 
     let cap_gb = settings.prefs.stems.max_cache_gb;
     let mut cap = div().flex().flex_col().child(row_of(vec![chip(

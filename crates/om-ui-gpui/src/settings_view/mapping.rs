@@ -90,10 +90,6 @@ pub(super) fn mapping_page(
     };
     let mut column = div().flex().flex_col();
 
-    if let Some(confirm) = settings.mapping_confirm {
-        column = column.child(confirm_row(t, confirm, cx));
-    }
-
     // Toolbar: the bindings and the map file.
     let learning = page.is_learning();
     column = column.child(choice_row(
@@ -270,49 +266,7 @@ pub(super) fn mapping_page(
     }
     column = column.child(monitor);
 
-    column.child(status_line(t, &settings.notice))
-}
-
-/// The confirm step: Reset, or leaving with unsaved edits. Each names what happens.
-fn confirm_row(t: &ThemeTokens, confirm: MappingConfirm, cx: &mut Context<Shell>) -> Div {
-    match confirm {
-        MappingConfirm::Reset => div()
-            .flex()
-            .flex_col()
-            .mb(px(8.))
-            .child(note(
-                t,
-                "Reset replaces every binding with an empty map. Undo brings them back until you close the tab.",
-            ))
-            .child(row_of(vec![
-                chip(t, "Reset now", true, cx, |this| {
-                    this.settings_mut(|s| {
-                        s.mapping_confirm = None;
-                        s.mapping_op(|p| p.reset_to_default())
-                    })
-                }),
-                chip(t, "Keep the bindings", false, cx, |this| {
-                    this.settings_mut(|s| s.mapping_confirm = None)
-                }),
-            ])),
-        MappingConfirm::Leave => div()
-            .flex()
-            .flex_col()
-            .mb(px(8.))
-            .child(note(
-                t,
-                "Unsaved mapping changes. They stay in the running controller but are not in the map file.",
-            ))
-            .child(row_of(vec![
-                chip(t, "Close without saving", true, cx, |this| {
-                    this.settings_mut(|s| s.mapping_confirm = Some(MappingConfirm::Leave));
-                    this.close_settings();
-                }),
-                chip(t, "Keep editing", false, cx, |this| {
-                    this.settings_mut(|s| s.mapping_confirm = None)
-                }),
-            ])),
-    }
+    column
 }
 
 /// One conflict with the two ways to resolve it.
