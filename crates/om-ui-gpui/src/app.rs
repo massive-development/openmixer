@@ -39,6 +39,7 @@ use om_ui::sampler_binding::SamplerBinding;
 use om_ui::style::LookAndFeel;
 use om_ui::theme::{ThemeRegistry, ThemeTokens};
 use om_ui::widgets::deck::{DeckWidget, TrackInfo, WaveformMeta};
+use om_ui::widgets::loudness::LoudnessPanel;
 use om_ui::widgets::mixer::MixerPanel;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -141,6 +142,8 @@ pub struct Shell {
     pub(crate) stem_errors: Vec<Option<String>>,
     /// The sampler strip's view-model: pads, selection, path fields and the sample bank.
     pub(crate) sampler: SamplerBinding,
+    /// The master loudness meter's latest reading and whether its panel is open.
+    pub(crate) loudness: LoudnessPanel,
     /// Focus for the sampler strip: its digit keys press pads while it has focus.
     pub(crate) sampler_focus: Option<FocusHandle>,
     /// True while the selected pad's path field takes typed keys.
@@ -268,6 +271,9 @@ impl Shell {
                 deck
             })
             .collect();
+        if let Err(error) = engine.loudness().enable() {
+            eprintln!("loudness meter unavailable: {error}");
+        }
         Self {
             engine,
             router,
@@ -292,6 +298,7 @@ impl Shell {
             shown_waveform: vec![None; deck_count],
             stem_errors: vec![None; deck_count],
             sampler,
+            loudness: LoudnessPanel::new(),
             sampler_focus: None,
             sampler_editing: false,
             sampler_status: None,
@@ -396,6 +403,7 @@ impl Shell {
             deck.refresh(false);
         }
         self.mixer.refresh(dt, self.engine.mixer(), dragging);
+        self.loudness.set_reading(&self.engine.loudness().reading());
         self.sampler.prune_pending();
         if let Some(pad) = self.pending_pad {
             if self.sampler.pads().get(pad).is_some_and(|p| p.loaded) {
