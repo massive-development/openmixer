@@ -7,16 +7,20 @@ use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControl
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
 use crate::library::{LibraryPanel, SharedHub};
-use crate::library_view::library_card;
+use crate::library_view::{library_card, LibraryTable};
 use crate::mixer_view::{channel_card, mixer_card};
 use crate::paint::{paint, place};
 use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState};
 use crate::stage_view::stage_card;
 use gpui::{
-    div, prelude::*, px, size, App, AsyncApp, Bounds, Context, FocusHandle, KeyDownEvent, Window,
+    div, prelude::*, px, size, App, AsyncApp, Bounds, Context, Entity, FocusHandle, Window,
     WindowBounds, WindowOptions,
 };
+use gpui_kit::component::input::InputState;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::table::TableState;
+use gpui_kit::component::WindowExt as _;
 use om_analysis::WaveformData;
 use om_core::ParameterRouter;
 use om_core::{CommandSink, ParameterTarget};
@@ -87,6 +91,8 @@ pub struct RunOptions {
     pub automix: Option<crate::automix_bar::AutomixSnapshotFn>,
     /// Shows the Record button in the header and the `r` key (the window sends `record.toggle`).
     pub record: bool,
+    /// Registers with the OS media controls (media keys, now-playing). Off for tests and `--smoke`.
+    pub media_keys: bool,
     /// Demo only: staged window state for screenshots.
     pub scene: SceneOptions,
 }
@@ -112,8 +118,14 @@ pub struct Shell {
     pub(crate) library_focus: Option<FocusHandle>,
     /// Focus for the settings card: its keys (text fields, Escape) go here while it is open.
     pub(crate) settings_focus: Option<FocusHandle>,
-    /// Focus for the debug column: its path fields take the keys while one is open.
-    pub(crate) debug_focus: Option<FocusHandle>,
+    /// The library toolbar's text box: the search query, or a playlist name while one is typed.
+    pub(crate) library_search: Option<Entity<InputState>>,
+    /// The search box is showing the playlist-name prompt (see `library_view::sync_search_input`).
+    pub(crate) search_names: bool,
+    /// The library's track table. Made on the first draw (it needs a window).
+    pub(crate) library_table: Option<Entity<TableState<LibraryTable>>>,
+    /// The component theme must be rebuilt from `theme` before the next frame.
+    pub(crate) theme_dirty: bool,
     /// The debug column's per-deck path fields and its status line.
     pub(crate) deck_controls: DeckControls,
     /// What each deck card last showed, so the widgets only change on a real change.
@@ -141,10 +153,15 @@ pub struct Shell {
     pub(crate) sampler_open: bool,
     /// Demo only: a sampler pad to press once its sample has loaded.
     pending_pad: Option<usize>,
-    /// The header's notice chip was dismissed (it stays gone for the session).
-    pub(crate) notice_dismissed: bool,
     /// The window's size in px, as the last frame saw it (the library sizes itself from it).
     pub(crate) window_size: (i32, i32),
+    /// The OS media session (media keys, now-playing), once started.
+    pub(crate) media: Option<crate::media_keys::MediaSession>,
+    /// Starting the media session was tried (it is tried once).
+    pub(crate) media_tried: bool,
+    /// Whether the recorder, and stem preparation, were running last frame (to announce the end).
+    pub(crate) was_recording: bool,
+    pub(crate) was_stemming: bool,
     pub(crate) options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -263,7 +280,10 @@ impl Shell {
             library,
             library_focus: None,
             settings_focus: None,
-            debug_focus: None,
+            library_search: None,
+            search_names: false,
+            library_table: None,
+            theme_dirty: true,
             deck_controls: DeckControls::new(deck_count),
             shown_info: vec![TrackInfo::default(); deck_count],
             deck_art,
@@ -278,8 +298,11 @@ impl Shell {
             performance: false,
             sampler_open: scene.sampler_open,
             pending_pad: scene.press_pad,
-            notice_dismissed: false,
             window_size: (0, 0),
+            media: None,
+            media_tried: false,
+            was_recording: false,
+            was_stemming: false,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -388,12 +411,11 @@ impl Shell {
     }
 
     /// The `--debug-panel` column: the per-deck load and play controls, device figures, then the raw
-    /// control-surface values. Keys go to the column (`focus`), which passes them to an open path field.
+    /// control-surface values.
     fn debug_column(
         &self,
         status: &DeviceStatus,
         bounds: Rect,
-        focus: FocusHandle,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
         let t = &self.theme;
@@ -445,14 +467,6 @@ impl Shell {
             .border_color(paint(look.popup.border))
             .p(px(6.))
             .overflow_hidden()
-            .track_focus(&focus)
-            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
-                let keys = &ev.keystroke;
-                if !(keys.modifiers.control || keys.modifiers.platform) {
-                    this.debug_key(&keys.key, keys.key_char.as_deref());
-                    cx.notify();
-                }
-            }))
             .child(body)
             .child(
                 div()
@@ -471,16 +485,26 @@ impl Shell {
 
     /// One placed cell. Tagged with a debug selector (`deck:N`, `slot:NAME`) so headless tests can
     /// read back the bounds it was laid out at; the tag is a no-op without gpui's `test-support`.
-    fn cell_view(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
+    fn cell_view(
+        &mut self,
+        cell: &PlacedCell,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
         let tag = match &cell.kind {
             CellKind::Deck(index) => format!("deck:{index}"),
             CellKind::Slot(name) => format!("slot:{name}"),
             CellKind::Rows(_) => "rows".to_owned(),
         };
-        self.cell_content(cell, cx).debug_selector(|| tag)
+        self.cell_content(cell, window, cx).debug_selector(|| tag)
     }
 
-    fn cell_content(&mut self, cell: &PlacedCell, cx: &mut Context<Self>) -> gpui::Div {
+    fn cell_content(
+        &mut self,
+        cell: &PlacedCell,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
         let t = &self.theme;
         match &cell.kind {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
@@ -499,7 +523,7 @@ impl Shell {
                 sampler_card(self, cell.bounds, focus, cx)
             }
             CellKind::Slot(name) if name == LIBRARY_SLOT && self.library.is_some() => {
-                library_card(self, cell.bounds, cx)
+                library_card(self, cell.bounds, window, cx)
             }
             // `compute_layout` flattens groups, so none reaches the view.
             CellKind::Rows(_) => place(cell.bounds),
@@ -525,7 +549,9 @@ impl Shell {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let frame_start = Instant::now();
+        crate::controls::begin_frame();
         self.tick();
+        self.desktop_step(window, cx);
         window.request_animation_frame();
         if !window.is_window_active() {
             // The key-up or mouse-up of a held sampler pad never reaches an inactive window.
@@ -537,6 +563,13 @@ impl Render for Shell {
             .is_some_and(|limit| self.frames >= limit)
         {
             cx.quit();
+        }
+        if std::mem::take(&mut self.theme_dirty) {
+            crate::theme_bridge::apply(cx, &self.theme);
+        }
+        if let Some(text) = self.options.banner.take() {
+            // The mock-device fallback notice: a toast that stays until it is dismissed.
+            window.push_notification(Notification::warning(text).autohide(false), cx);
         }
 
         let viewport = window.viewport_size();
@@ -566,15 +599,15 @@ impl Render for Shell {
                 .font(crate::font::interface_font(&self.theme))
                 .bg(paint(self.theme.backdrop_top))
                 .text_color(paint(self.theme.text_primary))
-                .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
+                .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
                     // `r` toggles recording unless a text field or the settings card takes the key.
                     let keys = &ev.keystroke;
                     let plain =
                         !(keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt);
-                    if keys.key == "r" && plain && !this.typing() {
+                    if keys.key == "r" && plain && !this.typing(window, cx) {
                         this.press_record();
                         cx.notify();
-                    } else if keys.key == "tab" && plain && !this.typing() {
+                    } else if keys.key == "tab" && plain && !this.typing(window, cx) {
                         // Tab toggles performance mode, like the PERFORM button.
                         this.performance = !this.performance;
                         cx.notify();
@@ -588,17 +621,13 @@ impl Render for Shell {
         );
         root = root.child(self.header_strip(&page.header, cx));
         for cell in &page.cells {
-            root = root.child(self.cell_view(cell, cx));
+            root = root.child(self.cell_view(cell, window, cx));
         }
         if let Some(status) = self.options.debug.clone() {
-            let focus = self
-                .debug_focus
-                .get_or_insert_with(|| cx.focus_handle())
-                .clone();
+            self.ensure_deck_inputs(window, cx);
             root = root.child(self.debug_column(
                 &status(),
                 Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
-                focus,
                 cx,
             ));
         }
@@ -623,41 +652,48 @@ pub fn run(engine: Arc<DjEngine>, router: Arc<ParameterRouter>, mut options: Run
     let theme = load_theme();
     let frames_out = Arc::new(AtomicU64::new(0));
     let counter = Arc::clone(&frames_out);
-    gpui_kit::application().run(move |cx: &mut App| {
-        crate::font::register(cx);
-        let requested = std::env::var("OPENMIXER_WINDOW")
-            .ok()
-            .and_then(|text| crate::window_size::parse_size(&text));
-        let display = cx.primary_display().map(|d| {
-            let b = d.bounds().size;
-            (f32::from(b.width), f32::from(b.height))
+    gpui_kit::application()
+        .with_assets(gpui_kit::assets::Assets)
+        .run(move |cx: &mut App| {
+            crate::font::register(cx);
+            // The component library and its Root layer (`open_window` wraps the shell in one, which
+            // is what dialogs and toasts draw into), themed from the OpenMixer tokens.
+            gpui_kit::init(cx);
+            crate::theme_bridge::apply(cx, &theme);
+            let requested = std::env::var("OPENMIXER_WINDOW")
+                .ok()
+                .and_then(|text| crate::window_size::parse_size(&text));
+            let display = cx.primary_display().map(|d| {
+                let b = d.bounds().size;
+                (f32::from(b.width), f32::from(b.height))
+            });
+            let (width, height) = crate::window_size::initial_size(requested, display);
+            let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
+            if let Some(mut hook) = options.on_frame.take() {
+                // A foreground timer, not the render loop: it keeps running while the window is hidden.
+                cx.spawn(async move |cx: &mut AsyncApp| loop {
+                    cx.background_executor().timer(CONTROL_TICK).await;
+                    cx.update(|_| hook());
+                })
+                .detach();
+            }
+            let mut slot = Some((engine, router, theme, options, counter));
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    // Below this the deck controls would overlap; see `main_layout::MIN_WINDOW`.
+                    window_min_size: Some(size(px(MIN_WINDOW.0 as f32), px(MIN_WINDOW.1 as f32))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    let (engine, router, theme, options, counter) =
+                        slot.take().expect("window opened once");
+                    cx.new(|_| Shell::new(engine, router, theme, options, counter))
+                },
+            )
+            .expect("open main window");
+            cx.activate(true);
         });
-        let (width, height) = crate::window_size::initial_size(requested, display);
-        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
-        if let Some(mut hook) = options.on_frame.take() {
-            // A foreground timer, not the render loop: it keeps running while the window is hidden.
-            cx.spawn(async move |cx: &mut AsyncApp| loop {
-                cx.background_executor().timer(CONTROL_TICK).await;
-                cx.update(|_| hook());
-            })
-            .detach();
-        }
-        let mut slot = Some((engine, router, theme, options, counter));
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                // Below this the deck controls would overlap; see `main_layout::MIN_WINDOW`.
-                window_min_size: Some(size(px(MIN_WINDOW.0 as f32), px(MIN_WINDOW.1 as f32))),
-                ..Default::default()
-            },
-            move |_, cx| {
-                let (engine, router, theme, options, counter) =
-                    slot.take().expect("window opened once");
-                cx.new(|_| Shell::new(engine, router, theme, options, counter))
-            },
-        )
-        .expect("open main window");
-        cx.activate(true);
-    });
     frames_out.load(Ordering::Relaxed)
 }

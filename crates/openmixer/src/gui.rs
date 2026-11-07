@@ -404,6 +404,7 @@ pub fn main(args: &[String]) -> ExitCode {
         on_frame: Some(automix_frame),
         automix: Some(automix_read),
         record: true,
+        media_keys: !smoke,
     };
     let frames = run(Arc::clone(&engine), router, options);
     if demo_record {
