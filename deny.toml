@@ -32,6 +32,9 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     # CC0-1.0: tiny-keccak (gpui's ahash chain, via zed-xim); a public-domain dedication.
     "CC0-1.0",
+    # 0BSD: enum-iterator (and its derive), via gpui-component (the P5 chrome); a public-domain
+    # equivalent, permissive and compatible with AGPL-3.0 distribution.
+    "0BSD",
     # NCSA: libfuzzer-sys (via gpui's image/rav1e chain, dev-only in practice); OSI-approved permissive.
     "NCSA",
 ]
