@@ -34,6 +34,7 @@ pub(super) fn recording_page(
             chip(t, "Change folder", false, cx, |this| {
                 this.settings_mut(|s| s.begin_entry(EntryKind::RecordFolder))
             }),
+            browse_chip(t, EntryKind::RecordFolder, cx),
             chip(t, "Use default", r.folder.is_empty(), cx, |this| {
                 this.settings_mut(|s| s.record_set_folder(""))
             }),
@@ -80,7 +81,7 @@ pub(super) fn recording_page(
             .unwrap_or("16-bit")
     );
     column = column.child(note(t, &status));
-    column.child(status_line(t, &settings.notice))
+    column
 }
 
 fn on_off(on: bool) -> &'static str {
