@@ -35,3 +35,7 @@ tempfile.workspace = true
 [[bench]]
 name = "hot_loops"
 harness = false
+
+[[bench]]
+name = "varispeed"
+harness = false

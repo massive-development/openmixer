@@ -670,3 +670,64 @@ fn dj_engine_process_does_not_allocate_while_recording() {
     let summary = engine.recorder().stop().expect("stops");
     assert!(summary.frames > 0);
 }
+
+#[test]
+fn rubato_varispeed_with_changing_rates_and_a_loop_wrap_does_not_allocate() {
+    use crate::quantizer::Loop;
+    let fixture = om_testing::fs::TempDir::new("om_engine");
+    let wav = fixture.file("varispeed.wav");
+    let frames = BLOCK * 150 * 3 + 8192;
+    let mut samples = Vec::with_capacity(frames * 2);
+    for n in 0..frames {
+        let v = (n % 1000) as f32 / 1000.0;
+        samples.push(v);
+        samples.push(-v);
+    }
+    om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
+
+    let (deck, mut audio) = Deck::new(1 << 16);
+    audio.prepare(RATE, BLOCK);
+    deck.load(&wav).expect("fixture loads");
+    assert!(
+        crate::deck::tests::pump_until_buffered(&deck, &mut audio, BLOCK * 4, 0),
+        "decoder did not buffer in time"
+    );
+    assert!(deck.set_loop(Loop {
+        start: 1024,
+        end: 5120
+    }));
+    assert!(
+        wait_until(std::time::Duration::from_secs(10), DEFAULT_POLL, || deck
+            .is_loop_prefetched()),
+        "loop start was not prefetched"
+    );
+    deck.play();
+
+    let mut l = [0.0_f32; BLOCK];
+    let mut r = [0.0_f32; BLOCK];
+    let mut audible = 0_usize;
+    let mut wraps = 0_usize;
+    let mut last = 0_i64;
+    // The rate moves every block, crossing exact unity (linear path), 3.0 (out of range, linear)
+    // and back into the rubato range, so path switches happen under the guard too. The 4096-frame
+    // loop wraps several times.
+    for b in 0..150 {
+        let rate = match b % 50 {
+            20..=24 => 1.0,
+            30..=34 => 3.0,
+            _ => 1.0 + 0.1 * (b as f64 * 0.37).sin(),
+        };
+        deck.set_rate(rate);
+        assert_no_alloc(|| audio.render_stereo(&mut l, &mut r));
+        if l.iter().any(|&v| v != 0.0) {
+            audible += 1;
+        }
+        let p = deck.position_frames();
+        if p < last {
+            wraps += 1;
+        }
+        last = p;
+    }
+    assert_eq!(audible, 150, "every block should carry audio");
+    assert!(wraps >= 3, "expected loop wraps, saw {wraps}");
+}

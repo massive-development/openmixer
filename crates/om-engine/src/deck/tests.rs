@@ -13,6 +13,8 @@ mod keylock;
 mod loops;
 #[cfg(test)]
 pub(crate) mod stems;
+#[cfg(test)]
+mod varispeed;
 
 use om_testing::fs::TempDir;
 use om_testing::wav::write_float_wav;
@@ -221,8 +223,9 @@ fn rate_half_advances_half_as_fast_and_interpolates() {
         "position {}",
         deck.position_frames()
     );
-    // Linear ramp => interpolation is exact; slope is half.
-    assert!((l[2] - l[0] - 1.0 / FRAMES as f32).abs() <= 1e-6);
+    // Linear ramp => interpolation is exact; slope is half. Read well past the start: the
+    // varispeed filter rings for a few dozen frames after a cold start, as at any abrupt edge.
+    assert!((l[602] - l[600] - 1.0 / FRAMES as f32).abs() <= 1e-6);
 }
 
 #[test]
