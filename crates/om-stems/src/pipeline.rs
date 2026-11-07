@@ -73,8 +73,11 @@ struct Emitter<'a> {
 
 impl<'a> Emitter<'a> {
     fn new(sink: &'a mut dyn StemSink, model_rate: f64, src_rate: f64) -> Self {
-        let resamplers = ((model_rate - src_rate).abs() > 1e-6)
-            .then(|| vec![StreamResampler::new(model_rate, src_rate); 8]);
+        let resamplers = ((model_rate - src_rate).abs() > 1e-6).then(|| {
+            (0..8)
+                .map(|_| StreamResampler::new(model_rate, src_rate))
+                .collect()
+        });
         Self {
             sink,
             resamplers,

@@ -15,6 +15,8 @@ om-core.workspace = true
 om-dsp.workspace = true
 om-stretch.workspace = true
 rtrb.workspace = true
+audioadapter-buffers.workspace = true
+rubato.workspace = true
 symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "ogg", "vorbis", "isomp4", "aac"] }
 thiserror.workspace = true
 tracing.workspace = true
