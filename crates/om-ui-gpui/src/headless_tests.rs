@@ -636,6 +636,62 @@ impl gpui::Render for PanelOnly {
     }
 }
 
+/// Focuses the sampler strip, as a click on it does.
+fn focus_sampler(view: &Entity<Shell>, vcx: &mut VisualTestContext) {
+    // The strip starts collapsed to a handle, which takes no pad keys; a click opens it.
+    view.update(vcx, |shell, cx| {
+        shell.sampler_open = true;
+        cx.notify();
+    });
+    vcx.run_until_parked();
+    let focus = view
+        .read_with(vcx, |s, _| s.sampler_focus.clone())
+        .expect("the sampler strip is drawn");
+    vcx.update(|window, cx| focus.focus(window, cx));
+    vcx.run_until_parked();
+}
+
+fn selected_pad(view: &Entity<Shell>, vcx: &mut VisualTestContext) -> usize {
+    view.read_with(vcx, |s, _| s.sampler.selected())
+}
+
+/// Presses `pad`'s digit key (down and up) and returns the pad selected after.
+fn press_pad_key(view: &Entity<Shell>, vcx: &mut VisualTestContext, pad: usize) -> usize {
+    vcx.simulate_keystrokes(&(pad + 1).to_string());
+    vcx.run_until_parked();
+    selected_pad(view, vcx)
+}
+
+fn search_query(view: &Entity<Shell>, vcx: &mut VisualTestContext) -> Option<String> {
+    view.read_with(vcx, |s, _| {
+        s.library
+            .as_ref()
+            .map(|p| p.browser.search_text().to_owned())
+    })
+}
+
+fn search_focused(view: &Entity<Shell>, vcx: &mut VisualTestContext) -> bool {
+    let input = view
+        .read_with(vcx, |s, _| s.library_search.clone())
+        .expect("the search box is made on the first draw");
+    vcx.update(|window, cx| input.focus_handle(cx).is_focused(window))
+}
+
+#[gpui::test]
+fn keys_1_to_8_press_their_pads_while_the_strip_has_focus(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], library_shell(&["A"]));
+    focus_sampler(&view, vcx);
+    // Descending then ascending, so every key moves the selection to a pad it was not on.
+    for pad in (0..8).rev().chain(0..8) {
+        assert_eq!(press_pad_key(&view, vcx, pad), pad, "key {}", pad + 1);
+        assert_eq!(
+            view.read_with(vcx, |s, _| s.sampler.held()),
+            None,
+            "the key coming up released the pad"
+        );
+    }
+}
+
 #[gpui::test]
 fn the_loudness_panel_draws_a_reading_inside_its_slot(cx: &mut TestAppContext) {
     let (panel, vcx) = draw_loudness_panel(cx, &loud_reading());
@@ -686,4 +742,75 @@ fn the_shell_starts_the_meter_and_the_toggle_opens_the_panel_in_the_mixer(cx: &m
             "{size:?}: {panel:?} outside {mixer:?}"
         );
     }
+}
+
+#[gpui::test]
+fn pad_keys_are_typed_text_not_triggers_while_the_search_box_has_focus(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], library_shell(&["A"]));
+    focus_sampler(&view, vcx);
+    assert_eq!(press_pad_key(&view, vcx, 3), 3);
+
+    let input = view
+        .read_with(vcx, |s, _| s.library_search.clone())
+        .expect("the search box is made on the first draw");
+    vcx.update(|window, cx| input.focus_handle(cx).focus(window, cx));
+    vcx.simulate_input("5");
+    vcx.simulate_keystrokes("6");
+    vcx.run_until_parked();
+    assert_eq!(selected_pad(&view, vcx), 3, "no pad was triggered");
+    assert_eq!(view.read_with(vcx, |s, _| s.sampler.held()), None);
+    assert_eq!(search_query(&view, vcx).as_deref(), Some("56"));
+}
+
+#[gpui::test]
+fn pad_keys_do_not_trigger_while_the_settings_text_field_has_focus(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], settings_shell());
+    focus_sampler(&view, vcx);
+    assert_eq!(press_pad_key(&view, vcx, 2), 2);
+
+    view.update(vcx, |shell, cx| {
+        shell.settings_mut(|s| s.begin_entry(EntryKind::WatchFolder));
+        cx.notify();
+    });
+    vcx.run_until_parked();
+    vcx.simulate_input("7");
+    vcx.simulate_keystrokes("8");
+    vcx.run_until_parked();
+    assert_eq!(selected_pad(&view, vcx), 2, "no pad was triggered");
+    let typed = view.read_with(vcx, |s, _| {
+        s.settings
+            .as_ref()
+            .and_then(|s| s.entry.as_ref())
+            .map(|e| e.text.clone())
+    });
+    assert_eq!(typed.as_deref(), Some("78"), "the digits went to the field");
+}
+
+#[gpui::test]
+fn slash_focuses_the_search_box_and_escape_clears_it(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], library_shell(&["House", "Techno"]));
+    // The library card has focus, as after a click on it.
+    let card = view
+        .read_with(vcx, |s, _| s.library_focus.clone())
+        .expect("the library card is drawn");
+    vcx.update(|window, cx| card.focus(window, cx));
+    vcx.run_until_parked();
+    assert!(!search_focused(&view, vcx));
+
+    vcx.simulate_keystrokes("/");
+    vcx.run_until_parked();
+    assert!(search_focused(&view, vcx), "/ focuses the search box");
+    assert_eq!(search_query(&view, vcx).as_deref(), Some(""), "no / typed");
+
+    vcx.simulate_input("tech");
+    vcx.run_until_parked();
+    assert_eq!(search_query(&view, vcx).as_deref(), Some("tech"));
+
+    vcx.simulate_keystrokes("escape");
+    vcx.run_until_parked();
+    assert_eq!(search_query(&view, vcx).as_deref(), Some(""));
+    assert!(
+        !search_focused(&view, vcx),
+        "Escape gives the keyboard back"
+    );
 }

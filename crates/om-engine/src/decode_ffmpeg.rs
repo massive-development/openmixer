@@ -155,15 +155,9 @@ fn run(
     if bytes.is_empty() {
         return Err(DecodeError::FfmpegFailed("the file has no audio".into()));
     }
-    let samples = bytes
-        .chunks_exact(8) // whole stereo frames only
-        .flat_map(|f| {
-            [
-                f32::from_le_bytes([f[0], f[1], f[2], f[3]]),
-                f32::from_le_bytes([f[4], f[5], f[6], f[7]]),
-            ]
-        })
-        .collect();
+    // Whole stereo frames only (8 bytes each); ffmpeg writes f32le, so this is a plain reinterpret.
+    let whole = bytes.len() - bytes.len() % 8;
+    let samples = bytemuck::pod_collect_to_vec::<u8, f32>(&bytes[..whole]);
     Ok(DecodedAudio {
         samples,
         sample_rate: target_rate,

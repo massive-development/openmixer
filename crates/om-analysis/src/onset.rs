@@ -94,11 +94,11 @@ fn bins_of(stft: &MagnitudeStft, band: FrequencyBand, sample_rate: f64) -> BinRa
 }
 
 fn positive_flux(now: &[f32], previous: &[f32], bins: BinRange) -> f32 {
-    let mut flux = 0.0f32;
-    for k in bins.first..=bins.last {
-        flux += (now[k] - previous[k]).max(0.0);
-    }
-    flux
+    let range = bins.first..=bins.last;
+    now[range.clone()]
+        .iter()
+        .zip(&previous[range])
+        .fold(0.0f32, |flux, (n, p)| flux + (n - p).max(0.0))
 }
 
 fn empty_envelope(stft: &MagnitudeStft, sample_rate: f64) -> OnsetEnvelope {
