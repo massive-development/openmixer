@@ -9,6 +9,7 @@ pub mod deck_header;
 pub mod fx_panel;
 pub mod hotcues;
 pub mod loops;
+pub mod loudness;
 pub mod master;
 pub mod mixer;
 pub mod pitch;

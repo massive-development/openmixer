@@ -6,6 +6,7 @@ use super::channel::ChannelStrip;
 use super::crossfader::CrossfaderSection;
 use super::cue::{CueSection, CUE_HEIGHT};
 use super::fx_panel::FxPanel;
+use super::loudness::TOGGLE_HEIGHT;
 use super::master::MasterSection;
 use crate::binding::{LevelSource, MixerBinding};
 use crate::geometry::Rect;
@@ -35,6 +36,10 @@ pub struct ModuleLayout {
     pub master: Rect,
     pub crossfader: Rect,
     pub cue: Rect,
+    /// The loudness toggle, in the free space between the FX toggle and the headphone knobs.
+    pub loudness: Rect,
+    /// Where the open loudness panel is drawn: under the toggle, over the headphone knobs.
+    pub loudness_panel: Rect,
 }
 
 pub struct MixerPanel {
@@ -127,11 +132,21 @@ impl MixerPanel {
         let fx = top.remove_left(FX_TOGGLE_WIDTH.min(top.w));
         right.remove_top(FX_TOGGLE_HEIGHT + gap);
         let cue = right.remove_bottom(CUE_HEIGHT);
+        let mut free = right.reduced(pad.min(right.w / 2), 0);
+        let loudness = free.remove_top(TOGGLE_HEIGHT.min(free.h));
+        let loudness_panel = Rect::new(
+            loudness.x,
+            loudness.bottom() + 2,
+            loudness.w,
+            (cue.bottom() - loudness.bottom() - 2).max(0),
+        );
         ModuleLayout {
             fx,
             master,
             crossfader,
             cue,
+            loudness,
+            loudness_panel,
         }
     }
 }
