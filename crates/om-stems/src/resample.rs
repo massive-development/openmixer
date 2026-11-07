@@ -9,6 +9,13 @@ use audioadapter_buffers::direct::InterleavedSlice;
 use om_engine::resample::fft_resampler;
 use rubato::{Fft, Resampler};
 
+use crate::separator::StemError;
+
+/// Highest rate accepted, in Hz (the FFT size grows with the reduced rate fraction).
+const MAX_RATE_HZ: f64 = 768_000.0;
+/// Largest conversion ratio accepted, either way.
+const MAX_RATIO: f64 = 64.0;
+
 #[derive(Debug)]
 pub struct StreamResampler {
     inner: Fft<f32>,
@@ -29,18 +36,28 @@ pub struct StreamResampler {
 impl StreamResampler {
     /// Rates are whole Hz (container and model rates are); a fractional rate is rounded.
     ///
-    /// # Panics
-    /// If a rate is not finite and at least 1 Hz.
-    pub fn new(in_rate: f64, out_rate: f64) -> Self {
-        assert!(
-            in_rate.is_finite() && out_rate.is_finite() && in_rate >= 1.0 && out_rate >= 1.0,
-            "sample rates must be finite and at least 1 Hz"
-        );
+    /// # Errors
+    /// [`StemError::Invalid`] if a rate is not finite, below 1 Hz or above 768 kHz, if the ratio
+    /// is beyond 64:1 either way, or if rubato refuses the pair.
+    pub fn new(in_rate: f64, out_rate: f64) -> Result<Self, StemError> {
+        let ok = |r: f64| r.is_finite() && (1.0..=MAX_RATE_HZ).contains(&r.round());
+        if !(ok(in_rate) && ok(out_rate)) {
+            return Err(StemError::Invalid(format!(
+                "sample rates {in_rate} -> {out_rate} Hz (need whole rates from 1 Hz to {MAX_RATE_HZ} Hz)"
+            )));
+        }
         let (rate_in, rate_out) = (in_rate.round(), out_rate.round());
-        let inner = fft_resampler(rate_in as usize, rate_out as usize, 1)
-            .expect("whole, positive rates construct");
+        let ratio = rate_out / rate_in;
+        if !(1.0 / MAX_RATIO..=MAX_RATIO).contains(&ratio) {
+            return Err(StemError::Invalid(format!(
+                "resampling ratio {rate_in} -> {rate_out} Hz is beyond {MAX_RATIO}:1"
+            )));
+        }
+        let inner = fft_resampler(rate_in as usize, rate_out as usize, 1).map_err(|e| {
+            StemError::Invalid(format!("resampler {rate_in} -> {rate_out} Hz: {e}"))
+        })?;
         let chunk = inner.input_frames_next();
-        Self {
+        Ok(Self {
             step: rate_in / rate_out,
             chunk,
             chunk_in: vec![0.0; chunk],
@@ -50,7 +67,7 @@ impl StreamResampler {
             inner,
             pushed: 0,
             emitted: 0,
-        }
+        })
     }
 
     /// Output frames for `n_in` input frames: `round(n_in / step)`.
@@ -119,7 +136,7 @@ mod tests {
     }
 
     fn run(rin: f64, rout: f64, x: &[f32], chunk: usize) -> Vec<f32> {
-        let mut r = StreamResampler::new(rin, rout);
+        let mut r = StreamResampler::new(rin, rout).expect("valid rates");
         let mut out = Vec::new();
         for c in x.chunks(chunk) {
             r.push(c, &mut out);
@@ -167,5 +184,29 @@ mod tests {
         let y = run(44_100.0, 48_000.0, &x, 999);
         // The step at each end rings for a few hundred frames; the interior must be flat.
         assert!(y[600..y.len() - 600].iter().all(|v| (v - 0.3).abs() < 1e-4));
+    }
+
+    #[test]
+    fn bad_rates_are_errors_not_panics() {
+        for (a, b) in [
+            (0.0, 44_100.0),
+            (44_100.0, 0.0),
+            (0.4, 44_100.0),
+            (f64::NAN, 44_100.0),
+            (44_100.0, f64::NAN),
+            (f64::INFINITY, 44_100.0),
+            (-48_000.0, 44_100.0),
+            (1e12, 44_100.0),
+            (1.0, 768_000.0),
+            (768_000.0, 1.0),
+            (8_000.0, 768_000.0),
+        ] {
+            assert!(
+                matches!(StreamResampler::new(a, b), Err(StemError::Invalid(_))),
+                "{a} -> {b} should be Invalid"
+            );
+        }
+        assert!(StreamResampler::new(96_000.0, 44_100.0).is_ok());
+        assert!(StreamResampler::new(768_000.0, 44_100.0).is_ok());
     }
 }

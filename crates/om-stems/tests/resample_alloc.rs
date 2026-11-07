@@ -9,7 +9,7 @@ static ALLOCATOR: AllocDisabler = AllocDisabler;
 
 #[test]
 fn push_and_finish_do_not_allocate_after_construction() {
-    let mut resampler = StreamResampler::new(48_000.0, 44_100.0);
+    let mut resampler = StreamResampler::new(48_000.0, 44_100.0).expect("valid rates");
     let block: Vec<f32> = (0..700).map(|n| (n as f32 * 0.05).sin() * 0.5).collect();
     let blocks = 60;
     let mut out: Vec<f32> = Vec::with_capacity(blocks * block.len() + 4096);
