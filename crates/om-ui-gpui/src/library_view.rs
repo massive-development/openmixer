@@ -504,6 +504,11 @@ pub fn library_card(
         .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
             let keys = &ev.keystroke;
             if keys.modifiers.control || keys.modifiers.platform {
+                // Ctrl or Cmd C copies the selected tracks, unless the search box is editing text.
+                if keys.key == "c" && !this.search_has_focus(window, cx) {
+                    this.copy_selected_tracks(window, cx);
+                    cx.notify();
+                }
                 return;
             }
             // Keys typed in the search box are the box's own, except Escape.
@@ -733,6 +738,15 @@ pub fn library_card(
         .items_center()
         .gap(px(4.))
         .child(div().flex_1().h(px(button_h)).child(Input::new(&input)));
+    toolbar = toolbar.child(
+        div().h(px(button_h)).flex_none().child(
+            push_button(&t, "Copy", None, cx, |this, window, cx| {
+                this.copy_selected_tracks(window, cx)
+            })
+            .h_full()
+            .px(px(10.)),
+        ),
+    );
     toolbar = toolbar.child(action_button(&t, button_h, "Analyse", false, cx, |p| {
         p.prep_selected();
     }));

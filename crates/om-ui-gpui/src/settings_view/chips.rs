@@ -36,6 +36,23 @@ pub(crate) fn chip(
         .child(button)
 }
 
+/// A chip that opens the platform's file dialog for the text field `kind`; the picked path is
+/// applied as if it had been typed and confirmed.
+pub(crate) fn browse_chip(t: &ThemeTokens, kind: EntryKind, cx: &mut Context<Shell>) -> Div {
+    debug_assert!(kind.can_browse(), "{kind:?} is not a path field");
+    let button = push_button(t, "Browse…", None, cx, move |this, _, cx| {
+        this.browse(kind, cx)
+    })
+    .h_full()
+    .px(px(10.));
+    div()
+        .h(px(CHIP_H))
+        .mr(px(6.))
+        .mb(px(6.))
+        .flex_none()
+        .child(button)
+}
+
 /// A labelled row of chips.
 pub(super) fn choice_row(t: &ThemeTokens, title: &str, chips: Div) -> Div {
     let caption = LookAndFeel::from_tokens(t).panel_caption;
