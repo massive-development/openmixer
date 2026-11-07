@@ -13,13 +13,17 @@ workspace = true
 
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.10" }
-gpui-kit = { version = "=0.8.1", default-features = false }
+gpui-kit = { version = "=0.8.1", default-features = false, features = ["component", "assets"] }
 om-analysis.workspace = true
 om-core.workspace = true
 om-engine.workspace = true
 om-library.workspace = true
 om-ui.workspace = true
 om-midi.workspace = true
+# OS media keys and now-playing (#229). `use_zbus` keeps libdbus (a system library) out of the build.
+souvlaki = { version = "=0.9.3", default-features = false, features = ["use_zbus"] }
+# The window handles of the CLAP plugin window (all platforms) and of souvlaki's Win32 attach
+# (a type-only crate GPUI already uses).
 raw-window-handle = "0.6"
 
 [dev-dependencies]

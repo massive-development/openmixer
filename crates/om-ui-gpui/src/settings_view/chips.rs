@@ -1,8 +1,14 @@
-//! Shared widgets for the settings cards: chips, choice rows, notes, status lines and the text field.
+//! Shared widgets for the settings cards: chips, choice rows, notes and the text field. The chips
+//! are `gpui-component` buttons and the text field an input; what a page tells the user after an
+//! action is a toast (see `Shell::push_notice`).
 
 use super::*;
-use crate::paint::skin;
+use crate::controls::push_button;
+use gpui_kit::component::input::Input;
 use om_ui::style::LookAndFeel;
+
+/// Height of a chip, px.
+const CHIP_H: f32 = 28.0;
 
 /// A flow-layout button: a labelled chip that runs `on_press` on the Shell when clicked. Lit
 /// chips are switches on; the rest are raised buttons.
@@ -24,31 +30,32 @@ pub(crate) fn chip_with_window(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
 ) -> Div {
-    let look = LookAndFeel::from_tokens(t);
-    let style = if lit {
-        look.toggle(true, accent_of(t))
-    } else {
-        look.button.idle
-    };
-    skin(
-        div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .px(px(10.))
-            .py(px(4.))
-            .mr(px(6.))
-            .mb(px(6.)),
-        &style,
-    )
-    .child(label.to_owned())
-    .on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-            on_press(this, window, cx);
-            cx.notify();
-        }),
-    )
+    let button = push_button(t, label, lit.then(|| accent_of(t)), cx, on_press)
+        .h_full()
+        .px(px(10.));
+    div()
+        .h(px(CHIP_H))
+        .mr(px(6.))
+        .mb(px(6.))
+        .flex_none()
+        .child(button)
+}
+
+/// A chip that opens the platform's file dialog for the text field `kind`; the picked path is
+/// applied as if it had been typed and confirmed.
+pub(crate) fn browse_chip(t: &ThemeTokens, kind: EntryKind, cx: &mut Context<Shell>) -> Div {
+    debug_assert!(kind.can_browse(), "{kind:?} is not a path field");
+    let button = push_button(t, "Browse…", None, cx, move |this, _, cx| {
+        this.browse(kind, cx)
+    })
+    .h_full()
+    .px(px(10.));
+    div()
+        .h(px(CHIP_H))
+        .mr(px(6.))
+        .mb(px(6.))
+        .flex_none()
+        .child(button)
 }
 
 /// A labelled row of chips.
@@ -77,29 +84,6 @@ pub(super) fn note(t: &ThemeTokens, text: &str) -> Div {
         .child(text.to_owned())
 }
 
-/// The last action's text, in the error colour when it failed.
-pub(super) fn status_line(t: &ThemeTokens, notice: &Notice) -> Div {
-    if notice.text.is_empty() {
-        return div();
-    }
-    let look = LookAndFeel::from_tokens(t);
-    let colour = if notice.error {
-        look.panel.text
-    } else {
-        look.panel_caption.text
-    };
-    let text = if notice.error {
-        format!("Error: {}", notice.text)
-    } else {
-        notice.text.clone()
-    };
-    div()
-        .text_color(paint(colour))
-        .text_size(px(look.panel_caption.font_size))
-        .mt(px(6.))
-        .child(text)
-}
-
 /// A row of chips.
 pub(super) fn row_of(chips: Vec<Div>) -> Div {
     chips
@@ -107,7 +91,8 @@ pub(super) fn row_of(chips: Vec<Div>) -> Div {
         .fold(div().flex().flex_wrap(), |row, c| row.child(c))
 }
 
-/// The text field, when the open field is `kind`: the typed path with Apply and Cancel.
+/// The text field, when the open field is `kind`: an input with Apply and Cancel. The input
+/// itself is made by `Shell::sync_entry_input` when the field opens.
 pub(super) fn entry_field(
     t: &ThemeTokens,
     settings: &SettingsState,
@@ -115,22 +100,13 @@ pub(super) fn entry_field(
     hint: &str,
     cx: &mut Context<Shell>,
 ) -> Option<Div> {
-    let entry = settings.entry.as_ref().filter(|e| e.kind == kind)?;
-    let field = skin(
-        div()
-            .flex_1()
-            .overflow_hidden()
-            .px(px(8.))
-            .py(px(4.))
-            .mr(px(6.)),
-        &LookAndFeel::from_tokens(t).text_field.focus,
-    )
-    .child(format!("{}|", entry.text));
+    settings.entry.as_ref().filter(|e| e.kind == kind)?;
+    let (_, input) = settings.entry_input.as_ref().filter(|(k, _)| *k == kind)?;
     let line = div()
         .flex()
         .items_center()
         .mb(px(6.))
-        .child(field)
+        .child(div().flex_1().mr(px(6.)).child(Input::new(input)))
         .child(chip(t, "Apply", false, cx, |this| {
             this.settings_mut(|s| s.submit_entry())
         }))
