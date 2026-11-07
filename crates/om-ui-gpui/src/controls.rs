@@ -16,9 +16,11 @@ use crate::knob_paint::{
 use crate::meter_paint;
 use crate::paint::{paint, place, shadow, skin};
 use gpui::{
-    canvas, div, prelude::*, px, Bounds, Context, Div, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseUpEvent, Pixels, ScrollEvent, Window,
+    canvas, div, prelude::*, px, Bounds, ClickEvent, Context, Div, Hsla, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseUpEvent, Pixels, ScrollEvent, SharedString, Window,
 };
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
+use gpui_kit::component::Sizable as _;
 use om_ui::geometry::Rect;
 use om_ui::style::LookAndFeel;
 use om_ui::theme::{Colour, ThemeTokens};
@@ -107,27 +109,74 @@ pub fn button(
     on_press: impl Fn(&mut Shell) + 'static,
 ) -> Div {
     let look = LookAndFeel::from_tokens(t);
-    let hover = look.button.hover.fill;
-    let el = skin(
-        place(rect).flex().items_center().justify_center(),
-        &if lit {
-            look.lit_button(accent)
-        } else {
-            look.button.idle
-        },
-    )
-    .text_size(px(t.type_caption.max(MIN_TEXT_PX)));
-    let el = if lit {
-        shadow(el, &look.glow(accent))
+    let wrap = place(rect).rounded(px(t.control_radius));
+    let wrap = if lit {
+        shadow(wrap, &look.glow(accent))
     } else {
-        el.hover(move |style| style.bg(paint(hover)))
+        wrap
     };
-    el.child(label.to_owned()).on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-            on_press(this);
+    wrap.child(
+        push_button(t, label, lit.then_some(accent), cx, move |this, _, _| {
+            on_press(this)
+        })
+        .w_full()
+        .h_full(),
+    )
+}
+
+thread_local! {
+    /// How many buttons of each label this frame has made so far (see [`next_button_id`]).
+    static BUTTON_IDS: std::cell::RefCell<std::collections::HashMap<String, u32>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Forgets the button ids of the last frame. Called at the start of each frame's render.
+pub(crate) fn begin_frame() {
+    BUTTON_IDS.with(|ids| ids.borrow_mut().clear());
+}
+
+/// An element id for a button labelled `label`: the label and how many same-labelled buttons came
+/// before it in this frame. Same-labelled buttons (every watch folder row has a "Remove") would
+/// otherwise share one focus handle; the order of a page is stable from frame to frame, so each
+/// button keeps its id.
+fn next_button_id(label: &str) -> String {
+    BUTTON_IDS.with(|ids| {
+        let mut ids = ids.borrow_mut();
+        let seen = ids.entry(label.to_owned()).or_insert(0);
+        let id = format!("button-{label}-{seen}");
+        *seen += 1;
+        id
+    })
+}
+
+/// A `gpui-component` [`Button`] that runs `on_press` on the shell. `lit` is
+/// the accent it takes as its fill (a switch that is on), or `None` for a plain raised button,
+/// which follows the component theme (see `theme_bridge`).
+pub fn push_button(
+    t: &ThemeTokens,
+    label: &str,
+    lit: Option<Colour>,
+    cx: &mut Context<Shell>,
+    on_press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
+) -> Button {
+    let button = Button::new(SharedString::from(next_button_id(label)))
+        .label(label.to_owned())
+        .xsmall()
+        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            on_press(this, window, cx);
             cx.notify();
-        }),
+        }));
+    let Some(accent) = lit else {
+        return button;
+    };
+    let look = LookAndFeel::from_tokens(t);
+    let fill = Hsla::from(paint(look.lit_button(accent).fill));
+    button.custom(
+        ButtonCustomVariant::new(cx)
+            .color(fill)
+            .foreground(Hsla::from(paint(look.lit_text)))
+            .hover(fill)
+            .active(fill),
     )
 }
 
