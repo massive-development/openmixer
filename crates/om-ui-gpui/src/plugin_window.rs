@@ -181,8 +181,8 @@ mod tests {
 
     #[test]
     fn x11_handles_give_the_window_id_and_wayland_gives_none() {
-        let xcb = RawWindowHandle::Xcb(XcbWindowHandle::new(NonZeroU32::new(0x40_0007).unwrap()));
-        assert_eq!(native_of(&xcb), (PluginSession::X11, Some(0x40_0007)));
+        let xcb = RawWindowHandle::Xcb(XcbWindowHandle::new(NonZeroU32::new(4_194_311).unwrap()));
+        assert_eq!(native_of(&xcb), (PluginSession::X11, Some(4_194_311)));
         let wl =
             RawWindowHandle::Wayland(WaylandWindowHandle::new(NonNull::<u8>::dangling().cast()));
         assert_eq!(native_of(&wl), (PluginSession::Wayland, None));
