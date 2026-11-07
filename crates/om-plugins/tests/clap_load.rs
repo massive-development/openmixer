@@ -1,6 +1,8 @@
 //! Loading and listing CLAP plugins (ADR 0007, migration step 3). Builds the fixture plugin
 //! (`examples/plugins/clap-gain-fixture`, made with clack-plugin) once per run and loads it.
 
+#![cfg(feature = "clap")]
+
 mod clap_fixture;
 
 use clap_fixture::{fixture, other_library};

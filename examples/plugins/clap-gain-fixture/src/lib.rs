@@ -15,6 +15,7 @@ use clack_extensions::params::{
 };
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -77,12 +78,17 @@ impl DefaultPluginFactory for GainFixture {
         _host: HostMainThreadHandle<'a>,
         shared: &'a Shared,
     ) -> Result<GainMainThread<'a>, PluginError> {
-        Ok(GainMainThread { shared })
+        Ok(GainMainThread {
+            shared,
+            size: Cell::new((320, 200)),
+        })
     }
 }
 
 pub struct GainMainThread<'a> {
     shared: &'a Shared,
+    /// The stub window's size; `set_size` changes it.
+    size: Cell<(u32, u32)>,
 }
 
 impl<'a> PluginMainThread<'a, Shared> for GainMainThread<'a> {}
@@ -198,18 +204,24 @@ impl PluginGuiImpl for GainMainThread<'_> {
     }
 
     fn get_size(&self) -> Option<GuiSize> {
-        Some(GuiSize {
-            width: 320,
-            height: 200,
-        })
+        let (width, height) = self.size.get();
+        Some(GuiSize { width, height })
     }
 
-    fn set_size(&self, _size: GuiSize) -> Result<(), PluginError> {
+    fn set_size(&self, size: GuiSize) -> Result<(), PluginError> {
+        if size.width > 2000 || size.height > 2000 {
+            return Err(PluginError::Message("window too large"));
+        }
+        self.size.set((size.width, size.height));
         Ok(())
     }
 
-    fn set_parent(&self, _window: Window) -> Result<(), PluginError> {
-        Ok(())
+    fn set_parent(&self, window: Window) -> Result<(), PluginError> {
+        // The host must hand over an X11 window; anything else is the host's bug.
+        match window.as_x11_handle() {
+            Some(id) if id != 0 => Ok(()),
+            _ => Err(PluginError::Message("parent is not an X11 window")),
+        }
     }
 
     fn set_transient(&self, _window: Window) -> Result<(), PluginError> {

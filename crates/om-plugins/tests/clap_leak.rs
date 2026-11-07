@@ -6,6 +6,8 @@
 //! the PR: `valgrind --leak-check=full --errors-for-leak-kinds=definite,indirect --error-exitcode=9
 //! target/debug/deps/clap_leak-<hash> --test-threads=1` with `CLAP_LEAK_ITERATIONS=15`.
 
+#![cfg(feature = "clap")]
+
 mod clap_fixture;
 
 use clap_fixture::{fixture, PLUGIN_ID};

@@ -26,6 +26,8 @@ const TICK: Duration = Duration::from_millis(15);
 pub(super) struct Ctx {
     pub instance: PluginInstance<Host>,
     pub signals: Arc<Signals>,
+    /// The open plugin window, if any (see `gui.rs`).
+    pub gui: Option<super::gui::ActiveGui>,
 }
 
 type Job = Box<dyn FnOnce(&mut Ctx) + Send>;
@@ -35,10 +37,16 @@ enum Cmd {
     Stop,
 }
 
-pub(super) struct Worker {
+/// A cloneable way to send jobs to a control thread. Calls return `None` once the thread is gone.
+#[derive(Clone)]
+pub(super) struct WorkerHandle {
     tx: Sender<Cmd>,
-    join: Option<JoinHandle<()>>,
     pub signals: Arc<Signals>,
+}
+
+pub(super) struct Worker {
+    handle: WorkerHandle,
+    join: Option<JoinHandle<()>>,
 }
 
 fn host_info() -> Result<HostInfo, PluginError> {
@@ -85,6 +93,7 @@ impl Worker {
                             Ctx {
                                 instance,
                                 signals: thread_signals,
+                                gui: None,
                             },
                             &rx,
                         );
@@ -97,9 +106,8 @@ impl Worker {
             .map_err(|e| PluginError::Rejected(format!("cannot start plugin thread: {e}")))?;
         match ready_rx.recv() {
             Ok(Ok(())) => Ok(Self {
-                tx,
+                handle: WorkerHandle { tx, signals },
                 join: Some(join),
-                signals,
             }),
             Ok(Err(reason)) => {
                 let _ = join.join();
@@ -115,8 +123,23 @@ impl Worker {
         }
     }
 
+    /// A handle other threads can use to reach this instance (the plugin window).
+    pub(super) fn handle(&self) -> WorkerHandle {
+        self.handle.clone()
+    }
+
     /// Runs `job` on the control thread and waits for its result. `None` when the thread is gone
     /// (the plugin panicked on its main thread).
+    pub(super) fn call<R: Send + 'static>(
+        &self,
+        job: impl FnOnce(&mut Ctx) -> R + Send + 'static,
+    ) -> Option<R> {
+        self.handle.call(job)
+    }
+}
+
+impl WorkerHandle {
+    /// Runs `job` on the control thread and waits for its result.
     pub(super) fn call<R: Send + 'static>(
         &self,
         job: impl FnOnce(&mut Ctx) -> R + Send + 'static,
@@ -132,7 +155,7 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
-        let _ = self.tx.send(Cmd::Stop);
+        let _ = self.handle.tx.send(Cmd::Stop);
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
@@ -159,6 +182,8 @@ fn run(mut ctx: Ctx, rx: &mpsc::Receiver<Cmd>) {
             break;
         }
     }
+    // The window must be destroyed before the instance goes (CLAP: destroy the GUI before the plugin).
+    let _ = catch_unwind(AssertUnwindSafe(|| super::gui::destroy(&mut ctx)));
 }
 
 impl Ctx {
@@ -168,6 +193,8 @@ impl Ctx {
             self.instance.call_on_main_thread_callback();
         }
         self.run_due_timers();
+        super::fds::poll_ready(self);
+        super::gui::service(self);
     }
 
     fn run_due_timers(&mut self) {
