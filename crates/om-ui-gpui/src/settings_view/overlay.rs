@@ -1,4 +1,6 @@
-//! The overlay around the pages: header button, keys, the text field's typed input and the card.
+//! The overlay around the pages: header button, keys, the text field's input and the card. The
+//! tab strip is a `gpui-component` tab bar, the text field an input, the confirmations alert
+//! dialogs and what an action reports a toast.
 
 use super::appearance::*;
 use super::audio::*;
@@ -11,9 +13,61 @@ use super::plugins::*;
 use super::recording::*;
 use super::*;
 use crate::paint::skin;
-use crate::text_entry::{apply_key, EntryKey};
+use gpui::{SharedString, WeakEntity};
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::WindowExt as _;
 use om_ui::style::LookAndFeel;
 use std::time::Instant;
+
+/// A question the overlay asks in a dialog before an action that would lose work. Each is the
+/// state flag of a settings page (`stems_confirm_clear`, `mapping_confirm`) shown as a dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Ask {
+    ClearStems,
+    MappingReset,
+    MappingLeave,
+}
+
+impl Ask {
+    fn title(self) -> &'static str {
+        match self {
+            Ask::ClearStems => "Clear the stem cache?",
+            Ask::MappingReset => "Reset the mapping?",
+            Ask::MappingLeave => "Unsaved mapping changes",
+        }
+    }
+
+    fn body(self) -> &'static str {
+        match self {
+            Ask::ClearStems => {
+                "Remove every prepared stem set? Running prepare jobs are cancelled."
+            }
+            Ask::MappingReset => {
+                "Reset replaces every binding with an empty map. Undo brings them back until you \
+                 close the tab."
+            }
+            Ask::MappingLeave => "They stay in the running controller but are not in the map file.",
+        }
+    }
+
+    fn ok(self) -> &'static str {
+        match self {
+            Ask::ClearStems => "Remove stems",
+            Ask::MappingReset => "Reset now",
+            Ask::MappingLeave => "Close without saving",
+        }
+    }
+
+    fn cancel(self) -> &'static str {
+        match self {
+            Ask::ClearStems => "Keep them",
+            Ask::MappingReset => "Keep the bindings",
+            Ask::MappingLeave => "Keep editing",
+        }
+    }
+}
 
 impl Shell {
     /// Runs `f` on the settings when the window has them.
@@ -27,6 +81,7 @@ impl Shell {
     pub(super) fn refresh_theme(&mut self) {
         if let Some(settings) = self.settings.as_ref() {
             self.theme = settings.themes.current().clone();
+            self.theme_dirty = true;
         }
     }
 
@@ -49,27 +104,177 @@ impl Shell {
         }
     }
 
-    /// A key while the overlay is open: the text field takes the typed text (Enter applies,
-    /// Escape cancels it); otherwise Escape closes the overlay.
-    pub(crate) fn settings_key(&mut self, key: &str, typed: Option<&str>) {
+    /// A key while the overlay is open that the focused control did not take: Escape cancels the
+    /// open text field, else closes the overlay. Typed text and Enter belong to the field's input.
+    pub(crate) fn settings_key(&mut self, key: &str) {
         let Some(settings) = self.settings.as_mut() else {
             return;
         };
-        if !settings.open {
+        if !settings.open || key != "escape" {
             return;
         }
-        if let Some(entry) = settings.entry.as_mut() {
-            let kind = entry.kind;
-            match apply_key(&mut entry.text, key, typed) {
-                EntryKey::Submit => settings.submit_entry(),
-                EntryKey::Cancel => settings.cancel_entry(),
-                // The mapping filter narrows the table as it is typed.
-                EntryKey::Edited if kind == EntryKind::MapFilter => settings.mapping_filter_live(),
-                EntryKey::Edited | EntryKey::Ignored => {}
-            }
-        } else if key == "escape" {
+        if settings.entry.is_some() {
+            settings.cancel_entry();
+        } else {
             self.close_settings();
         }
+    }
+
+    /// Brings the components the overlay owns in step with its state: the text field's input, the
+    /// confirmation dialog and the toast for the last notice. Runs every frame, open or not.
+    fn sync_settings_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_entry_input(window, cx);
+        self.sync_confirm(window, cx);
+        self.push_notice(window, cx);
+    }
+
+    /// Makes the input for the open text field (and drops it when the field closes). Typing edits
+    /// the entry, and Enter applies it.
+    fn sync_entry_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        let wanted = settings.entry.as_ref().map(|e| (e.kind, e.text.clone()));
+        let shown = settings.entry_input.as_ref().map(|(kind, _)| *kind);
+        match (wanted, shown) {
+            (Some((kind, text)), shown) if shown != Some(kind) => {
+                let input = cx.new(|cx| InputState::new(window, cx).default_value(text));
+                cx.subscribe_in(
+                    &input,
+                    window,
+                    move |this, input, event: &InputEvent, _, cx| {
+                        match event {
+                            InputEvent::Change => {
+                                let value = input.read(cx).value().to_string();
+                                this.settings_mut(|s| {
+                                    if let Some(entry) = s.entry.as_mut() {
+                                        entry.text = value;
+                                    }
+                                    // The mapping filter narrows the table as it is typed.
+                                    if kind == EntryKind::MapFilter {
+                                        s.mapping_filter_live();
+                                    }
+                                });
+                            }
+                            InputEvent::PressEnter { .. } => {
+                                this.settings_mut(|s| s.submit_entry());
+                            }
+                            InputEvent::Focus | InputEvent::Blur => {}
+                        }
+                        cx.notify();
+                    },
+                )
+                .detach();
+                input.update(cx, |input, cx| input.focus(window, cx));
+                settings.entry_input = Some((kind, input));
+            }
+            (None, Some(_)) => {
+                settings.entry_input = None;
+                // The keyboard goes back to the card, so Escape closes it again.
+                if let Some(focus) = self.settings_focus.clone() {
+                    focus.focus(window, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Opens the dialog for the confirmation the settings are waiting on, and closes it when the
+    /// settings stop waiting.
+    fn sync_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        let wanted = if settings.stems_confirm_clear {
+            Some(Ask::ClearStems)
+        } else {
+            settings.mapping_confirm.map(|confirm| match confirm {
+                MappingConfirm::Reset => Ask::MappingReset,
+                MappingConfirm::Leave => Ask::MappingLeave,
+            })
+        };
+        if wanted == settings.ask_shown {
+            return;
+        }
+        if settings.ask_shown.take().is_some() {
+            window.close_dialog(cx);
+        }
+        let Some(ask) = wanted else {
+            return;
+        };
+        settings.ask_shown = Some(ask);
+        let shell: WeakEntity<Shell> = cx.weak_entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let (on_ok, on_cancel, on_close) = (shell.clone(), shell.clone(), shell.clone());
+            let resolve = move |shell: &WeakEntity<Shell>, ok: bool, cx: &mut gpui::App| {
+                shell
+                    .update(cx, |this, cx| {
+                        this.resolve_ask(ask, ok);
+                        cx.notify();
+                    })
+                    .ok();
+            };
+            alert
+                .confirm()
+                .title(SharedString::from(ask.title()))
+                .description(SharedString::from(ask.body()))
+                .ok_text(ask.ok())
+                .cancel_text(ask.cancel())
+                .on_ok(move |_, _, cx| {
+                    resolve(&on_ok, true, cx);
+                    true
+                })
+                .on_cancel(move |_, _, cx| {
+                    resolve(&on_cancel, false, cx);
+                    true
+                })
+                // Any other way out of the dialog counts as keeping things as they were.
+                .on_close(move |_, _, cx| resolve(&on_close, false, cx))
+        });
+    }
+
+    /// The dialog for `ask` was answered (`ok`) or dismissed. A no-op when it was already.
+    fn resolve_ask(&mut self, ask: Ask, ok: bool) {
+        if self.settings.as_ref().and_then(|s| s.ask_shown) != Some(ask) {
+            return;
+        }
+        self.settings_mut(|s| s.ask_shown = None);
+        match (ask, ok) {
+            (Ask::ClearStems, true) => self.settings_mut(|s| s.stems_clear_confirmed()),
+            (Ask::ClearStems, false) => self.settings_mut(|s| s.stems_clear_cancelled()),
+            (Ask::MappingReset, true) => self.settings_mut(|s| {
+                s.mapping_confirm = None;
+                s.mapping_op(|p| p.reset_to_default());
+            }),
+            (Ask::MappingLeave, true) => {
+                self.settings_mut(|s| s.mapping_confirm = Some(MappingConfirm::Leave));
+                self.close_settings();
+            }
+            (Ask::MappingReset | Ask::MappingLeave, false) => {
+                self.settings_mut(|s| s.mapping_confirm = None);
+            }
+        }
+    }
+
+    /// Shows the last action's outcome as a toast, once.
+    fn push_notice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        if settings.toasted_serial == settings.notice_serial() {
+            return;
+        }
+        settings.toasted_serial = settings.notice_serial();
+        let notice = settings.notice.clone();
+        if notice.text.is_empty() {
+            return;
+        }
+        let toast = if notice.error {
+            Notification::error(notice.text)
+        } else {
+            Notification::info(notice.text)
+        };
+        window.push_notification(toast, cx);
     }
 
     /// The overlay for a window of `area` size, or `None` while it is closed.
@@ -79,6 +284,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Shell>,
     ) -> Option<Div> {
+        self.sync_settings_chrome(window, cx);
         let t = self.theme.clone();
         let focus: FocusHandle = self
             .settings_focus
@@ -108,15 +314,23 @@ impl Shell {
 
         // Tabs, then the page of the tab shown.
         let current = settings.panel.current();
-        let mut tabs = div().flex().flex_wrap().mb(px(10.));
-        for (index, title) in settings.panel.tabs().to_vec().into_iter().enumerate() {
-            tabs = tabs.child(chip(&t, &title, index == current, cx, move |this| {
+        let tabs = TabBar::new("settings-tabs")
+            .selected_index(current)
+            .children(
+                settings
+                    .panel
+                    .tabs()
+                    .iter()
+                    .map(|title| Tab::new().label(title.clone())),
+            )
+            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                let index = *index;
                 this.settings_mut(|s| {
                     s.panel.show(index);
                     s.refresh_lists();
                 });
+                cx.notify();
             }));
-        }
         let body = match settings.panel.page_kind(current) {
             Some(PageKind::Audio) => match settings.audio_view() {
                 Some(view) => audio_page(&t, &view, cx),
@@ -131,7 +345,6 @@ impl Shell {
             Some(PageKind::Mapping) => mapping_page(&t, settings, cx),
             None => note(&t, "This page is added by a plugin."),
         };
-        let status = status_line(&t, &settings.notice);
         let close = chip(&t, "Close", false, cx, |this| this.close_settings());
 
         let click_focus = focus.clone();
@@ -151,7 +364,7 @@ impl Shell {
                 .mb(px(8.))
                 .child("Settings"),
         )
-        .child(tabs)
+        .child(div().mb(px(10.)).child(tabs))
         // The page scrolls: the Library page with the stems section is taller than the card.
         .child(
             div()
@@ -160,14 +373,13 @@ impl Shell {
                 .overflow_y_scroll()
                 .child(body),
         )
-        .child(status)
         .child(div().flex().justify_end().child(close))
         .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
             let keys = &ev.keystroke;
             if keys.modifiers.control || keys.modifiers.platform {
                 return;
             }
-            this.settings_key(&keys.key, keys.key_char.as_deref());
+            this.settings_key(&keys.key);
             cx.notify();
         }))
         // Clicks on the card do not reach the scrim below, and the card takes the keys.

@@ -75,13 +75,6 @@ fn panel(fx: &Fixture) -> (LibraryPanel, Arc<DjEngine>) {
     (panel, engine)
 }
 
-fn type_text(panel: &mut LibraryPanel, text: &str) {
-    for c in text.chars() {
-        let key = c.to_string();
-        panel.handle_key(&key, Some(&key));
-    }
-}
-
 #[test]
 fn three_tracks_show_three_rows_and_the_first_loads_into_deck_a() {
     let fx = fixture("rows");
@@ -117,7 +110,7 @@ fn double_click_and_enter_load_into_the_suggested_idle_deck() {
 
     // Enter loads the selected row into the next idle deck (B, still empty).
     panel.select_row(0);
-    assert_eq!(panel.handle_key("enter", None), KeyOutcome::Activated);
+    assert_eq!(panel.handle_key("enter"), KeyOutcome::Activated);
     assert!(panel.has_track(1));
 }
 
@@ -157,7 +150,7 @@ fn a_missing_file_is_reported_in_the_status_and_the_deck_stays_empty() {
 }
 
 #[test]
-fn search_keys_edit_the_query_and_apply_on_enter() {
+fn the_search_query_runs_on_the_tick_and_is_applied_or_cleared_by_the_box() {
     let fx = fixture("search");
     add(&fx, "House Anthem", "8A", true);
     add(&fx, "Techno Pulse", "9A", true);
@@ -166,64 +159,43 @@ fn search_keys_edit_the_query_and_apply_on_enter() {
     panel.tick();
     assert_eq!(panel.row_count(), 3);
 
-    assert_eq!(panel.handle_key("/", Some("/")), KeyOutcome::Edited);
-    assert!(panel.search_active);
-    type_text(&mut panel, "house");
+    // `/` asks the window to put the keyboard in the search box; the box is an input of its own.
+    assert_eq!(panel.handle_key("/"), KeyOutcome::Search);
+    panel.set_query("house");
     panel.tick();
     assert_eq!(panel.row_count(), 2, "the query runs on the tick");
 
-    assert_eq!(panel.handle_key("backspace", None), KeyOutcome::Edited);
+    panel.set_query("hous");
     assert_eq!(panel.browser.search_text(), "hous");
-    panel.handle_key("enter", None);
-    assert!(!panel.search_active);
+    panel.commit_query();
     assert_eq!(panel.browser.search_text(), "hous");
 
-    // Escape leaves the box and clears the query.
-    panel.handle_key("/", Some("/"));
-    panel.handle_key("escape", None);
-    assert!(!panel.search_active);
+    // Escape clears the query.
+    panel.clear_query();
     assert_eq!(panel.browser.search_text(), "");
     assert_eq!(panel.row_count(), 3);
 }
 
 #[test]
-fn arrow_keys_move_the_selection_and_keep_it_on_screen() {
+fn arrow_keys_move_the_selection() {
     let fx = fixture("arrows");
-    for (i, title) in ["A1", "A2", "A3", "A4"].iter().enumerate() {
+    for title in ["A1", "A2", "A3", "A4"] {
         add(&fx, title, "", true);
-        let _ = i;
     }
     let (mut panel, _engine) = panel(&fx);
     panel.tick();
-    panel.visible_rows = 2;
-    assert_eq!(panel.handle_key("down", None), KeyOutcome::Moved);
+    assert_eq!(panel.handle_key("down"), KeyOutcome::Moved);
     assert_eq!(panel.browser.selected_row(), Some(0));
-    for _ in 0..3 {
-        panel.handle_key("down", None);
+    for _ in 0..5 {
+        panel.handle_key("down");
     }
-    assert_eq!(panel.browser.selected_row(), Some(3));
     assert_eq!(
-        panel.table_top, 2,
-        "the selected row is the last visible one"
+        panel.browser.selected_row(),
+        Some(3),
+        "stops at the last row"
     );
-    panel.handle_key("up", None);
+    panel.handle_key("up");
     assert_eq!(panel.browser.selected_row(), Some(2));
-    assert_eq!(panel.table_top, 2);
-}
-
-#[test]
-fn scrolling_stays_inside_the_list() {
-    let fx = fixture("scroll");
-    for title in ["S1", "S2", "S3"] {
-        add(&fx, title, "", true);
-    }
-    let (mut panel, _engine) = panel(&fx);
-    panel.tick();
-    panel.visible_rows = 2;
-    panel.scroll_rows(5);
-    assert_eq!(panel.table_top, 1);
-    panel.scroll_rows(-9);
-    assert_eq!(panel.table_top, 0);
 }
 
 #[test]
@@ -289,12 +261,9 @@ fn a_playlist_is_named_with_the_keys_filled_by_a_drop_and_emptied_with_remove() 
 
     panel.begin_new_playlist();
     assert!(panel.is_typing());
-    type_text(&mut panel, "Warm up");
-    assert_eq!(
-        panel.name_entry.as_ref().unwrap().prompt(),
-        "New playlist: Warm up|"
-    );
-    assert_eq!(panel.handle_key("enter", None), KeyOutcome::Edited);
+    panel.set_name_text("Warm up");
+    assert_eq!(panel.name_entry.as_ref().unwrap().prompt(), "New playlist");
+    assert_eq!(panel.submit_name(), KeyOutcome::Edited);
     assert!(!panel.is_typing());
     let playlist = panel
         .browser
@@ -303,9 +272,9 @@ fn a_playlist_is_named_with_the_keys_filled_by_a_drop_and_emptied_with_remove() 
 
     // A refused (blank) name keeps the box open, Escape closes it.
     panel.begin_new_playlist();
-    panel.handle_key("enter", None);
+    panel.submit_name();
     assert!(panel.is_typing() && panel.browser.status_is_error());
-    panel.handle_key("escape", None);
+    panel.cancel_name();
     assert!(!panel.is_typing());
 
     // Back on all tracks, drag Bravo onto the playlist.

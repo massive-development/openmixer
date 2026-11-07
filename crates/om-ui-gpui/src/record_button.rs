@@ -4,7 +4,7 @@
 
 use crate::app::Shell;
 use crate::paint::{paint, place};
-use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent};
+use gpui::{div, prelude::*, px, Context, Div, Focusable as _, MouseButton, MouseDownEvent};
 use om_core::{ParameterTarget, RecordSnapshot};
 use om_ui::geometry::Rect;
 use om_ui::record_bar::RecordBar;
@@ -126,10 +126,13 @@ impl Shell {
 
     /// True while something takes typed keys (the settings card, a text field in the library,
     /// the sampler's path field or the debug column), so `r` must not toggle recording.
-    pub(crate) fn typing(&self) -> bool {
+    pub(crate) fn typing(&self, window: &gpui::Window, cx: &gpui::App) -> bool {
         self.settings.as_ref().is_some_and(|s| s.open)
             || self.sampler_editing
-            || self.deck_controls.editing.is_some()
-            || self.library.as_ref().is_some_and(|panel| panel.is_typing())
+            || self
+                .library_search
+                .iter()
+                .chain(self.deck_controls.inputs())
+                .any(|input| input.focus_handle(cx).is_focused(window))
     }
 }
