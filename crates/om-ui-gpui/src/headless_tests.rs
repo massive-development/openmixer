@@ -10,7 +10,8 @@ use crate::controls::BarState;
 use crate::fader_paint::{FaderFace, FaderLaw, FaderPlan};
 use crate::knob_paint::{knob_geometry, KnobRole};
 use crate::meter_paint::{MeterFace, MeterPlan};
-use gpui::{px, size, Bounds, Pixels, TestAppContext, VisualTestContext};
+use gpui::{px, size, AppContext as _, Bounds, Entity, Pixels, TestAppContext, VisualTestContext};
+use gpui_kit::base::Root;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::geometry::Rect;
@@ -25,11 +26,16 @@ use std::sync::Arc;
 const SIZES: [(i32, i32); 2] = [(1280, 800), (900, 600)];
 
 fn shell() -> Shell {
+    shell_with(|_| {})
+}
+
+/// A shell whose window options `tweak` has changed (a library, settings, a banner).
+fn shell_with(tweak: impl FnOnce(&mut RunOptions)) -> Shell {
     let (engine, _audio) = DjEngine::new(2);
     let engine = Arc::new(engine);
     let router = Arc::new(ParameterRouter::new());
     engine.register(&router);
-    let options = RunOptions {
+    let mut options = RunOptions {
         on_frame: None,
         automix: None,
         record: false,
@@ -43,6 +49,7 @@ fn shell() -> Shell {
         samples: None,
         scene: SceneOptions::default(),
     };
+    tweak(&mut options);
     Shell::new(
         engine,
         router,
@@ -53,11 +60,28 @@ fn shell() -> Shell {
 }
 
 /// The shell in a test window of `(w, h)` px, drawn once.
-fn open(cx: &mut TestAppContext, (w, h): (i32, i32)) -> &mut VisualTestContext {
-    let (_view, vcx) = cx.add_window_view(|_, _| shell());
-    vcx.simulate_resize(size(px(w as f32), px(h as f32)));
+fn open(cx: &mut TestAppContext, size: (i32, i32)) -> &mut VisualTestContext {
+    open_with(cx, size, shell()).1
+}
+
+/// `shell` in a test window under a component `Root`, as `run` opens it: the component library is
+/// initialised and themed from the shell's tokens first.
+fn open_with(
+    cx: &mut TestAppContext,
+    (w, h): (i32, i32),
+    shell: Shell,
+) -> (Entity<Shell>, &mut VisualTestContext) {
+    let theme = shell.theme.clone();
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        crate::theme_bridge::apply(cx, &theme);
+    });
+    let view = cx.new(|_| shell);
+    let root = view.clone();
+    let (_root, vcx) = cx.add_window_view(|window, cx| Root::new(root, window, cx));
+    vcx.simulate_resize(gpui::size(px(w as f32), px(h as f32)));
     vcx.run_until_parked();
-    vcx
+    (view, vcx)
 }
 
 /// What the shell lays out for `size`: the same call `Render` makes with no debug column.
@@ -288,4 +312,275 @@ fn a_resize_relayouts_the_same_shell(cx: &mut TestAppContext) {
             .expect("cell")
             .bounds
     );
+}
+
+// The component chrome: themed buttons, the library's input and table, the settings text field,
+// the confirmation dialog and the toasts. These drive real key and text events through the
+// component widgets in gpui's test platform; they say nothing about how the widgets look.
+
+use crate::debug_panel::DeviceStatus;
+use crate::library::LibraryHub;
+use crate::settings_view::overlay::Ask;
+use crate::settings_view::{fixtures, EntryKind};
+use gpui::{Focusable as _, Hsla};
+use gpui_kit::component::table::TableDelegate as _;
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
+use om_library::TrackRecord;
+use om_ui::library::{LibraryServices, Options};
+use std::cell::Cell;
+use std::rc::Rc;
+
+/// A shell over an in-memory library holding one track per title.
+fn library_shell(titles: &[&str]) -> Shell {
+    let services =
+        LibraryServices::create(Options::for_path(":memory:")).expect("in-memory library opens");
+    let hub = LibraryHub::shared(services, 2);
+    for title in titles {
+        let track = TrackRecord {
+            path: format!("/nowhere/{title}.wav"),
+            title: (*title).to_owned(),
+            artist: "Tester".to_owned(),
+            bpm: Some(124.0),
+            duration_sec: 1.0,
+            ..TrackRecord::default()
+        };
+        hub.borrow()
+            .services
+            .library()
+            .tracks()
+            .insert(&track)
+            .expect("track inserts");
+    }
+    shell_with(|options| options.library = Some(hub))
+}
+
+/// A shell with the settings overlay open on the Library tab.
+fn settings_shell() -> Shell {
+    shell_with(|options| {
+        let mut settings = fixtures::options(
+            None,
+            None,
+            None,
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+        );
+        settings.start_tab = Some("library".to_owned());
+        options.settings = Some(settings);
+    })
+}
+
+fn component_colour(colour: om_ui::theme::Colour) -> Hsla {
+    Hsla::from(crate::paint::paint(colour))
+}
+
+#[gpui::test]
+fn the_component_theme_follows_the_om_ui_tokens(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], shell());
+    let tokens = view.read_with(vcx, |s, _| s.theme.clone());
+    vcx.update(|_, cx| {
+        let theme = cx.theme();
+        assert_eq!(theme.background, component_colour(tokens.surface));
+        assert_eq!(theme.foreground, component_colour(tokens.text_primary));
+        assert_eq!(theme.input, component_colour(tokens.border_strong));
+        assert_eq!(
+            theme.is_dark(),
+            crate::theme_bridge::mode_of(&tokens).is_dark()
+        );
+    });
+}
+
+#[gpui::test]
+fn the_banner_is_a_toast_that_stays(cx: &mut TestAppContext) {
+    let shell = shell_with(|options| options.banner = Some("Audio: mock device".to_owned()));
+    let (view, vcx) = open_with(cx, SIZES[0], shell);
+    assert_eq!(vcx.update(|window, cx| window.notifications(cx).len()), 1);
+    assert!(
+        view.read_with(vcx, |s, _| s.options.banner.is_none()),
+        "shown once"
+    );
+    vcx.run_until_parked();
+    assert_eq!(vcx.update(|window, cx| window.notifications(cx).len()), 1);
+}
+
+#[gpui::test]
+fn the_library_table_lists_the_tracks_and_the_search_box_narrows_it(cx: &mut TestAppContext) {
+    let shell = library_shell(&["House Anthem", "Techno Pulse", "Deep House"]);
+    let (view, vcx) = open_with(cx, SIZES[0], shell);
+    let table = view
+        .read_with(vcx, |s, _| s.library_table.clone())
+        .expect("table drawn");
+    let rows =
+        |vcx: &mut VisualTestContext| vcx.update(|_, cx| table.read(cx).delegate().rows_count(cx));
+    assert_eq!(rows(vcx), 3);
+
+    let input = view
+        .read_with(vcx, |s, _| s.library_search.clone())
+        .expect("the search box is made on the first draw");
+    vcx.update(|window, cx| input.focus_handle(cx).focus(window, cx));
+    vcx.simulate_input("house");
+    vcx.run_until_parked();
+    let (query, typing) = vcx.update(|window, cx| {
+        let shell = view.read(cx);
+        (
+            shell
+                .library
+                .as_ref()
+                .map(|p| p.browser.search_text().to_owned()),
+            shell.typing(window, cx),
+        )
+    });
+    assert_eq!(query.as_deref(), Some("house"));
+    assert!(typing, "typed keys in the box must not reach the shortcuts");
+    // The query runs on a tick, which the draw after the keystroke made.
+    vcx.run_until_parked();
+    assert_eq!(rows(vcx), 2, "House Anthem and Deep House");
+
+    // Escape drops the query and gives the keyboard back to the library card.
+    vcx.simulate_keystrokes("escape");
+    vcx.run_until_parked();
+    assert_eq!(
+        view.read_with(vcx, |s, _| s
+            .library
+            .as_ref()
+            .map(|p| p.browser.search_text().to_owned())),
+        Some(String::new())
+    );
+    assert_eq!(rows(vcx), 3);
+}
+
+#[gpui::test]
+fn naming_a_playlist_uses_the_search_box_and_enter_creates_it(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], library_shell(&["A", "B"]));
+    view.update(vcx, |shell, cx| {
+        shell
+            .library
+            .as_mut()
+            .expect("library")
+            .begin_new_playlist();
+        cx.notify();
+    });
+    vcx.run_until_parked();
+    assert!(
+        view.read_with(vcx, |s, _| s.search_names),
+        "the box shows the name prompt"
+    );
+
+    vcx.simulate_input("Warm up");
+    vcx.simulate_keystrokes("enter");
+    vcx.run_until_parked();
+    let (naming, shown, playlist) = view.read_with(vcx, |s, _| {
+        let panel = s.library.as_ref().expect("library");
+        (
+            panel.name_entry.is_some(),
+            s.search_names,
+            panel.browser.selected_playlist(),
+        )
+    });
+    assert!(!naming, "Enter created the playlist");
+    assert!(!shown, "the box is a search box again");
+    assert!(playlist.is_some(), "the new playlist is open");
+}
+
+#[gpui::test]
+fn the_settings_text_field_is_an_input_that_escape_cancels(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], settings_shell());
+    view.update(vcx, |shell, cx| {
+        shell.settings_mut(|s| s.begin_entry(EntryKind::WatchFolder));
+        cx.notify();
+    });
+    vcx.run_until_parked();
+    assert!(
+        view.read_with(vcx, |s, _| s
+            .settings
+            .as_ref()
+            .is_some_and(|s| s.entry_input.is_some())),
+        "the field has an input"
+    );
+
+    vcx.simulate_input("/music");
+    vcx.run_until_parked();
+    let typed = view.read_with(vcx, |s, _| {
+        s.settings
+            .as_ref()
+            .and_then(|s| s.entry.as_ref())
+            .map(|e| e.text.clone())
+    });
+    assert_eq!(typed.as_deref(), Some("/music"), "typing edits the entry");
+
+    vcx.simulate_keystrokes("escape");
+    vcx.run_until_parked();
+    let (entry, input, open) = view.read_with(vcx, |s, _| {
+        let s = s.settings.as_ref().expect("settings");
+        (s.entry.is_some(), s.entry_input.is_some(), s.open)
+    });
+    assert!(
+        !entry && !input,
+        "Escape cancels the field and drops its input"
+    );
+    assert!(open, "the first Escape only cancelled the field");
+}
+
+#[gpui::test]
+fn a_confirmation_is_a_dialog_that_closes_when_the_settings_stop_asking(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], settings_shell());
+    view.update(vcx, |shell, cx| {
+        shell.settings_mut(|s| s.stems_ask_clear());
+        cx.notify();
+    });
+    vcx.run_until_parked();
+    let asked = view.read_with(vcx, |s, _| s.settings.as_ref().and_then(|s| s.ask_shown));
+    assert_eq!(asked, Some(Ask::ClearStems));
+    assert!(vcx.update(|window, cx| window.has_active_dialog(cx)));
+
+    view.update(vcx, |shell, cx| {
+        shell.settings_mut(|s| s.stems_clear_cancelled());
+        cx.notify();
+    });
+    vcx.run_until_parked();
+    assert!(!vcx.update(|window, cx| window.has_active_dialog(cx)));
+}
+
+#[gpui::test]
+fn each_notice_is_one_toast_even_when_the_text_repeats(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], settings_shell());
+    for expected in 1..=2 {
+        view.update(vcx, |shell, cx| {
+            shell.settings_mut(|s| s.set_notice("Imported 3 tracks", false));
+            cx.notify();
+        });
+        vcx.run_until_parked();
+        assert_eq!(
+            vcx.update(|window, cx| window.notifications(cx).len()),
+            expected
+        );
+    }
+}
+
+#[gpui::test]
+fn the_debug_columns_path_field_loads_on_enter(cx: &mut TestAppContext) {
+    let shell = shell_with(|options| {
+        options.debug = Some(Arc::new(|| DeviceStatus {
+            name: "mock".into(),
+            sample_rate: 48_000.0,
+            buffer_size: 256,
+            round_trip_ms: 5.0,
+            callback_avg_us: 100.0,
+            callback_max_us: 200.0,
+            budget_us: 5_000.0,
+            cpu_load: 0.02,
+            xruns: 0,
+            callbacks: 10,
+        }));
+    });
+    let (view, vcx) = open_with(cx, SIZES[0], shell);
+    let first = view
+        .read_with(vcx, |s, _| s.deck_controls.inputs().next().cloned())
+        .expect("a path field per deck");
+    vcx.update(|window, cx| first.focus_handle(cx).focus(window, cx));
+    vcx.simulate_input("/nowhere/a.wav");
+    vcx.simulate_keystrokes("enter");
+    vcx.run_until_parked();
+    let status = view.read_with(vcx, |s, _| s.deck_controls.status.clone());
+    let (text, error) = status.expect("Enter reported an outcome");
+    assert!(error, "there is no library, so the load is refused: {text}");
 }

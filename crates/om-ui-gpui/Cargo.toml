@@ -13,7 +13,7 @@ workspace = true
 
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.10" }
-gpui-kit = { version = "=0.8.1", default-features = false }
+gpui-kit = { version = "=0.8.1", default-features = false, features = ["component", "assets"] }
 om-analysis.workspace = true
 om-core.workspace = true
 om-engine.workspace = true
