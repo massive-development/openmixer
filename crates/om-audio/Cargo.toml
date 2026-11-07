@@ -11,14 +11,23 @@ publish = false
 workspace = true
 
 [dependencies]
-# `realtime-dbus`: cpal promotes its own callback thread (audio_thread_priority, rtkit on Linux) and
-# reports a refusal on the error callback, after which the stream plays at normal priority.
-cpal = { version = "0.18", features = ["realtime-dbus"] }
+cpal = "0.18"
 om-core.workspace = true
 om-engine.workspace = true
 rtrb.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+# Real-time priority for cpal's callback thread: cpal promotes it itself and reports a refusal on
+# the error callback (logged and counted by `cpal_device`); the stream then plays at normal
+# priority. On Windows the plain `realtime` feature is enough and needs no system library.
+[target.'cfg(windows)'.dependencies]
+cpal = { version = "0.18", features = ["realtime"] }
+
+[features]
+# Linux: promote through rtkit over D-Bus. Off by default because it builds libdbus (needs
+# `libdbus-1-dev`); without it cpal's Linux promotion is a no-op. Build with `--features realtime-dbus`.
+realtime-dbus = ["cpal/realtime-dbus"]
 
 [dev-dependencies]
 om-core.workspace = true

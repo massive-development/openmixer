@@ -256,7 +256,7 @@ valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 ### Minimum System
 
 - **Rust** toolchain pinned in `rust-toolchain.toml` (installed with rustup; `rustfmt` and `clippy` included)
-- **Linux audio:** `pkg-config`, `libasound2-dev` and `libdbus-1-dev` (real-time priority via rtkit; see the Building section of `README.md`)
+- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`)
 - **cargo-deny** for `cargo deny check`
 - **Audio libraries:** see `agents.md`
 

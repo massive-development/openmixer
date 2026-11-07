@@ -33,12 +33,6 @@ pub trait AudioDevice: Send {
 - **Reuse when:** any realtime thread needs data from a non-realtime producer (decode, analysis results, MIDI events).
 - **Notes:** `rtrb::RingBuffer::new(capacity)` returns a `(Producer, Consumer)` pair. Exactly one producer and one consumer thread, and the pair must be created before the audio thread starts.
 
-### Soft real-time promotion guard (`RealTimeGuard`)
-- **Where:** `om-engine` (`thread_priority.rs`, used by the deck decoder worker); the audio callback thread is promoted by cpal's `realtime-dbus` feature in `om-audio`.
-- **Why:** run latency-critical threads at real-time priority without making a refusal fatal.
-- **Reuse when:** a long-lived worker feeds the audio callback and must not be starved.
-- **Notes:** call once at thread start, never on the audio callback (it allocates and may use D-Bus). A refusal is logged and the thread runs normally. On Linux the burst budget becomes `RLIMIT_RTTIME`; a thread that computes longer than that without blocking gets `SIGXCPU`, so the worker must sleep or block regularly.
-
 ### Epoch handshake (producer-owned reset)
 - **Where:** `om-engine` deck streaming (`deck/shared.rs`, `deck/decoder.rs`, `deck/playback.rs`)
 - **Why:** seek/load without the producer resetting a ring the consumer is reading.

@@ -49,7 +49,7 @@ jobs:
           sudo apt-get update
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
           # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
-          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libclang-dev libxkbcommon-dev \
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev
 
@@ -112,7 +112,7 @@ jobs:
       - name: Install Linux audio dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libclang-dev
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev
 
       - uses: Swatinem/rust-cache@v2
 
@@ -205,7 +205,7 @@ jobs:
           sudo apt-get update
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
           # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
-          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libclang-dev libxkbcommon-dev \
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev
 

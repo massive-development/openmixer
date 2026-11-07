@@ -14,9 +14,6 @@ workspace = true
 om-core.workspace = true
 om-dsp.workspace = true
 om-stretch.workspace = true
-# The 0.35 line cpal links, so the build carries one copy. Default features keep the D-Bus (rtkit)
-# path: without it the crate is a no-op on Linux.
-audio_thread_priority = "0.35"
 rtrb.workspace = true
 symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "ogg", "vorbis", "isomp4", "aac"] }
 thiserror.workspace = true

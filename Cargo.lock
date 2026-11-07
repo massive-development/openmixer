@@ -4327,7 +4327,6 @@ name = "om-engine"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
- "audio_thread_priority",
  "om-core",
  "om-dsp",
  "om-stretch",

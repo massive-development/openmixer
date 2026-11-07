@@ -22,7 +22,6 @@ mod stems;
 
 use crate::callback::AudioCallback;
 use crate::quantizer::Loop;
-use crate::thread_priority::RealTimeGuard;
 use decoder::DecoderWorker;
 use loop_state::LoopSnapshot;
 use om_core::param_id::DeckParam;
@@ -52,10 +51,6 @@ pub const DEFAULT_RING_FRAMES: usize = 1 << 16;
 pub const MAX_RATE: f64 = 8.0;
 const DEFAULT_DEVICE_RATE: f64 = 44_100.0;
 const DEFAULT_MONO_SINK: usize = 4096;
-/// Longest CPU burst the decoder may run without blocking: rtkit's own `RLIMIT_RTTIME` ceiling
-/// (200 ms), because passing the limit raises `SIGXCPU`. The worker sleeps whenever its ring is full.
-const DECODER_BURST_FRAMES: u32 = 9_600;
-const DECODER_NOMINAL_RATE: u32 = 48_000;
 
 /// Control-side handle: loading, transport, hotcues and the parameter surface. Shareable across
 /// control threads. Owns the decoder thread, which stops when the handle is dropped.
@@ -115,11 +110,6 @@ impl Deck {
         let decoder = std::thread::Builder::new()
             .name("openmixer-deck-decoder".into())
             .spawn(move || {
-                let _priority = RealTimeGuard::promote(
-                    "deck decoder",
-                    DECODER_BURST_FRAMES,
-                    DECODER_NOMINAL_RATE,
-                );
                 // A panic must not unwind out of the thread unobserved: the deck records it and
                 // stays silent from then on.
                 let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| worker.run()));
