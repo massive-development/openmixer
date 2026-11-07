@@ -17,6 +17,7 @@ pub mod fx;
 pub mod fx_routing;
 pub mod grid;
 pub mod latency;
+pub mod loudness;
 pub mod mixer;
 pub mod output;
 pub mod quantizer;
@@ -32,6 +33,9 @@ pub use deck_control::DeckControl;
 pub use dj_engine::{DjEngine, DjEngineAudio};
 pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
+pub use loudness::{
+    Loudness, LoudnessAnalyser, LoudnessControl, LoudnessError, LoudnessReading, LoudnessTap,
+};
 pub use mixer::{ChannelInput, Mixer, MixerControl};
 pub use output::{OutputPairs, OutputRouter, NO_PAIR};
 pub use recorder::{
