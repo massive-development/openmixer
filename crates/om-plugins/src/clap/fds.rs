@@ -43,10 +43,10 @@ pub(super) fn poll_ready(ctx: &mut Ctx) {
     if ready.is_empty() {
         return;
     }
-    let mut handle = ctx.instance.plugin_handle();
+    let handle = ctx.instance.plugin_handle();
     if let Some(ext) = handle.get_extension::<PluginPosixFd>() {
         for (fd, flags) in ready {
-            ext.on_fd(&mut handle, fd, flags);
+            ext.on_fd(&handle, fd, flags);
         }
     }
 }

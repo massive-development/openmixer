@@ -59,7 +59,7 @@ fn files_that_are_not_clap_plugins_are_refused_with_a_typed_error() {
     let garbage = dir.path().join("garbage.clap");
     std::fs::write(&garbage, b"this is not a library").expect("write");
     for path in [garbage, other_library()] {
-        let err = ClapLoader::scan(&path).err().expect("refused");
+        let err = ClapLoader::scan(&path).expect_err("refused");
         assert!(
             matches!(err, PluginError::InvalidLibrary { .. }),
             "{}: {err}",

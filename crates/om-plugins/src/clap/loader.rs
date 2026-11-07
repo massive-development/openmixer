@@ -23,6 +23,9 @@ pub struct ClapPluginInfo {
     pub features: Vec<String>,
 }
 
+/// One result per plugin descriptor in a file.
+pub type LoadedPlugins = Vec<Result<Box<dyn Plugin>, PluginError>>;
+
 pub struct ClapLoader;
 
 fn open(path: &Path) -> Result<PluginEntry, PluginError> {
@@ -90,7 +93,7 @@ impl ClapLoader {
 
     /// Loads every plugin in `path`; one result per descriptor, so a plugin the host cannot use does
     /// not hide the others.
-    pub fn load_all(path: &Path) -> Result<Vec<Result<Box<dyn Plugin>, PluginError>>, PluginError> {
+    pub fn load_all(path: &Path) -> Result<LoadedPlugins, PluginError> {
         let entry = open(path)?;
         let infos = describe(&entry, path)?;
         Ok(infos

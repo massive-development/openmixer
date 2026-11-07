@@ -68,8 +68,8 @@ pub(super) fn read_params(ctx: &mut Ctx) -> Vec<(ClapParam, f64)> {
 
 /// Latency in frames, 0 without the `latency` extension. Valid after activation.
 pub(super) fn read_latency(ctx: &mut Ctx) -> u32 {
-    let mut handle = ctx.instance.plugin_handle();
+    let handle = ctx.instance.plugin_handle();
     handle
         .get_extension::<PluginLatency>()
-        .map_or(0, |ext| ext.get(&mut handle))
+        .map_or(0, |ext| ext.get(&handle))
 }
