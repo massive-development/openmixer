@@ -20,6 +20,7 @@ om-engine.workspace = true
 om-library.workspace = true
 om-ui.workspace = true
 om-midi.workspace = true
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 om-testing.workspace = true

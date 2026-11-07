@@ -12,7 +12,7 @@ This index contains all Architecture Decision Records (ADRs) for the OpenMixer p
 | 0004 | Technology Stack - Rust with GPUI | Accepted (superseded in part, see the note in the ADR) |
 | 0005 | Experience-first product bar | Accepted |
 | 0006 | Controller map provenance | Accepted |
-| 0007 | CLAP plugin hosting with clack | Proposed |
+| 0007 | CLAP plugin hosting with clack | Accepted |
 
 ## ADR Templates
 
@@ -57,3 +57,4 @@ Links to relevant documents, discussions, or resources.
 - 2026-10-27 - ADR 0004 marked superseded in part (plugins, stems, MIDI backend, CI scope)
 - 2026-10-28 - ADR 0006 created
 - 2026-11-06 - ADR 0007 proposed
+- 2026-11-07 - ADR 0007 accepted

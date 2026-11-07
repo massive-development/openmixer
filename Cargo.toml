@@ -18,6 +18,7 @@ members = [
     "examples/plugins/gain-plugin",
     "examples/plugins/gain-plugin-cdylib",
     "examples/plugins/param-plugin-cdylib",
+    "examples/plugins/clap-gain-fixture",
     "crates/openmixer",
 ]
 [workspace.package]
@@ -44,6 +45,10 @@ om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
 om-ui-gpui = { path = "crates/om-ui-gpui" }
 rtrb = "0.4"
+# CLAP hosting (ADR 0007): exact pins, bumped by hand after reading the changelog.
+clack-host = "=0.2.0"
+clack-extensions = "=0.2.0"
+clack-plugin = "=0.2.0"
 rusqlite = { version = "0.35", features = ["bundled"] }
 serde_json = "1"
 sha2 = "0.10"

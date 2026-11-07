@@ -19,6 +19,7 @@ pub mod meter_paint;
 pub mod mixer_view;
 pub mod paint;
 pub mod platter_paint;
+mod plugin_window;
 pub mod record_button;
 pub mod sampler_view;
 pub mod settings_view;
