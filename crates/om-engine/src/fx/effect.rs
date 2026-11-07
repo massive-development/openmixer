@@ -146,11 +146,18 @@ impl ParamSet {
 
     /// Audio thread, once per `process` call: freezes this block's targets.
     pub fn latch(&mut self) {
-        for i in 0..self.len {
-            self.block_targets[i] = self.targets[i].load();
+        let len = self.len;
+        for (block, target) in self.block_targets[..len]
+            .iter_mut()
+            .zip(&self.targets[..len])
+        {
+            *block = target.load();
         }
         // A smoother on its target stays there (`step` is a fixed point), so ticking can be skipped.
-        self.settled = (0..self.len).all(|i| self.smoothers[i].current() == self.block_targets[i]);
+        self.settled = self.smoothers[..len]
+            .iter()
+            .zip(&self.block_targets[..len])
+            .all(|(smoother, target)| smoother.current() == *target);
     }
 
     /// Advance all smoothers by one sample; call once per rendered sample.
@@ -158,8 +165,12 @@ impl ParamSet {
         if self.settled {
             return;
         }
-        for i in 0..self.len {
-            self.smoothers[i].step(self.block_targets[i]);
+        let len = self.len;
+        for (smoother, target) in self.smoothers[..len]
+            .iter_mut()
+            .zip(&self.block_targets[..len])
+        {
+            smoother.step(*target);
         }
     }
 
