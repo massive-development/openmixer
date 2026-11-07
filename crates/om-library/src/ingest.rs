@@ -15,6 +15,7 @@ use std::fs;
 use std::ops::AddAssign;
 use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 use std::time::{SystemTime, UNIX_EPOCH};
+use walkdir::WalkDir;
 
 /// Counts for one scan. Filled in even when the scan is stopped or fails part way.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -87,47 +88,36 @@ impl<'a> Ingestor<'a> {
         }
         let base = full_path(folder);
         let mut seen: HashSet<String> = HashSet::new();
-        let mut pending: Vec<PathBuf> = vec![base.clone()];
-        while let Some(dir) = pending.pop() {
-            let Ok(entries) = fs::read_dir(&dir) else {
-                continue; // unreadable subfolder: skipped
+        // Symlinked files count; symlinked folders are not followed (walkdir's default, so no
+        // cycles). Unreadable entries are skipped.
+        for entry in WalkDir::new(&base).into_iter().flatten() {
+            let path = entry.path();
+            let kind = entry.file_type();
+            let is_file = if kind.is_symlink() {
+                fs::metadata(path).is_ok_and(|m| m.is_file())
+            } else {
+                kind.is_file()
             };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let Ok(kind) = entry.file_type() else {
-                    continue;
-                };
-                if kind.is_dir() {
-                    pending.push(path);
-                    continue;
-                }
-                // Symlinked files count; symlinked folders are not followed (no cycles).
-                let is_file = if kind.is_symlink() {
-                    fs::metadata(&path).is_ok_and(|m| m.is_file())
-                } else {
-                    kind.is_file()
-                };
-                if !is_file {
-                    continue;
-                }
-                if should_stop() {
-                    return Err(LibraryError::Ingest("stopped".into()));
-                }
-                if !self.readers.supports(&path) {
-                    continue;
-                }
-                seen.insert(path_text(&path));
-                summary.scanned += 1;
-                let (outcome, queued) = self.ingest_file(&path);
-                summary.enqueued += usize::from(queued);
-                match outcome {
-                    Outcome::Added => summary.added += 1,
-                    Outcome::Updated => summary.updated += 1,
-                    Outcome::Unchanged => summary.unchanged += 1,
-                    Outcome::Restored => summary.restored += 1,
-                    // Stays "seen": a transient failure must not flag the file missing.
-                    Outcome::Failed => summary.failed += 1,
-                }
+            if !is_file {
+                continue;
+            }
+            if should_stop() {
+                return Err(LibraryError::Ingest("stopped".into()));
+            }
+            if !self.readers.supports(path) {
+                continue;
+            }
+            seen.insert(path_text(path));
+            summary.scanned += 1;
+            let (outcome, queued) = self.ingest_file(path);
+            summary.enqueued += usize::from(queued);
+            match outcome {
+                Outcome::Added => summary.added += 1,
+                Outcome::Updated => summary.updated += 1,
+                Outcome::Unchanged => summary.unchanged += 1,
+                Outcome::Restored => summary.restored += 1,
+                // Stays "seen": a transient failure must not flag the file missing.
+                Outcome::Failed => summary.failed += 1,
             }
         }
         summary.missing += self.mark_missing(&base, &seen, should_stop);
