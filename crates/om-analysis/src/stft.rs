@@ -72,11 +72,9 @@ impl MagnitudeStft {
     pub fn compute_frame(&mut self, samples: &[f32], index: usize, magnitudes: &mut Vec<f32>) {
         self.input.fill(0.0);
         let start = index * self.hop;
-        for i in 0..self.frame_size {
-            let Some(&sample) = samples.get(start + i) else {
-                break;
-            };
-            self.input[i] = sample * self.window[i];
+        let available = samples.get(start..).unwrap_or(&[]);
+        for ((out, &sample), &w) in self.input.iter_mut().zip(available).zip(&self.window) {
+            *out = sample * w;
         }
 
         self.fft

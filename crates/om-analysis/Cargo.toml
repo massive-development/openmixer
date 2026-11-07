@@ -22,9 +22,14 @@ sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+divan = "0.1.21"
 om-testing.workspace = true
 tempfile.workspace = true
 
 [features]
 # Decode fallback through ffmpeg for formats symphonia rejects (see om-engine).
 ffmpeg = ["om-engine/ffmpeg"]
+
+[[bench]]
+name = "hot_loops"
+harness = false
