@@ -26,6 +26,7 @@ pub mod slip;
 mod stage;
 pub mod stem_control;
 pub mod sync;
+mod thread_priority;
 
 pub use callback::AudioCallback;
 pub use deck_control::DeckControl;
