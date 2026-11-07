@@ -20,6 +20,7 @@ use om_ui::main_layout::{
     channel_slot, page_for, CellKind, LayoutState, Page, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
 };
 use om_ui::widgets::channel::ChannelStrip;
+use om_ui::widgets::mixer::MixerPanel;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -586,6 +587,56 @@ fn the_debug_columns_path_field_loads_on_enter(cx: &mut TestAppContext) {
     assert!(error, "there is no library, so the load is refused: {text}");
 }
 
+fn loud_reading() -> om_engine::LoudnessReading {
+    om_engine::LoudnessReading {
+        momentary_lufs: -9.5,
+        short_term_lufs: -12.0,
+        integrated_lufs: -13.1,
+        loudness_range_lu: 6.2,
+        true_peak_dbtp: [-2.0, 0.4],
+        dropped_frames: 0,
+        frames_measured: 480_000,
+    }
+}
+
+/// The loudness panel drawn at its mixer-module rectangle for `reading`, as a bare element so the
+/// shell's own tick (which polls the engine) cannot replace the reading.
+fn draw_loudness_panel<'a>(
+    cx: &'a mut TestAppContext,
+    reading: &om_engine::LoudnessReading,
+) -> (Rect, &'a mut VisualTestContext) {
+    let card = Rect::sized(253, 262);
+    let panel = MixerPanel::module_layout(card, &load_theme()).loudness_panel;
+    let shell = {
+        let (view, vcx) = open_with(cx, SIZES[0], shell());
+        view.update(vcx, |shell, _| shell.loudness.set_reading(reading));
+        view
+    };
+    let (_, vcx) = cx.add_window_view(|_, _| PanelOnly { shell, panel });
+    vcx.simulate_resize(gpui::size(px(400.), px(400.)));
+    vcx.run_until_parked();
+    (panel, vcx)
+}
+
+/// A view that renders only the loudness panel of `shell`, which it does not tick.
+struct PanelOnly {
+    shell: Entity<Shell>,
+    panel: Rect,
+}
+
+impl gpui::Render for PanelOnly {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        let panel = self.panel;
+        self.shell.update(cx, |shell, cx| {
+            crate::loudness_paint::loudness_panel(shell, panel, cx)
+        })
+    }
+}
+
 // Desktop integration (#229): media keys, the clipboard, file-dialog picks and announcements.
 
 use crate::media_keys::MediaSession;
@@ -709,6 +760,58 @@ fn keys_1_to_8_press_their_pads_while_the_strip_has_focus(cx: &mut TestAppContex
             view.read_with(vcx, |s, _| s.sampler.held()),
             None,
             "the key coming up released the pad"
+        );
+    }
+}
+
+#[gpui::test]
+fn the_loudness_panel_draws_a_reading_inside_its_slot(cx: &mut TestAppContext) {
+    let (panel, vcx) = draw_loudness_panel(cx, &loud_reading());
+    let got = to_rect(vcx.debug_bounds("loudness:panel").expect("panel drawn"));
+    assert_eq!(got, panel);
+    assert!(
+        vcx.debug_bounds("loudness:lamp:lit").is_some(),
+        "0.4 dBTP clips"
+    );
+    assert!(vcx.debug_bounds("loudness:warning").is_none());
+}
+
+#[gpui::test]
+fn the_loudness_panel_warns_when_frames_were_dropped(cx: &mut TestAppContext) {
+    let mut reading = loud_reading();
+    reading.true_peak_dbtp = [-6.0, -6.0];
+    reading.dropped_frames = 960;
+    let (_, vcx) = draw_loudness_panel(cx, &reading);
+    assert!(vcx.debug_bounds("loudness:warning").is_some());
+    assert!(vcx.debug_bounds("loudness:lamp:off").is_some());
+}
+
+#[gpui::test]
+fn the_loudness_panel_draws_before_anything_is_measured(cx: &mut TestAppContext) {
+    let (_, vcx) = draw_loudness_panel(cx, &om_engine::LoudnessReading::SILENT);
+    assert!(vcx.debug_bounds("loudness:panel").is_some());
+    assert!(vcx.debug_bounds("loudness:lamp:off").is_some());
+}
+
+#[gpui::test]
+fn the_shell_starts_the_meter_and_the_toggle_opens_the_panel_in_the_mixer(cx: &mut TestAppContext) {
+    for size in SIZES {
+        let (view, vcx) = open_with(cx, size, shell());
+        assert!(view.read_with(vcx, |s, _| s.engine.loudness().is_enabled()));
+        assert!(
+            vcx.debug_bounds("loudness:panel").is_none(),
+            "closed at first"
+        );
+        view.update(vcx, |s, cx| {
+            s.loudness.toggle();
+            cx.notify();
+        });
+        vcx.run_until_parked();
+        let mixer = to_rect(vcx.debug_bounds("slot:mixer").expect("mixer"));
+        let panel = to_rect(vcx.debug_bounds("loudness:panel").expect("panel opened"));
+        assert!(
+            mixer.contains(&panel),
+            "{size:?}: {panel:?} outside {mixer:?}"
         );
     }
 }
