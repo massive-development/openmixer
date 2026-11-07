@@ -210,3 +210,11 @@ Date: 2026-11-06. Code: `spikes/gpui-window` (own workspace, throwaway).
 - **Toolchain blocker.** The kit needs a newer rustc than the repo pin (1.91.1): `oo7` 0.6.0 requires 1.92, and `gpui-pre` uses `std::hint::cold_path`, stable in 1.95. 1.93.0 fails; **1.95.0 builds**. Migrating (#219) needs a `rust-toolchain.toml` bump to 1.95 or later, which is a repo policy change for the user to approve.
 - **Built and run.** One `gpui-component` `Button` and one canvas-painted knob (`paint_quad`) compile. `cpal` device and `midir` port enumeration run in the same binary. Rendering was not verified: this WSL host has no usable GPU (EGL/Zink errors), so the window was not seen. Check on real hardware.
 - **API notes.** `use gpui_kit::*` replaces `use gpui::*`; `gpui_kit::application()` replaces `Application::new()`; windows open through `gpui_kit::open_window` after `gpui_kit::init(cx)`; `Button::primary` needs `ButtonVariants` in scope.
+
+## P9: real-time priority for the audio callback only (#228)
+
+Date: 2026-11-06. cpal 0.18.2 with `audio_thread_priority` 0.35 (cpal's own dependency; om-engine does not depend on it).
+
+- **Callback thread only.** cpal promotes the thread that runs the audio callback and reports a refusal on the stream's error callback, which `om-audio` logs and counts; the stream keeps playing at normal priority (fail soft). The callback code is not touched.
+- **Deck decoder workers are not promoted.** They read and decode files, which blocks and can burn CPU for long stretches. On Linux the promotion sets `RLIMIT_RTTIME` to the burst budget, and passing it raises `SIGXCPU`, which ends the process. A decoder has no safe budget, so it stays at normal priority.
+- **Linux needs D-Bus.** `audio_thread_priority` is a no-op on Linux without its D-Bus (rtkit) path. That path builds `libdbus`, so it is the `om-audio` feature `realtime-dbus`, off by default, and `libdbus-1-dev` is not a build requirement. Linux builds therefore run the callback at normal priority unless they enable the feature. Windows enables cpal's plain `realtime` feature (no system library). Whether `openmixer` should forward `realtime-dbus` is open: it is a packaging choice, and the GPUI tree avoids system libdbus by using `zbus`.
