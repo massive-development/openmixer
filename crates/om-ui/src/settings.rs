@@ -24,7 +24,9 @@ pub use automix::{
 pub use library::{LibraryControl, LibrarySettingsPage};
 pub use midi::{learnable_targets, MidiHost, MidiInputs, MidiPage, MidiSettingsPage};
 pub use panel::{PageKind, SettingsPanel};
-pub use plugins::{PluginHost, PluginParam, PluginsSettingsPage};
+pub use plugins::{
+    PluginHost, PluginParam, PluginSession, PluginWindow, PluginWindowMode, PluginsSettingsPage,
+};
 pub use record::{RecordHost, RecordSettingsPage, FORMAT_LABELS as RECORD_FORMAT_LABELS};
 pub use stems::{format_gib, StemsSettingsPage};
 

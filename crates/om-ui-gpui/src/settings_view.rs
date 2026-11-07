@@ -136,6 +136,8 @@ pub struct PageLists {
     /// The plugin whose generic parameter panel is open, and its parameters.
     pub open_params: Option<String>,
     pub params: Vec<PluginParam>,
+    /// Plugins whose embedding window is open (see `plugin_window`).
+    pub(crate) open_windows: crate::plugin_window::OpenWindows,
     /// Playlists the automix queue can play, as `(id, label)`.
     pub playlists: Vec<(i64, String)>,
 }

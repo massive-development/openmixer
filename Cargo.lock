@@ -4467,6 +4467,7 @@ dependencies = [
  "om-midi",
  "om-testing",
  "om-ui",
+ "raw-window-handle",
  "tempfile",
 ]
 

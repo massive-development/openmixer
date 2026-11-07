@@ -32,6 +32,8 @@ default = ["gui"]
 onnx = ["om-stems/onnx"]
 # Decode fallback that runs the `ffmpeg` executable for formats symphonia lacks (see om-engine). Off by default.
 ffmpeg = ["om-engine/ffmpeg"]
+# CLAP plugin hosting (ADR 0007): the Plugins page can open a CLAP plugin's own window. Off by default.
+clap = ["om-plugins/clap"]
 # The window. Off (`--no-default-features`) leaves only the headless flags: --smoke and --version.
 gui = ["dep:om-ui-gpui"]
 

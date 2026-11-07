@@ -22,6 +22,10 @@ pub(super) fn plugins_page(
                 .items_center()
                 .mb(px(4.))
                 .child(div().flex_1().overflow_hidden().child(id.clone()))
+                .child(chip_with_window(t, "Window", false, cx, {
+                    let id = id.clone();
+                    move |this, window, cx| this.open_plugin_window(&id, window, cx)
+                }))
                 .child(chip(t, "Parameters", open, cx, move |this| {
                     let id = toggle.clone();
                     this.settings_mut(|s| s.plugin_toggle_params(&id));
@@ -127,7 +131,42 @@ fn param_panel(
     panel
 }
 
+impl Shell {
+    /// Opens the plugin's own window; when it cannot be shown the page says so and the Parameters
+    /// panel is the way in.
+    pub(crate) fn open_plugin_window(
+        &mut self,
+        id: &str,
+        window: &Window,
+        cx: &mut Context<Shell>,
+    ) {
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        let Some(source) = settings.plugin_window(id) else {
+            settings.set_notice(
+                "This plugin has no window of its own; use Parameters.",
+                true,
+            );
+            return;
+        };
+        let open = settings.lists.open_windows.clone();
+        match crate::plugin_window::open_plugin_window(cx, window, id, source, &open) {
+            Ok(()) => settings.set_notice(format!("Opened the window of {id}"), false),
+            Err(reason) => settings.set_notice(reason, true),
+        }
+    }
+}
+
 impl SettingsState {
+    /// The plugin's own window, when the plugin host has one for it.
+    pub(super) fn plugin_window(
+        &mut self,
+        id: &str,
+    ) -> Option<std::sync::Arc<dyn om_ui::settings::PluginWindow>> {
+        self.with_plugins_page(|p| Ok(p.window(id))).ok().flatten()
+    }
+
     /// Opens the generic parameter panel of plugin `id`, or closes it when it is the open one.
     pub fn plugin_toggle_params(&mut self, id: &str) {
         let open = self.lists.open_params.as_deref() == Some(id);

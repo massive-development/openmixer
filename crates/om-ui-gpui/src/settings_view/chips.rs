@@ -13,6 +13,17 @@ pub(crate) fn chip(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell) + 'static,
 ) -> Div {
+    chip_with_window(t, label, lit, cx, move |this, _, _| on_press(this))
+}
+
+/// A [`chip`] whose press also gets the window and context, for actions that open another window.
+pub(crate) fn chip_with_window(
+    t: &ThemeTokens,
+    label: &str,
+    lit: bool,
+    cx: &mut Context<Shell>,
+    on_press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
+) -> Div {
     let look = LookAndFeel::from_tokens(t);
     let style = if lit {
         look.toggle(true, accent_of(t))
@@ -33,8 +44,8 @@ pub(crate) fn chip(
     .child(label.to_owned())
     .on_mouse_down(
         MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-            on_press(this);
+        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+            on_press(this, window, cx);
             cx.notify();
         }),
     )

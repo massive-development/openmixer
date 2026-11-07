@@ -82,6 +82,10 @@ impl Plugin for ClapPlugin {
         self.param_value(id.parse().ok()?)
     }
 
+    fn clap_gui(&self) -> Option<PluginGui> {
+        self.stage_states().iter().find_map(|s| s.gui())
+    }
+
     fn on_load(&mut self, host: &mut dyn PluginHost) {
         let (entry, id) = (self.entry.clone(), self.plugin_id.clone());
         let (stages, label) = (Arc::clone(&self.stages), self.info.id.clone());
