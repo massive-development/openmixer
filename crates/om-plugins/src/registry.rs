@@ -57,6 +57,9 @@ struct Registrations {
 pub struct PluginRegistry {
     entries: Vec<Entry>,
     regs: Registrations,
+    /// The user accepted the first-load warning for third-party CLAP plugins.
+    #[cfg(feature = "clap")]
+    clap_acknowledged: bool,
 }
 
 /// The host side of one `on_load` call. Exists only for the duration of the call.
@@ -203,6 +206,41 @@ impl PluginRegistry {
     pub fn load_library(&mut self, path: &Path) -> Result<(), PluginError> {
         let plugin = PluginLoader::load(path)?;
         self.add_plugin(plugin)
+    }
+
+    /// Records that the user accepted the first-load warning: CLAP plugins run native code in this
+    /// process. Until then [`Self::load_clap`] refuses.
+    #[cfg(feature = "clap")]
+    pub fn acknowledge_clap_warning(&mut self) {
+        self.clap_acknowledged = true;
+    }
+
+    #[cfg(feature = "clap")]
+    pub fn clap_warning_acknowledged(&self) -> bool {
+        self.clap_acknowledged
+    }
+
+    /// Loads every plugin in the `.clap` file at `path` and adds it. Refused with
+    /// [`PluginError::NotAcknowledged`] before the warning is accepted. A plugin the host cannot use
+    /// (other port layout, duplicate id) is appended to `errors` and the rest still load. Returns how
+    /// many loaded.
+    #[cfg(feature = "clap")]
+    pub fn load_clap(
+        &mut self,
+        path: &Path,
+        errors: &mut Vec<String>,
+    ) -> Result<usize, PluginError> {
+        if !self.clap_acknowledged {
+            return Err(PluginError::NotAcknowledged(path.display().to_string()));
+        }
+        let mut loaded = 0;
+        for plugin in crate::clap::ClapLoader::load_all(path)? {
+            match plugin.and_then(|p| self.add_plugin(p)) {
+                Ok(()) => loaded += 1,
+                Err(error) => errors.push(format!("{}: {error}", path.display())),
+            }
+        }
+        Ok(loaded)
     }
 
     /// Loads every shared library in `dir` and every built-in plugin. Failures are appended to

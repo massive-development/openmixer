@@ -8,9 +8,14 @@ rust-version.workspace = true
 publish = false
 
 # The workspace forbids unsafe code. This crate denies it and allows it only in `abi.rs` and
-# `loader.rs`, the shared-library loader (see `src/lib.rs`).
+# `loader.rs` (the C-ABI loader) and `clap/entry.rs` (the CLAP loader, feature `clap`); see `src/lib.rs`.
 [lints.rust]
 unsafe_code = "deny"
+
+[features]
+# CLAP hosting through clack (ADR 0007). Off by default; this crate's own tests turn it on through the
+# self dev-dependency below, so `cargo test` and `cargo clippy --all-targets` cover it.
+clap = ["dep:clack-host", "dep:clack-extensions", "dep:raw-window-handle", "dep:tracing"]
 
 [dependencies]
 om-core.workspace = true
@@ -19,7 +24,16 @@ om-midi.workspace = true
 libloading = "0.8"
 serde_json.workspace = true
 thiserror.workspace = true
+rtrb.workspace = true
+clack-host = { workspace = true, optional = true }
+clack-extensions = { workspace = true, optional = true, features = [
+    "clack-host", "audio-ports", "params", "state", "latency", "tail", "gui", "timer", "posix-fd",
+    "thread-check", "log", "raw-window-handle_06",
+] }
+raw-window-handle = { version = "0.6", optional = true }
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
+om-plugins = { path = ".", features = ["clap"] }
 assert_no_alloc = "1.1"
 tempfile.workspace = true
