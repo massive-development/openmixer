@@ -4446,6 +4446,7 @@ name = "om-engine"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "bytemuck",
  "om-core",
  "om-dsp",
  "om-stretch",
@@ -4471,6 +4472,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "walkdir",
 ]
 
 [[package]]
