@@ -16,6 +16,8 @@ om-core.workspace = true
 om-engine.workspace = true
 om-library.workspace = true
 realfft = "3.5"
+audioadapter-buffers.workspace = true
+rubato.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
@@ -32,4 +34,5 @@ ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, fea
 onnx = ["dep:ort"]
 
 [dev-dependencies]
+assert_no_alloc = "1.1"
 tempfile.workspace = true
