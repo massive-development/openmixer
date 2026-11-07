@@ -11,13 +11,10 @@ publish = false
 workspace = true
 
 [dependencies]
+midir = "0.11"
 om-core.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-
-# Same version cpal links, so the build carries one `alsa`. Linux only: the sequencer backend.
-[target.'cfg(target_os = "linux")'.dependencies]
-alsa = "0.11"
 
 [dev-dependencies]
 om-engine.workspace = true
