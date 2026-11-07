@@ -44,6 +44,7 @@ om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
 om-ui-gpui = { path = "crates/om-ui-gpui" }
 audioadapter-buffers = "5.1"
+ebur128 = "0.1.11"
 rtrb = "0.4"
 rubato = "5.0.1"
 rusqlite = { version = "0.35", features = ["bundled"] }
