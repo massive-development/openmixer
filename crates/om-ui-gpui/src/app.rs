@@ -91,6 +91,8 @@ pub struct RunOptions {
     pub automix: Option<crate::automix_bar::AutomixSnapshotFn>,
     /// Shows the Record button in the header and the `r` key (the window sends `record.toggle`).
     pub record: bool,
+    /// Registers with the OS media controls (media keys, now-playing). Off for tests and `--smoke`.
+    pub media_keys: bool,
     /// Demo only: staged window state for screenshots.
     pub scene: SceneOptions,
 }
@@ -153,6 +155,13 @@ pub struct Shell {
     pending_pad: Option<usize>,
     /// The window's size in px, as the last frame saw it (the library sizes itself from it).
     pub(crate) window_size: (i32, i32),
+    /// The OS media session (media keys, now-playing), once started.
+    pub(crate) media: Option<crate::media_keys::MediaSession>,
+    /// Starting the media session was tried (it is tried once).
+    pub(crate) media_tried: bool,
+    /// Whether the recorder, and stem preparation, were running last frame (to announce the end).
+    pub(crate) was_recording: bool,
+    pub(crate) was_stemming: bool,
     pub(crate) options: RunOptions,
     started: Instant,
     last_tick: f64,
@@ -290,6 +299,10 @@ impl Shell {
             sampler_open: scene.sampler_open,
             pending_pad: scene.press_pad,
             window_size: (0, 0),
+            media: None,
+            media_tried: false,
+            was_recording: false,
+            was_stemming: false,
             options,
             started: Instant::now(),
             last_tick: 0.0,
@@ -538,6 +551,7 @@ impl Render for Shell {
         let frame_start = Instant::now();
         crate::controls::begin_frame();
         self.tick();
+        self.desktop_step(window, cx);
         window.request_animation_frame();
         if !window.is_window_active() {
             // The key-up or mouse-up of a held sampler pad never reaches an inactive window.
