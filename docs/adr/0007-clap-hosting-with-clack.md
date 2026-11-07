@@ -143,6 +143,18 @@ The maintainer answered the open questions on 2026-11-07.
 - Stage kind: the stereo stage kind is introduced with a descriptor (inputs, outputs, kind), so an instrument or a sidechain effect is a new descriptor value and not a new engine path.
 - Routing for sidechain and the source for instrument notes (MIDI from `om-midi`) need their own design notes when they are taken up.
 
+## Implementation notes
+
+Where the build differs from, or settled a question in, the text above.
+
+- **Unsafe surface is three modules, not one.** `clap/entry.rs` holds the library open. clack 0.2.0 also marks `PluginGui::set_parent` and `set_transient` `unsafe` (it cannot check the window is still valid), which the "GUI" section assumed safe: they live in `clap/gui_parent.rs`. Posix file descriptors a plugin registers are borrowed in `clap/fds.rs`. Each block has a `// SAFETY:` line; the leak check covers the path.
+- **One control thread per plugin instance.** clack's `PluginInstance` is not `Send`, so each instance lives on a worker thread and the engine stage holds only the audio processor (`clap/worker.rs`). All GUI, timer and parameter-query calls run there. This is the message boundary an out-of-process host would replace.
+- **No engine change.** The engine's `ProcessStage::process(left, right)` already receives both channels in one call, so the "stereo stage kind" is the existing stage plus a `StageDescriptor` in `om-plugins` that records the ports (data, one stereo in and out accepted).
+- **The window is a window of its own.** CLAP gives the host no call to place the plugin's child inside a sub-rectangle, so on X11 the plugin is embedded in a dedicated GPUI window that holds nothing else. Which handle GPUI returns was read from the source: an XCB window handle (the X11 window id) on X11 and a Wayland surface handle on Wayland; clack's `Window::from_window` has no Wayland case, so Wayland floats.
+- **Still unverified:** that GPUI's X11 window keeps the plugin's child visible (it may paint over it), the order of `close` against platform window teardown, and a Wayland floating window opening. No display was available. The plan logic and the CLAP call sequence are tested against the fixture's GUI stub only.
+- **Discovery** is data (`ClapSearch`): the standard folders are scanned only when `scan_standard_paths` is true, which the first-run prompt sets. The prompt and the first-load warning screens are not built; the registry refuses `load_clap` until `acknowledge_clap_warning` is called.
+- **State persistence (step 6) and the preferences list of `.clap` files (step 8) are not done.**
+
 ## References
 
 - Issue #225 (P7); #218 and #219 (gpui-kit, `gpui-pre` 0.3.10); the platform refresh handoff (`docs/superpowers/plans/2026-11-06-platform-refresh-handoff.md`, local, untracked)

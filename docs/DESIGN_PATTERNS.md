@@ -33,6 +33,12 @@ pub trait AudioDevice: Send {
 - **Reuse when:** any realtime thread needs data from a non-realtime producer (decode, analysis results, MIDI events).
 - **Notes:** `rtrb::RingBuffer::new(capacity)` returns a `(Producer, Consumer)` pair. Exactly one producer and one consumer thread, and the pair must be created before the audio thread starts.
 
+### Control thread per foreign plugin instance (message boundary)
+- **Where:** `om-plugins/src/clap/worker.rs` (feature `clap`)
+- **Why:** a CLAP instance is not `Send` and its main-thread calls (init, activate, GUI, timers) must stay on one thread, while the engine moves the audio side between threads.
+- **Reuse when:** hosting any foreign plugin whose handles are thread-bound, or when a later out-of-process host must replace the in-process one without touching the engine.
+- **Notes:** the worker owns the instance and runs jobs sent over a channel; the audio side holds only the processor. The processor is handed back and deactivated on the worker before the instance is dropped (dropping it earlier leaks it in clack). Parameter changes go through one `rtrb` ring per live stage (`param_bus.rs`); the audio thread never locks. A plugin's ports are data (`PortLayout`, `StageDescriptor`), so sidechain and instruments are new values, not new code paths.
+
 ### Epoch handshake (producer-owned reset)
 - **Where:** `om-engine` deck streaming (`deck/shared.rs`, `deck/decoder.rs`, `deck/playback.rs`)
 - **Why:** seek/load without the producer resetting a ring the consumer is reading.

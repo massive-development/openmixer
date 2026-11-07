@@ -130,4 +130,10 @@ pub trait Plugin: Send {
 
     /// Called after the plugin's registrations are removed and before the plugin is dropped.
     fn on_unload(&mut self) {}
+
+    /// The window handle of the plugin's first live stage, for a CLAP plugin that has one.
+    #[cfg(feature = "clap")]
+    fn clap_gui(&self) -> Option<crate::clap::PluginGui> {
+        None
+    }
 }

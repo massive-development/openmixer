@@ -46,6 +46,42 @@ impl PluginParam {
     }
 }
 
+/// The kind of windows the app shows, which decides how a plugin's window can appear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginSession {
+    X11,
+    Wayland,
+    Other,
+}
+
+/// How a plugin's own window will be shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginWindowMode {
+    /// A child of a window of ours (X11).
+    Embedded,
+    /// The plugin's own top-level window.
+    Floating,
+    /// Not showable here: use the generic parameter panel.
+    Parameters,
+}
+
+/// A loaded plugin's own window, driven by the app's window layer. `parent` is an X11 window id.
+/// The caller must call `close` before it destroys the parent window.
+pub trait PluginWindow: Send + Sync {
+    fn mode(&self, session: PluginSession) -> PluginWindowMode;
+    /// Opens the window; returns its size when the plugin reports one.
+    fn open(
+        &self,
+        mode: PluginWindowMode,
+        parent: Option<u64>,
+        scale: f64,
+    ) -> SettingsResult<Option<(u32, u32)>>;
+    fn resize(&self, width: u32, height: u32) -> SettingsResult<()>;
+    /// A size the embedded plugin asked for since the last call.
+    fn take_resize_request(&self) -> Option<(u32, u32)>;
+    fn close(&self);
+}
+
 /// What the plugins page needs. The app implements it over `om-plugins` (`openmixer::plugins`).
 pub trait PluginHost {
     fn loaded_plugins(&self) -> Vec<String>;
@@ -63,6 +99,10 @@ pub trait PluginHost {
     /// The parameters of loaded plugin `id` with their current values. Empty when it has none.
     fn plugin_parameters(&self, _id: &str) -> Vec<PluginParam> {
         Vec::new()
+    }
+    /// The own window of loaded plugin `id`, when it has one.
+    fn plugin_window(&self, _id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
+        None
     }
     /// Sets parameter `param` of plugin `id`; the host clamps the value.
     fn set_plugin_parameter(&mut self, id: &str, _param: &str, _value: f64) -> SettingsResult<()> {
@@ -104,6 +144,10 @@ impl<'a> PluginsSettingsPage<'a> {
 
     pub fn unload(&mut self, id: &str) -> SettingsResult<()> {
         self.host.unload(id)
+    }
+
+    pub fn window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
+        self.host.plugin_window(id)
     }
 
     pub fn parameters(&self, id: &str) -> Vec<PluginParam> {

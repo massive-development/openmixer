@@ -294,6 +294,13 @@ impl PluginRegistry {
         self.find(id).map(|p| p.parameters()).unwrap_or_default()
     }
 
+    /// The window handle of CLAP plugin `id`'s first live stage. `None` for any other plugin or when
+    /// no stage is attached (a stage is what owns the plugin instance).
+    #[cfg(feature = "clap")]
+    pub fn clap_gui(&self, id: &str) -> Option<crate::clap::PluginGui> {
+        self.find(id)?.clap_gui()
+    }
+
     /// Sets parameter `parameter` of plugin `id` through the plugin's own parameter target. False
     /// when the plugin is not loaded or refuses the id or value.
     pub fn set_plugin_parameter(&self, id: &str, parameter: &str, value: f64) -> bool {
