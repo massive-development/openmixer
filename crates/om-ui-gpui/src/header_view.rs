@@ -4,15 +4,12 @@
 //! height, so the controls sit on one baseline. This file only draws them.
 
 use crate::app::Shell;
-use crate::controls::{button, tip_overlay};
+use crate::controls::button;
 use crate::paint::{paint, place};
-use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent};
+use gpui::{div, prelude::*, px, Context, Div};
 use om_ui::header_layout::{HeaderNeeds, HeaderRects};
 use om_ui::labels::latency_text;
 use om_ui::widgets::deck::format_bpm;
-
-/// What the collapsed notice chip says (the message itself is in its tooltip).
-const NOTICE_SHORT: &str = "Notice";
 
 impl Shell {
     /// Which optional header parts this window has.
@@ -21,7 +18,8 @@ impl Shell {
             automix: self.options.automix.is_some(),
             record: self.options.record,
             settings: self.settings.is_some(),
-            notice: self.options.banner.is_some() && !self.notice_dismissed,
+            // The banner is a toast now (see `Shell::show_banner`), not a header chip.
+            notice: false,
         }
     }
 
@@ -67,48 +65,6 @@ impl Shell {
             strip = strip.child(crate::automix_bar::automix_bar_view(
                 &t, &snapshot, &prefs, rect, cx,
             ));
-        }
-
-        if let (Some(rect), Some(text)) = (rects.notice, self.options.banner.clone()) {
-            let collapsed = rect.w < om_ui::header_layout::NOTICE_WIDTH;
-            strip = strip.child(
-                place(rect)
-                    .flex()
-                    .items_center()
-                    .gap(px(if collapsed { 2. } else { 6. }))
-                    .px(px(if collapsed { 6. } else { 8. }))
-                    .whitespace_nowrap()
-                    .rounded(px(t.control_radius))
-                    .border_1()
-                    .border_color(paint(t.border))
-                    .bg(paint(t.surface_raised))
-                    .text_size(px(t.type_caption))
-                    .text_color(paint(t.text_primary))
-                    .overflow_hidden()
-                    .child(div().flex_1().min_w(px(0.)).child(if collapsed {
-                        NOTICE_SHORT.to_owned()
-                    } else {
-                        text.clone()
-                    }))
-                    // The whole message on hover, so the collapsed chip is never cryptic.
-                    .child(tip_overlay(&t, "notice-chip", text))
-                    .child(
-                        div()
-                            .flex_none()
-                            .px(px(4.))
-                            .text_size(px(t.type_body))
-                            .text_color(paint(t.text_secondary))
-                            .child("\u{00D7}")
-                            .child(tip_overlay(&t, "notice-dismiss", "Dismiss"))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _: &MouseDownEvent, _, cx| {
-                                    this.notice_dismissed = true;
-                                    cx.notify();
-                                }),
-                            ),
-                    ),
-            );
         }
 
         if let Some(rect) = rects.master_bpm {

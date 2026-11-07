@@ -389,6 +389,7 @@ mod tests {
             on_frame: None,
             automix: None,
             record: false,
+            media_keys: false,
             smoke_frames: None,
             banner: None,
             debug: None,

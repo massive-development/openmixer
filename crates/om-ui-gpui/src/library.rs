@@ -216,15 +216,18 @@ pub struct SidebarLine {
 pub enum KeyOutcome {
     /// Not a key the browser uses.
     Ignored,
-    /// The search text or the search mode changed.
-    Edited,
+    /// `/`: the window should put the keyboard in the search box.
+    Search,
     /// The selection moved.
     Moved,
     /// Enter: the selected row was activated (loaded into the suggested deck).
     Activated,
+    /// `p`: stem preparation was started for the selection.
+    Edited,
 }
 
-/// A playlist name being typed in the search box's place.
+/// A playlist name being typed in the search box's place. The text is typed in the box (a text
+/// input); the window copies it here as it changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameEntry {
     /// `Some(id)` renames that playlist or folder; `None` names a new one.
@@ -235,9 +238,9 @@ pub struct NameEntry {
 }
 
 impl NameEntry {
-    /// What the box shows while the name is typed.
-    pub fn prompt(&self) -> String {
-        let what = if self.rename.is_some() {
+    /// What the box asks for while the name is typed (its placeholder).
+    pub fn prompt(&self) -> &'static str {
+        if self.rename.is_some() {
             if self.folder {
                 "Rename folder"
             } else {
@@ -247,8 +250,7 @@ impl NameEntry {
             "New folder"
         } else {
             "New playlist"
-        };
-        format!("{what}: {}|", self.text)
+        }
     }
 }
 
@@ -256,18 +258,12 @@ pub struct LibraryPanel {
     hub: SharedHub,
     engine: Arc<DjEngine>,
     pub browser: LibraryBrowser,
-    /// Typing goes to the search box (set by a click on it or by `/`).
-    pub search_active: bool,
-    /// A playlist name being typed; takes the keys before the search box does.
+    /// A playlist name being typed in the search box's place.
     pub name_entry: Option<NameEntry>,
     /// Set when a stems action needs the model first: the window opens the Library settings page.
     licence_request: bool,
     /// Column and direction of the last header click (`true` = ascending).
     sort: Option<(i32, bool)>,
-    /// The first table row on screen.
-    pub table_top: usize,
-    /// Rows that fit in the table, as the window last laid it out.
-    pub visible_rows: usize,
     shown_reference: String,
 }
 
@@ -299,12 +295,9 @@ impl LibraryPanel {
             hub,
             engine,
             browser,
-            search_active: false,
             name_entry: None,
             licence_request: false,
             sort: None,
-            table_top: 0,
-            visible_rows: 10,
             shown_reference: String::new(),
         }
     }
@@ -335,15 +328,31 @@ impl LibraryPanel {
         self.browser.model.set_reference_bpm(bpm);
     }
 
-    /// Rows in the table.
-    /// True while the search field takes typed keys.
+    /// True while a playlist name is being typed in the search box's place.
     pub fn is_typing(&self) -> bool {
-        self.search_active || self.name_entry.is_some()
+        self.name_entry.is_some()
+    }
+
+    /// The search box's text changed: the query runs on the next tick.
+    pub fn set_query(&mut self, text: &str) {
+        self.browser.type_search(text);
+    }
+
+    /// Enter in the search box: the query runs now.
+    pub fn commit_query(&mut self) {
+        let query = self.browser.search_text().to_owned();
+        let h = self.hub.borrow();
+        self.browser.set_search_text(&h.services, &query);
+    }
+
+    /// Escape in the search box: the query is dropped and the whole list shows.
+    pub fn clear_query(&mut self) {
+        let h = self.hub.borrow();
+        self.browser.set_search_text(&h.services, "");
     }
 
     /// Starts naming a new playlist.
     pub fn begin_new_playlist(&mut self) {
-        self.search_active = false;
         self.name_entry = Some(NameEntry {
             rename: None,
             folder: false,
@@ -353,7 +362,6 @@ impl LibraryPanel {
 
     /// Starts naming a new top-level folder; playlists are dragged into it afterwards.
     pub fn begin_new_folder(&mut self) {
-        self.search_active = false;
         self.name_entry = Some(NameEntry {
             rename: None,
             folder: true,
@@ -389,7 +397,6 @@ impl LibraryPanel {
         };
         match target {
             Some((id, folder, text)) => {
-                self.search_active = false;
                 self.name_entry = Some(NameEntry {
                     rename: Some(id),
                     folder,
@@ -437,45 +444,42 @@ impl LibraryPanel {
         )
     }
 
-    /// Typed keys for the playlist name: text edits it, Enter creates or renames, Escape cancels.
-    fn handle_name_key(&mut self, key: &str, text: Option<&str>) -> KeyOutcome {
-        let Some(entry) = self.name_entry.as_mut() else {
+    /// The name box's text changed.
+    pub fn set_name_text(&mut self, text: &str) {
+        if let Some(entry) = self.name_entry.as_mut() {
+            text.clone_into(&mut entry.text);
+        }
+    }
+
+    /// Enter in the name box: creates or renames. A refused name stays open so it can be fixed;
+    /// the status line says why.
+    pub fn submit_name(&mut self) -> KeyOutcome {
+        let Some(entry) = self.name_entry.clone() else {
             return KeyOutcome::Ignored;
         };
-        match key {
-            "escape" => {
-                self.name_entry = None;
-            }
-            "enter" => {
-                let entry = entry.clone();
-                let mut h = self.hub.borrow_mut();
-                let done = match entry.rename {
-                    Some(_) => self
-                        .browser
-                        .rename_selected_playlist(&mut h.services, &entry.text),
-                    None if entry.folder => self
-                        .browser
-                        .new_folder(&mut h.services, None, &entry.text)
-                        .is_some(),
-                    None => self
-                        .browser
-                        .create_playlist(&mut h.services, &entry.text)
-                        .is_some(),
-                };
-                // A refused name stays open so it can be fixed; the status line says why.
-                if done {
-                    self.name_entry = None;
-                }
-            }
-            "backspace" => {
-                entry.text.pop();
-            }
-            _ => match text {
-                Some(typed) if !typed.chars().any(char::is_control) => entry.text.push_str(typed),
-                _ => return KeyOutcome::Ignored,
-            },
+        let mut h = self.hub.borrow_mut();
+        let done = match entry.rename {
+            Some(_) => self
+                .browser
+                .rename_selected_playlist(&mut h.services, &entry.text),
+            None if entry.folder => self
+                .browser
+                .new_folder(&mut h.services, None, &entry.text)
+                .is_some(),
+            None => self
+                .browser
+                .create_playlist(&mut h.services, &entry.text)
+                .is_some(),
+        };
+        if done {
+            self.name_entry = None;
         }
         KeyOutcome::Edited
+    }
+
+    /// Escape in the name box.
+    pub fn cancel_name(&mut self) {
+        self.name_entry = None;
     }
 
     pub fn row_count(&self) -> usize {
@@ -692,51 +696,13 @@ impl LibraryPanel {
         self.browser.prep_selected(&mut h.services)
     }
 
-    /// Keyboard input for the browser. While the search box is active, printable text edits the
-    /// query (applied on the next tick), Backspace deletes, Enter and Escape leave the box. Else
-    /// `/` opens the box, arrows move the selection and Enter activates it.
-    /// `text` is the typed character (if any); `key` is the key name.
-    pub fn handle_key(&mut self, key: &str, text: Option<&str>) -> KeyOutcome {
-        if self.name_entry.is_some() {
-            return self.handle_name_key(key, text);
-        }
-        if self.search_active {
-            return match key {
-                "enter" => {
-                    self.search_active = false;
-                    let query = self.browser.search_text().to_owned();
-                    let h = self.hub.borrow();
-                    self.browser.set_search_text(&h.services, &query);
-                    KeyOutcome::Edited
-                }
-                "escape" => {
-                    self.search_active = false;
-                    let h = self.hub.borrow();
-                    self.browser.set_search_text(&h.services, "");
-                    KeyOutcome::Edited
-                }
-                "backspace" => {
-                    let mut text = self.browser.search_text().to_owned();
-                    text.pop();
-                    self.browser.type_search(&text);
-                    KeyOutcome::Edited
-                }
-                _ => match text {
-                    Some(typed) if !typed.chars().any(char::is_control) => {
-                        let mut query = self.browser.search_text().to_owned();
-                        query.push_str(typed);
-                        self.browser.type_search(&query);
-                        KeyOutcome::Edited
-                    }
-                    _ => KeyOutcome::Ignored,
-                },
-            };
-        }
+    /// Keyboard input for the browser while no text box has the keyboard: `/` asks for the search
+    /// box, `p` prepares stems, arrows move the selection and Enter activates it. The text boxes
+    /// are inputs of their own (see `library_view`), so typed text never comes through here.
+    /// `key` is the key name.
+    pub fn handle_key(&mut self, key: &str) -> KeyOutcome {
         match key {
-            "/" => {
-                self.search_active = true;
-                KeyOutcome::Edited
-            }
+            "/" => KeyOutcome::Search,
             "p" => {
                 self.prepare_stems();
                 KeyOutcome::Edited
@@ -753,7 +719,6 @@ impl LibraryPanel {
                     (Some(row), _) => (row + 1).min(count - 1),
                 };
                 self.browser.select_row(next);
-                self.keep_visible(next);
                 KeyOutcome::Moved
             }
             "enter" => match self.browser.selected_row() {
@@ -767,22 +732,36 @@ impl LibraryPanel {
         }
     }
 
-    /// Moves the table's top row so `row` is on screen.
-    pub fn keep_visible(&mut self, row: usize) {
-        let visible = self.visible_rows.max(1);
-        if row < self.table_top {
-            self.table_top = row;
-        } else if row >= self.table_top + visible {
-            self.table_top = row + 1 - visible;
-        }
-    }
-
-    /// Scrolls the table by whole rows (negative = up), clamped to the list.
-    pub fn scroll_rows(&mut self, rows: isize) {
-        let count = self.row_count();
-        let max_top = count.saturating_sub(self.visible_rows.max(1));
-        let top = self.table_top as isize + rows;
-        self.table_top = top.clamp(0, max_top as isize) as usize;
+    /// The selected tracks as text for the clipboard, one per line in table order:
+    /// `Artist - Title (124 BPM, 8A)`, leaving out what the track has no value for. Empty when
+    /// nothing is selected.
+    pub fn selected_summary(&mut self) -> String {
+        let mut rows = self.browser.selected_rows();
+        rows.sort_unstable();
+        rows.into_iter()
+            .filter_map(|row| self.browser.model.row_at(row as isize).cloned())
+            .map(|track| {
+                let name = match (track.artist.is_empty(), track.title.is_empty()) {
+                    (false, false) => format!("{} - {}", track.artist, track.title),
+                    (true, false) => track.title.clone(),
+                    (false, true) => track.artist.clone(),
+                    (true, true) => track.path.clone(),
+                };
+                let mut facts = Vec::new();
+                if let Some(bpm) = track.bpm.filter(|bpm| *bpm > 0.0) {
+                    facts.push(format!("{bpm:.0} BPM"));
+                }
+                if !track.camelot.is_empty() {
+                    facts.push(track.camelot.clone());
+                }
+                if facts.is_empty() {
+                    name
+                } else {
+                    format!("{name} ({})", facts.join(", "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// The loaded track's header text and the grid BPM it shows.
