@@ -2,9 +2,9 @@
 
 ## Status
 
-Proposed
+Accepted
 
-Design note only (issue #225, P7). No code and no Cargo change is part of this ADR. Building waits for the maintainer's sign-off on the decision and on the open questions below.
+Design note only (issue #225, P7). No code and no Cargo change is part of this ADR. The maintainer signed off on 2026-11-07 (see "Decisions"); implementation follows the migration plan.
 
 ## Context
 
@@ -31,7 +31,7 @@ Checked on 2026-11-06 against crates.io, the 0.2.0 crate sources (downloaded and
 
 ## Decision
 
-Proposed, subject to sign-off on the open questions.
+Accepted. The maintainer's answers to the seven open questions are in "Decisions" and override anything below that reads as an option.
 
 ### 1. Host third-party CLAP plugins, not only our own
 
@@ -41,18 +41,18 @@ Hosting only our own CLAP plugins would add the clack dependency and its risk fo
 
 ### 2. Use `clack-host` and `clack-extensions` 0.2.0, pinned exactly
 
-Enable only the extensions we use: `audio-ports`, `params`, `state`, `latency`, `tail`, `gui`, `timer`, `posix-fd`, `thread-check`, and `raw-window-handle_06`; `note-ports` when instruments are in scope (open question 4). Pin with `=0.2.0` in the workspace `Cargo.toml` and bump by hand after reading the changelog, because the API is pre-1.0 and may break on any release. Keep every clack type behind our own types inside `om-plugins`, so a breaking release, or a move to raw `clap-sys` (which clack itself uses), touches one module. The pre-1.0 risk is accepted because the wrapper is thin and the CLAP ABI under it is stable.
+Enable only the extensions we use: `audio-ports`, `params`, `state`, `latency`, `tail`, `gui`, `timer`, `posix-fd`, `thread-check`, and `raw-window-handle_06`; `note-ports` is not enabled in the first release (effects only), but see "Keeping instruments and sidechain open". Pin with `=0.2.0` in the workspace `Cargo.toml` and bump by hand after reading the changelog, because the API is pre-1.0 and may break on any release. Keep every clack type behind our own types inside `om-plugins`, so a breaking release, or a move to raw `clap-sys` (which clack itself uses), touches one module. The pre-1.0 risk is accepted because the wrapper is thin and the CLAP ABI under it is stable.
 
 ### 3. `unsafe`: one new allowed module in `om-plugins`
 
 `PluginEntry::load` needs `unsafe`. The workspace forbids `unsafe_code`; `om-plugins` denies it and allows it only in `abi.rs` and `loader.rs` (see `lib.rs`), which exist to load shared libraries.
 
-Decision: add one module, `om-plugins/src/clap` (feature `clap`), with `#[allow(unsafe_code)]` on the loading file only, as `abi` and `loader` have it. It holds the single `unsafe { PluginEntry::load(path) }` call with a `// SAFETY:` line (the user chose to load this file; the entry is then used only through clack's safe API; clack keeps the library loaded while any instance created from the entry lives). Everything else stays safe Rust in sibling files that keep `deny(unsafe_code)`, including the GUI bridge, because `Window::from_window` is safe. Avoid `Window::borrow_handle_unchecked`, which is `unsafe`. The `unsafe` surface grows by one call site, and `agents.md` ("Unsafe"), CONTRIBUTING and the handoff text then name this module beside `abi` and `loader`.
+Decision (maintainer-approved, Decisions 3): add one module, `om-plugins/src/clap` (feature `clap`), with `#[allow(unsafe_code)]` on the loading file only, as `abi` and `loader` have it. It holds the single `unsafe { PluginEntry::load(path) }` call with a `// SAFETY:` line (the user chose to load this file; the entry is then used only through clack's safe API; clack keeps the library loaded while any instance created from the entry lives). Everything else stays safe Rust in sibling files that keep `deny(unsafe_code)`, including the GUI bridge, because `Window::from_window` is safe. Avoid `Window::borrow_handle_unchecked`, which is `unsafe`. The `unsafe` surface grows by one call site, and `agents.md` ("Unsafe"), CONTRIBUTING and the handoff text then name this module beside `abi` and `loader`.
 
 Alternatives:
 
 - Put it in `loader.rs`. That mixes two loaders in a module meant for one ABI. Rejected.
-- A new crate `om-clap` with `unsafe` allowed, like `om-stretch`. A harder boundary, and clack leaves `om-plugins`' dependency tree. Costs a crate and a new entry in the policy. Reasonable; see open question 3.
+- A new crate `om-clap` with `unsafe` allowed, like `om-stretch`. A harder boundary, and clack leaves `om-plugins`' dependency tree. Costs a crate and a new entry in the policy. Not chosen (Decisions, 3).
 
 Wherever the `unsafe` sits, third-party code can still corrupt the process. See "Crash isolation".
 
@@ -73,7 +73,7 @@ CLAP `process` runs on the real-time audio thread. The rules are those of the C 
 CLAP GUIs are native windows the plugin owns, either embedded in a host-provided parent or floating.
 
 - X11, Win32, Cocoa: embed. Take the `HasWindowHandle` of the GPUI `Window` that shows the plugin panel, convert it with `Window::from_window`, then `gui.create` (embedded), `set_parent`, `set_scale`, `set_size`, `show`. The parent is the whole top-level native window, not a sub-rectangle, so placing the plugin's child window inside our layout, and keeping it there through scroll, resize and scale changes, is our job and is untested. Unverified: whether GPUI's X11 window can host a foreign child without GPUI painting over it.
-- Wayland: no reparenting exists and clack's handle bridge has no Wayland case. Use floating mode: `gui.create` (floating), `set_transient` to our top-level where possible, then `show`. The plugin opens its own window beside OpenMixer. A plugin that only supports X11 might run through XWayland (open question 5).
+- Wayland: no reparenting exists and clack's handle bridge has no Wayland case. Use floating mode: `gui.create` (floating), `set_transient` to our top-level where possible, then `show`. The plugin opens its own window beside OpenMixer. A plugin that supports only X11 gets the generic parameter panel on Wayland; no XWayland (Decisions, 5).
 - Fallback on every platform: a generic parameter panel built from the `params` extension (names, ranges, steps) in our own UI.
 - Runtime order: `get_preferred_api`, then `is_api_supported` for the platform's embed API, then floating, then the generic panel.
 - Plugin timers (`timer`) and file descriptors (`posix-fd`) are serviced on the control thread. A plugin-requested resize is applied on the control thread and acknowledged.
@@ -97,7 +97,7 @@ A third-party plugin that crashes takes OpenMixer down mid-set. clack states tha
 
 ## Migration plan
 
-1. Sign-off on this ADR and the open questions. Status moves to Accepted.
+1. Sign-off on this ADR: done (Decisions).
 2. Proof of concept on a branch, not merged: load one CLAP plugin (a `clack-plugin` gain example), activate, process a buffer offline, and open its GUI embedded on X11 inside a GPUI window. This settles the embedding risk and the `libloading` pin.
 3. Land the loader: `om-plugins/src/clap` behind feature `clap` (off by default until it passes on all CI platforms), one `unsafe` call, `cargo deny` check, workspace pin, `agents.md` and CONTRIBUTING updated for the new allowed module.
 4. Stereo stage kind in the engine and `om-plugins`, so a CLAP effect gets both channels in one call, with latency reported through the `latency` extension for delay compensation. Instruments (note ports) and sidechain each need their own design and come later.
@@ -124,15 +124,24 @@ Each step is its own PR, with `docs/progress.json`, `TODO.md` and `docs/PROGRESS
 - Negative: a pre-1.0 dependency pinned and upgraded by hand; a second plugin path to maintain; a large new surface (GUI embedding on several platforms, threading rules, latency, state). A third-party plugin can crash or stall the app and in-process hosting does not protect against it. VST3 and AU users stay out, which is accepted.
 - Neutral: Wayland has no reparenting, so floating windows there are permanent, not a temporary gap.
 
-## Open questions
+## Decisions
 
-1. Sign-off: host third-party CLAP plugins now, in-process with a warning, or wait for an out-of-process host design?
-2. Which platforms must the first release cover: Linux X11 only, Linux with Wayland floating, Windows, macOS?
-3. `unsafe` placement: a module in `om-plugins` (proposed) or a new crate `om-clap` with its own exception, like `om-stretch`?
-4. First-release scope: effects only (stereo in, stereo out), or also instruments (note ports) and sidechain?
-5. Wayland: when a plugin supports only X11, run it through XWayland, or show the generic panel only?
-6. Discovery: scan only the user's plugin folder, or also the standard CLAP paths? Scanning runs plugin initialisers, so a first-run prompt may be wanted.
-7. Is the pre-1.0 risk acceptable with an exact pin, our own wrapper types and hand-bumped upgrades, or do you want raw `clap-sys` from the start?
+The maintainer answered the open questions on 2026-11-07.
+
+1. **MVP: in-process with a first-load warning.** Third-party CLAP plugins are hosted in-process. Crash isolation through an out-of-process host is planned later. To keep that door open, all clack and CLAP types stay behind our own wrapper types (a plugin-instance trait and a small message boundary of audio blocks, parameter events and control calls), so the host can move into a child process without touching the engine.
+2. **First-release platforms: Linux X11 plus Wayland floating windows.** Windows and macOS follow.
+3. **`unsafe` is permitted where necessary, on a no-leak condition.** The workspace `unsafe_code = "forbid"` lint stays; exceptions stay per module. Keep `unsafe` minimal, each use with a `// SAFETY:` comment, confined to the `om-plugins` `clap` module proposed above. The CLAP load, instance and teardown path needs a leak check before it merges: a test that loads, activates, processes and drops an instance many times in a loop and checks for growth with a counting allocator, plus a valgrind (or equivalent) run of that test, documented in the PR. Leaks found there block the merge.
+4. **Effects only first (stereo in, stereo out).** Wrapper types and the host handlers are designed so note ports and sidechain are additions, not a rewrite; see "Keeping instruments and sidechain open".
+5. **X11-only plugins on Wayland: generic parameter panel.** No XWayland.
+6. **Discovery: the user's plugin folder plus the standard CLAP paths (`~/.clap`, `/usr/lib/clap`), behind a first-run prompt**, because scanning runs plugin initialisers.
+7. **clack: exact pin `=0.2.0`, our own wrapper types, upgrades bumped by hand.**
+
+### Keeping instruments and sidechain open
+
+- Audio ports: the wrapper reads the `audio-ports` extension and models the port list (count, channel count, main or sidechain flag) as data, not as a fixed stereo pair. The first release accepts only one stereo input and one stereo output and refuses other layouts with a typed error. A sidechain port then becomes an extra input buffer in the same process-block type.
+- Events: the process-block type carries event lists in and out (parameter events now). Note events slot into the same lists, and `note-ports` is a Cargo feature to enable later.
+- Stage kind: the stereo stage kind is introduced with a descriptor (inputs, outputs, kind), so an instrument or a sidechain effect is a new descriptor value and not a new engine path.
+- Routing for sidechain and the source for instrument notes (MIDI from `om-midi`) need their own design notes when they are taken up.
 
 ## References
 
