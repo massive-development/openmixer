@@ -14,6 +14,7 @@ mod entry;
 mod events;
 mod host;
 mod loader;
+mod param_bus;
 mod params;
 mod plugin;
 mod ports;

@@ -7,7 +7,9 @@
 //! process down.
 
 use super::buffers::BlockBuffers;
+use super::events::HostEvent;
 use super::host::{self, Host};
+use super::param_bus::{ParamChange, ParamSet};
 use super::probe;
 use super::state::{Fault, StageState};
 use super::worker::Worker;
@@ -24,13 +26,29 @@ pub struct ClapStage {
     buffers: Option<BlockBuffers>,
     config: Option<(f64, usize)>,
     steady: u64,
+    params: Arc<ParamSet>,
+    link: u64,
+    changes: rtrb::Consumer<ParamChange>,
+    /// All values were sent to the plugin since it was activated.
+    synced: bool,
+    seen_refused: u64,
 }
 
 impl ClapStage {
-    pub(super) fn new(worker: Option<Worker>, state: Arc<StageState>) -> Self {
+    pub(super) fn new(
+        worker: Option<Worker>,
+        state: Arc<StageState>,
+        params: Arc<ParamSet>,
+    ) -> Self {
+        let (link, changes) = params.link();
         Self {
             worker,
             state,
+            params,
+            link,
+            changes,
+            synced: false,
+            seen_refused: 0,
             processor: None,
             buffers: None,
             config: None,
@@ -53,6 +71,7 @@ impl ClapStage {
                 self.buffers = Some(BlockBuffers::new(max_block.max(1)));
                 self.config = Some((sample_rate, max_block));
                 self.steady = 0;
+                self.synced = false;
                 self.state.clear_fault();
                 if let Some(frames) = worker.call(probe::read_latency) {
                     self.state.set_latency(frames);
@@ -89,10 +108,18 @@ impl ClapStage {
         };
         let frames = left.len();
         buffers.load(left, right);
+        queue_changes(
+            &self.params,
+            &mut self.changes,
+            buffers,
+            &mut self.synced,
+            &mut self.seen_refused,
+        );
         let started = processor
             .ensure_processing_started()
             .map_err(|_| Fault::ProcessFailed)?;
         let status = buffers.run(started, self.steady);
+        publish_plugin_changes(&self.params, buffers);
         self.steady = self.steady.wrapping_add(frames as u64);
         status.map_err(|_| Fault::ProcessFailed)?;
         buffers.store(left, right);
@@ -127,8 +154,59 @@ impl ProcessStage for ClapStage {
     }
 }
 
+/// Moves queued changes (or, on the first block and after a full ring, every value) into the block's
+/// event list. Audio thread: pops and pushes into pre-allocated storage only.
+fn queue_changes(
+    params: &ParamSet,
+    changes: &mut rtrb::Consumer<ParamChange>,
+    buffers: &mut BlockBuffers,
+    synced: &mut bool,
+    seen_refused: &mut u64,
+) {
+    let refused = params.refused();
+    if !*synced || refused != *seen_refused {
+        *synced = true;
+        *seen_refused = refused;
+        while changes.pop().is_ok() {}
+        for (i, p) in params
+            .params
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.read_only)
+        {
+            let value = params.value(i);
+            buffers.to_plugin.push(
+                0,
+                HostEvent::ParamValue {
+                    param_id: p.id,
+                    value,
+                },
+            );
+        }
+        return;
+    }
+    while let Ok(c) = changes.pop() {
+        let value = HostEvent::ParamValue {
+            param_id: c.param_id,
+            value: c.value,
+        };
+        buffers.to_plugin.push(0, value);
+    }
+}
+
+/// Records the values the plugin reported in its output events. Lock-free.
+fn publish_plugin_changes(params: &ParamSet, buffers: &BlockBuffers) {
+    for (_, event) in buffers.from_plugin.iter() {
+        let HostEvent::ParamValue { param_id, value } = *event;
+        if let Some(i) = params.index_of_id(param_id) {
+            params.store_from_plugin(i, value);
+        }
+    }
+}
+
 impl Drop for ClapStage {
     fn drop(&mut self) {
+        self.params.unlink(self.link);
         self.release_processor();
     }
 }

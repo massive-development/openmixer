@@ -227,6 +227,9 @@ impl PluginGuiImpl for GainMainThread<'_> {
 
 pub struct GainProcessor<'a> {
     shared: &'a Shared,
+    /// `emit-param-change`: the change the "GUI" made was already reported.
+    #[cfg_attr(not(feature = "emit-param-change"), allow(dead_code))]
+    reported: bool,
 }
 
 impl<'a> PluginAudioProcessor<'a, Shared, GainMainThread<'a>> for GainProcessor<'a> {
@@ -236,7 +239,10 @@ impl<'a> PluginAudioProcessor<'a, Shared, GainMainThread<'a>> for GainProcessor<
         shared: &'a Shared,
         _audio_config: PluginAudioConfiguration,
     ) -> Result<Self, PluginError> {
-        Ok(Self { shared })
+        Ok(Self {
+            shared,
+            reported: false,
+        })
     }
 
     fn process(
@@ -253,6 +259,8 @@ impl<'a> PluginAudioProcessor<'a, Shared, GainMainThread<'a>> for GainProcessor<
         #[allow(unreachable_code)]
         {
             apply_param_events(self.shared, events.input);
+            #[cfg(feature = "emit-param-change")]
+            self.report_gui_change(events.output);
             let gain = self.shared.gain();
             for mut pair in &mut audio {
                 let Some(channels) = pair.channels()?.into_f32() else {
@@ -264,6 +272,21 @@ impl<'a> PluginAudioProcessor<'a, Shared, GainMainThread<'a>> for GainProcessor<
             }
             Ok(ProcessStatus::ContinueIfNotQuiet)
         }
+    }
+}
+
+#[cfg(feature = "emit-param-change")]
+impl GainProcessor<'_> {
+    /// Stands in for the plugin's own GUI moving the knob: sets gain 1.5 and tells the host once.
+    fn report_gui_change(&mut self, output: &mut OutputEvents) {
+        use clack_plugin::events::event_types::ParamValueEvent;
+        if self.reported {
+            return;
+        }
+        self.reported = true;
+        self.shared.set_gain(1.5);
+        let event = ParamValueEvent::new(0, ClapId::new(PARAM_GAIN), Pckn::match_all(), 1.5);
+        let _ = output.try_push(&event);
     }
 }
 

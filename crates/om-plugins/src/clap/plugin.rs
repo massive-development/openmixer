@@ -1,6 +1,7 @@
 //! A CLAP plugin as a [`Plugin`]: the registry treats it like an in-process or C-ABI plugin.
 
 use super::loader::ClapPluginInfo;
+use super::param_bus::{ClapTarget, ParamSet};
 use super::params::ClapParam;
 use super::ports::StageDescriptor;
 use super::stage::ClapStage;
@@ -17,7 +18,7 @@ pub struct ClapPlugin {
     plugin_id: CString,
     info: ClapPluginInfo,
     descriptor: StageDescriptor,
-    params: Vec<(ClapParam, f64)>,
+    params: Arc<ParamSet>,
     stages: Arc<Mutex<Vec<Weak<StageState>>>>,
 }
 
@@ -34,7 +35,7 @@ impl ClapPlugin {
             plugin_id,
             info,
             descriptor,
-            params,
+            params: Arc::new(ParamSet::new(params)),
             stages: Arc::default(),
         }
     }
@@ -50,9 +51,16 @@ impl ClapPlugin {
         &self.descriptor
     }
 
-    /// The declared parameters with their values at load time.
-    pub fn clap_parameters(&self) -> &[(ClapParam, f64)] {
-        &self.params
+    /// The declared parameters (hidden ones included).
+    pub fn clap_parameters(&self) -> &[ClapParam] {
+        &self.params.params
+    }
+
+    /// The host's latest value of a parameter, by CLAP id (changes the plugin made itself included).
+    pub fn param_value(&self, param_id: u32) -> Option<f64> {
+        self.params
+            .index_of_id(param_id)
+            .map(|i| self.params.value(i))
     }
 }
 
@@ -66,30 +74,17 @@ impl Plugin for ClapPlugin {
     }
 
     fn parameters(&self) -> Vec<ParameterInfo> {
-        self.params
-            .iter()
-            .filter(|(p, _)| !p.hidden)
-            .map(|(p, _)| ParameterInfo {
-                id: p.id.to_string(),
-                name: p.name.clone(),
-                min: p.min,
-                max: p.max,
-                default: p.default,
-            })
-            .collect()
+        self.params.infos()
     }
 
     fn parameter(&self, id: &str) -> Option<f64> {
-        let id: u32 = id.parse().ok()?;
-        self.params
-            .iter()
-            .find(|(p, _)| p.id == id)
-            .map(|(_, v)| *v)
+        self.param_value(id.parse().ok()?)
     }
 
     fn on_load(&mut self, host: &mut dyn PluginHost) {
         let (entry, id) = (self.entry.clone(), self.plugin_id.clone());
         let (stages, label) = (Arc::clone(&self.stages), self.info.id.clone());
+        let params = Arc::clone(&self.params);
         let factory = Box::new(move || {
             let state = Arc::new(StageState::default());
             stages
@@ -104,9 +99,16 @@ impl Plugin for ClapPlugin {
             if worker.is_none() {
                 state.set_fault(Fault::ActivationFailed);
             }
-            Box::new(ClapStage::new(worker, state)) as Box<dyn crate::ProcessStage>
+            Box::new(ClapStage::new(worker, state, Arc::clone(&params)))
+                as Box<dyn crate::ProcessStage>
         });
         // A stage id another plugin took leaves this one without a stage; the Plugins page shows it.
         let _ = host.register_stage(&self.info.id, StageKind::Fx, factory);
+        if !self.params.params.is_empty() {
+            let target = Arc::new(ClapTarget {
+                set: Arc::clone(&self.params),
+            });
+            let _ = host.register_parameter_target(&self.info.id, target);
+        }
     }
 }
