@@ -25,5 +25,10 @@ ffmpeg = []
 
 [dev-dependencies]
 assert_no_alloc = "1.1"
+divan = "0.1.21"
 om-testing.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "hot_loops"
+harness = false
