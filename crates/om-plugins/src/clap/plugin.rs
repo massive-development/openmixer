@@ -3,17 +3,22 @@
 use super::loader::ClapPluginInfo;
 use super::params::ClapParam;
 use super::ports::StageDescriptor;
-use crate::{ParameterInfo, Plugin, PluginHost, PluginInfo};
+use super::stage::ClapStage;
+use super::state::{Fault, StageState};
+use super::worker::Worker;
+use crate::{ParameterInfo, Plugin, PluginHost, PluginInfo, StageKind};
 use clack_host::entry::PluginEntry;
 use std::ffi::CString;
+use std::sync::{Arc, Mutex, Weak};
 
 pub struct ClapPlugin {
     // Held so the library stays mapped for as long as the plugin is loaded.
-    _entry: PluginEntry,
-    _plugin_id: CString,
+    entry: PluginEntry,
+    plugin_id: CString,
     info: ClapPluginInfo,
     descriptor: StageDescriptor,
     params: Vec<(ClapParam, f64)>,
+    stages: Arc<Mutex<Vec<Weak<StageState>>>>,
 }
 
 impl ClapPlugin {
@@ -25,12 +30,20 @@ impl ClapPlugin {
         params: Vec<(ClapParam, f64)>,
     ) -> Self {
         Self {
-            _entry: entry,
-            _plugin_id: plugin_id,
+            entry,
+            plugin_id,
             info,
             descriptor,
             params,
+            stages: Arc::default(),
         }
+    }
+
+    /// The state of every live stage this plugin made (faults, latency, cost). Prunes dead ones.
+    pub fn stage_states(&self) -> Vec<Arc<StageState>> {
+        let mut stages = self.stages.lock().unwrap_or_else(|e| e.into_inner());
+        stages.retain(|w| w.strong_count() > 0);
+        stages.iter().filter_map(Weak::upgrade).collect()
     }
 
     pub fn descriptor(&self) -> &StageDescriptor {
@@ -74,5 +87,26 @@ impl Plugin for ClapPlugin {
             .map(|(_, v)| *v)
     }
 
-    fn on_load(&mut self, _host: &mut dyn PluginHost) {}
+    fn on_load(&mut self, host: &mut dyn PluginHost) {
+        let (entry, id) = (self.entry.clone(), self.plugin_id.clone());
+        let (stages, label) = (Arc::clone(&self.stages), self.info.id.clone());
+        let factory = Box::new(move || {
+            let state = Arc::new(StageState::default());
+            stages
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(Arc::downgrade(&state));
+            let worker = Worker::spawn(entry.clone(), id.clone(), &label)
+                .inspect_err(
+                    |error| tracing::warn!(%error, plugin = %label, "cannot create CLAP instance"),
+                )
+                .ok();
+            if worker.is_none() {
+                state.set_fault(Fault::ActivationFailed);
+            }
+            Box::new(ClapStage::new(worker, state)) as Box<dyn crate::ProcessStage>
+        });
+        // A stage id another plugin took leaves this one without a stage; the Plugins page shows it.
+        let _ = host.register_stage(&self.info.id, StageKind::Fx, factory);
+    }
 }

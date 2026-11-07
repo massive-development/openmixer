@@ -6,7 +6,6 @@ use super::worker::Ctx;
 use clack_extensions::audio_ports::{AudioPortFlags, AudioPortInfoBuffer, PluginAudioPorts};
 use clack_extensions::latency::PluginLatency;
 use clack_extensions::params::{ParamInfoBuffer, ParamInfoFlags, PluginParams};
-use clack_host::prelude::*;
 
 /// The plugin's audio ports; empty when it has no `audio-ports` extension.
 pub(super) fn read_layout(ctx: &mut Ctx) -> PortLayout {

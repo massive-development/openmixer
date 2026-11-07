@@ -1,4 +1,4 @@
-//! A CLAP gain effect for the host tests: stereo in, stereo out, one parameter (`gain`, 0 to 2, default 1)
+//! A CLAP gain effect for the host tests: stereo in, stereo out, one parameter (`gain`, 0 to 2, default 0.5)
 //! and a GUI stub that records nothing but answers every call. The host tests build it as a shared library.
 
 use clack_extensions::audio_ports::{
@@ -20,6 +20,9 @@ use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 const PARAM_GAIN: u32 = 1;
+/// Not 1.0, so a test can tell a processed block from a passed-through one.
+const DEFAULT_GAIN: f32 = 0.5;
+const LATENCY_FRAMES: u32 = 16;
 
 pub struct GainFixture;
 
@@ -66,7 +69,7 @@ impl DefaultPluginFactory for GainFixture {
 
     fn new_shared(_host: HostSharedHandle<'_>) -> Result<Shared, PluginError> {
         Ok(Shared {
-            gain: AtomicU32::new(1.0_f32.to_bits()),
+            gain: AtomicU32::new(DEFAULT_GAIN.to_bits()),
         })
     }
 
@@ -121,7 +124,7 @@ impl PluginMainThreadParams for GainMainThread<'_> {
             module: b"",
             min_value: 0.0,
             max_value: 2.0,
-            default_value: 1.0,
+            default_value: f64::from(DEFAULT_GAIN),
         });
     }
 
@@ -163,7 +166,7 @@ fn apply_param_events(shared: &Shared, events: &InputEvents) {
 
 impl PluginLatencyImpl for GainMainThread<'_> {
     fn get(&self) -> u32 {
-        0
+        LATENCY_FRAMES
     }
 }
 
