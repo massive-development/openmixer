@@ -732,6 +732,38 @@ impl LibraryPanel {
         }
     }
 
+    /// The selected tracks as text for the clipboard, one per line in table order:
+    /// `Artist - Title (124 BPM, 8A)`, leaving out what the track has no value for. Empty when
+    /// nothing is selected.
+    pub fn selected_summary(&mut self) -> String {
+        let mut rows = self.browser.selected_rows();
+        rows.sort_unstable();
+        rows.into_iter()
+            .filter_map(|row| self.browser.model.row_at(row as isize).cloned())
+            .map(|track| {
+                let name = match (track.artist.is_empty(), track.title.is_empty()) {
+                    (false, false) => format!("{} - {}", track.artist, track.title),
+                    (true, false) => track.title.clone(),
+                    (false, true) => track.artist.clone(),
+                    (true, true) => track.path.clone(),
+                };
+                let mut facts = Vec::new();
+                if let Some(bpm) = track.bpm.filter(|bpm| *bpm > 0.0) {
+                    facts.push(format!("{bpm:.0} BPM"));
+                }
+                if !track.camelot.is_empty() {
+                    facts.push(track.camelot.clone());
+                }
+                if facts.is_empty() {
+                    name
+                } else {
+                    format!("{name} ({})", facts.join(", "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// The loaded track's header text and the grid BPM it shows.
     pub fn track_info(&self, deck: usize) -> TrackInfo {
         self.hub.borrow().loader.track_info(deck)

@@ -20,6 +20,12 @@ om-engine.workspace = true
 om-library.workspace = true
 om-ui.workspace = true
 om-midi.workspace = true
+# OS media keys and now-playing (#229). `use_zbus` keeps libdbus (a system library) out of the build.
+souvlaki = { version = "=0.9.3", default-features = false, features = ["use_zbus"] }
+
+[target.'cfg(windows)'.dependencies]
+# The Win32 window handle souvlaki attaches to (a type-only crate GPUI already uses).
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 om-testing.workspace = true
