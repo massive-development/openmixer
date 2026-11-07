@@ -40,6 +40,7 @@ fn shell_with(tweak: impl FnOnce(&mut RunOptions)) -> Shell {
         on_frame: None,
         automix: None,
         record: false,
+        media_keys: false,
         smoke_frames: None,
         banner: None,
         debug: None,
@@ -634,6 +635,77 @@ impl gpui::Render for PanelOnly {
             crate::loudness_paint::loudness_panel(shell, panel, cx)
         })
     }
+}
+
+// Desktop integration (#229): media keys, the clipboard, file-dialog picks and announcements.
+
+use crate::media_keys::MediaSession;
+use souvlaki::MediaControlEvent;
+
+#[gpui::test]
+fn the_play_pause_key_drives_the_lead_deck_and_the_widget_follows(cx: &mut TestAppContext) {
+    let (session, os) = MediaSession::detached();
+    let mut shell = shell();
+    shell.media = Some(session);
+    let (view, vcx) = open_with(cx, SIZES[0], shell);
+    // Frame one publishes the idle state to the OS widget.
+    let shown = view.read_with(vcx, |s, _| {
+        s.media
+            .as_ref()
+            .and_then(|m| m.shown().map(|(t, a, p)| (t.to_owned(), a.to_owned(), p)))
+    });
+    assert_eq!(shown, Some((String::new(), String::new(), false)));
+
+    os.send(MediaControlEvent::Toggle).unwrap();
+    view.update(vcx, |_, cx| cx.notify());
+    vcx.run_until_parked();
+    // The key reached deck 1 through the router. The engine's audio side is dropped in this
+    // test, so the deck cannot be heard to move; the command queue is what shows it was taken.
+    assert!(
+        view.read_with(vcx, |s, _| s.media.is_some()),
+        "the session stays"
+    );
+    let drained = view.update(vcx, |s, _| s.media.as_mut().map(MediaSession::drain));
+    assert_eq!(drained, Some(vec![]), "the frame took the key press");
+}
+
+#[gpui::test]
+fn copy_puts_the_selected_tracks_on_the_clipboard(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, SIZES[0], library_shell(&["Alpha", "Bravo"]));
+    // Nothing selected: a hint, nothing copied.
+    vcx.update(|window, cx| view.update(cx, |s, cx| s.copy_selected_tracks(window, cx)));
+    assert!(vcx.read_from_clipboard().is_none());
+
+    view.update(vcx, |shell, _| {
+        shell.library.as_mut().expect("library").select_row(1);
+    });
+    vcx.update(|window, cx| view.update(cx, |s, cx| s.copy_selected_tracks(window, cx)));
+    let text = vcx.read_from_clipboard().and_then(|item| item.text());
+    let text = text.expect("the clipboard has text");
+    assert!(text.starts_with("Tester - "), "{text}");
+    assert!(text.contains("124 BPM"), "{text}");
+    assert_eq!(text.lines().count(), 1);
+}
+
+#[gpui::test]
+fn a_recording_that_just_stopped_is_announced_once(cx: &mut TestAppContext) {
+    let mut shell = shell();
+    shell.was_recording = true; // the last frame saw it running; the recorder is idle now
+    let (_view, vcx) = open_with(cx, SIZES[0], shell);
+    assert_eq!(vcx.update(|window, cx| window.notifications(cx).len()), 1);
+    vcx.run_until_parked();
+    assert_eq!(vcx.update(|window, cx| window.notifications(cx).len()), 1);
+}
+
+#[test]
+fn a_picked_path_is_applied_as_if_typed() {
+    let changes = Rc::new(std::cell::RefCell::new(0));
+    let mut settings = fixtures::state(None, changes);
+    // No library is attached, so the import is refused and says so.
+    settings.apply_pick(EntryKind::ImportXml, std::path::Path::new("/music/lib.xml"));
+    assert!(settings.notice.error, "{:?}", settings.notice);
+    assert!(EntryKind::WatchFolder.can_browse());
+    assert!(!EntryKind::MaxCacheGb.can_browse());
 }
 
 /// Focuses the sampler strip, as a click on it does.

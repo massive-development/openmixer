@@ -320,7 +320,7 @@ pub(crate) mod fixtures {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    pub(super) fn state(
+    pub(crate) fn state(
         audio: Option<Box<dyn AudioSettingsModel>>,
         changes: Rc<RefCell<usize>>,
     ) -> SettingsState {
