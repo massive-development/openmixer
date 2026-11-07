@@ -405,8 +405,9 @@ fn render_voice(
         v.active = false;
         return;
     };
-    let data: &[f32] = sample.data();
-    let len = data.len() / 2;
+    // Frame pairs: one bounds check per fetch instead of two.
+    let (frames, _) = sample.data().as_chunks::<2>();
+    let len = frames.len();
     let looping = v.mode == PadMode::Loop;
     let step = ratio * sample.sample_rate() / engine_rate;
     let tail_span = step * TAIL_FRAMES;
@@ -421,7 +422,8 @@ fn render_voice(
         } else {
             idx as usize
         };
-        (data[i * 2], data[i * 2 + 1])
+        let [l, r] = frames[i];
+        (l, r)
     };
     for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
         if v.env_delta != 0.0 {
