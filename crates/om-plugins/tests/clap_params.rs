@@ -1,6 +1,8 @@
 //! CLAP parameters: a router or UI change reaches the plugin as a parameter event in the next block,
 //! a change the plugin makes itself shows in the host snapshot (ADR 0007, test plan "Parameters").
 
+#![cfg(feature = "clap")]
+
 mod clap_fixture;
 
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
@@ -151,4 +153,13 @@ fn two_stages_of_one_plugin_both_follow_the_parameter() {
         (second.run(1.0) - 1.5).abs() < 1e-6,
         "the second stage synced at its first block"
     );
+}
+
+#[test]
+fn the_registry_sets_a_parameter_by_plugin_id_for_the_generic_panel() {
+    let s = setup(None);
+    assert!(s.registry.set_plugin_parameter(PLUGIN_ID, "1", 1.75));
+    assert!((s.point.run(1.0) - 1.75).abs() < 1e-6);
+    assert!(!s.registry.set_plugin_parameter(PLUGIN_ID, "42", 1.0));
+    assert!(!s.registry.set_plugin_parameter("not.loaded", "1", 1.0));
 }

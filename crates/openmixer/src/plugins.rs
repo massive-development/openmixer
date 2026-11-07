@@ -8,7 +8,7 @@ use crate::composition::AppComposition;
 use gain_plugin::GainPlugin;
 use om_plugins::{Plugin, PluginRegistry};
 use om_ui::settings::SettingsError;
-use om_ui::settings::{PluginHost, SettingsResult};
+use om_ui::settings::{PluginHost, PluginParam, SettingsResult};
 use om_ui::theme::{Source, ThemeRegistry};
 use std::cell::RefCell;
 use std::path::Path;
@@ -87,6 +87,14 @@ impl PluginHost for PluginsPage {
     fn unload(&mut self, id: &str) -> SettingsResult<()> {
         PluginHost::unload(&mut *self.0.borrow_mut(), id)
     }
+
+    fn plugin_parameters(&self, id: &str) -> Vec<PluginParam> {
+        PluginHost::plugin_parameters(&*self.0.borrow(), id)
+    }
+
+    fn set_plugin_parameter(&mut self, id: &str, param: &str, value: f64) -> SettingsResult<()> {
+        PluginHost::set_plugin_parameter(&mut *self.0.borrow_mut(), id, param, value)
+    }
 }
 
 impl PluginSink for PluginRegistry {
@@ -151,6 +159,32 @@ impl PluginHost for AppComposition {
             return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
         }
         self.refresh_plugin_themes();
+        Ok(())
+    }
+
+    fn plugin_parameters(&self, id: &str) -> Vec<PluginParam> {
+        self.plugins
+            .plugin_parameters(id)
+            .into_iter()
+            .map(|p| PluginParam {
+                value: self
+                    .plugins
+                    .plugin_parameter(id, &p.id)
+                    .unwrap_or(p.default),
+                id: p.id,
+                name: p.name,
+                min: p.min,
+                max: p.max,
+                default: p.default,
+            })
+            .collect()
+    }
+
+    fn set_plugin_parameter(&mut self, id: &str, param: &str, value: f64) -> SettingsResult<()> {
+        if !self.plugins.plugin_ids().iter().any(|p| p == id) {
+            return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
+        }
+        self.plugins.set_plugin_parameter(id, param, value);
         Ok(())
     }
 }

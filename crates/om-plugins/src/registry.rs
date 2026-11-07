@@ -294,6 +294,16 @@ impl PluginRegistry {
         self.find(id).map(|p| p.parameters()).unwrap_or_default()
     }
 
+    /// Sets parameter `parameter` of plugin `id` through the plugin's own parameter target. False
+    /// when the plugin is not loaded or refuses the id or value.
+    pub fn set_plugin_parameter(&self, id: &str, parameter: &str, value: f64) -> bool {
+        self.regs
+            .targets
+            .iter()
+            .filter(|t| t.owner == id)
+            .any(|t| t.target.set_parameter(parameter, value))
+    }
+
     /// The current value of parameter `parameter` of plugin `id`.
     pub fn plugin_parameter(&self, id: &str, parameter: &str) -> Option<f64> {
         self.find(id)?.parameter(parameter)
