@@ -37,9 +37,9 @@ fn load_reads_the_ports_and_parameters() {
             params[0].max,
             params[0].default
         ),
-        ("Gain", 0.0, 2.0, 1.0)
+        ("Gain", 0.0, 2.0, 0.5)
     );
-    assert_eq!(plugin.parameter(&params[0].id), Some(1.0));
+    assert_eq!(plugin.parameter(&params[0].id), Some(0.5));
     assert_eq!(plugin.parameter("999"), None);
 }
 
