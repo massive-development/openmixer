@@ -41,6 +41,14 @@ impl SqliteResultCache {
             path: path.to_owned(),
             source,
         })?;
+        // why: a rollback journal with FULL syncing costs several fsyncs per stored result. The
+        // cache is derived data (a lost row is recomputed), so WAL with NORMAL syncing is enough.
+        // NORMAL goes first so the switch to WAL itself syncs less. The journal_mode pragma
+        // returns the resulting mode as a row, so it goes through a query.
+        db.pragma_update(None, "synchronous", "NORMAL")
+            .map_err(CacheError::Schema)?;
+        db.query_row("PRAGMA journal_mode = WAL;", [], |_| Ok(()))
+            .map_err(CacheError::Schema)?;
         db.execute_batch(SCHEMA).map_err(CacheError::Schema)?;
         db.pragma_update(None, "user_version", SCHEMA_VERSION)
             .map_err(CacheError::Schema)?;

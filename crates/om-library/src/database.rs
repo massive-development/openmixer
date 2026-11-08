@@ -39,6 +39,11 @@ impl Database {
         // Cascading deletes (cues, playlist entries) depend on this; it is off by default in SQLite.
         db.exec("PRAGMA foreign_keys = ON;")?;
         if mode == OpenMode::ReadWrite && path != ":memory:" {
+            // why: in WAL mode NORMAL never corrupts the file and only risks the last commits on
+            // power loss (an app crash loses nothing). FULL fsyncs every commit, which made each
+            // ingested track, migration and test database wait on the disk (seconds per open on a
+            // busy host); a rescan recovers anything lost.
+            db.exec("PRAGMA synchronous = NORMAL;")?;
             db.enable_wal()?;
         }
         Ok(db)
