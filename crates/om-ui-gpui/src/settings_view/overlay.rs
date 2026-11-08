@@ -18,6 +18,7 @@ use gpui_kit::component::input::InputEvent;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::WindowExt as _;
+use om_ui::settings::ClapStatus;
 use om_ui::style::LookAndFeel;
 use std::time::Instant;
 
@@ -28,6 +29,19 @@ pub(crate) enum Ask {
     ClearStems,
     MappingReset,
     MappingLeave,
+    /// First run: may the standard CLAP folders be scanned? (Scanning runs plugin code.)
+    ClapFirstRun,
+    /// A CLAP plugin is about to load for the first time: it runs in this process.
+    ClapFirstLoad,
+}
+
+/// How a dialog ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Answer {
+    Ok,
+    Cancel,
+    /// Left without pressing either button (Escape, a click outside).
+    Dismissed,
 }
 
 impl Ask {
@@ -36,19 +50,26 @@ impl Ask {
             Ask::ClearStems => "Clear the stem cache?",
             Ask::MappingReset => "Reset the mapping?",
             Ask::MappingLeave => "Unsaved mapping changes",
+            Ask::ClapFirstRun => "Look for CLAP plugins in the standard folders?",
+            Ask::ClapFirstLoad => "Load CLAP plugins?",
         }
     }
 
-    fn body(self) -> &'static str {
+    pub(crate) fn body(self, clap: &ClapStatus) -> String {
         match self {
             Ask::ClearStems => {
-                "Remove every prepared stem set? Running prepare jobs are cancelled."
+                "Remove every prepared stem set? Running prepare jobs are cancelled.".to_owned()
             }
             Ask::MappingReset => {
                 "Reset replaces every binding with an empty map. Undo brings them back until you \
                  close the tab."
+                    .to_owned()
             }
-            Ask::MappingLeave => "They stay in the running controller but are not in the map file.",
+            Ask::MappingLeave => {
+                "They stay in the running controller but are not in the map file.".to_owned()
+            }
+            Ask::ClapFirstRun => clap_first_run_text(clap),
+            Ask::ClapFirstLoad => clap_first_load_text(clap),
         }
     }
 
@@ -57,6 +78,8 @@ impl Ask {
             Ask::ClearStems => "Remove stems",
             Ask::MappingReset => "Reset now",
             Ask::MappingLeave => "Close without saving",
+            Ask::ClapFirstRun => "Scan these folders",
+            Ask::ClapFirstLoad => "Load the plugins",
         }
     }
 
@@ -65,8 +88,39 @@ impl Ask {
             Ask::ClearStems => "Keep them",
             Ask::MappingReset => "Keep the bindings",
             Ask::MappingLeave => "Keep editing",
+            Ask::ClapFirstRun => "Do not scan",
+            Ask::ClapFirstLoad => "Not now",
         }
     }
+}
+
+/// The first-run question's text. Scanning opens every plugin file in the folders, and opening a
+/// plugin file runs its code, which is why this is asked and not assumed.
+pub(crate) fn clap_first_run_text(clap: &ClapStatus) -> String {
+    let folders = if clap.standard_folders.is_empty() {
+        "the standard CLAP folders".to_owned()
+    } else {
+        clap.standard_folders.join(" and ")
+    };
+    format!(
+        "OpenMixer can look for CLAP plugins in {folders}. Looking opens each plugin file, and \
+         opening a plugin file runs code written by someone else. Plugins in your OpenMixer \
+         plugin folder are looked at either way. You can change this later on the Plugins tab."
+    )
+}
+
+/// The first-load warning's text (ADR 0007, decision 1): the plugin runs inside this process.
+pub(crate) fn clap_first_load_text(clap: &ClapStatus) -> String {
+    let files = match clap.waiting {
+        1 => "1 CLAP plugin file is".to_owned(),
+        n => format!("{n} CLAP plugin files are"),
+    };
+    format!(
+        "{files} waiting. A CLAP plugin is native code made by someone else. It runs inside \
+         OpenMixer with the same access to your files as OpenMixer has, and OpenMixer cannot \
+         contain it: a plugin that crashes takes the whole app, and your set, down with it. Load \
+         only plugins you trust."
+    )
 }
 
 impl Shell {
@@ -187,11 +241,13 @@ impl Shell {
         };
         let wanted = if settings.stems_confirm_clear {
             Some(Ask::ClearStems)
-        } else {
-            settings.mapping_confirm.map(|confirm| match confirm {
+        } else if let Some(confirm) = settings.mapping_confirm {
+            Some(match confirm {
                 MappingConfirm::Reset => Ask::MappingReset,
                 MappingConfirm::Leave => Ask::MappingLeave,
             })
+        } else {
+            settings.clap_ask_due()
         };
         if wanted == settings.ask_shown {
             return;
@@ -203,13 +259,14 @@ impl Shell {
             return;
         };
         settings.ask_shown = Some(ask);
+        let body = ask.body(&settings.lists.clap);
         let shell: WeakEntity<Shell> = cx.weak_entity();
         window.open_alert_dialog(cx, move |alert, _, _| {
             let (on_ok, on_cancel, on_close) = (shell.clone(), shell.clone(), shell.clone());
-            let resolve = move |shell: &WeakEntity<Shell>, ok: bool, cx: &mut gpui::App| {
+            let resolve = move |shell: &WeakEntity<Shell>, answer: Answer, cx: &mut gpui::App| {
                 shell
                     .update(cx, |this, cx| {
-                        this.resolve_ask(ask, ok);
+                        this.resolve_ask(ask, answer);
                         cx.notify();
                     })
                     .ok();
@@ -217,29 +274,35 @@ impl Shell {
             alert
                 .confirm()
                 .title(SharedString::from(ask.title()))
-                .description(SharedString::from(ask.body()))
+                .description(SharedString::from(body.clone()))
                 .ok_text(ask.ok())
                 .cancel_text(ask.cancel())
                 .on_ok(move |_, _, cx| {
-                    resolve(&on_ok, true, cx);
+                    resolve(&on_ok, Answer::Ok, cx);
                     true
                 })
                 .on_cancel(move |_, _, cx| {
-                    resolve(&on_cancel, false, cx);
+                    resolve(&on_cancel, Answer::Cancel, cx);
                     true
                 })
-                // Any other way out of the dialog counts as keeping things as they were.
-                .on_close(move |_, _, cx| resolve(&on_close, false, cx))
+                // Any other way out of the dialog is not an answer: things stay as they were (the
+                // CLAP questions are asked again on the next start).
+                .on_close(move |_, _, cx| resolve(&on_close, Answer::Dismissed, cx))
         });
     }
 
     /// The dialog for `ask` was answered (`ok`) or dismissed. A no-op when it was already.
-    fn resolve_ask(&mut self, ask: Ask, ok: bool) {
+    pub(crate) fn resolve_ask(&mut self, ask: Ask, answer: Answer) {
         if self.settings.as_ref().and_then(|s| s.ask_shown) != Some(ask) {
             return;
         }
         self.settings_mut(|s| s.ask_shown = None);
+        let ok = answer == Answer::Ok;
         match (ask, ok) {
+            (Ask::ClapFirstRun | Ask::ClapFirstLoad, _) => {
+                self.settings_mut(|s| s.clap_answered(ask, answer));
+                self.refresh_theme();
+            }
             (Ask::ClearStems, true) => self.settings_mut(|s| s.stems_clear_confirmed()),
             (Ask::ClearStems, false) => self.settings_mut(|s| s.stems_clear_cancelled()),
             (Ask::MappingReset, true) => self.settings_mut(|s| {

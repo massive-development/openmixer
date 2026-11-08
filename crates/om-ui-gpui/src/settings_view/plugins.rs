@@ -67,6 +67,7 @@ pub(super) fn plugins_page(
         );
     }
 
+    let clap = super::clap::clap_section(t, settings, cx);
     div()
         .flex()
         .flex_col()
@@ -80,6 +81,7 @@ pub(super) fn plugins_page(
                 this.refresh_theme();
             })]),
         ))
+        .children(clap)
         .child(note(
             t,
             &format!(

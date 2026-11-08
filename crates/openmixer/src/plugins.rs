@@ -95,6 +95,11 @@ impl PluginHost for PluginsPage {
     }
 
     #[cfg(feature = "clap")]
+    fn clap_status(&self) -> om_ui::settings::ClapStatus {
+        PluginHost::clap_status(&*self.0.borrow())
+    }
+
+    #[cfg(feature = "clap")]
     fn plugin_window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
         PluginHost::plugin_window(&*self.0.borrow(), id)
     }
@@ -109,11 +114,27 @@ impl PluginSink for PluginRegistry {
         PluginRegistry::unload_all(self);
     }
 
+    #[cfg(feature = "clap")]
+    fn set_policy(&mut self, plugins: &om_ui::preferences::PluginPrefs) {
+        self.set_clap_policy(
+            plugins.scan_standard_folders(),
+            plugins.clap_warning_accepted,
+        );
+    }
+
     /// Loads the shared libraries in `folder` (C-ABI plugins, see `om_plugins::PluginLoader`) and
     /// the built-in plugins. A library that fails to load is reported in the errors.
     fn load_folder(&mut self, folder: &Path) -> PluginLoad {
         let mut errors = Vec::new();
-        let loaded = self.load_directory(folder, &mut errors);
+        #[allow(unused_mut)]
+        let mut loaded = self.load_directory(folder, &mut errors);
+        // `.clap` files in the folder (and the standard folders, if the user allowed them). Listed
+        // always; opened only after the first-load warning was accepted.
+        #[cfg(feature = "clap")]
+        {
+            let home = dirs::home_dir();
+            loaded += self.load_clap_folders(folder, home.as_deref(), &mut errors);
+        }
         PluginLoad {
             loaded,
             errors,
@@ -239,6 +260,25 @@ impl PluginHost for AppComposition {
         }
         self.refresh_plugin_themes();
         Ok(())
+    }
+
+    #[cfg(feature = "clap")]
+    fn clap_status(&self) -> om_ui::settings::ClapStatus {
+        let home = dirs::home_dir();
+        om_ui::settings::ClapStatus {
+            supported: true,
+            standard_folders: om_plugins::clap::ClapSearch::standard_paths(home.as_deref())
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            files: self
+                .plugins
+                .clap_files_found()
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            waiting: self.plugins.clap_files_waiting().len(),
+        }
     }
 
     #[cfg(feature = "clap")]
@@ -388,6 +428,43 @@ mod tests {
         );
         assert!(loaded.errors[0].contains("gain.so"), "{:?}", loaded.errors);
         assert!(loaded.themes.is_empty());
+    }
+
+    /// `.clap` files are listed by the folder load and opened only after the first-load warning was
+    /// accepted (a broken file shows up as an error exactly when it is opened).
+    #[cfg(feature = "clap")]
+    #[test]
+    fn clap_files_in_the_plugin_folder_wait_for_the_warning_then_load() {
+        use om_ui::preferences::{ClapScan, PluginPrefs};
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join("broken.clap"), "x").expect("write");
+        let mut app = composition();
+
+        let load = PluginSink::load_folder(&mut app.plugins, dir.path());
+        assert_eq!(
+            (load.loaded, load.errors.len()),
+            (0, 0),
+            "{:?}",
+            load.errors
+        );
+        let status = PluginHost::clap_status(&app);
+        assert!(status.supported);
+        assert_eq!(status.files.len(), 1);
+        assert!(status.files[0].ends_with("broken.clap"));
+        assert_eq!(status.waiting, 1);
+        assert!(!status.standard_folders.is_empty());
+
+        PluginSink::set_policy(
+            &mut app.plugins,
+            &PluginPrefs {
+                clap_scan: ClapScan::Declined,
+                clap_warning_accepted: true,
+            },
+        );
+        let load = PluginSink::load_folder(&mut app.plugins, dir.path());
+        assert_eq!(load.errors.len(), 1, "opened now: {:?}", load.errors);
+        assert!(load.errors[0].contains("broken.clap"));
+        assert_eq!(PluginHost::clap_status(&app).waiting, 0);
     }
 
     #[test]

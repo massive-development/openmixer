@@ -16,8 +16,56 @@ use thiserror::Error;
 ///
 /// History: 1 = audio, midi, library, plugins. 2 adds `stems` (cache cap and auto-prepare). 3 adds
 /// `automix`. 4 adds `record` (mix recording). Each step is additive: an older file has no new section, so it reads with the
-/// defaults and is written back as the current version on the next save.
+/// defaults and is written back as the current version on the next save. The `plugins` section gained
+/// `clapScan` and `clapWarningAccepted` without a bump: the section is old and both keys are optional.
 pub const PREFERENCES_VERSION: i64 = 4;
+
+/// What the user answered to the first-run question "scan the standard CLAP folders?". Scanning
+/// loads each plugin library, which runs its code, so nothing outside the plugin folder is scanned
+/// until the answer is `Allowed` (ADR 0007, decision 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClapScan {
+    /// Not asked yet (or the question was dismissed). The prompt is still due.
+    #[default]
+    Unasked,
+    Allowed,
+    Declined,
+}
+
+impl ClapScan {
+    fn as_str(self) -> &'static str {
+        match self {
+            ClapScan::Unasked => "unasked",
+            ClapScan::Allowed => "allowed",
+            ClapScan::Declined => "declined",
+        }
+    }
+
+    fn parse(text: &str) -> Option<Self> {
+        Some(match text {
+            "unasked" => ClapScan::Unasked,
+            "allowed" => ClapScan::Allowed,
+            "declined" => ClapScan::Declined,
+            _ => return None,
+        })
+    }
+}
+
+/// Plugin consent (ADR 0007). Both answers are remembered here, in the preferences file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PluginPrefs {
+    /// Whether the standard CLAP folders may be scanned (the first-run prompt).
+    pub clap_scan: ClapScan,
+    /// The user accepted the first-load warning: a CLAP plugin runs its native code inside OpenMixer.
+    pub clap_warning_accepted: bool,
+}
+
+impl PluginPrefs {
+    /// Whether the standard CLAP folders may be scanned.
+    pub fn scan_standard_folders(&self) -> bool {
+        self.clap_scan == ClapScan::Allowed
+    }
+}
 
 /// Mix recording settings (Wave 8). The `format` is one of [`RECORD_FORMATS`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,6 +243,8 @@ pub struct Preferences {
     pub library: LibraryPrefs,
     /// Empty = the default plugin folder.
     pub plugin_folder: String,
+    /// Consent for CLAP plugins; the folder above stays a plain string for compatibility.
+    pub plugins: PluginPrefs,
     pub stems: StemsPrefs,
     pub automix: AutomixPrefs,
     pub record: RecordPrefs,
@@ -208,6 +258,7 @@ impl Default for Preferences {
             midi: MidiPrefs::default(),
             library: LibraryPrefs::default(),
             plugin_folder: String::new(),
+            plugins: PluginPrefs::default(),
             stems: StemsPrefs::default(),
             automix: AutomixPrefs::default(),
             record: RecordPrefs::default(),
@@ -317,6 +368,11 @@ impl Preferences {
 
         let mut plugins = Map::new();
         plugins.insert("folder".into(), self.plugin_folder.clone().into());
+        plugins.insert("clapScan".into(), self.plugins.clap_scan.as_str().into());
+        plugins.insert(
+            "clapWarningAccepted".into(),
+            self.plugins.clap_warning_accepted.into(),
+        );
 
         let mut root = Map::new();
         root.insert("version".into(), PREFERENCES_VERSION.into());
@@ -371,7 +427,17 @@ impl Preferences {
         read_audio(section(root, "audio"), &mut p.audio);
         read_midi(section(root, "midi"), &mut p.midi);
         read_library(section(root, "library"), &mut p.library);
-        p.plugin_folder = string_or(section(root, "plugins").get("folder"), p.plugin_folder);
+        let plugins = section(root, "plugins");
+        p.plugin_folder = string_or(plugins.get("folder"), p.plugin_folder);
+        p.plugins.clap_scan = plugins
+            .get("clapScan")
+            .and_then(Value::as_str)
+            .and_then(ClapScan::parse)
+            .unwrap_or(p.plugins.clap_scan);
+        p.plugins.clap_warning_accepted = bool_or(
+            plugins.get("clapWarningAccepted"),
+            p.plugins.clap_warning_accepted,
+        );
         read_stems(section(root, "stems"), &mut p.stems);
         read_automix(section(root, "automix"), &mut p.automix);
         read_record(section(root, "record"), &mut p.record);
@@ -546,6 +612,10 @@ mod tests {
                 scan_interval_minutes: 15,
             },
             plugin_folder: "/opt/openmixer/plugins".into(),
+            plugins: PluginPrefs {
+                clap_scan: ClapScan::Allowed,
+                clap_warning_accepted: true,
+            },
             stems: StemsPrefs {
                 max_cache_gb: 64,
                 auto_prepare: true,
@@ -585,6 +655,28 @@ mod tests {
             (p.record.format.as_str(), p.record.folder.as_str()),
             ("pcm16", "/ok")
         );
+    }
+
+    #[test]
+    fn clap_consent_defaults_to_not_asked_and_hostile_values_fall_back() {
+        let p = Preferences::from_json(r#"{"version":4,"plugins":{"folder":"/p"}}"#).unwrap();
+        assert_eq!(p.plugins, PluginPrefs::default());
+        assert_eq!(p.plugins.clap_scan, ClapScan::Unasked);
+        assert!(!p.plugins.scan_standard_folders() && !p.plugins.clap_warning_accepted);
+        let p = Preferences::from_json(
+            r#"{"version":4,"plugins":{"clapScan":"maybe","clapWarningAccepted":"yes"}}"#,
+        )
+        .unwrap();
+        assert_eq!(p.plugins, PluginPrefs::default());
+        let p = Preferences::from_json(
+            r#"{"version":4,"plugins":{"clapScan":"allowed","clapWarningAccepted":true}}"#,
+        )
+        .unwrap();
+        assert!(p.plugins.scan_standard_folders() && p.plugins.clap_warning_accepted);
+        let declined =
+            Preferences::from_json(r#"{"version":1,"plugins":{"clapScan":"declined"}}"#).unwrap();
+        assert!(!declined.plugins.scan_standard_folders());
+        assert_eq!(declined.plugins.clap_scan, ClapScan::Declined);
     }
 
     fn scratch() -> tempfile::TempDir {

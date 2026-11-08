@@ -370,6 +370,7 @@ pub fn main(args: &[String]) -> ExitCode {
             as Box<dyn om_ui::settings::RecordHost>),
         start_tab: start_tab.map(str::to_owned),
         plugins: Some(Box::new(PluginsPage(Rc::clone(&composition)))),
+        ask_clap: !smoke && !demo_run,
         automix: Some(Box::new(AppAutomixSettings::new(
             composition.borrow().automix.clone(),
             library

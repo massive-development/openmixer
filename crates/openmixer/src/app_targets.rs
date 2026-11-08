@@ -9,7 +9,7 @@
 
 use crate::error::AppError;
 use om_audio::OutputPairs;
-use om_ui::preferences::{default_map_file, AudioPrefs, MidiPrefs};
+use om_ui::preferences::{default_map_file, AudioPrefs, MidiPrefs, PluginPrefs};
 use om_ui::preferences_applier::PreferencesTargets;
 use om_ui::settings::MidiHost;
 use om_ui::theme::{Source, ThemeRegistry};
@@ -59,6 +59,9 @@ pub trait PluginSink {
     /// Unloads every plugin. Called before a folder is loaded.
     fn unload_all(&mut self);
     fn load_folder(&mut self, folder: &Path) -> PluginLoad;
+    /// What the user agreed to (CLAP scan of the standard folders, first-load warning). Called
+    /// before the folder is loaded. Does nothing by default.
+    fn set_policy(&mut self, _plugins: &PluginPrefs) {}
 }
 
 /// What the targets remember between calls, for the lifetime of the app. The owner
@@ -151,6 +154,12 @@ impl<'a, 'd> AppPreferencesTargets<'a, 'd> {
 }
 
 impl PreferencesTargets for AppPreferencesTargets<'_, '_> {
+    fn apply_plugin_policy(&mut self, plugins: &PluginPrefs) {
+        if let Some(sink) = self.plugins.as_deref_mut() {
+            sink.set_policy(plugins);
+        }
+    }
+
     fn apply_plugin_folder(&mut self, folder: &Path) {
         self.load_plugin_folder(folder);
     }

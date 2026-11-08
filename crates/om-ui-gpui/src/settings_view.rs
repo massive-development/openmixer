@@ -23,9 +23,9 @@ use om_ui::mapping_editor::MappingEditorPage;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
-    AutomixControl, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage,
-    PageKind, PluginHost, PluginParam, PluginsSettingsPage, RecordHost, SettingsError,
-    SettingsPanel, SettingsResult,
+    AutomixControl, ClapStatus, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage,
+    MidiSettingsPage, PageKind, PluginHost, PluginParam, PluginsSettingsPage, RecordHost,
+    SettingsError, SettingsPanel, SettingsResult,
 };
 use om_ui::stems::StemHost;
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
@@ -36,6 +36,9 @@ mod appearance;
 mod audio;
 mod automix;
 pub(crate) mod chips;
+mod clap;
+#[cfg(test)]
+pub(crate) mod clap_tests;
 mod library;
 mod mapping;
 mod midi;
@@ -80,6 +83,9 @@ pub struct SettingsOptions {
     pub stems: Option<Box<dyn StemHost>>,
     /// The plugins, behind the Plugins page. `None` leaves the page out of use.
     pub plugins: Option<Box<dyn PluginHost>>,
+    /// Ask the CLAP questions (first-run prompt, first-load warning) in dialogs when they are due.
+    /// Off for demo and smoke runs, which must not wait for an answer or write consent.
+    pub ask_clap: bool,
     /// The automix service, behind the Automix page. `None` leaves the page without a service: its
     /// settings are still stored and the page says automix is idle.
     pub automix: Option<Box<dyn AutomixControl>>,
@@ -137,6 +143,8 @@ pub struct PageLists {
     /// The plugin whose generic parameter panel is open, and its parameters.
     pub open_params: Option<String>,
     pub params: Vec<PluginParam>,
+    /// CLAP support, the `.clap` files found and how many wait for the first-load warning.
+    pub clap: ClapStatus,
     /// Plugins whose embedding window is open (see `plugin_window`).
     pub(crate) open_windows: crate::plugin_window::OpenWindows,
     /// Playlists the automix queue can play, as `(id, label)`.
@@ -190,6 +198,13 @@ pub struct SettingsState {
     /// The Clear-cache confirmation is showing.
     pub stems_confirm_clear: bool,
     plugins: Option<Box<dyn PluginHost>>,
+    /// The CLAP dialogs are on (see `SettingsOptions::ask_clap`).
+    pub(crate) ask_clap: bool,
+    /// The first-run prompt was dismissed (not answered): not asked again until the next start or
+    /// until the user asks for it on the Plugins tab.
+    pub(crate) clap_scan_deferred: bool,
+    /// The first-load warning was cancelled: the plugins stay unloaded until the user asks again.
+    pub(crate) clap_warning_deferred: bool,
     automix: Option<Box<dyn AutomixControl>>,
     record: Option<Box<dyn RecordHost>>,
     sync_themes: Option<ThemeSync>,
@@ -233,6 +248,9 @@ impl SettingsState {
             stems_bytes: 0,
             stems_confirm_clear: false,
             plugins: options.plugins,
+            ask_clap: options.ask_clap,
+            clap_scan_deferred: false,
+            clap_warning_deferred: false,
             automix: options.automix,
             record: options.record,
             mapping: options.mapping,
@@ -288,6 +306,7 @@ impl SettingsState {
         if let Some(plugins) = &self.plugins {
             self.lists.loaded_plugins = plugins.loaded_plugins();
             self.lists.builtins = plugins.builtins();
+            self.lists.clap = plugins.clap_status();
             self.lists.params = match &self.lists.open_params {
                 Some(id) => plugins.plugin_parameters(id),
                 None => Vec::new(),
@@ -347,6 +366,7 @@ pub(crate) mod fixtures {
             library: None,
             stems: None,
             plugins: None,
+            ask_clap: false,
             automix: None,
             record: None,
             mapping: None,
@@ -376,6 +396,7 @@ pub(crate) mod fixtures {
             library,
             stems: None,
             plugins,
+            ask_clap: false,
             automix: None,
             record: None,
             mapping: None,

@@ -542,6 +542,71 @@ fn a_confirmation_is_a_dialog_that_closes_when_the_settings_stop_asking(cx: &mut
     assert!(!vcx.update(|window, cx| window.has_active_dialog(cx)));
 }
 
+/// A shell whose settings ask the CLAP questions over a plugin host with CLAP support.
+fn clap_shell(status: &Rc<std::cell::RefCell<om_ui::settings::ClapStatus>>) -> Shell {
+    let status = Rc::clone(status);
+    shell_with(move |options| {
+        let mut o = fixtures::options(
+            None,
+            None,
+            Some(Box::new(crate::settings_view::clap_tests::ClapHost {
+                status: Rc::clone(&status),
+            })),
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+        );
+        o.ask_clap = true;
+        options.settings = Some(o);
+    })
+}
+
+#[gpui::test]
+fn the_clap_questions_are_dialogs_asked_in_order_and_closed_by_their_answers(
+    cx: &mut TestAppContext,
+) {
+    use crate::settings_view::overlay::Answer;
+    use om_ui::preferences::ClapScan;
+    let status = crate::settings_view::clap_tests::supported(1);
+    let (view, vcx) = open_with(cx, SIZES[0], clap_shell(&status));
+    vcx.run_until_parked();
+    let asked = |view: &Entity<Shell>, vcx: &mut VisualTestContext| {
+        view.read_with(vcx, |s, _| s.settings.as_ref().and_then(|s| s.ask_shown))
+    };
+    assert_eq!(asked(&view, vcx), Some(Ask::ClapFirstRun));
+    assert!(vcx.update(|window, cx| window.has_active_dialog(cx)));
+
+    // Answering the first-run question stores it; the warning is the next question.
+    view.update(vcx, |shell, cx| {
+        shell.resolve_ask(Ask::ClapFirstRun, Answer::Ok);
+        cx.notify();
+    });
+    // The button closes its dialog itself; closing it here stands in for the click.
+    vcx.update(|window, cx| window.close_dialog(cx));
+    vcx.run_until_parked();
+    let scan = view.read_with(vcx, |s, _| {
+        s.settings.as_ref().map(|s| s.prefs.plugins.clap_scan)
+    });
+    assert_eq!(scan, Some(ClapScan::Allowed));
+    assert_eq!(asked(&view, vcx), Some(Ask::ClapFirstLoad));
+    assert!(vcx.update(|window, cx| window.has_active_dialog(cx)));
+
+    // Cancelling the warning leaves the plugins unloaded and the dialog closed.
+    view.update(vcx, |shell, cx| {
+        shell.resolve_ask(Ask::ClapFirstLoad, Answer::Cancel);
+        cx.notify();
+    });
+    vcx.update(|window, cx| window.close_dialog(cx));
+    vcx.run_until_parked();
+    assert_eq!(asked(&view, vcx), None);
+    assert!(!vcx.update(|window, cx| window.has_active_dialog(cx)));
+    let accepted = view.read_with(vcx, |s, _| {
+        s.settings
+            .as_ref()
+            .map(|s| s.prefs.plugins.clap_warning_accepted)
+    });
+    assert_eq!(accepted, Some(false));
+}
+
 #[gpui::test]
 fn each_notice_is_one_toast_even_when_the_text_repeats(cx: &mut TestAppContext) {
     let (view, vcx) = open_with(cx, SIZES[0], settings_shell());
