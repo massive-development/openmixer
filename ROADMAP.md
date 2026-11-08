@@ -64,6 +64,8 @@ The nine implementation waves below are stable identifiers for the tasks in `TOD
 5. **Before Wave 7** - the prioritised list in `TODO.md` (blockers, verification debt, smaller gaps). Done before Wave 7 starts.
 6. **Remaining waves** - Wave 7 (stems, Automix, sampler), Wave 8 (recording, broadcast, DVS, video), Wave 9 (release). Not started.
 7. **Windows and macOS support** - WASAPI and CoreAudio runtime targets, GPUI checks, device runs and the Rubber Band FFI build cost on both. Later. CI is Linux only until then.
+8. **Native streaming integration** (issue #261) - unscheduled and opt-in. A Discord bot that announces track changes and performances and can join a voice channel to broadcast the master output; other sinks (Twitch or YouTube RTMP, Icecast) may follow. Nothing is designed or decided here; the issue holds the sketch.
+   - Open licensing question: broadcasting music needs a human decision first (see `docs/legal`).
 
 ## Current Status
 
