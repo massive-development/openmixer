@@ -198,6 +198,10 @@ impl Ctx {
         if self.signals.callback.swap(false, Ordering::AcqRel) {
             self.instance.call_on_main_thread_callback();
         }
+        if self.signals.latency_changed.swap(false, Ordering::AcqRel) {
+            // Display only: the engine does no delay compensation (ADR 0007).
+            super::probe::read_latency(self);
+        }
         self.run_due_timers();
         super::fds::poll_ready(self);
         super::gui::service(self);

@@ -8,7 +8,7 @@ use crate::composition::AppComposition;
 use gain_plugin::GainPlugin;
 use om_plugins::{Plugin, PluginRegistry};
 use om_ui::settings::SettingsError;
-use om_ui::settings::{PluginHost, PluginParam, SettingsResult};
+use om_ui::settings::{PluginHost, PluginLatency, PluginParam, SettingsResult};
 #[cfg(feature = "clap")]
 use om_ui::settings::{PluginSession, PluginWindow, PluginWindowMode};
 use om_ui::theme::{Source, ThemeRegistry};
@@ -92,6 +92,10 @@ impl PluginHost for PluginsPage {
 
     fn plugin_parameters(&self, id: &str) -> Vec<PluginParam> {
         PluginHost::plugin_parameters(&*self.0.borrow(), id)
+    }
+
+    fn plugin_latency(&self, id: &str) -> Option<PluginLatency> {
+        PluginHost::plugin_latency(&*self.0.borrow(), id)
     }
 
     #[cfg(feature = "clap")]
@@ -261,6 +265,14 @@ impl PluginHost for AppComposition {
         self.persist_plugin_states();
         self.refresh_plugin_themes();
         Ok(())
+    }
+
+    fn plugin_latency(&self, id: &str) -> Option<PluginLatency> {
+        let report = self.plugins.plugin_latency(id)?;
+        Some(PluginLatency {
+            frames: report.frames,
+            sample_rate: report.sample_rate,
+        })
     }
 
     #[cfg(feature = "clap")]

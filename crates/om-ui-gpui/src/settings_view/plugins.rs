@@ -22,6 +22,7 @@ pub(super) fn plugins_page(
                 .items_center()
                 .mb(px(4.))
                 .child(div().flex_1().overflow_hidden().child(id.clone()))
+                .children(latency_label(t, settings, id))
                 .child(chip_with_window(t, "Window", false, cx, {
                     let id = id.clone();
                     move |this, window, cx| this.open_plugin_window(&id, window, cx)
@@ -37,7 +38,13 @@ pub(super) fn plugins_page(
                 })),
         );
         if open {
-            loaded = loaded.child(param_panel(t, id, &settings.lists.params, cx));
+            loaded = loaded.child(param_panel(
+                t,
+                id,
+                &settings.lists.params,
+                settings.plugin_latency_text(id),
+                cx,
+            ));
         }
     }
 
@@ -98,9 +105,13 @@ fn param_panel(
     t: &ThemeTokens,
     plugin: &str,
     params: &[PluginParam],
+    latency: Option<String>,
     cx: &mut Context<Shell>,
 ) -> Div {
     let mut panel = div().flex().flex_col().mb(px(8.));
+    if let Some(text) = latency {
+        panel = panel.child(note(t, &text));
+    }
     if params.is_empty() {
         return panel.child(note(t, "This plugin has no parameters."));
     }
@@ -160,7 +171,22 @@ impl Shell {
     }
 }
 
+/// The latency of a loaded plugin on its row, when it reports one.
+fn latency_label(t: &ThemeTokens, settings: &SettingsState, id: &str) -> Option<Div> {
+    let text = settings.plugin_latency_text(id)?;
+    Some(note(t, &text).mb(px(0.)).mr(px(8.)))
+}
+
 impl SettingsState {
+    /// `Latency 128 fr / 2.9 ms` for plugin `id`, read now so a change the plugin signalled shows
+    /// on the next draw. `None` when the plugin reports no latency.
+    pub(crate) fn plugin_latency_text(&self, id: &str) -> Option<String> {
+        self.plugins
+            .as_deref()?
+            .plugin_latency(id)
+            .map(|l| l.labelled())
+    }
+
     /// The plugin's own window, when the plugin host has one for it.
     pub(super) fn plugin_window(
         &mut self,
@@ -267,6 +293,8 @@ mod tests {
     struct FakePlugins {
         loaded: std::cell::RefCell<Vec<String>>,
         gain: std::cell::Cell<f64>,
+        /// Frames the plugin reports now; 0 means it reports none.
+        latency: Rc<Cell<u32>>,
     }
 
     impl PluginHost for FakePlugins {
@@ -293,6 +321,13 @@ mod tests {
         fn unload(&mut self, id: &str) -> SettingsResult<()> {
             self.loaded.borrow_mut().retain(|l| l != id);
             Ok(())
+        }
+        fn plugin_latency(&self, _id: &str) -> Option<om_ui::settings::PluginLatency> {
+            let frames = self.latency.get();
+            (frames != 0).then_some(om_ui::settings::PluginLatency {
+                frames,
+                sample_rate: 44_100,
+            })
         }
         fn plugin_parameters(&self, _id: &str) -> Vec<om_ui::settings::PluginParam> {
             vec![om_ui::settings::PluginParam {
@@ -343,6 +378,35 @@ mod tests {
         assert_eq!(s.lists.builtins.len(), 1);
         s.plugin_load_builtin("missing");
         assert!(s.notice.error);
+    }
+
+    #[test]
+    fn the_row_and_the_panel_header_show_the_latency_and_follow_a_change() {
+        let plugins = FakePlugins::default();
+        let latency = Rc::clone(&plugins.latency);
+        latency.set(128);
+        let mut s = SettingsState::new(options(
+            None,
+            None,
+            Some(Box::new(plugins)),
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+        ));
+        s.plugin_load_builtin("demo.a");
+        // The row and the panel header draw this text.
+        assert_eq!(
+            s.plugin_latency_text("demo.a").as_deref(),
+            Some("Latency 128 fr / 2.9 ms")
+        );
+        // The plugin signals a change: the next draw reads the new figure, no list refresh needed.
+        latency.set(256);
+        assert_eq!(
+            s.plugin_latency_text("demo.a").as_deref(),
+            Some("Latency 256 fr / 5.8 ms")
+        );
+        // A plugin that reports none shows nothing.
+        latency.set(0);
+        assert_eq!(s.plugin_latency_text("demo.a"), None);
     }
 
     #[test]

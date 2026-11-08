@@ -135,6 +135,7 @@ The maintainer answered the open questions on 2026-11-07.
 5. **X11-only plugins on Wayland: generic parameter panel.** No XWayland.
 6. **Discovery: the user's plugin folder plus the standard CLAP paths (`~/.clap`, `/usr/lib/clap`), behind a first-run prompt**, because scanning runs plugin initialisers.
 7. **clack: exact pin `=0.2.0`, our own wrapper types, upgrades bumped by hand.**
+8. **Plugin delay compensation: deferred.** The engine does not compensate for a CLAP plugin's latency, and no delay lines are added. The reported latency (the `latency` extension, read at activation and again when the plugin signals a change) is shown only, as frames and milliseconds at the current sample rate, on the Plugins page rows and in the parameter panel header. Revisit when a plugin needs it.
 
 ### Keeping instruments and sidechain open
 

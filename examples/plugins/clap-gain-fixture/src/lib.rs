@@ -26,12 +26,16 @@ const PARAM_GAIN: u32 = 1;
 /// Not 1.0, so a test can tell a processed block from a passed-through one.
 const DEFAULT_GAIN: f32 = 0.5;
 const LATENCY_FRAMES: u32 = 16;
+/// `change-latency`: the latency the plugin switches to, and tells the host about, after activation.
+#[cfg(feature = "change-latency")]
+const CHANGED_LATENCY_FRAMES: u32 = 64;
 
 pub struct GainFixture;
 
 /// State the main thread and the audio processor share: the gain as `f32` bits.
 pub struct Shared {
     gain: AtomicU32,
+    latency: AtomicU32,
 }
 
 impl Shared {
@@ -74,14 +78,16 @@ impl DefaultPluginFactory for GainFixture {
     fn new_shared(_host: HostSharedHandle<'_>) -> Result<Shared, PluginError> {
         Ok(Shared {
             gain: AtomicU32::new(DEFAULT_GAIN.to_bits()),
+            latency: AtomicU32::new(LATENCY_FRAMES),
         })
     }
 
     fn new_main_thread<'a>(
-        _host: HostMainThreadHandle<'a>,
+        host: HostMainThreadHandle<'a>,
         shared: &'a Shared,
     ) -> Result<GainMainThread<'a>, PluginError> {
         Ok(GainMainThread {
+            host,
             shared,
             size: Cell::new((320, 200)),
         })
@@ -89,12 +95,27 @@ impl DefaultPluginFactory for GainFixture {
 }
 
 pub struct GainMainThread<'a> {
+    #[cfg_attr(not(feature = "change-latency"), allow(dead_code))]
+    host: HostMainThreadHandle<'a>,
     shared: &'a Shared,
     /// The stub window's size; `set_size` changes it.
     size: Cell<(u32, u32)>,
 }
 
-impl<'a> PluginMainThread<'a, Shared> for GainMainThread<'a> {}
+impl<'a> PluginMainThread<'a, Shared> for GainMainThread<'a> {
+    /// `change-latency`: switches to the new latency and signals it through the host's `latency`
+    /// extension (asked for by `activate`).
+    #[cfg(feature = "change-latency")]
+    fn on_main_thread(&self) {
+        use clack_extensions::latency::HostLatency;
+        self.shared
+            .latency
+            .store(CHANGED_LATENCY_FRAMES, Ordering::Relaxed);
+        if let Some(latency) = self.host.get_extension::<HostLatency>() {
+            latency.changed(&self.host);
+        }
+    }
+}
 
 impl PluginAudioPortsImpl for GainMainThread<'_> {
     fn count(&self, _is_input: bool) -> u32 {
@@ -211,7 +232,7 @@ impl PluginStateImpl for GainMainThread<'_> {
 
 impl PluginLatencyImpl for GainMainThread<'_> {
     fn get(&self) -> u32 {
-        LATENCY_FRAMES
+        self.shared.latency.load(Ordering::Relaxed)
     }
 }
 
@@ -285,11 +306,15 @@ pub struct GainProcessor<'a> {
 
 impl<'a> PluginAudioProcessor<'a, Shared, GainMainThread<'a>> for GainProcessor<'a> {
     fn activate(
-        _host: HostAudioProcessorHandle<'a>,
+        host: HostAudioProcessorHandle<'a>,
         _main_thread: &GainMainThread<'a>,
         shared: &'a Shared,
         _audio_config: PluginAudioConfiguration,
     ) -> Result<Self, PluginError> {
+        #[cfg(feature = "change-latency")]
+        host.request_callback();
+        #[cfg(not(feature = "change-latency"))]
+        let _ = host;
         Ok(Self {
             shared,
             reported: false,

@@ -15,7 +15,7 @@ use clack_extensions::timer::{HostTimer, HostTimerImpl, TimerId};
 use clack_host::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -42,6 +42,8 @@ pub(super) struct Signals {
     pub process: AtomicBool,
     pub callback: AtomicBool,
     pub latency_changed: AtomicBool,
+    /// The latest latency the control thread read, in frames (display only).
+    pub latency: AtomicU32,
     pub tail_changed: AtomicBool,
     pub params_rescan: AtomicBool,
     pub gui_resize_pending: AtomicBool,
