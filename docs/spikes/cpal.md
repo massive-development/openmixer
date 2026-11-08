@@ -2,7 +2,7 @@
 
 THROWAWAY spike code in `spikes/cpal-out/` (own `[workspace]`; not built by the root workspace or Rust CI; `spikes/**/target/` is gitignored, `Cargo.lock` is committed). Date: 2026-10-18.
 
-Update (2026-11-07): the workspace now uses cpal 0.18 (locked 0.18.2) in `om-audio`. Real-time priority for the callback thread is cpal's own promotion; on Linux it is the opt-in `realtime-dbus` feature (see "P9: real-time priority for the audio callback only (#228)" in `docs/spikes/DECISIONS.md`). The device-run items below are still open and are on `docs/testing/hardware-checklist.md`.
+Update (2026-11-07): the workspace now uses cpal 0.18 (locked 0.18.2) in `om-audio`. Real-time priority for the callback thread is cpal's own promotion; on Linux it is the `realtime-dbus` feature, on by default in `openmixer` (see "P9: real-time priority for the audio callback only (#228)" in `docs/spikes/DECISIONS.md`). The device-run items below are still open and are on `docs/testing/hardware-checklist.md`.
 
 ## Verdict
 

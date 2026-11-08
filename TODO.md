@@ -80,11 +80,11 @@ Tracking issue #227. Built and tested headless; none of it has been confirmed on
 - [x] **#223:** app chrome on `gpui-component` (buttons, inputs, `DataTable`, `TabBar`, `AlertDialog`, toasts, `theme_bridge`)
 - [x] **#224:** utility crates (`walkdir`, `bytemuck`)
 - [x] **#226:** bounds-check work in the audio and analysis hot loops, with `divan` benches
-- [x] **#228:** real-time priority for cpal's callback thread; on Linux it is the opt-in `realtime-dbus` feature of `om-audio` (the decoder promotion was dropped)
+- [x] **#228:** real-time priority for cpal's callback thread; on Linux it is the `realtime-dbus` feature of `om-audio`, forwarded and on by default in `openmixer` (the decoder promotion was dropped)
 - [x] **#229:** `souvlaki` media keys, GPUI file pickers, clipboard and notifications (`rfd`, `arboard`, `tray-icon` rejected)
 - [x] **#250:** SQLite `synchronous=NORMAL` in WAL mode for the library and analysis cache, and faster tests
 - [ ] **#225 CLAP hosting** (ADR 0007, `clap` feature of `om-plugins`): host, generic parameter panel and plugin window built; first-run warning, plugin state save and restore, and latency compensation in progress
-- [ ] **#244 real-time priority on Linux** is on hold (needs a packaging decision on `realtime-dbus`)
+- [ ] **#244 real-time priority on Linux:** `realtime-dbus` is on by default in `openmixer`; confirm on a real device that rtkit grants it
 - [ ] **EBU Tech 3341 and 3342 reference files:** the loudness tests use synthesised signals; the official files (cases 6 to 8 and the programme cases) have not been run
 - [ ] **Real hardware:** work through `docs/testing/hardware-checklist.md` (window and look, audio, MIDI, media keys, CLAP) and open an issue per failure
 
