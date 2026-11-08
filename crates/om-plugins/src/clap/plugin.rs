@@ -9,7 +9,7 @@ use super::ports::StageDescriptor;
 use super::stage::ClapStage;
 use super::state::{Fault, StageState};
 use super::worker::Worker;
-use crate::{ParameterInfo, Plugin, PluginError, PluginHost, PluginInfo, StageKind};
+use crate::{LatencyReport, ParameterInfo, Plugin, PluginError, PluginHost, PluginInfo, StageKind};
 use clack_host::entry::PluginEntry;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex, Weak};
@@ -144,6 +144,16 @@ impl Plugin for ClapPlugin {
             }
         }
         failure.map_or(Ok(()), Err)
+    }
+
+    fn latency(&self) -> Option<LatencyReport> {
+        self.stage_states().iter().find_map(|s| {
+            let sample_rate = s.sample_rate();
+            (sample_rate != 0).then(|| LatencyReport {
+                frames: s.latency_frames(),
+                sample_rate,
+            })
+        })
     }
 
     fn clap_gui(&self) -> Option<PluginGui> {

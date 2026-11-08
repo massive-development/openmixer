@@ -50,6 +50,7 @@ impl Fault {
 pub struct StageState {
     fault: AtomicU8,
     latency: AtomicU32,
+    rate: AtomicU32,
     last_ns: AtomicU64,
     max_ns: AtomicU64,
     gui: OnceLock<PluginGui>,
@@ -62,9 +63,18 @@ impl StageState {
         Fault::from_code(self.fault.load(Ordering::Acquire))
     }
 
-    /// Plugin latency in frames, read at activation.
+    /// Plugin latency in frames: read at activation and again whenever the plugin signals a
+    /// change. Reported for display only; the engine does not compensate for it (ADR 0007).
     pub fn latency_frames(&self) -> u32 {
-        self.latency.load(Ordering::Relaxed)
+        match self.worker.get() {
+            Some(worker) => worker.signals.latency.load(Ordering::Relaxed),
+            None => self.latency.load(Ordering::Relaxed),
+        }
+    }
+
+    /// The sample rate the stage was last activated at, 0 before the first activation.
+    pub fn sample_rate(&self) -> u32 {
+        self.rate.load(Ordering::Relaxed)
     }
 
     /// Wall time of the last `process` call (all chunks of one engine block).
@@ -105,6 +115,10 @@ impl StageState {
 
     pub(super) fn set_latency(&self, frames: u32) {
         self.latency.store(frames, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_sample_rate(&self, rate: f64) {
+        self.rate.store(rate.round() as u32, Ordering::Relaxed);
     }
 
     pub(super) fn record_cost(&self, elapsed: Duration) {

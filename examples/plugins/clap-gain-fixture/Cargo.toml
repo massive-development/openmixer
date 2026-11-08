@@ -23,6 +23,8 @@ error-in-process = []
 emit-param-change = []
 # The state extension refuses to load, to test a plugin that rejects saved state.
 reject-state = []
+# After activation the plugin changes its latency and signals it to the host.
+change-latency = []
 
 [dependencies]
 clack-plugin.workspace = true

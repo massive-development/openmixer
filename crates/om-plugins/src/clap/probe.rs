@@ -6,6 +6,7 @@ use super::worker::Ctx;
 use clack_extensions::audio_ports::{AudioPortFlags, AudioPortInfoBuffer, PluginAudioPorts};
 use clack_extensions::latency::PluginLatency;
 use clack_extensions::params::{ParamInfoBuffer, ParamInfoFlags, PluginParams};
+use std::sync::atomic::Ordering;
 
 /// The plugin's audio ports; empty when it has no `audio-ports` extension.
 pub(super) fn read_layout(ctx: &mut Ctx) -> PortLayout {
@@ -67,9 +68,12 @@ pub(super) fn read_params(ctx: &mut Ctx) -> Vec<(ClapParam, f64)> {
 }
 
 /// Latency in frames, 0 without the `latency` extension. Valid after activation.
+/// The value is also published on the worker's signals, which the stage state reads.
 pub(super) fn read_latency(ctx: &mut Ctx) -> u32 {
     let handle = ctx.instance.plugin_handle();
-    handle
+    let frames = handle
         .get_extension::<PluginLatency>()
-        .map_or(0, |ext| ext.get(&handle))
+        .map_or(0, |ext| ext.get(&handle));
+    ctx.signals.latency.store(frames, Ordering::Relaxed);
+    frames
 }

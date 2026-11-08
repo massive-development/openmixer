@@ -419,6 +419,11 @@ impl PluginRegistry {
         self.find(id)?.clap_gui()
     }
 
+    /// The latency plugin `id` reports, for display (no delay compensation exists).
+    pub fn plugin_latency(&self, id: &str) -> Option<crate::LatencyReport> {
+        self.find(id)?.latency()
+    }
+
     /// Sets parameter `parameter` of plugin `id` through the plugin's own parameter target. False
     /// when the plugin is not loaded or refuses the id or value.
     pub fn set_plugin_parameter(&self, id: &str, parameter: &str, value: f64) -> bool {

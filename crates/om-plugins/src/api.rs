@@ -14,6 +14,13 @@ pub const API_VERSION: u32 = 1;
 /// refused rather than held in memory and written to the state file.
 pub const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
 
+/// The latency a plugin reports, with the sample rate it applies to. For display only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LatencyReport {
+    pub frames: u32,
+    pub sample_rate: u32,
+}
+
 /// Identity a plugin reports about itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginInfo {
@@ -142,6 +149,12 @@ pub trait Plugin: Send {
     /// thread. A plugin that refuses the bytes keeps running with its defaults.
     fn restore_state(&self, _state: &[u8]) -> Result<(), PluginError> {
         Ok(())
+    }
+
+    /// The latency the plugin reports, for display. `None` when it reports none (not a CLAP plugin,
+    /// or no stage has been activated yet). Never used for delay compensation (ADR 0007).
+    fn latency(&self) -> Option<LatencyReport> {
+        None
     }
 
     /// Registers the plugin's stages, targets, maps and themes.
