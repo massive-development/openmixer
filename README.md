@@ -57,12 +57,12 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt-get install pkg-config libasound2-dev
+sudo apt-get install pkg-config libasound2-dev libdbus-1-dev
 ```
 
 GPUI system dependencies are documented in `docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen).
 
-Optional: `sccache` shares compiled dependencies between worktrees (setup in `agents.md`); `libdbus-1-dev` is needed only for the opt-in `realtime-dbus` feature of `om-audio` (real-time priority for the audio callback on Linux).
+Optional: `sccache` shares compiled dependencies between worktrees (setup in `agents.md`); `libdbus-1-dev` is required on Linux by the default `realtime-dbus` feature (real-time priority for the audio callback); `--no-default-features` builds without it.
 
 **macOS and Windows:** not runtime targets yet (Windows and macOS support is later). CI checks Linux only, so no extra system packages are listed for them yet.
 
@@ -142,7 +142,7 @@ The GPUI window is the default build and needs the `-dev` packages listed in the
 
 Set `OPENMIXER_FRAME_STATS=1` to print frame-time percentiles to the terminal every five seconds. Other environment variables: `OPENMIXER_PREFS` (preferences file), `OPENMIXER_LIBRARY_DB` (library database), `OPENMIXER_THEME` (theme id for the session), `OPENMIXER_WINDOW=WIDTHxHEIGHT` (window size), `OPENMIXER_WAVE_STYLE` (waveform style), `OPENMIXER_MOCK_STEMS` (mock stem separator), `OPENMIXER_DEMO_TRACK` (a real file for the demo deck) and `OPENMIXER_FFMPEG` (the `ffmpeg` executable).
 
-Optional cargo features of the `openmixer` binary, all off by default: `clap` (CLAP plugin hosting through `om-plugins`, ADR 0007; Linux first), `onnx` (real stem separation through ONNX Runtime) and `ffmpeg` (decode fallback). `om-audio` has its own opt-in `realtime-dbus` feature.
+Optional cargo features of the `openmixer` binary, all off by default: `clap` (CLAP plugin hosting through `om-plugins`, ADR 0007; Linux first), `onnx` (real stem separation through ONNX Runtime) and `ffmpeg` (decode fallback). `realtime-dbus` is on by default (Linux real-time priority; needs `libdbus-1-dev`); `--no-default-features` turns it off along with the window.
 
 ### Debug Build
 
@@ -163,7 +163,7 @@ crates/
 ├── om-core/      # Typed control surface (ParamId, Command), pulled engine snapshot, job queue, routing; no I/O
 ├── om-dsp/       # Filters, EQ, sweep filter, meters and crossfader curves
 ├── om-engine/    # Audio-thread engine: decks (rubato varispeed), mixer, FX racks, sync, quantizer, loops, sampler, recorder and EBU R128 loudness meter
-├── om-audio/     # Device layer over cpal, a headless mock device, the output router; opt-in `realtime-dbus` feature
+├── om-audio/     # Device layer over cpal, a headless mock device, the output router; `realtime-dbus` feature (real-time priority on Linux)
 ├── om-stretch/   # Rubber Band R3 key-lock time-stretch via FFI (unsafe confined to `ffi.rs`)
 ├── om-analysis/  # BPM, key, waveform and structure analysis; job service and SQLite cache
 ├── om-library/   # SQLite library, metadata ingest, iTunes and Rekordbox import, search, prep queue
@@ -235,7 +235,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - The real htdemucs model (Todo 19): the export script and I/O contract match Demucs on a reference segment (`crates/om-stems/tests/htdemucs_reference.rs`), but nothing has been listened to. The ONNX backend is behind the off-by-default `onnx` feature, and its CI job blocks merges. The separator interface and the licence-gated downloads are done
 - CLAP hosting (issue #225, ADR 0007, `clap` feature of `om-plugins`, off by default): the host, the generic parameter panel and the plugin's own window are built and tested with an in-tree fixture plugin; first-run warning, plugin state save and restore, and latency compensation are in progress. No third-party CLAP plugin has been run by a person, and the Linux GUI paths (X11 embed, Wayland floating) are unverified on a real display
 - Loudness metering (issue #222): the meter is checked against signals synthesised from EBU Tech 3341 and 3342, not the official EBU reference files (the EBU site refuses automated downloads); cases 6 to 8 and the programme cases are not covered. The mixer panel is checked in the headless gpui tests only
-- Real-time priority for the audio callback (issue #244) is on hold: cpal's `realtime-dbus` feature builds libdbus, so it is an opt-in `om-audio` feature and Linux builds run the callback at normal priority
+- Real-time priority for the audio callback (issues #228, #244): on Linux the `realtime-dbus` feature (on by default; needs `libdbus-1-dev`) asks rtkit for it. It has not been confirmed on a real device, and a `--no-default-features` build runs the callback at normal priority
 - The platform refresh (UI on `gpui-component`, `midir`, `rubato`, media keys, desktop integration) was built on a host with no display, GPU, MIDI device or audio session. Visual parity with the older screenshots, real MIDI ports and the media keys are unverified; `docs/testing/hardware-checklist.md` lists what to confirm
 - Deck varispeed through rubato (issue #241, sinc 128 by default, linear fallback): the last ~130 source frames of a track (about 3 ms) are not played, and no listening check has been done
 - HID (Todo 35) and plug-and-play controller maps (Todo 34). The mapping editor (Todo 36) is done at logic and view level; it is not verified with hardware

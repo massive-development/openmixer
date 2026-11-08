@@ -60,7 +60,7 @@ The nine implementation waves below are stable identifiers for the tasks in `TOD
 1. **Engine, analysis, library, MIDI, plugins** - done on Linux, verified headlessly. Open: the real htdemucs model on the ONNX backend (Todo 19; the backend and its toy-model test are built and the `onnx` CI job is green), FFmpeg beyond the sampler (Todo 8b, optional).
 2. **UI** - partial: decks, mixer and settings are drawn and wired; LookAndFeel (Todo 25) still has consumers on the old paths and stem pads (Todo 30) are not checked by ear; only staged screenshots have been checked by eye (`docs/screenshots/REVIEW.md`), not a live window on a real display.
 3. **Hardware** - MIDI input and mapping done; controller maps and HID (Todos 34-35) open; the mapping editor (Todo 36) is done at logic and view level, not verified with hardware.
-4. **Platform refresh** (issues #218 to #229, #241, #250) - done and tested headless: `gpui-kit`/`gpui-component` UI, Rust 1.95, `midir`, `rubato`, `ebur128` loudness metering, media keys and desktop integration, SQLite tuning, bounds-check work. Open: CLAP hosting (#225; first-run, state and latency in progress), real-time priority on Linux (#244, on hold), the EBU 3341/3342 reference files, and the real-hardware pass in `docs/testing/hardware-checklist.md`.
+4. **Platform refresh** (issues #218 to #229, #241, #250) - done and tested headless: `gpui-kit`/`gpui-component` UI, Rust 1.95, `midir`, `rubato`, `ebur128` loudness metering, media keys and desktop integration, SQLite tuning, bounds-check work. Open: CLAP hosting (#225; first-run, state and latency in progress), real-time priority on Linux (#244, on by default, unconfirmed on a device), the EBU 3341/3342 reference files, and the real-hardware pass in `docs/testing/hardware-checklist.md`.
 5. **Before Wave 7** - the prioritised list in `TODO.md` (blockers, verification debt, smaller gaps). Done before Wave 7 starts.
 6. **Remaining waves** - Wave 7 (stems, Automix, sampler), Wave 8 (recording, broadcast, DVS, video), Wave 9 (release). Not started.
 7. **Windows and macOS support** - WASAPI and CoreAudio runtime targets, GPUI checks, device runs and the Rubber Band FFI build cost on both. Later. CI is Linux only until then.
@@ -85,7 +85,7 @@ The nine implementation waves below are stable identifiers for the tasks in `TOD
 - CI is Linux only; macOS and Windows legs are not in the check matrix
 - CLAP hosting (issue #225, ADR 0007, `clap` feature, off by default) is in progress: first-run warning, plugin state save and restore, and latency compensation are open, and no third-party CLAP plugin has been run by a person
 - Loudness metering (issue #222) is checked against synthesised EBU Tech 3341/3342 signals, not the official reference files
-- Real-time priority for the audio callback on Linux (issue #244) is on hold; the opt-in `realtime-dbus` feature of `om-audio` exists
+- Real-time priority for the audio callback on Linux (issue #244): the `realtime-dbus` feature is on by default in `openmixer` (needs `libdbus-1-dev`); not yet confirmed on a real device
 - The platform refresh was built without a display, GPU, MIDI device or audio session: `docs/testing/hardware-checklist.md` lists what to confirm
 - The headphone-cue second stream is unproven (it failed on WSLg)
 - The window-opening `--smoke` (without `--headless`) is not run in CI

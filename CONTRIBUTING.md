@@ -64,19 +64,17 @@ git commit -s -m "fix: description"
 
 ## Pull Request Workflow (required)
 
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
+All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
 
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
-2. Open a PR into `stage` with `gh pr create --base stage`. The description must include:
+1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
+2. Open a PR into `main` with `gh pr create --base main`. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key files/crates modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, `cargo clippy`, `cargo fmt --check`, `cargo deny check`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
-6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact. GitHub stacks are the preferred way to manage these: install `gh extension install github/gh-stack`, then `gh stack init`, `gh stack add` and `gh stack submit`; `gh stack link <pr>...` links PRs that already exist. Update a stacked branch by merging the parent in and pushing normally; do not use `gh stack rebase` or `gh stack sync`, which rewrite pushed history.
-7. Promote early: open a `stage` -> `main` PR at every major milestone (a finished Todo or feature group), not only at the end of a wave, so release PRs stay small and reviewable.
+5. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact. GitHub stacks are the preferred way to manage these: install `gh extension install github/gh-stack`, then `gh stack init`, `gh stack add` and `gh stack submit`; `gh stack link <pr>...` links PRs that already exist. Update a stacked branch by merging the parent in and pushing normally; do not use `gh stack rebase` or `gh stack sync`, which rewrite pushed history.
 
 ## Rust Standards & Memory Safety (required)
 
@@ -262,7 +260,7 @@ valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 ### Minimum System
 
 - **Rust** toolchain pinned in `rust-toolchain.toml` (1.95, the workspace MSRV; installed with rustup; `rustfmt` and `clippy` included)
-- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `docs/spikes/gpui.md`; `libdbus-1-dev` only for `om-audio`'s opt-in `realtime-dbus` feature
+- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `docs/spikes/gpui.md`; `libdbus-1-dev` for the real-time priority feature `realtime-dbus` (on by default; `--no-default-features` builds without it)
 - **cargo-deny** for `cargo deny check`
 - **sccache (optional, Linux):** `~/.cargo/config.toml` with `[build]`, `rustc-wrapper = "sccache"` and `incremental = false` shares compiled dependencies between worktrees.
 - **Cost rule for agents:** while working, `cargo check -p <crate>` and tests of the touched crates with `-j 4`; full clippy, workspace tests and `cargo deny check` once per PR, at the end; at most two parallel agents on the 12-core shared host.

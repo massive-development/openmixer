@@ -3,7 +3,7 @@
 //! Audio device layer: the [`AudioDevice`] contract, a headless [`MockAudioDevice`] for tests, and
 //! the cpal-backed device. Devices drive an [`AudioCallback`] (re-exported from `om-engine`); the
 //! callback runs on the device's audio thread and must not allocate, lock or block. cpal promotes
-//! the callback thread itself; on Linux that needs the opt-in `realtime-dbus` feature (libdbus),
+//! the callback thread itself; on Linux that needs the `realtime-dbus` feature (libdbus; `openmixer` enables it by default),
 //! otherwise the callback runs at normal priority.
 
 mod cpal_device;

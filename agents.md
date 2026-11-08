@@ -42,7 +42,7 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
 
 - **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
 - **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops, sampler, recorder and the EBU R128 loudness meter. Decks resample through `rubato` (`deck/playback/varispeed.rs`, sinc 128 by default, linear for rate 0, steps outside 0.25..=2.0, exact unity and key-lock). Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
-- **`om-audio`, `om-dsp`, `om-stretch`**: device layer (cpal; the opt-in `realtime-dbus` feature asks rtkit for real-time priority on Linux and needs `libdbus-1-dev`), DSP, and key-lock time-stretch (FFI `unsafe` in `om-stretch/src/ffi.rs`).
+- **`om-audio`, `om-dsp`, `om-stretch`**: device layer (cpal; the `realtime-dbus` feature, on by default in `openmixer`, asks rtkit for real-time priority on Linux and needs `libdbus-1-dev`), DSP, and key-lock time-stretch (FFI `unsafe` in `om-stretch/src/ffi.rs`).
 - **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`. `om-midi` talks to hardware through `MidirBackend` (`midir`; port ids are `Client:Port`, without the sequencer address) or the mock backend. `om-library` and the analysis cache open SQLite with `journal_mode=WAL` and `synchronous=NORMAL`. `om-plugins` loads in-process plugins and C-ABI shared libraries, and with the `clap` feature (off by default, ADR 0007) CLAP plugins through `clack` (`clap/`, with a worker thread per instance); the CLAP first-run warning, state and latency work is in progress.
 - **`om-stems` detail:** `StemSeparator` v2 is streamed (`separate_to(StereoSource, StemSink, ctx)`); `HtDemucsPipeline<I: StemInference>` does resampling, 7.8 s segments with overlap-add and STFT in Rust; `OrtInference` (ONNX Runtime) exists only with `--features onnx` (off by default, downloads the runtime at build time; own blocking CI job). `StemCache` (`cache.rs`, `wav.rs`) holds the stems under `<library folder>/stems`; `StemService` (`service.rs`, on `WorkerPool`, one worker) separates a track on explicit submit only and records `track_stems` through `om-library`, so `om-stems` depends on `om-library`. The app attaches it with `AppComposition::attach_stems` (`Services.stems`): the mock with `--mock-stems`, else htdemucs when built with `onnx` and installed. Real htdemucs is exported with `tools/export_htdemucs.py` (STFT-outside variant, checked against Demucs by `crates/om-stems/tests/htdemucs_reference.rs`; not yet listened to).
 - **`om-automix`** (pure, depends on `om-core` only, control thread; never touches the audio thread): `stem_fade` (S8) holds `StemFade` ramps and `StemFadePlan`, the builders and `StemFadeRunner`. Automix proper (Todo 38):
@@ -173,10 +173,10 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 
 ## Pull Request Workflow (required)
 
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
+All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
 
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
-2. Open a PR into `stage` with `gh pr create --base stage`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, `cargo deny`, the `onnx` job, the progress heatmap check and the ASIO SDK guard) runs on every pull request. The description must include:
+1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
+2. Open a PR into `main` with `gh pr create --base main`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, `cargo deny`, the `onnx` job, the progress heatmap check and the ASIO SDK guard) runs on every pull request. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key crates/modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
@@ -184,11 +184,7 @@ All changes — including those by AI agents and maintainers — land through a 
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Docs match the repo before the PR opens: check `README.md` (status, screenshots, build notes), `docs/PROGRESS.md`, `TODO.md` and any doc the change touches against the current code, and fix stale claims in the same PR. Outdated docs send people to rebuild or fix what already exists or is in flight.
 5. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-6. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
-7. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
-8. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
-9. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
-10. Release PR description: list the included PRs (number + Todo), the testing they already had, and the revert command. Merge with `--merge` so a batch can be undone with `git revert -m 1 <merge commit>`.
+6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact.
 
 ## Rust Standards & Memory Safety (required)
 
@@ -301,10 +297,10 @@ Any change to `.github/workflows/` must be tested locally with [`act`](https://g
 - **Linux audio:** `cpal` needs ALSA development headers and `pkg-config`:
 
 ```bash
-sudo apt-get install libasound2-dev pkg-config libclang-dev
+sudo apt-get install libasound2-dev pkg-config libclang-dev libdbus-1-dev
 ```
 
-`libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is needed only for `om-audio`'s `realtime-dbus` feature.
+`libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is for the default `realtime-dbus` feature; `--no-default-features` builds without it.
 
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
 - GPUI platform dependencies (Linux) are documented in `docs/spikes/gpui.md`.
@@ -318,7 +314,7 @@ sudo apt-get install libasound2-dev pkg-config libclang-dev
   - `divan` (dev-dependency): benches in `om-engine` and `om-analysis`.
   - Not adopted after evaluation: `rfd`, `arboard`, `tray-icon` (GPUI's file picker and clipboard cover the first two, the third cannot work under GPUI's loop; `docs/spikes/DECISIONS.md`).
   - `clack-host`, `clack-extensions`, `clack-plugin`: CLAP hosting, behind the optional `clap` feature of `om-plugins`.
-  - `cpal` `realtime-dbus`: opt-in `om-audio` feature (needs `libdbus-1-dev`) for Linux real-time priority.
+  - `cpal` `realtime-dbus`: `om-audio` feature (needs `libdbus-1-dev`) for Linux real-time priority; `openmixer` forwards it and enables it by default.
 
 ### Build Commands
 
@@ -498,7 +494,7 @@ Next: the Before-Wave-7 list in `TODO.md`, then Wave 7. Windows (WASAPI) and mac
 
 **Implementation:**
 1. `cpal` output stream behind a device trait
-2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio later); real-time priority for the callback through cpal (`realtime-dbus` on Linux, opt-in)
+2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio later); real-time priority for the callback through cpal (`realtime-dbus` on Linux, on by default in `openmixer`)
 3. Mock device for CI testing
 4. Latency probing
 
@@ -549,7 +545,7 @@ fn device_opens_and_closes() {
 **Solution:** Install `libclang-dev` (bindgen needs it)
 
 ### Issue: `libdbus-1` not found
-**Solution:** Only the opt-in `realtime-dbus` feature of `om-audio` needs it (`libdbus-1-dev`); the default build and the souvlaki media keys (zbus) do not
+**Solution:** Install `libdbus-1-dev`; the default `realtime-dbus` feature of `openmixer` needs it. Build with `--no-default-features` to go without it (the souvlaki media keys use zbus and do not need it)
 
 ### Issue: `cargo deny check` fails on a licence
 **Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
