@@ -13,8 +13,10 @@ use clack_extensions::params::{
     ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginAudioProcessorParams,
     PluginMainThreadParams, PluginParams,
 };
+use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
+use clack_plugin::stream::{InputStream, OutputStream};
 use std::cell::Cell;
 use std::ffi::CStr;
 use std::fmt::Write as _;
@@ -55,7 +57,8 @@ impl Plugin for GainFixture {
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
             .register::<PluginGui>()
-            .register::<PluginLatency>();
+            .register::<PluginLatency>()
+            .register::<PluginState>();
     }
 }
 
@@ -166,6 +169,42 @@ fn apply_param_events(shared: &Shared, events: &InputEvents) {
             if e.param_id() == Some(ClapId::new(PARAM_GAIN)) {
                 shared.set_gain(e.value());
             }
+        }
+    }
+}
+
+/// State layout (version 1): the magic `GAIN`, a version byte, the gain as little-endian `f32`.
+const STATE_MAGIC: &[u8; 4] = b"GAIN";
+const STATE_VERSION: u8 = 1;
+
+impl PluginStateImpl for GainMainThread<'_> {
+    fn save(&self, output: &mut OutputStream) -> Result<(), PluginError> {
+        use std::io::Write as _;
+        let mut bytes = [0_u8; 9];
+        bytes[..4].copy_from_slice(STATE_MAGIC);
+        bytes[4] = STATE_VERSION;
+        bytes[5..].copy_from_slice(&self.shared.gain().to_le_bytes());
+        output.write_all(&bytes)?;
+        Ok(())
+    }
+
+    fn load(&self, input: &mut InputStream) -> Result<(), PluginError> {
+        use std::io::Read as _;
+        #[cfg(feature = "reject-state")]
+        return Err(PluginError::Message("fixture rejects state"));
+        #[allow(unreachable_code)]
+        {
+            let mut bytes = [0_u8; 9];
+            input.read_exact(&mut bytes)?;
+            if &bytes[..4] != STATE_MAGIC || bytes[4] != STATE_VERSION {
+                return Err(PluginError::Message("not a gain state"));
+            }
+            let gain = f32::from_le_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
+            if !gain.is_finite() {
+                return Err(PluginError::Message("gain is not finite"));
+            }
+            self.shared.set_gain(f64::from(gain));
+            Ok(())
         }
     }
 }

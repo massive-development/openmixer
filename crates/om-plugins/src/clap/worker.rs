@@ -44,6 +44,12 @@ pub(super) struct WorkerHandle {
     pub signals: Arc<Signals>,
 }
 
+impl std::fmt::Debug for WorkerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WorkerHandle")
+    }
+}
+
 pub(super) struct Worker {
     handle: WorkerHandle,
     join: Option<JoinHandle<()>>,

@@ -3,7 +3,7 @@
 //! A counting allocator tracks live heap bytes in this process (the host side: clack, our wrappers,
 //! the worker thread). The loop must not grow after a warm-up. Allocations made inside the fixture
 //! plugin use the plugin library's own allocator and are covered by the valgrind run documented in
-//! the PR: `valgrind --leak-check=full --errors-for-leak-kinds=definite,indirect --error-exitcode=9
+//! the PR (each cycle also saves, restores and re-restores plugin state): `valgrind --leak-check=full --errors-for-leak-kinds=definite,indirect --error-exitcode=9
 //! target/debug/deps/clap_leak-<hash> --test-threads=1` with `CLAP_LEAK_ITERATIONS=15`.
 
 #![cfg(feature = "clap")]
@@ -91,12 +91,34 @@ fn one_cycle(path: &std::path::Path, cycle: usize) {
         let (mut l, mut r) = (vec![0.5_f32; 300], vec![0.5_f32; 300]);
         point.0.lock().unwrap().process(&mut l, &mut r);
     }
+    // State: save from the live instance, restore it into the live instance, then keep it for a
+    // second load (the deferred path restores into the stage the next load creates).
+    let states = registry.plugin_states();
+    let state = states
+        .get(PLUGIN_ID)
+        .expect("the fixture has state")
+        .clone();
+    registry
+        .restore_plugin_state(PLUGIN_ID, &state)
+        .expect("restore into the live instance");
+    assert!(registry
+        .restore_plugin_state(PLUGIN_ID, b"not a state")
+        .is_err());
+    assert!(registry.take_state_errors().is_empty());
     // Replace the live stage (the old one is deactivated and freed on this thread), then unload.
     registry
         .attach_stage(PLUGIN_ID, &dyn_point, InsertAt::Master, 0)
         .expect("replace");
     point.1.reclaim();
     assert!(registry.unload(PLUGIN_ID));
+    // Load again with the saved state: the new stage loads it before it activates.
+    registry.set_saved_states(states);
+    assert_eq!(registry.load_clap(path, &mut errors).expect("reload"), 1);
+    registry
+        .attach_stage(PLUGIN_ID, &dyn_point, InsertAt::Master, 0)
+        .expect("attach after reload");
+    let (mut l, mut r) = (vec![0.5_f32; 300], vec![0.5_f32; 300]);
+    point.0.lock().unwrap().process(&mut l, &mut r);
     drop(registry);
     point.1.reclaim();
 }
