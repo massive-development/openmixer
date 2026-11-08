@@ -6,6 +6,8 @@ Accepted
 
 Design note only (issue #225, P7). No code and no Cargo change is part of this ADR. The maintainer signed off on 2026-11-07 (see "Decisions"); implementation follows the migration plan.
 
+Update (2026-11-07): the loader, parameters, the plugin window and a test fixture landed behind the `clap` feature of `om-plugins` (see "Implementation notes"). Still open: the first-run prompt and warning screens, state persistence and latency compensation.
+
 ## Context
 
 `om-plugins` loads our own plugins through a C ABI with `libloading` (`abi.rs`, `loader.rs`; ABI versions 1 and 2; `docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). It is mono, in-place, one `process` call per channel, with an optional JSON parameter list and no GUI. Only plugins written against `include/openmixer_plugin.h` can run. Most effects, instruments and utilities that users own ship as CLAP, VST3 or AU, so a user cannot bring "their" reverb into OpenMixer.

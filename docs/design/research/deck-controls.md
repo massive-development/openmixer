@@ -1,5 +1,7 @@
 # Deck transport and performance controls: research and spec
 
+Update (2026-11-07): the "gpui 0.2.2" feasibility notes in section 4 predate the move to `gpui-pre` 0.3.10 with `gpui-kit` 0.8.1; recheck them against the current source.
+
 Scope: conventions only (ADR 0001, Lotus v. Borland). No names, art, layouts or text copied from any product. Web search returned mostly manuals and hardware guides; where a point is unconfirmed it says so.
 
 ## 1. Findings

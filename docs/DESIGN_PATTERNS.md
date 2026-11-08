@@ -364,6 +364,18 @@ pub trait AudioCallback: Send {
 - **Latest-wins flags beside the ring:** a lost command must not strand a voice. `held[pad]` (set before a trigger is queued, cleared before a release) is polled each block to end gate voices. Loop pads latch (second trigger stops); release never ends a loop.
 - **Notes:** `Arc` clones on trigger are an atomic increment, not an allocation. Voices that must outlive a stolen or replaced slot get spare slots so a fade-out never needs the slot of the voice that replaces it.
 
+### Audio-thread tap with an off-thread worker (recorder, loudness)
+- **Where:** `om-engine/src/recorder/` (`RecorderTap`, `RecorderControl`) and `om-engine/src/loudness/` (`LoudnessTap`, `LoudnessControl`); both are created as a `(tap, control)` pair and the tap lives in `DjEngineAudio`.
+- **Why:** measuring or writing the master output needs allocation, files or heavy maths that the audio thread may not do. The tap copies each master block into a preallocated `rtrb` ring behind an atomic enable flag; a worker thread owned by the control side drains it. A full ring drops frames and counts them (`dropped_frames`); the audio thread never blocks.
+- **Reuse when:** a feature has to observe the audio the callback produces (meters, recording, analysis of the live output) without touching the render path's real-time rules.
+- **Notes:** off by default (one relaxed load per block, no thread until `enable()`); results come back through atomics (`LoudnessControl::reading`) or a status call, never a lock the callback takes. `assert_no_alloc` tests cover the tap (`om-engine/tests/loudness_alloc.rs`, the recorder tests).
+
+### Theme bridge to a component library (`theme_bridge`)
+- **Where:** `om-ui-gpui/src/theme_bridge.rs` (`apply`).
+- **Why:** `gpui-component` draws its own buttons, inputs, tables, tabs, dialogs and toasts from its `Theme`. The bridge maps om-ui's `ThemeTokens` (and the derived `LookAndFeel` styles) onto that theme, so the tokens stay the single source of colour and a theme switch re-skins both our painted controls and the library's widgets.
+- **Reuse when:** adopting a third-party widget library: map roles to tokens in one adapter and add no colours there (`tests/style_lint.rs` keeps raw colour calls out of views).
+- **Notes:** runs at start-up and on every theme change, on the window thread. Custom-painted controls (knobs, faders, meters, waveform) do not go through it.
+
 ## Idioms and their Rust equivalents
 
 What the code uses in place of common object-oriented patterns.

@@ -13,6 +13,14 @@ Superseded in part (2026-10-27): the stack table and consequences below are the 
 - **Not in the tree:** `criterion`, `arc-swap`, `anyhow` and a `cargo audit` run. `proptest` is used in `om-core`, `om-library` and `om-automix`.
 - **CI:** Linux only, not cross-platform from the first crate; macOS and Windows return in the porting phase (`.github/workflows/rust.yml`).
 
+Update (2026-11-07), after the platform refresh (details in `docs/spikes/DECISIONS.md`):
+
+- **GPUI:** `gpui =0.2.2` is replaced by `gpui-pre` 0.3.10 (imported as `gpui`) with `gpui-kit` 0.8.1 and `gpui-component`; the toolchain and MSRV are Rust 1.95. The app chrome is built on `gpui-component`; knobs, faders, meters and waveforms stay custom-painted.
+- **MIDI:** `midir` is used again: `MidirBackend` in `om-midi` replaced the direct ALSA backend (#220).
+- **Plugins:** CLAP hosting through `clack` is accepted in ADR 0007 and built behind the `clap` feature of `om-plugins`.
+- **Unsafe:** the `om-stretch` crate is no longer the only `unsafe` site; the policy is per-module exceptions with a leak check (`CONTRIBUTING.md`).
+- **Also adopted:** `rubato`, `ebur128`, `souvlaki`, `walkdir`, `bytemuck`, `divan` (benches).
+
 ## Context
 
 ADR 0002 chose JUCE 8.x (C++) as the application framework. The product is a

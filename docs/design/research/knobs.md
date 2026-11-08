@@ -2,6 +2,8 @@
 
 Status: research, no code changed. Clean-room (ADR 0001): conventions only; every glyph below is drawn by us.
 
+Update (2026-11-07): the "gpui 0.2.2" API notes below were checked against the old dependency. The workspace is now on `gpui-pre` 0.3.10 (imported as `gpui`) with `gpui-kit` 0.8.1; the knobs are built (`om-ui-gpui::knob_paint`, `controls::knob`), so recheck any API claim against the current source before relying on it.
+
 ## 1. Findings
 
 **Sourcing caveat.** Interaction behaviour is sourced below. Pixel sizes, sweep angles and stroke widths are not published by any vendor; they are convention from common practice and should be treated as our design choices to tune by eye.
