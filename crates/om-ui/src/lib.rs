@@ -2,7 +2,8 @@
 
 //! UI logic for OpenMixer, without a windowing toolkit: themes, value formatting, waveform and
 //! meter geometry, and the view-model state of the deck and mixer widgets. Every widget reads the
-//! engine and writes through the string-id control surface, so it can be driven and tested headless.
+//! engine's pulled snapshot and writes typed commands through the control surface (the string
+//! façade stays for MIDI and plugins), so it can be driven and tested headless.
 //! The gpui front end renders these models.
 
 pub mod artwork_binding;

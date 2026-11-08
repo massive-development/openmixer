@@ -25,8 +25,9 @@ tracing.workspace = true
 cpal = { version = "0.18", features = ["realtime"] }
 
 [features]
-# Linux: promote through rtkit over D-Bus. Off by default because it builds libdbus (needs
-# `libdbus-1-dev`); without it cpal's Linux promotion is a no-op. Build with `--features realtime-dbus`.
+# Linux: promote through rtkit over D-Bus. Off by default in this crate because it builds libdbus
+# (needs `libdbus-1-dev`); without it cpal's Linux promotion is a no-op. The `openmixer` binary turns it
+# on by default through its own `realtime-dbus` feature.
 realtime-dbus = ["cpal/realtime-dbus"]
 
 [dev-dependencies]

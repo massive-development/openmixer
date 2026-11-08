@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! GPUI window layer for OpenMixer. Drawing and event glue only; UI logic lives in `om-ui`.
+//! GPUI window layer for OpenMixer. Drawing and event glue only; UI logic lives in `om-ui`. Built on
+//! `gpui-pre` (imported as `gpui`) and `gpui-kit`; standard widgets come from `gpui-component`,
+//! themed by `theme_bridge`, and knobs, faders, meters and waveforms are painted here.
 
 pub mod app;
 pub mod automix_bar;

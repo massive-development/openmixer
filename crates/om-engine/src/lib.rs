@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Audio-thread engine: FX rack, insert chains, mixer, decks, sync, sampler, recorder and output
-//! routing. The device layer is in `om-audio`. Nothing here allocates, locks or does I/O in
+//! Audio-thread engine: FX rack, insert chains, mixer, decks (rubato varispeed, Rubber Band key-lock),
+//! sync, sampler, recorder, EBU R128 loudness meter and output routing. The device layer is in
+//! `om-audio`. Nothing here allocates, locks or does I/O in
 //! `process` paths; buffers are sized in `prepare`.
 
 #[cfg(all(test, debug_assertions))]

@@ -2,16 +2,18 @@
 
 Date: 2026-10-18. Source documents: `docs/spikes/gpui.md`, `docs/spikes/cpal.md`, `docs/spikes/stretch.md` (read those for method, caveats and raw numbers). This record claims nothing they do not support. All spike code is throwaway and lives in `spikes/`. The GPUI and stretch spikes played no audio. Early cpal runs (5 s and 60 s on WSL) were audible: a 440 Hz tone at gain 0.5, before the silent-only rule. Everything since is silent by default; an audible tone is opt-in (`OPENMIXER_AUDIBLE=1`, gain at most 0.05) and user-run only.
 
-**Status: the engine, analysis, library, MIDI and plugins are verified headlessly on Linux, and the GPUI app runs on Linux. The UI (Wave 5) is partial, and the GPUI window has never been viewed by eye. Windows and macOS support is later. Next: the Before-Wave-7 list in `TODO.md`, then Wave 7.**
+**Status (updated 2026-11-07): the engine, analysis, library, MIDI and plugins are verified headlessly on Linux, and the GPUI app runs on Linux. The UI (Wave 5) is partial: staged screenshots were checked by eye, a live window on a real display was not. The platform refresh (sections from "P0 spike" on) is built and tested headless and not yet confirmed on hardware (`docs/testing/hardware-checklist.md`). Windows and macOS support is later. Next: the Before-Wave-7 list in `TODO.md`, then Wave 7.**
+
+The dated sections below are records. Where a later decision replaced one, a line marked Update points to the newer section: the GPUI dependency (now `gpui-pre` 0.3.10 with `gpui-kit` 0.8.1), the MIDI backend (now `midir`), the unsafe policy, CI platforms and deck varispeed.
 
 ## Linux first
 
 Decided by the user, with the time-stretch choice made by the author.
 
-- **Scope.** Linux only for now. Windows and macOS support comes later. CI keeps building and testing the Rust workspace on Linux, macOS and Windows so portability does not rot, but no Windows or macOS spike run, device run or listening test is a gate for now.
-- **GPUI gate: closed on Linux.** `gpui =0.2.2` ran on WSL2 X11 (Spike A). The only remaining Linux check is a native-Linux run on a real GPU: nice-to-have, not blocking. The fallback toolkit (iced, then Slint) stays only for a Linux failure. Windows and macOS GPUI checks come with Windows and macOS support.
+- **Scope.** Linux only for now. Windows and macOS support comes later. CI keeps building and testing the Rust workspace on Linux, macOS and Windows so portability does not rot, but no Windows or macOS spike run, device run or listening test is a gate for now. (Update 2026-10-27: CI is Linux only; see "CI status by platform".)
+- **GPUI gate: closed on Linux.** `gpui =0.2.2` ran on WSL2 X11 (Spike A). The only remaining Linux check is a native-Linux run on a real GPU: nice-to-have, not blocking. The fallback toolkit (iced, then Slint) stays only for a Linux failure. Windows and macOS GPUI checks come with Windows and macOS support. (Update 2026-11-07: the dependency is now `gpui-pre` 0.3.10 imported as `gpui` with `gpui-kit` 0.8.1 and `gpui-component`, on Rust 1.95; see "P0 spike: gpui-kit with cpal and midir (#218)" and "P5" below.)
 - **Real-device audio: Linux (ALSA/PipeWire) only for now.** Windows WASAPI and macOS CoreAudio come later. The headphone-cue second-stream failure on WSLg stays recorded as an open Linux item, to verify on native Linux with a real device.
-- **Time-stretch: decided (author call; the user may revisit by ear).** Rubber Band R3 via FFI in a dedicated `om-stretch` crate, the one crate allowed `unsafe`, behind a small `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Rationale: reference quality; GPL-2.0-or-later is AGPLv3-compatible and design-accepted; it was used by the earlier C++ build; stereo CPU is 4.9-5.6% of a core per deck on WSL wall-clock, which is marginal and is to be re-measured in the real engine. The `GPL-2.0-or-later` allow-entry in `deny.toml` is enabled (om-stretch has landed; the reason is recorded in `deny.toml`). The Windows and macOS build cost of the FFI route is a concern for that later work.
+- **Time-stretch: decided (author call; the user may revisit by ear).** Rubber Band R3 via FFI in a dedicated `om-stretch` crate, the one crate allowed `unsafe` (Update 2026-11-07: the policy is now per-module exceptions with a leak check, see `CONTRIBUTING.md`; `om-stretch` keeps its `unsafe` in `ffi.rs`), behind a small `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Rationale: reference quality; GPL-2.0-or-later is AGPLv3-compatible and design-accepted; it was used by the earlier C++ build; stereo CPU is 4.9-5.6% of a core per deck on WSL wall-clock, which is marginal and is to be re-measured in the real engine. The `GPL-2.0-or-later` allow-entry in `deny.toml` is enabled (om-stretch has landed; the reason is recorded in `deny.toml`). The Windows and macOS build cost of the FFI route is a concern for that later work.
 - **General rule.** For well-established crates (cpal, symphonia, rusqlite, midir and similar), adopt directly. Reserve spikes for genuine unknowns.
 
 ## Summary
@@ -24,7 +26,7 @@ Decided by the user, with the time-stretch choice made by the author.
 
 ## Spike A: GPUI window (go/no-go gate)
 
-- GPUI is available on crates.io as `gpui` 0.2.2 (Apache-2.0). It is pinned with `gpui = "=0.2.2"`; no Zed git pin is needed, which supersedes the earlier design note that found no authoritative crates.io status.
+- (Update 2026-11-07: `spikes/gpui-window` now builds `gpui-kit` with `cpal` and `midir`, see the #218 section; the notes below describe the 2026-10-18 run on `gpui` 0.2.2.) GPUI is available on crates.io as `gpui` 0.2.2 (Apache-2.0). It is pinned with `gpui = "=0.2.2"`; no Zed git pin is needed, which supersedes the earlier design note that found no authoritative crates.io status.
 - WSL2 X11: runs at 60.0 fps in release (30.0 fps debug, not understood), about 114% CPU. The window was not visually seen (non-interactive session). `vulkaninfo` was not installed. There is no `dzn` ICD and no `/dev/dri`, so the device is most likely llvmpipe (software), unconfirmed.
 - WSL2 Wayland (WSLg): panic `UnsupportedVersion` in GPUI's Wayland client; `WAYLAND_DISPLAY=` forces X11. Per the design this is a dev-loop issue and does not fail the gate on its own.
 - Build friction: a fresh dependency resolve breaks (`libc` 0.2.191 vs `xattr`); the committed `Cargo.lock` pins `libc` 0.2.188. Needs `libxkbcommon-x11-dev` on Linux. Budget for dependency churn.
@@ -73,7 +75,7 @@ This writes about 42 WAVs (2 originals plus 40 stretched) and `results.md` into 
 
 | Area | Decision | Status |
 |---|---|---|
-| UI toolkit | `gpui =0.2.2` from crates.io, no Zed git pin. Fallback only on a Linux NO-GO: iced, then Slint | Gate CLOSED on Linux (WSL2 X11 ran; native-Linux GPU run optional). Windows and macOS checks come later |
+| UI toolkit | `gpui =0.2.2` from crates.io, no Zed git pin. Fallback only on a Linux NO-GO: iced, then Slint | Gate CLOSED on Linux (WSL2 X11 ran; native-Linux GPU run optional). Windows and macOS checks come later. Update 2026-11-07: now `gpui-pre` 0.3.10 and `gpui-kit` 0.8.1 (#218, #219) |
 | Audio I/O | cpal for the engine output callback (rationale corrected above). rodio is acceptable for library preview | Chosen. Linux (ALSA/PipeWire) real-device numbers and the headphone-cue second stream are open Linux items; Windows (WASAPI) and macOS (CoreAudio) come later |
 | Time-stretch | Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait | DECIDED (author call; the user may revisit by ear). Crate has landed (`om-stretch`) |
 | `deny.toml` | The `GPL-2.0-or-later` entry is enabled (Rubber Band R3 in `om-stretch`; the reason is in `deny.toml`) | Enabled. It was commented out until `om-stretch` landed |
@@ -212,7 +214,7 @@ Date: 2026-11-06. Code: `spikes/gpui-window` (own workspace, throwaway).
 
 ## P3: rubato for offline resampling; deck varispeed stays linear (#221)
 
-Date: 2026-11-06. rubato 5.0.1 (`audioadapter-buffers` for its buffers); `om-stretch` stays for key lock.
+Date: 2026-11-06. Update 2026-11-07: deck varispeed was switched to rubato in #241 (default sinc 128, linear fallback); see "Deck varispeed through rubato" below. rubato 5.0.1 (`audioadapter-buffers` for its buffers); `om-stretch` stays for key lock.
 
 - **Done.** `om-stems` `StreamResampler` and the sampler's `Sample::load` resample now use rubato's synchronous `Fft` resampler (a fixed ratio is its case). Both are offline, so this removes two hand-written sinc kernels and keeps behaviour: exact output length, any chunking gives identical output. `om_engine::resample::fft_resampler` builds it. rubato reports its delay as `fft_size_out / 2` rounded down, so an odd output block leaves a half-frame error after trimming (96 kHz to 44.1 kHz gave a 7% sine error); the helper picks an even block. Rates are whole Hz (container and model rates are); a fractional rate is rounded.
 - **`set_resample_ratio` does not allocate** (read in rubato's `asynchro.rs`: it checks bounds, stores the ratio and recomputes two lengths; the out-of-bounds error carries plain numbers). Proven under `assert_no_alloc` in `om-engine` (`rubato_eval.rs`), with ramped and unramped changes and a rejected ratio, for both sinc and polynomial `Async`. `process_into_buffer` allocates nothing either. `StreamResampler::push` and `finish` are proven in `om-stems/tests/resample_alloc.rs`.
@@ -259,7 +261,8 @@ Date: 2026-11-06. cpal 0.18.2 with `audio_thread_priority` 0.35 (cpal's own depe
 
 - **Callback thread only.** cpal promotes the thread that runs the audio callback and reports a refusal on the stream's error callback, which `om-audio` logs and counts; the stream keeps playing at normal priority (fail soft). The callback code is not touched.
 - **Deck decoder workers are not promoted.** They read and decode files, which blocks and can burn CPU for long stretches. On Linux the promotion sets `RLIMIT_RTTIME` to the burst budget, and passing it raises `SIGXCPU`, which ends the process. A decoder has no safe budget, so it stays at normal priority.
-- **Linux needs D-Bus.** `audio_thread_priority` is a no-op on Linux without its D-Bus (rtkit) path. That path builds `libdbus`, so it is the `om-audio` feature `realtime-dbus`, off by default, and `libdbus-1-dev` is not a build requirement. Linux builds therefore run the callback at normal priority unless they enable the feature. Windows enables cpal's plain `realtime` feature (no system library). Whether `openmixer` should forward `realtime-dbus` is open: it is a packaging choice, and the GPUI tree avoids system libdbus by using `zbus`.
+- **Linux needs D-Bus.** `audio_thread_priority` is a no-op on Linux without its D-Bus (rtkit) path. That path builds `libdbus`, so it is the `om-audio` feature `realtime-dbus`, off by default, and `libdbus-1-dev` is not a build requirement. Linux builds therefore run the callback at normal priority unless they enable the feature. Windows enables cpal's plain `realtime` feature (no system library). Whether `openmixer` should forward `realtime-dbus` was open: it is a packaging choice, and the GPUI tree avoids system libdbus by using `zbus`.
+- **Update (2026-11-07).** The owner decided to forward it: `openmixer` has a `realtime-dbus` feature (`om-audio/realtime-dbus`) that is in `default`, so Linux builds now need `libdbus-1-dev` (CI installs it) and run the callback at real-time priority when rtkit grants it. `--no-default-features` builds without libdbus. The statements above about "off by default" describe `om-audio` alone.
 
 ## P10: desktop integration (#229)
 
