@@ -207,3 +207,24 @@ fn unloading_the_plugin_with_a_live_stage_is_safe() {
     drop(chain);
     drop(point);
 }
+
+#[test]
+fn the_reported_latency_follows_a_change_the_plugin_signals() {
+    let rig = rig(&fixture(Some("change-latency")), 48_000.0, 256);
+    assert_eq!(rig.state.sample_rate(), 48_000);
+    // The plugin switches from 16 to 64 frames on its control thread after activation and tells
+    // the host; the stage state follows (display only, no compensation).
+    let start = std::time::Instant::now();
+    while rig.state.latency_frames() != 64 {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "latency stayed at {}",
+            rig.state.latency_frames()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let report = rig._plugin.latency().expect("a report once active");
+    assert_eq!((report.frames, report.sample_rate), (64, 48_000));
+    drop(rig.chain);
+    rig.insert.reclaim();
+}

@@ -20,6 +20,7 @@ pub mod demo_scene;
 pub mod engine_state;
 pub mod library_smoke;
 pub mod midi;
+pub mod plugin_state;
 pub mod plugins;
 pub mod record_service;
 pub mod sampler_demo;

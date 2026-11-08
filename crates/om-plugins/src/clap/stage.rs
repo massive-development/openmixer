@@ -75,6 +75,7 @@ impl ClapStage {
                 self.state.clear_fault();
                 if let Some(frames) = worker.call(probe::read_latency) {
                     self.state.set_latency(frames);
+                    self.state.set_sample_rate(sample_rate);
                 }
             }
             Some(Err(error)) => {

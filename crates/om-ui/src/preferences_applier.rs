@@ -7,10 +7,13 @@
 //! The targets are passed to [`PreferencesApplier::apply`] instead of
 //! being held by the applier, so the owner keeps one `&mut` to the targets.
 
-use crate::preferences::{AudioPrefs, MidiPrefs, Preferences};
+use crate::preferences::{AudioPrefs, MidiPrefs, PluginPrefs, Preferences};
 use std::path::Path;
 
 pub trait PreferencesTargets {
+    /// The plugin consent (CLAP scan and first-load warning). Pushed before the folder, so the load
+    /// that follows already knows what it may do. Does nothing by default.
+    fn apply_plugin_policy(&mut self, _plugins: &PluginPrefs) {}
     /// Loads plugins from `folder` and forwards their themes to the registry.
     fn apply_plugin_folder(&mut self, folder: &Path);
     /// `false` when the theme is unknown (the current one is kept).
@@ -39,8 +42,12 @@ impl PreferencesApplier {
         let first = self.applied.is_none();
         let old = self.applied.as_ref().unwrap_or(prefs);
 
+        let policy_changed = first || old.plugins != prefs.plugins;
+        if policy_changed {
+            targets.apply_plugin_policy(&prefs.plugins);
+        }
         let plugins_changed =
-            first || old.effective_plugin_folder() != prefs.effective_plugin_folder();
+            policy_changed || old.effective_plugin_folder() != prefs.effective_plugin_folder();
         if plugins_changed {
             targets.apply_plugin_folder(&prefs.effective_plugin_folder());
             pushed += 1;
@@ -86,6 +93,7 @@ mod tests {
                 scan_interval_minutes: 15,
             },
             plugin_folder: "/opt/openmixer/plugins".into(),
+            plugins: Default::default(),
             stems: Default::default(),
             automix: Default::default(),
             record: Default::default(),
@@ -95,9 +103,19 @@ mod tests {
     #[derive(Default)]
     struct MockTargets {
         calls: Vec<String>,
+        /// The consent pushes, kept apart so the order checks above stay about the sections.
+        policies: Vec<(bool, bool, usize)>,
     }
 
     impl PreferencesTargets for MockTargets {
+        fn apply_plugin_policy(&mut self, p: &PluginPrefs) {
+            // The last field is how many section pushes came before: 0 means "before the folder".
+            self.policies.push((
+                p.scan_standard_folders(),
+                p.clap_warning_accepted,
+                self.calls.len(),
+            ));
+        }
         fn apply_plugin_folder(&mut self, folder: &Path) {
             self.calls.push(format!("plugins:{}", folder.display()));
         }
@@ -184,6 +202,37 @@ mod tests {
             targets.calls.join(";"),
             "plugins:/elsewhere;theme:openmixer.daylight"
         );
+    }
+
+    #[test]
+    fn plugin_consent_is_pushed_before_the_folder_and_reloads_it_when_it_changes() {
+        let mut targets = MockTargets::default();
+        let mut applier = PreferencesApplier::new();
+        let mut p = customised();
+        applier.apply(&mut targets, &p);
+        assert_eq!(targets.policies, vec![(false, false, 0)]);
+
+        // Unrelated changes do not push the consent again.
+        p.audio.cue_pair = 1;
+        applier.apply(&mut targets, &p);
+        assert_eq!(targets.policies.len(), 1);
+
+        // Allowing the standard folders pushes it first, then loads the folder again.
+        targets.calls.clear();
+        p.plugins.clap_scan = crate::preferences::ClapScan::Allowed;
+        applier.apply(&mut targets, &p);
+        assert_eq!(targets.policies.last(), Some(&(true, false, 0)));
+        assert_eq!(
+            targets.calls.join(";"),
+            "plugins:/opt/openmixer/plugins;theme:openmixer.daylight"
+        );
+
+        // Accepting the warning does the same.
+        targets.calls.clear();
+        p.plugins.clap_warning_accepted = true;
+        applier.apply(&mut targets, &p);
+        assert_eq!(targets.policies.last(), Some(&(true, true, 0)));
+        assert!(targets.calls[0].starts_with("plugins:"));
     }
 
     #[test]

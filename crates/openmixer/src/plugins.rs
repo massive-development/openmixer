@@ -8,7 +8,7 @@ use crate::composition::AppComposition;
 use gain_plugin::GainPlugin;
 use om_plugins::{Plugin, PluginRegistry};
 use om_ui::settings::SettingsError;
-use om_ui::settings::{PluginHost, PluginParam, SettingsResult};
+use om_ui::settings::{PluginHost, PluginLatency, PluginParam, SettingsResult};
 #[cfg(feature = "clap")]
 use om_ui::settings::{PluginSession, PluginWindow, PluginWindowMode};
 use om_ui::theme::{Source, ThemeRegistry};
@@ -94,6 +94,15 @@ impl PluginHost for PluginsPage {
         PluginHost::plugin_parameters(&*self.0.borrow(), id)
     }
 
+    fn plugin_latency(&self, id: &str) -> Option<PluginLatency> {
+        PluginHost::plugin_latency(&*self.0.borrow(), id)
+    }
+
+    #[cfg(feature = "clap")]
+    fn clap_status(&self) -> om_ui::settings::ClapStatus {
+        PluginHost::clap_status(&*self.0.borrow())
+    }
+
     #[cfg(feature = "clap")]
     fn plugin_window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
         PluginHost::plugin_window(&*self.0.borrow(), id)
@@ -109,11 +118,27 @@ impl PluginSink for PluginRegistry {
         PluginRegistry::unload_all(self);
     }
 
+    #[cfg(feature = "clap")]
+    fn set_policy(&mut self, plugins: &om_ui::preferences::PluginPrefs) {
+        self.set_clap_policy(
+            plugins.scan_standard_folders(),
+            plugins.clap_warning_accepted,
+        );
+    }
+
     /// Loads the shared libraries in `folder` (C-ABI plugins, see `om_plugins::PluginLoader`) and
     /// the built-in plugins. A library that fails to load is reported in the errors.
     fn load_folder(&mut self, folder: &Path) -> PluginLoad {
         let mut errors = Vec::new();
-        let loaded = self.load_directory(folder, &mut errors);
+        #[allow(unused_mut)]
+        let mut loaded = self.load_directory(folder, &mut errors);
+        // `.clap` files in the folder (and the standard folders, if the user allowed them). Listed
+        // always; opened only after the first-load warning was accepted.
+        #[cfg(feature = "clap")]
+        {
+            let home = dirs::home_dir();
+            loaded += self.load_clap_folders(folder, home.as_deref(), &mut errors);
+        }
         PluginLoad {
             loaded,
             errors,
@@ -237,8 +262,36 @@ impl PluginHost for AppComposition {
         if !self.plugins.unload(id) {
             return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
         }
+        self.persist_plugin_states();
         self.refresh_plugin_themes();
         Ok(())
+    }
+
+    fn plugin_latency(&self, id: &str) -> Option<PluginLatency> {
+        let report = self.plugins.plugin_latency(id)?;
+        Some(PluginLatency {
+            frames: report.frames,
+            sample_rate: report.sample_rate,
+        })
+    }
+
+    #[cfg(feature = "clap")]
+    fn clap_status(&self) -> om_ui::settings::ClapStatus {
+        let home = dirs::home_dir();
+        om_ui::settings::ClapStatus {
+            supported: true,
+            standard_folders: om_plugins::clap::ClapSearch::standard_paths(home.as_deref())
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            files: self
+                .plugins
+                .clap_files_found()
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            waiting: self.plugins.clap_files_waiting().len(),
+        }
     }
 
     #[cfg(feature = "clap")]
@@ -390,6 +443,43 @@ mod tests {
         assert!(loaded.themes.is_empty());
     }
 
+    /// `.clap` files are listed by the folder load and opened only after the first-load warning was
+    /// accepted (a broken file shows up as an error exactly when it is opened).
+    #[cfg(feature = "clap")]
+    #[test]
+    fn clap_files_in_the_plugin_folder_wait_for_the_warning_then_load() {
+        use om_ui::preferences::{ClapScan, PluginPrefs};
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join("broken.clap"), "x").expect("write");
+        let mut app = composition();
+
+        let load = PluginSink::load_folder(&mut app.plugins, dir.path());
+        assert_eq!(
+            (load.loaded, load.errors.len()),
+            (0, 0),
+            "{:?}",
+            load.errors
+        );
+        let status = PluginHost::clap_status(&app);
+        assert!(status.supported);
+        assert_eq!(status.files.len(), 1);
+        assert!(status.files[0].ends_with("broken.clap"));
+        assert_eq!(status.waiting, 1);
+        assert!(!status.standard_folders.is_empty());
+
+        PluginSink::set_policy(
+            &mut app.plugins,
+            &PluginPrefs {
+                clap_scan: ClapScan::Declined,
+                clap_warning_accepted: true,
+            },
+        );
+        let load = PluginSink::load_folder(&mut app.plugins, dir.path());
+        assert_eq!(load.errors.len(), 1, "opened now: {:?}", load.errors);
+        assert!(load.errors[0].contains("broken.clap"));
+        assert_eq!(PluginHost::clap_status(&app).waiting, 0);
+    }
+
     #[test]
     fn plugin_themes_reach_the_theme_registry_as_plugin_source() {
         let mut app = composition();
@@ -408,6 +498,54 @@ mod tests {
         let entry = app.themes.find("demo.theme").expect("forwarded");
         assert_eq!(entry.source, Source::Plugin);
         assert_eq!(entry.owner, ID);
+    }
+
+    /// A plugin with state: one counter, saved as its bytes.
+    struct Stateful(std::sync::Mutex<u8>);
+
+    impl Plugin for Stateful {
+        fn info(&self) -> PluginInfo {
+            PluginInfo {
+                id: "test.stateful".into(),
+                name: "Stateful".into(),
+                version: "1".into(),
+            }
+        }
+
+        fn on_load(&mut self, _host: &mut dyn om_plugins::PluginHost) {}
+
+        fn save_state(&self) -> Result<Option<Vec<u8>>, om_plugins::PluginError> {
+            Ok(Some(vec![*self.0.lock().unwrap()]))
+        }
+
+        fn restore_state(&self, state: &[u8]) -> Result<(), om_plugins::PluginError> {
+            *self.0.lock().unwrap() = state.first().copied().unwrap_or(0);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn plugin_state_is_saved_on_unload_and_restored_in_the_next_session() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let prefs = dir.path().join("prefs.json");
+        let mut first = AppComposition::new(&prefs, None);
+        first
+            .plugins
+            .add_plugin(Box::new(Stateful(std::sync::Mutex::new(7))))
+            .expect("loads");
+        PluginHost::unload(&mut first, "test.stateful").expect("unloads");
+        let file = dir.path().join("plugin-state.json");
+        assert!(
+            file.is_file(),
+            "unloading wrote the state beside the preferences"
+        );
+        drop(first);
+
+        let mut second = AppComposition::new(&prefs, None);
+        let plugin = Stateful(std::sync::Mutex::new(0));
+        second.plugins.add_plugin(Box::new(plugin)).expect("loads");
+        let states = second.plugins.plugin_states();
+        assert_eq!(states.get("test.stateful"), Some(&vec![7]));
     }
 
     #[test]

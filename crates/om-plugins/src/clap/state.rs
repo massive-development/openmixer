@@ -2,6 +2,7 @@
 //! the cost of its `process` calls. Atomics only, written from the audio thread.
 
 use super::gui::PluginGui;
+use super::worker::WorkerHandle;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -49,9 +50,11 @@ impl Fault {
 pub struct StageState {
     fault: AtomicU8,
     latency: AtomicU32,
+    rate: AtomicU32,
     last_ns: AtomicU64,
     max_ns: AtomicU64,
     gui: OnceLock<PluginGui>,
+    worker: OnceLock<WorkerHandle>,
 }
 
 impl StageState {
@@ -60,9 +63,18 @@ impl StageState {
         Fault::from_code(self.fault.load(Ordering::Acquire))
     }
 
-    /// Plugin latency in frames, read at activation.
+    /// Plugin latency in frames: read at activation and again whenever the plugin signals a
+    /// change. Reported for display only; the engine does not compensate for it (ADR 0007).
     pub fn latency_frames(&self) -> u32 {
-        self.latency.load(Ordering::Relaxed)
+        match self.worker.get() {
+            Some(worker) => worker.signals.latency.load(Ordering::Relaxed),
+            None => self.latency.load(Ordering::Relaxed),
+        }
+    }
+
+    /// The sample rate the stage was last activated at, 0 before the first activation.
+    pub fn sample_rate(&self) -> u32 {
+        self.rate.load(Ordering::Relaxed)
     }
 
     /// Wall time of the last `process` call (all chunks of one engine block).
@@ -84,6 +96,15 @@ impl StageState {
         let _ = self.gui.set(gui);
     }
 
+    /// The control thread of this stage's instance, for state save and restore.
+    pub(super) fn worker(&self) -> Option<WorkerHandle> {
+        self.worker.get().cloned()
+    }
+
+    pub(super) fn set_worker(&self, worker: WorkerHandle) {
+        let _ = self.worker.set(worker);
+    }
+
     pub(super) fn set_fault(&self, fault: Fault) {
         self.fault.store(fault.code(), Ordering::Release);
     }
@@ -94,6 +115,10 @@ impl StageState {
 
     pub(super) fn set_latency(&self, frames: u32) {
         self.latency.store(frames, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_sample_rate(&self, rate: f64) {
+        self.rate.store(rate.round() as u32, Ordering::Relaxed);
     }
 
     pub(super) fn record_cost(&self, elapsed: Duration) {

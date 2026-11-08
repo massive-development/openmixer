@@ -16,6 +16,8 @@ use om_core::{ParameterRouter, ParameterTarget};
 use om_midi::{MidiMap, MidiMapper};
 use std::collections::BTreeMap;
 use std::path::Path;
+#[cfg(feature = "clap")]
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// A theme a plugin provided, ready for the UI registry. `owner` is the plugin id.
@@ -60,6 +62,19 @@ pub struct PluginRegistry {
     /// The user accepted the first-load warning for third-party CLAP plugins.
     #[cfg(feature = "clap")]
     clap_acknowledged: bool,
+    /// The user allowed scanning the standard CLAP folders (the first-run prompt).
+    #[cfg(feature = "clap")]
+    clap_scan_standard: bool,
+    /// The `.clap` files the last folder load found, and those of them not loaded for want of the
+    /// first-load acceptance.
+    #[cfg(feature = "clap")]
+    clap_found: Vec<PathBuf>,
+    #[cfg(feature = "clap")]
+    clap_waiting: Vec<PathBuf>,
+    /// Saved plugin state by plugin id: handed to a plugin when it loads, refreshed when it unloads.
+    saved_states: BTreeMap<String, Vec<u8>>,
+    /// Why a state could not be saved or restored, until [`PluginRegistry::take_state_errors`].
+    state_errors: Vec<String>,
 }
 
 /// The host side of one `on_load` call. Exists only for the duration of the call.
@@ -195,6 +210,11 @@ impl PluginRegistry {
             owner: &info.id,
             regs: &mut self.regs,
         });
+        if let Some(bytes) = self.saved_states.get(&info.id) {
+            if let Err(error) = plugin.restore_state(bytes) {
+                self.state_errors.push(error.to_string());
+            }
+        }
         self.entries.push(Entry {
             id: info.id,
             plugin,
@@ -218,6 +238,58 @@ impl PluginRegistry {
     #[cfg(feature = "clap")]
     pub fn clap_warning_acknowledged(&self) -> bool {
         self.clap_acknowledged
+    }
+
+    /// Sets what the user agreed to: scanning the standard CLAP folders (first-run prompt) and the
+    /// first-load warning. Takes effect on the next [`Self::load_clap_folders`]; a withdrawn
+    /// acceptance does not unload what is loaded.
+    #[cfg(feature = "clap")]
+    pub fn set_clap_policy(&mut self, scan_standard_folders: bool, warning_accepted: bool) {
+        self.clap_scan_standard = scan_standard_folders;
+        self.clap_acknowledged = warning_accepted;
+    }
+
+    /// Finds the `.clap` files in the plugin folder (and the standard CLAP folders when the user
+    /// allowed them) and loads them, if the first-load warning was accepted. Listing the files runs
+    /// no plugin code; loading does, so before the acceptance the files are only remembered as
+    /// waiting. Failures are appended to `errors`. Returns how many plugins loaded.
+    #[cfg(feature = "clap")]
+    pub fn load_clap_folders(
+        &mut self,
+        folder: &Path,
+        home: Option<&Path>,
+        errors: &mut Vec<String>,
+    ) -> usize {
+        let search = crate::clap::ClapSearch {
+            user_folder: Some(folder.to_owned()),
+            scan_standard_paths: self.clap_scan_standard,
+        };
+        self.clap_found = search.candidates(home);
+        if !self.clap_acknowledged {
+            self.clap_waiting.clone_from(&self.clap_found);
+            return 0;
+        }
+        self.clap_waiting.clear();
+        let mut loaded = 0;
+        for path in self.clap_found.clone() {
+            match self.load_clap(&path, errors) {
+                Ok(count) => loaded += count,
+                Err(error) => errors.push(error.to_string()),
+            }
+        }
+        loaded
+    }
+
+    /// The `.clap` files the last [`Self::load_clap_folders`] found.
+    #[cfg(feature = "clap")]
+    pub fn clap_files_found(&self) -> &[PathBuf] {
+        &self.clap_found
+    }
+
+    /// The found files that were not loaded because the first-load warning is not accepted.
+    #[cfg(feature = "clap")]
+    pub fn clap_files_waiting(&self) -> &[PathBuf] {
+        &self.clap_waiting
     }
 
     /// Loads every plugin in the `.clap` file at `path` and adds it. Refused with
@@ -269,6 +341,14 @@ impl PluginRegistry {
         let Some(index) = self.entries.iter().position(|e| e.id == id) else {
             return false;
         };
+        // Before the stages go: a live instance is where the current state is.
+        match self.entries[index].plugin.save_state() {
+            Ok(Some(bytes)) => {
+                self.saved_states.insert(id.to_owned(), bytes);
+            }
+            Ok(None) => {}
+            Err(error) => self.state_errors.push(error.to_string()),
+        }
         let held = self.regs.remove_owner(id);
         let mut entry = self.entries.remove(index);
         entry.plugin.on_unload();
@@ -285,6 +365,44 @@ impl PluginRegistry {
         }
     }
 
+    /// Sets the states plugins get when they load (read from the app's store). Replaces what was set.
+    pub fn set_saved_states(&mut self, states: BTreeMap<String, Vec<u8>>) {
+        self.saved_states = states;
+    }
+
+    /// Restores `state` into loaded plugin `id` now (live instances included) and keeps it for the
+    /// next load. Fails when the plugin is not loaded or refuses the bytes.
+    pub fn restore_plugin_state(&mut self, id: &str, state: &[u8]) -> Result<(), PluginError> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .ok_or_else(|| PluginError::UnknownStage(id.to_owned()))?;
+        self.saved_states.insert(id.to_owned(), state.to_vec());
+        entry.plugin.restore_state(state)
+    }
+
+    /// The state of every plugin that has one: loaded plugins as they are now, unloaded ones as they
+    /// were when they unloaded (or as they were set). Control thread.
+    pub fn plugin_states(&mut self) -> BTreeMap<String, Vec<u8>> {
+        let mut states = self.saved_states.clone();
+        for entry in &self.entries {
+            match entry.plugin.save_state() {
+                Ok(Some(bytes)) => {
+                    states.insert(entry.id.clone(), bytes);
+                }
+                Ok(None) => {}
+                Err(error) => self.state_errors.push(error.to_string()),
+            }
+        }
+        states
+    }
+
+    /// The reasons states could not be saved or restored since the last call.
+    pub fn take_state_errors(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.state_errors)
+    }
+
     pub fn plugin_ids(&self) -> Vec<String> {
         self.entries.iter().map(|e| e.id.clone()).collect()
     }
@@ -299,6 +417,11 @@ impl PluginRegistry {
     #[cfg(feature = "clap")]
     pub fn clap_gui(&self, id: &str) -> Option<crate::clap::PluginGui> {
         self.find(id)?.clap_gui()
+    }
+
+    /// The latency plugin `id` reports, for display (no delay compensation exists).
+    pub fn plugin_latency(&self, id: &str) -> Option<crate::LatencyReport> {
+        self.find(id)?.latency()
     }
 
     /// Sets parameter `parameter` of plugin `id` through the plugin's own parameter target. False
