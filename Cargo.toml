@@ -18,6 +18,7 @@ members = [
     "examples/plugins/gain-plugin",
     "examples/plugins/gain-plugin-cdylib",
     "examples/plugins/param-plugin-cdylib",
+    "examples/plugins/clap-gain-fixture",
     "crates/openmixer",
 ]
 [workspace.package]
@@ -47,6 +48,10 @@ audioadapter-buffers = "5.1"
 ebur128 = "0.1.11"
 rtrb = "0.4"
 rubato = "5.0.1"
+# CLAP hosting (ADR 0007): exact pins, bumped by hand after reading the changelog.
+clack-host = "=0.2.0"
+clack-extensions = "=0.2.0"
+clack-plugin = "=0.2.0"
 rusqlite = { version = "0.35", features = ["bundled"] }
 serde_json = "1"
 sha2 = "0.10"

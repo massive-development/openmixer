@@ -57,6 +57,9 @@ struct Registrations {
 pub struct PluginRegistry {
     entries: Vec<Entry>,
     regs: Registrations,
+    /// The user accepted the first-load warning for third-party CLAP plugins.
+    #[cfg(feature = "clap")]
+    clap_acknowledged: bool,
 }
 
 /// The host side of one `on_load` call. Exists only for the duration of the call.
@@ -205,6 +208,41 @@ impl PluginRegistry {
         self.add_plugin(plugin)
     }
 
+    /// Records that the user accepted the first-load warning: CLAP plugins run native code in this
+    /// process. Until then [`Self::load_clap`] refuses.
+    #[cfg(feature = "clap")]
+    pub fn acknowledge_clap_warning(&mut self) {
+        self.clap_acknowledged = true;
+    }
+
+    #[cfg(feature = "clap")]
+    pub fn clap_warning_acknowledged(&self) -> bool {
+        self.clap_acknowledged
+    }
+
+    /// Loads every plugin in the `.clap` file at `path` and adds it. Refused with
+    /// [`PluginError::NotAcknowledged`] before the warning is accepted. A plugin the host cannot use
+    /// (other port layout, duplicate id) is appended to `errors` and the rest still load. Returns how
+    /// many loaded.
+    #[cfg(feature = "clap")]
+    pub fn load_clap(
+        &mut self,
+        path: &Path,
+        errors: &mut Vec<String>,
+    ) -> Result<usize, PluginError> {
+        if !self.clap_acknowledged {
+            return Err(PluginError::NotAcknowledged(path.display().to_string()));
+        }
+        let mut loaded = 0;
+        for plugin in crate::clap::ClapLoader::load_all(path)? {
+            match plugin.and_then(|p| self.add_plugin(p)) {
+                Ok(()) => loaded += 1,
+                Err(error) => errors.push(format!("{}: {error}", path.display())),
+            }
+        }
+        Ok(loaded)
+    }
+
     /// Loads every shared library in `dir` and every built-in plugin. Failures are appended to
     /// `errors`. Returns how many plugins loaded.
     pub fn load_directory(&mut self, dir: &Path, errors: &mut Vec<String>) -> usize {
@@ -254,6 +292,23 @@ impl PluginRegistry {
     /// The parameters plugin `id` declares. Empty for an unknown plugin or one without any.
     pub fn plugin_parameters(&self, id: &str) -> Vec<ParameterInfo> {
         self.find(id).map(|p| p.parameters()).unwrap_or_default()
+    }
+
+    /// The window handle of CLAP plugin `id`'s first live stage. `None` for any other plugin or when
+    /// no stage is attached (a stage is what owns the plugin instance).
+    #[cfg(feature = "clap")]
+    pub fn clap_gui(&self, id: &str) -> Option<crate::clap::PluginGui> {
+        self.find(id)?.clap_gui()
+    }
+
+    /// Sets parameter `parameter` of plugin `id` through the plugin's own parameter target. False
+    /// when the plugin is not loaded or refuses the id or value.
+    pub fn set_plugin_parameter(&self, id: &str, parameter: &str, value: f64) -> bool {
+        self.regs
+            .targets
+            .iter()
+            .filter(|t| t.owner == id)
+            .any(|t| t.target.set_parameter(parameter, value))
     }
 
     /// The current value of parameter `parameter` of plugin `id`.

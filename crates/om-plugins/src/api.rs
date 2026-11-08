@@ -69,6 +69,12 @@ pub enum PluginError {
     InvalidLibrary { path: String, reason: String },
     #[error("cannot read {path}: {reason}")]
     Io { path: String, reason: String },
+    /// A CLAP plugin whose audio ports the host cannot use (the first release takes one stereo in and one stereo out).
+    #[error("{plugin}: unsupported audio ports: {reason}")]
+    UnsupportedLayout { plugin: String, reason: String },
+    /// A third-party CLAP library was not loaded because the user has not accepted the first-load warning.
+    #[error("{0}: loading a CLAP plugin runs its native code; accept the warning first")]
+    NotAcknowledged(String),
 }
 
 /// Services the host offers a plugin. Only valid during [`Plugin::on_load`]; the host hands a
@@ -124,4 +130,10 @@ pub trait Plugin: Send {
 
     /// Called after the plugin's registrations are removed and before the plugin is dropped.
     fn on_unload(&mut self) {}
+
+    /// The window handle of the plugin's first live stage, for a CLAP plugin that has one.
+    #[cfg(feature = "clap")]
+    fn clap_gui(&self) -> Option<crate::clap::PluginGui> {
+        None
+    }
 }
