@@ -44,6 +44,12 @@ pub(super) struct WorkerHandle {
     pub signals: Arc<Signals>,
 }
 
+impl std::fmt::Debug for WorkerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WorkerHandle")
+    }
+}
+
 pub(super) struct Worker {
     handle: WorkerHandle,
     join: Option<JoinHandle<()>>,
@@ -191,6 +197,10 @@ impl Ctx {
     fn service(&mut self) {
         if self.signals.callback.swap(false, Ordering::AcqRel) {
             self.instance.call_on_main_thread_callback();
+        }
+        if self.signals.latency_changed.swap(false, Ordering::AcqRel) {
+            // Display only: the engine does no delay compensation (ADR 0007).
+            super::probe::read_latency(self);
         }
         self.run_due_timers();
         super::fds::poll_ready(self);

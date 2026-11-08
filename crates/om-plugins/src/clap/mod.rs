@@ -20,6 +20,7 @@ mod host;
 mod loader;
 mod param_bus;
 mod params;
+mod persist;
 mod plugin;
 mod ports;
 mod probe;

@@ -16,6 +16,31 @@ pub struct PluginParam {
     pub value: f64,
 }
 
+/// The latency a plugin reports, as the Plugins page shows it. Display only: the engine does no
+/// delay compensation (ADR 0007).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginLatency {
+    pub frames: u32,
+    /// The rate the stage runs at; 0 when unknown (then only frames are shown).
+    pub sample_rate: u32,
+}
+
+impl PluginLatency {
+    /// Frames and milliseconds, for example `128 fr / 2.9 ms`.
+    pub fn text(&self) -> String {
+        if self.sample_rate == 0 {
+            return format!("{} fr", self.frames);
+        }
+        let ms = f64::from(self.frames) * 1000.0 / f64::from(self.sample_rate);
+        format!("{} fr / {ms:.1} ms", self.frames)
+    }
+
+    /// The text with its label, for a row or a panel header.
+    pub fn labelled(&self) -> String {
+        format!("Latency {}", self.text())
+    }
+}
+
 /// How many presses take a parameter across its whole range.
 const PANEL_STEPS: f64 = 20.0;
 
@@ -82,6 +107,19 @@ pub trait PluginWindow: Send + Sync {
     fn close(&self);
 }
 
+/// What the plugins page shows about CLAP plugins (ADR 0007). Without CLAP support in the build
+/// `supported` is false and the page and the prompts say nothing about it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClapStatus {
+    pub supported: bool,
+    /// The standard folders a scan would add, for the first-run prompt.
+    pub standard_folders: Vec<String>,
+    /// The `.clap` files found in the folders that are scanned now, as paths.
+    pub files: Vec<String>,
+    /// How many of those wait for the first-load warning to be accepted.
+    pub waiting: usize,
+}
+
 /// What the plugins page needs. The app implements it over `om-plugins` (`openmixer::plugins`).
 pub trait PluginHost {
     fn loaded_plugins(&self) -> Vec<String>;
@@ -99,6 +137,15 @@ pub trait PluginHost {
     /// The parameters of loaded plugin `id` with their current values. Empty when it has none.
     fn plugin_parameters(&self, _id: &str) -> Vec<PluginParam> {
         Vec::new()
+    }
+    /// The latency loaded plugin `id` reports now. `None` when it reports none. Cheap (atomics),
+    /// so the page asks on every draw and follows a latency change.
+    fn plugin_latency(&self, _id: &str) -> Option<PluginLatency> {
+        None
+    }
+    /// CLAP support, the `.clap` files found and how many wait for the first-load warning.
+    fn clap_status(&self) -> ClapStatus {
+        ClapStatus::default()
     }
     /// The own window of loaded plugin `id`, when it has one.
     fn plugin_window(&self, _id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
@@ -146,6 +193,10 @@ impl<'a> PluginsSettingsPage<'a> {
         self.host.unload(id)
     }
 
+    pub fn clap_status(&self) -> ClapStatus {
+        self.host.clap_status()
+    }
+
     pub fn window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
         self.host.plugin_window(id)
     }
@@ -163,6 +214,20 @@ impl<'a> PluginsSettingsPage<'a> {
 mod tests {
     use super::*;
     use crate::preferences::Preferences;
+
+    #[test]
+    fn latency_reads_as_frames_and_milliseconds_at_the_current_rate() {
+        let at = |frames, sample_rate| PluginLatency {
+            frames,
+            sample_rate,
+        };
+        assert_eq!(at(128, 44_100).text(), "128 fr / 2.9 ms");
+        assert_eq!(at(16, 48_000).text(), "16 fr / 0.3 ms");
+        assert_eq!(at(0, 48_000).text(), "0 fr / 0.0 ms");
+        assert_eq!(at(480, 48_000).text(), "480 fr / 10.0 ms");
+        assert_eq!(at(128, 0).text(), "128 fr", "no rate, no milliseconds");
+        assert_eq!(at(128, 44_100).labelled(), "Latency 128 fr / 2.9 ms");
+    }
 
     #[derive(Default)]
     struct Host {

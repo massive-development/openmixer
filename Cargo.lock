@@ -5385,6 +5385,7 @@ dependencies = [
 name = "openmixer"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dirs",
  "gain-plugin",
  "om-analysis",
