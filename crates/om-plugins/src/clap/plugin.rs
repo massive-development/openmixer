@@ -4,11 +4,12 @@ use super::gui::PluginGui;
 use super::loader::ClapPluginInfo;
 use super::param_bus::{ClapTarget, ParamSet};
 use super::params::ClapParam;
+use super::persist;
 use super::ports::StageDescriptor;
 use super::stage::ClapStage;
 use super::state::{Fault, StageState};
 use super::worker::Worker;
-use crate::{ParameterInfo, Plugin, PluginHost, PluginInfo, StageKind};
+use crate::{ParameterInfo, Plugin, PluginError, PluginHost, PluginInfo, StageKind};
 use clack_host::entry::PluginEntry;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex, Weak};
@@ -21,6 +22,9 @@ pub struct ClapPlugin {
     descriptor: StageDescriptor,
     params: Arc<ParamSet>,
     stages: Arc<Mutex<Vec<Weak<StageState>>>>,
+    /// The latest state seen: restored from the app's store or saved from a live instance. New
+    /// stages load it before they activate, so a plugin with no stage keeps its state too.
+    state: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 impl ClapPlugin {
@@ -38,6 +42,7 @@ impl ClapPlugin {
             descriptor,
             params: Arc::new(ParamSet::new(params)),
             stages: Arc::default(),
+            state: Arc::default(),
         }
     }
 
@@ -65,6 +70,25 @@ impl ClapPlugin {
     }
 }
 
+/// Loads the latest saved state into a new instance, before it activates. A refusal is logged and
+/// the instance keeps its defaults.
+fn restore_into(
+    worker: &Worker,
+    label: &str,
+    saved: &Mutex<Option<Vec<u8>>>,
+    params: &Arc<ParamSet>,
+) {
+    let Some(bytes) = saved.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return;
+    };
+    let (plugin, params) = (label.to_owned(), Arc::clone(params));
+    match worker.call(move |ctx| persist::load(ctx, &plugin, &bytes, &params)) {
+        Some(Ok(())) => {}
+        Some(Err(error)) => tracing::warn!(%error, plugin = %label, "cannot restore CLAP state"),
+        None => tracing::warn!(plugin = %label, "plugin thread ended while restoring state"),
+    }
+}
+
 impl Plugin for ClapPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
@@ -82,6 +106,46 @@ impl Plugin for ClapPlugin {
         self.param_value(id.parse().ok()?)
     }
 
+    /// The state of the first live instance (and remembered), else the last state restored. `None`
+    /// when the plugin has no `state` extension and nothing was restored.
+    fn save_state(&self) -> Result<Option<Vec<u8>>, PluginError> {
+        let live = self.stage_states().iter().find_map(|s| s.worker());
+        if let Some(worker) = live {
+            let plugin = self.info.id.clone();
+            let saved = worker
+                .call(move |ctx| persist::save(ctx, &plugin))
+                .ok_or_else(|| PluginError::State {
+                    plugin: self.info.id.clone(),
+                    reason: "the plugin's control thread has ended".into(),
+                })??;
+            if let Some(bytes) = saved {
+                *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(bytes);
+            }
+        }
+        Ok(self.state.lock().unwrap_or_else(|e| e.into_inner()).clone())
+    }
+
+    /// Remembers `state` for stages made later and loads it into every live instance.
+    fn restore_state(&self, state: &[u8]) -> Result<(), PluginError> {
+        if state.len() > crate::MAX_STATE_BYTES {
+            return Err(PluginError::State {
+                plugin: self.info.id.clone(),
+                reason: "plugin state is too large".into(),
+            });
+        }
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.to_vec());
+        let mut failure = None;
+        for worker in self.stage_states().iter().filter_map(|s| s.worker()) {
+            let (plugin, bytes) = (self.info.id.clone(), state.to_vec());
+            let params = Arc::clone(&self.params);
+            let result = worker.call(move |ctx| persist::load(ctx, &plugin, &bytes, &params));
+            if let Some(Err(error)) = result {
+                failure.get_or_insert(error);
+            }
+        }
+        failure.map_or(Ok(()), Err)
+    }
+
     fn clap_gui(&self) -> Option<PluginGui> {
         self.stage_states().iter().find_map(|s| s.gui())
     }
@@ -90,6 +154,7 @@ impl Plugin for ClapPlugin {
         let (entry, id) = (self.entry.clone(), self.plugin_id.clone());
         let (stages, label) = (Arc::clone(&self.stages), self.info.id.clone());
         let params = Arc::clone(&self.params);
+        let saved = Arc::clone(&self.state);
         let factory = Box::new(move || {
             let state = Arc::new(StageState::default());
             stages
@@ -102,7 +167,11 @@ impl Plugin for ClapPlugin {
                 )
                 .ok();
             match &worker {
-                Some(w) => state.set_gui(PluginGui::new(w.handle())),
+                Some(w) => {
+                    state.set_gui(PluginGui::new(w.handle()));
+                    state.set_worker(w.handle());
+                    restore_into(w, &label, &saved, &params);
+                }
                 None => state.set_fault(Fault::ActivationFailed),
             }
             Box::new(ClapStage::new(worker, state, Arc::clone(&params)))
