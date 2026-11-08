@@ -2,6 +2,8 @@
 
 THROWAWAY spike code in `spikes/gpui-window/` (own `[workspace]`; not built by the root workspace or Rust CI). Date: 2026-10-18.
 
+Update (2026-11-07): this is the record of the 2026-10-18 run on `gpui` 0.2.2. The dependency is now `gpui-pre` 0.3.10 imported as `gpui`, with `gpui-kit` 0.8.1 and `gpui-component`, on Rust 1.95; `spikes/gpui-window` was reworked as the P0 spike for that move (see "P0 spike: gpui-kit with cpal and midir (#218)" and "P5: app chrome on gpui-component (#223)" in `docs/spikes/DECISIONS.md`). The Linux build packages for the current tree are the ones in the `check` job of `.github/workflows/rust.yml`.
+
 ## Verdict
 
 | Platform | Verdict | Basis |
@@ -68,7 +70,7 @@ Unexplained: the 30 fps debug reading is not understood; it could be CPU-bound i
 
 ## Run on Windows/macOS (porting phase, not a gate)
 
-Prereqs: Rust 1.91.1 (rustup picks it up from `rust-toolchain.toml`). Windows: MSVC build tools + Windows SDK. macOS: Xcode (full app, for the Metal toolchain) and `xcode-select`.
+Prereqs: Rust 1.95.0, the current pin (rustup picks it up from `rust-toolchain.toml`). Windows: MSVC build tools + Windows SDK. macOS: Xcode (full app, for the Metal toolchain) and `xcode-select`.
 
 ```
 cd spikes/gpui-window
