@@ -1,6 +1,6 @@
 # OpenMixer TODO
 
-OpenMixer is a free, open-source DJ application written in Rust with GPUI. The statuses below describe the current code. Todo numbers are stable identifiers.
+OpenMixer is a free, open-source DJ application written in Rust with GPUI. The statuses below describe the current code. Todo numbers are stable identifiers. Remaining work toward the alpha is also tracked as GitHub issues (the alpha gate is issue #128; the plan to let issues replace this file is #141).
 
 ## Experience track
 
@@ -35,7 +35,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todo 38:** done at logic and view level (Wave 7 A1-A6): the Automix settings page (Todo 29), the main-window bar, the `--demo-automix` scene and the A6 safety tests. Not verified by ear (mock device only). A Skip button shows on the bar while a transition runs. Tracks the queue skips as not analysed are now submitted to the prep queue (once per track, up to 3 submissions, then `last_error`) and retried on later picks; not heard by ear. L
 - **Todo 40:** 8-pad sampler: the engine (P1, P3: `om-engine::sampler`, `sampler.*` ids, snapshot, `SamplerAssign`), the sample bank (P2: `<data>/samples/sampler.json`, off-thread import, start-up apply), the pad view-model and sampler strip (P4: `om-ui::sampler_binding`, `om-ui-gpui::sampler_view`) and the soak and UI gate scenarios (P5) are built, at logic and view level. Not heard. The staged screenshots were checked by eye (`docs/screenshots/REVIEW.md`); a live display has not been checked. Open: the user's listening and by-eye check; a per-pad mode and gain on MIDI; learn for pad settings. M
 - **Library (Phase L, L1-L4): done.** Play history (`play_history`, a play at 30 s of playing time), hotcue save-back and restore on load, cover art stored per track (`artwork`, front cover up to 512 KiB), and free-text search over an FTS5 index (`tracks_fts`, migration 7; LIKE only when FTS5 is missing). Cover art is shown in the deck card header (loaded on a worker, 16-entry cache, PNG and JPEG only, placeholder otherwise); there is no track detail view, the cache is not invalidated on rescan, and it has not been seen on a display. A library scan also enqueues new unanalysed tracks and changed tracks with a finished prep row for analysis.
-- **Todo 25:** LookAndFeel partial: `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. `ScrollBarStyle`, `TableStyle` and `ToggleStyle` exist; the library table, its display-only scroll thumb and the automix Off|On switch draw from them. The platter switch, transport toggle pills, settings chips (the MIDI toggles included), the settings card and the debug column now draw from `LookAndFeel` (`ToggleStyle`, `popup`, `popup_hint`); the grep test covers them. Still on the old paths: the settings mapping table and monitor, the Stems/Appearance text, the deck's Sync/Play/Cue colours, the debug column's scroll (no thumb), and menus. Nothing is checked on a live display. S
+- **Todo 25:** LookAndFeel partial (the "old paths" below predate #223: buttons, inputs, the library table, sidebar rows, settings tabs, dialogs and toasts are now `gpui-component` widgets themed through `theme_bridge`, so recheck which items remain): `om_ui::style::LookAndFeel` derives the control styles from `ThemeTokens` and the gpui knobs, faders, buttons, meters, tooltips and drop tint draw from them. `ScrollBarStyle`, `TableStyle` and `ToggleStyle` exist; the library table, its display-only scroll thumb and the automix Off|On switch draw from them. The platter switch, transport toggle pills, settings chips (the MIDI toggles included), the settings card and the debug column now draw from `LookAndFeel` (`ToggleStyle`, `popup`, `popup_hint`); the grep test covers them. Still on the old paths: the settings mapping table and monitor, the Stems/Appearance text, the deck's Sync/Play/Cue colours, the debug column's scroll (no thumb), and menus. Nothing is checked on a live display. S
 - **Todo 26a:** partial: the debug column loads a typed path per deck (`TrackLoader::load_path`) and plays or pauses each deck through `DeckBinding` (tests: `track_loader`, `debug_panel::play_toggles_between_zero_and_one`). Faders, EQ and meters are not widgets on it (the raw parameter list shows their values as text). It is still removed once Wave 5 replaces it.
 
 ### (B) Quality and verification debt
@@ -43,7 +43,7 @@ Checked against the code on 2026-10-19 (not against the older docs). Size: S = u
 - **Todos 25-29, 31:** the staged screenshots were checked by eye (`docs/screenshots/REVIEW.md`, rendered by WSLg software GL), but no live window on a real display has been checked, at 900x600 or otherwise. M, needs a native display run.
 - **Todo 7:** cpal has never opened a real ALSA or PipeWire device (the device test skips on WSL). S, needs hardware.
 - **Todo 7 / 13:** headphone-cue second stream failed on WSLg ("Invalid argument"), cause not isolated. M, verify on native Linux with two devices.
-- **Todo 32:** no real MIDI device has been used; the ALSA backend is only smoke-tested. S, needs hardware.
+- **Todo 32:** no real MIDI device has been used; the `midir` backend is only smoke-tested (port enumeration). S, needs hardware (`docs/testing/hardware-checklist.md`).
 - **Wave 1 CI:** the check matrix is Linux only; the macOS and Windows legs are not in `rust.yml` until the porting phase. S-M
 - **Todos 13 and 31:** the 10-minute soaks (`#[ignore]` in `om-audio` and `openmixer`) are never run in CI. A weekly scheduled `soak` job in the rust.yml workflow now runs both; it has not run yet (no scheduled run is in the workflow history), so the result is unknown. S
 - **Todos 25-29:** GPUI paint and layout tests now run headlessly (`#[gpui::test]` in `crates/om-ui-gpui/src/headless_tests.rs`, gpui `test-support` as a dev-dependency, no display needed): the shell renders at 1280x800 and 900x600 and the cell bounds, overlap and knob/fader/meter plans are asserted. Still open: the per-todo items in "Not yet covered by tests" in `docs/PROGRESS.md` (settings overlay, library toolbar, clip-click, theme-switch repaint). M
@@ -65,13 +65,32 @@ Escape on the settings overlay is done (`settings_view.rs`, the `escape` key han
 - Listening: stem seams and clicks, mute and solo, bass swap, key-lock with stems; sampler latency, clicks, loop latch and gate.
 - An Automix transition on real decks: phase, EQ and bass swap, echo-out, and how cancel feels with real MIDI fader jitter. Decide whether Automix stays enabled across restarts.
 - The GPUI window by eye at 900x600 and smaller, in both themes, on a real display (the E1 glow and the E3 row tint are guesses from software-render screenshots).
-- The `onnx` CI job is green on hosted runners (run 40398196325, 2026-10-26); it is still `continue-on-error` in `rust.yml`, so decide whether to make it blocking.
+- The `onnx` CI job is green on hosted runners (run 40398196325, 2026-10-26) and blocks merges (no `continue-on-error` in `rust.yml`).
 - The macOS and Windows porting phase (root causes in `docs/spikes/DECISIONS.md`).
 - Todo 34: plug a real class-compliant controller in, load the generic map from `resources/controllers/`, record its port name and a trace, and check every control moves the right parameter (see Todo 34 in section C).
 
+## Platform refresh (issues #218 to #229, #241, #250)
+
+Tracking issue #227. Built and tested headless; none of it has been confirmed on a display, GPU, MIDI device or audio session (`docs/testing/hardware-checklist.md`).
+
+- [x] **#218, #219:** `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1 replace `gpui =0.2.2`; toolchain and MSRV Rust 1.95
+- [x] **#220:** `midir` backend in `om-midi` replaces the direct ALSA one
+- [x] **#221, #241:** `rubato` for offline resampling (sampler load, stems) and for deck varispeed (sinc 128 by default, linear fallback)
+- [x] **#222:** EBU R128 loudness metering with `ebur128` (`om-engine::loudness`, `DjEngine::loudness()`) and the mixer's LUFS panel
+- [x] **#223:** app chrome on `gpui-component` (buttons, inputs, `DataTable`, `TabBar`, `AlertDialog`, toasts, `theme_bridge`)
+- [x] **#224:** utility crates (`walkdir`, `bytemuck`)
+- [x] **#226:** bounds-check work in the audio and analysis hot loops, with `divan` benches
+- [x] **#228:** real-time priority for cpal's callback thread; on Linux it is the opt-in `realtime-dbus` feature of `om-audio` (the decoder promotion was dropped)
+- [x] **#229:** `souvlaki` media keys, GPUI file pickers, clipboard and notifications (`rfd`, `arboard`, `tray-icon` rejected)
+- [x] **#250:** SQLite `synchronous=NORMAL` in WAL mode for the library and analysis cache, and faster tests
+- [ ] **#225 CLAP hosting** (ADR 0007, `clap` feature of `om-plugins`): host, generic parameter panel and plugin window built; first-run warning, plugin state save and restore, and latency compensation in progress
+- [ ] **#244 real-time priority on Linux** is on hold (needs a packaging decision on `realtime-dbus`)
+- [ ] **EBU Tech 3341 and 3342 reference files:** the loudness tests use synthesised signals; the official files (cases 6 to 8 and the programme cases) have not been run
+- [ ] **Real hardware:** work through `docs/testing/hardware-checklist.md` (window and look, audio, MIDI, media keys, CLAP) and open an issue per failure
+
 ## Spikes (done)
 
-Spike A (GPUI window), spike B (cpal output callback) and spike C (time-stretch) and the decision record are in `docs/spikes/`. Decisions: `docs/spikes/DECISIONS.md`.
+Spike A (GPUI window), spike B (cpal output callback), spike C (time-stretch) and the P0 spike for `gpui-kit` with `cpal` and `midir` (#218) and the decision record are in `docs/spikes/`. Decisions: `docs/spikes/DECISIONS.md`.
 
 ## Wave 1: Foundation (COMPLETE)
 
@@ -103,14 +122,14 @@ Reordered so audio can be heard and driven (mixer + MIDI + debug panel) before h
 - [x] **Todo 10a:** Plugin API + registry (extension points)
   - `om-plugins` crate: versioned `Plugin` and `PluginHost` traits, registry with id, prefix and collision rules, unload order
   - Stage catalog over the engine insert chains (channel and master), MIDI maps, parameter targets and themes, all installed through the composition (`openmixer::plugins`)
-  - Example plugin: `examples/plugins/gain-plugin`. Plugins are in-process; shared-library loading over a C ABI is built (see Todo 10a under (C) below, and `docs/spikes/DECISIONS.md`)
+  - Example plugin: `examples/plugins/gain-plugin`. Plugins are in-process; shared-library loading over a C ABI is built (see Todo 10a under (C) below, and `docs/spikes/DECISIONS.md`); CLAP hosting is in progress behind the `clap` feature (see Platform refresh)
   - No signing/allow-list gatekeeping (see CONTRIBUTING "Extensibility")
 
 - [x] **Todo 32:** MIDI input + mapping engine (pulled forward from Wave 6)
   - MIDI input -> JSON map file -> mixer/deck parameters; controller feedback (LEDs) from engine state
-  - Device layer: an ALSA sequencer backend on Linux (the `alsa` crate cpal already links, so midir does not join the build) and a mock backend for tests. macOS and Windows get a midir backend later, behind `system_backend` (see `docs/spikes/DECISIONS.md`)
+  - Device layer: `MidirBackend` (`midir` 0.11: ALSA sequencer on Linux, CoreMIDI, WinMM; port ids are `Client:Port` without the sequencer address) and a mock backend for tests (#220; it replaced the earlier direct ALSA backend, see `docs/spikes/DECISIONS.md`)
   - Mapping editor UI stays in Wave 6 (Todo 36)
-  - No test or CI job has exercised a real MIDI device. The ALSA backend is smoke-tested only for sequencer enumeration and skips without `/dev/snd/seq`. macOS and Windows have no backend (a stub returns a device error).
+  - No test or CI job has exercised a real MIDI device. The backend is smoke-tested only for port enumeration. macOS and Windows go through midir too and have not been built or run.
 
 - [x] **Todo 33:** Controller trace harness (pulled forward from Wave 6)
   - Replay recorded MIDI streams headlessly to test mappings
