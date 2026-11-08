@@ -6,6 +6,8 @@
 
 #[cfg(all(test, debug_assertions))]
 mod alloc_guard;
+#[cfg(all(test, debug_assertions))]
+mod rubato_eval;
 
 pub mod callback;
 pub mod deck;
@@ -17,10 +19,12 @@ pub mod fx;
 pub mod fx_routing;
 pub mod grid;
 pub mod latency;
+pub mod loudness;
 pub mod mixer;
 pub mod output;
 pub mod quantizer;
 pub mod recorder;
+pub mod resample;
 pub mod sampler;
 pub mod slip;
 mod stage;
@@ -32,6 +36,9 @@ pub use deck_control::DeckControl;
 pub use dj_engine::{DjEngine, DjEngineAudio};
 pub use fx_routing::FxRouting;
 pub use latency::{LatencyMonitor, LatencyStats};
+pub use loudness::{
+    Loudness, LoudnessAnalyser, LoudnessControl, LoudnessError, LoudnessReading, LoudnessTap,
+};
 pub use mixer::{ChannelInput, Mixer, MixerControl};
 pub use output::{OutputPairs, OutputRouter, NO_PAIR};
 pub use recorder::{
