@@ -2,6 +2,7 @@
 //! the cost of its `process` calls. Atomics only, written from the audio thread.
 
 use super::gui::PluginGui;
+use super::worker::WorkerHandle;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -52,6 +53,7 @@ pub struct StageState {
     last_ns: AtomicU64,
     max_ns: AtomicU64,
     gui: OnceLock<PluginGui>,
+    worker: OnceLock<WorkerHandle>,
 }
 
 impl StageState {
@@ -82,6 +84,15 @@ impl StageState {
 
     pub(super) fn set_gui(&self, gui: PluginGui) {
         let _ = self.gui.set(gui);
+    }
+
+    /// The control thread of this stage's instance, for state save and restore.
+    pub(super) fn worker(&self) -> Option<WorkerHandle> {
+        self.worker.get().cloned()
+    }
+
+    pub(super) fn set_worker(&self, worker: WorkerHandle) {
+        let _ = self.worker.set(worker);
     }
 
     pub(super) fn set_fault(&self, fault: Fault) {

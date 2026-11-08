@@ -10,6 +10,10 @@ use thiserror::Error;
 /// Plugin API version the host speaks. A plugin reporting another version is refused.
 pub const API_VERSION: u32 = 1;
 
+/// The largest plugin state the host saves or restores. A plugin that wants more (sample banks) is
+/// refused rather than held in memory and written to the state file.
+pub const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
+
 /// Identity a plugin reports about itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginInfo {
@@ -73,6 +77,9 @@ pub enum PluginError {
     #[error("{plugin}: unsupported audio ports: {reason}")]
     UnsupportedLayout { plugin: String, reason: String },
     /// A third-party CLAP library was not loaded because the user has not accepted the first-load warning.
+    /// Saving or restoring a plugin's state failed.
+    #[error("{plugin}: plugin state: {reason}")]
+    State { plugin: String, reason: String },
     #[error("{0}: loading a CLAP plugin runs its native code; accept the warning first")]
     NotAcknowledged(String),
 }
@@ -123,6 +130,18 @@ pub trait Plugin: Send {
     /// The current value of parameter `id`, or `None` when the plugin has no such parameter.
     fn parameter(&self, _id: &str) -> Option<f64> {
         None
+    }
+
+    /// The plugin's own state as opaque bytes, `None` when it keeps none. Control thread. The host
+    /// stores it beside the preferences and hands it back to [`Self::restore_state`] on a later load.
+    fn save_state(&self) -> Result<Option<Vec<u8>>, PluginError> {
+        Ok(None)
+    }
+
+    /// Restores state from an earlier [`Self::save_state`]. Called after `on_load`, on the control
+    /// thread. A plugin that refuses the bytes keeps running with its defaults.
+    fn restore_state(&self, _state: &[u8]) -> Result<(), PluginError> {
+        Ok(())
     }
 
     /// Registers the plugin's stages, targets, maps and themes.
