@@ -28,13 +28,16 @@ gain-plugin = { path = "../../examples/plugins/gain-plugin" }
 om-ui-gpui = { workspace = true, optional = true }
 
 [features]
-default = ["gui"]
+default = ["gui", "realtime-dbus"]
 # Real stem separation through ONNX Runtime (see om-stems). Off by default: no runtime, no network.
 onnx = ["om-stems/onnx"]
 # Decode fallback that runs the `ffmpeg` executable for formats symphonia lacks (see om-engine). Off by default.
 ffmpeg = ["om-engine/ffmpeg"]
 # CLAP plugin hosting (ADR 0007): the Plugins page can open a CLAP plugin's own window. Off by default.
 clap = ["om-plugins/clap"]
+# Real-time priority for the audio callback on Linux (cpal asks rtkit over D-Bus). On by default;
+# builds libdbus, so Linux needs `libdbus-1-dev`. `--no-default-features` builds without it.
+realtime-dbus = ["om-audio/realtime-dbus"]
 # The window. Off (`--no-default-features`) leaves only the headless flags: --smoke and --version.
 gui = ["dep:om-ui-gpui"]
 

@@ -205,7 +205,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-stretch` (`rubberband.rs` `RubberBandStretcher` behind the `Stretcher` trait, FFI calls in `ffi.rs`; see `docs/spikes/DECISIONS.md`)
 - **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
 - **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
-- **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe`, each block with a `// SAFETY:` line.
+- **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe` (a per-module `allow`), each block with a `// SAFETY:` line, and the load/teardown path is leak-checked.
 
 ### Stem cache (atomic directory entries, LRU by mtime)
 - **Where:** `om-stems` (`cache.rs` `StemCache`, `StemCacheSink`, `StemKey`; `wav.rs` streaming 16-bit WAV). The index is `om-library` `track_stems` (migration 8, `TrackStemsDao`).
@@ -363,6 +363,18 @@ pub trait AudioCallback: Send {
 - **Reuse when:** the audio thread needs to own or release shared heap data. If the retire ring is full, park the value (a per-voice `limbo` slot) so the owner stays reusable and retry next block; stall the command queue (`peek`) rather than reorder it. The control thread must call `reclaim` on its tick (`DjEngine::update_control`), but the audio side must not depend on it: a finished voice holding the pad's current sample only decrements the count (the pad keeps the last reference).
 - **Latest-wins flags beside the ring:** a lost command must not strand a voice. `held[pad]` (set before a trigger is queued, cleared before a release) is polled each block to end gate voices. Loop pads latch (second trigger stops); release never ends a loop.
 - **Notes:** `Arc` clones on trigger are an atomic increment, not an allocation. Voices that must outlive a stolen or replaced slot get spare slots so a fade-out never needs the slot of the voice that replaces it.
+
+### Audio-thread tap with an off-thread worker (recorder, loudness)
+- **Where:** `om-engine/src/recorder/` (`RecorderTap`, `RecorderControl`) and `om-engine/src/loudness/` (`LoudnessTap`, `LoudnessControl`); both are created as a `(tap, control)` pair and the tap lives in `DjEngineAudio`.
+- **Why:** measuring or writing the master output needs allocation, files or heavy maths that the audio thread may not do. The tap copies each master block into a preallocated `rtrb` ring behind an atomic enable flag; a worker thread owned by the control side drains it. A full ring drops frames and counts them (`dropped_frames`); the audio thread never blocks.
+- **Reuse when:** a feature has to observe the audio the callback produces (meters, recording, analysis of the live output) without touching the render path's real-time rules.
+- **Notes:** off by default (one relaxed load per block, no thread until `enable()`); results come back through atomics (`LoudnessControl::reading`) or a status call, never a lock the callback takes. `assert_no_alloc` tests cover the tap (`om-engine/tests/loudness_alloc.rs`, the recorder tests).
+
+### Theme bridge to a component library (`theme_bridge`)
+- **Where:** `om-ui-gpui/src/theme_bridge.rs` (`apply`).
+- **Why:** `gpui-component` draws its own buttons, inputs, tables, tabs, dialogs and toasts from its `Theme`. The bridge maps om-ui's `ThemeTokens` (and the derived `LookAndFeel` styles) onto that theme, so the tokens stay the single source of colour and a theme switch re-skins both our painted controls and the library's widgets.
+- **Reuse when:** adopting a third-party widget library: map roles to tokens in one adapter and add no colours there (`tests/style_lint.rs` keeps raw colour calls out of views).
+- **Notes:** runs at start-up and on every theme change, on the window thread. Custom-painted controls (knobs, faders, meters, waveform) do not go through it.
 
 ## Idioms and their Rust equivalents
 
