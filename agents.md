@@ -10,19 +10,24 @@ OpenMixer is a clean-room, legally original implementation of professional DJ so
 
 ```
 openmixer/
-├── .github/workflows/        # rust.yml: the Rust CI (every PR)
+├── .github/workflows/        # rust.yml (the Rust CI, every PR; weekly soak) and issue-heatmap.yml
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   └── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
-│   ├── legal/                # Legal documentation
+│   ├── controllers/          # Controller map notes
+│   ├── design/               # E1 brand note, UI research, review gates
+│   ├── legal/                # Legal documentation and the asset provenance record
+│   ├── screenshots/          # Staged window screenshots and REVIEW.md
 │   ├── spikes/               # Spike notes and the decision record (DECISIONS.md)
+│   ├── testing/              # Hardware checklist (after the platform refresh)
 │   └── superpowers/          # Historical design specs and plans
-├── examples/plugins/         # Example in-process plugin (gain-plugin)
+├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports
-├── resources/themes/         # Built-in theme JSON
+├── resources/                # Built-in theme JSON, generic controller maps, bundled Inter font
+├── spikes/                   # Throwaway spikes (gpui-window, cpal-out, stretch), each its own Cargo workspace
 ├── tests/tools/              # Unit tests for the Python tools
-├── tools/                    # check_docs_rust.py, progress_heatmap.py, screenshots.sh
+├── tools/                    # check_docs_rust.py, progress_heatmap.py, issue_heatmap.py, screenshots.sh, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh, graphify_rebuild.py
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain
@@ -36,9 +41,9 @@ openmixer/
 Dependencies point toward `om-core` (see "Modularity" above). The README architecture section has the directory tree; this is what each crate owns.
 
 - **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
-- **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops. Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
-- **`om-audio`, `om-dsp`, `om-stretch`**: device layer, DSP, and key-lock time-stretch (the only crate allowed `unsafe`, for FFI).
-- **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`.
+- **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops, sampler, recorder and the EBU R128 loudness meter. Decks resample through `rubato` (`deck/playback/varispeed.rs`, sinc 128 by default, linear for rate 0, steps outside 0.25..=2.0, exact unity and key-lock). Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
+- **`om-audio`, `om-dsp`, `om-stretch`**: device layer (cpal; the `realtime-dbus` feature, on by default in `openmixer`, asks rtkit for real-time priority on Linux and needs `libdbus-1-dev`), DSP, and key-lock time-stretch (FFI `unsafe` in `om-stretch/src/ffi.rs`).
+- **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`. `om-midi` talks to hardware through `MidirBackend` (`midir`; port ids are `Client:Port`, without the sequencer address) or the mock backend. `om-library` and the analysis cache open SQLite with `journal_mode=WAL` and `synchronous=NORMAL`. `om-plugins` loads in-process plugins and C-ABI shared libraries, and with the `clap` feature (off by default, ADR 0007) CLAP plugins through `clack` (`clap/`, with a worker thread per instance); the CLAP first-run warning, state and latency work is in progress.
 - **`om-stems` detail:** `StemSeparator` v2 is streamed (`separate_to(StereoSource, StemSink, ctx)`); `HtDemucsPipeline<I: StemInference>` does resampling, 7.8 s segments with overlap-add and STFT in Rust; `OrtInference` (ONNX Runtime) exists only with `--features onnx` (off by default, downloads the runtime at build time; own blocking CI job). `StemCache` (`cache.rs`, `wav.rs`) holds the stems under `<library folder>/stems`; `StemService` (`service.rs`, on `WorkerPool`, one worker) separates a track on explicit submit only and records `track_stems` through `om-library`, so `om-stems` depends on `om-library`. The app attaches it with `AppComposition::attach_stems` (`Services.stems`): the mock with `--mock-stems`, else htdemucs when built with `onnx` and installed. Real htdemucs is exported with `tools/export_htdemucs.py` (STFT-outside variant, checked against Demucs by `crates/om-stems/tests/htdemucs_reference.rs`; not yet listened to).
 - **`om-automix`** (pure, depends on `om-core` only, control thread; never touches the audio thread): `stem_fade` (S8) holds `StemFade` ramps and `StemFadePlan`, the builders and `StemFadeRunner`. Automix proper (Todo 38):
   - `planner`/`plan`: `DefaultPlanner` implements `TransitionPlanner::plan(out, inc, style, opts) -> Result<TransitionPlan, PlanError>` over `DeckInfo` (grid, Camelot, sections, mix points, stems, length, bpm). Beats are the outgoing deck's. Styles `Auto, Crossfade, BassSwap, EchoOut, Cut, StemBridge` (`om_core::AutomixStyle`); `Auto` picks by key (clash gives EchoOut), tempo gap (wider than 6% gives Cut), stems on both decks (BassSwap) and sections; length 8/16/32 beats, start on a bar at the mix-out point or later than playhead plus lead. BassSwap and StemBridge fall back to Crossfade unless both decks have stems; their stem start gains and mutes come from the `EngineSnapshot`. Errors: `NoGrid, InvalidBpm, BpmRatio, OutgoingTooShort, IncomingTooShort, NoRoom, SameDeck`.
@@ -50,7 +55,7 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
   - **Crossfader routing:** when the routing reassigns a channel, the ramp starts from the outgoing side's edge (not the current crossfader position), so a centred crossfader does not dip.
 - **Automix in the app** (`openmixer`): `automix_service` (`AutomixShared`: target, published `AutomixSnapshot`, host factory; `AutomixRunner`, stepped by the control thread, builds a snapshot only while automix is on or busy) and `automix_queue` (`LibraryQueue` over its own `Library` handle). The composition registers `Namespace::Automix`. `AutomixShared::overlay` puts the controller's snapshot into an `EngineSnapshot` (the engine leaves `automix` at its default). `Command::Automix` is routed by the router's sink to the same target.
 - **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
-- **`om-ui-gpui`** (workspace member, the default `gui` feature): GPUI drawing and events over `om-ui` models.
+- **`om-ui-gpui`** (workspace member, the default `gui` feature): GPUI drawing and events over `om-ui` models. It builds on `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1; buttons, inputs, the library `DataTable`, sidebar rows, settings tabs, dialogs and toasts are `gpui-component` widgets themed by `theme_bridge`; knobs, faders, meters, waveforms, the platter and the sampler pads stay custom-painted. `desktop` and `media_keys` hold the file pickers, clipboard, notifications and OS media keys (`souvlaki`); `plugin_window` hosts a CLAP plugin's window.
 - **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
 
 Control paths, and what is live today:
@@ -125,13 +130,13 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 
 ## Current State (Linux first)
 
-**Status:** Works, verified headlessly on Linux: the audio engine (cpal and a mock device, decks, mixer, FX racks, sync and quantize, key-lock), analysis (BPM, key, waveform, structure), the library (database, ingest, iTunes and Rekordbox import, search, prep queue), MIDI (ALSA sequencer, mapping, feedback, trace replay), the plugin API, themes, preferences and the settings overlay, the debug panel, and the GPUI app. Partial: the Wave 5 UI and stems (mock separator only). The GPUI window has never been viewed by eye. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7.
+**Status:** Works, verified headlessly on Linux: the audio engine (cpal and a mock device, decks, mixer, FX racks, sync and quantize, key-lock), analysis (BPM, key, waveform, structure), the library (database, ingest, iTunes and Rekordbox import, search, prep queue), MIDI (`midir`, mapping, feedback, trace replay), loudness metering, the plugin API (in-process, C ABI, CLAP behind the `clap` feature), themes, preferences and the settings overlay, the debug panel, and the GPUI app. Partial: the Wave 5 UI and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. The platform refresh (UI on `gpui-component`, `midir`, `rubato`, media keys, CLAP) has not been confirmed on real hardware; see `docs/testing/hardware-checklist.md`. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7.
 
 **Implemented:**
 - Governance and legal: LICENSE, ADRs, CONTRIBUTING, clean-room doctrine
 - The crates and features in the status above, plus the headless UI gate
 - The GPUI window (the default `gui` feature)
-- Rust CI (`rust.yml`): fmt, clippy, test on all three OSes, `cargo deny`, the progress heatmap check and the ASIO SDK guard; the GPUI crate is a workspace member, so the same jobs cover it, and a headless `--no-default-features` test of `openmixer` runs too
+- Rust CI (`rust.yml`): fmt, clippy, test on Linux (`ubuntu-24.04`; macOS and Windows legs are not in the matrix), `cargo deny`, the `onnx` job, the progress heatmap check, the ASIO SDK guard and a weekly 10-minute soak; the GPUI crate is a workspace member, so the same jobs cover it, and a headless `--no-default-features` test of `openmixer` runs too
 
 **Known gaps:** see the list in `ROADMAP.md` (Known gaps) and the Before-Wave-7 list in `TODO.md`, which is the authoritative list.
 
@@ -152,20 +157,26 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 - DCO sign-off required
 
 ### ADR-0004: Technology Stack - Rust with GPUI
-- **Language / UI:** Rust, with GPUI for the UI (gate closed on Linux)
-- **Audio I/O:** `cpal` for the engine output callback; `rodio` only for non-critical audio such as library preview
+- **Language / UI:** Rust (toolchain and MSRV 1.95), with GPUI for the UI: `gpui-pre` 0.3.10 imported as `gpui`, `gpui-kit` 0.8.1 and `gpui-component` (gate closed on Linux)
+- **Audio I/O:** `cpal` for the engine output callback; `rodio` is acceptable only for non-critical audio such as library preview (not used so far)
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
-- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
-- **MIDI:** ALSA sequencer (`alsa`, same version as cpal) on Linux; `midir` for macOS and Windows, later (see `docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
-- **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
+- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (`unsafe` confined to `ffi.rs`), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
+- **MIDI:** `midir` on every platform (`MidirBackend` in `om-midi`; the earlier direct ALSA backend is gone, see `docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
+- **Resampling and loudness:** `rubato` (offline resampling, deck varispeed), `ebur128` (EBU R128 metering)
+- **RT plumbing:** `rtrb` (SPSC), atomics for the pulled `EngineSnapshot`, `assert_no_alloc` in tests (`arc-swap` is not used)
+
+### ADR-0005 to ADR-0007
+- **0005 Experience-first product bar:** `docs/PRODUCT.md` is the bar; interface work is judged by looking at it
+- **0006 Controller map provenance:** maps are written clean-room from the MIDI spec and the maintainer's own hardware traces
+- **0007 CLAP hosting with clack:** accepted; `om-plugins` hosts CLAP plugins behind the `clap` feature, beside the C ABI (`clack-*` pinned `=0.2.0`)
 
 ## Pull Request Workflow (required)
 
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main` or `stage`.
+All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
 
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `stage`.
-2. Open a PR into `stage` with `gh pr create --base stage`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, macOS and Windows, `cargo deny`, the progress heatmap check and the ASIO SDK guard) runs on every pull request. The description must include:
+1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
+2. Open a PR into `main` with `gh pr create --base main`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, `cargo deny`, the `onnx` job, the progress heatmap check and the ASIO SDK guard) runs on every pull request. The description must include:
    - **Summary:** what changed and why (link the Todo number from `TODO.md`).
    - **Changes:** key crates/modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
@@ -173,23 +184,20 @@ All changes — including those by AI agents and maintainers — land through a 
 3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
 4. Docs match the repo before the PR opens: check `README.md` (status, screenshots, build notes), `docs/PROGRESS.md`, `TODO.md` and any doc the change touches against the current code, and fix stale claims in the same PR. Outdated docs send people to rebuild or fix what already exists or is in flight.
 5. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-6. Release: batch `stage` into `main` with a PR (`--base main`); `rust.yml` runs on it as on every PR. Pushes alone never trigger CI.
-7. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base stage`. Use plain merge commits, not squash, so stacked history stays intact.
-8. Promote early: open a `stage` -> `main` PR when a Todo or feature group finishes, or once `stage` is about 3 feature PRs or ~2,000 changed lines ahead of `main`, whichever comes first. Small release PRs stay readable and revertable.
-9. Slice large backlogs: if `stage` is further ahead than that, do not promote it in one PR. Cut `release/rN` branches at `stage` first-parent merge commits (each already passed CI), open them as a stack (`release/r1` -> `main`, `release/r2` -> `release/r1`, ...), merge in order and retarget the next one to `main` so the full matrix runs on it.
-10. Release PR description: list the included PRs (number + Todo), the testing they already had, and the revert command. Merge with `--merge` so a batch can be undone with `git revert -m 1 <merge commit>`.
+6. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact.
 
 ## Rust Standards & Memory Safety (required)
 
 All code must follow Rust best practices (edition 2021, toolchain pinned in `rust-toolchain.toml`). Outdated, unsafe or leaking code is not acceptable.
 
 - **Ownership:** owned values and borrows by default. Use `Arc` only when ownership is genuinely shared across threads, and `Rc` never on the audio path. Pass data by value or by reference; avoid `'static` leaks and `Box::leak`.
-- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate `om-stretch` (Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md) and the library loaders in `om-plugins`: `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (ADR 0007). Every `unsafe` block there has a `// SAFETY:` line stating the invariant, and `unsafe` is allowed only with no memory leak: `crates/om-plugins/tests/clap_leak.rs` and `tools/clap_leak_check.sh` (valgrind) guard the CLAP path.
+- **Unsafe:** allowed where necessary, anywhere in the repo, provided there are no memory leaks. The workspace `unsafe_code = "forbid"` lint stays on; each use is a per-module `#[allow(unsafe_code)]` exception. Current exception modules: `om-stretch/src/ffi.rs` (Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md); in `om-plugins` `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (ADR 0007); plus the plugin fixtures under `examples/plugins/` and `crates/om-plugins/tests/clap_leak.rs`. Every `unsafe` block has a `// SAFETY:` line stating the invariant, and any new FFI or load/teardown path needs a leak check (counting allocator or valgrind): `crates/om-plugins/tests/clap_leak.rs` and `tools/clap_leak_check.sh` (valgrind) guard the CLAP path.
 - **Idioms:** `enum`s and `match` for state and commands, newtypes for ids and units, `Option`/`Result` instead of sentinel values, `?` for propagation, `#[must_use]` where a result must not be ignored, iterators over index loops where clearer. Prefer `&str`/`&[T]` parameters.
-- **Errors:** `thiserror` for typed errors in library crates, `anyhow` only in the `openmixer` binary. Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
+- **Errors:** `thiserror` for typed errors in library crates; the `openmixer` binary uses its own `AppError` (`anyhow` is not a dependency). Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
 - **Logging:** `tracing` macros with structured fields. Never log from the audio thread.
-- **Concurrency:** no shared mutable state between the audio thread and other threads except through the designated channels: `rtrb` SPSC rings, `arc-swap` snapshots and atomics. Document the thread that owns each type in its module doc.
+- **Concurrency:** no shared mutable state between the audio thread and other threads except through the designated channels: `rtrb` SPSC rings and atomics (the `EngineSnapshot` is pulled from atomics). Document the thread that owns each type in its module doc.
 - **Real-time safety (audio thread):** no allocation, locks (`Mutex`, `RwLock`), blocking channel calls, file or network I/O, or syscalls in the render path. Create buffers and graphs off the audio thread. Enforce this in tests with `assert_no_alloc` around the render function; a failing check is a bug, not a flaky test.
+- **Hot loops:** in per-sample audio and analysis loops use `zip`/`iter` over pre-sliced buffers (or `as_chunks`) instead of indexing, so the bounds checks drop out (#226); check a change with the `divan` benches (`cargo bench -p om-engine`, `-p om-analysis`).
 - **Lints:** `cargo clippy --all-targets -- -D warnings` must pass. Do not add `#[allow(...)]` to get past a lint without a comment stating why.
 - **Licences and bans:** `cargo deny check` must pass (`deny.toml`). New dependencies must be AGPL-compatible.
 - **Adopting crates:** well-established crates (cpal, symphonia, rusqlite, midir and similar) are adopted directly; reserve spikes for genuine unknowns.
@@ -263,7 +271,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 - **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (serde-loaded files) over fixed code paths.
 - **Stable plugin API:** keep extension traits small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
-- **Plugins are in-process for now.** `om-plugins` has the plugin API and registry; loading from a shared library is open (see `docs/spikes/DECISIONS.md`). Keep new extension points as traits and registries in the owning crate, so they can be exposed later without restructuring.
+- **Plugins load in-process, from a C-ABI shared library, or (feature `clap`) as CLAP plugins.** `om-plugins` has the plugin API, registry and loaders (see `docs/spikes/DECISIONS.md` and ADR 0007). Keep new extension points as traits and registries in the owning crate, so they can be exposed later without restructuring.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
 ## Progress Files (required)
@@ -289,11 +297,24 @@ Any change to `.github/workflows/` must be tested locally with [`act`](https://g
 - **Linux audio:** `cpal` needs ALSA development headers and `pkg-config`:
 
 ```bash
-sudo apt-get install libasound2-dev pkg-config
+sudo apt-get install libasound2-dev pkg-config libclang-dev libdbus-1-dev
 ```
+
+`libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is for the default `realtime-dbus` feature; `--no-default-features` builds without it.
 
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
 - GPUI platform dependencies (Linux) are documented in `docs/spikes/gpui.md`.
+- **Crates added in the platform refresh:**
+  - `gpui-pre` (renamed to `gpui`) with `gpui-kit` (which brings `gpui-component`), the GPUI base for `om-ui-gpui`.
+  - `rubato`: sample-rate conversion (sampler load, stems) and deck varispeed.
+  - `ebur128`: EBU R128 loudness metering in `om-engine`.
+  - `midir`: MIDI I/O in `om-midi`.
+  - `souvlaki`: OS media controls in `om-ui-gpui`.
+  - `walkdir`: library folder scans in `om-library`; `bytemuck`: sample casts in the optional ffmpeg decode path of `om-engine`.
+  - `divan` (dev-dependency): benches in `om-engine` and `om-analysis`.
+  - Not adopted after evaluation: `rfd`, `arboard`, `tray-icon` (GPUI's file picker and clipboard cover the first two, the third cannot work under GPUI's loop; `docs/spikes/DECISIONS.md`).
+  - `clack-host`, `clack-extensions`, `clack-plugin`: CLAP hosting, behind the optional `clap` feature of `om-plugins`.
+  - `cpal` `realtime-dbus`: `om-audio` feature (needs `libdbus-1-dev`) for Linux real-time priority; `openmixer` forwards it and enables it by default.
 
 ### Build Commands
 
@@ -318,9 +339,30 @@ cargo deny check
 
 # Startup smoke check
 cargo run -p openmixer -- --smoke
+
+# Benchmarks (divan)
+cargo bench -p om-engine
+cargo bench -p om-analysis
+
+# Optional features: CLAP hosting, real stem separation, ffmpeg decode fallback
+cargo build -p openmixer --features clap
+cargo test -p om-stems --features onnx
+cargo test -p om-engine -p om-analysis --features om-engine/ffmpeg,om-analysis/ffmpeg
 ```
 
 Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
+
+### Build setup and cost rule
+
+- **sccache (Linux, optional):** to share compiled dependencies between worktrees, install `sccache` and put this in `~/.cargo/config.toml`:
+
+```toml
+[build]
+rustc-wrapper = "sccache"
+incremental = false
+```
+
+- **Cost rule for agents:** while working use `cargo check -p <crate>` and the touched crates' tests with `-j 4`. Run full clippy, workspace tests and `cargo deny check` once per PR, at the end. At most two parallel agents on the 12-core shared host.
 
 ### Working on a constrained machine (WSL)
 
@@ -409,7 +451,7 @@ Waves 1–4 and 6 are verified headlessly on Linux; the Wave 5 UI is partial. Wa
 ### Memory Safety
 
 - Values are owned by default; use `Box`, `Vec` and `Arc` deliberately
-- No `unsafe` outside the designated FFI crate
+- `unsafe` only in the per-module exceptions listed under "Rust Standards", each with a `// SAFETY:` comment and no leaks
 - Types are not `Clone` or `Copy` unless copying is meaningful
 - Allocation happens off the audio thread; `assert_no_alloc` guards the render path in tests
 
@@ -438,7 +480,7 @@ pub use mixer::Mixer;
 - TDD for engine and analysis logic
 - Golden-vector fixtures (kept in the crates' test modules and `fixtures/`)
 - Property tests (`proptest`) for parsers and search
-- Metric tests for DSP accuracy; `criterion` benchmarks for DSP
+- Metric tests for DSP accuracy; `divan` benchmarks (`cargo bench -p om-engine`, `-p om-analysis`) for the audio-thread and analysis hot loops
 - Real-time tests: render the engine inside `assert_no_alloc`
 - Screenshot tests for UI (planned)
 
@@ -452,7 +494,7 @@ Next: the Before-Wave-7 list in `TODO.md`, then Wave 7. Windows (WASAPI) and mac
 
 **Implementation:**
 1. `cpal` output stream behind a device trait
-2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio later)
+2. Platform backends via cpal (ALSA first; WASAPI and CoreAudio later); real-time priority for the callback through cpal (`realtime-dbus` on Linux, on by default in `openmixer`)
 3. Mock device for CI testing
 4. Latency probing
 
@@ -499,6 +541,12 @@ fn device_opens_and_closes() {
 ### Issue: cpal fails to build on Linux (missing `alsa.pc`)
 **Solution:** Install `libasound2-dev pkg-config`
 
+### Issue: `rubberband-sys` fails with a missing `libclang`
+**Solution:** Install `libclang-dev` (bindgen needs it)
+
+### Issue: `libdbus-1` not found
+**Solution:** Install `libdbus-1-dev`; the default `realtime-dbus` feature of `openmixer` needs it. Build with `--no-default-features` to go without it (the souvlaki media keys use zbus and do not need it)
+
 ### Issue: `cargo deny check` fails on a licence
 **Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
 
@@ -519,7 +567,9 @@ After each wave:
 - ADR 0004 (Rust with GPUI): `docs/adr/0004-stack-rust-gpui.md`
 - cpal: https://docs.rs/cpal
 - rtrb: https://docs.rs/rtrb
-- arc-swap: https://docs.rs/arc-swap
+- rubato: https://docs.rs/rubato
+- ebur128: https://docs.rs/ebur128
+- midir: https://docs.rs/midir
 - rusqlite: https://docs.rs/rusqlite
 - Rubber Band: https://breakfastquay.com/rubberband/
 - Clean-Room Doctrine: docs/adr/0001-clean-room-doctrine.md

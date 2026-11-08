@@ -51,7 +51,7 @@ jobs:
           # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
           sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
-            libvulkan-dev libssl-dev
+            libvulkan-dev libssl-dev libdbus-1-dev
 
       - uses: Swatinem/rust-cache@v2
 
@@ -207,7 +207,7 @@ jobs:
           # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
           sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
-            libvulkan-dev libssl-dev
+            libvulkan-dev libssl-dev libdbus-1-dev
 
       - uses: Swatinem/rust-cache@v2
 
