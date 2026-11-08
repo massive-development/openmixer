@@ -19,15 +19,20 @@ pub(crate) fn chip(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell) + 'static,
 ) -> Div {
-    let button = push_button(
-        t,
-        label,
-        lit.then(|| accent_of(t)),
-        cx,
-        move |this, _, _| on_press(this),
-    )
-    .h_full()
-    .px(px(10.));
+    chip_with_window(t, label, lit, cx, move |this, _, _| on_press(this))
+}
+
+/// A [`chip`] whose press also gets the window and context, for actions that open another window.
+pub(crate) fn chip_with_window(
+    t: &ThemeTokens,
+    label: &str,
+    lit: bool,
+    cx: &mut Context<Shell>,
+    on_press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
+) -> Div {
+    let button = push_button(t, label, lit.then(|| accent_of(t)), cx, on_press)
+        .h_full()
+        .px(px(10.));
     div()
         .h(px(CHIP_H))
         .mr(px(6.))

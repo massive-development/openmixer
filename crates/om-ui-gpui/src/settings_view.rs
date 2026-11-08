@@ -24,8 +24,8 @@ use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, AudioStats,
     AutomixControl, LibraryControl, LibrarySettingsPage, MidiInputs, MidiPage, MidiSettingsPage,
-    PageKind, PluginHost, PluginsSettingsPage, RecordHost, SettingsError, SettingsPanel,
-    SettingsResult,
+    PageKind, PluginHost, PluginParam, PluginsSettingsPage, RecordHost, SettingsError,
+    SettingsPanel, SettingsResult,
 };
 use om_ui::stems::StemHost;
 use om_ui::theme::{Source, ThemeRegistry, ThemeTokens};
@@ -134,6 +134,11 @@ pub struct PageLists {
     pub loaded_plugins: Vec<String>,
     /// Built-in plugins that are not loaded, as `(id, name)`.
     pub builtins: Vec<(String, String)>,
+    /// The plugin whose generic parameter panel is open, and its parameters.
+    pub open_params: Option<String>,
+    pub params: Vec<PluginParam>,
+    /// Plugins whose embedding window is open (see `plugin_window`).
+    pub(crate) open_windows: crate::plugin_window::OpenWindows,
     /// Playlists the automix queue can play, as `(id, label)`.
     pub playlists: Vec<(i64, String)>,
 }
@@ -283,6 +288,10 @@ impl SettingsState {
         if let Some(plugins) = &self.plugins {
             self.lists.loaded_plugins = plugins.loaded_plugins();
             self.lists.builtins = plugins.builtins();
+            self.lists.params = match &self.lists.open_params {
+                Some(id) => plugins.plugin_parameters(id),
+                None => Vec::new(),
+            };
         }
         if let Some(automix) = &self.automix {
             match automix.playlists() {

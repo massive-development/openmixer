@@ -1,4 +1,5 @@
-// `unsafe` is denied everywhere but the two modules that load shared libraries (`abi`, `loader`).
+// `unsafe` is denied everywhere but the modules that load libraries: `abi` and `loader` (C ABI) and
+// `clap/entry.rs` (CLAP, feature `clap`).
 #![deny(unsafe_code)]
 
 //! Plugin API, registry and stage catalog.
@@ -10,12 +11,15 @@
 //! the theme list ([`PluginRegistry::themes`]).
 //!
 //! A plugin is in-process, or a shared library exporting the C ABI in [`abi`]: [`PluginLoader`]
-//! loads it and adapts it to [`Plugin`].
+//! loads it and adapts it to [`Plugin`]. With the `clap` feature, `.clap` files load through the
+//! [`clap`] module (ADR 0007).
 
 #[allow(unsafe_code)]
 pub mod abi;
 mod api;
 mod catalog;
+#[cfg(feature = "clap")]
+pub mod clap;
 #[allow(unsafe_code)]
 mod loader;
 mod registry;

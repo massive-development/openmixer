@@ -8,7 +8,9 @@ use crate::composition::AppComposition;
 use gain_plugin::GainPlugin;
 use om_plugins::{Plugin, PluginRegistry};
 use om_ui::settings::SettingsError;
-use om_ui::settings::{PluginHost, SettingsResult};
+use om_ui::settings::{PluginHost, PluginParam, SettingsResult};
+#[cfg(feature = "clap")]
+use om_ui::settings::{PluginSession, PluginWindow, PluginWindowMode};
 use om_ui::theme::{Source, ThemeRegistry};
 use std::cell::RefCell;
 use std::path::Path;
@@ -87,6 +89,19 @@ impl PluginHost for PluginsPage {
     fn unload(&mut self, id: &str) -> SettingsResult<()> {
         PluginHost::unload(&mut *self.0.borrow_mut(), id)
     }
+
+    fn plugin_parameters(&self, id: &str) -> Vec<PluginParam> {
+        PluginHost::plugin_parameters(&*self.0.borrow(), id)
+    }
+
+    #[cfg(feature = "clap")]
+    fn plugin_window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
+        PluginHost::plugin_window(&*self.0.borrow(), id)
+    }
+
+    fn set_plugin_parameter(&mut self, id: &str, param: &str, value: f64) -> SettingsResult<()> {
+        PluginHost::set_plugin_parameter(&mut *self.0.borrow_mut(), id, param, value)
+    }
 }
 
 impl PluginSink for PluginRegistry {
@@ -111,6 +126,78 @@ impl PluginSink for PluginRegistry {
                 })
                 .collect(),
         }
+    }
+}
+
+/// A CLAP plugin's own window as the Plugins page sees it.
+#[cfg(feature = "clap")]
+struct ClapWindow(om_plugins::clap::PluginGui);
+
+#[cfg(feature = "clap")]
+impl ClapWindow {
+    fn session(session: PluginSession) -> om_plugins::clap::GuiSession {
+        use om_plugins::clap::GuiSession;
+        match session {
+            PluginSession::X11 => GuiSession::X11,
+            PluginSession::Wayland => GuiSession::Wayland,
+            PluginSession::Other => GuiSession::Other,
+        }
+    }
+
+    fn plan(
+        mode: PluginWindowMode,
+        session_api: om_plugins::clap::GuiApi,
+    ) -> om_plugins::clap::GuiPlan {
+        use om_plugins::clap::GuiPlan;
+        match mode {
+            PluginWindowMode::Embedded => GuiPlan::Embedded(session_api),
+            PluginWindowMode::Floating => GuiPlan::Floating(session_api),
+            PluginWindowMode::Parameters => GuiPlan::Parameters,
+        }
+    }
+}
+
+#[cfg(feature = "clap")]
+impl PluginWindow for ClapWindow {
+    fn mode(&self, session: PluginSession) -> PluginWindowMode {
+        use om_plugins::clap::GuiPlan;
+        match self.0.plan(Self::session(session)) {
+            GuiPlan::Embedded(_) => PluginWindowMode::Embedded,
+            GuiPlan::Floating(_) => PluginWindowMode::Floating,
+            GuiPlan::Parameters => PluginWindowMode::Parameters,
+        }
+    }
+
+    fn open(
+        &self,
+        mode: PluginWindowMode,
+        parent: Option<u64>,
+        scale: f64,
+    ) -> SettingsResult<Option<(u32, u32)>> {
+        use om_plugins::clap::{GuiApi, ParentWindow};
+        // The window API follows the session: an X11 parent means X11, no parent means Wayland.
+        let api = if parent.is_some() {
+            GuiApi::X11
+        } else {
+            GuiApi::Wayland
+        };
+        self.0
+            .open(Self::plan(mode, api), parent.map(ParentWindow::X11), scale)
+            .map_err(|e| SettingsError::Plugin(Box::new(e)))
+    }
+
+    fn resize(&self, width: u32, height: u32) -> SettingsResult<()> {
+        self.0
+            .resize(width, height)
+            .map_err(|e| SettingsError::Plugin(Box::new(e)))
+    }
+
+    fn take_resize_request(&self) -> Option<(u32, u32)> {
+        self.0.take_resize_request()
+    }
+
+    fn close(&self) {
+        self.0.close();
     }
 }
 
@@ -151,6 +238,38 @@ impl PluginHost for AppComposition {
             return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
         }
         self.refresh_plugin_themes();
+        Ok(())
+    }
+
+    #[cfg(feature = "clap")]
+    fn plugin_window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
+        let gui = self.plugins.clap_gui(id)?;
+        Some(std::sync::Arc::new(ClapWindow(gui)))
+    }
+
+    fn plugin_parameters(&self, id: &str) -> Vec<PluginParam> {
+        self.plugins
+            .plugin_parameters(id)
+            .into_iter()
+            .map(|p| PluginParam {
+                value: self
+                    .plugins
+                    .plugin_parameter(id, &p.id)
+                    .unwrap_or(p.default),
+                id: p.id,
+                name: p.name,
+                min: p.min,
+                max: p.max,
+                default: p.default,
+            })
+            .collect()
+    }
+
+    fn set_plugin_parameter(&mut self, id: &str, param: &str, value: f64) -> SettingsResult<()> {
+        if !self.plugins.plugin_ids().iter().any(|p| p == id) {
+            return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
+        }
+        self.plugins.set_plugin_parameter(id, param, value);
         Ok(())
     }
 }
