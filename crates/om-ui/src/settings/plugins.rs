@@ -82,6 +82,19 @@ pub trait PluginWindow: Send + Sync {
     fn close(&self);
 }
 
+/// What the plugins page shows about CLAP plugins (ADR 0007). Without CLAP support in the build
+/// `supported` is false and the page and the prompts say nothing about it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClapStatus {
+    pub supported: bool,
+    /// The standard folders a scan would add, for the first-run prompt.
+    pub standard_folders: Vec<String>,
+    /// The `.clap` files found in the folders that are scanned now, as paths.
+    pub files: Vec<String>,
+    /// How many of those wait for the first-load warning to be accepted.
+    pub waiting: usize,
+}
+
 /// What the plugins page needs. The app implements it over `om-plugins` (`openmixer::plugins`).
 pub trait PluginHost {
     fn loaded_plugins(&self) -> Vec<String>;
@@ -99,6 +112,10 @@ pub trait PluginHost {
     /// The parameters of loaded plugin `id` with their current values. Empty when it has none.
     fn plugin_parameters(&self, _id: &str) -> Vec<PluginParam> {
         Vec::new()
+    }
+    /// CLAP support, the `.clap` files found and how many wait for the first-load warning.
+    fn clap_status(&self) -> ClapStatus {
+        ClapStatus::default()
     }
     /// The own window of loaded plugin `id`, when it has one.
     fn plugin_window(&self, _id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
@@ -144,6 +161,10 @@ impl<'a> PluginsSettingsPage<'a> {
 
     pub fn unload(&mut self, id: &str) -> SettingsResult<()> {
         self.host.unload(id)
+    }
+
+    pub fn clap_status(&self) -> ClapStatus {
+        self.host.clap_status()
     }
 
     pub fn window(&self, id: &str) -> Option<std::sync::Arc<dyn PluginWindow>> {
