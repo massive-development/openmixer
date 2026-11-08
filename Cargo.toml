@@ -44,7 +44,10 @@ om-stretch = { path = "crates/om-stretch" }
 om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
 om-ui-gpui = { path = "crates/om-ui-gpui" }
+audioadapter-buffers = "5.1"
+ebur128 = "0.1.11"
 rtrb = "0.4"
+rubato = "5.0.1"
 # CLAP hosting (ADR 0007): exact pins, bumped by hand after reading the changelog.
 clack-host = "=0.2.0"
 clack-extensions = "=0.2.0"

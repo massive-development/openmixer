@@ -13,6 +13,7 @@ use crate::deck::{Deck, DeckAudio, DEFAULT_RING_FRAMES, NUM_CUES};
 use crate::deck_control::{DeckBank, DeckControl};
 use crate::fx_routing::FxRouting;
 use crate::grid::BeatGrid;
+use crate::loudness::{Loudness, LoudnessControl, LoudnessTap};
 use crate::mixer::{ChannelInput, Mixer, MixerControl, MAX_CHANNELS};
 use crate::recorder::{Recorder, RecorderControl, RecorderTap};
 use crate::sampler::{Sample, SampleRegistry, SamplerAudio, SamplerControl, SamplerError};
@@ -45,6 +46,7 @@ pub struct DjEngine {
     sampler: Arc<SamplerControl>,
     samples: Arc<SampleRegistry>,
     recorder: Arc<RecorderControl>,
+    loudness: Arc<LoudnessControl>,
     /// Control-timer ticks so far; stamps [`EngineSnapshot::ticks`].
     ticks: AtomicU64,
     /// Snapshots built so far; stamps [`EngineSnapshot::built`].
@@ -60,6 +62,8 @@ pub struct DjEngineAudio {
     cue: StereoBuffer,
     /// Taps the final master output (after gain and inserts) for mix recording.
     recorder: RecorderTap,
+    /// Taps the same final master output for EBU R128 metering (idle until enabled).
+    loudness: LoudnessTap,
     max_block: usize,
 }
 
@@ -109,6 +113,7 @@ impl DjEngine {
         }
         let fx = Arc::new(FxRouting::new(&mixer_control));
         let (recorder_tap, recorder) = Recorder::create();
+        let (loudness_tap, loudness) = Loudness::create();
         let engine = Self {
             decks,
             controls,
@@ -119,6 +124,7 @@ impl DjEngine {
             sampler: Arc::new(sampler_control),
             samples: Arc::new(SampleRegistry::default()),
             recorder: Arc::new(recorder),
+            loudness: Arc::new(loudness),
             ticks: AtomicU64::new(0),
             builds: AtomicU64::new(0),
         };
@@ -129,6 +135,7 @@ impl DjEngine {
             master: StereoBuffer::new(),
             cue: StereoBuffer::new(),
             recorder: recorder_tap,
+            loudness: loudness_tap,
             max_block: 0,
         };
         (engine, audio)
@@ -178,6 +185,12 @@ impl DjEngine {
     /// The mix recorder's control side.
     pub fn recorder(&self) -> &RecorderControl {
         &self.recorder
+    }
+
+    /// The master bus's EBU R128 loudness meter: call `enable()` to start it, `reading()` to read
+    /// momentary, short-term, integrated, LRA and true peak.
+    pub fn loudness(&self) -> &LoudnessControl {
+        &self.loudness
     }
 
     /// Shared handle to the recorder, for the app's `record.*` target.
@@ -371,6 +384,8 @@ impl DjEngineAudio {
         );
         self.recorder
             .process(&self.master.left[..n], &self.master.right[..n]);
+        self.loudness
+            .process(&self.master.left[..n], &self.master.right[..n]);
 
         let channels = outputs.len();
         for (c, out) in outputs.iter_mut().enumerate() {
@@ -390,6 +405,16 @@ impl DjEngineAudio {
     }
 }
 
+impl DjEngineAudio {
+    /// Chooses the varispeed interpolation for every deck (default: sinc, 128 taps). An
+    /// engine-level setting with no UI. Allocates; call before the audio thread runs.
+    pub fn set_varispeed_quality(&mut self, quality: crate::deck::VarispeedQuality) {
+        for deck in &mut self.decks {
+            deck.set_varispeed_quality(quality);
+        }
+    }
+}
+
 impl AudioCallback for DjEngineAudio {
     fn prepare(&mut self, sample_rate: f64, max_block_size: usize) {
         self.max_block = max_block_size.max(1);
@@ -398,6 +423,7 @@ impl AudioCallback for DjEngineAudio {
         }
         self.mixer.prepare(sample_rate, self.max_block);
         self.recorder.prepare(sample_rate);
+        self.loudness.prepare(sample_rate);
         for buf in &mut self.deck_buffers {
             buf.resize(self.max_block);
         }

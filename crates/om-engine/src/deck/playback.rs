@@ -1,6 +1,7 @@
 //! Audio-thread side of a deck: services the seek handshake, pulls frames from the ring and
-//! renders them with linear interpolation at `rate * file_rate / device_rate`, or through
-//! the key-lock stretcher when that is on (`keylock.rs`). Allocation-free and lock-free.
+//! renders them at `rate * file_rate / device_rate` through rubato (`varispeed.rs`) or, where that
+//! does not apply, with linear interpolation, or through the key-lock stretcher when that is on
+//! (`keylock.rs`). Allocation-free and lock-free.
 
 use super::loop_state::LoopSnapshot;
 use super::prefetch::PrefetchSlot;
@@ -11,6 +12,19 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::Arc;
 
 mod keylock;
+mod varispeed;
+
+use varispeed::Varispeed;
+pub use varispeed::VarispeedQuality;
+
+/// Which renderer produced the last block, so a switch between them can be handled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Path {
+    /// Nothing rendered since a seek, a key-lock block or `configure_varispeed`.
+    Cold,
+    Linear,
+    Rubato,
+}
 
 pub(super) struct Playback {
     ring: rtrb::Consumer<f32>,
@@ -36,6 +50,13 @@ pub(super) struct Playback {
     /// Load id of the track being played; prefetch slots from other tracks are unusable.
     playing_load_id: u32,
     keylock: KeylockState,
+    /// Rubato varispeed state; `None` until `configure_varispeed` builds it (or for `Linear`).
+    vs: Option<Box<Varispeed>>,
+    path: Path,
+    /// Last frame of the previous block, for blending across a path switch.
+    last_out: [f32; 2],
+    /// Play exactly unity on the linear path (bit-exact, no delay). Tests turn it off.
+    unity_bypass: bool,
     /// Floats per ring frame, adopted from the decoder's ack: 2 in plain mode, 8 in stem mode.
     stride: usize,
     /// Folds eight-float stem frames into stereo at pull time, ahead of the interpolator and the
@@ -65,6 +86,10 @@ impl Playback {
             slot: None,
             playing_load_id: 0,
             keylock: KeylockState::new(),
+            vs: None,
+            path: Path::Cold,
+            last_out: [0.0; 2],
+            unity_bypass: true,
         }
     }
 
@@ -85,13 +110,36 @@ impl Playback {
             self.mixer.update_targets();
         }
         if sh.keylock.load(Relaxed) && self.keylock.stretch.is_some() {
+            self.path = Path::Cold;
             self.render_keylocked(sh, left, right);
             return;
         }
         if self.keylock_engaged() {
             self.leave_keylock();
         }
+        let step = sh.rate.load() * (sh.file_sample_rate.load() / sh.device_sample_rate.load());
+        if self.varispeed_applies(step) {
+            self.render_varispeed(sh, left, right, step);
+            return;
+        }
+        if self.path == Path::Rubato {
+            self.leave_varispeed();
+        }
         self.render_interpolated(sh, left, right);
+        self.path = Path::Linear;
+        self.remember_last_frame(left, right);
+    }
+
+    /// Chooses the varispeed quality and builds its resampler. Allocates; control thread, before
+    /// audio runs.
+    pub(super) fn set_varispeed_quality(&mut self, quality: VarispeedQuality) {
+        self.configure_varispeed(quality);
+    }
+
+    /// Test hook: lets the rubato path take exact unity too.
+    #[cfg(test)]
+    pub(super) fn force_varispeed_at_unity(&mut self, force: bool) {
+        self.unity_bypass = !force;
     }
 
     fn service_handshake(&mut self, sh: &Shared) -> bool {
@@ -127,6 +175,7 @@ impl Playback {
         self.primed = false;
         self.have_first = false;
         self.phase = 0.0;
+        self.path = Path::Cold;
         self.keylock.on_playhead_reset();
         self.release_slot(sh);
         if self.stride > 2 {

@@ -16,6 +16,7 @@ pub mod header_view;
 pub mod knob_paint;
 pub mod library;
 pub mod library_view;
+pub mod loudness_paint;
 pub mod media_keys;
 pub mod meter_paint;
 pub mod mixer_view;
