@@ -54,7 +54,7 @@ Code path: `--cue` enumerates `host.output_devices()`, prefers a device differen
 
 ## Run on native Linux (Phase 2); Windows and macOS in the porting phase
 
-Prereqs: Rust 1.91.1 via `rust-toolchain.toml`. Linux: `sudo apt install libasound2-dev pkg-config`. Windows: MSVC build tools. macOS: Xcode command line tools.
+Prereqs: Rust 1.95.0 (current pin) via `rust-toolchain.toml`. Linux: `sudo apt install libasound2-dev pkg-config`. Windows: MSVC build tools. macOS: Xcode command line tools.
 
 ```
 cd spikes/cpal-out

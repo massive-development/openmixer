@@ -205,7 +205,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-stretch` (`rubberband.rs` `RubberBandStretcher` behind the `Stretcher` trait, FFI calls in `ffi.rs`; see `docs/spikes/DECISIONS.md`)
 - **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
 - **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
-- **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe`, each block with a `// SAFETY:` line.
+- **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe` (a per-module `allow`), each block with a `// SAFETY:` line, and the load/teardown path is leak-checked.
 
 ### Stem cache (atomic directory entries, LRU by mtime)
 - **Where:** `om-stems` (`cache.rs` `StemCache`, `StemCacheSink`, `StemKey`; `wav.rs` streaming 16-bit WAV). The index is `om-library` `track_stems` (migration 8, `TrackStemsDao`).
