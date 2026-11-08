@@ -3,8 +3,8 @@
 //! MIDI input, controller maps, MIDI learn and controller feedback. Maps translate normalised
 //! events into string-id parameter targets (`mixer.ch0.fader`, `deck.0.play`) through the shared
 //! `ParameterRouter`, and feedback rules light controller LEDs from engine state.
-//! Hardware is optional: the device layer is a [`MidiBackend`]; tests use [`MockBackend`] and feed
-//! bytes straight into the mapper.
+//! Hardware is optional: the device layer is a [`MidiBackend`] ([`MidirBackend`] on `midir` in the
+//! app); tests use [`MockBackend`] and feed bytes straight into the mapper.
 
 mod backend;
 mod catalog;
