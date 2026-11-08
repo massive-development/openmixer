@@ -68,7 +68,7 @@ Unexplained: the 30 fps debug reading is not understood; it could be CPU-bound i
 
 ## Run on Windows/macOS (porting phase, not a gate)
 
-Prereqs: Rust 1.91.1 (rustup picks it up from `rust-toolchain.toml`). Windows: MSVC build tools + Windows SDK. macOS: Xcode (full app, for the Metal toolchain) and `xcode-select`.
+Prereqs: Rust 1.95.0, the current pin (rustup picks it up from `rust-toolchain.toml`). Windows: MSVC build tools + Windows SDK. macOS: Xcode (full app, for the Metal toolchain) and `xcode-select`.
 
 ```
 cd spikes/gpui-window

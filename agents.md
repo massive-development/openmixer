@@ -37,7 +37,7 @@ Dependencies point toward `om-core` (see "Modularity" above). The README archite
 
 - **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
 - **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops. Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
-- **`om-audio`, `om-dsp`, `om-stretch`**: device layer, DSP, and key-lock time-stretch (the only crate allowed `unsafe`, for FFI).
+- **`om-audio`, `om-dsp`, `om-stretch`**: device layer, DSP, and key-lock time-stretch (FFI `unsafe` in `om-stretch/src/ffi.rs`).
 - **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`.
 - **`om-stems` detail:** `StemSeparator` v2 is streamed (`separate_to(StereoSource, StemSink, ctx)`); `HtDemucsPipeline<I: StemInference>` does resampling, 7.8 s segments with overlap-add and STFT in Rust; `OrtInference` (ONNX Runtime) exists only with `--features onnx` (off by default, downloads the runtime at build time; own blocking CI job). `StemCache` (`cache.rs`, `wav.rs`) holds the stems under `<library folder>/stems`; `StemService` (`service.rs`, on `WorkerPool`, one worker) separates a track on explicit submit only and records `track_stems` through `om-library`, so `om-stems` depends on `om-library`. The app attaches it with `AppComposition::attach_stems` (`Services.stems`): the mock with `--mock-stems`, else htdemucs when built with `onnx` and installed. Real htdemucs is exported with `tools/export_htdemucs.py` (STFT-outside variant, checked against Demucs by `crates/om-stems/tests/htdemucs_reference.rs`; not yet listened to).
 - **`om-automix`** (pure, depends on `om-core` only, control thread; never touches the audio thread): `stem_fade` (S8) holds `StemFade` ramps and `StemFadePlan`, the builders and `StemFadeRunner`. Automix proper (Todo 38):
@@ -156,7 +156,7 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 - **Audio I/O:** `cpal` for the engine output callback; `rodio` only for non-critical audio such as library preview
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
-- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
+- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (`unsafe` confined to `ffi.rs`), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `docs/spikes/DECISIONS.md`)
 - **MIDI:** ALSA sequencer (`alsa`, same version as cpal) on Linux; `midir` for macOS and Windows, later (see `docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
 - **RT plumbing:** `rtrb` (SPSC), `arc-swap` for snapshots, `assert_no_alloc` in tests
 
@@ -184,7 +184,7 @@ All changes — including those by AI agents and maintainers — land through a 
 All code must follow Rust best practices (edition 2021, toolchain pinned in `rust-toolchain.toml`). Outdated, unsafe or leaking code is not acceptable.
 
 - **Ownership:** owned values and borrows by default. Use `Arc` only when ownership is genuinely shared across threads, and `Rc` never on the audio path. Pass data by value or by reference; avoid `'static` leaks and `Box::leak`.
-- **Unsafe:** every crate has `#![forbid(unsafe_code)]` (or the workspace `unsafe_code = "forbid"` lint) except the dedicated FFI crate `om-stretch` (Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md) and the library loaders in `om-plugins`: `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (ADR 0007). Every `unsafe` block there has a `// SAFETY:` line stating the invariant, and `unsafe` is allowed only with no memory leak: `crates/om-plugins/tests/clap_leak.rs` and `tools/clap_leak_check.sh` (valgrind) guard the CLAP path.
+- **Unsafe:** allowed where necessary, anywhere in the repo, provided there are no memory leaks. The workspace `unsafe_code = "forbid"` lint stays on; each use is a per-module `#[allow(unsafe_code)]` exception. Current exception modules: `om-stretch/src/ffi.rs` (Rubber Band R3 behind a `Stretcher` trait; see docs/spikes/DECISIONS.md); in `om-plugins` `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (ADR 0007); plus the plugin fixtures under `examples/plugins/` and `crates/om-plugins/tests/clap_leak.rs`. Every `unsafe` block has a `// SAFETY:` line stating the invariant, and any new FFI or load/teardown path needs a leak check (counting allocator or valgrind): `crates/om-plugins/tests/clap_leak.rs` and `tools/clap_leak_check.sh` (valgrind) guard the CLAP path.
 - **Idioms:** `enum`s and `match` for state and commands, newtypes for ids and units, `Option`/`Result` instead of sentinel values, `?` for propagation, `#[must_use]` where a result must not be ignored, iterators over index loops where clearer. Prefer `&str`/`&[T]` parameters.
 - **Errors:** `thiserror` for typed errors in library crates, `anyhow` only in the `openmixer` binary. Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
 - **Logging:** `tracing` macros with structured fields. Never log from the audio thread.
@@ -294,6 +294,15 @@ sudo apt-get install libasound2-dev pkg-config
 
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
 - GPUI platform dependencies (Linux) are documented in `docs/spikes/gpui.md`.
+- **Crates added in the platform refresh:**
+  - `gpui-pre` (renamed to `gpui`) with `gpui-kit`, the GPUI base for `om-ui-gpui`.
+  - `rubato`: sample-rate conversion (sampler load, stems).
+  - `ebur128`: EBU R128 loudness metering in `om-engine`.
+  - `midir`: MIDI I/O in `om-midi`.
+  - `souvlaki`: OS media controls in `om-ui-gpui`.
+  - `walkdir`: library folder scans in `om-library`.
+  - `clack-host`, `clack-extensions`, `clack-plugin`: CLAP hosting, behind the optional `clap` feature of `om-plugins`.
+  - `cpal` `realtime-dbus`: opt-in `om-audio` feature (needs `libdbus-1-dev`) for Linux real-time priority.
 
 ### Build Commands
 
@@ -321,6 +330,18 @@ cargo run -p openmixer -- --smoke
 ```
 
 Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
+
+### Build setup and cost rule
+
+- **sccache (Linux, optional):** to share compiled dependencies between worktrees, install `sccache` and put this in `~/.cargo/config.toml`:
+
+```toml
+[build]
+rustc-wrapper = "sccache"
+incremental = false
+```
+
+- **Cost rule for agents:** while working use `cargo check -p <crate>` and the touched crates' tests with `-j 4`. Run full clippy, workspace tests and `cargo deny check` once per PR, at the end. At most two parallel agents on the 12-core shared host.
 
 ### Working on a constrained machine (WSL)
 
@@ -409,7 +430,7 @@ Waves 1–4 and 6 are verified headlessly on Linux; the Wave 5 UI is partial. Wa
 ### Memory Safety
 
 - Values are owned by default; use `Box`, `Vec` and `Arc` deliberately
-- No `unsafe` outside the designated FFI crate
+- `unsafe` only in the per-module exceptions listed under "Rust Standards", each with a `// SAFETY:` comment and no leaks
 - Types are not `Clone` or `Copy` unless copying is meaningful
 - Allocation happens off the audio thread; `assert_no_alloc` guards the render path in tests
 
