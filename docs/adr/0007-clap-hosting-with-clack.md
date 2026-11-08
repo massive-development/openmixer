@@ -6,6 +6,8 @@ Accepted
 
 Design note only (issue #225, P7). No code and no Cargo change is part of this ADR. The maintainer signed off on 2026-11-07 (see "Decisions"); implementation follows the migration plan.
 
+Update (2026-11-07): the loader, parameters, the plugin window and a test fixture landed behind the `clap` feature of `om-plugins` (see "Implementation notes"). Still open: the first-run prompt and warning screens, state persistence and latency compensation.
+
 ## Context
 
 `om-plugins` loads our own plugins through a C ABI with `libloading` (`abi.rs`, `loader.rs`; ABI versions 1 and 2; `docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). It is mono, in-place, one `process` call per channel, with an optional JSON parameter list and no GUI. Only plugins written against `include/openmixer_plugin.h` can run. Most effects, instruments and utilities that users own ship as CLAP, VST3 or AU, so a user cannot bring "their" reverb into OpenMixer.
@@ -47,7 +49,7 @@ Enable only the extensions we use: `audio-ports`, `params`, `state`, `latency`, 
 
 `PluginEntry::load` needs `unsafe`. The workspace forbids `unsafe_code`; `om-plugins` denies it and allows it only in `abi.rs` and `loader.rs` (see `lib.rs`), which exist to load shared libraries.
 
-Decision (maintainer-approved, Decisions 3): add one module, `om-plugins/src/clap` (feature `clap`), with `#[allow(unsafe_code)]` on the loading file only, as `abi` and `loader` have it. It holds the single `unsafe { PluginEntry::load(path) }` call with a `// SAFETY:` line (the user chose to load this file; the entry is then used only through clack's safe API; clack keeps the library loaded while any instance created from the entry lives). Everything else stays safe Rust in sibling files that keep `deny(unsafe_code)`, including the GUI bridge, because `Window::from_window` is safe. Avoid `Window::borrow_handle_unchecked`, which is `unsafe`. The `unsafe` surface grows by one call site, and `agents.md` ("Unsafe"), CONTRIBUTING and the handoff text then name this module beside `abi` and `loader`.
+Decision (maintainer-approved, Decisions 3): add one module, `om-plugins/src/clap` (feature `clap`), with `#[allow(unsafe_code)]` on the loading file only, as `abi` and `loader` have it. It holds the single `unsafe { PluginEntry::load(path) }` call with a `// SAFETY:` line (the user chose to load this file; the entry is then used only through clack's safe API; clack keeps the library loaded while any instance created from the entry lives). Everything else stays safe Rust in sibling files that keep `deny(unsafe_code)`, including the GUI bridge, because `Window::from_window` is safe. Avoid `Window::borrow_handle_unchecked`, which is `unsafe`. The `unsafe` surface grows by one call site, and `agents.md` ("Unsafe") and CONTRIBUTING then name this module beside `abi` and `loader`.
 
 Alternatives:
 
@@ -157,7 +159,7 @@ Where the build differs from, or settled a question in, the text above.
 
 ## References
 
-- Issue #225 (P7); #218 and #219 (gpui-kit, `gpui-pre` 0.3.10); the platform refresh handoff (`docs/superpowers/plans/2026-11-06-platform-refresh-handoff.md`, local, untracked)
+- Issue #225 (P7); #218 and #219 (gpui-kit, `gpui-pre` 0.3.10)
 - `crates/om-plugins/src/abi.rs`, `loader.rs`, `lib.rs`; `docs/spikes/DECISIONS.md` ("Plugins: C ABI dynamic loading", "ABI 2")
 - `agents.md` ("Unsafe", "Extensibility", "Plugin control targets")
 - ADR 0004 (Rust with GPUI; plugins superseded in part)

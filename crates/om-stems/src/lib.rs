@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Stem separation: the streamed separator interface (v2), the htdemucs pipeline (resampling,
-//! segmenting, overlap-add, STFT) around a [`StemInference`] network trait, the model manifest, and
-//! licence-gated, checksum-verified weight downloads. The ONNX Runtime network (`OrtInference`) is
+//! Stem separation: the streamed separator interface (v2), the htdemucs pipeline (resampling with
+//! `rubato`, segmenting, overlap-add, STFT) around a [`StemInference`] network trait, the model
+//! manifest, and licence-gated, checksum-verified weight downloads. The ONNX Runtime network (`OrtInference`) is
 //! behind the off-by-default `onnx` feature; without it the pipeline runs on fakes and the
 //! [`MockSeparator`] stands in.
 

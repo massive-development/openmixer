@@ -4,6 +4,8 @@
 //!
 //! Threading: one writer per database file. A `Database` is used by one thread at a time; the UI
 //! opens its own read-only connection to the same file (WAL lets it read while the writer commits).
+//! A writable file database runs in WAL mode with `synchronous=NORMAL`: a power loss can lose the
+//! last commits (a rescan recovers them), an application crash loses nothing.
 //!
 //! ## Free-text search and FTS5 (migration 7)
 //!
