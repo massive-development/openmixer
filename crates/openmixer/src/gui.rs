@@ -139,6 +139,8 @@ pub fn main(args: &[String]) -> ExitCode {
         om_ui::preferences::default_file(),
         &library_smoke::scratch_dir(),
     );
+    // A demo run keeps its plugin state in the scratch folder too.
+    composition.use_plugin_state_file(openmixer::plugin_state::state_file_for(&prefs_file));
     let home = dirs::home_dir().map(std::path::PathBuf::into_os_string);
     let user_themes = default_user_directory(home.as_deref());
 
@@ -413,6 +415,7 @@ pub fn main(args: &[String]) -> ExitCode {
         composition.borrow().record.stop();
     }
     output.lock().stop();
+    composition.borrow_mut().persist_plugin_states();
 
     let mut failed = false;
     if smoke {

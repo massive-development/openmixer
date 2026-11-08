@@ -258,6 +258,7 @@ impl PluginHost for AppComposition {
         if !self.plugins.unload(id) {
             return Err(SettingsError::PluginNotLoaded { id: id.to_owned() });
         }
+        self.persist_plugin_states();
         self.refresh_plugin_themes();
         Ok(())
     }
@@ -485,6 +486,54 @@ mod tests {
         let entry = app.themes.find("demo.theme").expect("forwarded");
         assert_eq!(entry.source, Source::Plugin);
         assert_eq!(entry.owner, ID);
+    }
+
+    /// A plugin with state: one counter, saved as its bytes.
+    struct Stateful(std::sync::Mutex<u8>);
+
+    impl Plugin for Stateful {
+        fn info(&self) -> PluginInfo {
+            PluginInfo {
+                id: "test.stateful".into(),
+                name: "Stateful".into(),
+                version: "1".into(),
+            }
+        }
+
+        fn on_load(&mut self, _host: &mut dyn om_plugins::PluginHost) {}
+
+        fn save_state(&self) -> Result<Option<Vec<u8>>, om_plugins::PluginError> {
+            Ok(Some(vec![*self.0.lock().unwrap()]))
+        }
+
+        fn restore_state(&self, state: &[u8]) -> Result<(), om_plugins::PluginError> {
+            *self.0.lock().unwrap() = state.first().copied().unwrap_or(0);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn plugin_state_is_saved_on_unload_and_restored_in_the_next_session() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let prefs = dir.path().join("prefs.json");
+        let mut first = AppComposition::new(&prefs, None);
+        first
+            .plugins
+            .add_plugin(Box::new(Stateful(std::sync::Mutex::new(7))))
+            .expect("loads");
+        PluginHost::unload(&mut first, "test.stateful").expect("unloads");
+        let file = dir.path().join("plugin-state.json");
+        assert!(
+            file.is_file(),
+            "unloading wrote the state beside the preferences"
+        );
+        drop(first);
+
+        let mut second = AppComposition::new(&prefs, None);
+        let plugin = Stateful(std::sync::Mutex::new(0));
+        second.plugins.add_plugin(Box::new(plugin)).expect("loads");
+        let states = second.plugins.plugin_states();
+        assert_eq!(states.get("test.stateful"), Some(&vec![7]));
     }
 
     #[test]

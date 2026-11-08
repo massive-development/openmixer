@@ -17,6 +17,7 @@ use crate::control_timer::ControlTimer;
 use crate::engine_state::EngineStateReader;
 use crate::error::AppError;
 use crate::midi::{FeedbackThread, MidiService};
+use crate::plugin_state::{state_file_for, PluginStateStore};
 use crate::record_service::RecordService;
 use crate::stems_host::StemsHost;
 use om_audio::{DjEngine, DjEngineAudio};
@@ -120,6 +121,8 @@ pub struct AppComposition {
     /// The plugins: loaded from the plugin folder by the preferences, or added in-process. Their
     /// parameter targets are routed through [`AppComposition::router`].
     pub plugins: PluginRegistry,
+    /// Where the plugins' saved state lives (`plugin-state.json` beside the preferences).
+    plugin_state: PluginStateStore,
     /// Automix: the `automix.*` target is registered with the router. The window steps the
     /// controller (an [`AutomixRunner`]) once it has a host.
     pub automix: Arc<AutomixShared>,
@@ -153,6 +156,8 @@ impl AppComposition {
         engine.register(&router);
         let mut plugins = PluginRegistry::new();
         plugins.bind_router(Some(Arc::clone(&router)));
+        let mut plugin_state = PluginStateStore::new(state_file_for(prefs_file));
+        load_plugin_states(&mut plugin_state, &mut plugins);
 
         let (prefs, prefs_replaceable) = match Preferences::load(prefs_file) {
             Ok(p) => (p, true),
@@ -197,6 +202,7 @@ impl AppComposition {
             prefs_replaceable,
             services: Services::default(),
             plugins,
+            plugin_state,
             midi_feedback: None,
             applier: PreferencesApplier::new(),
             targets: AppTargetsState::default(),
@@ -416,6 +422,29 @@ impl AppComposition {
         )
     }
 
+    /// Keeps the plugins' saved state in `file` from now on and reads it (a demo run points this at
+    /// its scratch folder, so it neither reads nor writes the user's state). Call before the plugins
+    /// load.
+    pub fn use_plugin_state_file(&mut self, file: PathBuf) {
+        self.plugin_state = PluginStateStore::new(file);
+        load_plugin_states(&mut self.plugin_state, &mut self.plugins);
+    }
+
+    /// Saves every plugin's state to the state file (a changed set only). Called when a plugin is
+    /// unloaded or the folder reloaded, and when the window closes. Problems go to stderr.
+    pub fn persist_plugin_states(&mut self) {
+        let states = self.plugins.plugin_states();
+        for error in self.plugins.take_state_errors() {
+            eprintln!("openmixer: {error}");
+        }
+        if let Err(error) = self.plugin_state.save(&states) {
+            eprintln!(
+                "openmixer: could not save {}: {error}",
+                self.plugin_state.path().display()
+            );
+        }
+    }
+
     /// Reloads the plugin folder applied last (the Plugins page's Reload button). Themes are
     /// re-forwarded, and the selection is restored when its plugin theme is back.
     pub fn reload_plugins(&mut self) {
@@ -428,7 +457,18 @@ impl AppComposition {
             Some(&mut self.plugins),
         );
         targets.reload_plugins();
+        self.persist_plugin_states();
     }
+}
+
+/// Reads the state file into the store and hands the states to the registry, so a plugin gets its
+/// state when it loads. Problems with the file go to stderr.
+fn load_plugin_states(store: &mut PluginStateStore, plugins: &mut PluginRegistry) {
+    let loaded = store.load();
+    for issue in &loaded.issues {
+        eprintln!("openmixer: {issue}");
+    }
+    plugins.set_saved_states(loaded.states);
 }
 
 /// The htdemucs separator over ONNX Runtime, when the model is installed and the `onnx` feature is

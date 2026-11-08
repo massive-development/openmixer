@@ -21,7 +21,9 @@ unsafe_code = "deny"
 panic-in-process = []
 error-in-process = []
 emit-param-change = []
+# The state extension refuses to load, to test a plugin that rejects saved state.
+reject-state = []
 
 [dependencies]
 clack-plugin.workspace = true
-clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "gui", "latency"] }
+clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "gui", "latency", "state"] }

@@ -71,6 +71,10 @@ pub struct PluginRegistry {
     clap_found: Vec<PathBuf>,
     #[cfg(feature = "clap")]
     clap_waiting: Vec<PathBuf>,
+    /// Saved plugin state by plugin id: handed to a plugin when it loads, refreshed when it unloads.
+    saved_states: BTreeMap<String, Vec<u8>>,
+    /// Why a state could not be saved or restored, until [`PluginRegistry::take_state_errors`].
+    state_errors: Vec<String>,
 }
 
 /// The host side of one `on_load` call. Exists only for the duration of the call.
@@ -206,6 +210,11 @@ impl PluginRegistry {
             owner: &info.id,
             regs: &mut self.regs,
         });
+        if let Some(bytes) = self.saved_states.get(&info.id) {
+            if let Err(error) = plugin.restore_state(bytes) {
+                self.state_errors.push(error.to_string());
+            }
+        }
         self.entries.push(Entry {
             id: info.id,
             plugin,
@@ -332,6 +341,14 @@ impl PluginRegistry {
         let Some(index) = self.entries.iter().position(|e| e.id == id) else {
             return false;
         };
+        // Before the stages go: a live instance is where the current state is.
+        match self.entries[index].plugin.save_state() {
+            Ok(Some(bytes)) => {
+                self.saved_states.insert(id.to_owned(), bytes);
+            }
+            Ok(None) => {}
+            Err(error) => self.state_errors.push(error.to_string()),
+        }
         let held = self.regs.remove_owner(id);
         let mut entry = self.entries.remove(index);
         entry.plugin.on_unload();
@@ -346,6 +363,44 @@ impl PluginRegistry {
             let id = last.id.clone();
             self.unload(&id);
         }
+    }
+
+    /// Sets the states plugins get when they load (read from the app's store). Replaces what was set.
+    pub fn set_saved_states(&mut self, states: BTreeMap<String, Vec<u8>>) {
+        self.saved_states = states;
+    }
+
+    /// Restores `state` into loaded plugin `id` now (live instances included) and keeps it for the
+    /// next load. Fails when the plugin is not loaded or refuses the bytes.
+    pub fn restore_plugin_state(&mut self, id: &str, state: &[u8]) -> Result<(), PluginError> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .ok_or_else(|| PluginError::UnknownStage(id.to_owned()))?;
+        self.saved_states.insert(id.to_owned(), state.to_vec());
+        entry.plugin.restore_state(state)
+    }
+
+    /// The state of every plugin that has one: loaded plugins as they are now, unloaded ones as they
+    /// were when they unloaded (or as they were set). Control thread.
+    pub fn plugin_states(&mut self) -> BTreeMap<String, Vec<u8>> {
+        let mut states = self.saved_states.clone();
+        for entry in &self.entries {
+            match entry.plugin.save_state() {
+                Ok(Some(bytes)) => {
+                    states.insert(entry.id.clone(), bytes);
+                }
+                Ok(None) => {}
+                Err(error) => self.state_errors.push(error.to_string()),
+            }
+        }
+        states
+    }
+
+    /// The reasons states could not be saved or restored since the last call.
+    pub fn take_state_errors(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.state_errors)
     }
 
     pub fn plugin_ids(&self) -> Vec<String> {
