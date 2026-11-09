@@ -10,7 +10,8 @@ pub enum Density {
 }
 
 /// The density the user asked for on the Appearance page. `Automatic` picks Roomy when the window
-/// is tall enough for it and Compact otherwise (`main_layout::resolve_density`).
+/// is tall enough for it and Compact otherwise; `Roomy` gives way to Compact only where it would
+/// leave the library without its rows (`main_layout::resolve_density`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DensityChoice {
     #[default]
