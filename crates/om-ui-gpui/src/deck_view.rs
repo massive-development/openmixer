@@ -8,14 +8,16 @@ use crate::app::Shell;
 use crate::controls::slider;
 use crate::drag::Target;
 use crate::fader_paint;
-use crate::font::{numeral, Numeral};
+use crate::font::{numeral, Numeral, TypeExt};
 use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place, skin};
 use crate::platter_paint::{
     angle_delta, paint_platter, platter_geometry, platter_rect, pointer_angle, scratch_target,
     zone_at, PlatterScene, Zone, SECONDS_PER_TURN,
 };
-use crate::waveform_paint::{paint_overview, paint_zoom, with_alpha, OverviewScene, ZoomScene};
+use crate::waveform_paint::{
+    paint_overview, paint_zoom, style as wave_style, OverviewScene, ZoomScene,
+};
 use gpui::{
     canvas, div, prelude::*, px, relative, Bounds, Context, Div, MouseButton, MouseDownEvent,
     MouseMoveEvent, Pixels, Render, SharedString, Stateful, Window,
@@ -27,9 +29,9 @@ use om_ui::style::LookAndFeel;
 use om_ui::style::{contrast_ratio, over, relative_luminance};
 use om_ui::theme::Colour;
 use om_ui::theme::ThemeTokens;
+use om_ui::theme::TypeRole;
 use om_ui::waveform::{
-    cue_flags, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_LINE_WIDTH,
-    CUE_STACK_STEP, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
+    cue_flags, StripInk, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_STACK_STEP,
 };
 use om_ui::widgets::deck::{
     deck_controls_layout_for, deck_layout_for, tab_rects, DeckLayout, PadMode, CONTROL_GAP,
@@ -509,8 +511,8 @@ fn slider_caption(t: &ThemeTokens, text: &str) -> Div {
         .child(text.to_owned())
 }
 
-/// The overview: the whole track in the three bands, played part dimmed, with the playhead, hot
-/// cue ticks, loop and bar ticks. A click or a drag across it seeks.
+/// The overview: the whole track in the deck colour (Low-Band), played part shaded, with the
+/// playhead, hot cue guides, loop and bar ticks. A click or a drag across it seeks.
 pub(crate) fn overview(
     shell: &Shell,
     index: usize,
@@ -523,11 +525,12 @@ pub(crate) fn overview(
     let area = l.overview;
     let width = f64::from(area.w);
     let origin_x = card.x + area.x;
+    let ink = StripInk::new(t, wave_style(), index);
     let scene = OverviewScene {
         deck: index,
         wave: shell.library.as_ref().and_then(|p| p.waveform(index)),
         markers: deck.overview.markers(width),
-        well: om_ui::waveform::strip_well(t),
+        ink,
     };
 
     let canvas_el = canvas(
@@ -545,7 +548,7 @@ pub(crate) fn overview(
     };
     place(area)
         .overflow_hidden()
-        .bg(paint(om_ui::waveform::WAVE_WELL))
+        .bg(paint(ink.well))
         .rounded(px(t.control_radius))
         .child(canvas_el)
         .on_mouse_down(
@@ -588,6 +591,7 @@ pub(crate) fn zoom(
     let grid = deck.zoom.grid_lines(&view);
     let loop_region = deck.zoom.loop_region(&view);
     let flags = cue_flags(&deck.zoom.cue_xs(&view), width);
+    let ink = StripInk::new(t, wave_style(), index);
     let scene = ZoomScene {
         deck: index,
         wave: shell.library.as_ref().and_then(|p| p.waveform(index)),
@@ -595,7 +599,7 @@ pub(crate) fn zoom(
         length_frames: shell.engine.deck(index).length_frames(),
         grid: grid.clone(),
         loop_span: loop_region.as_ref().map(|r| (r.x0, r.x1, r.looping)),
-        well: om_ui::waveform::strip_well(t),
+        ink,
     };
 
     let strip = canvas(
@@ -608,12 +612,12 @@ pub(crate) fn zoom(
 
     let mut el = place(area)
         .overflow_hidden()
-        .bg(paint(om_ui::waveform::WAVE_WELL))
+        .bg(paint(ink.well))
         .rounded(px(t.control_radius))
         .child(strip);
 
-    // Bar numbers sit at the foot of their line, in front of the waveform.
-    let number_colour = with_alpha(GRID_COLOUR, 0.85);
+    // Bar numbers sit bottom-left of their line, in front of the waveform.
+    let number_colour = paint(ink.number);
     for line in &grid {
         if let Some(n) = line.bar_number {
             el = el.child(strip_number(
@@ -626,20 +630,23 @@ pub(crate) fn zoom(
         }
     }
 
+    // The loop's length in the label style, in the deck colour (comp 4a).
     if let Some(region) = &loop_region {
-        if !region.label.is_empty() {
-            let x = (region.x0 as f32).max(0.0) + 6.0;
-            el = el.child(strip_number(
-                t,
-                x,
-                height - BAR_NUMBER_SIZE - 6.0,
-                with_alpha(LOOP_COLOUR, region.edge_alpha()),
-                region.label.clone(),
-            ));
+        let caption = region.caption();
+        if !caption.is_empty() {
+            el = el.child(
+                div()
+                    .absolute()
+                    .left(px((region.x0 as f32).max(0.0) + 8.0))
+                    .bottom(px(5.))
+                    .type_role(t, TypeRole::Label)
+                    .text_color(paint(ink.loop_edge(region.looping)))
+                    .child(caption),
+            );
         }
     }
 
-    // Hot cue flags: a 2 px line down the strip and a numbered tab at the top.
+    // Hot cue flags: a 1 px guide down the strip and a numbered flag at the top, in the deck colour.
     for flag in &flags {
         el = el
             .child(
@@ -647,9 +654,9 @@ pub(crate) fn zoom(
                     .absolute()
                     .left(px(flag.x))
                     .top(px(0.))
-                    .w(px(CUE_LINE_WIDTH))
+                    .w(px(ink.cue_width))
                     .h(px(height))
-                    .bg(paint(flag.colour)),
+                    .bg(paint(ink.cue_guide())),
             )
             .child(
                 div()
@@ -661,9 +668,8 @@ pub(crate) fn zoom(
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded_br(px(3.))
-                    .bg(paint(flag.colour))
-                    .text_color(paint(CUE_TEXT_COLOUR))
+                    .bg(paint(ink.deck))
+                    .text_color(paint(ink.on_deck))
                     .child(numeral(t, Numeral::Value, flag.label.clone())),
             );
     }

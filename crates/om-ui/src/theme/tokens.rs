@@ -115,10 +115,11 @@ pub struct ThemeTokens {
     pub meter_high: Colour,
     /// Signal red: the playhead and the recording state, nothing else.
     pub playhead: Colour,
-    /// Semantic colours (chrome, markers and state; never a deck identity and never waveform).
-    /// Cue point and "main" marker.
+    /// Semantic colours (chrome and state; never a deck identity and never waveform). The
+    /// waveform's cue flags and loop region take the deck colour (comp 4a), not these.
+    /// Cue chrome.
     pub cue: Colour,
-    /// Loop region and loop-active state.
+    /// Loop chrome.
     pub loop_mark: Colour,
     /// Sync engaged.
     pub sync_on: Colour,
@@ -168,8 +169,11 @@ pub struct ThemeTokens {
     pub deck_min_zoom_height: f32,
     pub deck_readout_width: f32,
     pub deck_range_box_height: f32,
+    /// Waveform marks (comp 4a): playhead and cue guide widths, the cue guide's share of the deck
+    /// colour, bar and beat lines' share of the text colour, the loop fill's of the deck colour.
     pub playhead_width: f32,
     pub cue_marker_width: f32,
+    pub cue_guide_alpha: f32,
     pub grid_bar_alpha: f32,
     pub grid_beat_alpha: f32,
     pub loop_active_alpha: f32,
@@ -348,10 +352,11 @@ impl ThemeTokens {
             deck_readout_width: 78.0,
             deck_range_box_height: 24.0,
             playhead_width: 2.0,
-            cue_marker_width: 2.0,
-            grid_bar_alpha: 0.55,
-            grid_beat_alpha: 0.4,
-            loop_active_alpha: 0.25,
+            cue_marker_width: 1.0,
+            cue_guide_alpha: 0.45,
+            grid_bar_alpha: 0.14,
+            grid_beat_alpha: 0.05,
+            loop_active_alpha: 0.14,
             loop_idle_alpha: 0.08,
             deck_tint_alpha: 0.22,
             deck_border_alpha: 0.70,
