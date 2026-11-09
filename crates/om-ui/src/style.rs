@@ -203,6 +203,8 @@ pub struct LookAndFeel {
     pub bar_radius: f32,
     /// Disabled text colour is the muted text colour at this alpha.
     pub disabled_alpha: f32,
+    /// The "on" hue of chrome that belongs to no deck (settings chips, the sampler, header
+    /// switches): the text colour, so a deck hue never appears without its deck (DESIGN.md).
     pub accent: Colour,
     pub readout: ReadoutStyle,
     /// The one small drop under raised controls.
@@ -221,7 +223,7 @@ pub struct LookAndFeel {
 impl LookAndFeel {
     /// Derives every control style from `t`.
     pub fn from_tokens(t: &ThemeTokens) -> Self {
-        let accent = t.accent_for(0);
+        let accent = t.text_primary;
         let raised = t.surface_raised_scaled();
         let shape =
             |fill: Colour, text: Colour, border: Colour, radius: f32, size: f32| ControlStyle {
@@ -1136,6 +1138,22 @@ mod tests {
         assert_eq!(on.radius, t.control_radius);
         assert_eq!(look.toggle(false, accent), look.toggle.off);
         assert_eq!(look.toggle.off, look.button.idle);
+    }
+
+    #[test]
+    fn chrome_that_names_no_deck_lights_in_the_text_colour() {
+        for id in ["dark", "daylight", "harbour"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            assert_eq!(look.accent, t.text_primary);
+            for hue in &t.accents {
+                assert_ne!(
+                    look.toggle.on.border,
+                    tint(t.border, *hue, t.deck_border_alpha)
+                );
+                assert_ne!(look.tabs.selected.border, *hue);
+            }
+        }
     }
 
     #[test]
