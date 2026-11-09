@@ -19,7 +19,7 @@ _Regenerate with `python3 tools/progress_heatmap.py` after editing `docs/progres
 | 2 | Audio engine | 🟡 (debug panel 26a partial; 8b FFmpeg fallback on sampler, decks, stems and analysis, optional feature; 10-minute soak on a weekly CI job, not yet run) |
 | 3 | Analysis | 🟡 (htdemucs model export and app wiring, 19, open) |
 | 4 | Library | 🟡 (crates open) |
-| 5 | UI | 🟡 (LookAndFeel 25 partial (library table, scroll thumb, automix switch, platter switch, transport pills, settings chips and card, debug column restyled); stem pads 30 done at logic and view level, not checked by ear; decks, mixer and settings partial; staged screenshots checked by eye, a live display not checked) |
+| 5 | UI | 🟡 (Machined Faceplate redesign, ADR 0008, Phases 1 to 6 built: tokens, fonts, controls, Low-Band waveform, layout, polish; checked on offscreen captures only, not on a live display or with real music; stem pads 30 done at logic and view level, not checked by ear; the tracked screenshots still show the E1 window) |
 | 6 | Hardware | 🟡 (32 and 33 moved to Wave 2; 36 mapping editor at logic and view level, not verified with hardware; 34 generic maps and selection built, not verified with a device; 35 open) |
 | 7 | Intelligence | 🟡 (37 stem DSP, 38 Automix and 39 stem transitions done at engine and logic level, not heard; 40 sampler partial) |
 | 8 | Pro surface | ⬜ |
@@ -190,6 +190,20 @@ The snapshot carries each channel's crossfader assignment (`mixer.ch<N>.xfader`)
 ### Soak xrun budget: one retry (review item 9)
 
 `soak_short` and `soak_short_with_stems` (`crates/om-audio/tests/soak.rs`) allow the xrun budget (5 callbacks over the buffer's time budget) to be exceeded once: an over-budget run is repeated, and the test fails only when the repeat is over budget too. Shared runners stall for reasons the engine does not control, so one clean run out of two is the bar; two over-budget runs in a row still fail. Non-finite samples, overflow and steady-state underruns keep zero tolerance on both runs. Each run prints its xrun count and worst callback time, so a retry is visible in the log. The 10-minute soak keeps the single-run check.
+
+### UI redesign: the Machined Faceplate (ADR 0008)
+
+Plan: `docs/superpowers/plans/2026-11-05-ui-faceplate-redesign.md`; decisions and open owner questions: `docs/design/faceplate-decisions.md`; look: `docs/design-system/DESIGN.md`.
+
+| Phase | Done | Tests | Missing |
+|-------|------|-------|---------|
+| 0 Decisions | ADR 0008; D1 to D8 answered | | |
+| 1 Tokens | Warm neutrals, four deck hues, signal red; dark, daylight, harbour (harbour unsourced); Roomy and Compact metric sets; E1 keys still load with warnings | `theme_json`, `theme_registry`, contrast and colour-blind tests (daylight C/D below the floor, ignored and reported) | |
+| 2 Fonts | Sansation Bold, Source Sans 3, Ubuntu Mono; type tiers; every number in mono | `type_lint`, font tests | Ubuntu Mono has no 500; no letter-spacing in GPUI |
+| 3 Controls | Faces with the full state set, knobs, faders, meters with CLIP, deck tags, LOCK; controls gallery | gallery, knob hit-target and contrast tests | |
+| 4 Waveform | Low-Band style default (`colour` selectable), signal-red playhead, deck-colour cues and loop, overview strip | `wave_budget`, `wave_flicker`, `wave_palette` | Frame times with real music |
+| 5 Layout | Header, deck heads with the master tempo, stacked waveforms, deck A / mixer / deck B mirrored, library band; density preference | `main_layout` at every listed size, headless gpui tests, keyboard walk | D7 features (Full/Controller, Compatible with A, vs A, Delta BPM) not built |
+| 6 Verification | Offscreen matrix (3 themes x 2 densities x 3 sizes and extra scenes) looked at; chrome no longer lit in deck A's amber; an explicit Roomy gives way where the library would lose its rows; library numeral baseline, sidebar bar, FX labels, sampler handle and empty-deck readout fixed (`docs/screenshots/REVIEW.md`) | `every_density_choice_keeps_the_library_rows_from_the_minimum_window_up`, `chrome_that_names_no_deck_lights_in_the_text_colour`, `a_lit_chip_is_neutral_never_a_deck_hue`, `an_fx_knob_makes_room_for_a_long_name_and_keeps_the_column_width_for_short_ones` | A live display, real music, `frame_stats` frame times, `tools/screenshots.sh` recapture, `/impeccable` document and critique |
 
 ### Platform refresh (issues #218 to #229, #241, #250)
 
