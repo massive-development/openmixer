@@ -1,5 +1,5 @@
 //! The bundled fonts and the type tiers. Sansation Bold (SIL OFL 1.1), Source Sans 3 Regular and
-//! Medium (SIL OFL 1.1) and Ubuntu Mono Regular (Ubuntu Font Licence 1.0) are compiled in and
+//! Medium (SIL OFL 1.1) and Ubuntu Mono Regular and Bold (Ubuntu Font Licence 1.0) are compiled in and
 //! registered with GPUI's text system at start-up; their licences sit beside them in
 //! `resources/fonts`. GPUI picks the nearest weight among the static faces of one family, so
 //! Source Sans 3's two files share one family name (docs/spikes/DECISIONS.md, "Faceplate P2").
@@ -17,8 +17,9 @@ use gpui::{
 use om_ui::theme::{FontSlot, ThemeTokens, TypeRole};
 
 /// The bundled faces: (file name, bytes). Ubuntu Mono has no 500; the 500 numerals resolve to its
-/// Regular, as a browser does with the comp's 400/700 web fonts.
-pub static BUNDLED_FACES: [(&str, &[u8]); 4] = [
+/// Regular, as a browser does with the comp's 400/700 web fonts. Its Bold sets the deck letter and
+/// the state words (LOCK, CLIP).
+pub static BUNDLED_FACES: [(&str, &[u8]); 5] = [
     (
         "Sansation-Bold.ttf",
         include_bytes!("../../../resources/fonts/Sansation-Bold.ttf"),
@@ -34,6 +35,10 @@ pub static BUNDLED_FACES: [(&str, &[u8]); 4] = [
     (
         "UbuntuMono-Regular.ttf",
         include_bytes!("../../../resources/fonts/UbuntuMono-Regular.ttf"),
+    ),
+    (
+        "UbuntuMono-Bold.ttf",
+        include_bytes!("../../../resources/fonts/UbuntuMono-Bold.ttf"),
     ),
 ];
 
@@ -111,6 +116,30 @@ impl Numeral {
 /// Mono Numbers Rule). Colour and alignment are the caller's.
 pub fn numeral(t: &ThemeTokens, size: Numeral, text: impl Into<SharedString>) -> Div {
     div().type_role(t, size.role()).child(text.into())
+}
+
+/// The size of a [`mark`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkSize {
+    /// A state word beside a control (LOCK, CLIP): the label size.
+    Word,
+    /// The deck letter in its tag: the numeral size.
+    Letter,
+}
+
+/// A deck letter or a state word: mono bold, line height 1 (canvas section 5, "Sync locked" and
+/// "Deck identity"). Colour is the caller's.
+pub fn mark(t: &ThemeTokens, size: MarkSize, text: impl Into<SharedString>) -> Div {
+    let px_size = match size {
+        MarkSize::Word => t.type_label,
+        MarkSize::Letter => t.type_numeral,
+    };
+    div()
+        .font_family(family(t, FontSlot::Mono))
+        .text_size(px(px_size))
+        .font_weight(FontWeight::BOLD)
+        .line_height(relative(1.0))
+        .child(text.into())
 }
 
 #[cfg(test)]

@@ -120,6 +120,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** drawing any text. Pick a tier with `type_role`; draw a value with `numeral` (or a wrapper that calls it, such as `controls::value_caption`), and add its source to the lint's audit list if it is new.
 - **Notes:** sizes are theme tokens (`type` section) range-checked to the rule floors; families are theme keys (`font.display`, `font.body`, `font.mono`). GPUI has no letter-spacing, so the tiers carry none.
 
+### Control faces: one state model, static parts, a forcing gallery
+- **Where:** `om-ui` `style/face.rs` (`Face`, `FaceStyle`, `FaceTokens`, `tint`); `om-ui-gpui` `paint.rs` (`face`, `face_shadows`, `paint_raised`, `focus_layer`), `parts.rs` (button, pad, segmented, deck tag, state words), `controls::face_button`, and `gallery.rs` with `examples/controls_gallery.rs`.
+- **Why:** every pressable control takes the same states (rest, hover, pressed, on, on + hover, playing, disabled, keyboard focus) from one model built from tokens, so the canvas "States" rules hold everywhere and a state is never a one-off colour. Builders draw one fixed state with no behaviour, so the gallery can force hover, press and focus, and the interactive control is the same builder plus `hover`/`active` refinements and a focus ring layer.
+- **Reuse when:** adding a control: build its look from `LookAndFeel::face` (or a `FaceTokens` method), draw it with `paint::face`, add a static builder to `parts`, a row to the gallery, and wire input in `controls`.
+- **Notes:** depth is a 1px border plus inset shadows pulled in by the edge width (GPUI paints borders over inset shadows); the focus ring is painted 2px outside the bounds by a canvas, so a clipping ancestor cuts it. Focus handles live in a per-id map so a ring can ask whether its control has keyboard focus.
+
 ### Prefetched jump slot (two-slot handoff)
 - **Where:** `om-engine` loop prefetch (`deck/prefetch.rs`)
 - **Why:** the audio thread jumps (loop wrap) without waiting for the decoder to refill the ring.

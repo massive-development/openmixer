@@ -8,7 +8,7 @@
 use crate::app::{load_theme, RunOptions, SceneOptions, Shell};
 use crate::controls::BarState;
 use crate::fader_paint::{FaderFace, FaderLaw, FaderPlan};
-use crate::knob_paint::{knob_geometry, KnobRole};
+use crate::knob_paint::knob_geometry;
 use crate::meter_paint::{MeterFace, MeterPlan};
 use gpui::{px, size, AppContext as _, Bounds, Entity, Pixels, TestAppContext, VisualTestContext};
 use gpui_kit::base::Root;
@@ -212,20 +212,21 @@ fn knob_fader_and_meter_painters_get_non_empty_bounds_in_the_rendered_strips(
             let inside = Rect::sized(card.w, card.h);
 
             // Knobs: trim, filter and the three bands get a real cap inside their cell.
-            for (what, rect, role) in [
-                ("trim", lay.trim, KnobRole::Wide),
-                ("filter", lay.filter, KnobRole::Wide),
-                ("eq0", lay.eq[0], KnobRole::Band),
-                ("eq1", lay.eq[1], KnobRole::Band),
-                ("eq2", lay.eq[2], KnobRole::Band),
+            let knob_size = crate::controls::metrics(&theme).knob_size;
+            for (what, rect) in [
+                ("trim", lay.trim),
+                ("filter", lay.filter),
+                ("eq0", lay.eq[0]),
+                ("eq1", lay.eq[1]),
+                ("eq2", lay.eq[2]),
             ] {
                 assert!(
                     !rect.is_empty() && inside.contains(&rect),
                     "{size:?} {name} {what}: {rect:?}"
                 );
-                let g = knob_geometry(rect.w as f32, rect.h as f32, 0.0, role);
+                let g = knob_geometry(rect.w as f32, rect.h as f32, 0.0, knob_size);
                 assert!(
-                    g.cap_diameter() >= 20.0,
+                    g.cap_diameter() >= 14.0,
                     "{size:?} {name} {what}: cap {}",
                     g.cap_diameter()
                 );

@@ -112,7 +112,6 @@ const COLOUR_TOKENS: &[&str] = &[
     "accents",
     "border",
     "border_strong",
-    "brand",
     "danger",
     "drop_target",
     "focus_ring",

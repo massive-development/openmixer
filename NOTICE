@@ -22,7 +22,7 @@ Bundled unmodified in `resources/fonts/` and compiled into the binary; each keep
 |------|---------|--------|
 | Sansation Bold 1.301 (Bernd Montag; Reserved Font Name "Sansation") | SIL OFL 1.1 (`Sansation-OFL.txt`) | https://github.com/google/fonts/tree/main/ofl/sansation |
 | Source Sans 3 Regular and Medium 3.052 (Adobe; Reserved Font Name "Source") | SIL OFL 1.1 (`SourceSans3-OFL.txt`) | https://github.com/adobe-fonts/source-sans |
-| Ubuntu Mono Regular 0.80 (Canonical Ltd.) | Ubuntu Font Licence 1.0 (`UbuntuMono-UFL.txt`) | https://github.com/google/fonts/tree/main/ufl/ubuntumono |
+| Ubuntu Mono Regular and Bold 0.80 (Canonical Ltd.) | Ubuntu Font Licence 1.0 (`UbuntuMono-UFL.txt`) | https://github.com/google/fonts/tree/main/ufl/ubuntumono |
 
 Ubuntu and Canonical are registered trademarks of Canonical Ltd.; the font licence grants no trademark rights.
 

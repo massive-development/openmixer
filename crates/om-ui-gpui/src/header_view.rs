@@ -53,7 +53,7 @@ impl Shell {
                 .items_center()
                 .pl(px(6.))
                 .type_role(&t, TypeRole::Body)
-                .text_color(paint(t.brand))
+                .text_color(paint(t.text_primary))
                 .child("OPENMIXER"),
         );
 
@@ -78,7 +78,7 @@ impl Shell {
                     .justify_center()
                     .gap(px(6.))
                     .child(
-                        numeral(&t, Numeral::Readout, format_bpm(bpm)).text_color(paint(t.brand)),
+                        numeral(&t, Numeral::Readout, format_bpm(bpm)).text_color(paint(t.readout)),
                     )
                     .child(
                         div()

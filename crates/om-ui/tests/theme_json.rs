@@ -381,7 +381,7 @@ fn density_sets_hold_the_design_metrics_in_every_built_in_theme() {
 
 #[test]
 fn every_built_in_theme_sets_every_colour_and_faceplate_key() {
-    const COLOURS: [&str; 29] = [
+    const COLOURS: [&str; 28] = [
         "ground",
         "surface",
         "surfaceRaised",
@@ -408,7 +408,6 @@ fn every_built_in_theme_sets_every_colour_and_faceplate_key() {
         "master",
         "popup",
         "dropTarget",
-        "brand",
         "readout",
         "readoutDim",
     ];

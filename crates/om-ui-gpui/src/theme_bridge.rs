@@ -51,10 +51,11 @@ pub fn mode_of(t: &ThemeTokens) -> ThemeMode {
 }
 
 /// The component colours `t` implies, laid over `base` (the library's own scheme, which keeps the
-/// roles a theme has no token for, such as the chart palette).
+/// roles a theme has no token for, such as the chart palette). Buttons take the faceplate faces:
+/// rest, one tonal step on hover, the well when pressed, secondary text at rest.
 pub fn colours(t: &ThemeTokens, base: ThemeColor) -> ThemeColor {
     let look = LookAndFeel::from_tokens(t);
-    let accent = t.accents.first().copied().unwrap_or(t.brand);
+    let accent = t.accent_for(0);
     let accent_hover = tinted(accent, t.text_primary, 0.12);
     let accent_active = tinted(accent, t.well, 0.2);
     let (idle, hover, pressed) = (
@@ -132,7 +133,7 @@ pub fn colours(t: &ThemeTokens, base: ThemeColor) -> ThemeColor {
         drop_target: component_colour(t.drop_target),
         title_bar: component_colour(t.popup),
         title_bar_border: component_colour(t.border),
-        link: component_colour(t.brand),
+        link: component_colour(t.text_primary),
         ..base
     }
 }
@@ -161,7 +162,10 @@ pub fn apply(cx: &mut App, t: &ThemeTokens) {
         theme.font_family = family;
         theme.mono_font_family = mono;
         theme.mono_font_size = mono_size;
+        // No drops on component controls, and the ring outside the edge for keyboard focus: the
+        // nearest the library has to the faceplate's 2px ring at a 2px offset.
         theme.shadow = false;
+        theme.focus_ring = true;
     });
 }
 

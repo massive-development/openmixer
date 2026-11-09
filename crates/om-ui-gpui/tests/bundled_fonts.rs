@@ -74,17 +74,18 @@ fn the_body_family_resolves_regular_and_medium_from_two_static_files() {
 }
 
 #[test]
-fn the_display_and_mono_families_have_one_face_each() {
+fn the_display_family_has_one_face_and_mono_has_regular_and_bold() {
     let text = text_system();
     assert_eq!(
         face(&text, "Sansation", 700.0),
         face(&text, "Sansation", 400.0)
     );
     // Ubuntu Mono has no 500; the numerals take its Regular.
-    assert_eq!(
-        face(&text, "Ubuntu Mono", 500.0),
-        face(&text, "Ubuntu Mono", 400.0)
-    );
+    let regular = face(&text, "Ubuntu Mono", 400.0);
+    assert_eq!(face(&text, "Ubuntu Mono", 500.0), regular);
+    // The deck letter and the state words take its Bold.
+    let bold = face(&text, "Ubuntu Mono", 700.0);
+    assert_ne!(bold, regular, "700 is the bundled Bold");
     let fallback = face(&text, "No Such Family", 400.0);
     for family in ["Sansation", "Source Sans 3", "Ubuntu Mono"] {
         assert_ne!(

@@ -126,9 +126,6 @@ pub struct ThemeTokens {
     /// Clip, error and record.
     pub danger: Colour,
     pub master: Colour,
-    /// Wordmark and master marks. Neutral in the built-in themes (E1's ember is retired); never
-    /// a deck accent and never signal red.
-    pub brand: Colour,
     /// BPM, key and time numerals, and the dimmer colour of their unit labels.
     pub readout: Colour,
     pub readout_dim: Colour,
@@ -278,7 +275,7 @@ pub struct ThemeTokens {
     pub font_body: String,
     pub font_mono: String,
     pub tabular_numerals: bool,
-    /// Reduced-motion preference: transitions collapse to zero length and glow pulses stop.
+    /// Reduced-motion preference: transitions collapse to zero length.
     pub reduced_motion: bool,
 
     /// Scales the alpha of surface, raised and hover (glass strength).
@@ -320,7 +317,6 @@ impl ThemeTokens {
             master: Colour::from_argb(0xFFEC_E8DF),
             popup: Colour::from_argb(0xFF22_211E),
             drop_target: Colour::from_argb(0x1FEC_E8DF),
-            brand: Colour::from_argb(0xFFEC_E8DF),
             readout: Colour::from_argb(0xFFEC_E8DF),
             readout_dim: Colour::from_argb(0xFFBA_B4A7),
             accents: builtin_accents(),

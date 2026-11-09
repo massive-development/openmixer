@@ -316,6 +316,7 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
                 accent: Some(accent),
                 dragging: shell.is_dragging(target),
                 disabled: !pad.loaded,
+                ..KnobLook::default()
             },
             cx,
         ));
