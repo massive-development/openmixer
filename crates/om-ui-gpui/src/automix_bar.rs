@@ -116,7 +116,8 @@ pub(crate) fn automix_bar_view(
     let actions = bar.actions();
     let fraction = bar.progress as f32;
     let height = rect.h as f32;
-    let accent = t.accents.first().copied().unwrap_or(t.surface_hover);
+    // The bar belongs to no deck: its progress is drawn in the text colour, not a deck hue.
+    let accent = t.text_primary;
     let length = bar.length_beats;
     let next_length = LENGTH_CHOICES
         .iter()
@@ -175,7 +176,8 @@ pub(crate) fn automix_bar_view(
         let (text, colour) = if bar.error.is_empty() {
             (bar.next.clone(), t.text_primary)
         } else {
-            (bar.error.clone(), t.meter_high)
+            // An error is stated in words; red is kept for the playhead and recording.
+            (bar.error.clone(), t.text_primary)
         };
         row = row.child(
             div()
