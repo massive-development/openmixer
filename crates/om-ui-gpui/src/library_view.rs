@@ -21,20 +21,29 @@ use gpui::{
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::table::{Column, ColumnSort, DataTable, TableDelegate, TableState};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, Size};
+use gpui_kit::component::{Sizable as _, Size};
 use om_ui::geometry::Rect;
 use om_ui::library::{column_shown, columns, MixLevel, SEARCH_PLACEHOLDER};
 use om_ui::main_layout::library_metrics;
 use om_ui::sidebar::SidebarKind;
 use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::{Colour, ThemeTokens, TypeRole};
+use std::collections::HashMap;
 
 /// Inner padding of the library card.
 const PAD: f32 = 6.0;
 /// Narrowest the flexible (Title, Artist) columns get, px.
 const MIN_FLEX_W: f32 = 120.0;
-/// Opacity of the deck accent behind the track loaded on a deck (plan, Task 5).
-const PLAYING_ROW_ALPHA: f32 = 0.18;
+/// The selected row: the slate hue (deck B's) as an 18% tint with a 55% edge (DESIGN.md "Library
+/// rows").
+const SELECTED_TINT: f32 = 0.18;
+const SELECTED_EDGE: f32 = 0.55;
+/// A row loaded on a deck: that deck's hue at 40% as its edge, beside its letter.
+const LOADED_EDGE: f32 = 0.40;
+/// Rows the table delegate keeps built before it starts over (a screenful is well under this).
+const ROW_CACHE_LIMIT: usize = 512;
+/// The hue a selection takes: slate, deck B's colour.
+const SELECTION_HUE: i32 = 1;
 /// Width of the selection bar at a sidebar row's left edge (px). Unsourced; small.
 const SIDEBAR_BAR_W: f32 = 3.0;
 
@@ -215,7 +224,7 @@ impl Shell {
             window_w: self.window_size.0,
             list_w: 0.0,
             sort: None,
-            row: None,
+            rows: HashMap::new(),
         };
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
@@ -240,8 +249,10 @@ pub struct LibraryTable {
     list_w: f32,
     /// Column and direction of the last sort, shown on the header.
     sort: Option<(i32, bool)>,
-    /// The row `render_tr` built last, so its cells need not ask the panel again.
-    row: Option<RowView>,
+    /// The rows `render_tr` built, by index, so their cells need not ask the panel again. The table
+    /// builds every visible row before any of their cells (the cells sit in a per-row list laid
+    /// out later), so one cached row is not enough.
+    rows: HashMap<usize, RowView>,
 }
 
 impl LibraryTable {
@@ -340,40 +351,20 @@ impl TableDelegate for LibraryTable {
         let drawn = self
             .shell
             .update(cx, |shell, _| {
-                let t = &shell.theme;
-                let (master, size) = (t.master, t.type_body);
-                let preview = LookAndFeel::from_tokens(t).tooltip;
+                let look = RowLook::from_tokens(&shell.theme);
+                let preview = LookAndFeel::from_tokens(&shell.theme).tooltip;
                 let row = with_library(shell, |p| p.row(row_ix)).flatten();
-                let deck_tint = row
-                    .as_ref()
-                    .and_then(|r| r.on_deck)
-                    .map(|deck| shell.theme.accent_for(deck as i32));
-                (row, master, size, preview, deck_tint)
+                (row, look, preview)
             })
             .ok();
         let line = div().id(("library-row", row_ix));
-        let Some((Some(row), master, size, preview, deck_tint)) = drawn else {
-            self.row = None;
+        let Some((Some(row), look, preview)) = drawn else {
+            self.rows.remove(&row_ix);
             return line;
         };
-        let background = if row.selected {
-            Some(cx.theme().table_active)
-        } else if let Some(accent) = deck_tint {
-            // The track on a deck: that deck's accent at 18% (plan).
-            Some(Hsla::from(paint(accent.with_alpha(PLAYING_ROW_ALPHA))))
-        } else if row.compatible {
-            // The Camelot tint: the master colour, translucent, over the row. Key and tempo both
-            // fitting is stronger than the key alone.
-            let mut tint = paint(master);
-            tint.a = if row.mix == MixLevel::Strong {
-                0.34
-            } else {
-                0.16
-            };
-            Some(Hsla::from(tint))
-        } else {
-            None
-        };
+        let (background, edge) = look.fill_and_edge(&row);
+        let dimmed = row.error.is_some();
+        let (master, size) = (look.master, look.size);
         let label = row.cells.first().cloned().unwrap_or_default();
         let payload = TrackDragPayload {
             description: row.drag.clone(),
@@ -381,13 +372,20 @@ impl TableDelegate for LibraryTable {
             label,
             preview,
         };
-        self.row = Some(row);
+        if self.rows.len() > ROW_CACHE_LIMIT {
+            self.rows.clear();
+        }
+        self.rows.insert(row_ix, row);
         let drop_target = drop_tint(master);
         let (shell, shell_drop) = (self.shell.clone(), self.shell.clone());
         // A track dropped on another row of the open playlist takes that row's place (the browser
         // refuses it anywhere else).
         line.text_size(px(size))
             .when_some(background, |el, colour| el.bg(colour))
+            .when_some(edge, |el, colour| el.border_1().border_color(colour))
+            .when(dimmed, |el| {
+                el.border_dashed().text_color(paint(look.dimmed_text))
+            })
             .drag_over::<TrackDragPayload>(move |style, _, _, _| style.bg(drop_target))
             .on_drop(move |payload: &TrackDragPayload, _, cx| {
                 shell_drop
@@ -433,9 +431,8 @@ impl TableDelegate for LibraryTable {
             return div();
         };
         let cell = self
-            .row
-            .as_ref()
-            .filter(|row| row.row == row_ix)
+            .rows
+            .get(&row_ix)
             .and_then(|row| row.cells.get(index))
             .cloned()
             .unwrap_or_default();
@@ -444,6 +441,15 @@ impl TableDelegate for LibraryTable {
         } else {
             cell
         };
+        if col_ix == 0 {
+            let marks = self.rows.get(&row_ix).map(|row| (row.on_deck, row.error));
+            if let Some((deck, error)) = marks.filter(|(d, e)| d.is_some() || e.is_some()) {
+                return self
+                    .shell
+                    .read_with(cx, |shell, _| title_cell(&shell.theme, &text, deck, error))
+                    .unwrap_or_else(|_| div().child(text));
+            }
+        }
         // BPM, key and length are numbers: mono, so a column of them lines up (the Mono Numbers Rule).
         let el = if spec.numeric {
             self.shell
@@ -471,6 +477,98 @@ impl TableDelegate for LibraryTable {
     }
 }
 
+/// How the library rows are tinted and edged, from the theme.
+#[derive(Clone, Copy)]
+struct RowLook {
+    master: Colour,
+    size: f32,
+    compat: f32,
+    selection: Colour,
+    accents: [Colour; 4],
+    dimmed_text: Colour,
+    error_edge: Colour,
+}
+
+impl RowLook {
+    fn from_tokens(t: &ThemeTokens) -> Self {
+        Self {
+            master: t.master,
+            size: t.type_body,
+            compat: t.library_compat_alpha,
+            selection: t.accent_for(SELECTION_HUE),
+            accents: std::array::from_fn(|i| t.accent_for(i as i32)),
+            dimmed_text: t.text_muted,
+            error_edge: t.border_strong,
+        }
+    }
+
+    /// The row's fill and 1px edge: selected (slate tint and edge), loaded on a deck (the deck's
+    /// edge), unplayable (the dashed graphic edge), or the key-compatibility tint, stronger when
+    /// the tempo fits too.
+    fn fill_and_edge(&self, row: &RowView) -> (Option<Hsla>, Option<Hsla>) {
+        let shade = |c: Colour| Hsla::from(paint(c));
+        if row.selected {
+            return (
+                Some(shade(self.selection.with_alpha(SELECTED_TINT))),
+                Some(shade(self.selection.with_alpha(SELECTED_EDGE))),
+            );
+        }
+        if row.error.is_some() {
+            return (None, Some(shade(self.error_edge)));
+        }
+        let fill = row.compatible.then(|| {
+            let alpha = if row.mix == MixLevel::Strong {
+                self.compat
+            } else {
+                self.compat / 2.0
+            };
+            shade(self.master.with_alpha(alpha))
+        });
+        let edge = row
+            .on_deck
+            .map(|d| shade(self.accents[d % self.accents.len()].with_alpha(LOADED_EDGE)));
+        (fill, edge)
+    }
+}
+
+/// The title cell of a marked row: the letter of the deck it is loaded on, in that deck's hue, and
+/// the reason in words when it would not load.
+fn title_cell(t: &ThemeTokens, title: &str, deck: Option<usize>, error: Option<&str>) -> Div {
+    let m = crate::controls::metrics(t);
+    let mut el = div()
+        .flex()
+        .items_center()
+        .gap(px(m.space[2]))
+        .overflow_hidden()
+        .whitespace_nowrap();
+    if let Some(d) = deck {
+        el = el.child(
+            crate::font::mark(
+                t,
+                crate::font::MarkSize::Word,
+                om_ui::widgets::deck_header::deck_letter(d).to_string(),
+            )
+            .text_color(paint(t.accent_for(d as i32))),
+        );
+    }
+    el = el.child(
+        div()
+            .overflow_hidden()
+            .text_ellipsis()
+            .child(title.to_owned()),
+    );
+    if let Some(reason) = error {
+        el = el.child(
+            div()
+                .flex_none()
+                .type_role(t, TypeRole::Label)
+                .text_color(paint(t.text_secondary))
+                .child(reason.to_owned()),
+        );
+    }
+    el
+}
+
 /// Draws the library card in `bounds` (window coordinates, the bottom layout slot).
 pub fn library_card(
     shell: &mut Shell,
@@ -490,17 +588,16 @@ pub fn library_card(
     );
     // Toolbar buttons are one control high, as everywhere on the faceplate.
     let button_h = m.control_height;
-    // The playlist buttons: four rows of one table row's height, under the tree.
-    let actions_h = 4.0 * row_h + 3.0 * 4.0 + 8.0;
+    // The sidebar's lines and the playlist buttons are one control high (comp sidebar).
+    let line_h = m.control_height;
     let focus: FocusHandle = shell
         .library_focus
         .get_or_insert_with(|| cx.focus_handle())
         .clone();
+    // The band sits on the faceplate under one etched line (comp library band), no card.
     let root = place(bounds)
-        .bg(paint(t.surface))
-        .border_1()
+        .border_t_1()
         .border_color(paint(t.border))
-        .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary))
         .type_role(&t, TypeRole::Body)
         .overflow_hidden()
@@ -597,11 +694,10 @@ pub fn library_card(
         .left(px(0.))
         .top(px(0.))
         .w(px(sidebar_w))
-        .h(px((bounds.h as f32 - actions_h).max(0.)))
+        .h(px(bounds.h as f32))
         .flex()
         .flex_col()
         .p(px(4.))
-        .bg(paint(t.well))
         .overflow_hidden();
     let drop_target = drop_tint(t.master);
     let preview = LookAndFeel::from_tokens(&t).tooltip;
@@ -631,7 +727,7 @@ pub fn library_card(
         tree = tree.child(
             ListItem::new(("sidebar-row", index))
                 .selected(line.selected)
-                .h(px(row_h))
+                .h(px(line_h))
                 .py(px(0.))
                 .pl(px(4. + 12. * line.depth as f32))
                 .rounded(px(3.))
@@ -691,54 +787,6 @@ pub fn library_card(
         );
     }
 
-    // The playlist actions sit under the tree.
-    let playlist_actions = div()
-        .absolute()
-        .left(px(0.))
-        .bottom(px(0.))
-        .w(px(sidebar_w))
-        .p(px(4.))
-        .flex()
-        .flex_col()
-        .gap(px(4.))
-        .child(
-            div()
-                .flex()
-                .gap(px(4.))
-                .child(action_button(&t, row_h, "New", true, cx, |p| {
-                    p.begin_new_playlist()
-                }))
-                .child(action_button(&t, row_h, "Rename", true, cx, |p| {
-                    p.begin_rename_playlist()
-                })),
-        )
-        .child(action_button(
-            &t,
-            row_h,
-            om_ui::labels::NEW_FOLDER,
-            false,
-            cx,
-            |p| p.begin_new_folder(),
-        ))
-        .child(action_button(
-            &t,
-            row_h,
-            om_ui::labels::DELETE_PLAYLIST,
-            false,
-            cx,
-            |p| p.delete_playlist(),
-        ))
-        .child(action_button(
-            &t,
-            row_h,
-            om_ui::labels::REMOVE_FROM_PLAYLIST,
-            false,
-            cx,
-            |p| {
-                p.remove_selected_from_playlist();
-            },
-        ));
-
     // Toolbar: search box, analyse, stems, status line.
     let mut toolbar = div()
         .absolute()
@@ -749,7 +797,13 @@ pub fn library_card(
         .flex()
         .items_center()
         .gap(px(4.))
-        .child(div().flex_1().h(px(button_h)).child(Input::new(&input)));
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(t.library_search_min_width))
+                .h(px(button_h))
+                .child(Input::new(&input).with_size(search_size(button_h))),
+        );
     toolbar = toolbar.child(
         div().h(px(button_h)).flex_none().child(
             push_button(&t, "Copy", None, cx, |this, window, cx| {
@@ -786,6 +840,42 @@ pub fn library_card(
         ));
     }
 
+    // The playlist actions follow the track actions on the toolbar, so the sidebar's tree keeps the
+    // band's whole height (the faceplate's band is short in Compact).
+    toolbar = toolbar
+        .child(action_button(&t, button_h, "New", false, cx, |p| {
+            p.begin_new_playlist()
+        }))
+        .child(action_button(&t, button_h, "Rename", false, cx, |p| {
+            p.begin_rename_playlist()
+        }))
+        .child(action_button(
+            &t,
+            button_h,
+            om_ui::labels::NEW_FOLDER,
+            false,
+            cx,
+            |p| p.begin_new_folder(),
+        ))
+        .child(action_button(
+            &t,
+            button_h,
+            om_ui::labels::DELETE_PLAYLIST,
+            false,
+            cx,
+            |p| p.delete_playlist(),
+        ))
+        .child(action_button(
+            &t,
+            button_h,
+            om_ui::labels::REMOVE_FROM_PLAYLIST,
+            false,
+            cx,
+            |p| {
+                p.remove_selected_from_playlist();
+            },
+        ));
+
     // An error states its reason in words at full text strength; `highlight` is now the top edge.
     let status_colour = if status_error {
         t.text_primary
@@ -819,10 +909,18 @@ pub fn library_card(
         );
 
     root.child(tree)
-        .child(playlist_actions)
         .child(toolbar)
         .child(status_line)
         .child(list)
+}
+
+/// The search box's component size: the one whose height fits a control `button_h` px high.
+fn search_size(button_h: f32) -> Size {
+    if button_h >= 26.0 {
+        Size::Small
+    } else {
+        Size::XSmall
+    }
 }
 
 /// A toolbar button that runs `on_press` on the panel. `half` makes two of them share a row.
@@ -847,5 +945,48 @@ fn action_button(
         cell.flex_1().child(button.w_full())
     } else {
         cell.child(button)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(selected: bool, on_deck: Option<usize>, error: Option<&'static str>) -> RowView {
+        RowView {
+            row: 0,
+            track_id: 1,
+            cells: Vec::new(),
+            compatible: true,
+            mix: MixLevel::Strong,
+            selected,
+            on_deck,
+            error,
+            drag: String::new(),
+        }
+    }
+
+    fn shade(c: Colour) -> Hsla {
+        Hsla::from(paint(c))
+    }
+
+    #[test]
+    fn a_selected_row_is_the_slate_tint_with_its_edge() {
+        let t = ThemeTokens::builtin_dark();
+        let (fill, edge) = RowLook::from_tokens(&t).fill_and_edge(&row(true, Some(0), None));
+        let slate = t.accent_for(1);
+        assert_eq!(fill, Some(shade(slate.with_alpha(0.18))));
+        assert_eq!(edge, Some(shade(slate.with_alpha(0.55))));
+    }
+
+    #[test]
+    fn a_loaded_row_takes_its_decks_edge_and_an_unplayable_one_the_graphic_edge() {
+        let t = ThemeTokens::builtin_dark();
+        let look = RowLook::from_tokens(&t);
+        let (_, edge) = look.fill_and_edge(&row(false, Some(1), None));
+        assert_eq!(edge, Some(shade(t.accent_for(1).with_alpha(0.40))));
+        let (fill, edge) = look.fill_and_edge(&row(false, None, Some("can't read file")));
+        assert_eq!((fill, edge), (None, Some(shade(t.border_strong))));
+        assert_ne!(t.border_strong, t.playhead, "errors are never red");
     }
 }
