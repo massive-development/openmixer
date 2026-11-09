@@ -238,6 +238,8 @@ impl Default for StemsPrefs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preferences {
     pub theme: String,
+    /// Roomy, Compact or Automatic (from the window height). A file without it reads Automatic.
+    pub density: crate::theme::DensityChoice,
     pub audio: AudioPrefs,
     pub midi: MidiPrefs,
     pub library: LibraryPrefs,
@@ -254,6 +256,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             theme: "openmixer.dark".to_owned(),
+            density: crate::theme::DensityChoice::Automatic,
             audio: AudioPrefs::default(),
             midi: MidiPrefs::default(),
             library: LibraryPrefs::default(),
@@ -377,6 +380,7 @@ impl Preferences {
         let mut root = Map::new();
         root.insert("version".into(), PREFERENCES_VERSION.into());
         root.insert("theme".into(), self.theme.clone().into());
+        root.insert("density".into(), self.density.id().into());
         root.insert("audio".into(), Value::Object(audio));
         root.insert("midi".into(), Value::Object(midi));
         root.insert("library".into(), Value::Object(library));
@@ -424,6 +428,11 @@ impl Preferences {
 
         let mut p = Self::default();
         p.theme = string_or(root.get("theme"), p.theme);
+        p.density = root
+            .get("density")
+            .and_then(Value::as_str)
+            .and_then(crate::theme::DensityChoice::from_id)
+            .unwrap_or(p.density);
         read_audio(section(root, "audio"), &mut p.audio);
         read_midi(section(root, "midi"), &mut p.midi);
         read_library(section(root, "library"), &mut p.library);
@@ -596,6 +605,7 @@ mod tests {
     fn customised() -> Preferences {
         Preferences {
             theme: "openmixer.daylight".into(),
+            density: crate::theme::DensityChoice::Compact,
             audio: AudioPrefs {
                 device_state: "<DEVICESETUP deviceType=\"ALSA\" audioOutputDeviceName=\"hw:1\"/>"
                     .into(),
@@ -778,6 +788,23 @@ mod tests {
             PathBuf::from("/opt/openmixer/plugins")
         );
         assert_eq!(loaded.to_json(), original.to_json());
+    }
+
+    #[test]
+    fn the_density_round_trips_and_an_unknown_one_reads_automatic() {
+        use crate::theme::DensityChoice;
+        let p = Preferences {
+            density: DensityChoice::Compact,
+            ..Preferences::default()
+        };
+        assert_eq!(
+            Preferences::from_json(&p.to_json()).unwrap().density,
+            DensityChoice::Compact
+        );
+        let old = Preferences::from_json(r#"{"version":4}"#).unwrap();
+        assert_eq!(old.density, DensityChoice::Automatic);
+        let odd = Preferences::from_json(r#"{"version":4,"density":"huge"}"#).unwrap();
+        assert_eq!(odd.density, DensityChoice::Automatic);
     }
 
     #[test]

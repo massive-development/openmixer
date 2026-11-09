@@ -416,16 +416,20 @@ mod tests {
             settings: true,
             notice: false,
         };
-        let header_h = crate::main_layout::header_height(min_height);
-        let available = crate::header_layout::header_rects(min_width, header_h, needs)
-            .automix
-            .expect("bar")
-            .w as f32;
-        assert!(idle <= available, "idle row needs {idle} px of {available}");
-        assert!(
-            running <= available,
-            "running row needs {running} px of {available}"
-        );
+        let _ = min_height;
+        let t = crate::theme::ThemeTokens::builtin_dark();
+        for density in [crate::theme::Density::Roomy, crate::theme::Density::Compact] {
+            let m = t.metrics(density);
+            let available = crate::header_layout::header_rects(min_width, m, needs)
+                .automix
+                .expect("bar")
+                .w as f32;
+            assert!(idle <= available, "idle row needs {idle} px of {available}");
+            assert!(
+                running <= available,
+                "running row needs {running} px of {available}"
+            );
+        }
     }
 
     #[test]

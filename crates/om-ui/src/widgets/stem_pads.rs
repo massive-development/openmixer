@@ -1,9 +1,8 @@
 //! Geometry of a deck's stems drawer: one row per stem, each with a mute button carrying the stem's
-//! name, a solo button, a volume slider and a filter slider with a centre detent. Rows are 32 px,
-//! the smallest comfortable target. Geometry only; the gpui layer draws the rows and wires them to
+//! name, a solo button, a volume slider and a filter slider with a centre detent. Rows are one
+//! control high (the density's control height). Geometry only; the gpui layer draws the rows and wires them to
 //! [`crate::stem_binding::StemBinding`].
 
-use super::deck::{STEM_ROW_GAP, STEM_ROW_HEIGHT};
 use crate::geometry::Rect;
 
 /// Rows per deck: one per stem.
@@ -24,12 +23,13 @@ pub struct PadRects {
 const MUTE_WIDTH: i32 = 60;
 const SOLO_WIDTH: i32 = 32;
 
-/// Places the four stem rows from the top of `bounds` (the stems drawer). `gap` separates the
-/// buttons in a row. The sliders share what is left, volume 5 parts to filter 4.
-pub fn stem_pad_layout(bounds: Rect, gap: i32) -> [PadRects; PADS] {
+/// Places the four stem rows, `row_h` high, from the top of `bounds` (the stems drawer). `gap`
+/// separates the rows and the buttons in a row. The sliders share what is left, volume 5 parts to
+/// filter 4.
+pub fn stem_pad_layout(bounds: Rect, gap: i32, row_h: i32) -> [PadRects; PADS] {
     std::array::from_fn(|i| {
-        let y = bounds.y + i as i32 * (STEM_ROW_HEIGHT + STEM_ROW_GAP);
-        let mut row = Rect::new(bounds.x, y, bounds.w, STEM_ROW_HEIGHT);
+        let y = bounds.y + i as i32 * (row_h + gap);
+        let mut row = Rect::new(bounds.x, y, bounds.w, row_h);
         let mute = row.remove_left(MUTE_WIDTH.min(row.w));
         row.remove_left(gap);
         let solo = row.remove_left(SOLO_WIDTH.min(row.w));
@@ -51,9 +51,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rows_stack_without_overlap_and_every_target_is_at_least_32_px_tall() {
+    fn rows_stack_without_overlap_and_every_target_is_one_row_tall() {
         let bounds = Rect::new(0, 0, 198, 150);
-        let rows = stem_pad_layout(bounds, 4);
+        let rows = stem_pad_layout(bounds, 4, 32);
         let mut parts = Vec::new();
         for row in &rows {
             for part in [row.mute, row.solo, row.volume, row.filter] {
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn rows_are_in_stem_order_top_to_bottom() {
-        let rows = stem_pad_layout(Rect::new(0, 0, 300, 150), 4);
+        let rows = stem_pad_layout(Rect::new(0, 0, 300, 150), 4, 32);
         assert!(rows.windows(2).all(|w| w[0].mute.y < w[1].mute.y));
     }
 }

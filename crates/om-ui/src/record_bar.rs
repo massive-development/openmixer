@@ -85,43 +85,34 @@ pub fn dropped_text(frames: u64) -> String {
     }
 }
 
-/// Where the button sits in a header strip of `window_width` with `header_height` px, left of a
-/// Settings button that reserves `settings_reserve` pixels (0 for none) at the right edge, at
-/// `header_top`. A thin wrapper over [`crate::header_layout::header_rects`]; `None` when the strip is
-/// too narrow.
+/// Where the button sits in a header strip of `window_width` laid out in metric set `m`, with a
+/// Settings button when `settings`, at `header_top`. A thin wrapper over
+/// [`crate::header_layout::header_rects`]; `None` when the strip is too narrow.
 pub fn record_rect(
     window_width: i32,
     header_top: i32,
-    header_height: i32,
-    settings_reserve: i32,
+    m: &crate::theme::DensityMetrics,
+    settings: bool,
 ) -> Option<Rect> {
-    let rects = crate::header_layout::header_rects(
-        window_width,
-        header_height,
-        crate::header_layout::HeaderNeeds {
-            automix: true,
-            record: true,
-            settings: settings_reserve > 0,
-            notice: false,
-        },
-    );
+    let rects = crate::header_layout::header_rects(window_width, m, needs(settings));
     let at = rects.record?;
     (at.x >= rects.brand.right()).then(|| Rect::new(at.x, header_top + at.y, at.w, at.h))
 }
 
-/// The width left to the automix bar when the strip has a Record button and a Settings button.
-pub fn automix_width(window_width: i32, settings_reserve: i32) -> i32 {
-    let rects = crate::header_layout::header_rects(
-        window_width,
-        crate::main_layout::HEADER_HEIGHT_SHORT,
-        crate::header_layout::HeaderNeeds {
-            automix: true,
-            record: true,
-            settings: settings_reserve > 0,
-            notice: false,
-        },
-    );
-    rects.automix.map_or(0, |r| r.w)
+/// The header parts a window with a Record button has.
+fn needs(settings: bool) -> crate::header_layout::HeaderNeeds {
+    crate::header_layout::HeaderNeeds {
+        automix: true,
+        record: true,
+        settings,
+        notice: false,
+    }
+}
+
+/// The right edge of the automix bar when the strip has a Record button.
+pub fn automix_width(window_width: i32, m: &crate::theme::DensityMetrics, settings: bool) -> i32 {
+    let rects = crate::header_layout::header_rects(window_width, m, needs(settings));
+    rects.automix.map_or(0, |r| r.right())
 }
 
 #[cfg(test)]
@@ -182,12 +173,13 @@ mod tests {
     /// of the toggle and Settings, and a strip too narrow for it has none.
     #[test]
     fn the_button_sits_right_of_the_automix_bar() {
-        for (w, h) in [(1024, 640), (1280, 800), (1920, 1080)] {
-            let header_h = crate::main_layout::header_height(h);
-            let record = record_rect(w, 0, header_h, 96).expect("fits");
-            assert!(record.x >= automix_width(w, 96) && record.right() <= w - 96);
+        let t = crate::theme::ThemeTokens::builtin_dark();
+        let m = t.metrics(crate::theme::Density::Compact);
+        for w in [1024, 1280, 1920] {
+            let record = record_rect(w, 0, m, true).expect("fits");
+            assert!(record.x >= automix_width(w, m, true) && record.right() <= w - 96);
             assert_eq!(record.w, RECORD_WIDTH);
         }
-        assert!(record_rect(200, 0, 36, 96).is_none());
+        assert!(record_rect(200, 0, m, true).is_none());
     }
 }
