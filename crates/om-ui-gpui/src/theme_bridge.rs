@@ -8,10 +8,21 @@ use crate::paint::paint;
 use gpui::{px, App, Hsla};
 use gpui_kit::component::{ActiveTheme as _, Theme, ThemeColor, ThemeMode};
 use om_ui::style::LookAndFeel;
-use om_ui::theme::{Colour, ThemeTokens};
+use om_ui::theme::{Colour, FontSlot, ThemeTokens};
 
 /// Share of the focus colour mixed into a selected sidebar row's fill. Unsourced; small.
 const SELECT_TINT: f32 = 0.18;
+
+/// The component library sizes its text in rems of `Theme::font_size`: buttons, inputs and tabs
+/// at 0.875 rem, extra-small buttons at 0.75 rem.
+const COMPONENT_TEXT_REM: f32 = 0.875;
+const COMPONENT_XSMALL_REM: f32 = 0.75;
+
+/// The component rem (px) that puts its usual text on the body tier and its extra-small text no
+/// lower than the label tier.
+pub fn component_rem(t: &ThemeTokens) -> f32 {
+    (t.type_body / COMPONENT_TEXT_REM).max(t.type_label / COMPONENT_XSMALL_REM)
+}
 
 /// A token as the component library's colour type.
 fn component_colour(colour: Colour) -> Hsla {
@@ -127,21 +138,29 @@ pub fn colours(t: &ThemeTokens, base: ThemeColor) -> ThemeColor {
 }
 
 /// Makes the component library follow `t`: its light or dark scheme, its colours, the control
-/// radius and the body type size. Safe to call again on a theme change.
+/// radius, the families and the type size ([`component_rem`]). Safe to call again on a theme
+/// change.
 pub fn apply(cx: &mut App, t: &ThemeTokens) {
     let mode = mode_of(t);
     // A mode switch loads the registered scheme, so the colours go in a second pass.
     Theme::change(mode, None, cx);
     let base = cx.theme().colors;
-    let (radius, size) = (px(t.control_radius), px(t.type_body));
-    let family = t.font_family.clone();
+    let (radius, size, mono_size) = (
+        px(t.control_radius),
+        px(component_rem(t)),
+        px(t.type_numeral),
+    );
+    let family = crate::font::family(t, FontSlot::Body);
+    let mono = crate::font::family(t, FontSlot::Mono);
     let colours = colours(t, base);
     Theme::update(cx, |theme| {
         theme.colors = colours;
         theme.radius = radius;
         theme.radius_lg = radius;
         theme.font_size = size;
-        theme.font_family = family.into();
+        theme.font_family = family;
+        theme.mono_font_family = mono;
+        theme.mono_font_size = mono_size;
         theme.shadow = false;
     });
 }
@@ -160,6 +179,17 @@ mod tests {
                 .expect("built-in theme");
             parse_theme(json).expect("theme parses").tokens
         })
+    }
+
+    /// The component library's small text lands on the body tier and its extra-small button
+    /// labels stay at or above the label floor (11 px), in every built-in theme.
+    #[test]
+    fn component_text_meets_the_body_and_label_tiers() {
+        for t in themes() {
+            let rem = component_rem(&t);
+            assert!((rem * COMPONENT_TEXT_REM - t.type_body).abs() < 1e-3);
+            assert!(rem * COMPONENT_XSMALL_REM >= t.type_label);
+        }
     }
 
     #[test]

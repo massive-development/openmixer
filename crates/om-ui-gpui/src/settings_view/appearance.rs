@@ -2,6 +2,8 @@
 
 use super::chips::*;
 use super::*;
+use crate::font::TypeExt as _;
+use om_ui::theme::TypeRole;
 
 pub(super) fn appearance_page(
     t: &ThemeTokens,
@@ -35,13 +37,13 @@ pub(super) fn appearance_page(
                     div()
                         .w(px(200.))
                         .text_color(paint(t.text_secondary))
-                        .text_size(px(t.type_caption))
+                        .type_role(t, TypeRole::Label)
                         .child(theme_id),
                 )
                 .child(
                     div()
                         .text_color(paint(accent_of(t)))
-                        .text_size(px(t.type_caption))
+                        .type_role(t, TypeRole::Label)
                         .child(if lit { "current" } else { "" }),
                 ),
         );
@@ -52,7 +54,7 @@ pub(super) fn appearance_page(
         .child(
             div()
                 .text_color(paint(t.text_secondary))
-                .text_size(px(t.type_caption))
+                .type_role(t, TypeRole::Label)
                 .mb(px(4.))
                 .child("Theme"),
         )

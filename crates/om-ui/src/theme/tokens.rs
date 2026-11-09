@@ -149,17 +149,18 @@ pub struct ThemeTokens {
     pub card_radius: f32,
     pub control_radius: f32,
 
-    // Type scale (px height).
-    pub type_small: f32,
-    pub type_caption: f32,
+    // Type scale (px), the tiers of DESIGN.md; see [`crate::theme::TypeRole`] for family and weight.
+    /// Wordmark and page titles, and section headings (display family, never below 21).
+    pub type_display: f32,
+    pub type_headline: f32,
+    /// Interface text and prose (never below 12), and control labels (never below 11).
     pub type_body: f32,
     pub type_label: f32,
-    pub type_title: f32,
-    pub type_heading: f32,
-    pub type_mono: f32,
-    /// Large numerals for BPM and time, and the smaller companion size (key, remaining time).
-    pub type_readout: f32,
-    pub type_readout_small: f32,
+    /// Values in mono, and the primary readouts (BPM, key, time).
+    pub type_numeral: f32,
+    pub type_numeral_large: f32,
+    /// The fader dB scale ticks: the one text below the label size.
+    pub type_scale: f32,
 
     // Deck widget metrics (px) and overlay strengths (0..1 alpha).
     pub deck_header_height: f32,
@@ -271,8 +272,11 @@ pub struct ThemeTokens {
     pub motion_fast_ms: f32,
     pub motion_base_ms: f32,
 
-    /// Interface font family (registered by the front end) and whether numerals are tabular.
-    pub font_family: String,
+    /// Font families (registered by the front end): wordmark and headings, interface text, and
+    /// every number. `tabular_numerals` asks the body family for `tnum`.
+    pub font_display: String,
+    pub font_body: String,
+    pub font_mono: String,
     pub tabular_numerals: bool,
     /// Reduced-motion preference: transitions collapse to zero length and glow pulses stop.
     pub reduced_motion: bool,
@@ -330,16 +334,14 @@ impl ThemeTokens {
             card_radius: 3.0,
             control_radius: 2.0,
 
-            // Type scale 12/14/16/20/28/40; nothing below 12.
-            type_small: 12.0,
-            type_caption: 12.0,
-            type_body: 14.0,
-            type_label: 16.0,
-            type_title: 20.0,
-            type_heading: 20.0,
-            type_mono: 16.0,
-            type_readout: 40.0,
-            type_readout_small: 28.0,
+            // DESIGN.md type scale: display 34, headline 21, body 13, label 11, numerals 13 and 21.
+            type_display: 34.0,
+            type_headline: 21.0,
+            type_body: 13.0,
+            type_label: 11.0,
+            type_numeral: 13.0,
+            type_numeral_large: 21.0,
+            type_scale: 10.0,
 
             deck_header_height: 52.0,
             deck_overview_height: 40.0,
@@ -434,7 +436,9 @@ impl ThemeTokens {
             motion_fast_ms: 90.0,
             motion_base_ms: 180.0,
 
-            font_family: DEFAULT_FONT_FAMILY.to_owned(),
+            font_display: DISPLAY_FONT_FAMILY.to_owned(),
+            font_body: BODY_FONT_FAMILY.to_owned(),
+            font_mono: MONO_FONT_FAMILY.to_owned(),
             tabular_numerals: true,
             reduced_motion: false,
 
@@ -486,8 +490,11 @@ impl ThemeTokens {
     }
 }
 
-/// Family name of the bundled interface font (Inter, SIL OFL 1.1; see `resources/fonts`).
-pub const DEFAULT_FONT_FAMILY: &str = "Inter";
+/// Family names of the bundled fonts (`resources/fonts`): Sansation (SIL OFL 1.1), Source Sans 3
+/// (SIL OFL 1.1) and Ubuntu Mono (Ubuntu Font Licence 1.0).
+pub const DISPLAY_FONT_FAMILY: &str = "Sansation";
+pub const BODY_FONT_FAMILY: &str = "Source Sans 3";
+pub const MONO_FONT_FAMILY: &str = "Ubuntu Mono";
 
 /// The Roomy spacing scale (px): Fibonacci 3, 5, 8, 13, 21, 34. Layout values come from here.
 pub const SPACE_SCALE: [f32; 6] = DensityMetrics::roomy().space;

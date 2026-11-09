@@ -181,7 +181,7 @@ examples/plugins/param-plugin-cdylib/   # Example C-ABI plugin (ABI 2: prepare, 
 examples/plugins/clap-gain-fixture/     # CLAP test fixture plugin (built with clack-plugin)
 fixtures/                               # Small test inputs: controller maps and traces, library exports
 resources/controllers/                  # Generic controller maps
-resources/fonts/                        # Bundled Inter (SIL OFL 1.1) interface font
+resources/fonts/                        # Bundled Sansation, Source Sans 3 (SIL OFL 1.1), Ubuntu Mono (UFL 1.0)
 resources/themes/                       # Built-in theme JSON
 spikes/                                 # Throwaway spikes, each its own Cargo workspace (see docs/spikes/)
 tools/                                  # Helpers: progress and issue heatmaps, docs check, screenshots, htdemucs export, CLAP leak check

@@ -218,7 +218,7 @@ impl LookAndFeel {
                 font_size: size,
             };
         let button = |fill: Colour, text: Colour| {
-            shape(fill, text, t.border_strong, t.control_radius, t.type_small)
+            shape(fill, text, t.border_strong, t.control_radius, t.type_label)
         };
         let disabled_text = t.text_muted.with_multiplied_alpha(t.disabled_alpha);
         Self {
@@ -235,7 +235,7 @@ impl LookAndFeel {
                     t.text_primary,
                     t.border_strong,
                     t.control_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 fill: accent,
                 label: shape(
@@ -243,14 +243,14 @@ impl LookAndFeel {
                     t.text_secondary,
                     t.border_strong,
                     t.control_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 readout: shape(
                     raised,
                     t.text_primary,
                     t.border_strong,
                     t.control_radius,
-                    t.type_caption,
+                    t.type_numeral,
                 ),
                 track: if t.surface.brightness() < 0.5 {
                     t.border_strong.with_multiplied_alpha(0.6)
@@ -266,7 +266,7 @@ impl LookAndFeel {
                     t.text_primary,
                     t.border_strong,
                     t.control_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 // A control-face cap. Its edge is text-3: the graphic edge falls under 3:1 on the
                 // daylight well the track is drawn in.
@@ -275,7 +275,7 @@ impl LookAndFeel {
                     t.text_primary,
                     t.text_muted,
                     t.control_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 thumb_size: t.thumb_size,
             },
@@ -285,14 +285,14 @@ impl LookAndFeel {
                     t.text_primary,
                     accent,
                     t.control_radius,
-                    t.type_small,
+                    t.type_label,
                 ),
                 unselected: shape(
                     t.surface_scaled(),
                     t.text_secondary,
                     t.border_strong,
                     t.control_radius,
-                    t.type_small,
+                    t.type_label,
                 ),
             },
             tooltip: shape(
@@ -300,7 +300,7 @@ impl LookAndFeel {
                 t.text_primary,
                 t.border,
                 t.control_radius,
-                t.type_caption,
+                t.type_body,
             ),
             text_field: TextFieldStyles {
                 idle: shape(
@@ -348,7 +348,7 @@ impl LookAndFeel {
                 t.text_secondary,
                 t.border,
                 t.card_radius,
-                t.type_caption,
+                t.type_label,
             ),
             separator: SeparatorStyle {
                 colour: t.border,
@@ -360,26 +360,26 @@ impl LookAndFeel {
                     t.text_secondary,
                     t.border,
                     t.bar_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 thumb: shape(
                     t.text_muted,
                     best_text(t.text_muted, t),
                     t.border_strong,
                     t.bar_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 thumb_hover: shape(
                     t.text_secondary,
                     best_text(t.text_secondary, t),
                     t.border_strong,
                     t.bar_radius,
-                    t.type_caption,
+                    t.type_label,
                 ),
                 width: t.min_pointer_target / 3.0,
             },
             table: TableStyle {
-                header: shape(raised, t.text_secondary, t.border, 0.0, t.type_small),
+                header: shape(raised, t.text_secondary, t.border, 0.0, t.type_label),
                 row: shape(
                     t.surface_scaled(),
                     t.text_primary,
@@ -413,21 +413,21 @@ impl LookAndFeel {
                     t.text_secondary,
                     t.border_strong,
                     t.control_radius,
-                    t.type_small,
+                    t.type_label,
                 ),
                 on: shape(
                     accent,
                     t.on_accent,
                     t.border_strong,
                     t.control_radius,
-                    t.type_small,
+                    t.type_label,
                 ),
                 knob: shape(
                     t.text_primary,
                     best_text(t.text_primary, t),
                     t.border_strong,
                     t.control_radius,
-                    t.type_small,
+                    t.type_label,
                 ),
             },
             popup: shape(
@@ -435,14 +435,14 @@ impl LookAndFeel {
                 t.text_primary,
                 t.border,
                 t.control_radius,
-                t.type_small,
+                t.type_body,
             ),
             popup_hint: shape(
                 t.popup,
                 t.text_muted,
                 t.border,
                 t.control_radius,
-                t.type_small,
+                t.type_label,
             ),
             drop_target: t.drop_target,
             body_size: t.type_body,
@@ -454,9 +454,9 @@ impl LookAndFeel {
             readout: ReadoutStyle {
                 value: t.readout,
                 unit: t.readout_dim,
-                value_size: t.type_readout,
-                small_size: t.type_readout_small,
-                unit_size: t.type_small,
+                value_size: t.type_numeral_large,
+                small_size: t.type_numeral,
+                unit_size: t.type_label,
             },
             lift: ShadowStyle {
                 colour: t.shadow,
@@ -768,11 +768,8 @@ mod tests {
             assert!(value >= 7.0, "{id}: readout contrast {value:.2} < 7");
             assert!(unit >= 4.5, "{id}: readout unit contrast {unit:.2} < 4.5");
             assert!(value + 0.01 >= body, "{id}: readout weaker than body text");
-            assert!(
-                r.value_size >= t.type_heading + 4.0,
-                "{id}: numerals too small"
-            );
-            assert!(r.small_size > t.type_body && r.small_size < r.value_size);
+            assert!(r.value_size >= t.type_headline, "{id}: numerals too small");
+            assert!(r.small_size >= t.type_body && r.small_size < r.value_size);
             assert!(r.unit_size < r.small_size);
         }
     }
@@ -978,22 +975,20 @@ mod tests {
     }
 
     #[test]
-    fn type_scale_has_no_text_below_12_and_targets_meet_minimums() {
+    fn control_text_is_never_below_the_label_size_and_targets_meet_minimums() {
         let t = ThemeTokens::builtin_dark();
-        for (name, size) in [
-            ("small", t.type_small),
-            ("caption", t.type_caption),
-            ("body", t.type_body),
-            ("label", t.type_label),
-            ("title", t.type_title),
-            ("heading", t.type_heading),
-            ("mono", t.type_mono),
-            ("readout_small", t.type_readout_small),
-            ("readout", t.type_readout),
-        ] {
-            assert!(size >= 12.0, "type {name} = {size}");
+        for (name, style) in LookAndFeel::from_tokens(&t).entries() {
+            assert!(
+                style.font_size >= t.type_label,
+                "{name}: {}",
+                style.font_size
+            );
         }
-        assert_eq!((t.type_readout, t.type_readout_small), (40.0, 28.0));
+        let look = LookAndFeel::from_tokens(&t);
+        for prose in [look.tooltip, look.popup, look.panel] {
+            assert!(prose.font_size >= crate::theme::MIN_PROSE_SIZE);
+        }
+        assert_eq!((t.type_numeral_large, t.type_numeral), (21.0, 13.0));
         assert!(t.deck_row_height >= 40.0);
         assert!(t.min_target >= 44.0 && t.min_pointer_target >= 32.0);
         for gap in [t.gap, t.pad, t.inner_gap] {

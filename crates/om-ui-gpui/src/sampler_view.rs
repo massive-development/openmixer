@@ -5,8 +5,9 @@
 //! comes up. Models come from `om-ui`'s `SamplerBinding`; the layout from `widgets::sampler_strip`.
 
 use crate::app::Shell;
-use crate::controls::{button, caption, knob_face_with, KnobFace, KnobLook};
+use crate::controls::{button, caption, knob_face_with, value_caption, KnobFace, KnobLook};
 use crate::drag::Target;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::knob_paint::KnobRole;
 use crate::paint::{paint, place, skin};
 use crate::text_entry::{apply_key, EntryKey};
@@ -18,7 +19,7 @@ use om_engine::sampler::{PadMode, MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
 use om_ui::geometry::Rect;
 use om_ui::sampler_binding::{mode_label, pad_for_key, PadView};
 use om_ui::style::LookAndFeel;
-use om_ui::theme::Colour;
+use om_ui::theme::{Colour, TypeRole};
 use om_ui::widgets::sampler_strip::{sampler_strip_layout, SamplerStripLayout};
 
 /// Velocity of a click or key press on a pad (a full-scale hit leaves headroom for the master).
@@ -136,7 +137,7 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         .items_center()
         .justify_center()
         .gap(px(4.))
-        .text_size(px(t.type_caption))
+        .type_role(t, TypeRole::Label)
         .hover(move |style| style.bg(paint(hover)))
         .track_focus(&focus)
         .children("SAMPLER".chars().map(|c| gpui::div().child(c.to_string())))
@@ -213,7 +214,14 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         om_ui::sampler_binding::EMPTY_PAD_HINT.to_owned()
     };
     let error = shell.sampler_status.as_ref().is_some_and(|(_, e)| *e);
-    root = root.child(caption(t, l.caption, &text).text_color(paint(if error {
+    // The loaded pad's caption is its mode, pitch and gain; anything else is a sentence.
+    let values = pads[selected].loaded && !shell.sampler_editing && shell.sampler_status.is_none();
+    let line = if values {
+        value_caption(t, l.caption, &text)
+    } else {
+        caption(t, l.caption, &text).type_role(t, TypeRole::Body)
+    };
+    root = root.child(line.text_color(paint(if error {
         look.button.idle.text
     } else {
         t.text_primary
@@ -342,7 +350,11 @@ fn pad_tile(
     } else {
         pad.key.to_string()
     };
-    let mut text = div().flex().flex_col().items_center().child(key);
+    let mut text = div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .child(numeral(t, Numeral::Value, key));
     if pad.loaded {
         text = text.child(name);
     }
@@ -352,7 +364,7 @@ fn pad_tile(
             .flex()
             .items_center()
             .justify_center()
-            .text_size(px(t.type_caption)),
+            .type_role(t, TypeRole::Label),
         &style,
     )
     .border_color(paint(border_colour))

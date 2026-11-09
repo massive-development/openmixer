@@ -5,8 +5,10 @@
 
 use super::chips::*;
 use super::*;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use om_midi::{Conflict, Keep, MapMode, MidiKind};
 use om_ui::mapping_editor::{mode_label, MappingFilter};
+use om_ui::theme::TypeRole;
 
 /// One field of the edit form, typed into the text field at the foot of the card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,7 +210,7 @@ pub(super) fn mapping_page(
                 .py(px(3.))
                 .bg(paint(if lit { accent_of(t) } else { t.surface_raised }))
                 .text_color(paint(if lit { t.on_accent } else { t.text_primary }))
-                .text_size(px(t.type_small))
+                .type_role(t, TypeRole::Body)
                 .child(format!("{mark}{}", row.text))
                 .on_mouse_down(
                     MouseButton::Left,
@@ -256,13 +258,14 @@ pub(super) fn mapping_page(
         .rounded(px(t.control_radius))
         .px(px(8.))
         .py(px(4.))
-        .text_size(px(t.type_caption))
+        .type_role(t, TypeRole::Body)
         .text_color(paint(t.text_secondary));
     if lines.is_empty() {
         monitor = monitor.child("No MIDI event yet. Move a control on the controller.");
     }
+    // Each monitor line is a message's numbers (channel, control, value).
     for line in lines {
-        monitor = monitor.child(line);
+        monitor = monitor.child(numeral(t, Numeral::Value, line));
     }
     column = column.child(monitor);
 
@@ -287,7 +290,7 @@ fn conflict_row(t: &ThemeTokens, conflict: Conflict, cx: &mut Context<Shell>) ->
         .child(
             div()
                 .mr(px(8.))
-                .text_size(px(t.type_small))
+                .type_role(t, TypeRole::Body)
                 .text_color(paint(t.text_primary))
                 .child(text),
         )
@@ -379,7 +382,7 @@ fn form_view(
             column = column.child(
                 div()
                     .text_color(paint(t.text_primary))
-                    .text_size(px(t.type_caption))
+                    .type_role(t, TypeRole::Body)
                     .mb(px(6.))
                     .child(format!("Not valid yet: {error}")),
             )

@@ -384,6 +384,11 @@ fn the_component_theme_follows_the_om_ui_tokens(cx: &mut TestAppContext) {
         assert_eq!(theme.background, component_colour(tokens.surface));
         assert_eq!(theme.foreground, component_colour(tokens.text_primary));
         assert_eq!(theme.input, component_colour(tokens.border_strong));
+        assert_eq!(theme.font_family.as_ref(), tokens.font_body);
+        assert_eq!(theme.mono_font_family.as_ref(), tokens.font_mono);
+        let rem = crate::theme_bridge::component_rem(&tokens);
+        assert_eq!(f32::from(theme.font_size), rem);
+        assert!(0.875 * rem >= tokens.type_body && 0.75 * rem >= tokens.type_label);
         assert_eq!(
             theme.is_dark(),
             crate::theme_bridge::mode_of(&tokens).is_dark()

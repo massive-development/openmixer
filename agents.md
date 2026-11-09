@@ -24,7 +24,7 @@ openmixer/
 │   └── superpowers/          # Historical design specs and plans
 ├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports
-├── resources/                # Built-in theme JSON, generic controller maps, bundled Inter font
+├── resources/                # Built-in theme JSON, generic controller maps, bundled fonts
 ├── spikes/                   # Throwaway spikes (gpui-window, cpal-out, stretch), each its own Cargo workspace
 ├── tests/tools/              # Unit tests for the Python tools
 ├── tools/                    # check_docs_rust.py, progress_heatmap.py, issue_heatmap.py, screenshots.sh, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh, graphify_rebuild.py
@@ -238,6 +238,7 @@ Colours, radii, border widths, insets and font sizes come from the theme, never 
 4. A value no token covers: add a token field in `theme/tokens.rs` (default in `builtin_dark`), a reader in `theme/json.rs` (range-checked, with a key in the matching section), and a value in both built-in theme JSON files. Old theme files stay valid because a missing key inherits the default.
 5. Add the new style to `LookAndFeel::entries()` so the contrast and live-switch tests cover it. Text on a control needs contrast 3.0 (control) or 4.5 (body) against its fill over both backdrop ends; disabled controls are exempt.
 6. `crates/om-ui-gpui/tests/style_lint.rs` fails on raw colour calls (`rgb(`, `rgba(`, `hsla(`, `from_argb(`, bare 6 or 8 digit hex) in `src/`. Only `paint.rs` may name them.
+7. Type: set text with a tier, `el.type_role(t, TypeRole::Label)` (`om-ui-gpui::font::TypeExt`; tiers in `om_ui::theme::TypeRole`), and draw every number with `font::numeral(t, Numeral::Value | Readout, text)`, which is always the mono family. `crates/om-ui-gpui/tests/type_lint.rs` fails on a family named outside `font.rs`, a number source drawn without `numeral`, the 10 px `Numeral::Scale` outside the fader dB scale, and a literal text size under 11 px.
 
 gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
 

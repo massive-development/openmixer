@@ -11,6 +11,7 @@
 
 use crate::app::Shell;
 use crate::controls::push_button;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::library::{KeyOutcome, LibraryPanel, RowView};
 use crate::paint::{paint, place, skin};
 use gpui::{
@@ -26,7 +27,7 @@ use om_ui::library::{column_shown, columns, MixLevel, SEARCH_PLACEHOLDER};
 use om_ui::main_layout::{header_height, library_metrics};
 use om_ui::sidebar::SidebarKind;
 use om_ui::style::{ControlStyle, LookAndFeel};
-use om_ui::theme::{Colour, ThemeTokens};
+use om_ui::theme::{Colour, ThemeTokens, TypeRole};
 
 /// Inner padding of the library card.
 const PAD: f32 = 6.0;
@@ -426,7 +427,7 @@ impl TableDelegate for LibraryTable {
         row_ix: usize,
         col_ix: usize,
         _: &mut Window,
-        _: &mut Context<TableState<Self>>,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let Some((index, spec)) = self.shown().nth(col_ix) else {
             return div();
@@ -443,7 +444,17 @@ impl TableDelegate for LibraryTable {
         } else {
             cell
         };
-        div().overflow_hidden().whitespace_nowrap().child(text)
+        // BPM, key and length are numbers: mono, so a column of them lines up (the Mono Numbers Rule).
+        let el = if spec.numeric {
+            self.shell
+                .read_with(cx, |shell, _| {
+                    numeral(&shell.theme, Numeral::Value, text.clone())
+                })
+                .unwrap_or_else(|_| div().child(text))
+        } else {
+            div().child(text)
+        };
+        el.overflow_hidden().whitespace_nowrap()
     }
 
     fn render_empty(
@@ -490,7 +501,7 @@ pub fn library_card(
         .border_color(paint(t.border))
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary))
-        .text_size(px(t.type_caption.max(12.0)))
+        .type_role(&t, TypeRole::Body)
         .overflow_hidden()
         .track_focus(&focus)
         .on_mouse_down(
@@ -623,7 +634,7 @@ pub fn library_card(
                 .py(px(0.))
                 .pl(px(4. + 12. * line.depth as f32))
                 .rounded(px(3.))
-                .text_size(px(t.type_caption.max(12.0)))
+                .type_role(&t, TypeRole::Body)
                 .text_color(paint(text))
                 .when_some(bar, |el, colour| {
                     // Selection is a fill and a bar in the focus colour, so it does not rest on

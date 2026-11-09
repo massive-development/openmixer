@@ -114,6 +114,12 @@ pub trait AudioCallback: Send {
 - **Reuse when:** adding any widget. Read tokens at render time, so a theme switch needs no rebuild.
 - **Notes:** UI thread only. Precedence per id: User > Plugin > BuiltIn; a missing key inherits the built-in dark theme, and an invalid value rejects that file only. The built-in theme is compiled in and tested to match its shipped file.
 
+### Type tiers and one numeral helper
+- **Where:** `om-ui` `theme/typography.rs` (`TypeRole`, `FontSlot`, `ThemeTokens::type_style`); `om-ui-gpui` `font.rs` (`TypeExt::type_role`, `numeral`), checked by `tests/type_lint.rs`.
+- **Why:** text takes its family, size, weight and line height from one named tier, so the DESIGN.md rules (Sansation 21 px and up, labels 11, prose 12, every number in mono) hold by construction and are checked in one place.
+- **Reuse when:** drawing any text. Pick a tier with `type_role`; draw a value with `numeral` (or a wrapper that calls it, such as `controls::value_caption`), and add its source to the lint's audit list if it is new.
+- **Notes:** sizes are theme tokens (`type` section) range-checked to the rule floors; families are theme keys (`font.display`, `font.body`, `font.mono`). GPUI has no letter-spacing, so the tiers carry none.
+
 ### Prefetched jump slot (two-slot handoff)
 - **Where:** `om-engine` loop prefetch (`deck/prefetch.rs`)
 - **Why:** the audio thread jumps (loop wrap) without waiting for the decoder to refill the ring.
