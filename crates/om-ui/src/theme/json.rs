@@ -2,6 +2,7 @@
 //! Pure; no global state. Missing keys inherit the built-in dark theme; a malformed value rejects
 //! the whole theme; unknown keys are reported as warnings and ignored.
 
+use super::density::{self, DensityMetrics};
 use super::tokens::{Colour, ThemeTokens, WaveStop};
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -137,6 +138,10 @@ mod deck_keys {
         "gridBeatAlpha" => grid_beat_alpha: 0.0, 1.0;
         "loopActiveAlpha" => loop_active_alpha: 0.0, 1.0;
         "loopIdleAlpha" => loop_idle_alpha: 0.0, 1.0;
+        "onTintAlpha" => deck_tint_alpha: 0.0, 1.0;
+        "onBorderAlpha" => deck_border_alpha: 0.0, 1.0;
+        "onHoverTintAlpha" => deck_tint_hover_alpha: 0.0, 1.0;
+        "onHoverBorderAlpha" => deck_border_hover_alpha: 0.0, 1.0;
     }
 }
 
@@ -202,12 +207,18 @@ mod style_keys {
         "disabledAlpha" => disabled_alpha: 0.0, 1.0;
         "minTarget" => min_target: 0.0, MAX_PX;
         "minPointerTarget" => min_pointer_target: 0.0, MAX_PX;
-        "glowAlpha" => glow_alpha: 0.0, 1.0;
-        "glowRadius" => glow_radius: 0.0, 64.0;
         "shadowBlur" => shadow_blur: 0.0, 64.0;
         "shadowOffsetY" => shadow_offset_y: 0.0, 32.0;
         "motionFastMs" => motion_fast_ms: 0.0, 1000.0;
         "motionBaseMs" => motion_base_ms: 0.0, 2000.0;
+    }
+}
+
+mod edge_keys {
+    use super::*;
+    float_keys! {
+        "line" => edge_line_alpha: 0.0, 1.0;
+        "highlight" => edge_highlight_alpha: 0.0, 1.0;
     }
 }
 
@@ -252,10 +263,7 @@ macro_rules! colour_keys {
 }
 
 colour_keys! {
-    "backdropTop" => backdrop_top;
-    "backdropBottom" => backdrop_bottom;
-    "glowCool" => glow_cool;
-    "glowWarm" => glow_warm;
+    "ground" => ground;
     "surface" => surface;
     "surfaceRaised" => surface_raised;
     "surfaceHover" => surface_hover;
@@ -272,7 +280,7 @@ colour_keys! {
     "meterLow" => meter_low;
     "meterMid" => meter_mid;
     "meterHigh" => meter_high;
-    "recordRed" => record_red;
+    "playhead" => playhead;
     "cue" => cue;
     "loopMark" => loop_mark;
     "syncOn" => sync_on;
@@ -280,16 +288,28 @@ colour_keys! {
     "danger" => danger;
     "master" => master;
     "popup" => popup;
-    "capTop" => cap_top;
-    "capBottom" => cap_bottom;
     "dropTarget" => drop_target;
     "brand" => brand;
     "readout" => readout;
     "readoutDim" => readout_dim;
 }
 
+/// Colour keys older theme files carry under another name: (old, new). The old value is used only
+/// when the file does not set the new key.
+const RENAMED_COLOURS: [(&str, &str); 2] = [("backdropTop", "ground"), ("recordRed", "playhead")];
+
+/// Glass and glow colours the faceplate themes no longer have.
+const RETIRED_COLOURS: [&str; 5] = [
+    "backdropBottom",
+    "glowCool",
+    "glowWarm",
+    "capTop",
+    "capBottom",
+];
+
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
-const ROOT_KEYS: [&str; 17] = [
+const DENSITY_KEYS: [&str; 2] = ["roomy", "compact"];
+const ROOT_KEYS: [&str; 20] = [
     "id",
     "name",
     "author",
@@ -307,6 +327,9 @@ const ROOT_KEYS: [&str; 17] = [
     "waveform",
     "font",
     "accessibility",
+    "edge",
+    "density",
+    "notes",
 ];
 
 /// Parses a theme document. On error no tokens are returned, so a caller can never use a half-filled
@@ -401,11 +424,24 @@ pub fn parse_theme(json: &str) -> Result<ParsedTheme, ThemeError> {
         style_keys::set,
         style_keys::range,
     )?;
+    read_floats(
+        section(&root, "edge")?,
+        "edge",
+        w,
+        t,
+        edge_keys::KEYS,
+        edge_keys::set,
+        edge_keys::range,
+    )?;
+    read_density(section(&root, "density")?, w, t)?;
     read_waveform(section(&root, "waveform")?, w, t)?;
     read_font(section(&root, "font")?, w, t)?;
     read_accessibility(section(&root, "accessibility")?, w, t)?;
     if let Some(accents) = root.get("accents") {
         t.accents = read_accents(accents)?;
+    }
+    if root.get("notes").is_some_and(|v| !v.is_string()) {
+        return Err(field("notes", "must be a string"));
     }
     warn_unknown(&root, &ROOT_KEYS, "", w);
     Ok(out)
@@ -592,6 +628,19 @@ fn section<'a>(
     }
 }
 
+/// An optional object inside `parent` (named `parent_name` in errors).
+fn section_in<'a>(
+    parent: &'a Map<String, Value>,
+    parent_name: &str,
+    name: &str,
+) -> Result<Option<&'a Map<String, Value>>, ThemeError> {
+    match parent.get(name) {
+        None => Ok(None),
+        Some(Value::Object(obj)) => Ok(Some(obj)),
+        Some(_) => Err(field(format!("{parent_name}.{name}"), "must be an object")),
+    }
+}
+
 /// Reports keys the schema does not know (typos) without rejecting the theme.
 fn warn_unknown(
     obj: &Map<String, Value>,
@@ -611,19 +660,93 @@ fn read_colours(
     t: &mut ThemeTokens,
     warnings: &mut Vec<String>,
 ) -> Result<(), ThemeError> {
+    let colour = |key: &str, value: &Value| {
+        value
+            .as_str()
+            .and_then(parse_colour_hex)
+            .ok_or_else(|| field(format!("colours.{key}"), HEX_HINT))
+    };
     for (key, value) in section {
-        if !COLOUR_KEYS.contains(&key.as_str()) {
-            continue;
-        }
-        let colour = value.as_str().and_then(parse_colour_hex);
-        match colour {
-            Some(c) => {
-                set_colour(t, key, c);
-            }
-            None => return Err(field(format!("colours.{key}"), HEX_HINT)),
+        if COLOUR_KEYS.contains(&key.as_str()) {
+            set_colour(t, key, colour(key, value)?);
         }
     }
-    warn_unknown(section, COLOUR_KEYS, "colours.", warnings);
+    for (old, new) in RENAMED_COLOURS {
+        let Some(value) = section.get(old) else {
+            continue;
+        };
+        if !section.contains_key(new) {
+            set_colour(t, new, colour(old, value)?);
+        }
+        warnings.push(format!(
+            "renamed key 'colours.{old}' read as 'colours.{new}'"
+        ));
+    }
+    for old in RETIRED_COLOURS
+        .into_iter()
+        .filter(|k| section.contains_key(*k))
+    {
+        warnings.push(format!("retired key 'colours.{old}' ignored"));
+    }
+    let known: Vec<&str> = COLOUR_KEYS
+        .iter()
+        .copied()
+        .chain(RENAMED_COLOURS.map(|(old, _)| old))
+        .chain(RETIRED_COLOURS)
+        .collect();
+    warn_unknown(section, &known, "colours.", warnings);
+    Ok(())
+}
+
+/// `density`: a `roomy` and a `compact` metric set; a key left out keeps the built-in value.
+fn read_density(
+    section: Option<&Map<String, Value>>,
+    warnings: &mut Vec<String>,
+    t: &mut ThemeTokens,
+) -> Result<(), ThemeError> {
+    let Some(section) = section else {
+        return Ok(());
+    };
+    if let Some(set) = section_in(section, "density", "roomy")? {
+        read_density_set(set, "roomy", &mut t.roomy, warnings)?;
+    }
+    if let Some(set) = section_in(section, "density", "compact")? {
+        read_density_set(set, "compact", &mut t.compact, warnings)?;
+    }
+    warn_unknown(section, &DENSITY_KEYS, "density.", warnings);
+    Ok(())
+}
+
+fn read_density_set(
+    set: &Map<String, Value>,
+    name: &str,
+    metrics: &mut DensityMetrics,
+    warnings: &mut Vec<String>,
+) -> Result<(), ThemeError> {
+    for key in density::KEYS {
+        let Some(value) = set.get(*key) else {
+            continue;
+        };
+        let (lo, hi) = density::range(key);
+        let number = value
+            .as_f64()
+            .map(|v| v as f32)
+            .filter(|v| (lo..=hi).contains(v));
+        let Some(v) = number else {
+            return Err(field(
+                format!("density.{name}.{key}"),
+                format!("expected a number {lo}-{hi}"),
+            ));
+        };
+        metrics.set(key, v);
+    }
+    if !metrics.steps_rise() {
+        return Err(field(
+            format!("density.{name}"),
+            "spacing steps s1..s6 must rise",
+        ));
+    }
+    warn_unknown(set, density::KEYS, &format!("density.{name}."), warnings);
     Ok(())
 }
 
@@ -709,15 +832,17 @@ fn read_floats(
             }
         }
     }
+    let in_section = |list: &'static [(&'static str, &'static str)]| {
+        list.iter().filter(|(s, _)| *s == name).map(|(_, k)| *k)
+    };
+    for key in in_section(&WARNED_RETIRED_KEYS).filter(|k| section.contains_key(*k)) {
+        warnings.push(format!("retired key '{name}.{key}' ignored"));
+    }
     let known: Vec<&str> = keys
         .iter()
         .copied()
-        .chain(
-            RETIRED_KEYS
-                .iter()
-                .filter(|(s, _)| *s == name)
-                .map(|(_, k)| *k),
-        )
+        .chain(in_section(&RETIRED_KEYS))
+        .chain(in_section(&WARNED_RETIRED_KEYS))
         .collect();
     warn_unknown(section, &known, &format!("{name}."), warnings);
     Ok(())
@@ -726,6 +851,9 @@ fn read_floats(
 /// Keys that older theme files carry and no token reads any more: (section, key). They are
 /// accepted without a warning so those files keep loading quietly.
 const RETIRED_KEYS: [(&str, &str); 1] = [("mixer", "meterReleaseSeconds")];
+
+/// Retired glow keys: accepted so E1 theme files still load, with a warning that they do nothing.
+const WARNED_RETIRED_KEYS: [(&str, &str); 2] = [("style", "glowAlpha"), ("style", "glowRadius")];
 
 #[cfg(test)]
 mod tests {
@@ -761,18 +889,64 @@ mod tests {
     #[test]
     fn brand_tokens_parse_and_are_range_checked() {
         let ok = r##"{"id":"t.one","name":"T","colours":{"brand":"#FF112233"},
-            "type":{"readout":30},"style":{"glowAlpha":0.5,"glowRadius":12}}"##;
+            "type":{"readout":30},"edge":{"line":0.5,"highlight":0.1}}"##;
         let t = parse_theme(ok).expect("parses").tokens;
         assert_eq!(t.brand, Colour::from_argb(0xFF11_2233));
         assert_eq!(t.type_readout, 30.0);
-        assert_eq!((t.glow_alpha, t.glow_radius), (0.5, 12.0));
+        assert_eq!((t.edge_line_alpha, t.edge_highlight_alpha), (0.5, 0.1));
         // A file that leaves them out inherits the defaults.
         let bare = parse_theme(r#"{"id":"t.two","name":"T"}"#)
             .expect("parses")
             .tokens;
         assert_eq!(bare.brand, ThemeTokens::builtin_dark().brand);
-        let bad = r#"{"id":"t.three","name":"T","style":{"glowAlpha":2}}"#;
+        let bad = r#"{"id":"t.three","name":"T","edge":{"highlight":2}}"#;
         assert!(parse_theme(bad).is_err());
+    }
+
+    #[test]
+    fn e1_glass_and_glow_keys_still_load_with_a_warning_each() {
+        let old = r##"{"id":"t.e1","colours":{"backdropTop":"#FF010203","backdropBottom":"#FF000000",
+            "glowCool":"#0F00C2FF","glowWarm":"#0AFF6B35","capTop":"#FF2C3446","capBottom":"#FF161B26",
+            "recordRed":"#FFFF3B4E"},"style":{"glowAlpha":2,"glowRadius":10}}"##;
+        let parsed = parse_theme(old).expect("an E1 theme still loads");
+        assert_eq!(parsed.warnings.len(), 9, "{:?}", parsed.warnings);
+        assert!(parsed.warnings.iter().all(|w| !w.starts_with("unknown")));
+        assert_eq!(parsed.tokens.ground, Colour::from_argb(0xFF01_0203));
+        assert_eq!(parsed.tokens.record_red(), Colour::from_argb(0xFFFF_3B4E));
+    }
+
+    #[test]
+    fn a_new_key_wins_over_its_old_name() {
+        let both =
+            r##"{"id":"t.both","colours":{"ground":"#FF0A0A0A","backdropTop":"#FF010203"}}"##;
+        let parsed = parse_theme(both).expect("parses");
+        assert_eq!(parsed.tokens.ground, Colour::from_argb(0xFF0A_0A0A));
+        assert_eq!(parsed.warnings.len(), 1);
+        let bad = r##"{"id":"t.bad","colours":{"backdropTop":"blue"}}"##;
+        assert!(parse_theme(bad).is_err(), "an old key is still checked");
+    }
+
+    #[test]
+    fn density_sets_parse_and_are_range_checked() {
+        let ok = r#"{"id":"t.d","density":{"compact":{"rowHeight":24,"s6":20}}}"#;
+        let t = parse_theme(ok).expect("parses").tokens;
+        assert_eq!(t.compact.row_height, 24.0);
+        assert_eq!(t.compact.space[5], 20.0);
+        assert_eq!(
+            t.roomy,
+            DensityMetrics::roomy(),
+            "an absent set keeps the default"
+        );
+        for bad in [
+            r#"{"id":"t.d","density":{"roomy":{"rowHeight":-1}}}"#,
+            r#"{"id":"t.d","density":{"roomy":{"s2":1}}}"#,
+            r#"{"id":"t.d","density":{"roomy":3}}"#,
+            r#"{"id":"t.d","notes":7}"#,
+        ] {
+            assert!(parse_theme(bad).is_err(), "{bad}");
+        }
+        let typo = r#"{"id":"t.d","density":{"rooomy":{},"compact":{"rowHieght":2}}}"#;
+        assert_eq!(parse_theme(typo).expect("parses").warnings.len(), 2);
     }
 
     #[test]

@@ -605,7 +605,7 @@ impl Render for Shell {
                 .size_full()
                 .relative()
                 .font(crate::font::interface_font(&self.theme))
-                .bg(paint(self.theme.backdrop_top))
+                .bg(paint(self.theme.ground))
                 .text_color(paint(self.theme.text_primary))
                 .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
                     // `r` toggles recording unless a text field or the settings card takes the key.

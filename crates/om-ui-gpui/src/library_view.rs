@@ -774,8 +774,9 @@ pub fn library_card(
         ));
     }
 
+    // An error states its reason in words at full text strength; `highlight` is now the top edge.
     let status_colour = if status_error {
-        t.highlight
+        t.text_primary
     } else {
         t.text_secondary
     };

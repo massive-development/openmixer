@@ -142,8 +142,7 @@ pub struct ReadoutStyle {
     pub unit_size: f32,
 }
 
-/// A soft shadow: `colour` blurred over `blur` px, dropped `offset_y` px. Glow is the same with
-/// an accent colour and no offset.
+/// A soft shadow: `colour` blurred over `blur` px, dropped `offset_y` px.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowStyle {
     pub colour: Colour,
@@ -192,12 +191,8 @@ pub struct LookAndFeel {
     pub disabled_alpha: f32,
     pub accent: Colour,
     pub readout: ReadoutStyle,
-    /// Lift under cards and raised controls.
+    /// The one small drop under raised controls.
     pub lift: ShadowStyle,
-    /// Strength and reach of the glow of a lit control; the colour is the control's accent, see
-    /// [`LookAndFeel::glow`].
-    pub glow_alpha: f32,
-    pub glow_radius: f32,
     pub motion: MotionStyle,
     /// The brand colour, for marks and "now" cues.
     pub brand: Colour,
@@ -273,10 +268,12 @@ impl LookAndFeel {
                     t.control_radius,
                     t.type_caption,
                 ),
+                // A control-face cap. Its edge is text-3: the graphic edge falls under 3:1 on the
+                // daylight well the track is drawn in.
                 thumb: shape(
-                    t.cap_top,
+                    raised,
                     t.text_primary,
-                    t.border_strong,
+                    t.text_muted,
                     t.control_radius,
                     t.type_caption,
                 ),
@@ -466,8 +463,6 @@ impl LookAndFeel {
                 blur: t.shadow_blur,
                 offset_y: t.shadow_offset_y,
             },
-            glow_alpha: t.glow_alpha,
-            glow_radius: t.glow_radius,
             // Reduced motion collapses every transition to zero length.
             motion: MotionStyle {
                 fast_ms: if t.reduced_motion {
@@ -501,11 +496,12 @@ impl LookAndFeel {
         }
     }
 
-    /// The glow around a lit control of colour `accent`.
+    /// The glow around a lit control: none, since nothing glows on the faceplate. Kept so lit
+    /// controls still compile until the control rebuild drops the call sites.
     pub fn glow(&self, accent: Colour) -> ShadowStyle {
         ShadowStyle {
-            colour: accent.with_multiplied_alpha(self.glow_alpha),
-            blur: self.glow_radius,
+            colour: accent.with_alpha(0.0),
+            blur: 0.0,
             offset_y: 0.0,
         }
     }
@@ -564,16 +560,11 @@ pub fn gutter_width(shown: bool, bar_width: f32) -> f32 {
 }
 
 /// Of the primary text colour and the on-accent colour, the one that reads better on `fill`
-/// (judged over the darker backdrop end). For marks with no caption, such as a scroll thumb.
+/// (judged over the window ground). For marks with no caption, such as a scroll thumb.
 fn best_text(fill: Colour, t: &ThemeTokens) -> Colour {
     let ratio = |text: Colour| {
-        [t.backdrop_top, t.backdrop_bottom]
-            .into_iter()
-            .map(|b| {
-                let ground = over(fill, b);
-                contrast_ratio(over(text, ground), ground)
-            })
-            .fold(f32::MAX, f32::min)
+        let ground = over(fill, t.ground);
+        contrast_ratio(over(text, ground), ground)
     };
     if ratio(t.text_primary) >= ratio(t.on_accent) {
         t.text_primary
@@ -654,12 +645,9 @@ mod tests {
             .tokens
     }
 
-    /// Lowest contrast of `style`'s text over its fill, checked on both ends of the backdrop gradient.
+    /// Lowest contrast of `style`'s text over its fill, over the window ground.
     fn worst_contrast(style: &ControlStyle, t: &ThemeTokens) -> f32 {
-        [t.backdrop_top, t.backdrop_bottom]
-            .into_iter()
-            .map(|b| style.contrast_on(b))
-            .fold(f32::MAX, f32::min)
+        style.contrast_on(t.ground)
     }
 
     #[test]
@@ -703,17 +691,12 @@ mod tests {
     }
 
     /// Worst contrast of the visible edge of a control (its fill or its border, whichever stands
-    /// out more) against the card surface it sits on, over both ends of the backdrop gradient.
+    /// out more) against the card surface it sits on, over the window ground.
     fn edge_contrast(fill: Colour, border: Colour, t: &ThemeTokens) -> f32 {
-        [t.backdrop_top, t.backdrop_bottom]
-            .into_iter()
-            .map(|b| {
-                let ground = over(t.surface_scaled(), b);
-                let body = over(fill, ground);
-                let edge = over(border, body);
-                contrast_ratio(body, ground).max(contrast_ratio(edge, ground))
-            })
-            .fold(f32::MAX, f32::min)
+        let ground = over(t.surface_scaled(), t.ground);
+        let body = over(fill, ground);
+        let edge = over(border, body);
+        contrast_ratio(body, ground).max(contrast_ratio(edge, ground))
     }
 
     #[test]
@@ -751,13 +734,11 @@ mod tests {
                 check(name, edge_contrast(fill, border, &t), floor);
             }
             // The fader thumb stands out from its track.
-            for bd in [t.backdrop_top, t.backdrop_bottom] {
-                let ground = over(look.fader.track.fill, over(t.surface_scaled(), bd));
-                let cap = over(look.fader.thumb.fill, ground);
-                let edge = over(look.fader.thumb.border, cap);
-                let r = contrast_ratio(cap, ground).max(contrast_ratio(edge, ground));
-                check("fader.thumb", r, floor);
-            }
+            let ground = over(look.fader.track.fill, over(t.surface_scaled(), t.ground));
+            let cap = over(look.fader.thumb.fill, ground);
+            let edge = over(look.fader.thumb.border, cap);
+            let r = contrast_ratio(cap, ground).max(contrast_ratio(edge, ground));
+            check("fader.thumb", r, floor);
             // A disabled label is still legible.
             // (WCAG exempts inactive controls; this only keeps them from vanishing.)
             check("button.disabled text", worst_contrast(&b.disabled, &t), 1.5);
@@ -767,7 +748,7 @@ mod tests {
                 ("mid", look.meter.mid),
                 ("high", look.meter.high),
             ] {
-                let ground = over(look.meter.well, over(t.surface_scaled(), t.backdrop_top));
+                let ground = over(look.meter.well, over(t.surface_scaled(), t.ground));
                 check(&format!("meter.{name}"), contrast_ratio(c, ground), floor);
             }
             assert!(found.is_empty(), "{id}: {found:?}");
@@ -780,15 +761,13 @@ mod tests {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             let r = look.readout;
-            let ground = |b: Colour| over(t.surface_scaled(), b);
-            for b in [t.backdrop_top, t.backdrop_bottom] {
-                let value = contrast_ratio(over(r.value, ground(b)), ground(b));
-                let unit = contrast_ratio(over(r.unit, ground(b)), ground(b));
-                let body = contrast_ratio(over(t.text_primary, ground(b)), ground(b));
-                assert!(value >= 7.0, "{id}: readout contrast {value:.2} < 7");
-                assert!(unit >= 4.5, "{id}: readout unit contrast {unit:.2} < 4.5");
-                assert!(value + 0.01 >= body, "{id}: readout weaker than body text");
-            }
+            let ground = over(t.surface_scaled(), t.ground);
+            let value = contrast_ratio(over(r.value, ground), ground);
+            let unit = contrast_ratio(over(r.unit, ground), ground);
+            let body = contrast_ratio(over(t.text_primary, ground), ground);
+            assert!(value >= 7.0, "{id}: readout contrast {value:.2} < 7");
+            assert!(unit >= 4.5, "{id}: readout unit contrast {unit:.2} < 4.5");
+            assert!(value + 0.01 >= body, "{id}: readout weaker than body text");
             assert!(
                 r.value_size >= t.type_heading + 4.0,
                 "{id}: numerals too small"
@@ -799,37 +778,37 @@ mod tests {
     }
 
     #[test]
-    fn glow_is_the_accent_and_visible_but_restrained() {
+    fn nothing_glows_and_the_lift_is_one_small_drop() {
         for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             for accent in t.accents.clone() {
                 let g = look.glow(accent);
-                assert_eq!(g.colour.argb() & 0x00FF_FFFF, accent.argb() & 0x00FF_FFFF);
-                assert!(g.colour.alpha() >= 0.2, "{id}: glow too faint");
-                assert!(
-                    g.colour.alpha() <= 0.6,
-                    "{id}: glow too loud for a dark room"
-                );
-                assert!(g.blur > 0.0 && g.offset_y == 0.0);
+                assert!(g.colour.is_transparent() && g.blur == 0.0, "{id}: glow");
             }
-            assert!(look.lift.blur > 0.0 && look.lift.offset_y > 0.0);
+            // DESIGN.md Elevation: `0 2px 3px` (or `0 3px 5px`).
+            assert!(
+                look.lift.blur > 0.0 && look.lift.blur <= 5.0,
+                "{id}: drop blur"
+            );
+            assert!(look.lift.offset_y > 0.0 && look.lift.offset_y <= 3.0);
             assert!(look.motion.fast_ms < look.motion.base_ms);
             assert!(look.motion.base_ms <= 300.0, "{id}: motion should be brief");
         }
     }
 
     #[test]
-    fn brand_is_not_a_deck_accent_and_reads_on_the_backdrop() {
+    fn brand_is_not_a_deck_accent_and_reads_on_the_ground() {
         for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             assert!(
                 !t.accents.contains(&t.brand),
                 "{id}: brand reused as accent"
             );
-            for b in [t.backdrop_top, t.backdrop_bottom] {
-                assert!(contrast_ratio(t.brand, b) >= 3.0, "{id}: brand unreadable");
-            }
+            assert!(
+                contrast_ratio(t.brand, t.ground) >= 3.0,
+                "{id}: brand unreadable"
+            );
         }
         assert_ne!(builtin("dark").accents, builtin("daylight").accents);
     }
@@ -848,14 +827,10 @@ mod tests {
 
     // ---- Opaque-palette contrast and colour-distinctness checks (dark theme) ----
 
-    fn c(argb: u32) -> Colour {
-        Colour::from_argb(argb)
-    }
-
     /// The surfaces text and markers are drawn on.
     fn dark_surfaces(t: &ThemeTokens) -> [(&'static str, Colour); 4] {
         [
-            ("backdrop", t.backdrop_top),
+            ("ground", t.ground),
             ("surface", t.surface),
             ("surface_raised", t.surface_raised),
             ("well", t.well),
@@ -866,8 +841,7 @@ mod tests {
     fn dark_surfaces_and_text_are_opaque() {
         let t = ThemeTokens::builtin_dark();
         for (name, col) in [
-            ("backdrop_top", t.backdrop_top),
-            ("backdrop_bottom", t.backdrop_bottom),
+            ("ground", t.ground),
             ("surface", t.surface),
             ("surface_raised", t.surface_raised),
             ("surface_hover", t.surface_hover),
@@ -904,10 +878,11 @@ mod tests {
                 );
             }
         }
-        // The headline ratios the palette is specified against.
-        assert!(contrast_ratio(t.text_primary, t.surface) >= 15.0);
-        assert!(contrast_ratio(t.text_secondary, t.surface) >= 8.0);
-        assert!(contrast_ratio(t.text_muted, t.surface) >= 5.0);
+        // The hierarchy holds on the panel (DESIGN.md's own floors are in tests/theme_json.rs).
+        let on_panel = |c: Colour| contrast_ratio(c, t.surface);
+        assert!(on_panel(t.text_primary) > on_panel(t.text_secondary));
+        assert!(on_panel(t.text_secondary) > on_panel(t.text_muted));
+        assert!(on_panel(t.text_muted) >= 4.95);
     }
 
     #[test]
@@ -978,26 +953,19 @@ mod tests {
     }
 
     #[test]
-    fn deck_colours_are_distinct_from_each_other_and_from_waveform_bands() {
+    fn deck_colours_are_distinct_from_each_other_and_from_semantic_colours() {
+        // The Low-Band Rule paints the waveform's low band in the deck colour, so decks are no
+        // longer kept apart from waveform bands. Colour-blind separation is in tests/theme_json.rs.
         let t = ThemeTokens::builtin_dark();
-        // Waveform band colours: bass blue, mid amber, high near-white.
-        let bands = [c(0xFF25_63FF), c(0xFFFF_A726), c(0xFFF5_F7FA)];
         let decks: Vec<Colour> = (0..4).map(|i| t.accent_for(i)).collect();
         for (i, d) in decks.iter().enumerate() {
-            for band in bands {
-                let dist = oklab_distance(*d, band);
-                assert!(
-                    dist >= 0.15,
-                    "deck {i} vs band {:08X}: {dist:.3}",
-                    band.argb()
-                );
-            }
+            // Muted hues: amber A and sage C are the closest pair (about 0.11).
             for other in &decks[i + 1..] {
                 let dist = oklab_distance(*d, *other);
-                assert!(dist >= 0.15, "deck {i} vs another deck: {dist:.3}");
+                assert!(dist >= 0.10, "deck {i} vs another deck: {dist:.3}");
             }
-            // Semantic colours: pink B and red danger are the closest pair (about 0.08), which is
-            // why deck identity is always paired with the deck letter, never colour alone.
+            // Clay D and signal red are the closest pair (about 0.074), which is why deck
+            // identity is always paired with the deck letter, never colour alone.
             for sem in [t.cue, t.loop_mark, t.sync_on, t.warning, t.danger] {
                 let dist = oklab_distance(*d, sem);
                 assert!(
@@ -1126,15 +1094,16 @@ mod tests {
         for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
-            for bd in [t.backdrop_top, t.backdrop_bottom] {
-                let ground = over(look.scroll_bar.track.fill, over(t.surface_scaled(), bd));
-                for (name, thumb) in [
-                    ("thumb", look.scroll_bar.thumb),
-                    ("thumb_hover", look.scroll_bar.thumb_hover),
-                ] {
-                    let r = contrast_ratio(over(thumb.fill, ground), ground);
-                    assert!(r >= 3.0, "{id}: {name} on track {r:.2} < 3.0");
-                }
+            let ground = over(
+                look.scroll_bar.track.fill,
+                over(t.surface_scaled(), t.ground),
+            );
+            for (name, thumb) in [
+                ("thumb", look.scroll_bar.thumb),
+                ("thumb_hover", look.scroll_bar.thumb_hover),
+            ] {
+                let r = contrast_ratio(over(thumb.fill, ground), ground);
+                assert!(r >= 3.0, "{id}: {name} on track {r:.2} < 3.0");
             }
         }
     }

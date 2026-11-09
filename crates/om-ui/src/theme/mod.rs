@@ -1,11 +1,13 @@
 //! Design tokens and the theme loader, registry and built-in themes.
 
 mod builtin;
+mod density;
 mod json;
 mod registry;
 mod tokens;
 
 pub use builtin::BUILTIN_THEMES;
+pub use density::{Density, DensityMetrics};
 pub use json::{
     parse_colour_hex, parse_theme, parse_theme_file, ParsedTheme, ThemeError, ThemeInfo,
 };
