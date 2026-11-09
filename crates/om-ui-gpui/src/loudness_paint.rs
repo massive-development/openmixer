@@ -91,10 +91,11 @@ pub fn loudness_toggle(shell: &Shell, bounds: Rect, cx: &mut Context<Shell>) -> 
     let panel = &shell.loudness;
     let view = panel.view();
     let (button_rect, text_rect) = LoudnessPanel::toggle_layout(bounds);
+    // A header control that belongs to no deck: lit in the text colour, not a deck hue.
     let colour = if view.warning.is_some() {
         t.warning
     } else {
-        t.accent_for(0)
+        t.text_primary
     };
     let lit = panel.is_open() || view.warning.is_some();
     vec![

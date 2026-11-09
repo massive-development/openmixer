@@ -174,6 +174,14 @@ impl KnobGeom {
         dx * dx + dy * dy <= self.hit_radius() * self.hit_radius()
     }
 
+    /// True when `(x, y)` is within `radius` of the centre, or on the knob when that is larger: a
+    /// small knob padded out to a minimum pointer target.
+    pub fn hits_within(&self, x: f32, y: f32, radius: f32) -> bool {
+        let r = radius.max(self.hit_radius());
+        let (dx, dy) = (x - self.cx, y - self.cy);
+        dx * dx + dy * dy <= r * r
+    }
+
     /// Outer radius of the track stroke: the knob's reach.
     fn hit_radius(&self) -> f32 {
         self.r_track + self.stroke / 2.0
@@ -647,6 +655,24 @@ mod tests {
     }
 
     #[test]
+    fn a_small_knob_takes_the_pointer_over_the_minimum_target() {
+        let t = ThemeTokens::builtin_dark();
+        let compact = t.compact.knob_size;
+        let g = knob_geometry(40.0, 40.0, 0.0, compact);
+        assert!(
+            g.diameter() < t.min_pointer_target,
+            "the Compact knob is drawn small"
+        );
+        let edge = g.cx + t.min_pointer_target / 2.0 - 0.5;
+        assert!(!g.hits(edge, g.cy), "outside the drawn disc");
+        assert!(
+            g.hits_within(edge, g.cy, t.min_pointer_target / 2.0),
+            "inside the padded target"
+        );
+        assert!(!g.hits_within(g.cx + 30.0, g.cy, t.min_pointer_target / 2.0));
+    }
+
+    #[test]
     fn hover_and_drag_lift_the_value_arc_but_not_in_the_kill_zone() {
         let t = ThemeTokens::builtin_dark();
         let look = LookAndFeel::from_tokens(&t);
@@ -669,7 +695,12 @@ mod tests {
             value_colour(&state(false, true, false), &colours),
             value_colour(&state(true, false, false), &colours)
         );
-        assert_eq!(value_colour(&state(true, true, true), &colours), t.danger);
+        // The kill reads in the text colour with its "kill" word, never red (the Signal Rule).
+        assert_eq!(
+            value_colour(&state(true, true, true), &colours),
+            t.text_primary
+        );
+        assert_ne!(colours.kill, t.danger);
     }
 
     #[test]

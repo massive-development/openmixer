@@ -18,7 +18,7 @@ use crate::knob_paint::{
 };
 use crate::meter_paint;
 use crate::paint::{face, focus_layer, paint, place, skin};
-use crate::parts::face_box;
+use crate::parts::{face_box, pad_face, PadState};
 use gpui::{
     canvas, div, prelude::*, px, App, Bounds, ClickEvent, Context, Div, FocusHandle, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseUpEvent, Pixels, ScrollEvent, SharedString, Stateful, Window,
@@ -98,10 +98,224 @@ pub fn is_reset_click(click_count: usize, ctrl_or_cmd: bool) -> bool {
     click_count >= 2 || ctrl_or_cmd
 }
 
-/// The metric set the window lays out with. Density is not a preference yet (plan D8), so the
-/// window is Roomy; the gallery draws both.
+/// The metric set the window lays out with this frame (the density preference, resolved for the
+/// window by `main_layout::resolve_density`); the gallery draws both.
 pub fn metrics(t: &ThemeTokens) -> DensityMetrics {
-    *t.metrics(Density::default())
+    *t.metrics(density())
+}
+
+thread_local! {
+    /// The density the window lays out with this frame (set by the shell before it draws).
+    static DENSITY: std::cell::Cell<Density> = const { std::cell::Cell::new(Density::Roomy) };
+}
+
+/// Sets the density the controls of this frame are drawn in (see [`metrics`]).
+pub(crate) fn set_density(density: Density) {
+    DENSITY.with(|d| d.set(density));
+}
+
+/// The density the window lays out with this frame.
+pub fn density() -> Density {
+    DENSITY.with(std::cell::Cell::get)
+}
+
+/// When a [`press_button`] or a pad acts: on the pointer's press (transport, pads: timing
+/// matters) or on its release (everything else).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fires {
+    OnPress,
+    OnRelease,
+}
+
+/// A button like [`face_button`] that acts on the pointer's press, not its release (Play, Cue and
+/// the pads, where timing matters); Enter or Space acts while it has keyboard focus.
+pub fn press_button<V: 'static>(
+    t: &ThemeTokens,
+    label: &str,
+    (state, hue): (Face, Colour),
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
+    let look = LookAndFeel::from_tokens(t);
+    let style = look.face(state, hue);
+    let id = next_button_id(label);
+    let el = face_box(t, &style, label.to_owned())
+        .relative()
+        .px(px(metrics(t).space[3]))
+        .id(SharedString::from(id.clone()))
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(label.to_owned());
+    if state == Face::Disabled {
+        return el;
+    }
+    let handle = focus_handle(&id, cx);
+    let (hover, pressed) = (
+        look.face(state.hovered(), hue),
+        look.face(Face::Pressed, hue),
+    );
+    let el = el
+        .track_focus(&handle)
+        .child(focus_layer(look.focus, style.radius, Some(handle)))
+        .hover(move |s| face(s, &hover))
+        .active(move |s| face(s, &pressed));
+    wire_press(el, Fires::OnPress, cx, move |this, _, window, cx| {
+        on_press(this, window, cx)
+    })
+}
+
+/// Wires `el` to run `on_press` with the event's modifiers, on the pointer's press or release
+/// (`fires`) and on Enter or Space with keyboard focus. A press never takes keyboard focus.
+fn wire_press<V: 'static>(
+    el: Stateful<Div>,
+    fires: Fires,
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, gpui::Modifiers, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
+    let on_press = std::rc::Rc::new(on_press);
+    let down = std::rc::Rc::clone(&on_press);
+    el.on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+            window.prevent_default();
+            if fires == Fires::OnPress {
+                down(this, ev.modifiers, window, cx);
+                cx.notify();
+            }
+        }),
+    )
+    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+        let keyboard = matches!(ev, ClickEvent::Keyboard(_));
+        if keyboard || fires == Fires::OnRelease {
+            on_press(this, ev.modifiers(), window, cx);
+            cx.notify();
+        }
+    }))
+}
+
+/// A hot cue or loop pad at `rect` (parent coordinates): the [`pad_face`] in `state`, stretched to
+/// the rect, focusable, acting on the pointer's press (with its modifiers) or on Enter or Space. A
+/// disabled pad takes no input.
+pub fn pad_button(
+    t: &ThemeTokens,
+    rect: Rect,
+    (number, name): (&str, &str),
+    (state, hue): (PadState, Colour),
+    id: &str,
+    cx: &mut Context<Shell>,
+    on_press: impl Fn(&mut Shell, gpui::Modifiers) + 'static,
+) -> Div {
+    let m = metrics(t);
+    let look = LookAndFeel::from_tokens(t);
+    let el = pad_face(t, &m, (number, name), state, hue)
+        .w(px(rect.w as f32))
+        .h(px(rect.h as f32))
+        .relative()
+        .id(SharedString::from(id.to_owned()))
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(format!("{number} {name}"));
+    if state == PadState::Disabled {
+        return place(rect).child(el);
+    }
+    let handle = focus_handle(id, cx);
+    let el = el
+        .track_focus(&handle)
+        .child(focus_layer(look.focus, m.panel_radius, Some(handle)));
+    let wired = wire_press(el, Fires::OnPress, cx, move |this, mods, _, _| {
+        on_press(this, mods)
+    });
+    place(rect).child(wired)
+}
+
+/// An interactive segmented control: one bordered group of `labels` divided by 1px lines, segment
+/// `selected` lit in `hue`. Each segment is a tab stop; a click or Enter selects it.
+pub fn segmented<V: 'static>(
+    t: &ThemeTokens,
+    labels: &[&str],
+    (selected, hue): (Option<usize>, Colour),
+    cx: &mut Context<V>,
+    on_select: impl Fn(&mut V, usize) + Clone + 'static,
+) -> Div {
+    let m = metrics(t);
+    let look = LookAndFeel::from_tokens(t);
+    let group = look.faces.segment(false, hue);
+    let mut el = div()
+        .flex()
+        .flex_none()
+        .h(px(m.control_height))
+        .rounded(px(group.radius))
+        .border_1()
+        .border_color(paint(group.edge));
+    for (i, text) in labels.iter().enumerate() {
+        let style = look.faces.segment(selected == Some(i), hue);
+        let hover = look.face(Face::Hover, hue);
+        let id = next_button_id(text);
+        let handle = focus_handle(&id, cx);
+        let mut seg = div()
+            .relative()
+            .flex()
+            .items_center()
+            .h_full()
+            .px(px(m.space[3]))
+            .bg(paint(style.fill))
+            .text_color(paint(style.text))
+            .whitespace_nowrap()
+            .type_role(t, TypeRole::Label)
+            .child((*text).to_owned());
+        if i > 0 {
+            seg = seg.border_l_1().border_color(paint(group.edge));
+        }
+        let seg = seg
+            .id(SharedString::from(id))
+            .role(gpui::accesskit::Role::Tab)
+            .aria_label((*text).to_owned())
+            .track_focus(&handle)
+            .child(focus_layer(look.focus, group.radius, Some(handle)));
+        let seg = if selected == Some(i) {
+            seg
+        } else {
+            seg.hover(move |s| s.bg(paint(hover.fill)).text_color(paint(hover.text)))
+        };
+        let select = on_select.clone();
+        el = el.child(wire_press(
+            seg,
+            Fires::OnRelease,
+            cx,
+            move |this, _, _, _| select(this, i),
+        ));
+    }
+    el
+}
+
+/// A layer over a fader or slider that makes it a tab stop: while it has keyboard focus the ring
+/// shows and the arrow, Page and Home/End keys move `target` (see [`key_step`]). It takes no
+/// pointer press of its own, so the drag under it still works.
+pub fn slider_focus(t: &ThemeTokens, target: Target, cx: &mut Context<Shell>) -> Stateful<Div> {
+    let look = LookAndFeel::from_tokens(t);
+    let id = format!("slider-{target:?}");
+    let handle = focus_handle(&id, cx);
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .id(SharedString::from(id))
+        .role(gpui::accesskit::Role::Slider)
+        .track_focus(&handle)
+        .child(focus_layer(
+            look.focus,
+            metrics(t).control_radius,
+            Some(handle),
+        ))
+        .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+            let keys = &ev.keystroke;
+            if keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt {
+                return;
+            }
+            if this.knob_key(target, keys.key.as_str(), keys.modifiers.shift) {
+                cx.stop_propagation();
+                cx.notify();
+            }
+        }))
 }
 
 /// A labelled push button at `rect`. `accent` lights it ("on") when `lit`.
@@ -169,6 +383,18 @@ thread_local! {
     /// focus from frame to frame and its focus ring can ask whether it has it.
     static FOCUS: std::cell::RefCell<std::collections::HashMap<String, FocusHandle>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Every tab stop a control has registered on this thread, by element id (the keyboard-walk test).
+#[cfg(test)]
+pub(crate) fn registered_focus_handles() -> Vec<(String, FocusHandle)> {
+    FOCUS.with(|handles| {
+        handles
+            .borrow()
+            .iter()
+            .map(|(id, h)| (id.clone(), h.clone()))
+            .collect()
+    })
 }
 
 /// The focus handle of the control with element id `id`: a tab stop, made on first use.
@@ -449,6 +675,12 @@ pub struct KnobLook {
     pub value_beside: bool,
 }
 
+/// How far a focus ring reaches outside the control it rings, px.
+pub(crate) fn ring_reach(t: &ThemeTokens) -> f32 {
+    let ring = LookAndFeel::from_tokens(t).focus;
+    ring.offset + ring.width
+}
+
 /// The caption line under a knob whose label sits below it, px.
 fn label_line_height(t: &ThemeTokens) -> f32 {
     (t.type_label * TypeRole::Label.line_height()).ceil()
@@ -477,8 +709,9 @@ fn knob_layout(
 ) -> (KnobGeom, bool) {
     let show_label = !label.is_empty() && knob_look.role.shows_label();
     let label_below = show_label && h >= LABEL_BELOW_MIN_H;
+    // The focus ring reaches past the arc; the label below keeps clear of it.
     let label_h = if label_below {
-        label_line_height(t)
+        label_line_height(t) + ring_reach(t)
     } else {
         0.0
     };
@@ -629,17 +862,19 @@ pub fn knob_face_with(
     // The pressable part is the knob's bounding square, and a press outside the disc itself is
     // ignored. The popup is the wrapper's other child, so it exists (and takes the pointer) only
     // while shown, and then it takes nothing.
-    let (bx, by, side) = geom.bbox();
+    // A Compact knob is drawn 26 px but takes the pointer over the minimum target around it.
+    let (_, _, side) = geom.bbox();
+    let reach = side.max(t.min_pointer_target);
     let hit_rect = Rect::new(
-        bx.floor() as i32,
-        by.floor() as i32,
-        side.ceil() as i32,
-        side.ceil() as i32,
+        (geom.cx - reach / 2.0).floor() as i32,
+        (geom.cy - reach / 2.0).floor() as i32,
+        reach.ceil() as i32,
+        reach.ceil() as i32,
     );
     let hit = place(hit_rect).id(gpui::ElementId::Name(id.into()));
     let hit = match handle {
         None => hit,
-        Some(handle) => knob_input(hit.track_focus(&handle), target, abs, geom, cx),
+        Some(handle) => knob_input(hit.track_focus(&handle), target, abs, (geom, reach), cx),
     };
     outer = outer.child(hit);
     if face.active && !knob_look.disabled {
@@ -655,7 +890,7 @@ fn knob_input(
     hit: Stateful<Div>,
     target: Target,
     abs: Rect,
-    geom: KnobGeom,
+    (geom, reach): (KnobGeom, f32),
     cx: &mut Context<Shell>,
 ) -> Stateful<Div> {
     hit.on_mouse_down(
@@ -663,7 +898,7 @@ fn knob_input(
         cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
             let local_x = f32::from(ev.position.x) - abs.x as f32;
             let local_y = f32::from(ev.position.y) - abs.y as f32;
-            if !geom.hits(local_x, local_y) {
+            if !geom.hits_within(local_x, local_y, reach / 2.0) {
                 return;
             }
             let reset = is_reset_click(

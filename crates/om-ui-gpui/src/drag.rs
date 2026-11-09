@@ -421,10 +421,17 @@ mod tests {
             stems_tab: true,
             platter: false,
             press_pad: None,
+            deck_tabs: vec![(1, PadMode::Fx)],
+            library_hidden: true,
         });
-        assert!(staged.sampler_open);
+        assert!(staged.sampler_open && staged.performance);
         assert_eq!(staged.decks[0].pad_mode, PadMode::Stems);
-        assert_eq!(staged.decks[1].pad_mode, PadMode::Cues, "only deck A");
+        assert_eq!(staged.decks[1].pad_mode, PadMode::Fx);
+        assert_eq!(
+            staged.mixer.fx.scope(),
+            2,
+            "deck B's FX tab shows its channel's rack"
+        );
     }
 
     fn at(x: f32, y: f32) -> gpui::Point<gpui::Pixels> {

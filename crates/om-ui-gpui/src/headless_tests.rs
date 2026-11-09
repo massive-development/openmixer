@@ -3,7 +3,8 @@
 //! and 900x600. Each cell the shell lays out carries a debug selector (`app::cell_view`), so the
 //! tests read back the bounds the elements were actually given and check them against the layout
 //! model, then check that the knob, fader and meter painters plan non-empty geometry inside the
-//! channel strip those bounds describe. Nothing here opens an audio device.
+//! mixer column those bounds describe, and walk the keyboard through every control. Nothing here
+//! opens an audio device.
 
 use crate::app::{load_theme, RunOptions, SceneOptions, Shell};
 use crate::controls::BarState;
@@ -17,10 +18,11 @@ use om_engine::DjEngine;
 use om_ui::geometry::Rect;
 use om_ui::header_layout::HeaderNeeds;
 use om_ui::main_layout::{
-    channel_slot, page_for, CellKind, LayoutState, Page, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
+    head_slot, page_for, resolve_density, CellKind, LayoutState, Page, MIXER_SLOT, SAMPLER_SLOT,
+    STAGE_SLOT, TEMPO_SLOT,
 };
-use om_ui::widgets::channel::ChannelStrip;
-use om_ui::widgets::mixer::MixerPanel;
+use om_ui::theme::DensityChoice;
+use om_ui::widgets::mixer::column_layout;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -86,7 +88,8 @@ fn open_with(
     (view, vcx)
 }
 
-/// What the shell lays out for `size`: the same call `Render` makes with no debug column.
+/// What the shell lays out for `size`: the same call `Render` makes with no debug column and no
+/// settings (so the Automatic density).
 fn page(size: (i32, i32)) -> Page {
     let theme = load_theme();
     let needs = HeaderNeeds {
@@ -95,7 +98,8 @@ fn page(size: (i32, i32)) -> Page {
         settings: false,
         notice: false,
     };
-    page_for(2, size, 0, theme.gap, LayoutState::default(), needs)
+    let density = resolve_density(DensityChoice::Automatic, &theme, size);
+    page_for(2, size, 0, LayoutState::default(), needs, (&theme, density))
 }
 
 fn tag(kind: &CellKind) -> &'static str {
@@ -106,8 +110,9 @@ fn tag(kind: &CellKind) -> &'static str {
         CellKind::Slot(n) if n == STAGE_SLOT => "slot:stage",
         CellKind::Slot(n) if n == MIXER_SLOT => "slot:mixer",
         CellKind::Slot(n) if n == SAMPLER_SLOT => "slot:sampler",
-        CellKind::Slot(n) if n == &channel_slot(0) => "slot:channel:0",
-        CellKind::Slot(n) if n == &channel_slot(1) => "slot:channel:1",
+        CellKind::Slot(n) if n == TEMPO_SLOT => "slot:tempo",
+        CellKind::Slot(n) if n == &head_slot(0) => "slot:head:0",
+        CellKind::Slot(n) if n == &head_slot(1) => "slot:head:1",
         CellKind::Slot(n) if n == "library" => "slot:library",
         other => panic!("unexpected cell {other:?}"),
     }
@@ -166,8 +171,9 @@ fn the_key_cells_are_present_inside_the_window_and_never_overlap(cx: &mut TestAp
             "deck:1",
             "slot:stage",
             "slot:mixer",
-            "slot:channel:0",
-            "slot:channel:1",
+            "slot:tempo",
+            "slot:head:0",
+            "slot:head:1",
         ] {
             assert!(
                 rendered.iter().any(|(n, _)| *n == key),
@@ -192,107 +198,116 @@ fn the_key_cells_are_present_inside_the_window_and_never_overlap(cx: &mut TestAp
     }
 }
 
-/// The channel strips' knobs, faders and meters at each size, from the strip layout of the card
-/// each channel was actually rendered in.
+/// The mixer column's knobs, faders and meters at each size, from the column layout of the cell the
+/// mixer was actually rendered in.
 #[gpui::test]
-fn knob_fader_and_meter_painters_get_non_empty_bounds_in_the_rendered_strips(
+fn knob_fader_and_meter_painters_get_non_empty_bounds_in_the_rendered_mixer(
     cx: &mut TestAppContext,
 ) {
     let theme = load_theme();
     for size in SIZES {
         let vcx = open(cx, size);
-        for ch in 0..2 {
-            let name = if ch == 0 {
-                "slot:channel:0"
-            } else {
-                "slot:channel:1"
-            };
-            let card = to_rect(vcx.debug_bounds(name).expect("strip rendered"));
-            let lay = ChannelStrip::layout(Rect::sized(card.w, card.h), &theme);
-            let inside = Rect::sized(card.w, card.h);
-
-            // Knobs: trim, filter and the three bands get a real cap inside their cell.
-            let knob_size = crate::controls::metrics(&theme).knob_size;
-            for (what, rect) in [
-                ("trim", lay.trim),
-                ("filter", lay.filter),
-                ("eq0", lay.eq[0]),
-                ("eq1", lay.eq[1]),
-                ("eq2", lay.eq[2]),
-            ] {
+        let card = to_rect(vcx.debug_bounds("slot:mixer").expect("mixer rendered"));
+        let density = resolve_density(DensityChoice::Automatic, &theme, size);
+        let m = *theme.metrics(density);
+        let lay = column_layout(Rect::sized(card.w, card.h), &m);
+        let inside = Rect::sized(card.w, card.h);
+        for (ch, column) in lay.channels.iter().enumerate() {
+            let name = format!("{size:?} channel {ch}");
+            for (i, cell) in column.knobs.iter().enumerate() {
+                let rect = cell.knob;
                 assert!(
                     !rect.is_empty() && inside.contains(&rect),
-                    "{size:?} {name} {what}: {rect:?}"
+                    "{name} knob {i}: {rect:?}"
                 );
-                let g = knob_geometry(rect.w as f32, rect.h as f32, 0.0, knob_size);
+                let g = knob_geometry(rect.w as f32, rect.h as f32, 0.0, m.knob_size);
                 assert!(
                     g.cap_diameter() >= 14.0,
-                    "{size:?} {name} {what}: cap {}",
+                    "{name} knob {i}: cap {}",
                     g.cap_diameter()
                 );
                 let (x, y, side) = g.bbox();
                 assert!(
                     x >= 0.0 && y >= 0.0 && x + side <= rect.w as f32 + 1.0,
-                    "{size:?} {name} {what}: knob leaves its cell"
+                    "{name} knob {i}: leaves its cell"
                 );
             }
-
-            // Fader: a cap and tick marks inside the fader rect.
             assert!(
-                !lay.fader.is_empty() && inside.contains(&lay.fader),
-                "{size:?} {name}: fader"
+                !column.fader.is_empty() && inside.contains(&column.fader),
+                "{name}: fader"
             );
-            let face = FaderFace::channel(FaderLaw::Channel);
-            let plan = FaderPlan::new(lay.fader.w, lay.fader.h, &face, 0.5);
-            assert!(!plan.cap.is_empty(), "{size:?} {name}: no fader cap");
+            let face = FaderFace::channel(FaderLaw::Channel).for_density(&m);
+            let plan = FaderPlan::new(column.fader.w, column.fader.h, &face, 0.5);
+            assert!(!plan.cap.is_empty(), "{name}: no fader cap");
             assert!(
-                Rect::sized(lay.fader.w, lay.fader.h).contains(&plan.cap),
-                "{size:?} {name}: cap outside fader"
+                Rect::sized(column.fader.w, column.fader.h).contains(&plan.cap),
+                "{name}: cap outside fader"
             );
-            assert!(!plan.ticks.is_empty(), "{size:?} {name}: no fader ticks");
-
-            // Meter: two wells with canvases, lit segments at a high level and a lamp.
             assert!(
-                !lay.meter.is_empty() && inside.contains(&lay.meter),
-                "{size:?} {name}: meter"
+                !column.meter.is_empty() && inside.contains(&column.meter),
+                "{name}: meter"
             );
             let bars = [BarState {
                 level: 0.8,
                 hold: 0.9,
                 clipping: false,
             }; 2];
-            let m = MeterPlan::new(
+            let plan = MeterPlan::new(
                 &theme,
-                lay.meter,
-                lay.meter_labels,
+                column.meter,
+                false,
                 bars,
                 MeterFace::channel(&theme),
             );
-            let col = Rect::sized(lay.meter.w, lay.meter.h);
-            for (i, side) in m.sides.iter().enumerate() {
+            let col = Rect::sized(column.meter.w, column.meter.h);
+            for (i, side) in plan.sides.iter().enumerate() {
                 assert!(
                     !side.well.is_empty() && col.contains(&side.well),
-                    "{size:?} {name} side {i}: well"
-                );
-                assert!(
-                    !side.area.is_empty() && side.well.contains(&side.area),
-                    "{size:?} {name} side {i}: area"
-                );
-                assert!(
-                    !side.lamp.is_empty() && col.contains(&side.lamp),
-                    "{size:?} {name} side {i}: lamp"
+                    "{name} side {i}: well"
                 );
                 assert!(
                     !side.quads.is_empty(),
-                    "{size:?} {name} side {i}: nothing lit at 0.8"
+                    "{name} side {i}: nothing lit at 0.8"
                 );
             }
             assert!(
-                !m.sides[0].well.intersects(&m.sides[1].well),
-                "{size:?} {name}: wells overlap"
+                !plan.sides[0].well.intersects(&plan.sides[1].well),
+                "{name}: wells overlap"
             );
         }
     }
+}
+
+/// The keyboard walk: Tab from the window's first stop reaches every control that registered a
+/// tab stop (buttons, segments, pads, knobs, faders), and each one draws the 2px ring while it
+/// has keyboard focus (the ring is the focus layer every stop carries, see `controls`).
+#[gpui::test]
+fn tab_reaches_every_control_of_the_window(cx: &mut TestAppContext) {
+    let (_, vcx) = open_with(cx, (1440, 900), shell());
+    let stops = crate::controls::registered_focus_handles();
+    assert!(
+        stops.len() >= 40,
+        "only {} tab stops registered",
+        stops.len()
+    );
+    let mut reached: Vec<gpui::FocusHandle> = Vec::new();
+    vcx.update(|window, cx| {
+        window.activate_window();
+        for _ in 0..stops.len() * 3 {
+            window.focus_next(cx);
+            if let Some(focused) = window.focused(cx) {
+                if !reached.contains(&focused) {
+                    reached.push(focused);
+                }
+            }
+        }
+    });
+    let missed: Vec<&String> = stops
+        .iter()
+        .filter(|(_, handle)| !reached.contains(handle))
+        .map(|(id, _)| id)
+        .collect();
+    assert!(missed.is_empty(), "Tab never reaches {missed:?}");
 }
 
 #[gpui::test]
@@ -670,14 +685,16 @@ fn loud_reading() -> om_engine::LoudnessReading {
     }
 }
 
-/// The loudness panel drawn at its mixer-module rectangle for `reading`, as a bare element so the
-/// shell's own tick (which polls the engine) cannot replace the reading.
+/// The loudness panel drawn at the rectangle it drops down to under the header toggle, for
+/// `reading`, as a bare element so the shell's own tick (which polls the engine) cannot replace it.
 fn draw_loudness_panel<'a>(
     cx: &'a mut TestAppContext,
     reading: &om_engine::LoudnessReading,
 ) -> (Rect, &'a mut VisualTestContext) {
-    let card = Rect::sized(253, 262);
-    let panel = MixerPanel::module_layout(card, &load_theme()).loudness_panel;
+    let theme = load_theme();
+    let m = theme.metrics(om_ui::theme::Density::Compact);
+    let header = om_ui::header_layout::header_rects(400, m, HeaderNeeds::default());
+    let panel = om_ui::widgets::loudness::panel_rect(header.loudness, header.bar.bottom(), 3, 400);
     let shell = {
         let (view, vcx) = open_with(cx, SIZES[0], shell());
         view.update(vcx, |shell, _| shell.loudness.set_reading(reading));
@@ -865,7 +882,9 @@ fn the_loudness_panel_draws_before_anything_is_measured(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn the_shell_starts_the_meter_and_the_toggle_opens_the_panel_in_the_mixer(cx: &mut TestAppContext) {
+fn the_shell_starts_the_meter_and_the_toggle_opens_the_panel_under_the_header(
+    cx: &mut TestAppContext,
+) {
     for size in SIZES {
         let (view, vcx) = open_with(cx, size, shell());
         assert!(view.read_with(vcx, |s, _| s.engine.loudness().is_enabled()));
@@ -878,11 +897,19 @@ fn the_shell_starts_the_meter_and_the_toggle_opens_the_panel_in_the_mixer(cx: &m
             cx.notify();
         });
         vcx.run_until_parked();
-        let mixer = to_rect(vcx.debug_bounds("slot:mixer").expect("mixer"));
+        let header = page(size).header;
         let panel = to_rect(vcx.debug_bounds("loudness:panel").expect("panel opened"));
         assert!(
-            mixer.contains(&panel),
-            "{size:?}: {panel:?} outside {mixer:?}"
+            Rect::sized(size.0, size.1).contains(&panel),
+            "{size:?}: {panel:?} leaves the window"
+        );
+        assert!(
+            panel.y >= header.bar.bottom(),
+            "{size:?}: {panel:?} over the header"
+        );
+        assert!(
+            panel.right() <= header.loudness.right().max(size.0),
+            "{size:?}"
         );
     }
 }
@@ -955,5 +982,26 @@ fn slash_focuses_the_search_box_and_escape_clears_it(cx: &mut TestAppContext) {
     assert!(
         !search_focused(&view, vcx),
         "Escape gives the keyboard back"
+    );
+}
+
+/// Tab is the keyboard walk: once a control has keyboard focus, Tab moves the focus on and does
+/// not also hide the library band.
+#[gpui::test]
+fn tab_walks_the_focus_without_toggling_the_library(cx: &mut TestAppContext) {
+    let (view, vcx) = open_with(cx, (1440, 900), shell());
+    vcx.update(|window, cx| {
+        window.activate_window();
+        window.focus_next(cx);
+    });
+    let before = vcx.update(|window, cx| window.focused(cx));
+    assert!(before.is_some(), "a first stop takes focus");
+    vcx.simulate_keystrokes("tab");
+    vcx.run_until_parked();
+    let after = vcx.update(|window, cx| window.focused(cx));
+    assert_ne!(before, after, "Tab moves the focus");
+    assert!(
+        !view.read_with(vcx, |s, _| s.performance),
+        "Tab while walking does not hide the library"
     );
 }

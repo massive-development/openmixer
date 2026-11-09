@@ -1,17 +1,23 @@
-//! The header strip: the OPENMIXER wordmark, the automix bar, the notice chip, the master BPM,
-//! the latency and dropout indicator, Record, the library toggle and Settings. The rects come from
-//! om-ui's `header_layout` (through `main_layout::page_for`); every part shares one top and one
-//! height, so the controls sit on one baseline. This file only draws them.
+//! The header strip (comp 4a/4b): the OPENMIXER wordmark in the display family, the automix bar,
+//! then the latency and dropout indicator, the loudness toggle, Record, the library toggle and
+//! Settings, under one etched line. The rects come from om-ui's `header_layout` (through
+//! `main_layout::page_for`); every part shares one top and one height. This file only draws them.
+//! The master tempo is drawn over the mixer column (`deck_view::tempo_card`).
 
 use crate::app::Shell;
 use crate::controls::button;
 use crate::font::{numeral, Numeral, TypeExt as _};
+use crate::loudness_paint::{loudness_panel, loudness_toggle};
 use crate::paint::{paint, place};
-use gpui::{div, prelude::*, px, Context, Div};
+use gpui::{prelude::*, Context, Div};
+use om_ui::geometry::Rect;
 use om_ui::header_layout::{HeaderNeeds, HeaderRects};
 use om_ui::labels::latency_text;
 use om_ui::theme::TypeRole;
-use om_ui::widgets::deck::format_bpm;
+use om_ui::widgets::loudness::panel_rect;
+
+/// The wordmark (the display family is for the wordmark and headings at 21 px and up).
+pub const WORDMARK: &str = "OPENMIXER";
 
 impl Shell {
     /// Which optional header parts this window has.
@@ -43,20 +49,16 @@ impl Shell {
     pub(crate) fn header_strip(&mut self, rects: &HeaderRects, cx: &mut Context<Self>) -> Div {
         let t = self.theme.clone();
         let mut strip = place(rects.bar)
-            .bg(paint(t.popup))
-            .border_b_1()
-            .border_color(paint(t.border));
-
+            .child(place(Rect::new(0, rects.bar.h - 1, rects.bar.w, 1)).bg(paint(t.border)));
         strip = strip.child(
             place(rects.brand)
                 .flex()
                 .items_center()
-                .pl(px(6.))
-                .type_role(&t, TypeRole::Body)
+                .whitespace_nowrap()
+                .type_role(&t, TypeRole::Headline)
                 .text_color(paint(t.text_primary))
-                .child("OPENMIXER"),
+                .child(WORDMARK),
         );
-
         if let (Some(rect), Some(read)) = (rects.automix, self.options.automix.clone()) {
             let snapshot = read();
             let prefs = self
@@ -68,27 +70,6 @@ impl Shell {
                 &t, &snapshot, &prefs, rect, cx,
             ));
         }
-
-        if let Some(rect) = rects.master_bpm {
-            let bpm = self.master_bpm();
-            strip = strip.child(
-                place(rect)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap(px(6.))
-                    .child(
-                        numeral(&t, Numeral::Readout, format_bpm(bpm)).text_color(paint(t.readout)),
-                    )
-                    .child(
-                        div()
-                            .type_role(&t, TypeRole::Label)
-                            .text_color(paint(t.text_muted))
-                            .child("BPM"),
-                    ),
-            );
-        }
-
         let (text, healthy) = match self.settings.as_ref().and_then(|s| s.audio_snapshot()) {
             Some(stats) if stats.sample_rate > 0.0 => (
                 latency_text(stats.output_latency_ms, stats.xrun_count),
@@ -100,23 +81,22 @@ impl Shell {
             place(rects.latency)
                 .flex()
                 .items_center()
-                .justify_center()
+                .justify_end()
                 .whitespace_nowrap()
-                .text_color(paint(if healthy { t.text_secondary } else { t.warning }))
+                .text_color(paint(if healthy { t.text_muted } else { t.warning }))
                 .child(numeral(&t, Numeral::Value, text)),
         );
-
+        strip = strip.children(loudness_toggle(self, rects.loudness, cx));
         if let Some(rect) = rects.record {
             let snapshot = self.engine.recorder().snapshot();
             strip = strip.child(crate::record_button::record_button(&t, &snapshot, rect, cx));
         }
-
         strip = strip.child(button(
             &t,
             rects.library_toggle,
             "LIBRARY",
             !self.performance,
-            t.accent_for(0),
+            t.text_primary,
             cx,
             |this| this.performance = !this.performance,
         ));
@@ -126,11 +106,26 @@ impl Shell {
                 rect,
                 "Settings",
                 false,
-                t.accent_for(0),
+                t.text_primary,
                 cx,
                 |this| this.open_settings(),
             ));
         }
         strip
+    }
+
+    /// The open loudness panel, dropped down under the header's loudness toggle.
+    pub(crate) fn loudness_overlay(
+        &self,
+        rects: &HeaderRects,
+        window_w: i32,
+        cx: &mut Context<Self>,
+    ) -> Option<Div> {
+        if !self.loudness.is_open() {
+            return None;
+        }
+        let gap = crate::controls::metrics(&self.theme).space[1].round() as i32;
+        let rect = panel_rect(rects.loudness, rects.bar.bottom(), gap, window_w);
+        Some(loudness_panel(self, rect, cx))
     }
 }

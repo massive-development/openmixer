@@ -24,7 +24,7 @@ use gpui_kit::component::table::{Column, ColumnSort, DataTable, TableDelegate, T
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, Size};
 use om_ui::geometry::Rect;
 use om_ui::library::{column_shown, columns, MixLevel, SEARCH_PLACEHOLDER};
-use om_ui::main_layout::{header_height, library_metrics};
+use om_ui::main_layout::library_metrics;
 use om_ui::sidebar::SidebarKind;
 use om_ui::style::{ControlStyle, LookAndFeel};
 use om_ui::theme::{Colour, ThemeTokens, TypeRole};
@@ -479,16 +479,17 @@ pub fn library_card(
     cx: &mut Context<Shell>,
 ) -> Div {
     let t: ThemeTokens = shell.theme.clone();
-    let (window_w, window_h) = shell.window_size;
-    let metrics = library_metrics(window_w, window_h);
+    let window_w = shell.window_size.0;
+    let m = crate::controls::metrics(&t);
+    let metrics = library_metrics(&m);
     let (row_h, header_h, toolbar_h, sidebar_w) = (
         metrics.row_h as f32,
         metrics.header_h as f32,
         metrics.toolbar_h as f32,
         metrics.sidebar_w as f32,
     );
-    // Toolbar buttons are as tall as the header's controls.
-    let button_h = (header_height(window_h) - 6) as f32;
+    // Toolbar buttons are one control high, as everywhere on the faceplate.
+    let button_h = m.control_height;
     // The playlist buttons: four rows of one table row's height, under the tree.
     let actions_h = 4.0 * row_h + 3.0 * 4.0 + 8.0;
     let focus: FocusHandle = shell
