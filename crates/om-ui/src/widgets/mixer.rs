@@ -177,6 +177,22 @@ pub fn knob_text_width(m: &DensityMetrics) -> i32 {
     (m.knob_size.round() as i32 + 4).max(34)
 }
 
+/// Width of an FX knob's text block: [`knob_text_width`], widened for a long parameter name
+/// (estimated at 0.6 em a character in the label size) so "Feedback" does not run into the next knob.
+pub fn fx_knob_text_width<'a>(
+    m: &DensityMetrics,
+    label_px: f32,
+    labels: impl IntoIterator<Item = &'a str>,
+) -> i32 {
+    let widest = labels
+        .into_iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
+    let estimate = (widest as f32 * label_px * 0.6).ceil() as i32;
+    knob_text_width(m).max(estimate)
+}
+
 /// Width of a channel fader: the cap is 0.85 of a knob wide (comp "Fader").
 pub fn fader_width(m: &DensityMetrics) -> i32 {
     (m.knob_size * 0.85).round() as i32
@@ -334,6 +350,21 @@ mod tests {
         let m = *t.metrics(density);
         let bounds = Rect::new(600, 300, m.mixer_width as i32, column_height(&m));
         (m, bounds, column_layout(bounds, &m))
+    }
+
+    #[test]
+    fn an_fx_knob_makes_room_for_a_long_name_and_keeps_the_column_width_for_short_ones() {
+        let t = ThemeTokens::builtin_dark();
+        for density in [Density::Roomy, Density::Compact] {
+            let m = *t.metrics(density);
+            let label = t.type_label;
+            assert_eq!(
+                fx_knob_text_width(&m, label, ["Mix", "Time"]),
+                knob_text_width(&m)
+            );
+            let long = fx_knob_text_width(&m, label, ["Mix", "Feedback"]);
+            assert!(long as f32 >= 8.0 * label * 0.55, "{density:?}: {long}");
+        }
     }
 
     fn parts(l: &ColumnLayout) -> Vec<Rect> {

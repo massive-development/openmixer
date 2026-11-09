@@ -131,17 +131,27 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     let t = &shell.theme;
     let look = LookAndFeel::from_tokens(t);
     let hover = look.button.hover.fill;
-    skin(place(card), &look.button.idle)
+    // The letters clip inside the handle so a short band never spills them over its neighbours.
+    let letters = gpui::div()
+        .size_full()
         .flex()
         .flex_col()
         .items_center()
         .justify_center()
         .gap(px(4.))
+        .overflow_hidden()
+        .children("SAMPLER".chars().map(|c| gpui::div().child(c.to_string())))
+        .child("\u{203A}");
+    skin(place(card), &look.button.idle)
         .type_role(t, TypeRole::Label)
         .hover(move |style| style.bg(paint(hover)))
         .track_focus(&focus)
-        .children("SAMPLER".chars().map(|c| gpui::div().child(c.to_string())))
-        .child("\u{203A}")
+        .child(letters)
+        .child(crate::paint::focus_layer(
+            look.focus,
+            look.button.idle.radius,
+            Some(focus.clone()),
+        ))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, _: &MouseDownEvent, window, cx| {

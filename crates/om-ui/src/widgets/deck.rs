@@ -138,7 +138,11 @@ impl TrackHeader {
             key: deck_header::format_key(&self.info, self.key_notation),
             bpm: format_bpm(self.effective_bpm()),
             elapsed: format_time(position, false),
-            remaining: format_time(length - position, true),
+            remaining: if length > 0.0 {
+                format_time(length - position, true)
+            } else {
+                "--".to_owned()
+            },
             remaining_warn: deck_header::remaining_warning(length - position, length),
             sync: deck.sync,
             master: deck.sync_master,
