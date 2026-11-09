@@ -4,11 +4,9 @@
 //! Angles are degrees clockwise from 12 o'clock. The sweep is 270 degrees (spec: `docs/design/
 //! research/knobs.md` section 3), leaving a 90 degree gap at the bottom.
 
-use crate::paint::paint;
-use gpui::{
-    point, px, quad, size, BorderStyle, Bounds, Path, PathBuilder, Pixels, Point, Rgba, Window,
-};
-use om_ui::style::LookAndFeel;
+use crate::paint::{paint, paint_focus_ring, paint_raised};
+use gpui::{point, px, size, Bounds, Path, PathBuilder, Pixels, Point, Window};
+use om_ui::style::{LookAndFeel, RingStyle, ShadowStyle};
 use om_ui::theme::{Colour, ThemeTokens};
 
 /// Angle of the minimum, degrees clockwise from 12 o'clock (7:30).
@@ -101,7 +99,7 @@ pub fn snap_with_bypass(knob: &om_ui::control::Knob, value: f64, shift: bool) ->
     }
 }
 
-/// Which control a knob is, for its largest cap and where its label goes.
+/// Which control a knob is, for where its label goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KnobRole {
     /// Trim and filter: a wide strip-width bar.
@@ -119,33 +117,16 @@ pub enum KnobRole {
     Stem,
 }
 
-/// Gap between cap edge and track arc, px (spec section 3).
-pub const TRACK_GAP: f32 = 3.0;
-/// Scale ticks are drawn only on caps at least this wide, px (spec section 3).
-pub const TICKS_MIN_CAP: f32 = 32.0;
+/// Width of the value arc and of the track it runs along, px (canvas "Knob": a 2px arc).
+pub const ARC_STROKE: f32 = 2.0;
+/// The cap sits this far inside the arc's outer edge, px (canvas "Knob": `inset: 5px`).
+pub const CAP_INSET: f32 = 5.0;
 /// How far above a control its value popup floats, px.
 pub const POPUP_LIFT: f32 = 26.0;
-/// Arc stroke on caps above [`THIN_STROKE_MAX_CAP`], px (spec section 3).
-pub const THICK_STROKE: f32 = 2.5;
-/// Arc stroke on caps of [`THIN_STROKE_MAX_CAP`] or less, px.
-pub const THIN_STROKE: f32 = 2.0;
-/// Largest cap that takes the thin stroke, px.
-pub const THIN_STROKE_MAX_CAP: f32 = 28.0;
 /// Clearance between a popup flipped below its knob and the track, px. Unsourced.
 const POPUP_FLIP_GAP: f32 = 2.0;
 
 impl KnobRole {
-    /// Largest cap diameter, px (spec section 3).
-    pub fn max_cap(self) -> f32 {
-        match self {
-            KnobRole::Wide | KnobRole::Band => 32.0,
-            KnobRole::Cue => 36.0,
-            KnobRole::Fx => 30.0,
-            KnobRole::Sampler => 28.0,
-            KnobRole::Stem => 24.0,
-        }
-    }
-
     /// Whether the label is drawn (the stem knob shows its value on hover only).
     pub fn shows_label(self) -> bool {
         self != KnobRole::Stem
@@ -165,23 +146,18 @@ pub struct KnobGeom {
     pub stroke: f32,
 }
 
-/// Fits a knob into `rect_w` x `rect_h`, leaving `label_h` below for a label.
-pub fn knob_geometry(rect_w: f32, rect_h: f32, label_h: f32, role: KnobRole) -> KnobGeom {
-    let avail = rect_w.min(rect_h - label_h).max(1.0);
-    // 28 px caps and smaller take the thinner stroke, which changes the room the track needs.
-    let wide_stroke_cap = avail - 2.0 * (TRACK_GAP + THICK_STROKE / 2.0);
-    let stroke = if wide_stroke_cap.min(role.max_cap()) <= THIN_STROKE_MAX_CAP {
-        THIN_STROKE
-    } else {
-        THICK_STROKE
-    };
-    let r_cap = ((avail - 2.0 * (TRACK_GAP + stroke / 2.0)).min(role.max_cap()) / 2.0).max(1.0);
+/// Fits a knob of diameter `size` (the density's knob size: 34 Roomy, 26 Compact) into `rect_w` x
+/// `rect_h`, leaving `label_h` below for a label; a smaller rect shrinks it. The arc is the outer
+/// 2px ring and the cap sits [`CAP_INSET`] inside it.
+pub fn knob_geometry(rect_w: f32, rect_h: f32, label_h: f32, size: f32) -> KnobGeom {
+    let diameter = rect_w.min(rect_h - label_h).min(size).max(1.0);
+    let r = diameter / 2.0;
     KnobGeom {
         cx: rect_w / 2.0,
         cy: (rect_h - label_h) / 2.0,
-        r_cap,
-        r_track: r_cap + TRACK_GAP,
-        stroke,
+        r_cap: (r - CAP_INSET).max(1.0),
+        r_track: (r - ARC_STROKE / 2.0).max(0.5),
+        stroke: ARC_STROKE,
     }
 }
 
@@ -208,9 +184,9 @@ impl KnobGeom {
         2.0 * self.r_cap
     }
 
-    /// Scale ticks are drawn only on large caps.
-    pub fn shows_ticks(&self) -> bool {
-        self.cap_diameter().round() >= TICKS_MIN_CAP
+    /// Outer diameter: the arc's outer edge.
+    pub fn diameter(&self) -> f32 {
+        2.0 * self.hit_radius()
     }
 
     /// Popup top in the rect's coordinates. It floats [`POPUP_LIFT`] above the track; when that
@@ -273,11 +249,14 @@ pub struct KnobColours {
     /// Arc and pointer in the kill zone.
     pub kill: Colour,
     pub cap: Colour,
-    pub cap_hover: Colour,
     pub cap_border: Colour,
     pub pointer: Colour,
-    /// Detent tick and scale ticks.
+    /// The detent mark.
     pub mark: Colour,
+    /// The small drop under the cap.
+    pub drop: ShadowStyle,
+    /// The keyboard focus ring.
+    pub ring: RingStyle,
 }
 
 impl KnobColours {
@@ -287,10 +266,11 @@ impl KnobColours {
             value: accent,
             kill: look.knob.kill,
             cap: look.knob.body.fill,
-            cap_hover: look.button.hover.fill,
             cap_border: look.knob.body.border,
             pointer: look.knob.pointer,
             mark: t.text_secondary,
+            drop: look.knob.drop,
+            ring: look.focus,
         }
     }
 }
@@ -308,23 +288,25 @@ pub struct KnobPaintState {
     /// In the kill zone: arc and pointer in the kill colour.
     pub killed: bool,
     pub hovered: bool,
-    /// Being dragged: a slightly heavier arc.
+    /// Being dragged: the arc in the pointer colour mixed further in.
     pub active: bool,
     pub disabled: bool,
+    /// Keyboard focus: the 2px ring 2px outside the arc.
+    pub focused: bool,
 }
 
-/// Extra arc stroke while dragged, px (spec section 3).
-const ACTIVE_STROKE_EXTRA: f32 = 0.5;
 /// Weight of the pointer colour mixed into the value arc on hover: the spec's "+10% lightness".
 const HOVER_LIFT: f32 = 0.1;
-/// Pointer line: from this share of the cap radius to [`POINTER_OUTER`], px wide.
-const POINTER_INNER: f32 = 0.35;
-const POINTER_OUTER: f32 = 0.85;
+/// The same while dragging, so a held knob reads without a heavier stroke. Unsourced.
+const ACTIVE_LIFT: f32 = 0.2;
+/// Opacity of a disabled knob (an empty sampler pad). Unsourced, as before.
+const DISABLED_FADE: f32 = 0.4;
+/// Pointer line: from this share of the cap radius out to 1 px short of the cap's edge (canvas
+/// "Knob": a 2px line from the top 1px of the cap over 40% of its height).
+const POINTER_INNER: f32 = 0.2;
 const POINTER_WIDTH: f32 = 2.0;
-/// Width of the detent and scale marks, px.
+/// Width of the detent mark, px.
 const MARK_WIDTH: f32 = 2.0;
-/// Diameter of the dot a bipolar knob shows at rest, px.
-const REST_DOT: f32 = 2.0;
 
 fn px_point(origin: Point<Pixels>, p: (f32, f32)) -> Point<Pixels> {
     point(origin.x + px(p.0), origin.y + px(p.1))
@@ -368,35 +350,35 @@ fn line_path(
     builder.build().ok()
 }
 
-/// A filled disc of `diameter` centred on `(x, y)`; with `border`, a 1 px ring of that colour.
-fn disc(
-    window: &mut Window,
-    origin: Point<Pixels>,
-    (x, y): (f32, f32),
-    diameter: f32,
-    fill: Rgba,
-    border: Option<Rgba>,
-) {
-    let bounds = Bounds::new(
+/// The square of side `diameter` centred on `(x, y)` in the box at `origin`.
+fn square(origin: Point<Pixels>, (x, y): (f32, f32), diameter: f32) -> Bounds<Pixels> {
+    Bounds::new(
         px_point(origin, (x - diameter / 2.0, y - diameter / 2.0)),
         size(px(diameter), px(diameter)),
-    );
-    let ring = border.map_or(0.0, |_| 1.0);
-    window.paint_quad(quad(
-        bounds,
-        px(diameter / 2.0),
-        fill,
-        px(ring),
-        border.unwrap_or(fill),
-        BorderStyle::Solid,
-    ));
+    )
+}
+
+/// The value arc's colour: the kill colour in the kill zone, else the accent, lifted toward the
+/// pointer colour while hovered or dragged.
+fn value_colour(state: &KnobPaintState, colours: &KnobColours) -> Colour {
+    let lift = if state.active {
+        ACTIVE_LIFT
+    } else if state.hovered {
+        HOVER_LIFT
+    } else {
+        0.0
+    };
+    if state.killed {
+        colours.kill
+    } else {
+        Colour::mix(&[(colours.value, 1.0 - lift), (colours.pointer, lift)])
+    }
 }
 
 /// Paints a knob into the box whose top-left is `origin` (the geometry's coordinates are relative
-/// to it).
-///
-/// gpui 0.2.2 strokes have butt caps and `PathBuilder` offers no way to change that without a
-/// direct `lyon` dependency, so arc ends are capped with small discs.
+/// to it): the 2px track, the value arc from the detent (or the minimum), the detent mark, the
+/// raised cap with its drop and etched edge, the pointer, and the focus ring when focused. Arc ends
+/// are square, as the canvas draws them.
 pub fn paint_knob(
     window: &mut Window,
     origin: Point<Pixels>,
@@ -404,29 +386,10 @@ pub fn paint_knob(
     colours: &KnobColours,
 ) {
     let g = &state.geom;
-    let fade = if state.disabled { 0.4 } else { 1.0 };
+    let fade = if state.disabled { DISABLED_FADE } else { 1.0 };
     let col = |c: Colour| paint(c.with_multiplied_alpha(fade));
-    let stroke = g.stroke
-        + if state.active {
-            ACTIVE_STROKE_EXTRA
-        } else {
-            0.0
-        };
     let centre = (g.cx, g.cy);
 
-    let value_colour = if state.killed {
-        colours.kill
-    } else if state.hovered {
-        Colour::mix(&[
-            (colours.value, 1.0 - HOVER_LIFT),
-            (colours.pointer, HOVER_LIFT),
-        ])
-    } else {
-        colours.value
-    };
-
-    // Track, then the value arc over it. Both end in discs for round caps.
-    let (track_a, value_a) = (colours.track, value_colour);
     if let Some(path) = arc_path(
         origin,
         centre,
@@ -434,40 +397,22 @@ pub fn paint_knob(
         (SWEEP_START, SWEEP_END),
         g.stroke,
     ) {
-        window.paint_path(path, col(track_a));
+        window.paint_path(path, col(colours.track));
     }
-    for angle in [SWEEP_START, SWEEP_END] {
-        let p = point_on(g.cx, g.cy, g.r_track, angle);
-        disc(window, origin, p, g.stroke, col(track_a), None);
-    }
-    let (from, to) = if state.bipolar {
-        (state.detent_angle.unwrap_or(0.0), state.angle)
+    let from = if state.bipolar {
+        state.detent_angle.unwrap_or(0.0)
     } else {
-        (SWEEP_START, state.angle)
+        SWEEP_START
     };
-    if (to - from).abs() > 0.5 {
-        if let Some(path) = arc_path(origin, centre, g.r_track, (from, to), stroke) {
-            window.paint_path(path, col(value_a));
+    if (state.angle - from).abs() > 0.5 {
+        if let Some(path) = arc_path(origin, centre, g.r_track, (from, state.angle), g.stroke) {
+            window.paint_path(path, col(value_colour(state, colours)));
         }
-        for angle in [from, to] {
-            let p = point_on(g.cx, g.cy, g.r_track, angle);
-            disc(window, origin, p, stroke, col(value_a), None);
-        }
-    } else if state.bipolar {
-        // At rest on the detent: a dot where the arc would start.
-        let p = point_on(g.cx, g.cy, g.r_track, state.detent_angle.unwrap_or(0.0));
-        disc(window, origin, p, REST_DOT, col(colours.mark), None);
     }
 
-    // Detent and scale marks sit in the gap between cap and track so they stay inside the box.
-    let inner = g.r_cap + 0.5;
-    let outer = (g.r_track - g.stroke / 2.0).max(inner + 0.5);
-    let mut mark_angles: Vec<f64> = Vec::new();
-    if g.shows_ticks() {
-        mark_angles.extend([SWEEP_START, SWEEP_END]);
-    }
-    mark_angles.extend(state.detent_angle);
-    for angle in mark_angles {
+    // The detent mark sits in the gap between cap and track.
+    let (inner, outer) = (g.r_cap + 0.5, g.r_track - g.stroke / 2.0);
+    if let Some(angle) = state.detent_angle.filter(|_| outer > inner) {
         let (a, b) = (
             point_on(g.cx, g.cy, inner, angle),
             point_on(g.cx, g.cy, outer, angle),
@@ -477,22 +422,10 @@ pub fn paint_knob(
         }
     }
 
-    // Cap.
-    let cap_fill = if state.hovered {
-        colours.cap_hover
-    } else {
-        colours.cap
-    };
-    disc(
-        window,
-        origin,
-        centre,
-        2.0 * g.r_cap,
-        col(cap_fill),
-        Some(col(colours.cap_border)),
-    );
+    let cap = square(origin, centre, g.cap_diameter());
+    let cap_colours = (col(colours.cap), col(colours.cap_border));
+    paint_raised(window, cap, g.r_cap, cap_colours, &colours.drop);
 
-    // Pointer.
     let pointer = if state.killed {
         colours.kill
     } else {
@@ -500,10 +433,15 @@ pub fn paint_knob(
     };
     let (a, b) = (
         point_on(g.cx, g.cy, g.r_cap * POINTER_INNER, state.angle),
-        point_on(g.cx, g.cy, g.r_cap * POINTER_OUTER, state.angle),
+        point_on(g.cx, g.cy, (g.r_cap - 1.0).max(0.0), state.angle),
     );
     if let Some(path) = line_path(origin, a, b, POINTER_WIDTH) {
         window.paint_path(path, col(pointer));
+    }
+
+    if state.focused && !state.disabled {
+        let outer = square(origin, centre, g.diameter());
+        paint_focus_ring(window, outer, g.diameter() / 2.0, &colours.ring);
     }
 }
 
@@ -644,37 +582,44 @@ mod tests {
         (a - b).abs() < 1e-4
     }
 
+    const ROOMY: f32 = 34.0;
+    const COMPACT: f32 = 26.0;
+
     #[test]
-    fn geom_is_square_and_centred() {
+    fn geom_is_square_centred_and_the_density_size() {
         let cases = [
-            (200.0, 40.0, 0.0, KnobRole::Wide),
-            (58.0, 56.0, 14.0, KnobRole::Band),
-            (106.0, 32.0, 0.0, KnobRole::Cue),
-            (24.0, 24.0, 0.0, KnobRole::Stem),
-            (28.0, 28.0, 0.0, KnobRole::Sampler),
+            (200.0, 40.0, 0.0, ROOMY),
+            (58.0, 56.0, 14.0, ROOMY),
+            (106.0, 32.0, 0.0, ROOMY),
+            (24.0, 24.0, 0.0, COMPACT),
+            (28.0, 28.0, 0.0, COMPACT),
         ];
-        for (w, h, label_h, role) in cases {
-            let g = knob_geometry(w, h, label_h, role);
+        for (w, h, label_h, size) in cases {
+            let g = knob_geometry(w, h, label_h, size);
             let avail = w.min(h - label_h);
             let (bx, by, side) = g.bbox();
-            assert!(side <= avail + 1e-3, "{role:?}: side {side} > {avail}");
-            assert!(g.cap_diameter() <= role.max_cap() + 1e-3, "{role:?}");
-            assert!(bx >= -1e-3 && by >= -1e-3, "{role:?} inside the rect");
+            assert!(side <= avail.min(size) + 1e-3, "{w}x{h}: side {side}");
+            assert!(bx >= -1e-3 && by >= -1e-3, "{w}x{h} inside the rect");
             assert!(bx + side <= w + 1e-3 && by + side <= h - label_h + 1e-3);
-            assert!(near32(g.cx, w / 2.0), "{role:?} centred in x");
-            assert!(near32(g.cy, (h - label_h) / 2.0), "{role:?} centred in y");
+            assert!(near32(g.cx, w / 2.0) && near32(g.cy, (h - label_h) / 2.0));
+            assert!(near32(g.stroke, 2.0), "a 2px arc");
         }
-        // The wide bar's knob fills its height, about 32 px.
-        let wide = knob_geometry(200.0, 40.0, 0.0, KnobRole::Wide);
-        assert!((wide.cap_diameter() - 32.0).abs() <= 1.0);
-        // A roomy rect is capped at the role's maximum.
-        let big = knob_geometry(200.0, 200.0, 0.0, KnobRole::Cue);
-        assert!(near32(big.cap_diameter(), 36.0));
+        // Room enough: the circle is the density's size, the cap 5 px inside it.
+        for size in [ROOMY, COMPACT] {
+            let g = knob_geometry(200.0, 200.0, 0.0, size);
+            assert!(near32(g.diameter(), size));
+            assert!(near32(g.cap_diameter(), size - 2.0 * CAP_INSET));
+        }
+        // A short cell shrinks it.
+        assert!(near32(
+            knob_geometry(200.0, 30.0, 0.0, ROOMY).diameter(),
+            30.0
+        ));
     }
 
     #[test]
     fn hit_test_inside_circle_only() {
-        let g = knob_geometry(200.0, 40.0, 0.0, KnobRole::Wide);
+        let g = knob_geometry(200.0, 40.0, 0.0, ROOMY);
         assert!(g.hits(g.cx, g.cy));
         assert!(g.hits(g.cx + 0.9 * g.r_cap, g.cy));
         // The gap at the bottom is still the knob.
@@ -685,28 +630,46 @@ mod tests {
     }
 
     #[test]
-    fn small_knob_drops_ticks_and_label() {
-        let sampler = knob_geometry(28.0, 28.0, 0.0, KnobRole::Sampler);
-        assert!(!sampler.shows_ticks());
-        assert!(!knob_geometry(24.0, 24.0, 0.0, KnobRole::Stem).shows_ticks());
-        let big = knob_geometry(100.0, 100.0, 0.0, KnobRole::Cue);
-        assert!(big.shows_ticks());
+    fn only_the_stem_knob_drops_its_label() {
         assert!(!KnobRole::Stem.shows_label());
-        assert!(KnobRole::Band.shows_label());
-        // A cap of 28 px or less uses the thinner stroke.
-        assert!(near32(sampler.stroke, 2.0));
-        assert!(near32(big.stroke, 2.5));
+        assert!(KnobRole::Band.shows_label() && KnobRole::Sampler.shows_label());
     }
 
     #[test]
     fn popup_anchor_is_above_knob_top() {
-        let g = knob_geometry(100.0, 100.0, 0.0, KnobRole::Cue);
+        let g = knob_geometry(100.0, 100.0, 0.0, ROOMY);
         let top = g.popup_top(200.0);
         assert!(near32(top, g.cy - g.r_track - POPUP_LIFT));
         // Near the card's top the popup goes below the knob instead of leaving the card.
-        let tight = knob_geometry(40.0, 40.0, 0.0, KnobRole::Cue);
+        let tight = knob_geometry(40.0, 40.0, 0.0, ROOMY);
         assert!(tight.popup_top(5.0) >= tight.cy + tight.r_track - 1e-3);
         assert!(tight.popup_top(60.0) < tight.cy);
+    }
+
+    #[test]
+    fn hover_and_drag_lift_the_value_arc_but_not_in_the_kill_zone() {
+        let t = ThemeTokens::builtin_dark();
+        let look = LookAndFeel::from_tokens(&t);
+        let colours = KnobColours::new(&look, &t, t.accent_for(0));
+        let state = |hovered, active, killed| KnobPaintState {
+            geom: knob_geometry(40.0, 40.0, 0.0, ROOMY),
+            angle: 60.0,
+            detent_angle: Some(0.0),
+            bipolar: true,
+            killed,
+            hovered,
+            active,
+            disabled: false,
+            focused: false,
+        };
+        let rest = value_colour(&state(false, false, false), &colours);
+        assert_eq!(rest, t.accent_for(0));
+        assert_ne!(value_colour(&state(true, false, false), &colours), rest);
+        assert_ne!(
+            value_colour(&state(false, true, false), &colours),
+            value_colour(&state(true, false, false), &colours)
+        );
+        assert_eq!(value_colour(&state(true, true, true), &colours), t.danger);
     }
 
     #[test]

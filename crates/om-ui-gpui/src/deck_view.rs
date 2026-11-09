@@ -10,7 +10,7 @@ use crate::drag::Target;
 use crate::fader_paint;
 use crate::font::{numeral, Numeral};
 use crate::library_view::TrackDragPayload;
-use crate::paint::{paint, place, shadow, skin};
+use crate::paint::{paint, place, skin};
 use crate::platter_paint::{
     angle_delta, paint_platter, platter_geometry, platter_rect, pointer_angle, scratch_target,
     zone_at, PlatterScene, Zone, SECONDS_PER_TURN,
@@ -127,7 +127,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
 #[derive(Clone, Copy)]
 enum Tile {
     Idle,
-    /// Lit: this fill with this text colour, and a glow.
+    /// Lit: this fill with this text colour.
     Lit(om_ui::theme::Colour, om_ui::theme::Colour),
     /// No track: idle colours at [`DISABLED_ALPHA`], no hover.
     Disabled,
@@ -171,7 +171,7 @@ fn tile_with(
         .text_color(paint(text))
         .text_size(px(size.max(MIN_TEXT_SIZE)));
     let el = match state {
-        Tile::Lit(fill, _) => shadow(el, &look.glow(fill)),
+        Tile::Lit(..) => el,
         Tile::Idle => {
             let hover = look.button.hover.fill;
             el.hover(move |style| style.bg(paint(hover)))
@@ -423,7 +423,7 @@ fn stems(
                 shell.decks[index].stems.toggle_mute(stem);
             },
         ));
-        // Activity glow: the name button fills in proportion to what the stem contributes.
+        // Activity fill: the name button fills in proportion to what the stem contributes.
         let level = pads.level(stem);
         if audible && level > 0.0 {
             let w = (pad.mute.w as f32 * level) as i32;
@@ -772,15 +772,13 @@ pub(crate) struct ButtonStyle {
     pub diameter: i32,
     pub fill: Colour,
     pub text: Colour,
-    /// Glow colour while lit.
-    pub glow: Option<Colour>,
     pub alpha: f32,
     pub hover: bool,
 }
 
 /// The style of a transport button. Idle is the `well` fill; lit toggles take the deck accent
 /// (Sync keeps its own green, Play is green while playing, Cue is amber while held); with no track
-/// the button is at 40 % opacity and has no hover or glow.
+/// the button is at 40 % opacity and has no hover.
 pub(crate) fn transport_style(
     t: &ThemeTokens,
     button: TransportButton,
@@ -791,19 +789,19 @@ pub(crate) fn transport_style(
     let round = matches!(button, TransportButton::Play | TransportButton::Cue);
     let accent = t.accent_for(deck as i32);
     let look = LookAndFeel::from_tokens(t);
-    let (fill, text, glow) = match (button, lit) {
-        (_, false) => (look.toggle.off.fill, look.toggle.off.text, None),
-        (TransportButton::Sync, true) => (SYNC_ON, text_on(t, SYNC_ON), Some(SYNC_ON)),
-        (TransportButton::Play, true) => (t.meter_low, text_on(t, t.meter_low), Some(t.meter_low)),
-        (TransportButton::Cue, true) => (t.warning, text_on(t, t.warning), Some(t.warning)),
-        (_, true) => (look.toggle(true, accent).fill, look.lit_text, Some(accent)),
+    let on = look.toggle(true, accent);
+    let (fill, text) = match (button, lit) {
+        (_, false) => (look.toggle.off.fill, look.toggle.off.text),
+        (TransportButton::Sync, true) => (SYNC_ON, text_on(t, SYNC_ON)),
+        (TransportButton::Play, true) => (t.meter_low, text_on(t, t.meter_low)),
+        (TransportButton::Cue, true) => (t.warning, text_on(t, t.warning)),
+        (_, true) => (on.fill, on.text),
     };
     ButtonStyle {
         shape: if round { Shape::Round } else { Shape::Pill },
         diameter: if round { ROUND_DIAMETER } else { 0 },
         fill,
         text,
-        glow: if loaded { glow } else { None },
         alpha: if loaded { 1.0 } else { DISABLED_ALPHA },
         hover: loaded && !lit,
     }
@@ -832,7 +830,6 @@ pub(crate) struct PadStyle {
     pub label: String,
     /// Colour tab along the top edge of a set pad.
     pub tab: Option<Colour>,
-    pub glow: Option<Colour>,
     /// 1.0, or [`DISABLED_ALPHA`] while the deck has no track.
     pub alpha: f32,
     /// Whether the pad lightens under the pointer (never while disabled).
@@ -879,7 +876,7 @@ fn text_on(t: &ThemeTokens, fill: Colour) -> Colour {
 }
 
 /// The look of pad `i`. Empty: dashed border, "Set", no colour. Set: its cue colour at 85 % with the
-/// name and a 3 px tab. Active (playing from it): opaque with a glow.
+/// name and a 3 px tab. Active (playing from it): opaque, outlined in the label ink.
 pub(crate) fn pad_state(
     t: &ThemeTokens,
     set: bool,
@@ -895,7 +892,6 @@ pub(crate) fn pad_state(
             dashed: true,
             label: "Set".to_owned(),
             tab: None,
-            glow: None,
             alpha: control_alpha(loaded),
             hover: loaded,
         };
@@ -907,7 +903,7 @@ pub(crate) fn pad_state(
         fill,
         text,
         // Active: an outline in the label ink (>= 4.5:1 on the fill) and a play glyph, so the state
-        // does not rest on opacity and glow alone ("never rely on colour alone", States).
+        // does not rest on opacity alone ("never rely on colour alone", States).
         border: if active { text } else { colour },
         dashed: false,
         label: if active {
@@ -916,7 +912,6 @@ pub(crate) fn pad_state(
             format!("Cue {}", i + 1)
         },
         tab: Some(colour),
-        glow: (active && loaded).then_some(colour),
         alpha: control_alpha(loaded),
         hover: false,
     }
@@ -1182,10 +1177,6 @@ fn transport_button(
         .text_size(px(button_text_size(t, style.shape, rect)))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .opacity(style.alpha);
-    let el = match style.glow {
-        Some(c) => shadow(el, &look.glow(c)),
-        None => el,
-    };
     let el = if style.hover {
         let hover = t.surface_hover;
         el.hover(move |s| s.bg(paint(hover)))
@@ -1223,7 +1214,6 @@ fn hotcues(
     let deck = &shell.decks[index];
     let pads = HotcuePads::layout(l.hotcues, CONTROL_GAP);
     let lit = deck.hotcues.lit();
-    let look = LookAndFeel::from_tokens(t);
     let mut row = place(Rect::sized(card.w, card.h));
     for (i, rect) in pads.iter().enumerate() {
         let style = pad_state(t, lit[i], pad_active(snap, snap.hotcues[i]), i, snap.loaded);
@@ -1241,9 +1231,6 @@ fn hotcues(
             .overflow_hidden();
         if style.dashed {
             pad = pad.border_dashed();
-        }
-        if let Some(c) = style.glow {
-            pad = shadow(pad, &look.glow(c));
         }
         pad = pad.opacity(style.alpha);
         if style.hover {
@@ -1489,7 +1476,6 @@ fn platter_switch(
         diameter: 0,
         fill: track.fill,
         text: track.text,
-        glow: on.then_some(accent),
         alpha: 1.0,
         hover: !on,
     };
@@ -1713,7 +1699,6 @@ mod tests {
         let t = theme("dark");
         let play = transport_style(&t, TransportButton::Play, true, true, 1);
         assert_eq!(play.fill, t.meter_low);
-        assert!(play.glow.is_some());
         assert_eq!(transport_label(TransportButton::Play, true), "Pause");
         assert_eq!(transport_label(TransportButton::Play, false), "Play");
         assert_eq!(
@@ -1724,20 +1709,22 @@ mod tests {
             transport_style(&t, TransportButton::Sync, true, true, 0).fill,
             SYNC_ON
         );
+        // Other toggles take the "on" face: the deck tint over the control, not a solid fill.
+        let look = LookAndFeel::from_tokens(&t);
         let slip = transport_style(&t, TransportButton::Slip, true, true, 2);
-        assert_eq!(slip.fill, t.accent_for(2));
+        assert_eq!(slip.fill, look.toggle(true, t.accent_for(2)).fill);
         let idle = transport_style(&t, TransportButton::Slip, false, true, 2);
-        assert_eq!(idle.fill, t.well);
-        assert!(idle.glow.is_none() && idle.hover);
+        assert_eq!(idle.fill, look.toggle.off.fill);
+        assert!(idle.hover);
     }
 
     #[test]
-    fn a_deck_without_a_track_is_dimmed_with_no_hover_or_glow() {
+    fn a_deck_without_a_track_is_dimmed_with_no_hover() {
         let t = theme("dark");
         for b in TransportButton::ALL {
             let s = transport_style(&t, b, true, false, 0);
             assert_eq!(s.alpha, 0.4);
-            assert!(!s.hover && s.glow.is_none(), "{b:?}");
+            assert!(!s.hover, "{b:?}");
         }
     }
 
@@ -1748,7 +1735,7 @@ mod tests {
             for (set, active) in [(false, false), (true, false), (true, true)] {
                 let off = pad_state(&t, set, active, 1, false);
                 assert_eq!(off.alpha, DISABLED_ALPHA);
-                assert!(!off.hover && off.glow.is_none());
+                assert!(!off.hover);
                 let on = pad_state(&t, set, active, 1, true);
                 assert_eq!(on.alpha, 1.0);
             }
@@ -1790,7 +1777,7 @@ mod tests {
         let p = pad_state(&t, false, false, 3, true);
         assert!(p.dashed);
         assert_eq!(p.label, "Set");
-        assert!(p.tab.is_none() && p.glow.is_none());
+        assert!(p.tab.is_none());
         assert_eq!(p.fill, t.well);
     }
 
@@ -1802,16 +1789,14 @@ mod tests {
         assert_eq!(p.label, "Cue 3");
         assert!((p.fill.alpha() - 0.85).abs() < 0.01);
         assert_eq!(p.tab, Some(HotcuePads::colour(2)));
-        assert!(p.glow.is_none());
         let active = pad_state(&t, true, true, 2, true);
         assert!((active.fill.alpha() - 1.0).abs() < 0.01);
-        assert!(active.glow.is_some());
     }
 
     #[test]
-    fn the_active_pad_changes_label_and_outline_not_just_opacity_and_glow() {
-        // deck-controls.md States: "Active: full fill plus glow" and "Never rely on colour alone:
-        // label text and glyph change with state".
+    fn the_active_pad_changes_label_and_outline_not_just_opacity() {
+        // deck-controls.md States: "Never rely on colour alone: label text and glyph change with
+        // state" (the glow it also asked for is retired: DESIGN.md, Lines Not Light).
         for t in themes() {
             let set = pad_state(&t, true, false, 2, true);
             let active = pad_state(&t, true, true, 2, true);

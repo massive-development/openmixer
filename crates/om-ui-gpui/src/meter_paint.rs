@@ -4,15 +4,21 @@
 //! Plan: `docs/superpowers/plans/2026-10-24-ui-faders-meters.md` Phases 1.4 and 3. Conventions only
 //! (ADR 0001).
 //!
+//! The look is the canvas "Meter" (`docs/design-system`): a 4px well per side, segments in a grey
+//! ramp (muted text at the floor, secondary text at the mid threshold, ivory just under the high
+//! one), signal red above -3 dB, a hold tick, and on a clip the top segment and the word CLIP in
+//! signal red, held until the meter is clicked.
+//!
 //! Element budget (plan Phase 4): a segmented bar is NOT one box per segment. Each side is a well
-//! (one box), one `canvas` that paints the coalesced lit runs, the 1 px gaps and the hold segment as
-//! quads, and the clip lamp (one box). A quad is a GPU instance, not a layout element, so a 160 px
+//! (one box) and one `canvas` that paints the lit segments and the hold tick as quads; the column
+//! adds the CLIP word while it is held. A quad is a GPU instance, not a layout element, so a 160 px
 //! meter costs a handful of boxes however many segments it has.
 
 use crate::app::Shell;
 use crate::controls::BarState;
 use crate::font::{numeral, Numeral};
-use crate::paint::{border, paint, place};
+use crate::paint::{paint, place};
+use crate::parts::state_word;
 use gpui::{canvas, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton};
 use gpui::{MouseDownEvent, Rgba};
 use om_ui::geometry::Rect;
@@ -20,7 +26,7 @@ use om_ui::meter::{
     column_layout, MeterScale, MeterZone, DB_TICKS, MIN_LAMP_HEIGHT, MIN_MARK_SPACING,
 };
 use om_ui::style::LookAndFeel;
-use om_ui::theme::ThemeTokens;
+use om_ui::theme::{Colour, ThemeTokens};
 
 /// Static labels for [`DB_TICKS`], so no label is formatted per frame.
 const TICK_LABELS: [&str; 5] = ["0", "-6", "-12", "-24", "-48"];
@@ -31,9 +37,13 @@ const ZONE_EPS: f32 = 1e-3;
 const READOUT_H: i32 = 14;
 /// Space between the dB scale's right edge and the bars, in px. It was 3 px, which read as touching.
 const SCALE_GAP: i32 = 6;
-/// How much taller the master's clip lamp is than a channel's, in px. Unsourced: the plan asks for
+/// How much taller the master's clip row is than a channel's, in px. Unsourced: the plan asks for
 /// "taller on master" and the research gives 6 px, which is below today's 8 px channel lamp.
 const MASTER_LAMP_EXTRA: i32 = 4;
+/// Width of a bar's well, px (canvas "Meter": `w 4`).
+pub const BAR_W: i32 = 4;
+/// The ramp position of a segment inside its zone, `0..=SHADES`.
+const SHADES: f32 = 255.0;
 
 /// A run of lit segments of one zone, as a pixel rectangle relative to the bar's top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +176,24 @@ impl SegmentModel {
         (lit > 0).then(|| lit - 1)
     }
 
+    /// Where segment `i` sits in its zone's part of the grey ramp, `0` at the zone's bottom to
+    /// `255` at its top (the high zone is one colour).
+    pub fn shade(&self, i: usize) -> u8 {
+        let db = self.segment_top_db(i);
+        let (lo, hi) = match self.zone(i) {
+            MeterZone::Low => (self.scale.floor_db, self.scale.mid_db),
+            MeterZone::Mid => (self.scale.mid_db, self.scale.high_db),
+            MeterZone::High => return 0,
+        };
+        let t = if hi > lo { (db - lo) / (hi - lo) } else { 1.0 };
+        (t.clamp(0.0, 1.0) * SHADES).round() as u8
+    }
+
+    /// Top row and height of segment `i`.
+    pub fn segment_rect(&self, i: usize) -> (i32, i32) {
+        (self.segment_y(i), self.seg)
+    }
+
     /// The hold segment as a one-segment run in its zone's colour.
     pub fn hold_run(&self, hold: f32) -> Option<Run> {
         let i = self.hold_index(hold)?;
@@ -193,9 +221,10 @@ impl SegmentModel {
 /// What a quad in a bar's canvas is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuadRole {
-    Lit(MeterZone),
-    /// A 1 px separator between segments, in the bar's border colour.
-    Gap,
+    /// A lit segment, or the hold tick: its zone and its place in the zone's ramp.
+    Lit(MeterZone, u8),
+    /// The top segment of a side that clipped, held until reset.
+    Clip,
 }
 
 /// One rectangle painted inside a bar's canvas, relative to the canvas.
@@ -247,6 +276,7 @@ pub struct SidePlan {
     /// The area inside the well the canvas covers (column coordinates).
     pub area: Rect,
     pub quads: Vec<BarQuad>,
+    /// Where the side's clip shows (its top segment turns signal red), and whether it does.
     pub lamp: Rect,
     pub lamp_lit: bool,
 }
@@ -265,6 +295,8 @@ pub struct MeterPlan {
     pub sides: [SidePlan; 2],
     /// The numeric peak readout box, when the face asks for one.
     pub readout: Option<Rect>,
+    /// The CLIP word over both bars, while either side's clip is held.
+    pub clip: Option<Rect>,
 }
 
 impl MeterPlan {
@@ -283,7 +315,6 @@ impl MeterPlan {
         let col = column_layout(Rect::sized(rect.w, rect.h), labels);
         let well_h = (rect.h - headroom - readout_h).max(1);
         let bw = t.border_width.round().max(0.0) as i32;
-        let side_inset = m.bar_inset as i32;
         let area_h = (well_h - 2 * bw).max(1);
         let model = SegmentModel::new(t, area_h);
         let any_clip = bars.iter().any(|b| b.clipping);
@@ -316,61 +347,45 @@ impl MeterPlan {
         }
 
         let side = |bar: &Rect, state: BarState| {
-            let well = Rect::new(bar.x, headroom, bar.w.max(1), well_h);
-            let area = Rect::new(
-                well.x + side_inset,
-                headroom + bw,
-                (well.w - 2 * side_inset).max(1),
-                area_h,
-            );
-            let mut quads = Vec::with_capacity(model.count() + 4);
-            for run in model.lit_runs(state.level).into_iter().flatten() {
-                quads.push(BarQuad {
-                    rect: Rect::new(0, run.y, area.w, run.h),
-                    role: QuadRole::Lit(run.zone),
-                });
-            }
-            for y in model.gap_ys() {
-                quads.push(BarQuad {
-                    rect: Rect::new(0, y, area.w, (t.meter_segment_gap.round() as i32).max(1)),
-                    role: QuadRole::Gap,
-                });
-            }
-            if let Some(run) = model.hold_run(state.hold) {
-                quads.push(BarQuad {
-                    rect: Rect::new(0, run.y, area.w, run.h),
-                    role: QuadRole::Lit(run.zone),
-                });
-            }
+            let w = BAR_W.min(bar.w).max(1);
+            let well = Rect::new(bar.x + (bar.w - w) / 2, headroom, w, well_h);
+            let area = Rect::new(well.x, headroom + bw, w, area_h);
+            let lamp_lit = state.clipping || (face.shared_lamp && any_clip);
+            let quads = side_quads(t, &model, state, lamp_lit, w);
             let lamp_y = (m.inset as i32).min(headroom - face.lamp_h).max(0);
             SidePlan {
                 well,
                 area,
                 quads,
                 lamp: Rect::new(area.x, lamp_y, area.w, face.lamp_h),
-                lamp_lit: state.clipping || (face.shared_lamp && any_clip),
+                lamp_lit,
             }
         };
         let sides = [side(&col.bars[0], bars[0]), side(&col.bars[1], bars[1])];
-        let readout = face.readout.then(|| {
-            Rect::new(
-                col.bars[0].x,
-                headroom + well_h,
-                col.bars[1].x + col.bars[1].w - col.bars[0].x,
-                READOUT_H,
-            )
-        });
+        let span = |y: i32, h: i32| {
+            let (left, right) = (col.bars[0].x, col.bars[1].x + col.bars[1].w);
+            Rect::new(left, y, right - left, h)
+        };
+        let readout = face.readout.then(|| span(headroom + well_h, READOUT_H));
+        let clip = sides
+            .iter()
+            .any(|s| s.lamp_lit)
+            .then(|| span(0, headroom.max(1)));
         Self {
             marks,
             sides,
             readout,
+            clip,
         }
     }
 
-    /// Layout boxes the painter emits: the root, the scale labels, the readout, and per side a
-    /// well, a canvas and a lamp. Quads inside the canvases are not layout elements.
+    /// Layout boxes the painter emits: the root, the scale labels, the readout, the CLIP word and
+    /// per side a well and a canvas. Quads inside the canvases are not layout elements.
     pub fn div_count(&self) -> usize {
-        1 + self.marks.len() + usize::from(self.readout.is_some()) + 3 * self.sides.len()
+        1 + self.marks.len()
+            + usize::from(self.readout.is_some())
+            + usize::from(self.clip.is_some())
+            + 2 * self.sides.len()
     }
 
     /// Quads painted across both canvases.
@@ -389,12 +404,52 @@ pub fn peak_text(t: &ThemeTokens, bars: [BarState; 2]) -> String {
     format!("{:.1}", MeterScale::from_tokens(t).db_at(hold))
 }
 
+/// The quads of one bar `w` px wide: each lit segment, the hold tick, and the held clip.
+fn side_quads(
+    t: &ThemeTokens,
+    model: &SegmentModel,
+    state: BarState,
+    clipped: bool,
+    w: i32,
+) -> Vec<BarQuad> {
+    let lit = |i: usize| QuadRole::Lit(model.zone(i), model.shade(i));
+    let mut quads = Vec::with_capacity(model.count() + 2);
+    for i in 0..model.lit_count(state.level) {
+        let (y, h) = model.segment_rect(i);
+        quads.push(BarQuad {
+            rect: Rect::new(0, y, w, h),
+            role: lit(i),
+        });
+    }
+    if let Some(i) = model.hold_index(state.hold) {
+        let tick = (t.meter_hold_tick_height.round() as i32).max(1);
+        quads.push(BarQuad {
+            rect: Rect::new(0, model.segment_y(i), w, tick),
+            role: lit(i),
+        });
+    }
+    if clipped && model.count() > 0 {
+        let (y, h) = model.segment_rect(model.count() - 1);
+        quads.push(BarQuad {
+            rect: Rect::new(0, y, w, h),
+            role: QuadRole::Clip,
+        });
+    }
+    quads
+}
+
+/// The colour of a quad: the grey ramp by zone and shade, signal red above the high threshold,
+/// and the held clip.
 fn quad_colour(m: &om_ui::style::MeterStyle, role: QuadRole) -> Rgba {
+    let ramp = |from: Colour, to: Colour, shade: u8| {
+        let t = f32::from(shade) / SHADES;
+        Colour::mix(&[(from, 1.0 - t), (to, t)])
+    };
     paint(match role {
-        QuadRole::Lit(MeterZone::Low) => m.low,
-        QuadRole::Lit(MeterZone::Mid) => m.mid,
-        QuadRole::Lit(MeterZone::High) => m.high,
-        QuadRole::Gap => m.border,
+        QuadRole::Lit(MeterZone::Low, s) => ramp(m.low, m.mid, s),
+        QuadRole::Lit(MeterZone::Mid, s) => ramp(m.mid, m.top, s),
+        QuadRole::Lit(MeterZone::High, _) => m.high,
+        QuadRole::Clip => m.clip,
     })
 }
 
@@ -454,6 +509,24 @@ fn meter_with_face(
     cx: &mut Context<Shell>,
     on_click: impl Fn(&mut Shell) + 'static,
 ) -> Div {
+    meter_face(t, rect, (labels, bars), face, readout).on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+            on_click(this);
+            cx.notify();
+        }),
+    )
+}
+
+/// The drawn part of a meter column (no input): the dB scale, the two wells with their lit
+/// segments, the CLIP word while a clip is held, and the master's peak readout.
+pub fn meter_face(
+    t: &ThemeTokens,
+    rect: Rect,
+    (labels, bars): (bool, [BarState; 2]),
+    face: MeterFace,
+    readout: Option<String>,
+) -> Div {
     let look = LookAndFeel::from_tokens(t);
     let m = look.meter;
     let plan = MeterPlan::new(t, rect, labels, bars, face);
@@ -469,12 +542,7 @@ fn meter_with_face(
         );
     }
     for side in &plan.sides {
-        el = el.child(
-            border(place(side.well), t.border_width)
-                .border_color(paint(m.border))
-                .bg(paint(m.well))
-                .rounded(px(m.radius)),
-        );
+        el = el.child(place(side.well).bg(paint(m.well)).rounded(px(m.radius)));
         let quads = side.quads.clone();
         let colours: Vec<Rgba> = quads.iter().map(|q| quad_colour(&m, q.role)).collect();
         el = el.child(
@@ -497,10 +565,15 @@ fn meter_with_face(
                 .size_full(),
             ),
         );
+    }
+    if let Some(r) = plan.clip {
         el = el.child(
-            place(side.lamp)
-                .bg(paint(if side.lamp_lit { m.lamp_on } else { m.lamp_off }))
-                .rounded(px(m.radius)),
+            place(r)
+                .flex()
+                .justify_center()
+                .items_center()
+                .whitespace_nowrap()
+                .child(state_word(t, "CLIP", m.clip)),
         );
     }
     if let (Some(r), Some(text)) = (plan.readout, readout) {
@@ -513,13 +586,7 @@ fn meter_with_face(
                 .child(numeral(t, Numeral::Value, text)),
         );
     }
-    el.on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-            on_click(this);
-            cx.notify();
-        }),
-    )
+    el
 }
 
 #[cfg(test)]

@@ -289,7 +289,6 @@ colour_keys! {
     "master" => master;
     "popup" => popup;
     "dropTarget" => drop_target;
-    "brand" => brand;
     "readout" => readout;
     "readoutDim" => readout_dim;
 }
@@ -298,13 +297,15 @@ colour_keys! {
 /// when the file does not set the new key.
 const RENAMED_COLOURS: [(&str, &str); 2] = [("backdropTop", "ground"), ("recordRed", "playhead")];
 
-/// Glass and glow colours the faceplate themes no longer have.
-const RETIRED_COLOURS: [&str; 5] = [
+/// Glass and glow colours the faceplate themes no longer have, and E1's ember `brand` (the
+/// wordmark is ivory text now).
+const RETIRED_COLOURS: [&str; 6] = [
     "backdropBottom",
     "glowCool",
     "glowWarm",
     "capTop",
     "capBottom",
+    "brand",
 ];
 
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
@@ -918,18 +919,22 @@ mod tests {
     }
 
     #[test]
-    fn brand_tokens_parse_and_are_range_checked() {
+    fn type_and_edge_tokens_parse_and_are_range_checked() {
         let ok = r##"{"id":"t.one","name":"T","colours":{"brand":"#FF112233"},
             "type":{"numeralLarge":30},"edge":{"line":0.5,"highlight":0.1}}"##;
-        let t = parse_theme(ok).expect("parses").tokens;
-        assert_eq!(t.brand, Colour::from_argb(0xFF11_2233));
+        let parsed = parse_theme(ok).expect("an old brand key still loads");
+        assert_eq!(parsed.warnings, ["retired key 'colours.brand' ignored"]);
+        let t = parsed.tokens;
         assert_eq!(t.type_numeral_large, 30.0);
         assert_eq!((t.edge_line_alpha, t.edge_highlight_alpha), (0.5, 0.1));
         // A file that leaves them out inherits the defaults.
         let bare = parse_theme(r#"{"id":"t.two","name":"T"}"#)
             .expect("parses")
             .tokens;
-        assert_eq!(bare.brand, ThemeTokens::builtin_dark().brand);
+        assert_eq!(
+            bare.edge_line_alpha,
+            ThemeTokens::builtin_dark().edge_line_alpha
+        );
         let bad = r#"{"id":"t.three","name":"T","edge":{"highlight":2}}"#;
         assert!(parse_theme(bad).is_err());
     }

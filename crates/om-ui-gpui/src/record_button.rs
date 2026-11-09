@@ -4,11 +4,12 @@
 
 use crate::app::Shell;
 use crate::font::{numeral, Numeral, TypeExt as _};
-use crate::paint::{paint, place};
+use crate::paint::{face, paint, place};
 use gpui::{div, prelude::*, px, Context, Div, Focusable as _, MouseButton, MouseDownEvent};
 use om_core::{ParameterTarget, RecordSnapshot};
 use om_ui::geometry::Rect;
 use om_ui::record_bar::RecordBar;
+use om_ui::style::{Face, FaceStyle, LookAndFeel};
 use om_ui::theme::{ThemeTokens, TypeRole};
 
 /// Width of each channel's peak track in the button.
@@ -16,8 +17,9 @@ const PEAK_WIDTH: f32 = 36.0;
 /// Height of each channel's peak track.
 const PEAK_HEIGHT: f32 = 3.0;
 
-/// The Record button at `rect`: an outline while idle; while recording, a filled red dot, the
-/// elapsed time, the size, a dropped-frames badge (when any) and the mini L/R peak bars.
+/// The Record button at `rect`: a control face with a red ring for a dot while idle; while
+/// recording, a filled red dot and a red edge (the Signal Rule: red is for recording), the elapsed
+/// time, the size, a dropped-frames badge (when any) and the mini L/R peak bars.
 pub(crate) fn record_button(
     t: &ThemeTokens,
     snapshot: &RecordSnapshot,
@@ -85,21 +87,31 @@ pub(crate) fn record_button(
                 .child(peak_track(t, bar.peak_right)),
         );
     }
-    let mut button = place(rect)
-        .rounded(px(t.control_radius))
-        .border_1()
-        .border_color(if bar.recording { red } else { paint(t.border) })
+    let (rest, hover) = faces(t, bar.recording);
+    face(place(rect), &rest)
+        .hover(move |s| face(s, &hover))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(|this, _: &MouseDownEvent, _, cx| {
                 this.press_record();
                 cx.notify();
             }),
-        );
-    if bar.recording {
-        button = button.bg(paint(t.surface_raised));
-    }
-    button.child(row)
+        )
+        .child(row)
+}
+
+/// The button's face at rest and under the pointer; recording draws the edge in record red.
+fn faces(t: &ThemeTokens, recording: bool) -> (FaceStyle, FaceStyle) {
+    let look = LookAndFeel::from_tokens(t);
+    let edge = |f: FaceStyle| FaceStyle {
+        edge: if recording { t.record_red() } else { f.edge },
+        ..f
+    };
+    let hue = t.record_red();
+    (
+        edge(look.face(Face::Rest, hue)),
+        edge(look.face(Face::Hover, hue)),
+    )
 }
 
 /// One channel's peak: a thin track with the level filled in.

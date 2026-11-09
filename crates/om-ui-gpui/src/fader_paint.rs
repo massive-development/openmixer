@@ -7,18 +7,22 @@
 //!
 //! The maths and the geometry are pure (no GPUI) and unit tested; the painters only turn a
 //! [`FaderPlan`] into boxes, so the element count is testable too ([`FaderPlan::div_count`]).
+//!
+//! The look is the canvas "Fader": a 6px recessed slot, a flat two-tone hardware cap (2px bands of
+//! the control face and its hover tone, an etched edge and the larger small drop) sized from the
+//! knob size (0.85 by 0.4 of it: 29x14 Roomy), and a 2px line across the cap in the deck's colour
+//! (ivory on the master and the crossfader).
 
 use crate::app::Shell;
 use crate::controls::draggable;
 use crate::drag::Target;
 use crate::font::{numeral, Numeral};
-use crate::paint::{paint, place, skin};
-use gpui::{div, prelude::*, px, Context, Div};
+use crate::paint::{drop_shadow, paint, place, skin};
+use gpui::{canvas, div, fill, prelude::*, px, size, Bounds, Context, Div, Pixels, Rgba, Window};
 use om_ui::format;
 use om_ui::geometry::Rect;
-use om_ui::meter::LABEL_GUTTER;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::{Colour, ThemeTokens};
+use om_ui::theme::{Colour, DensityMetrics, ThemeTokens};
 
 /// Smallest box (px) a fader label is given; the dB scale text itself is the 10 px scale tier.
 pub const MIN_TEXT_PX: f32 = 12.0;
@@ -269,45 +273,66 @@ pub enum FaderScale {
     Pitch,
 }
 
+/// Cap width and height as shares of the knob size, and the slot width (canvas "Fader": cap
+/// `k * .85` by `k * .4`, a 6px slot).
+const CAP_W_SHARE: f32 = 0.85;
+const CAP_H_SHARE: f32 = 0.4;
+const SLOT_W: i32 = 6;
+
+/// The cap's long and short sides for a density.
+pub fn cap_size(m: &DensityMetrics) -> (i32, i32) {
+    (
+        (m.knob_size * CAP_W_SHARE).round() as i32,
+        (m.knob_size * CAP_H_SHARE).round() as i32,
+    )
+}
+
 impl FaderFace {
-    /// Channel fader: slot 4 px, cap 22x36 (R section 3; sizes are proposals).
+    fn with_scale(law: FaderLaw, scale: FaderScale) -> Self {
+        let (cap_w, cap_h) = cap_size(&DensityMetrics::roomy());
+        Self {
+            law,
+            scale,
+            cap_w,
+            cap_h,
+            slot_w: SLOT_W,
+        }
+    }
+
+    /// Channel fader, at the Roomy size (see [`FaderFace::for_density`]).
     pub fn channel(law: FaderLaw) -> Self {
-        Self {
-            law,
-            scale: FaderScale::Gain,
-            cap_w: 22,
-            cap_h: 36,
-            slot_w: 4,
-        }
+        Self::with_scale(law, FaderScale::Gain)
     }
 
-    /// Master fader: slot 6 px, cap 26x40.
+    /// Master fader: the channel fader's hardware, with the master's law and ticks.
     pub fn master(law: FaderLaw) -> Self {
-        Self {
-            law,
-            scale: FaderScale::Gain,
-            cap_w: 26,
-            cap_h: 40,
-            slot_w: 6,
-        }
+        Self::with_scale(law, FaderScale::Gain)
     }
 
-    /// Pitch fader: slot 4 px, cap 22x36, centre notch. Its position is linear in the rate (see
-    /// [`pitch_pos`]), so the law is the identity.
+    /// Pitch fader: centre notch. Its position is linear in the rate (see [`pitch_pos`]), so the
+    /// law is the identity; the range only changes the printed percentages.
     pub fn pitch() -> Self {
+        Self::with_scale(FaderLaw::Linear { max_gain: 1.0 }, FaderScale::Pitch)
+    }
+
+    /// The same fader with the cap of density `m`.
+    pub fn for_density(self, m: &DensityMetrics) -> Self {
+        let (cap_w, cap_h) = cap_size(m);
         Self {
-            law: FaderLaw::Linear { max_gain: 1.0 },
-            scale: FaderScale::Pitch,
-            cap_w: 22,
-            cap_h: 36,
-            slot_w: 4,
-            // The range only changes the printed percentages, not the geometry.
+            cap_w,
+            cap_h,
+            ..self
         }
     }
 }
 
-const MAJOR_TICK_PX: i32 = 10;
-const MINOR_TICK_PX: i32 = 6;
+/// Tick lengths (canvas "Fader": 4px marks beside the labels).
+const MAJOR_TICK_PX: i32 = 4;
+const MINOR_TICK_PX: i32 = 2;
+/// Space between a label and its tick (canvas: 3px).
+const LABEL_TICK_GAP: i32 = 3;
+/// Room a dB label needs: three glyphs of the 10 px mono scale (Ubuntu Mono advances half an em).
+const SCALE_GUTTER: i32 = 15;
 const NOTCH_W: i32 = 12;
 const NOTCH_H: i32 = 2;
 const CAP_LINE_H: i32 = 2;
@@ -364,10 +389,10 @@ impl FaderGeometry {
         Rect::new(self.cap_x, self.cap_y(pos), self.cap_w, self.cap_h)
     }
 
-    /// The 2 px line across the cap's middle.
+    /// The 2 px line across the cap's middle, edge to edge.
     pub fn cap_line(&self, pos: f32) -> Rect {
         let y = self.cap_y(pos) + self.cap_h / 2 - CAP_LINE_H / 2;
-        Rect::new(self.cap_x + 3, y, (self.cap_w - 6).max(1), CAP_LINE_H)
+        Rect::new(self.cap_x, y, self.cap_w, CAP_LINE_H)
     }
 
     /// Row of a 1 px tick for position `pos`: the lower row of the cap's centre line, so a tick at
@@ -412,7 +437,7 @@ impl FaderPlan {
         let mut ticks = Vec::new();
         let mut labels = Vec::new();
         let mut notch = None;
-        let label_room = room - MAJOR_TICK_PX;
+        let label_room = room - MAJOR_TICK_PX - LABEL_TICK_GAP;
         let tick_at = |p: f32, len: i32, unity: bool, out: &mut Vec<TickRect>| {
             let len = len.min(room);
             if len > 0 {
@@ -431,7 +456,7 @@ impl FaderPlan {
                         MINOR_TICK_PX
                     };
                     tick_at(tick.pos, len, tick.unity, &mut ticks);
-                    if tick.major && label_room >= LABEL_GUTTER {
+                    if tick.major && label_room >= SCALE_GUTTER {
                         labels.push(LabelRect {
                             rect: Rect::new(0, g.tick_y(tick.pos) - 6, label_room, 12),
                             text: tick.label,
@@ -460,7 +485,8 @@ impl FaderPlan {
         }
     }
 
-    /// Boxes the painter emits: root, slot, cap and line, plus ticks, labels and the notch.
+    /// Boxes the painter emits: root, slot, cap and the cap's canvas (bands and line), plus ticks,
+    /// labels and the notch.
     pub fn div_count(&self) -> usize {
         4 + self.ticks.len() + self.labels.len() + usize::from(self.notch.is_some())
     }
@@ -470,24 +496,40 @@ fn ticks_for(face: &FaderFace, travel: f32) -> Vec<Tick> {
     ticks(face.law, travel)
 }
 
-/// Paints a vertical fader in `rect` (parent coordinates) with its cap at `pos`. `accent` colours
-/// the cap line while dragging (a popup being shown means a drag is in progress) and the pitch
-/// notch. Made draggable with `abs`.
+/// Paints a vertical fader in `rect` (parent coordinates) with its cap at `pos`. `line` colours the
+/// line across the cap (the deck's colour on a channel or pitch fader, ivory on the master) and
+/// the pitch notch. Made draggable with `abs`.
 #[allow(clippy::too_many_arguments)]
 pub fn fader(
     t: &ThemeTokens,
     rect: Rect,
     face: &FaderFace,
     pos: f32,
-    accent: Colour,
+    line: Colour,
     target: Target,
     abs: Rect,
     popup_text: Option<&str>,
     cx: &mut Context<Shell>,
 ) -> Div {
-    let look = LookAndFeel::from_tokens(t);
     let plan = FaderPlan::new(rect.w, rect.h, face, pos);
-    let dragging = popup_text.is_some();
+    let drag = drag_abs(abs, plan.geometry.drag_rect());
+    draggable(
+        fader_face(t, rect, &plan, line, popup_text),
+        target,
+        drag,
+        cx,
+    )
+}
+
+/// The drawn part of a vertical fader (no input): slot, ticks, dB labels, notch, cap and popup.
+pub fn fader_face(
+    t: &ThemeTokens,
+    rect: Rect,
+    plan: &FaderPlan,
+    line: Colour,
+    popup_text: Option<&str>,
+) -> Div {
+    let look = LookAndFeel::from_tokens(t);
     let mut root = place(rect);
     root = root.child(skin(place(plan.geometry.slot), &look.fader.track));
     for tick in &plan.ticks {
@@ -515,24 +557,82 @@ pub fn fader(
         );
     }
     if let Some(notch) = plan.notch {
-        root = root.child(place(notch).bg(paint(accent)));
+        root = root.child(place(notch).bg(paint(line)));
     }
-    root = root.child(skin(place(plan.cap), &look.fader.thumb));
-    root = root.child(place(plan.cap_line).bg(paint(if dragging {
-        accent
-    } else {
-        t.text_secondary
-    })));
+    root = root.child(cap(t, plan.cap, plan.cap_line, line, Bands::Rows));
     if let Some(text) = popup_text {
         root = root.child(popup_chip(t, rect.w, text));
     }
-    draggable(root, target, drag_abs(abs, plan.geometry.drag_rect()), cx)
+    root
 }
 
-/// Crossfader cap size (R section 3; a proposal) and slot thickness.
-const XF_CAP_W: i32 = 28;
-const XF_CAP_H: i32 = 20;
-const XF_SLOT_H: i32 = 4;
+/// Which way a cap's two-tone bands run: rows on a vertical fader, columns on the crossfader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bands {
+    Rows,
+    Columns,
+}
+
+/// Width of one band of a cap's two-tone face, px (canvas: 2px stripes).
+const BAND_PX: i32 = 2;
+
+/// The hardware cap at `rect`: the face with its etched edge and drop, the alternate bands in the
+/// hover tone, and `line_rect` (both in the fader's coordinates) in `line`.
+fn cap(t: &ThemeTokens, rect: Rect, line_rect: Rect, line: Colour, bands: Bands) -> Div {
+    let look = LookAndFeel::from_tokens(t);
+    let thumb = look.fader.thumb;
+    let (band, stroke) = (paint(look.fader.thumb_band), paint(line));
+    let local = Rect::new(
+        line_rect.x - rect.x,
+        line_rect.y - rect.y,
+        line_rect.w,
+        line_rect.h,
+    );
+    let (w, h) = (rect.w, rect.h);
+    let painter = canvas(
+        |_, _, _| (),
+        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
+            paint_bands(window, bounds, (w, h), band, bands);
+            window.paint_quad(fill(at(bounds, local), stroke));
+        },
+    )
+    .absolute()
+    .size_full();
+    skin(place(rect), &thumb)
+        .shadow(vec![drop_shadow(&look.fader.thumb_drop)])
+        .child(painter)
+}
+
+/// The hover-tone bands across a cap `w` x `h`, every other [`BAND_PX`] from the top (or left).
+fn paint_bands(
+    window: &mut Window,
+    bounds: Bounds<Pixels>,
+    (w, h): (i32, i32),
+    band: Rgba,
+    bands: Bands,
+) {
+    let span = if bands == Bands::Rows { h } else { w };
+    for start in (0..span).step_by((2 * BAND_PX) as usize) {
+        let len = BAND_PX.min(span - start);
+        let r = match bands {
+            Bands::Rows => Rect::new(0, start, w, len),
+            Bands::Columns => Rect::new(start, 0, len, h),
+        };
+        window.paint_quad(fill(at(bounds, r), band));
+    }
+}
+
+/// `r` (relative to `bounds`) in window pixels.
+fn at(bounds: Bounds<Pixels>, r: Rect) -> Bounds<Pixels> {
+    Bounds::new(
+        crate::paint::offset(bounds.origin, (r.x as f32, r.y as f32)),
+        size(px(r.w as f32), px(r.h as f32)),
+    )
+}
+
+/// Crossfader slot thickness: the vertical fader's slot on its side. Its cap is the fader cap
+/// turned a quarter ([`cap_size`]).
+const XF_SLOT_H: i32 = SLOT_W;
 const XF_CENTRE_TICK: i32 = 10;
 const XF_END_TICK: i32 = 6;
 
@@ -548,8 +648,14 @@ pub struct CrossfaderGeometry {
 
 impl CrossfaderGeometry {
     pub fn new(w: i32, h: i32) -> Self {
-        let cap_w = XF_CAP_W.min(w).max(1);
-        let cap_h = XF_CAP_H.min(h).max(1);
+        Self::sized(w, h, &DensityMetrics::roomy())
+    }
+
+    /// The crossfader with the cap of density `m`.
+    pub fn sized(w: i32, h: i32, m: &DensityMetrics) -> Self {
+        let (long, short) = cap_size(m);
+        let cap_w = short.min(w).max(1);
+        let cap_h = long.min(h).max(1);
         let slot_h = XF_SLOT_H.min(h).max(1);
         Self {
             w,
@@ -588,14 +694,10 @@ impl CrossfaderGeometry {
         self.cap_x(pos) + self.cap_w / 2
     }
 
+    /// The 2 px line down the cap's middle, edge to edge.
     pub fn cap_line(&self, pos: f32) -> Rect {
         let cap = self.cap(pos);
-        Rect::new(
-            self.mark_x(pos) - 1,
-            cap.y + 3,
-            CAP_LINE_H,
-            (cap.h - 6).max(1),
-        )
+        Rect::new(self.mark_x(pos) - CAP_LINE_H / 2, cap.y, CAP_LINE_H, cap.h)
     }
 }
 
@@ -612,7 +714,12 @@ pub struct CrossfaderPlan {
 
 impl CrossfaderPlan {
     pub fn new(w: i32, h: i32, pos: f32) -> Self {
-        let g = CrossfaderGeometry::new(w, h);
+        Self::sized(w, h, pos, &DensityMetrics::roomy())
+    }
+
+    /// The plan with the cap of density `m`.
+    pub fn sized(w: i32, h: i32, pos: f32, m: &DensityMetrics) -> Self {
+        let g = CrossfaderGeometry::sized(w, h, m);
         let marks = crossfader_marks();
         let mid = g.slot.y + g.slot.h / 2;
         let tick = |p: f32, len: i32| Rect::new(g.mark_x(p), mid - len / 2, 1, len);
@@ -626,41 +733,54 @@ impl CrossfaderPlan {
     }
 
     pub fn div_count(&self) -> usize {
-        // root, slot, 3 ticks, cap, cap line
+        // root, slot, 3 ticks, cap, the cap's canvas
         7
     }
 }
 
-/// Paints the horizontal crossfader in `rect` with its cap at `pos` (`0` = A, `1` = B).
+/// Paints the horizontal crossfader in `rect` with its cap at `pos` (`0` = A, `1` = B); `line` is
+/// the colour of the line down its cap.
 #[allow(clippy::too_many_arguments)]
 pub fn crossfader(
     t: &ThemeTokens,
     rect: Rect,
     pos: f32,
-    accent: Colour,
+    line: Colour,
     target: Target,
     abs: Rect,
     popup_text: Option<&str>,
     cx: &mut Context<Shell>,
 ) -> Div {
-    let look = LookAndFeel::from_tokens(t);
     let plan = CrossfaderPlan::new(rect.w, rect.h, pos);
+    let drag = drag_abs(abs, plan.geometry.drag_rect());
+    draggable(
+        crossfader_face(t, rect, &plan, line, popup_text),
+        target,
+        drag,
+        cx,
+    )
+}
+
+/// The drawn part of the crossfader (no input): slot, marks, cap and popup.
+pub fn crossfader_face(
+    t: &ThemeTokens,
+    rect: Rect,
+    plan: &CrossfaderPlan,
+    line: Colour,
+    popup_text: Option<&str>,
+) -> Div {
+    let look = LookAndFeel::from_tokens(t);
     let mut root = place(rect).child(skin(place(plan.geometry.slot), &look.fader.track));
     for tick in plan.end_ticks {
         root = root.child(place(tick).bg(paint(t.text_muted)));
     }
     root = root
         .child(place(plan.centre_tick).bg(paint(t.text_primary)))
-        .child(skin(place(plan.cap), &look.fader.thumb))
-        .child(place(plan.cap_line).bg(paint(if popup_text.is_some() {
-            accent
-        } else {
-            t.text_secondary
-        })));
+        .child(cap(t, plan.cap, plan.cap_line, line, Bands::Columns));
     if let Some(text) = popup_text {
         root = root.child(popup_chip(t, rect.w, text));
     }
-    draggable(root, target, drag_abs(abs, plan.geometry.drag_rect()), cx)
+    root
 }
 
 /// The window rectangle a drag maps the pointer over: `local` (from a geometry's `drag_rect`)

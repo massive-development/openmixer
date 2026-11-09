@@ -263,6 +263,7 @@ fn knob_view(
             accent,
             dragging: shell.is_dragging(target),
             disabled: false,
+            ..KnobLook::default()
         },
         cx,
     )
@@ -491,27 +492,27 @@ mod tests {
         Rect::sized(cell.bounds.w, cell.bounds.h)
     }
 
-    fn cap(rect: Rect, role: KnobRole) -> f32 {
-        knob_geometry(rect.w as f32, rect.h as f32, 0.0, role).cap_diameter()
+    fn knob(rect: Rect, size: f32) -> f32 {
+        knob_geometry(rect.w as f32, rect.h as f32, 0.0, size).diameter()
     }
 
-    /// knobs.md section 3: trim, EQ and filter caps are 32 px (28 at the least). At 1280 wide the
-    /// strip must give the 32 px cap, not the 30 px the old width left.
+    /// DESIGN.md Knobs: 34 px circles Roomy, 26 Compact. The strip gives the trim, filter and EQ
+    /// knobs their full Roomy size at 1280 wide and never less than the Compact one.
     #[test]
-    fn strip_knobs_get_the_researched_cap_sizes() {
+    fn strip_knobs_get_the_density_knob_size() {
         let t = ThemeTokens::builtin_dark();
+        let (roomy, compact) = (t.roomy.knob_size, t.compact.knob_size);
         for size in SIZES {
             let lay = ChannelStrip::layout(strip_card(size, 0), &t);
-            let full = size.1 >= 800;
-            let want = if full { 31.99 } else { 28.0 };
-            for (name, c) in [
-                ("trim", cap(lay.trim, KnobRole::Wide)),
-                ("filter", cap(lay.filter, KnobRole::Wide)),
-                ("high", cap(lay.eq[2], KnobRole::Band)),
-                ("mid", cap(lay.eq[1], KnobRole::Band)),
-                ("low", cap(lay.eq[0], KnobRole::Band)),
+            let want = if size.1 >= 800 { roomy - 0.01 } else { compact };
+            for (name, d) in [
+                ("trim", knob(lay.trim, roomy)),
+                ("filter", knob(lay.filter, roomy)),
+                ("high", knob(lay.eq[2], roomy)),
+                ("mid", knob(lay.eq[1], roomy)),
+                ("low", knob(lay.eq[0], roomy)),
             ] {
-                assert!(c >= want, "{size:?}: {name} cap {c}");
+                assert!(d >= want, "{size:?}: {name} knob {d}");
             }
         }
     }

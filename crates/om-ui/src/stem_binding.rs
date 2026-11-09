@@ -283,7 +283,7 @@ impl StemBinding {
         })
     }
 
-    /// How loud a stem sounds, 0..=1, for the activity glow: 0 when muted, else gain over the
+    /// How loud a stem sounds, 0..=1, for the activity fill: 0 when muted, else gain over the
     /// volume range.
     pub fn level(&self, stem: usize) -> f32 {
         let Some(s) = self.stems().get(stem).copied() else {

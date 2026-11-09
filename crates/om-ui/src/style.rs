@@ -12,6 +12,11 @@
 
 use crate::theme::{Colour, ThemeTokens};
 
+mod face;
+pub use face::{
+    oklab, tint, Face, FaceStyle, FaceTokens, RingStyle, IDENTITY_EDGE, PAD_EDGE, PAD_TINT,
+};
+
 /// The drawing recipe of one control state: fill, text, border and shape.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ControlStyle {
@@ -50,19 +55,24 @@ pub struct KnobStyle {
     pub fill: Colour,
     pub label: ControlStyle,
     pub readout: ControlStyle,
-    /// The unlit arc a rotary knob's value arc runs along. Derived from `border_strong` (60% on a
-    /// dark surface, full on a light one; see the knob spec), so themes need no new key.
+    /// The unlit arc a rotary knob's value arc runs along: the etched line (canvas, "Knob").
     pub track: Colour,
     /// The pointer line on a rotary knob's cap.
     pub pointer: Colour,
+    /// The one small drop under the raised cap.
+    pub drop: ShadowStyle,
     /// The arc and pointer of a knob in its kill zone.
     pub kill: Colour,
 }
 
+/// A hardware fader: a recessed slot and a flat two-tone cap (alternate 2px bands of the face
+/// and its hover tone) with an etched edge and the larger small drop.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FaderStyle {
     pub track: ControlStyle,
     pub thumb: ControlStyle,
+    pub thumb_band: Colour,
+    pub thumb_drop: ShadowStyle,
     pub thumb_size: f32,
 }
 
@@ -79,11 +89,15 @@ pub struct TextFieldStyles {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A segmented meter: a grey ramp from `low` through `mid` to `top`, `high` (signal red) above the
+/// high threshold, and the held CLIP word in `clip`.
 pub struct MeterStyle {
     pub well: Colour,
     pub low: Colour,
     pub mid: Colour,
+    pub top: Colour,
     pub high: Colour,
+    pub clip: Colour,
     pub lamp_on: Colour,
     pub lamp_off: Colour,
     pub border: Colour,
@@ -161,7 +175,7 @@ pub struct MotionStyle {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LookAndFeel {
     pub button: ButtonStyles,
-    /// Lit buttons take the accent as their fill; see [`LookAndFeel::lit_button`].
+    /// Text on a solid deck fill (a playing control): the ground colour.
     pub lit_text: Colour,
     pub knob: KnobStyle,
     pub fader: FaderStyle,
@@ -194,10 +208,11 @@ pub struct LookAndFeel {
     /// The one small drop under raised controls.
     pub lift: ShadowStyle,
     pub motion: MotionStyle,
-    /// The brand colour, for marks and "now" cues.
-    pub brand: Colour,
-    /// Keyboard focus ring colour (>= 3:1 on every surface).
+    /// Keyboard focus ring colour (>= 3:1 on every surface), and the ring a focused control draws.
     pub focus_ring: Colour,
+    pub focus: RingStyle,
+    /// The tokens every control state is built from; see [`LookAndFeel::face`].
+    pub faces: FaceTokens,
     /// Smallest button/pad, and smallest mouse-only target (px).
     pub min_target: f32,
     pub min_pointer_target: f32,
@@ -217,23 +232,27 @@ impl LookAndFeel {
                 radius,
                 font_size: size,
             };
-        let button = |fill: Colour, text: Colour| {
-            shape(fill, text, t.border_strong, t.control_radius, t.type_label)
+        let faces = FaceTokens::from_tokens(t);
+        let state = |face: Face| faces.face(face, accent).control(t.type_label);
+        let lift = ShadowStyle {
+            colour: t.shadow,
+            blur: t.shadow_blur,
+            offset_y: t.shadow_offset_y,
         };
-        let disabled_text = t.text_muted.with_multiplied_alpha(t.disabled_alpha);
         Self {
             button: ButtonStyles {
-                idle: button(raised, t.text_primary),
-                hover: button(t.surface_hover_scaled(), t.text_primary),
-                active: button(t.well, t.text_primary),
-                disabled: button(t.surface_scaled(), disabled_text),
+                idle: state(Face::Rest),
+                hover: state(Face::Hover),
+                active: state(Face::Pressed),
+                disabled: state(Face::Disabled),
             },
             lit_text: t.on_accent,
+            // The canvas knob: a cap in the hover tone with an etched edge and the small drop.
             knob: KnobStyle {
                 body: shape(
-                    raised,
+                    t.surface_hover_scaled(),
                     t.text_primary,
-                    t.border_strong,
+                    t.border,
                     t.control_radius,
                     t.type_label,
                 ),
@@ -252,31 +271,33 @@ impl LookAndFeel {
                     t.control_radius,
                     t.type_numeral,
                 ),
-                track: if t.surface.brightness() < 0.5 {
-                    t.border_strong.with_multiplied_alpha(0.6)
-                } else {
-                    t.border_strong
-                },
+                track: t.border,
                 pointer: t.text_primary,
+                drop: lift,
                 kill: t.danger,
             },
             fader: FaderStyle {
                 track: shape(
                     t.well,
                     t.text_primary,
-                    t.border_strong,
+                    t.border,
                     t.control_radius,
                     t.type_label,
                 ),
-                // A control-face cap. Its edge is text-3: the graphic edge falls under 3:1 on the
-                // daylight well the track is drawn in.
                 thumb: shape(
                     raised,
                     t.text_primary,
-                    t.text_muted,
+                    t.border,
                     t.control_radius,
                     t.type_label,
                 ),
+                thumb_band: t.surface_hover_scaled(),
+                // DESIGN.md Elevation's larger drop (`0 3px 5px`), on fader caps in the canvas.
+                thumb_drop: ShadowStyle {
+                    blur: t.shadow_blur * 5.0 / 3.0,
+                    offset_y: t.shadow_offset_y * 1.5,
+                    ..lift
+                },
                 thumb_size: t.thumb_size,
             },
             tabs: TabStyles {
@@ -326,7 +347,9 @@ impl LookAndFeel {
                 well: t.well,
                 low: t.meter_low,
                 mid: t.meter_mid,
+                top: t.text_primary,
                 high: t.meter_high,
+                clip: t.record_red(),
                 lamp_on: t.meter_high,
                 lamp_off: raised,
                 border: t.border_strong,
@@ -408,20 +431,8 @@ impl LookAndFeel {
                 },
             },
             toggle: ToggleStyle {
-                off: shape(
-                    t.well,
-                    t.text_secondary,
-                    t.border_strong,
-                    t.control_radius,
-                    t.type_label,
-                ),
-                on: shape(
-                    accent,
-                    t.on_accent,
-                    t.border_strong,
-                    t.control_radius,
-                    t.type_label,
-                ),
+                off: state(Face::Rest),
+                on: state(Face::On),
                 knob: shape(
                     t.text_primary,
                     best_text(t.text_primary, t),
@@ -458,11 +469,7 @@ impl LookAndFeel {
                 small_size: t.type_numeral,
                 unit_size: t.type_label,
             },
-            lift: ShadowStyle {
-                colour: t.shadow,
-                blur: t.shadow_blur,
-                offset_y: t.shadow_offset_y,
-            },
+            lift,
             // Reduced motion collapses every transition to zero length.
             motion: MotionStyle {
                 fast_ms: if t.reduced_motion {
@@ -477,42 +484,36 @@ impl LookAndFeel {
                 },
             },
             focus_ring: t.focus_ring,
+            focus: RingStyle {
+                colour: t.focus_ring,
+                width: t.focus_border_width,
+                // DESIGN.md: a 2px ring at a 2px offset; the offset follows the ring width.
+                offset: t.focus_border_width,
+            },
+            faces,
             min_target: t.min_target,
             min_pointer_target: t.min_pointer_target,
-            brand: t.brand,
         }
     }
 
-    /// A switch in state `on`: the off track, or the on track filled with the caller's `accent`.
+    /// The face of a control in state `face`; `hue` is the deck colour of an "on" or playing control.
+    pub fn face(&self, face: Face, hue: Colour) -> FaceStyle {
+        self.faces.face(face, hue)
+    }
+
+    /// A toggle in state `on`: the rest face, or the "on" face in the caller's `accent`.
     pub fn toggle(&self, on: bool, accent: Colour) -> ControlStyle {
         if on {
-            ControlStyle {
-                fill: accent,
-                text: self.lit_text,
-                ..self.toggle.on
-            }
+            self.lit_button(accent)
         } else {
             self.toggle.off
         }
     }
 
-    /// The glow around a lit control: none, since nothing glows on the faceplate. Kept so lit
-    /// controls still compile until the control rebuild drops the call sites.
-    pub fn glow(&self, accent: Colour) -> ShadowStyle {
-        ShadowStyle {
-            colour: accent.with_alpha(0.0),
-            blur: 0.0,
-            offset_y: 0.0,
-        }
-    }
-
-    /// A lit button: the caller's accent as fill, with the theme's on-accent text.
+    /// A lit button: the "on" face, the caller's accent tinted over the control with its edge.
     pub fn lit_button(&self, accent: Colour) -> ControlStyle {
-        ControlStyle {
-            fill: accent,
-            text: self.lit_text,
-            ..self.button.idle
-        }
+        self.face(Face::On, accent)
+            .control(self.button.idle.font_size)
     }
 
     /// Every text-bearing control style, named, for contrast and live-switch checks.
@@ -690,67 +691,52 @@ mod tests {
         }
     }
 
-    /// Worst contrast of the visible edge of a control (its fill or its border, whichever stands
-    /// out more) against the card surface it sits on, over the window ground.
-    fn edge_contrast(fill: Colour, border: Colour, t: &ThemeTokens) -> f32 {
-        let ground = over(t.surface_scaled(), t.ground);
-        let body = over(fill, ground);
-        let edge = over(border, body);
-        contrast_ratio(body, ground).max(contrast_ratio(edge, ground))
-    }
-
     #[test]
     fn every_control_is_distinguishable_from_its_background_in_both_themes() {
-        // Both themes are held to WCAG 1.4.11's 3:1 for non-text UI (control outlines use
-        // `border_strong`; `border` is a decorative hairline and is not an outline).
-        for (id, floor) in [("dark", 3.0_f32), ("daylight", 3.0), ("harbour", 3.0)] {
+        // WCAG 1.4.11's 3:1 holds for what identifies a control: the dashed graphic edge of a
+        // disabled one, the knob pointer and the fader cap line on their caps, lit meter segments
+        // on the well, and a text field's outline. The etched line is decorative (DESIGN.md).
+        for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
-            let b = &look.button;
+            let panel = over(t.surface_scaled(), t.ground);
             let mut found: Vec<String> = Vec::new();
-            let mut check = |name: &str, r: f32, min: f32| {
-                if r < min {
-                    found.push(format!("{name} {r:.2} < {min}"));
+            let mut check_at = |name: &str, r: f32, floor: f32| {
+                if r < floor {
+                    found.push(format!("{name} {r:.2} < {floor}"));
                 }
             };
-            let controls = [
-                ("button.idle", b.idle.fill, b.idle.border),
-                ("button.hover", b.hover.fill, b.hover.border),
-                ("button.disabled", b.disabled.fill, b.disabled.border),
-                ("knob.body", look.knob.body.fill, look.knob.body.border),
-                (
-                    "fader.track",
-                    look.fader.track.fill,
-                    look.fader.track.border,
-                ),
-                ("meter.well", look.meter.well, look.meter.border),
-                (
-                    "text_field",
-                    look.text_field.idle.fill,
-                    look.text_field.idle.border,
-                ),
-            ];
-            for (name, fill, border) in controls {
-                check(name, edge_contrast(fill, border, &t), floor);
+            let mut check = |name: &str, r: f32| check_at(name, r, 3.0);
+            let b = &look.button;
+            check(
+                "button.disabled edge",
+                contrast_ratio(b.disabled.border, panel),
+            );
+            let cap = over(look.knob.body.fill, panel);
+            check("knob.pointer", contrast_ratio(look.knob.pointer, cap));
+            let thumb = over(look.fader.thumb.fill, panel);
+            for (i, line) in t.accents.iter().chain([&t.text_primary]).enumerate() {
+                check(&format!("fader.cap line {i}"), contrast_ratio(*line, thumb));
             }
-            // The fader thumb stands out from its track.
-            let ground = over(look.fader.track.fill, over(t.surface_scaled(), t.ground));
-            let cap = over(look.fader.thumb.fill, ground);
-            let edge = over(look.fader.thumb.border, cap);
-            let r = contrast_ratio(cap, ground).max(contrast_ratio(edge, ground));
-            check("fader.thumb", r, floor);
-            // A disabled label is still legible.
-            // (WCAG exempts inactive controls; this only keeps them from vanishing.)
-            check("button.disabled text", worst_contrast(&b.disabled, &t), 1.5);
-            // Meter bars show up against their well.
+            let well = over(look.meter.well, panel);
             for (name, c) in [
                 ("low", look.meter.low),
                 ("mid", look.meter.mid),
+                ("top", look.meter.top),
                 ("high", look.meter.high),
             ] {
-                let ground = over(look.meter.well, over(t.surface_scaled(), t.ground));
-                check(&format!("meter.{name}"), contrast_ratio(c, ground), floor);
+                check(&format!("meter.{name}"), contrast_ratio(c, well));
             }
+            let field = over(look.text_field.idle.fill, panel);
+            let outline = over(look.text_field.idle.border, field);
+            check(
+                "text_field",
+                contrast_ratio(outline, panel).max(contrast_ratio(field, panel)),
+            );
+            // A disabled label is still legible.
+            // (WCAG exempts inactive controls; this only keeps them from vanishing.)
+            let disabled_text = worst_contrast(&b.disabled, &t);
+            check_at("button.disabled text", disabled_text, 1.5);
             assert!(found.is_empty(), "{id}: {found:?}");
         }
     }
@@ -775,15 +761,13 @@ mod tests {
     }
 
     #[test]
-    fn nothing_glows_and_the_lift_is_one_small_drop() {
+    fn the_lift_is_one_small_drop() {
         for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
-            for accent in t.accents.clone() {
-                let g = look.glow(accent);
-                assert!(g.colour.is_transparent() && g.blur == 0.0, "{id}: glow");
-            }
-            // DESIGN.md Elevation: `0 2px 3px` (or `0 3px 5px`).
+            // DESIGN.md Elevation: `0 2px 3px` (or `0 3px 5px` under a fader cap).
+            let cap = look.fader.thumb_drop;
+            assert!(cap.blur <= 5.0 && cap.offset_y <= 3.0, "{id}: cap drop");
             assert!(
                 look.lift.blur > 0.0 && look.lift.blur <= 5.0,
                 "{id}: drop blur"
@@ -795,17 +779,16 @@ mod tests {
     }
 
     #[test]
-    fn brand_is_not_a_deck_accent_and_reads_on_the_ground() {
+    fn the_focus_ring_is_two_px_at_a_two_px_offset_and_not_a_deck_colour() {
         for id in ["dark", "daylight", "harbour"] {
             let t = builtin(id);
+            let ring = LookAndFeel::from_tokens(&t).focus;
+            assert_eq!((ring.width, ring.offset), (2.0, 2.0), "{id}");
             assert!(
-                !t.accents.contains(&t.brand),
-                "{id}: brand reused as accent"
+                !t.accents.contains(&ring.colour),
+                "{id}: ring is a deck hue"
             );
-            assert!(
-                contrast_ratio(t.brand, t.ground) >= 3.0,
-                "{id}: brand unreadable"
-            );
+            assert!(contrast_ratio(ring.colour, t.ground) >= 3.0, "{id}");
         }
         assert_ne!(builtin("dark").accents, builtin("daylight").accents);
     }
@@ -886,7 +869,7 @@ mod tests {
     fn text_on_accent_fills_is_aa() {
         let t = ThemeTokens::builtin_dark();
         for accent in t.accents.iter().chain([
-            &t.brand,
+            &t.playhead,
             &t.cue,
             &t.loop_mark,
             &t.sync_on,
@@ -904,7 +887,7 @@ mod tests {
         let markers: Vec<(&str, Colour)> = vec![
             ("border_strong", t.border_strong),
             ("focus_ring", t.focus_ring),
-            ("brand/playhead", t.brand),
+            ("playhead", t.playhead),
             ("cue", t.cue),
             ("loop_mark", t.loop_mark),
             ("sync_on", t.sync_on),
@@ -1007,17 +990,17 @@ mod tests {
 
     #[test]
     fn knob_arc_colours_derive_from_existing_tokens() {
-        let dark_tokens = builtin("dark");
-        let dark = LookAndFeel::from_tokens(&dark_tokens);
-        assert_eq!(dark.knob.pointer, dark_tokens.text_primary);
-        assert_eq!(dark.knob.kill, dark_tokens.danger);
-        assert_eq!(
-            dark.knob.track,
-            dark_tokens.border_strong.with_multiplied_alpha(0.6)
-        );
-        let day_tokens = builtin("daylight");
-        let day = LookAndFeel::from_tokens(&day_tokens);
-        assert_eq!(day.knob.track, day_tokens.border_strong);
+        for id in ["dark", "daylight"] {
+            let t = builtin(id);
+            let look = LookAndFeel::from_tokens(&t);
+            assert_eq!(look.knob.pointer, t.text_primary);
+            assert_eq!(look.knob.kill, t.danger);
+            assert_eq!(
+                look.knob.track, t.border,
+                "the canvas track is the etched line"
+            );
+            assert_eq!(look.knob.body.fill, t.surface_hover);
+        }
     }
 
     #[test]
@@ -1042,7 +1025,10 @@ mod tests {
             assert!(style.font_size > 0.0, "{name} has no font size");
             assert!(style.radius >= 0.0, "{name} has a negative radius");
         }
-        assert_eq!(look.lit_button(look.accent).fill, look.accent);
+        assert_eq!(
+            look.lit_button(look.accent).fill,
+            tint(t.surface_raised, look.accent, t.deck_tint_alpha)
+        );
     }
 
     #[test]
@@ -1139,12 +1125,14 @@ mod tests {
     fn a_toggle_takes_the_accent_only_when_on() {
         let t = ThemeTokens::builtin_dark();
         let look = LookAndFeel::from_tokens(&t);
-        let accent = Colour::from_argb(0xFF38_BDF8);
+        let accent = t.accent_for(1);
         let on = look.toggle(true, accent);
-        assert_eq!(on.fill, accent);
-        assert_eq!(on.text, look.lit_text);
+        assert_eq!(on.fill, tint(t.surface_raised, accent, t.deck_tint_alpha));
+        assert_eq!(on.border, tint(t.border, accent, t.deck_border_alpha));
+        assert_eq!(on.text, t.text_primary);
         assert_eq!(on.radius, t.control_radius);
         assert_eq!(look.toggle(false, accent), look.toggle.off);
+        assert_eq!(look.toggle.off, look.button.idle);
     }
 
     #[test]
