@@ -8,10 +8,8 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
-fn theme_json(id: &str, backdrop_top: &str, name: &str) -> String {
-    format!(
-        r##"{{ "id": "{id}", "name": "{name}", "colours": {{ "backdropTop": "{backdrop_top}" }} }}"##
-    )
+fn theme_json(id: &str, ground: &str, name: &str) -> String {
+    format!(r##"{{ "id": "{id}", "name": "{name}", "colours": {{ "ground": "{ground}" }} }}"##)
 }
 
 /// A scratch directory under cargo's per-target tmp dir, removed on drop.
@@ -33,8 +31,8 @@ impl Drop for ScopedDir {
     }
 }
 
-fn backdrop_of(reg: &ThemeRegistry, id: &str) -> Colour {
-    reg.find(id).expect("theme present").tokens.backdrop_top
+fn ground_of(reg: &ThemeRegistry, id: &str) -> Colour {
+    reg.find(id).expect("theme present").tokens.ground
 }
 
 #[test]
@@ -44,8 +42,53 @@ fn loads_built_in_dark_and_light() {
     let dark = reg.find(ThemeRegistry::DEFAULT_ID).expect("dark present");
     assert_eq!(dark.source, Source::BuiltIn);
     let light = reg.find("openmixer.daylight").expect("daylight present");
-    assert!(light.tokens.backdrop_top.brightness() > 0.8);
-    assert!(dark.tokens.backdrop_top.brightness() < 0.2);
+    assert!(light.tokens.ground.brightness() > 0.8);
+    assert!(dark.tokens.ground.brightness() < 0.2);
+}
+
+#[test]
+fn built_in_ids_are_stable_and_names_drop_glass_and_frost() {
+    let mut reg = ThemeRegistry::new();
+    reg.load_builtins();
+    let names: Vec<(&str, &str)> = reg
+        .themes()
+        .into_iter()
+        .map(|e| (e.info.id.as_str(), e.info.name.as_str()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("openmixer.dark", "Midnight"),
+            ("openmixer.daylight", "Daylight"),
+            ("openmixer.harbour", "Harbour"),
+        ]
+    );
+}
+
+#[test]
+fn an_e1_user_theme_with_glass_keys_still_loads() {
+    let tmp = ScopedDir::new("e1");
+    let e1 = r##"{ "id": "user.e1", "name": "Old glass",
+        "colours": { "backdropTop": "#FF0B0D12", "backdropBottom": "#FF0B0D12", "glowCool": "#0F00C2FF",
+                     "glowWarm": "#0AFF6B35", "capTop": "#FF2C3446", "capBottom": "#FF161B26",
+                     "recordRed": "#FFFF3B4E", "brand": "#FFFF6B35" },
+        "style": { "glowAlpha": 0.45, "glowRadius": 10 } }"##;
+    fs::write(tmp.0.join("e1.json"), e1).unwrap();
+    let mut reg = ThemeRegistry::new();
+    let load = reg.load_user_directory(&tmp.0);
+    assert_eq!(
+        (load.loaded, load.errors.len()),
+        (1, 0),
+        "{:?}",
+        load.errors
+    );
+    let t = &reg.find("user.e1").expect("loaded").tokens;
+    assert_eq!(
+        t.ground,
+        Colour::from_argb(0xFF0B_0D12),
+        "backdropTop reads as ground"
+    );
+    assert_eq!(t.record_red(), Colour::from_argb(0xFFFF_3B4E));
 }
 
 #[test]
@@ -68,13 +111,13 @@ fn precedence_is_user_over_plugin_over_builtin() {
         .unwrap();
     reg.add_json(&theme_json("x", "#FF000003", "X"), Source::Plugin, "p")
         .unwrap();
-    assert_eq!(backdrop_of(&reg, "x"), Colour::from_argb(0xFF00_0002));
+    assert_eq!(ground_of(&reg, "x"), Colour::from_argb(0xFF00_0002));
     assert_eq!(reg.themes().len(), 1, "one winner per id");
 
     reg.remove_source(Source::User);
-    assert_eq!(backdrop_of(&reg, "x"), Colour::from_argb(0xFF00_0003));
+    assert_eq!(ground_of(&reg, "x"), Colour::from_argb(0xFF00_0003));
     reg.remove_owner("p");
-    assert_eq!(backdrop_of(&reg, "x"), Colour::from_argb(0xFF00_0001));
+    assert_eq!(ground_of(&reg, "x"), Colour::from_argb(0xFF00_0001));
 }
 
 #[test]
@@ -84,11 +127,11 @@ fn later_add_within_a_source_wins() {
         .unwrap();
     reg.add_json(&theme_json("x", "#FF000002", "X"), Source::User, "b.json")
         .unwrap();
-    assert_eq!(backdrop_of(&reg, "x"), Colour::from_argb(0xFF00_0002));
+    assert_eq!(ground_of(&reg, "x"), Colour::from_argb(0xFF00_0002));
     reg.add_json(&theme_json("x", "#FF000003", "X"), Source::User, "a.json")
         .unwrap();
     assert_eq!(
-        backdrop_of(&reg, "x"),
+        ground_of(&reg, "x"),
         Colour::from_argb(0xFF00_0003),
         "same owner replaces itself"
     );
@@ -168,18 +211,15 @@ fn select_switches_the_current_theme_and_bumps_generation() {
     assert!(reg.select("openmixer.daylight"));
     assert!(reg.generation() > before);
     assert_eq!(
-        reg.current().backdrop_top,
-        reg.find("openmixer.daylight").unwrap().tokens.backdrop_top
+        reg.current().ground,
+        reg.find("openmixer.daylight").unwrap().tokens.ground
     );
     assert_eq!(
         reg.current().accent_for(0),
         reg.find("openmixer.daylight").unwrap().tokens.accent_for(0)
     );
     assert!(reg.select(ThemeRegistry::DEFAULT_ID));
-    assert_eq!(
-        reg.current().backdrop_top,
-        ThemeTokens::builtin_dark().backdrop_top
-    );
+    assert_eq!(reg.current().ground, ThemeTokens::builtin_dark().ground);
 }
 
 #[test]
@@ -189,13 +229,10 @@ fn removing_the_active_theme_falls_back_to_default() {
     reg.add_json(&theme_json("temp", "#FF010101", "T"), Source::User, "t")
         .unwrap();
     assert!(reg.select("temp"));
-    assert_eq!(reg.current().backdrop_top, Colour::from_argb(0xFF01_0101));
+    assert_eq!(reg.current().ground, Colour::from_argb(0xFF01_0101));
     reg.remove_owner("t");
     assert_eq!(reg.active_id(), Some(ThemeRegistry::DEFAULT_ID));
-    assert_eq!(
-        reg.current().backdrop_top,
-        ThemeTokens::builtin_dark().backdrop_top
-    );
+    assert_eq!(reg.current().ground, ThemeTokens::builtin_dark().ground);
 }
 
 #[test]
@@ -206,7 +243,7 @@ fn editing_the_active_theme_reapplies_it() {
     assert!(reg.select("live"));
     reg.add_json(&theme_json("live", "#FF020202", "L"), Source::User, "f")
         .unwrap();
-    assert_eq!(reg.current().backdrop_top, Colour::from_argb(0xFF02_0202));
+    assert_eq!(reg.current().ground, Colour::from_argb(0xFF02_0202));
 }
 
 #[test]

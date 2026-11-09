@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn a_selected_row_reads_in_every_theme_at_wcag() {
         for t in themes() {
-            let ground = over(t.well, over(t.surface, t.backdrop_bottom));
+            let ground = over(t.well, over(t.surface, t.ground));
             let fill = over(selected_row_fill(&t), ground);
             assert!(contrast_ratio(t.focus_ring, fill) >= 3.0, "indicator 3:1");
             assert!(

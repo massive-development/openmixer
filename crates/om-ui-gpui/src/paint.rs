@@ -59,8 +59,11 @@ pub fn skin(el: Div, style: &ControlStyle) -> Div {
         .rounded(px(style.radius))
 }
 
-/// Gives `el` a soft shadow (or, with an accent colour and no offset, a glow).
+/// Gives `el` a soft shadow. A transparent style (the retired glow) adds nothing.
 pub fn shadow(el: Div, style: &ShadowStyle) -> Div {
+    if style.colour.is_transparent() {
+        return el;
+    }
     el.shadow(vec![BoxShadow {
         color: paint(style.colour).into(),
         offset: point(px(0.), px(style.offset_y)),

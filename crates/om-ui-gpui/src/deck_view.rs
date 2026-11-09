@@ -852,14 +852,14 @@ pub(crate) fn control_alpha(loaded: bool) -> f32 {
     }
 }
 
-/// What a pad sits on, for contrast: the well over the surface over the backdrop.
+/// What a pad sits on, for contrast: the well over the surface over the ground.
 fn pad_ground(t: &ThemeTokens) -> Colour {
-    over(t.well, over(t.surface, t.backdrop_bottom))
+    over(t.well, over(t.surface, t.ground))
 }
 
 /// A daylight theme has a light surface.
 fn is_light(t: &ThemeTokens) -> bool {
-    relative_luminance(over(t.surface, t.backdrop_bottom)) > 0.5
+    relative_luminance(over(t.surface, t.ground)) > 0.5
 }
 
 /// The cue colour of pad `i` as it is filled: the palette, darkened 12 % on a light theme.

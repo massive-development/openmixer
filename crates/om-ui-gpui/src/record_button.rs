@@ -24,7 +24,7 @@ pub(crate) fn record_button(
     cx: &mut Context<Shell>,
 ) -> Div {
     let bar = RecordBar::new(snapshot, "");
-    let red = paint(t.record_red);
+    let red = paint(t.record_red());
     let mut dot = div()
         .flex_none()
         .w(px(10.))
