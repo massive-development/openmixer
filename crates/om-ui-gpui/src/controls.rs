@@ -9,6 +9,7 @@
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
 use crate::fader_paint::{self, FaderFace, FaderLaw};
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::knob_paint::{
     angle_of, in_kill_zone, knob_geometry, paint_knob, sweep_fraction, value_of_fraction,
     KnobColours, KnobPaintState, KnobRole, POPUP_LIFT,
@@ -23,10 +24,8 @@ use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as
 use gpui_kit::component::Sizable as _;
 use om_ui::geometry::Rect;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::{Colour, ThemeTokens};
+use om_ui::theme::{Colour, ThemeTokens, TypeRole};
 
-/// Smallest text drawn on a control, in px.
-const MIN_TEXT_PX: f32 = 12.0;
 /// A knob cell this tall or taller puts its label under the knob; shorter ones put it beside.
 const LABEL_BELOW_MIN_H: i32 = 48;
 /// Gap between the left edge of a cell and a knob that has its label beside it, px. Unsourced.
@@ -219,14 +218,21 @@ pub fn draggable(el: Div, target: Target, abs: Rect, cx: &mut Context<Shell>) ->
     )
 }
 
-/// A value popup centred above a control `width` px wide, drawn at `top` (negative: above). It has
-/// no pointer handling, so it never takes a press from what lies under it.
-fn popup(t: &ThemeTokens, width: i32, top: f32, text: &str) -> Div {
+/// A value popup centred above a control `width` px wide, drawn at `top` (negative: above): the
+/// control's name, when given, then its value in mono. It has no pointer handling, so it never
+/// takes a press from what lies under it.
+fn popup(t: &ThemeTokens, width: i32, top: f32, name: Option<&str>, value: &str) -> Div {
     let look = LookAndFeel::from_tokens(t);
-    let chip = skin(div().px(px(6.)).py(px(1.)), &look.tooltip)
-        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
-        .whitespace_nowrap()
-        .child(text.to_owned());
+    let mut chip = skin(div().px(px(6.)).py(px(1.)), &look.tooltip)
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .type_role(t, TypeRole::Label)
+        .whitespace_nowrap();
+    if let Some(name) = name {
+        chip = chip.child(name.to_owned());
+    }
+    let chip = chip.child(numeral(t, Numeral::Value, value.to_owned()));
     div()
         .absolute()
         .left(px(0.))
@@ -299,7 +305,7 @@ pub fn slider_with_popup(
     let track = skin(place(rect), &look.fader.track);
     let mut track = track.child(skin(thumb, &look.fader.thumb));
     if let Some(text) = popup_text {
-        track = track.child(popup(t, rect.w, -POPUP_LIFT, text));
+        track = track.child(popup(t, rect.w, -POPUP_LIFT, None, text));
     }
     draggable(track, target, abs, cx)
 }
@@ -396,7 +402,7 @@ pub struct KnobLook {
 
 /// The caption line under a knob whose label sits below it, px.
 fn label_line_height(t: &ThemeTokens) -> f32 {
-    (t.type_caption.max(MIN_TEXT_PX) + 2.0).ceil()
+    (t.type_label * TypeRole::Label.line_height()).ceil()
 }
 
 /// A rotary knob with the default look. See [`knob_face_with`].
@@ -465,7 +471,7 @@ pub fn knob_face_with(
     .size_full();
 
     let mut outer = place(rect)
-        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(
             look.knob
                 .label
@@ -570,12 +576,9 @@ pub fn knob_face_with(
     };
     outer = outer.child(hit);
     if face.active && !knob_look.disabled {
-        let text = if face.label.is_empty() {
-            face.readout.to_owned()
-        } else {
-            format!("{} {}", face.label, face.readout)
-        };
-        outer = outer.child(popup(t, rect.w, geom.popup_top(rect.y as f32), &text));
+        let name = (!face.label.is_empty()).then_some(face.label);
+        let top = geom.popup_top(rect.y as f32);
+        outer = outer.child(popup(t, rect.w, top, name, face.readout));
     }
     outer
 }
@@ -606,13 +609,23 @@ pub fn stereo_meter(
     meter_paint::segmented_meter(t, rect, labels, bars, cx, on_click)
 }
 
-/// A text caption at `rect` (parent coordinates). 12 px at least.
+/// A text caption at `rect` (parent coordinates), in the label tier.
 pub fn caption(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
     let style = LookAndFeel::from_tokens(t).panel_caption;
     place(rect)
-        .text_size(px(style.font_size.max(MIN_TEXT_PX)))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(style.text))
         .child(text.to_owned())
+}
+
+/// A number caption at `rect` (parent coordinates): [`caption`] for a value, in mono.
+pub fn value_caption(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
+    let style = LookAndFeel::from_tokens(t).panel_caption;
+    place(rect)
+        .text_color(paint(style.text))
+        .whitespace_nowrap()
+        .overflow_hidden()
+        .child(numeral(t, Numeral::Value, text.to_owned()))
 }
 
 /// Text centred in `rect`, for a label that rides on another control (the end marks of the
@@ -623,9 +636,19 @@ pub fn mark(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(MIN_TEXT_PX))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(t.text_secondary))
         .child(text.to_owned())
+}
+
+/// [`mark`] for a value (a meter's peak readout), in mono.
+pub fn value_mark(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
+    place(rect)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(paint(t.text_secondary))
+        .child(numeral(t, Numeral::Value, text.to_owned()))
 }
 
 /// Releases the drag when the pointer goes up anywhere in the window.

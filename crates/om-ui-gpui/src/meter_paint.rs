@@ -11,6 +11,7 @@
 
 use crate::app::Shell;
 use crate::controls::BarState;
+use crate::font::{numeral, Numeral};
 use crate::paint::{border, paint, place};
 use gpui::{canvas, fill, point, prelude::*, px, size, Bounds, Context, Div, MouseButton};
 use gpui::{MouseDownEvent, Rgba};
@@ -21,8 +22,6 @@ use om_ui::meter::{
 use om_ui::style::LookAndFeel;
 use om_ui::theme::ThemeTokens;
 
-/// Smallest text drawn on a control, in px.
-const MIN_TEXT_PX: f32 = 12.0;
 /// Static labels for [`DB_TICKS`], so no label is formatted per frame.
 const TICK_LABELS: [&str; 5] = ["0", "-6", "-12", "-24", "-48"];
 /// Tolerance when comparing a segment's dB with a zone threshold, so a boundary that lands exactly
@@ -464,10 +463,9 @@ fn meter_with_face(
             place(mark.rect)
                 .flex()
                 .justify_end()
-                .text_size(px(MIN_TEXT_PX))
-                .line_height(px(12.))
+                .items_center()
                 .text_color(paint(t.text_secondary))
-                .child(mark.text),
+                .child(numeral(t, Numeral::Value, mark.text)),
         );
     }
     for side in &plan.sides {
@@ -510,10 +508,9 @@ fn meter_with_face(
             place(r)
                 .flex()
                 .justify_center()
-                .text_size(px(MIN_TEXT_PX))
-                .line_height(px(12.))
+                .items_center()
                 .text_color(paint(t.text_secondary))
-                .child(text),
+                .child(numeral(t, Numeral::Value, text)),
         );
     }
     el.on_mouse_down(

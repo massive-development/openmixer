@@ -7,19 +7,20 @@
 
 use crate::app::Shell;
 use crate::controls::{
-    button, caption, knob_face_with, mark, slider_with_popup, stereo_meter, tip_overlay, BarState,
-    KnobFace, KnobLook,
+    button, caption, knob_face_with, mark, slider_with_popup, stereo_meter, tip_overlay,
+    value_caption, value_mark, BarState, KnobFace, KnobLook,
 };
 use crate::drag::Target;
+use crate::font::TypeExt as _;
 use crate::knob_paint::KnobRole;
 use crate::loudness_paint::{loudness_panel, loudness_toggle};
 use crate::paint::{paint, place};
-use gpui::{prelude::*, px, Context, Div, FontWeight};
+use gpui::{prelude::*, px, Context, Div};
 use om_ui::control::{Knob, Readout};
 use om_ui::geometry::Rect;
 use om_ui::labels::channel_labels;
 use om_ui::meter::{MeterBar, MeterScale};
-use om_ui::theme::Colour;
+use om_ui::theme::{Colour, TypeRole};
 use om_ui::widgets::channel::{channel_letter, ChannelStrip, ASSIGN_LABELS};
 use om_ui::widgets::crossfader::{CrossfaderSection, CURVE_LABELS, CURVE_TIPS};
 use om_ui::widgets::cue::CueSection;
@@ -106,8 +107,7 @@ fn channel(
         place(lay.title)
             .flex()
             .items_center()
-            .text_size(px(t.type_label))
-            .font_weight(FontWeight::BOLD)
+            .type_role(t, TypeRole::Label)
             .text_color(paint(accent))
             .child(channel_letter(ch).to_string()),
     );
@@ -302,7 +302,7 @@ fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> V
             meter.left.click();
             meter.right.click();
         }),
-        mark(t, lay.readout, &peak_text),
+        value_mark(t, lay.readout, &peak_text),
     ]
 }
 
@@ -462,7 +462,7 @@ pub(crate) fn fx_page(
             ));
         }
     }
-    out.push(caption(t, lay.beat, fx.beat_label()));
+    out.push(value_caption(t, lay.beat, fx.beat_label()));
     out
 }
 

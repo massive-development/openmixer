@@ -11,6 +11,7 @@
 use crate::app::Shell;
 use crate::controls::draggable;
 use crate::drag::Target;
+use crate::font::{numeral, Numeral};
 use crate::paint::{paint, place, skin};
 use gpui::{div, prelude::*, px, Context, Div};
 use om_ui::format;
@@ -19,7 +20,7 @@ use om_ui::meter::LABEL_GUTTER;
 use om_ui::style::LookAndFeel;
 use om_ui::theme::{Colour, ThemeTokens};
 
-/// Smallest text drawn on a control, in px.
+/// Smallest box (px) a fader label is given; the dB scale text itself is the 10 px scale tier.
 pub const MIN_TEXT_PX: f32 = 12.0;
 /// Ticks closer than this (px along the travel) are dropped, loudest kept. The unity tick is
 /// always kept. Same idea as `om_ui::meter::MIN_MARK_SPACING`, with the plan's 12 px.
@@ -503,14 +504,14 @@ pub fn fader(
         } else {
             t.text_secondary
         };
+        // The dB scale: the one text below the label size (DESIGN.md, 10 px mono).
         root = root.child(
             place(label.rect)
                 .flex()
                 .justify_end()
-                .text_size(px(MIN_TEXT_PX))
-                .line_height(px(12.))
+                .items_center()
                 .text_color(paint(colour))
-                .child(label.text),
+                .child(numeral(t, Numeral::Scale, label.text)),
         );
     }
     if let Some(notch) = plan.notch {
@@ -672,9 +673,8 @@ fn drag_abs(abs: Rect, local: Rect) -> Rect {
 fn popup_chip(t: &ThemeTokens, width: i32, text: &str) -> Div {
     let look = LookAndFeel::from_tokens(t);
     let chip = skin(div().px(px(6.)).py(px(1.)), &look.tooltip)
-        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
         .whitespace_nowrap()
-        .child(text.to_owned());
+        .child(numeral(t, Numeral::Value, text.to_owned()));
     div()
         .absolute()
         .left(px(0.))

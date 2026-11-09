@@ -9,7 +9,7 @@ use std::path::Path;
 
 const MAX_ACCENTS: usize = 8;
 const MAX_SPACING: i64 = 64;
-const MIN_TYPE: f32 = 6.0;
+const MIN_SCALE_TYPE: f32 = 10.0;
 const MAX_TYPE: f32 = 64.0;
 const MAX_RADIUS: f32 = 48.0;
 const MAX_PX: f32 = 400.0;
@@ -98,18 +98,18 @@ mod radii_keys {
     }
 }
 
+// The floors are DESIGN.md's rules: display family 21, prose 12, words 11, the dB scale 10.
 mod type_keys {
     use super::*;
+    use crate::theme::{MIN_DISPLAY_SIZE, MIN_LABEL_SIZE, MIN_PROSE_SIZE};
     float_keys! {
-        "small" => type_small: MIN_TYPE, MAX_TYPE;
-        "caption" => type_caption: MIN_TYPE, MAX_TYPE;
-        "body" => type_body: MIN_TYPE, MAX_TYPE;
-        "label" => type_label: MIN_TYPE, MAX_TYPE;
-        "title" => type_title: MIN_TYPE, MAX_TYPE;
-        "heading" => type_heading: MIN_TYPE, MAX_TYPE;
-        "mono" => type_mono: MIN_TYPE, MAX_TYPE;
-        "readout" => type_readout: MIN_TYPE, MAX_TYPE;
-        "readoutSmall" => type_readout_small: MIN_TYPE, MAX_TYPE;
+        "display" => type_display: MIN_DISPLAY_SIZE, MAX_TYPE;
+        "headline" => type_headline: MIN_DISPLAY_SIZE, MAX_TYPE;
+        "body" => type_body: MIN_PROSE_SIZE, MAX_TYPE;
+        "label" => type_label: MIN_LABEL_SIZE, MAX_TYPE;
+        "numeral" => type_numeral: MIN_LABEL_SIZE, MAX_TYPE;
+        "numeralLarge" => type_numeral_large: MIN_LABEL_SIZE, MAX_TYPE;
+        "scale" => type_scale: MIN_SCALE_TYPE, MAX_TYPE;
     }
 }
 
@@ -461,7 +461,10 @@ pub fn parse_theme_file(path: &Path) -> Result<ParsedTheme, ThemeError> {
 
 const MAX_FONT_FAMILY_LEN: usize = 64;
 
-/// `font`: `family` (non-empty string) and `tabularNumerals` (bool).
+const FONT_KEYS: [&str; 5] = ["display", "body", "mono", "family", "tabularNumerals"];
+
+/// `font`: `display`, `body` and `mono` (family names), and `tabularNumerals` (bool). The older
+/// single `family` is read as `body` when `body` is absent.
 fn read_font(
     section: Option<&Map<String, Value>>,
     warnings: &mut Vec<String>,
@@ -470,26 +473,43 @@ fn read_font(
     let Some(section) = section else {
         return Ok(());
     };
-    if let Some(value) = section.get("family") {
-        match value.as_str().map(str::trim) {
-            Some(name) if !name.is_empty() && name.len() <= MAX_FONT_FAMILY_LEN => {
-                t.font_family = name.to_owned();
-            }
-            _ => {
-                return Err(field(
-                    "font.family",
-                    "expected a non-empty font family name",
-                ))
-            }
+    for key in ["display", "body", "mono"] {
+        if let Some(value) = section.get(key) {
+            *family_slot(t, key) = family_name(key, value)?;
         }
+    }
+    if let Some(value) = section.get("family") {
+        let name = family_name("family", value)?;
+        if !section.contains_key("body") {
+            t.font_body = name;
+        }
+        warnings.push("renamed key 'font.family' read as 'font.body'".to_owned());
     }
     if let Some(value) = section.get("tabularNumerals") {
         t.tabular_numerals = value
             .as_bool()
             .ok_or_else(|| field("font.tabularNumerals", "expected true or false"))?;
     }
-    warn_unknown(section, &["family", "tabularNumerals"], "font.", warnings);
+    warn_unknown(section, &FONT_KEYS, "font.", warnings);
     Ok(())
+}
+
+fn family_slot<'a>(t: &'a mut ThemeTokens, key: &str) -> &'a mut String {
+    match key {
+        "display" => &mut t.font_display,
+        "mono" => &mut t.font_mono,
+        _ => &mut t.font_body,
+    }
+}
+
+fn family_name(key: &str, value: &Value) -> Result<String, ThemeError> {
+    match value.as_str().map(str::trim) {
+        Some(name) if !name.is_empty() && name.len() <= MAX_FONT_FAMILY_LEN => Ok(name.to_owned()),
+        _ => Err(field(
+            format!("font.{key}"),
+            "expected a non-empty font family name",
+        )),
+    }
 }
 
 /// `accessibility`: `reducedMotion` (bool).
@@ -852,8 +872,19 @@ fn read_floats(
 /// accepted without a warning so those files keep loading quietly.
 const RETIRED_KEYS: [(&str, &str); 1] = [("mixer", "meterReleaseSeconds")];
 
-/// Retired glow keys: accepted so E1 theme files still load, with a warning that they do nothing.
-const WARNED_RETIRED_KEYS: [(&str, &str); 2] = [("style", "glowAlpha"), ("style", "glowRadius")];
+/// Retired glow keys and the E1 type scale: accepted so older theme files still load, with a
+/// warning that they do nothing (the faceplate tiers take their defaults).
+const WARNED_RETIRED_KEYS: [(&str, &str); 9] = [
+    ("style", "glowAlpha"),
+    ("style", "glowRadius"),
+    ("type", "small"),
+    ("type", "caption"),
+    ("type", "title"),
+    ("type", "heading"),
+    ("type", "mono"),
+    ("type", "readout"),
+    ("type", "readoutSmall"),
+];
 
 #[cfg(test)]
 mod tests {
@@ -889,10 +920,10 @@ mod tests {
     #[test]
     fn brand_tokens_parse_and_are_range_checked() {
         let ok = r##"{"id":"t.one","name":"T","colours":{"brand":"#FF112233"},
-            "type":{"readout":30},"edge":{"line":0.5,"highlight":0.1}}"##;
+            "type":{"numeralLarge":30},"edge":{"line":0.5,"highlight":0.1}}"##;
         let t = parse_theme(ok).expect("parses").tokens;
         assert_eq!(t.brand, Colour::from_argb(0xFF11_2233));
-        assert_eq!(t.type_readout, 30.0);
+        assert_eq!(t.type_numeral_large, 30.0);
         assert_eq!((t.edge_line_alpha, t.edge_highlight_alpha), (0.5, 0.1));
         // A file that leaves them out inherits the defaults.
         let bare = parse_theme(r#"{"id":"t.two","name":"T"}"#)
@@ -951,15 +982,91 @@ mod tests {
 
     #[test]
     fn font_and_accessibility_sections_parse_and_validate() {
-        let ok = r#"{"id":"t.f","font":{"family":"Plex Sans","tabularNumerals":false},
-            "accessibility":{"reducedMotion":true}}"#;
-        let t = parse_theme(ok).expect("parses").tokens;
-        assert_eq!(t.font_family, "Plex Sans");
+        let ok = r#"{"id":"t.f","font":{"display":"Plex Serif","body":"Plex Sans",
+            "mono":"Plex Mono","tabularNumerals":false},"accessibility":{"reducedMotion":true}}"#;
+        let parsed = parse_theme(ok).expect("parses");
+        let t = parsed.tokens;
+        assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+        assert_eq!(
+            (
+                t.font_display.as_str(),
+                t.font_body.as_str(),
+                t.font_mono.as_str()
+            ),
+            ("Plex Serif", "Plex Sans", "Plex Mono")
+        );
         assert!(!t.tabular_numerals && t.reduced_motion);
         let bare = parse_theme(r#"{"id":"t.g"}"#).expect("parses").tokens;
-        assert_eq!(bare.font_family, "Inter");
+        assert_eq!(
+            (
+                bare.font_display.as_str(),
+                bare.font_body.as_str(),
+                bare.font_mono.as_str()
+            ),
+            ("Sansation", "Source Sans 3", "Ubuntu Mono")
+        );
         assert!(bare.tabular_numerals && !bare.reduced_motion);
-        assert!(parse_theme(r#"{"id":"t.h","font":{"family":""}}"#).is_err());
-        assert!(parse_theme(r#"{"id":"t.i","accessibility":{"reducedMotion":1}}"#).is_err());
+        for bad in [
+            r#"{"id":"t.h","font":{"family":""}}"#,
+            r#"{"id":"t.h","font":{"mono":7}}"#,
+            r#"{"id":"t.h","font":{"display":" "}}"#,
+            r#"{"id":"t.i","accessibility":{"reducedMotion":1}}"#,
+        ] {
+            assert!(parse_theme(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_older_font_family_key_is_read_as_the_body_family() {
+        let old = parse_theme(r#"{"id":"t.f","font":{"family":"Inter"}}"#).expect("parses");
+        assert_eq!(old.tokens.font_body, "Inter");
+        assert_eq!(
+            old.tokens.font_mono, "Ubuntu Mono",
+            "the other slots keep the default"
+        );
+        assert_eq!(old.warnings.len(), 1, "{:?}", old.warnings);
+        let both = r#"{"id":"t.f","font":{"family":"Inter","body":"Plex Sans"}}"#;
+        assert_eq!(
+            parse_theme(both).expect("parses").tokens.font_body,
+            "Plex Sans"
+        );
+    }
+
+    #[test]
+    fn the_e1_type_scale_still_loads_with_a_warning_per_retired_key() {
+        let old = r#"{"id":"t.e1","type":{"small":12,"caption":12,"body":14,"label":16,"title":20,
+            "heading":20,"mono":16,"readout":40,"readoutSmall":28}}"#;
+        let parsed = parse_theme(old).expect("an E1 type section still loads");
+        assert_eq!(parsed.warnings.len(), 7, "{:?}", parsed.warnings);
+        assert!(parsed
+            .warnings
+            .iter()
+            .all(|w| w.starts_with("retired key 'type.")));
+        let t = parsed.tokens;
+        assert_eq!(
+            (t.type_body, t.type_label),
+            (14.0, 16.0),
+            "kept keys still apply"
+        );
+        assert_eq!(
+            t.type_numeral_large, 21.0,
+            "retired keys leave the tier at its default"
+        );
+    }
+
+    #[test]
+    fn type_sizes_below_the_design_floors_are_rejected() {
+        for bad in [
+            r#"{"id":"t.t","type":{"headline":20}}"#,
+            r#"{"id":"t.t","type":{"display":18}}"#,
+            r#"{"id":"t.t","type":{"body":11}}"#,
+            r#"{"id":"t.t","type":{"label":10}}"#,
+            r#"{"id":"t.t","type":{"numeral":10}}"#,
+            r#"{"id":"t.t","type":{"scale":9}}"#,
+        ] {
+            assert!(parse_theme(bad).is_err(), "{bad}");
+        }
+        let floor = r#"{"id":"t.t","type":{"headline":21,"body":12,"label":11,"scale":10}}"#;
+        assert!(parse_theme(floor).is_ok());
     }
 }

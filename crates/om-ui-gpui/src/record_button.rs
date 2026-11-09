@@ -3,12 +3,13 @@
 //! the key both use). While a text field or the settings card takes typed keys, `r` is a letter.
 
 use crate::app::Shell;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::paint::{paint, place};
 use gpui::{div, prelude::*, px, Context, Div, Focusable as _, MouseButton, MouseDownEvent};
 use om_core::{ParameterTarget, RecordSnapshot};
 use om_ui::geometry::Rect;
 use om_ui::record_bar::RecordBar;
-use om_ui::theme::ThemeTokens;
+use om_ui::theme::{ThemeTokens, TypeRole};
 
 /// Width of each channel's peak track in the button.
 const PEAK_WIDTH: f32 = 36.0;
@@ -42,36 +43,35 @@ pub(crate) fn record_button(
         .px(px(8.))
         .size_full()
         .overflow_hidden()
-        .text_size(px(t.type_small))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(t.text_primary))
-        .child(dot)
-        .child(
-            div()
-                .flex_none()
-                .text_color(paint(if bar.failed {
-                    t.meter_high
-                } else {
-                    t.text_primary
-                }))
-                .child(bar.label.clone()),
-        );
+        .child(dot);
+    // While recording the label is the elapsed time.
+    let label = if bar.recording {
+        numeral(t, Numeral::Value, bar.label.clone())
+    } else {
+        div().child(bar.label.clone())
+    };
+    row = row.child(label.flex_none().text_color(paint(if bar.failed {
+        t.meter_high
+    } else {
+        t.text_primary
+    })));
     if bar.recording {
         row = row.child(
-            div()
+            numeral(t, Numeral::Value, bar.size.clone())
                 .flex_none()
-                .text_color(paint(t.text_secondary))
-                .child(bar.size.clone()),
+                .text_color(paint(t.text_secondary)),
         );
     }
     if !bar.warning.is_empty() {
         row = row.child(
-            div()
+            numeral(t, Numeral::Value, format!("!{}", snapshot.dropped_frames))
                 .flex_none()
                 .px(px(4.))
                 .rounded(px(3.))
                 .bg(paint(t.meter_mid))
-                .text_color(paint(t.on_accent))
-                .child(format!("!{}", snapshot.dropped_frames)),
+                .text_color(paint(t.on_accent)),
         );
     }
     if bar.recording {

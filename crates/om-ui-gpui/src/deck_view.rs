@@ -8,6 +8,7 @@ use crate::app::Shell;
 use crate::controls::slider;
 use crate::drag::Target;
 use crate::fader_paint;
+use crate::font::{numeral, Numeral};
 use crate::library_view::TrackDragPayload;
 use crate::paint::{paint, place, shadow, skin};
 use crate::platter_paint::{
@@ -28,7 +29,7 @@ use om_ui::theme::Colour;
 use om_ui::theme::ThemeTokens;
 use om_ui::waveform::{
     cue_flags, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH, CUE_LINE_WIDTH,
-    CUE_NUMBER_SIZE, CUE_STACK_STEP, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
+    CUE_STACK_STEP, CUE_TEXT_COLOUR, GRID_COLOUR, LOOP_COLOUR,
 };
 use om_ui::widgets::deck::{
     deck_controls_layout_for, deck_layout_for, tab_rects, DeckLayout, PadMode, CONTROL_GAP,
@@ -36,8 +37,7 @@ use om_ui::widgets::deck::{
 };
 use om_ui::widgets::deck_header::deck_letter;
 use om_ui::widgets::deck_header::{
-    header_metrics, ARTIST_SIZE, BADGE_SIZE, ELAPSED_SIZE, MIN_TEXT_SIZE, ON_BRIGHT, SYNC_ON,
-    TITLE_SIZE, WARN_RED,
+    ARTIST_SIZE, BADGE_SIZE, MIN_TEXT_SIZE, ON_BRIGHT, SYNC_ON, TITLE_SIZE, WARN_RED,
 };
 use om_ui::widgets::hotcues::{HotcuePads, Modifiers};
 use om_ui::widgets::loops::LoopFrame;
@@ -139,6 +139,18 @@ fn tile(
     t: &ThemeTokens,
     rect: Rect,
     label: &str,
+    look: (f32, Tile),
+    cx: &mut Context<Shell>,
+    on_press: impl Fn(&mut Shell) + 'static,
+) -> Div {
+    tile_with(t, rect, div().child(label.to_owned()), look, cx, on_press)
+}
+
+/// [`tile`] around any content, such as a [`numeral`].
+fn tile_with(
+    t: &ThemeTokens,
+    rect: Rect,
+    content: Div,
     (size, state): (f32, Tile),
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell) + 'static,
@@ -166,7 +178,7 @@ fn tile(
         }
         Tile::Disabled => el.opacity(DISABLED_ALPHA),
     };
-    el.child(label.to_owned()).on_mouse_down(
+    el.child(content).on_mouse_down(
         MouseButton::Left,
         cx.listener(move |this, _: &MouseDownEvent, _, cx| {
             on_press(this);
@@ -192,15 +204,14 @@ fn chip(label: &str, fill: om_ui::theme::Colour, text: om_ui::theme::Colour) -> 
 }
 
 /// The deck header. Left to right: the deck letter badge, title and artist over the state chips
-/// (SYNC, MASTER, LOOP size, each shown only while on), then the large numerals: effective BPM,
-/// key (one notation), and the time remaining, which is the biggest number and turns red under 30
-/// seconds, with the elapsed time under it. Titles never wrap; they end in an ellipsis. Clipped to
-/// its rectangle so it never runs into the overview strip.
+/// (SYNC, MASTER, LOOP size, each shown only while on), then the readouts in mono: effective BPM,
+/// key (one notation), and the time remaining, which turns red under 30 seconds, with the elapsed
+/// time under it. Titles never wrap; they end in an ellipsis. Clipped to its rectangle so it never
+/// runs into the overview strip.
 pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
     let t = &shell.theme;
     let look = LookAndFeel::from_tokens(t);
     let text = shell.decks[index].header.text();
-    let metrics = header_metrics(l.header.w);
     let accent = t.accent_for(index as i32);
     let remaining_colour = if text.remaining_warn {
         WARN_RED
@@ -219,14 +230,6 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
         chips = chips.child(chip(&format!("LOOP {len}"), accent, t.on_accent));
     }
 
-    let numeral = |value: String, size: f32, colour| {
-        div()
-            .text_size(px(size))
-            .line_height(relative(1.0))
-            .font_weight(gpui::FontWeight::BOLD)
-            .text_color(paint(colour))
-            .child(value)
-    };
     let caption = |label: &str| {
         div()
             .text_size(px(MIN_TEXT_SIZE))
@@ -282,13 +285,13 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
                 .flex_col()
                 .items_center()
                 .gap(px(2.))
-                .child(numeral(text.bpm, metrics.number, look.readout.value))
+                .child(numeral(t, Numeral::Readout, text.bpm).text_color(paint(look.readout.value)))
                 .child(caption("BPM")),
         )
         .child(
-            div()
-                .flex_none()
-                .child(numeral(text.key, metrics.number, look.readout.value)),
+            div().flex_none().child(
+                numeral(t, Numeral::Readout, text.key).text_color(paint(look.readout.value)),
+            ),
         )
         .child(
             div()
@@ -297,13 +300,12 @@ pub(crate) fn header(shell: &Shell, index: usize, l: &DeckLayout) -> Div {
                 .flex_col()
                 .items_end()
                 .gap(px(2.))
-                .child(numeral(text.remaining, metrics.time, remaining_colour))
                 .child(
-                    div()
-                        .text_size(px(ELAPSED_SIZE))
-                        .line_height(relative(1.0))
-                        .text_color(paint(look.readout.unit))
-                        .child(text.elapsed),
+                    numeral(t, Numeral::Readout, text.remaining)
+                        .text_color(paint(remaining_colour)),
+                )
+                .child(
+                    numeral(t, Numeral::Value, text.elapsed).text_color(paint(look.readout.unit)),
                 ),
         )
 }
@@ -484,9 +486,8 @@ fn stems(
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(MIN_TEXT_SIZE))
                     .text_color(paint(t.text_primary))
-                    .child(format!("{:+.2}", state.filter)),
+                    .child(numeral(t, Numeral::Value, format!("{:+.2}", state.filter))),
             );
         }
         parts.push(filter);
@@ -562,16 +563,13 @@ pub(crate) fn overview(
         }))
 }
 
-/// A text label placed inside a strip.
-fn label(x: f32, y: f32, size: f32, colour: gpui::Rgba, text: String) -> Div {
-    div()
+/// A number placed inside a strip (a bar number, a loop length).
+fn strip_number(t: &ThemeTokens, x: f32, y: f32, colour: gpui::Rgba, text: String) -> Div {
+    numeral(t, Numeral::Value, text)
         .absolute()
         .left(px(x))
         .top(px(y))
-        .text_size(px(size))
-        .line_height(px(size + 2.0))
         .text_color(colour)
-        .child(text)
 }
 
 pub(crate) fn zoom(
@@ -618,10 +616,10 @@ pub(crate) fn zoom(
     let number_colour = with_alpha(GRID_COLOUR, 0.85);
     for line in &grid {
         if let Some(n) = line.bar_number {
-            el = el.child(label(
+            el = el.child(strip_number(
+                t,
                 line.x as f32 + 4.0,
                 height - BAR_NUMBER_SIZE - 6.0,
-                BAR_NUMBER_SIZE,
                 number_colour,
                 n.to_string(),
             ));
@@ -631,10 +629,10 @@ pub(crate) fn zoom(
     if let Some(region) = &loop_region {
         if !region.label.is_empty() {
             let x = (region.x0 as f32).max(0.0) + 6.0;
-            el = el.child(label(
+            el = el.child(strip_number(
+                t,
                 x,
                 height - BAR_NUMBER_SIZE - 6.0,
-                BAR_NUMBER_SIZE,
                 with_alpha(LOOP_COLOUR, region.edge_alpha()),
                 region.label.clone(),
             ));
@@ -666,8 +664,7 @@ pub(crate) fn zoom(
                     .rounded_br(px(3.))
                     .bg(paint(flag.colour))
                     .text_color(paint(CUE_TEXT_COLOUR))
-                    .text_size(px(CUE_NUMBER_SIZE))
-                    .child(flag.label.clone()),
+                    .child(numeral(t, Numeral::Value, flag.label.clone())),
             );
     }
 
@@ -713,8 +710,7 @@ fn pitch(shell: &Shell, index: usize, card: Rect, l: &DeckLayout, cx: &mut Conte
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(t.type_label))
-                .child(deck.pitch.readout()),
+                .child(numeral(t, Numeral::Value, deck.pitch.readout())),
         )
         .child(fader_paint::fader(
             t,
@@ -1305,11 +1301,11 @@ fn loops(
         Tile::Idle
     };
     place(Rect::sized(card.w, card.h))
-        .child(tile(
+        .child(tile_with(
             t,
             halve,
-            "\u{f7}2",
-            (t.type_title, step_state(view.halve_enabled)),
+            numeral(t, Numeral::Readout, "\u{f7}2"),
+            (MIN_TEXT_SIZE, step_state(view.halve_enabled)),
             cx,
             move |this| {
                 this.decks[index].loops.halve();
@@ -1325,16 +1321,14 @@ fn loops(
                 .border_1()
                 .border_color(paint(t.border))
                 .text_color(paint(t.text_primary))
-                .text_size(px(t.type_body.max(MIN_TEXT_SIZE)))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
                 .opacity(control_alpha(snap.loaded))
-                .child(view.label.clone()),
+                .child(numeral(t, Numeral::Value, view.label.clone())),
         )
-        .child(tile(
+        .child(tile_with(
             t,
             double,
-            "\u{d7}2",
-            (t.type_title, step_state(view.double_enabled)),
+            numeral(t, Numeral::Readout, "\u{d7}2"),
+            (MIN_TEXT_SIZE, step_state(view.double_enabled)),
             cx,
             move |this| {
                 this.decks[index].loops.double();

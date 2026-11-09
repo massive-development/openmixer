@@ -5,10 +5,12 @@
 
 use crate::app::Shell;
 use crate::controls::button;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::paint::{paint, place};
 use gpui::{div, prelude::*, px, Context, Div};
 use om_ui::header_layout::{HeaderNeeds, HeaderRects};
 use om_ui::labels::latency_text;
+use om_ui::theme::TypeRole;
 use om_ui::widgets::deck::format_bpm;
 
 impl Shell {
@@ -50,7 +52,7 @@ impl Shell {
                 .flex()
                 .items_center()
                 .pl(px(6.))
-                .text_size(px(t.type_body))
+                .type_role(&t, TypeRole::Body)
                 .text_color(paint(t.brand))
                 .child("OPENMIXER"),
         );
@@ -76,14 +78,11 @@ impl Shell {
                     .justify_center()
                     .gap(px(6.))
                     .child(
-                        div()
-                            .text_size(px(t.type_readout_small))
-                            .text_color(paint(t.brand))
-                            .child(format_bpm(bpm)),
+                        numeral(&t, Numeral::Readout, format_bpm(bpm)).text_color(paint(t.brand)),
                     )
                     .child(
                         div()
-                            .text_size(px(t.type_caption))
+                            .type_role(&t, TypeRole::Label)
                             .text_color(paint(t.text_muted))
                             .child("BPM"),
                     ),
@@ -103,9 +102,8 @@ impl Shell {
                 .items_center()
                 .justify_center()
                 .whitespace_nowrap()
-                .text_size(px(t.type_small))
                 .text_color(paint(if healthy { t.text_secondary } else { t.warning }))
-                .child(text),
+                .child(numeral(&t, Numeral::Value, text)),
         );
 
         if let Some(rect) = rects.record {

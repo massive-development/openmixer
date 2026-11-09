@@ -6,9 +6,11 @@
 use super::chips::*;
 use super::*;
 use crate::app::Shell;
+use crate::font::TypeExt as _;
 use om_core::jobs::JobHandle;
 use om_ui::settings::{format_gib, SettingsResult, StemsSettingsPage};
 use om_ui::stems::{ModelState, StemJob};
+use om_ui::theme::TypeRole;
 
 /// Stands in for the stems host when the library did not open: every action says so.
 pub(super) struct NoStems;
@@ -137,7 +139,7 @@ fn licence_block(t: &ThemeTokens, name: &str, text: &str) -> Div {
         .flex_col()
         .p(px(8.))
         .text_color(paint(t.text_secondary))
-        .text_size(px(t.type_caption))
+        .type_role(t, TypeRole::Body)
         .child(
             div()
                 .text_color(paint(t.text_primary))

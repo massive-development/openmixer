@@ -6,6 +6,7 @@ use crate::controls::release_on;
 use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControls, DeviceStatus};
 use crate::deck_view::deck_card;
 use crate::drag::Drag;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::library::{LibraryPanel, SharedHub};
 use crate::library_view::{library_card, LibraryTable};
 use crate::mixer_view::{channel_card, mixer_card};
@@ -37,7 +38,7 @@ use om_ui::meter::meter_params;
 use om_ui::sample_bank::SampleBank;
 use om_ui::sampler_binding::SamplerBinding;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::{ThemeRegistry, ThemeTokens};
+use om_ui::theme::{ThemeRegistry, ThemeTokens, TypeRole};
 use om_ui::widgets::deck::{DeckWidget, TrackInfo, WaveformMeta};
 use om_ui::widgets::loudness::LoudnessPanel;
 use om_ui::widgets::mixer::MixerPanel;
@@ -448,7 +449,7 @@ impl Shell {
             .flex()
             .flex_col()
             .gap(px(2.))
-            .text_size(px(t.type_caption))
+            .type_role(t, TypeRole::Label)
             .child(decks_section(t, &self.deck_controls, &playing, cx));
         for (label, id, value) in lines {
             let row = div()
@@ -466,7 +467,7 @@ impl Shell {
                         .text_color(paint(look.popup_hint.text))
                         .child(id),
                 )
-                .child(div().text_color(paint(look.popup.text)).child(value));
+                .child(numeral(t, Numeral::Value, value).text_color(paint(look.popup.text)));
             body = body.child(row);
         }
         place(bounds)
@@ -605,6 +606,8 @@ impl Render for Shell {
                 .size_full()
                 .relative()
                 .font(crate::font::interface_font(&self.theme))
+                // The window's rem is the component library's (`theme_bridge::component_rem`).
+                .text_size(px(self.theme.type_body))
                 .bg(paint(self.theme.ground))
                 .text_color(paint(self.theme.text_primary))
                 .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {

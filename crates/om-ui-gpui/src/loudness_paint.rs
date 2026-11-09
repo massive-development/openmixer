@@ -4,18 +4,17 @@
 
 use crate::app::Shell;
 use crate::controls::button;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::paint::{border, paint, place};
-use gpui::{canvas, fill, point, prelude::*, px, size, Bounds, Context, Div};
+use gpui::{canvas, div, fill, point, prelude::*, px, size, Bounds, Context, Div};
 use om_ui::geometry::Rect;
 use om_ui::meter::MeterZone;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::ThemeTokens;
+use om_ui::theme::{ThemeTokens, TypeRole};
 use om_ui::widgets::loudness::{
     bar_fill, LoudnessLayout, LoudnessPanel, LoudnessView, BAR_CEILING_LUFS, BAR_FLOOR_LUFS,
 };
 
-/// Smallest text drawn on a control, in px.
-const MIN_TEXT_PX: f32 = 12.0;
 /// The bars turn amber at the streaming-platform target and red near the top of the range.
 const MID_LUFS: f32 = -14.0;
 const HIGH_LUFS: f32 = -9.0;
@@ -105,9 +104,8 @@ pub fn loudness_toggle(shell: &Shell, bounds: Rect, cx: &mut Context<Shell>) -> 
         place(text_rect)
             .flex()
             .items_center()
-            .text_size(px(MIN_TEXT_PX))
             .text_color(paint(summary_colour(t, view)))
-            .child(panel.summary_text()),
+            .child(numeral(t, Numeral::Value, panel.summary_text())),
     ]
 }
 
@@ -137,7 +135,13 @@ pub fn loudness_panel(shell: &Shell, bounds: Rect, cx: &mut Context<Shell>) -> D
         .border_color(paint(t.border))
         .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary))
-        .child(text(layout.title, "LOUDNESS", true, t.text_secondary))
+        .child(text(
+            t,
+            layout.title,
+            "LOUDNESS",
+            (true, Ink::Label),
+            t.text_secondary,
+        ))
         .child(button(
             t,
             layout.reset,
@@ -153,8 +157,20 @@ pub fn loudness_panel(shell: &Shell, bounds: Rect, cx: &mut Context<Shell>) -> D
     ];
     for (row, label, value) in rows {
         el = el
-            .child(text(row.label, label, false, t.text_secondary))
-            .child(text(row.value, value, true, t.text_primary));
+            .child(text(
+                t,
+                row.label,
+                label,
+                (false, Ink::Label),
+                t.text_secondary,
+            ))
+            .child(text(
+                t,
+                row.value,
+                value,
+                (true, Ink::Number),
+                t.text_primary,
+            ));
     }
     for well in plan.wells {
         el = el.child(
@@ -169,9 +185,27 @@ pub fn loudness_panel(shell: &Shell, bounds: Rect, cx: &mut Context<Shell>) -> D
     let lra = format!("LRA {}", view.range_text);
     let tp = format!("TP {} dBTP", view.true_peak_text);
     el = el
-        .child(text(layout.integrated, &int, false, t.text_primary))
-        .child(text(layout.range, &lra, false, t.text_primary))
-        .child(text(layout.true_peak, &tp, false, t.text_primary))
+        .child(text(
+            t,
+            layout.integrated,
+            &int,
+            (false, Ink::Number),
+            t.text_primary,
+        ))
+        .child(text(
+            t,
+            layout.range,
+            &lra,
+            (false, Ink::Number),
+            t.text_primary,
+        ))
+        .child(text(
+            t,
+            layout.true_peak,
+            &tp,
+            (false, Ink::Number),
+            t.text_primary,
+        ))
         .child(
             place(plan.lamp)
                 .bg(paint(if plan.lamp_lit { t.danger } else { m.lamp_off }))
@@ -180,7 +214,7 @@ pub fn loudness_panel(shell: &Shell, bounds: Rect, cx: &mut Context<Shell>) -> D
         );
     if let Some(warning) = &view.warning {
         el = el.child(
-            text(layout.warning, warning, false, t.warning)
+            text(t, layout.warning, warning, (false, Ink::Prose), t.warning)
                 .debug_selector(|| "loudness:warning".to_owned()),
         );
     }
@@ -196,17 +230,31 @@ fn lamp_tag(lit: bool) -> &'static str {
     }
 }
 
-fn text(rect: Rect, label: &str, right: bool, colour: om_ui::theme::Colour) -> Div {
-    let el = place(rect)
-        .flex()
-        .items_center()
-        .text_size(px(MIN_TEXT_PX))
-        .line_height(px(14.))
-        .text_color(paint(colour));
+/// What a panel text is: a label, a sentence or a number (drawn in mono).
+#[derive(Clone, Copy, PartialEq)]
+enum Ink {
+    Label,
+    Prose,
+    Number,
+}
+
+fn text(
+    t: &ThemeTokens,
+    rect: Rect,
+    label: &str,
+    (right, ink): (bool, Ink),
+    colour: om_ui::theme::Colour,
+) -> Div {
+    let content = match ink {
+        Ink::Number => numeral(t, Numeral::Value, label.to_owned()),
+        Ink::Label => div().type_role(t, TypeRole::Label).child(label.to_owned()),
+        Ink::Prose => div().type_role(t, TypeRole::Body).child(label.to_owned()),
+    };
+    let el = place(rect).flex().items_center().text_color(paint(colour));
     if right {
-        el.justify_end().child(label.to_owned())
+        el.justify_end().child(content)
     } else {
-        el.child(label.to_owned())
+        el.child(content)
     }
 }
 

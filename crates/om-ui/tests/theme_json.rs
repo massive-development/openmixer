@@ -32,7 +32,7 @@ fn parses_every_section() {
         "accents": ["#FF0000", "#00FF00"],
         "spacing": { "gap": 6, "pad": 7, "innerGap": 3 },
         "radii": { "card": 20, "control": 4.5 },
-        "type": { "title": 22, "mono": 13.5 },
+        "type": { "headline": 22, "numeral": 13.5 },
         "translucency": { "surface": 0.5, "backdrop": 0.25 } }"##,
     )
     .expect("full theme parses");
@@ -49,7 +49,8 @@ fn parses_every_section() {
     assert_eq!(p.tokens.inner_gap, 3);
     assert_close(p.tokens.card_radius, 20.0);
     assert_close(p.tokens.control_radius, 4.5);
-    assert_close(p.tokens.type_title, 22.0);
+    assert_close(p.tokens.type_headline, 22.0);
+    assert_close(p.tokens.type_numeral, 13.5);
     assert_close(p.tokens.surface_opacity, 0.5);
     assert_close(p.tokens.backdrop_opacity, 0.25);
     assert_close(p.tokens.type_body, dark().type_body);
@@ -134,7 +135,7 @@ fn rejects_bad_input() {
         r##"{ "id": "t", "spacing": { "gap": 12.5 } }"##,
         r##"{ "id": "t", "spacing": { "gap": 500 } }"##,
         r##"{ "id": "t", "radii": { "card": "big" } }"##,
-        r##"{ "id": "t", "type": { "title": 2 } }"##,
+        r##"{ "id": "t", "type": { "headline": 2 } }"##,
         r##"{ "id": "t", "translucency": { "surface": 1.5 } }"##,
     ];
     for json in bad {

@@ -5,6 +5,7 @@
 
 use crate::app::Shell;
 use crate::controls::push_button;
+use crate::font::TypeExt as _;
 use crate::paint::paint;
 use gpui::{div, prelude::*, px, Context, Div, Entity, Window};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -12,7 +13,7 @@ use om_core::param_id::DeckParam;
 use om_engine::DjEngine;
 use om_ui::binding::DeckBinding;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::ThemeTokens;
+use om_ui::theme::{ThemeTokens, TypeRole};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -177,7 +178,7 @@ pub fn decks_section(
         };
         section = section.child(
             div()
-                .text_size(px(t.type_caption))
+                .type_role(t, TypeRole::Body)
                 .text_color(paint(if *error {
                     look.panel.text
                 } else {

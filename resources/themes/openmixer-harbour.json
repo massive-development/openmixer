@@ -37,8 +37,7 @@
   "accents": ["#FFE3A24F", "#FF86A9CB", "#FF9CB585", "#FFC9705C"],
   "spacing": { "gap": 13, "pad": 13, "innerGap": 8 },
   "radii": { "card": 3, "control": 2 },
-  "type": { "small": 12, "caption": 12, "body": 14, "label": 16, "title": 20, "heading": 20, "mono": 16, "readout": 40,
-            "readoutSmall": 28 },
+  "type": { "display": 34, "headline": 21, "body": 13, "label": 11, "numeral": 13, "numeralLarge": 21, "scale": 10 },
   "deck": { "headerHeight": 52, "overviewHeight": 40, "transportHeight": 32, "rowHeight": 40, "pitchWidth": 84,
             "minZoomHeight": 60, "readoutWidth": 78, "rangeBoxHeight": 24, "playheadWidth": 2, "cueMarkerWidth": 2,
             "gridBarAlpha": 0.55, "gridBeatAlpha": 0.4, "loopActiveAlpha": 0.25, "loopIdleAlpha": 0.08,
@@ -78,7 +77,7 @@
       { "pos": 0.9, "hue": 260, "saturation": 0.2, "lightness": 0.97 },
       { "pos": 1.0, "hue": 270, "saturation": 0.06, "lightness": 1.0 }
     ] },
-  "font": { "family": "Inter", "tabularNumerals": true },
+  "font": { "display": "Sansation", "body": "Source Sans 3", "mono": "Ubuntu Mono", "tabularNumerals": true },
   "accessibility": { "reducedMotion": false },
   "translucency": { "surface": 1.0, "backdrop": 1.0 }
 }
