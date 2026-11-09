@@ -59,6 +59,18 @@ pub enum LoadError {
 }
 
 /// Where the stem cache is, and which separator's output the loader looks for.
+impl LoadError {
+    /// What a library row says about a track this error leaves unplayable, in words (errors are
+    /// not shown in red). `None` for an error about the deck or the moment, not the file.
+    pub fn row_reason(&self) -> Option<&'static str> {
+        match self {
+            LoadError::FileMissing => Some("file is missing"),
+            LoadError::Decode { .. } => Some("can't read file"),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StemSource {
     /// The cache root; a track's stem set is `root/<dir>` from its `track_stems` row.
