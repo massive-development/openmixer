@@ -12,6 +12,7 @@ use super::midi::*;
 use super::plugins::*;
 use super::recording::*;
 use super::*;
+use crate::font::TypeExt as _;
 use crate::paint::skin;
 use gpui::{SharedString, WeakEntity};
 use gpui_kit::component::input::InputEvent;
@@ -20,6 +21,7 @@ use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::WindowExt as _;
 use om_ui::settings::ClapStatus;
 use om_ui::style::LookAndFeel;
+use om_ui::theme::TypeRole;
 use std::time::Instant;
 
 /// A question the overlay asks in a dialog before an action that would lose work. Each is the
@@ -364,10 +366,11 @@ impl Shell {
         settings.poll_midi_inputs(Instant::now());
         settings.mapping_tick();
         let w = CARD_WIDTH.min(area.w - 2 * CARD_MARGIN).max(0);
-        // The Appearance page is short: its card fits the content instead of showing empty space.
+        // The Appearance page is short: its card fits the content (themes and density) instead of
+        // showing empty space.
         let wanted =
             if settings.panel.page_kind(settings.panel.current()) == Some(PageKind::Appearance) {
-                CARD_HEIGHT * 5 / 9
+                CARD_HEIGHT * 7 / 9
             } else {
                 CARD_HEIGHT
             };
@@ -423,7 +426,7 @@ impl Shell {
         .track_focus(&focus)
         .child(
             div()
-                .text_size(px(t.type_heading))
+                .type_role(&t, TypeRole::Headline)
                 .mb(px(8.))
                 .child("Settings"),
         )

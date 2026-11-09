@@ -2,13 +2,14 @@
 //! Pure; no global state. Missing keys inherit the built-in dark theme; a malformed value rejects
 //! the whole theme; unknown keys are reported as warnings and ignored.
 
+use super::density::{self, DensityMetrics};
 use super::tokens::{Colour, ThemeTokens, WaveStop};
 use serde_json::{Map, Value};
 use std::path::Path;
 
 const MAX_ACCENTS: usize = 8;
 const MAX_SPACING: i64 = 64;
-const MIN_TYPE: f32 = 6.0;
+const MIN_SCALE_TYPE: f32 = 10.0;
 const MAX_TYPE: f32 = 64.0;
 const MAX_RADIUS: f32 = 48.0;
 const MAX_PX: f32 = 400.0;
@@ -97,18 +98,18 @@ mod radii_keys {
     }
 }
 
+// The floors are DESIGN.md's rules: display family 21, prose 12, words 11, the dB scale 10.
 mod type_keys {
     use super::*;
+    use crate::theme::{MIN_DISPLAY_SIZE, MIN_LABEL_SIZE, MIN_PROSE_SIZE};
     float_keys! {
-        "small" => type_small: MIN_TYPE, MAX_TYPE;
-        "caption" => type_caption: MIN_TYPE, MAX_TYPE;
-        "body" => type_body: MIN_TYPE, MAX_TYPE;
-        "label" => type_label: MIN_TYPE, MAX_TYPE;
-        "title" => type_title: MIN_TYPE, MAX_TYPE;
-        "heading" => type_heading: MIN_TYPE, MAX_TYPE;
-        "mono" => type_mono: MIN_TYPE, MAX_TYPE;
-        "readout" => type_readout: MIN_TYPE, MAX_TYPE;
-        "readoutSmall" => type_readout_small: MIN_TYPE, MAX_TYPE;
+        "display" => type_display: MIN_DISPLAY_SIZE, MAX_TYPE;
+        "headline" => type_headline: MIN_DISPLAY_SIZE, MAX_TYPE;
+        "body" => type_body: MIN_PROSE_SIZE, MAX_TYPE;
+        "label" => type_label: MIN_LABEL_SIZE, MAX_TYPE;
+        "numeral" => type_numeral: MIN_LABEL_SIZE, MAX_TYPE;
+        "numeralLarge" => type_numeral_large: MIN_LABEL_SIZE, MAX_TYPE;
+        "scale" => type_scale: MIN_SCALE_TYPE, MAX_TYPE;
     }
 }
 
@@ -133,10 +134,15 @@ mod deck_keys {
         "rangeBoxHeight" => deck_range_box_height: 0.0, MAX_PX;
         "playheadWidth" => playhead_width: 0.0, MAX_RADIUS;
         "cueMarkerWidth" => cue_marker_width: 0.0, MAX_RADIUS;
+        "cueGuideAlpha" => cue_guide_alpha: 0.0, 1.0;
         "gridBarAlpha" => grid_bar_alpha: 0.0, 1.0;
         "gridBeatAlpha" => grid_beat_alpha: 0.0, 1.0;
         "loopActiveAlpha" => loop_active_alpha: 0.0, 1.0;
         "loopIdleAlpha" => loop_idle_alpha: 0.0, 1.0;
+        "onTintAlpha" => deck_tint_alpha: 0.0, 1.0;
+        "onBorderAlpha" => deck_border_alpha: 0.0, 1.0;
+        "onHoverTintAlpha" => deck_tint_hover_alpha: 0.0, 1.0;
+        "onHoverBorderAlpha" => deck_border_hover_alpha: 0.0, 1.0;
     }
 }
 
@@ -202,12 +208,18 @@ mod style_keys {
         "disabledAlpha" => disabled_alpha: 0.0, 1.0;
         "minTarget" => min_target: 0.0, MAX_PX;
         "minPointerTarget" => min_pointer_target: 0.0, MAX_PX;
-        "glowAlpha" => glow_alpha: 0.0, 1.0;
-        "glowRadius" => glow_radius: 0.0, 64.0;
         "shadowBlur" => shadow_blur: 0.0, 64.0;
         "shadowOffsetY" => shadow_offset_y: 0.0, 32.0;
         "motionFastMs" => motion_fast_ms: 0.0, 1000.0;
         "motionBaseMs" => motion_base_ms: 0.0, 2000.0;
+    }
+}
+
+mod edge_keys {
+    use super::*;
+    float_keys! {
+        "line" => edge_line_alpha: 0.0, 1.0;
+        "highlight" => edge_highlight_alpha: 0.0, 1.0;
     }
 }
 
@@ -252,10 +264,7 @@ macro_rules! colour_keys {
 }
 
 colour_keys! {
-    "backdropTop" => backdrop_top;
-    "backdropBottom" => backdrop_bottom;
-    "glowCool" => glow_cool;
-    "glowWarm" => glow_warm;
+    "ground" => ground;
     "surface" => surface;
     "surfaceRaised" => surface_raised;
     "surfaceHover" => surface_hover;
@@ -272,7 +281,7 @@ colour_keys! {
     "meterLow" => meter_low;
     "meterMid" => meter_mid;
     "meterHigh" => meter_high;
-    "recordRed" => record_red;
+    "playhead" => playhead;
     "cue" => cue;
     "loopMark" => loop_mark;
     "syncOn" => sync_on;
@@ -280,16 +289,29 @@ colour_keys! {
     "danger" => danger;
     "master" => master;
     "popup" => popup;
-    "capTop" => cap_top;
-    "capBottom" => cap_bottom;
     "dropTarget" => drop_target;
-    "brand" => brand;
     "readout" => readout;
     "readoutDim" => readout_dim;
 }
 
+/// Colour keys older theme files carry under another name: (old, new). The old value is used only
+/// when the file does not set the new key.
+const RENAMED_COLOURS: [(&str, &str); 2] = [("backdropTop", "ground"), ("recordRed", "playhead")];
+
+/// Glass and glow colours the faceplate themes no longer have, and E1's ember `brand` (the
+/// wordmark is ivory text now).
+const RETIRED_COLOURS: [&str; 6] = [
+    "backdropBottom",
+    "glowCool",
+    "glowWarm",
+    "capTop",
+    "capBottom",
+    "brand",
+];
+
 const SPACING_KEYS: [&str; 3] = ["gap", "pad", "innerGap"];
-const ROOT_KEYS: [&str; 17] = [
+const DENSITY_KEYS: [&str; 2] = ["roomy", "compact"];
+const ROOT_KEYS: [&str; 20] = [
     "id",
     "name",
     "author",
@@ -307,6 +329,9 @@ const ROOT_KEYS: [&str; 17] = [
     "waveform",
     "font",
     "accessibility",
+    "edge",
+    "density",
+    "notes",
 ];
 
 /// Parses a theme document. On error no tokens are returned, so a caller can never use a half-filled
@@ -401,11 +426,24 @@ pub fn parse_theme(json: &str) -> Result<ParsedTheme, ThemeError> {
         style_keys::set,
         style_keys::range,
     )?;
+    read_floats(
+        section(&root, "edge")?,
+        "edge",
+        w,
+        t,
+        edge_keys::KEYS,
+        edge_keys::set,
+        edge_keys::range,
+    )?;
+    read_density(section(&root, "density")?, w, t)?;
     read_waveform(section(&root, "waveform")?, w, t)?;
     read_font(section(&root, "font")?, w, t)?;
     read_accessibility(section(&root, "accessibility")?, w, t)?;
     if let Some(accents) = root.get("accents") {
         t.accents = read_accents(accents)?;
+    }
+    if root.get("notes").is_some_and(|v| !v.is_string()) {
+        return Err(field("notes", "must be a string"));
     }
     warn_unknown(&root, &ROOT_KEYS, "", w);
     Ok(out)
@@ -425,7 +463,10 @@ pub fn parse_theme_file(path: &Path) -> Result<ParsedTheme, ThemeError> {
 
 const MAX_FONT_FAMILY_LEN: usize = 64;
 
-/// `font`: `family` (non-empty string) and `tabularNumerals` (bool).
+const FONT_KEYS: [&str; 5] = ["display", "body", "mono", "family", "tabularNumerals"];
+
+/// `font`: `display`, `body` and `mono` (family names), and `tabularNumerals` (bool). The older
+/// single `family` is read as `body` when `body` is absent.
 fn read_font(
     section: Option<&Map<String, Value>>,
     warnings: &mut Vec<String>,
@@ -434,26 +475,43 @@ fn read_font(
     let Some(section) = section else {
         return Ok(());
     };
-    if let Some(value) = section.get("family") {
-        match value.as_str().map(str::trim) {
-            Some(name) if !name.is_empty() && name.len() <= MAX_FONT_FAMILY_LEN => {
-                t.font_family = name.to_owned();
-            }
-            _ => {
-                return Err(field(
-                    "font.family",
-                    "expected a non-empty font family name",
-                ))
-            }
+    for key in ["display", "body", "mono"] {
+        if let Some(value) = section.get(key) {
+            *family_slot(t, key) = family_name(key, value)?;
         }
+    }
+    if let Some(value) = section.get("family") {
+        let name = family_name("family", value)?;
+        if !section.contains_key("body") {
+            t.font_body = name;
+        }
+        warnings.push("renamed key 'font.family' read as 'font.body'".to_owned());
     }
     if let Some(value) = section.get("tabularNumerals") {
         t.tabular_numerals = value
             .as_bool()
             .ok_or_else(|| field("font.tabularNumerals", "expected true or false"))?;
     }
-    warn_unknown(section, &["family", "tabularNumerals"], "font.", warnings);
+    warn_unknown(section, &FONT_KEYS, "font.", warnings);
     Ok(())
+}
+
+fn family_slot<'a>(t: &'a mut ThemeTokens, key: &str) -> &'a mut String {
+    match key {
+        "display" => &mut t.font_display,
+        "mono" => &mut t.font_mono,
+        _ => &mut t.font_body,
+    }
+}
+
+fn family_name(key: &str, value: &Value) -> Result<String, ThemeError> {
+    match value.as_str().map(str::trim) {
+        Some(name) if !name.is_empty() && name.len() <= MAX_FONT_FAMILY_LEN => Ok(name.to_owned()),
+        _ => Err(field(
+            format!("font.{key}"),
+            "expected a non-empty font family name",
+        )),
+    }
 }
 
 /// `accessibility`: `reducedMotion` (bool).
@@ -592,6 +650,19 @@ fn section<'a>(
     }
 }
 
+/// An optional object inside `parent` (named `parent_name` in errors).
+fn section_in<'a>(
+    parent: &'a Map<String, Value>,
+    parent_name: &str,
+    name: &str,
+) -> Result<Option<&'a Map<String, Value>>, ThemeError> {
+    match parent.get(name) {
+        None => Ok(None),
+        Some(Value::Object(obj)) => Ok(Some(obj)),
+        Some(_) => Err(field(format!("{parent_name}.{name}"), "must be an object")),
+    }
+}
+
 /// Reports keys the schema does not know (typos) without rejecting the theme.
 fn warn_unknown(
     obj: &Map<String, Value>,
@@ -611,19 +682,93 @@ fn read_colours(
     t: &mut ThemeTokens,
     warnings: &mut Vec<String>,
 ) -> Result<(), ThemeError> {
+    let colour = |key: &str, value: &Value| {
+        value
+            .as_str()
+            .and_then(parse_colour_hex)
+            .ok_or_else(|| field(format!("colours.{key}"), HEX_HINT))
+    };
     for (key, value) in section {
-        if !COLOUR_KEYS.contains(&key.as_str()) {
-            continue;
-        }
-        let colour = value.as_str().and_then(parse_colour_hex);
-        match colour {
-            Some(c) => {
-                set_colour(t, key, c);
-            }
-            None => return Err(field(format!("colours.{key}"), HEX_HINT)),
+        if COLOUR_KEYS.contains(&key.as_str()) {
+            set_colour(t, key, colour(key, value)?);
         }
     }
-    warn_unknown(section, COLOUR_KEYS, "colours.", warnings);
+    for (old, new) in RENAMED_COLOURS {
+        let Some(value) = section.get(old) else {
+            continue;
+        };
+        if !section.contains_key(new) {
+            set_colour(t, new, colour(old, value)?);
+        }
+        warnings.push(format!(
+            "renamed key 'colours.{old}' read as 'colours.{new}'"
+        ));
+    }
+    for old in RETIRED_COLOURS
+        .into_iter()
+        .filter(|k| section.contains_key(*k))
+    {
+        warnings.push(format!("retired key 'colours.{old}' ignored"));
+    }
+    let known: Vec<&str> = COLOUR_KEYS
+        .iter()
+        .copied()
+        .chain(RENAMED_COLOURS.map(|(old, _)| old))
+        .chain(RETIRED_COLOURS)
+        .collect();
+    warn_unknown(section, &known, "colours.", warnings);
+    Ok(())
+}
+
+/// `density`: a `roomy` and a `compact` metric set; a key left out keeps the built-in value.
+fn read_density(
+    section: Option<&Map<String, Value>>,
+    warnings: &mut Vec<String>,
+    t: &mut ThemeTokens,
+) -> Result<(), ThemeError> {
+    let Some(section) = section else {
+        return Ok(());
+    };
+    if let Some(set) = section_in(section, "density", "roomy")? {
+        read_density_set(set, "roomy", &mut t.roomy, warnings)?;
+    }
+    if let Some(set) = section_in(section, "density", "compact")? {
+        read_density_set(set, "compact", &mut t.compact, warnings)?;
+    }
+    warn_unknown(section, &DENSITY_KEYS, "density.", warnings);
+    Ok(())
+}
+
+fn read_density_set(
+    set: &Map<String, Value>,
+    name: &str,
+    metrics: &mut DensityMetrics,
+    warnings: &mut Vec<String>,
+) -> Result<(), ThemeError> {
+    for key in density::KEYS {
+        let Some(value) = set.get(*key) else {
+            continue;
+        };
+        let (lo, hi) = density::range(key);
+        let number = value
+            .as_f64()
+            .map(|v| v as f32)
+            .filter(|v| (lo..=hi).contains(v));
+        let Some(v) = number else {
+            return Err(field(
+                format!("density.{name}.{key}"),
+                format!("expected a number {lo}-{hi}"),
+            ));
+        };
+        metrics.set(key, v);
+    }
+    if !metrics.steps_rise() {
+        return Err(field(
+            format!("density.{name}"),
+            "spacing steps s1..s6 must rise",
+        ));
+    }
+    warn_unknown(set, density::KEYS, &format!("density.{name}."), warnings);
     Ok(())
 }
 
@@ -709,15 +854,17 @@ fn read_floats(
             }
         }
     }
+    let in_section = |list: &'static [(&'static str, &'static str)]| {
+        list.iter().filter(|(s, _)| *s == name).map(|(_, k)| *k)
+    };
+    for key in in_section(&WARNED_RETIRED_KEYS).filter(|k| section.contains_key(*k)) {
+        warnings.push(format!("retired key '{name}.{key}' ignored"));
+    }
     let known: Vec<&str> = keys
         .iter()
         .copied()
-        .chain(
-            RETIRED_KEYS
-                .iter()
-                .filter(|(s, _)| *s == name)
-                .map(|(_, k)| *k),
-        )
+        .chain(in_section(&RETIRED_KEYS))
+        .chain(in_section(&WARNED_RETIRED_KEYS))
         .collect();
     warn_unknown(section, &known, &format!("{name}."), warnings);
     Ok(())
@@ -726,6 +873,20 @@ fn read_floats(
 /// Keys that older theme files carry and no token reads any more: (section, key). They are
 /// accepted without a warning so those files keep loading quietly.
 const RETIRED_KEYS: [(&str, &str); 1] = [("mixer", "meterReleaseSeconds")];
+
+/// Retired glow keys and the E1 type scale: accepted so older theme files still load, with a
+/// warning that they do nothing (the faceplate tiers take their defaults).
+const WARNED_RETIRED_KEYS: [(&str, &str); 9] = [
+    ("style", "glowAlpha"),
+    ("style", "glowRadius"),
+    ("type", "small"),
+    ("type", "caption"),
+    ("type", "title"),
+    ("type", "heading"),
+    ("type", "mono"),
+    ("type", "readout"),
+    ("type", "readoutSmall"),
+];
 
 #[cfg(test)]
 mod tests {
@@ -759,33 +920,159 @@ mod tests {
     }
 
     #[test]
-    fn brand_tokens_parse_and_are_range_checked() {
+    fn type_and_edge_tokens_parse_and_are_range_checked() {
         let ok = r##"{"id":"t.one","name":"T","colours":{"brand":"#FF112233"},
-            "type":{"readout":30},"style":{"glowAlpha":0.5,"glowRadius":12}}"##;
-        let t = parse_theme(ok).expect("parses").tokens;
-        assert_eq!(t.brand, Colour::from_argb(0xFF11_2233));
-        assert_eq!(t.type_readout, 30.0);
-        assert_eq!((t.glow_alpha, t.glow_radius), (0.5, 12.0));
+            "type":{"numeralLarge":30},"edge":{"line":0.5,"highlight":0.1}}"##;
+        let parsed = parse_theme(ok).expect("an old brand key still loads");
+        assert_eq!(parsed.warnings, ["retired key 'colours.brand' ignored"]);
+        let t = parsed.tokens;
+        assert_eq!(t.type_numeral_large, 30.0);
+        assert_eq!((t.edge_line_alpha, t.edge_highlight_alpha), (0.5, 0.1));
         // A file that leaves them out inherits the defaults.
         let bare = parse_theme(r#"{"id":"t.two","name":"T"}"#)
             .expect("parses")
             .tokens;
-        assert_eq!(bare.brand, ThemeTokens::builtin_dark().brand);
-        let bad = r#"{"id":"t.three","name":"T","style":{"glowAlpha":2}}"#;
+        assert_eq!(
+            bare.edge_line_alpha,
+            ThemeTokens::builtin_dark().edge_line_alpha
+        );
+        let bad = r#"{"id":"t.three","name":"T","edge":{"highlight":2}}"#;
         assert!(parse_theme(bad).is_err());
     }
 
     #[test]
-    fn font_and_accessibility_sections_parse_and_validate() {
-        let ok = r#"{"id":"t.f","font":{"family":"Plex Sans","tabularNumerals":false},
-            "accessibility":{"reducedMotion":true}}"#;
+    fn e1_glass_and_glow_keys_still_load_with_a_warning_each() {
+        let old = r##"{"id":"t.e1","colours":{"backdropTop":"#FF010203","backdropBottom":"#FF000000",
+            "glowCool":"#0F00C2FF","glowWarm":"#0AFF6B35","capTop":"#FF2C3446","capBottom":"#FF161B26",
+            "recordRed":"#FFFF3B4E"},"style":{"glowAlpha":2,"glowRadius":10}}"##;
+        let parsed = parse_theme(old).expect("an E1 theme still loads");
+        assert_eq!(parsed.warnings.len(), 9, "{:?}", parsed.warnings);
+        assert!(parsed.warnings.iter().all(|w| !w.starts_with("unknown")));
+        assert_eq!(parsed.tokens.ground, Colour::from_argb(0xFF01_0203));
+        assert_eq!(parsed.tokens.record_red(), Colour::from_argb(0xFFFF_3B4E));
+    }
+
+    #[test]
+    fn a_new_key_wins_over_its_old_name() {
+        let both =
+            r##"{"id":"t.both","colours":{"ground":"#FF0A0A0A","backdropTop":"#FF010203"}}"##;
+        let parsed = parse_theme(both).expect("parses");
+        assert_eq!(parsed.tokens.ground, Colour::from_argb(0xFF0A_0A0A));
+        assert_eq!(parsed.warnings.len(), 1);
+        let bad = r##"{"id":"t.bad","colours":{"backdropTop":"blue"}}"##;
+        assert!(parse_theme(bad).is_err(), "an old key is still checked");
+    }
+
+    #[test]
+    fn density_sets_parse_and_are_range_checked() {
+        let ok = r#"{"id":"t.d","density":{"compact":{"rowHeight":24,"s6":20}}}"#;
         let t = parse_theme(ok).expect("parses").tokens;
-        assert_eq!(t.font_family, "Plex Sans");
+        assert_eq!(t.compact.row_height, 24.0);
+        assert_eq!(t.compact.space[5], 20.0);
+        assert_eq!(
+            t.roomy,
+            DensityMetrics::roomy(),
+            "an absent set keeps the default"
+        );
+        for bad in [
+            r#"{"id":"t.d","density":{"roomy":{"rowHeight":-1}}}"#,
+            r#"{"id":"t.d","density":{"roomy":{"s2":1}}}"#,
+            r#"{"id":"t.d","density":{"roomy":3}}"#,
+            r#"{"id":"t.d","notes":7}"#,
+        ] {
+            assert!(parse_theme(bad).is_err(), "{bad}");
+        }
+        let typo = r#"{"id":"t.d","density":{"rooomy":{},"compact":{"rowHieght":2}}}"#;
+        assert_eq!(parse_theme(typo).expect("parses").warnings.len(), 2);
+    }
+
+    #[test]
+    fn font_and_accessibility_sections_parse_and_validate() {
+        let ok = r#"{"id":"t.f","font":{"display":"Plex Serif","body":"Plex Sans",
+            "mono":"Plex Mono","tabularNumerals":false},"accessibility":{"reducedMotion":true}}"#;
+        let parsed = parse_theme(ok).expect("parses");
+        let t = parsed.tokens;
+        assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+        assert_eq!(
+            (
+                t.font_display.as_str(),
+                t.font_body.as_str(),
+                t.font_mono.as_str()
+            ),
+            ("Plex Serif", "Plex Sans", "Plex Mono")
+        );
         assert!(!t.tabular_numerals && t.reduced_motion);
         let bare = parse_theme(r#"{"id":"t.g"}"#).expect("parses").tokens;
-        assert_eq!(bare.font_family, "Inter");
+        assert_eq!(
+            (
+                bare.font_display.as_str(),
+                bare.font_body.as_str(),
+                bare.font_mono.as_str()
+            ),
+            ("Sansation", "Source Sans 3", "Ubuntu Mono")
+        );
         assert!(bare.tabular_numerals && !bare.reduced_motion);
-        assert!(parse_theme(r#"{"id":"t.h","font":{"family":""}}"#).is_err());
-        assert!(parse_theme(r#"{"id":"t.i","accessibility":{"reducedMotion":1}}"#).is_err());
+        for bad in [
+            r#"{"id":"t.h","font":{"family":""}}"#,
+            r#"{"id":"t.h","font":{"mono":7}}"#,
+            r#"{"id":"t.h","font":{"display":" "}}"#,
+            r#"{"id":"t.i","accessibility":{"reducedMotion":1}}"#,
+        ] {
+            assert!(parse_theme(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_older_font_family_key_is_read_as_the_body_family() {
+        let old = parse_theme(r#"{"id":"t.f","font":{"family":"Inter"}}"#).expect("parses");
+        assert_eq!(old.tokens.font_body, "Inter");
+        assert_eq!(
+            old.tokens.font_mono, "Ubuntu Mono",
+            "the other slots keep the default"
+        );
+        assert_eq!(old.warnings.len(), 1, "{:?}", old.warnings);
+        let both = r#"{"id":"t.f","font":{"family":"Inter","body":"Plex Sans"}}"#;
+        assert_eq!(
+            parse_theme(both).expect("parses").tokens.font_body,
+            "Plex Sans"
+        );
+    }
+
+    #[test]
+    fn the_e1_type_scale_still_loads_with_a_warning_per_retired_key() {
+        let old = r#"{"id":"t.e1","type":{"small":12,"caption":12,"body":14,"label":16,"title":20,
+            "heading":20,"mono":16,"readout":40,"readoutSmall":28}}"#;
+        let parsed = parse_theme(old).expect("an E1 type section still loads");
+        assert_eq!(parsed.warnings.len(), 7, "{:?}", parsed.warnings);
+        assert!(parsed
+            .warnings
+            .iter()
+            .all(|w| w.starts_with("retired key 'type.")));
+        let t = parsed.tokens;
+        assert_eq!(
+            (t.type_body, t.type_label),
+            (14.0, 16.0),
+            "kept keys still apply"
+        );
+        assert_eq!(
+            t.type_numeral_large, 21.0,
+            "retired keys leave the tier at its default"
+        );
+    }
+
+    #[test]
+    fn type_sizes_below_the_design_floors_are_rejected() {
+        for bad in [
+            r#"{"id":"t.t","type":{"headline":20}}"#,
+            r#"{"id":"t.t","type":{"display":18}}"#,
+            r#"{"id":"t.t","type":{"body":11}}"#,
+            r#"{"id":"t.t","type":{"label":10}}"#,
+            r#"{"id":"t.t","type":{"numeral":10}}"#,
+            r#"{"id":"t.t","type":{"scale":9}}"#,
+        ] {
+            assert!(parse_theme(bad).is_err(), "{bad}");
+        }
+        let floor = r#"{"id":"t.t","type":{"headline":21,"body":12,"label":11,"scale":10}}"#;
+        assert!(parse_theme(floor).is_ok());
     }
 }

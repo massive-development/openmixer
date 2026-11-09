@@ -43,7 +43,7 @@ pub const STEP_BUTTON_WIDTH: i32 = 32;
 pub fn sampler_strip_layout(bounds: Rect, theme: &ThemeTokens) -> SamplerStripLayout {
     let gap = theme.inner_gap.clamp(2, 6);
     let mut area = bounds.reduced(px(theme.pad as f32).max(2), px(theme.pad as f32).max(2));
-    let caption_h = px(theme.type_caption * 1.5).min(area.h).max(0);
+    let caption_h = px(theme.type_body * 1.5).min(area.h).max(0);
     let mut caption = area.remove_top(caption_h);
     let close = caption.remove_right(CLOSE_WIDTH.min(caption.w / 3));
     area.remove_top(gap.min(area.h));

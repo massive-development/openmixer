@@ -139,7 +139,10 @@ fn percentile(v: &mut [f32], p: usize) -> f32 {
 fn adjacent(data: &WaveformData, length: i64) -> ((f32, f32), usize) {
     let points = &data.overview().points;
     let reference = Reference::of(points);
-    let palette = Palette::new(WaveStyle::Colour, strip_well(&ThemeTokens::builtin_dark()));
+    let palette = Palette::new(
+        WaveStyle::Colour,
+        strip_well(&ThemeTokens::builtin_dark(), WaveStyle::Colour),
+    );
     let fpp = 8.0 * RATE / WIDTH;
     let step = STRIP_STEP_PX * fpp;
     let level = data.level_for(fpp);
@@ -168,7 +171,10 @@ fn adjacent(data: &WaveformData, length: i64) -> ((f32, f32), usize) {
 /// that a smoothing would hide).
 fn smoothing_effect(data: &WaveformData, length: i64, radius: usize) -> (f32, f32) {
     let reference = Reference::of(&data.overview().points);
-    let palette = Palette::new(WaveStyle::Colour, strip_well(&ThemeTokens::builtin_dark()));
+    let palette = Palette::new(
+        WaveStyle::Colour,
+        strip_well(&ThemeTokens::builtin_dark(), WaveStyle::Colour),
+    );
     let fpp = 8.0 * RATE / WIDTH;
     let step = STRIP_STEP_PX * fpp;
     let level = data.level_for(fpp);

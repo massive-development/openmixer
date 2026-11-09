@@ -1,33 +1,34 @@
 //! What sits on top of the waveform: playhead, beat and bar lines, hot cue flags, the loop region
-//! and the overview's markers. The sizes, colours and the geometry that decides what is shown
-//! live here, pure, so they are tested; the GPUI layer only paints what these return. The values
-//! are local to the waveform and do not come from the theme.
+//! and the overview's markers. The sizes and the geometry that decides what is shown live here,
+//! pure, so they are tested; the GPUI layer only paints what these return. Colours and strengths
+//! come from the theme through [`StripInk`] (comp 4a: playhead in signal red, cue flags and loops
+//! in the deck colour, the grid in the text colour).
 
+use super::palette::{ensure_contrast, strip_well, Palette, WaveStyle, LINE_CONTRAST};
 use super::{frame_to_x, View};
-use crate::theme::Colour;
+use crate::style::contrast_ratio;
+use crate::theme::{Colour, ThemeTokens};
 use om_engine::grid::BeatGrid;
 
-// Playhead: opaque, 2 px, with a 1 px dark halo each side so it reads on any colour.
-pub const PLAYHEAD_WIDTH: f32 = 2.0;
+/// The earlier styles keep a 1 px halo in the well colour each side of the playhead, so the red
+/// line reads over their red band.
 pub const PLAYHEAD_HALO: f32 = 1.0;
-pub const PLAYHEAD_COLOUR: Colour = Colour::from_argb(0xFFFF_FFFF);
-pub const PLAYHEAD_HALO_COLOUR: Colour = Colour::from_argb(0xFF0B_0D12);
 
-// Beat grid.
+// Beat grid: 1 px lines (comp 4a); strengths are the theme's `gridBarAlpha` and `gridBeatAlpha`.
 pub const BEAT_LINE_WIDTH: f32 = 1.0;
-pub const BEAT_LINE_ALPHA: f32 = 0.25;
-pub const BAR_LINE_WIDTH: f32 = 2.0;
-pub const BAR_LINE_ALPHA: f32 = 0.70;
+pub const BAR_LINE_WIDTH: f32 = 1.0;
+/// The grid and bar number colour of the earlier styles, on their always-dark [`super::WAVE_WELL`].
 pub const GRID_COLOUR: Colour = Colour::from_argb(0xFFFF_FFFF);
+/// Alpha of the earlier styles' bar numbers in [`GRID_COLOUR`].
+pub const LEGACY_NUMBER_ALPHA: f32 = 0.85;
 /// Bar numbers are at least this tall, in px.
 pub const BAR_NUMBER_SIZE: f32 = 12.0;
 /// A bar number needs this much room to its right, so numbers never touch.
 pub const BAR_NUMBER_MIN_SPACING_PX: f32 = 48.0;
 
-// Cue flags.
+// Cue flags: the guide is the theme's `cueMarkerWidth` at `cueGuideAlpha` of the deck colour.
 pub const CUE_FLAG_WIDTH: f32 = 18.0;
 pub const CUE_FLAG_HEIGHT: f32 = 16.0;
-pub const CUE_LINE_WIDTH: f32 = 2.0;
 pub const CUE_NUMBER_SIZE: f32 = 12.0;
 /// The main cue point (not one of the numbered hot cues).
 pub const MAIN_CUE_COLOUR: Colour = Colour::from_argb(0xFFFF_9C78);
@@ -46,27 +47,12 @@ pub const CUE_PALETTE: [Colour; 8] = [
     Colour::from_argb(0xFFB6_E83A),
     Colour::from_argb(0xFF56_9AFF),
 ];
-/// Text on a cue flag.
-pub const CUE_TEXT_COLOUR: Colour = Colour::from_argb(0xFF0B_0D12);
-
-// Loop region.
-pub const LOOP_COLOUR: Colour = Colour::from_argb(0xFF2E_E59D);
-pub const LOOP_FILL_ALPHA: f32 = 0.18;
-/// A loop that is set but not engaged is dimmer.
-pub const LOOP_IDLE_FILL_ALPHA: f32 = 0.07;
-pub const LOOP_EDGE_WIDTH: f32 = 2.0;
+// Loop region: the deck colour at the theme's `loopActiveAlpha` (idle: `loopIdleAlpha`), with
+// 1 px edges (comp 4a).
+pub const LOOP_EDGE_WIDTH: f32 = 1.0;
 pub const LOOP_EDGE_ALPHA: f32 = 1.0;
+/// A loop that is set but not engaged has dimmer edges.
 pub const LOOP_IDLE_EDGE_ALPHA: f32 = 0.45;
-
-// Loop region in the Colour style: the loop green is close to the mid band green, so a loop also
-// gets a top bar and a diagonal hatch (plan, Palettes: 3 px bar, 2 px lines at 6 px spacing, alpha
-// 0.12).
-pub const LOOP_TOP_BAR_HEIGHT: f32 = 3.0;
-pub const LOOP_HATCH_WIDTH: f32 = 2.0;
-pub const LOOP_HATCH_SPACING: f32 = 6.0;
-pub const LOOP_HATCH_ALPHA: f32 = 0.12;
-/// Loops narrower than this get no hatch.
-pub const LOOP_HATCH_MIN_SPAN_PX: f32 = 8.0;
 /// Coincident cue flags stack at this offset (the flag height).
 pub const CUE_STACK_STEP: f32 = 16.0;
 /// Flags closer than this share a row only if they are further apart.
@@ -80,11 +66,128 @@ pub const OVERVIEW_TICK_HEIGHT: f32 = 4.0;
 pub const OVERVIEW_TICK_ALPHA: f32 = 0.35;
 /// Bar ticks on the overview are thinned until they are at least this far apart.
 pub const OVERVIEW_TICK_MIN_SPACING_PX: f32 = 8.0;
-pub const OVERVIEW_CUE_TICK_WIDTH: f32 = 2.0;
+/// Side of the square flag on top of an overview cue guide, in px.
+pub const OVERVIEW_CUE_FLAG: f32 = 4.0;
+/// The Low-Band overview covers the played part with the ground colour at this alpha (comp 4a).
+pub const OVERVIEW_PLAYED_SHADE_ALPHA: f32 = 0.6;
 
-/// Colour of hot cue `index` (0-based).
+/// Colour of hot cue `index` (0-based): the pads' colour. The waveform draws cues in the deck
+/// colour ([`StripInk::deck`]).
 pub fn cue_colour(index: usize) -> Colour {
     CUE_PALETTE[index % CUE_PALETTE.len()]
+}
+
+/// Every colour and strength one deck's strips are drawn with, resolved from the theme. Cheap and
+/// allocation-free, so it is built each frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StripInk {
+    pub style: WaveStyle,
+    /// The strip ground (opaque).
+    pub well: Colour,
+    /// Grid lines and the Low-Band high layer: the text colour (white in the earlier styles).
+    pub ink: Colour,
+    /// Bar numbers (text, 4.5:1 on the well).
+    pub number: Colour,
+    /// The deck colour, at least [`LINE_CONTRAST`] on the well: low band, cue flags, loop.
+    pub deck: Colour,
+    /// Text on a deck-colour flag.
+    pub on_deck: Colour,
+    /// Signal red, at least [`LINE_CONTRAST`] on the well.
+    pub playhead: Colour,
+    pub playhead_width: f32,
+    /// The halo either side of the playhead (earlier styles only).
+    pub halo: Option<Colour>,
+    /// Covers the played part of the overview (Low-Band); the earlier styles dim it instead.
+    pub played_shade: Option<Colour>,
+    pub cue_width: f32,
+    pub cue_guide_alpha: f32,
+    pub bar_alpha: f32,
+    pub beat_alpha: f32,
+    pub loop_alpha: f32,
+    pub loop_idle_alpha: f32,
+}
+
+impl StripInk {
+    /// The ink of deck `deck`'s strips in `style` under theme `t`.
+    pub fn new(t: &ThemeTokens, style: WaveStyle, deck: usize) -> Self {
+        let well = strip_well(t, style);
+        let low_band = style == WaveStyle::LowBand;
+        let deck_colour = ensure_contrast(t.accent_for(deck as i32), well, LINE_CONTRAST);
+        Self {
+            style,
+            well,
+            ink: if low_band {
+                t.text_primary
+            } else {
+                GRID_COLOUR
+            },
+            number: if low_band {
+                t.text_muted
+            } else {
+                GRID_COLOUR.with_alpha(LEGACY_NUMBER_ALPHA)
+            },
+            deck: deck_colour,
+            on_deck: clearer_on(deck_colour, t.on_accent, well),
+            playhead: ensure_contrast(t.playhead, well, LINE_CONTRAST),
+            playhead_width: t.playhead_width,
+            halo: (!low_band).then_some(well),
+            played_shade: low_band.then_some(t.ground),
+            cue_width: t.cue_marker_width,
+            cue_guide_alpha: t.cue_guide_alpha,
+            bar_alpha: t.grid_bar_alpha,
+            beat_alpha: t.grid_beat_alpha,
+            loop_alpha: t.loop_active_alpha,
+            loop_idle_alpha: t.loop_idle_alpha,
+        }
+    }
+
+    /// The waveform palette for this ink.
+    pub fn palette(&self) -> Palette {
+        match self.style {
+            WaveStyle::LowBand => Palette::low_band(self.well, self.deck, self.ink),
+            style => Palette::new(style, self.well),
+        }
+    }
+
+    /// A bar or beat line.
+    pub fn grid(&self, bar: bool) -> Colour {
+        let alpha = if bar { self.bar_alpha } else { self.beat_alpha };
+        self.ink.with_alpha(alpha)
+    }
+
+    /// The cue guide line.
+    pub fn cue_guide(&self) -> Colour {
+        self.deck.with_alpha(self.cue_guide_alpha)
+    }
+
+    /// The loop fill: engaged, or set but idle.
+    pub fn loop_fill(&self, looping: bool) -> Colour {
+        let alpha = if looping {
+            self.loop_alpha
+        } else {
+            self.loop_idle_alpha
+        };
+        self.deck.with_alpha(alpha)
+    }
+
+    /// The loop edges and its caption.
+    pub fn loop_edge(&self, looping: bool) -> Colour {
+        let alpha = if looping {
+            LOOP_EDGE_ALPHA
+        } else {
+            LOOP_IDLE_EDGE_ALPHA
+        };
+        self.deck.with_alpha(alpha)
+    }
+}
+
+/// Whichever of `a` and `b` contrasts more with `fill`.
+fn clearer_on(fill: Colour, a: Colour, b: Colour) -> Colour {
+    if contrast_ratio(a, fill) >= contrast_ratio(b, fill) {
+        a
+    } else {
+        b
+    }
 }
 
 /// One cue flag in the zoomed strip: the line at `x` and the tab to its right.
@@ -106,8 +209,7 @@ pub fn cue_flags(xs: &[Option<f64>], width: f64) -> Vec<CueFlag> {
     let mut flags: Vec<CueFlag> = Vec::new();
     for (index, x) in xs.iter().enumerate() {
         let Some(x) = *x else { continue };
-        let on_screen =
-            x + f64::from(CUE_FLAG_WIDTH) >= 0.0 && x - f64::from(CUE_LINE_WIDTH) <= width;
+        let on_screen = x + f64::from(CUE_FLAG_WIDTH) >= 0.0 && x <= width;
         if !on_screen {
             continue;
         }
@@ -130,38 +232,6 @@ pub fn cue_flags(xs: &[Option<f64>], width: f64) -> Vec<CueFlag> {
     flags
 }
 
-/// Diagonal hatch lines for a loop spanning `x0..x1` in a strip `height` px tall: one segment
-/// (bottom point, top point) every `spacing` px along the span, at 45 degrees, clipped to the loop.
-/// Empty for spans under [`LOOP_HATCH_MIN_SPAN_PX`].
-pub fn loop_hatch_lines(
-    x0: f32,
-    x1: f32,
-    height: f32,
-    spacing: f32,
-) -> Vec<((f32, f32), (f32, f32))> {
-    if x1 - x0 < LOOP_HATCH_MIN_SPAN_PX || spacing <= 0.0 || height <= 0.0 {
-        return Vec::new();
-    }
-    let mut lines = Vec::new();
-    // A line leaves the bottom edge at `start` and rises to the right.
-    let mut start = x0 - height;
-    while start < x1 {
-        let (mut bottom, mut top) = ((start, height), (start + height, 0.0));
-        // Clip to the span: slide each end along the line to x0 / x1.
-        if bottom.0 < x0 {
-            bottom = (x0, height - (x0 - start));
-        }
-        if top.0 > x1 {
-            top = (x1, height - (x1 - start));
-        }
-        if top.0 > bottom.0 {
-            lines.push((bottom, top));
-        }
-        start += spacing;
-    }
-    lines
-}
-
 /// The loop in the zoomed strip.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopRegion {
@@ -174,19 +244,14 @@ pub struct LoopRegion {
 }
 
 impl LoopRegion {
-    pub fn fill_alpha(&self) -> f32 {
-        if self.looping {
-            LOOP_FILL_ALPHA
-        } else {
-            LOOP_IDLE_FILL_ALPHA
-        }
-    }
-
-    pub fn edge_alpha(&self) -> f32 {
-        if self.looping {
-            LOOP_EDGE_ALPHA
-        } else {
-            LOOP_IDLE_EDGE_ALPHA
+    /// The loop's caption in the strip, its length in the label (comp 4a: "Loop · 4 bars"; the
+    /// app counts loops in beats, as the loop buttons do). Empty without a length.
+    pub fn caption(&self) -> String {
+        match self.label.as_str() {
+            "" => String::new(),
+            "1" => "Loop · 1 beat".to_owned(),
+            short if short.starts_with("1/") => format!("Loop · {short} beat"),
+            label => format!("Loop · {label} beats"),
         }
     }
 }
@@ -277,16 +342,10 @@ pub fn overview_bar_ticks(grid: &dyn BeatGrid, length: i64, width: f64) -> Vec<f
     ticks
 }
 
-/// Alpha-applied grid colour for a line.
-pub fn grid_line_colour(bar: bool) -> Colour {
-    GRID_COLOUR.with_alpha(if bar { BAR_LINE_ALPHA } else { BEAT_LINE_ALPHA })
-}
-
-/// The playhead's x range: the 2 px bar and its halo, as (left of halo, total width). Centred on
-/// `x`, snapped to whole pixels so the line does not shimmer.
-pub fn playhead_rect(x: f64) -> (f32, f32) {
-    let width = PLAYHEAD_WIDTH + 2.0 * PLAYHEAD_HALO;
-    ((x.round() as f32) - width / 2.0, width)
+/// The playhead's x range, as (left, width): `width` px centred on `x`, snapped to whole pixels so
+/// the line does not shimmer.
+pub fn playhead_rect(x: f64, width: f32) -> (f32, f32) {
+    ((x.round() as f32) - (width / 2.0).round(), width)
 }
 
 /// Where the already-played part of a zoomed strip ends: the playhead x, clamped into the view.
@@ -342,21 +401,6 @@ mod tests {
             }
         }
         assert_eq!(bar_number(0.0, 4), Some(1), "numbers start at 1");
-    }
-
-    #[test]
-    fn loop_hatch_stays_inside_the_loop() {
-        assert!(loop_hatch_lines(10.0, 17.0, 96.0, LOOP_HATCH_SPACING).is_empty());
-        let lines = loop_hatch_lines(100.0, 220.0, 96.0, LOOP_HATCH_SPACING);
-        assert!(lines.len() > 10);
-        for ((bx, by), (tx, ty)) in &lines {
-            assert!(
-                *bx >= 100.0 - 1e-3 && *tx <= 220.0 + 1e-3 && bx < tx,
-                "{bx} {tx}"
-            );
-            assert!((0.0..=96.0).contains(by) && (0.0..=96.0).contains(ty));
-            assert!(((tx - bx) - (by - ty)).abs() < 1e-3, "45 degrees");
-        }
     }
 
     #[test]
@@ -438,21 +482,60 @@ mod tests {
     }
 
     #[test]
-    fn an_idle_loop_is_dimmer_than_an_engaged_one() {
-        let on = LoopRegion {
+    fn an_idle_loop_is_dimmer_than_an_engaged_one_and_both_take_the_deck_colour() {
+        let t = ThemeTokens::builtin_dark();
+        let ink = StripInk::new(&t, WaveStyle::LowBand, 1);
+        // Comp 4a: the deck colour at 14% with 1 px edges.
+        assert!((ink.loop_fill(true).alpha() - 0.14).abs() < 0.01);
+        assert!(ink.loop_fill(false).alpha() < ink.loop_fill(true).alpha());
+        assert!(ink.loop_edge(false).alpha() < ink.loop_edge(true).alpha());
+        assert_eq!(ink.loop_fill(true).with_alpha(1.0), t.accent_for(1));
+        assert_eq!(LOOP_EDGE_WIDTH, 1.0);
+    }
+
+    #[test]
+    fn the_loop_caption_names_its_length() {
+        let region = |label: &str| LoopRegion {
             x0: 0.0,
             x1: 10.0,
             looping: true,
-            label: "4".into(),
+            label: label.into(),
         };
-        let off = LoopRegion {
-            looping: false,
-            ..on.clone()
-        };
-        assert_eq!(on.fill_alpha(), 0.18);
-        assert!(off.fill_alpha() < on.fill_alpha());
-        assert!(off.edge_alpha() < on.edge_alpha());
-        assert_eq!(LOOP_COLOUR.argb(), 0xFF2E_E59D);
+        assert_eq!(region("4").caption(), "Loop · 4 beats");
+        assert_eq!(region("1").caption(), "Loop · 1 beat");
+        assert_eq!(region("1/2").caption(), "Loop · 1/2 beat");
+        assert_eq!(region("").caption(), "");
+    }
+
+    #[test]
+    fn strip_ink_follows_the_comp_on_every_built_in_theme() {
+        for (name, json) in crate::theme::BUILTIN_THEMES {
+            let t = crate::theme::parse_theme(json).expect("parses").tokens;
+            let ink = StripInk::new(&t, WaveStyle::LowBand, 0);
+            assert_eq!(ink.well, crate::style::over(t.well, t.ground), "{name}");
+            assert_eq!(ink.ink, t.text_primary, "{name}: grid in the text colour");
+            assert_eq!(ink.playhead, t.playhead, "{name}: signal red as is");
+            assert_eq!(ink.deck, t.accent_for(0), "{name}: deck colour as is");
+            assert_eq!(ink.halo, None, "{name}: no halo in Low-Band");
+            assert_eq!((ink.bar_alpha, ink.beat_alpha), (0.14, 0.05), "{name}");
+            assert_eq!((ink.cue_width, ink.cue_guide_alpha), (1.0, 0.45), "{name}");
+            assert_eq!(ink.playhead_width, 2.0, "{name}");
+            assert!(
+                contrast_ratio(ink.number, ink.well) >= 4.5,
+                "{name}: bar numbers"
+            );
+            assert!(
+                contrast_ratio(ink.on_deck, ink.deck) >= 4.5,
+                "{name}: cue numbers"
+            );
+            for style in WaveStyle::ALL {
+                let ink = StripInk::new(&t, style, 1);
+                for (what, c) in [("deck", ink.deck), ("playhead", ink.playhead)] {
+                    let r = contrast_ratio(c, ink.well);
+                    assert!(r >= LINE_CONTRAST, "{name} {style:?} {what}: {r:.2}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -481,25 +564,32 @@ mod tests {
     }
 
     #[test]
-    fn grid_lines_are_faint_beats_and_firm_bars() {
-        assert!((grid_line_colour(false).alpha() - 0.25).abs() < 0.01);
-        assert!((grid_line_colour(true).alpha() - 0.70).abs() < 0.01);
-        assert_eq!((BEAT_LINE_WIDTH, BAR_LINE_WIDTH), (1.0, 2.0));
+    fn grid_lines_are_the_text_colour_at_14_and_5_percent() {
+        let t = ThemeTokens::builtin_dark();
+        let ink = StripInk::new(&t, WaveStyle::LowBand, 0);
+        assert!((ink.grid(false).alpha() - 0.05).abs() < 0.01);
+        assert!((ink.grid(true).alpha() - 0.14).abs() < 0.01);
+        assert_eq!(ink.grid(true).with_alpha(1.0), t.text_primary);
+        assert_eq!((BEAT_LINE_WIDTH, BAR_LINE_WIDTH), (1.0, 1.0));
+        let legacy = StripInk::new(&t, WaveStyle::Colour, 0);
+        assert_eq!(legacy.grid(true).with_alpha(1.0), GRID_COLOUR);
     }
 
     #[test]
-    fn playhead_is_two_opaque_pixels_with_a_halo() {
-        assert_eq!(PLAYHEAD_WIDTH, 2.0);
-        assert_eq!(PLAYHEAD_COLOUR.alpha(), 1.0);
-        assert_eq!(PLAYHEAD_HALO_COLOUR.alpha(), 1.0);
-        let (left, width) = playhead_rect(200.0);
-        assert_eq!(width, 4.0);
-        assert_eq!(left, 198.0, "bar spans 199..201 inside a 1 px halo");
+    fn playhead_is_two_signal_red_pixels() {
+        let t = ThemeTokens::builtin_dark();
+        let ink = StripInk::new(&t, WaveStyle::LowBand, 0);
+        assert_eq!(ink.playhead, t.playhead);
+        assert_eq!(ink.playhead.alpha(), 1.0);
+        let (left, width) = playhead_rect(200.0, ink.playhead_width);
+        assert_eq!((left, width), (199.0, 2.0), "bar spans 199..201");
         assert_eq!(
-            playhead_rect(200.4),
-            playhead_rect(200.0),
+            playhead_rect(200.4, 2.0),
+            playhead_rect(200.0, 2.0),
             "snaps to pixels"
         );
+        let legacy = StripInk::new(&t, WaveStyle::Colour, 0);
+        assert_eq!(legacy.halo, Some(legacy.well), "a halo over the red band");
     }
 
     #[test]

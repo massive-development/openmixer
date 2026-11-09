@@ -58,9 +58,9 @@ const CARD_MARGIN: i32 = 24;
 /// Copies the plugin themes into a window's theme registry.
 pub type ThemeSync = Box<dyn Fn(&mut ThemeRegistry)>;
 
-/// The accent for lit chips: the theme's first accent colour.
+/// The accent for lit chips: the text colour, since a settings chip names no deck.
 pub(super) fn accent_of(t: &ThemeTokens) -> om_ui::theme::Colour {
-    t.accents.first().copied().unwrap_or(t.surface_raised)
+    t.text_primary
 }
 
 /// What the binary hands the window to run the settings.

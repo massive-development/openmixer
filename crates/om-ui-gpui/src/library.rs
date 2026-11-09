@@ -6,6 +6,7 @@
 //! The browser itself is a separate field, so nothing borrows the hub while the browser runs.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -197,8 +198,10 @@ pub struct RowView {
     /// How strongly the row stands out: key and tempo both fit, key only, or neither.
     pub mix: MixLevel,
     pub selected: bool,
-    /// The deck this track is loaded into, if any (the row takes that deck's accent).
+    /// The deck this track is loaded into, if any (the row takes that deck's letter and edge).
     pub on_deck: Option<usize>,
+    /// Why the track would not load, in words, when its last load failed on the file.
+    pub error: Option<&'static str>,
     /// Drag payload for the row (the library track id).
     pub drag: String,
 }
@@ -265,6 +268,8 @@ pub struct LibraryPanel {
     /// Column and direction of the last header click (`true` = ascending).
     sort: Option<(i32, bool)>,
     shown_reference: String,
+    /// Tracks whose last load failed on the file, with the reason in words.
+    unplayable: Rc<RefCell<HashMap<i64, &'static str>>>,
 }
 
 impl LibraryPanel {
@@ -279,12 +284,25 @@ impl LibraryPanel {
         browser.search_feed = Some(Arc::clone(&hub.borrow().search_feed));
         let load_hub = Rc::clone(&hub);
         let load_engine = Arc::clone(&engine);
+        let unplayable: Rc<RefCell<HashMap<i64, &'static str>>> = Rc::default();
+        let marks = Rc::clone(&unplayable);
         browser.on_load_requested = Some(Box::new(move |deck, track| {
             let mut h = load_hub.borrow_mut();
             let LibraryHub {
                 services, loader, ..
             } = &mut *h;
-            loader.load_track(&load_engine, services, deck, track, false)
+            let result = loader.load_track(&load_engine, services, deck, track, false);
+            match &result {
+                Ok(()) => {
+                    marks.borrow_mut().remove(&track.id);
+                }
+                Err(error) => {
+                    if let Some(reason) = error.row_reason() {
+                        marks.borrow_mut().insert(track.id, reason);
+                    }
+                }
+            }
+            result
         }));
         let suggest_hub = Rc::clone(&hub);
         let suggest_engine = Arc::clone(&engine);
@@ -299,6 +317,7 @@ impl LibraryPanel {
             licence_request: false,
             sort: None,
             shown_reference: String::new(),
+            unplayable,
         }
     }
 
@@ -509,6 +528,7 @@ impl LibraryPanel {
             selected: self.browser.selected_rows().contains(&row),
             on_deck: (0..self.engine.num_decks())
                 .find(|&deck| self.loaded_track_id(deck) == Some(track.id)),
+            error: self.unplayable.borrow().get(&track.id).copied(),
             drag: describe_track_drag(track.id),
         })
     }

@@ -1,79 +1,83 @@
-//! The mixer: channel strips, crossfader, master, headphone cue and the FX page. Models come from
-//! `om-ui`'s `MixerPanel`; every control sends through the string-id control surface.
+//! The mixer column (comp 4a/4b mixer): each channel's gain, EQ and filter knobs at the outer
+//! edges with their values beside them, the channel faders and meters inside them, the master
+//! fader and meter in the middle; under them the crossfader between the A and B tags, each
+//! channel's headphone cue and crossfader assignment around the curve switch, and the headphone
+//! knobs. Also the FX drawer a deck's FX tab opens. Models come from `om-ui`'s `MixerPanel`; every
+//! control sends through the control surface.
 //!
-//! Labels appear only where position does not already say what a control is: the band names (which
-//! double as kill switches), GAIN, FILTER, A / THRU / B, MASTER and PHONES. Values appear in a
-//! popup while a control is dragged (knobs also on hover), never at rest.
+//! An EQ band's caption (its name over its value) is its kill switch, as the band label was before.
 
 use crate::app::Shell;
 use crate::controls::{
-    button, caption, knob_face_with, mark, slider_with_popup, stereo_meter, tip_overlay, BarState,
-    KnobFace, KnobLook,
+    face_button, knob_face_with, metrics, segmented, slider_focus, stereo_meter, tip_overlay,
+    BarState, KnobFace, KnobLook,
 };
 use crate::drag::Target;
+use crate::fader_paint::{self, FaderFace, FaderLaw};
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::knob_paint::KnobRole;
-use crate::loudness_paint::{loudness_panel, loudness_toggle};
-use crate::paint::{paint, place};
-use gpui::{prelude::*, px, Context, Div, FontWeight};
+use crate::paint::{focus_layer, paint, place};
+use crate::parts::deck_tag;
+use gpui::{div, prelude::*, px, ClickEvent, Context, Div, MouseButton, SharedString};
 use om_ui::control::{Knob, Readout};
 use om_ui::geometry::Rect;
 use om_ui::labels::channel_labels;
-use om_ui::meter::{MeterBar, MeterScale};
-use om_ui::theme::Colour;
-use om_ui::widgets::channel::{channel_letter, ChannelStrip, ASSIGN_LABELS};
-use om_ui::widgets::crossfader::{CrossfaderSection, CURVE_LABELS, CURVE_TIPS};
-use om_ui::widgets::cue::CueSection;
+use om_ui::meter::MeterBar;
+use om_ui::style::{Face, LookAndFeel};
+use om_ui::theme::{Colour, TypeRole};
+use om_ui::widgets::channel::{channel_letter, ASSIGN_LABELS};
+use om_ui::widgets::crossfader::{CURVE_LABELS, CURVE_TIPS};
+use om_ui::widgets::cue::{LEVEL_LABEL, MIX_LABEL};
 use om_ui::widgets::fx_panel::FxPanel;
-use om_ui::widgets::master::MasterSection;
-use om_ui::widgets::mixer::{MixerPanel, Page};
+use om_ui::widgets::mixer::{column_layout, ChannelColumn, KnobCell, KnobRow, KNOB_ORDER};
 
-/// Narrower than this a knob drops its label (a stem filter beside a strip), in px.
-const MIN_LABELLED_KNOB: i32 = 36;
+/// The word a killed band shows in place of its value (the Signal Rule keeps red off it).
+pub const KILL_WORD: &str = "kill";
 
-/// The mixer module drawn at `card` (window coordinates): the FX toggle, master section,
-/// headphone cue and crossfader. The channel strips are separate cards ([`channel_card`]).
+/// The mixer column at `card` (window coordinates).
 pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
-    let m = &shell.mixer;
-    let l = MixerPanel::module_layout(Rect::sized(card.w, card.h), t);
-    let accent = t.accent_for(0);
-
+    let m = metrics(t);
+    let l = column_layout(Rect::sized(card.w, card.h), &m);
     let mut root = place(card)
-        .bg(paint(t.surface))
-        .border_1()
+        .border_l_1()
+        .border_r_1()
         .border_color(paint(t.border))
-        .rounded(px(t.control_radius))
         .text_color(paint(t.text_primary));
-
-    // One toggle: the FX page replaces the stage while it is lit.
-    root = root.child(button(t, l.fx, "FX", m.fx_visible(), accent, cx, |this| {
-        let page = if this.mixer.fx_visible() {
-            Page::Mixer
-        } else {
-            Page::Fx
-        };
-        this.mixer.set_page(page);
-    }));
-    root = root.children(master(shell, l.master, card, cx));
-    root = root.children(cue(shell, l.cue, card, cx));
-    root = root.children(loudness_toggle(shell, l.loudness, cx));
-    if shell.loudness.is_open() {
-        root = root.child(loudness_panel(shell, l.loudness_panel, cx));
+    for (ch, column) in l.channels.iter().enumerate() {
+        if ch < shell.mixer.strips.len() {
+            root = root.children(channel(shell, ch, column, card, cx));
+        }
     }
-    root = root.children(crossfader(shell, l.crossfader, card, cx));
-    root
-}
-
-/// Channel `ch`'s strip as a card drawn at `card` (window coordinates), edged in the deck's colour.
-pub fn channel_card(shell: &Shell, ch: usize, card: Rect, cx: &mut Context<Shell>) -> Div {
-    let t = &shell.theme;
-    place(card)
-        .bg(paint(t.surface))
-        .border_1()
-        .border_color(paint(t.accent_for(ch as i32)))
-        .rounded(px(t.control_radius))
-        .text_color(paint(t.text_primary))
-        .children(channel(shell, ch, Rect::sized(card.w, card.h), card, cx))
+    root = root.children(master(shell, l.master_fader, l.master_meter, card, cx));
+    for (ch, tag) in l.tags.iter().enumerate() {
+        let hue = t.accent_for(ch as i32);
+        root = root.child(
+            place(*tag)
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(deck_tag(t, &channel_letter(ch).to_string(), hue)),
+        );
+    }
+    root = root.child(crossfader(shell, l.crossfader, card, cx));
+    root = root.child(curve(shell, l.curve, cx));
+    let c = &shell.mixer.cue;
+    let neutral = t.text_primary;
+    root = root.children(knob_cell(
+        shell,
+        &l.phones_mix,
+        (&c.mix, MIX_LABEL, Target::CueMix),
+        (card, neutral, false),
+        cx,
+    ));
+    root.children(knob_cell(
+        shell,
+        &l.phones_level,
+        (&c.level, LEVEL_LABEL, Target::CueLevel),
+        (card, neutral, false),
+        cx,
+    ))
 }
 
 /// The bars of a stereo meter as the view model reports them.
@@ -86,124 +90,70 @@ fn bar_state(bar: &MeterBar) -> BarState {
     }
 }
 
-/// One channel strip, top to bottom: the deck letter, gain, the three bands (each label is its
-/// kill switch), filter, PFL and FX, the fader beside its meter, and the A / THRU / B switch.
+/// A value as a knob's caption prints it: the readout without its unit (the label names it).
+fn caption_value(text: &str) -> String {
+    text.trim_end_matches(" dB")
+        .trim_end_matches(" %")
+        .to_owned()
+}
+
+/// Channel `ch`'s knobs, fader, meter, cue and assignment.
 fn channel(
     shell: &Shell,
     ch: usize,
-    bounds: Rect,
+    column: &ChannelColumn,
     card: Rect,
     cx: &mut Context<Shell>,
 ) -> Vec<Div> {
     let t = &shell.theme;
-    let strip: &ChannelStrip = &shell.mixer.strips[ch];
-    let lay = ChannelStrip::layout(bounds, t);
-    let abs = |r: Rect| Rect::new(card.x + r.x, card.y + r.y, r.w, r.h);
-    let accent = t.accent_for(ch as i32);
+    let strip = &shell.mixer.strips[ch];
+    let hue = t.accent_for(ch as i32);
+    let labels = channel_labels();
     let mut out = Vec::new();
-
-    out.push(
-        place(lay.title)
-            .flex()
-            .items_center()
-            .text_size(px(t.type_label))
-            .font_weight(FontWeight::BOLD)
-            .text_color(paint(accent))
-            .child(channel_letter(ch).to_string()),
-    );
-    out.push(knob_view(
-        shell,
-        lay.trim,
-        &strip.trim,
-        Target::Trim(ch),
-        card,
-        (true, KnobRole::Wide, Some(accent)),
-        cx,
-    ));
-    for band in 0..3 {
-        // One framed group per band, so the name (its kill switch) and the knob read as a pair.
-        let (k, e) = (lay.kill[band], lay.eq[band]);
-        let (x0, x1) = (k.x.min(e.x), k.right().max(e.right()));
-        let (y0, y1) = (k.y.min(e.y), k.bottom().max(e.bottom()));
-        out.push(
-            place(Rect::new(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2))
-                .bg(paint(t.well))
-                .border_1()
-                .border_color(paint(t.border))
-                .rounded(px(t.control_radius)),
-        );
-        // The band's name is its kill switch: lit while the band is killed.
-        let killed = strip.is_killed(band);
-        out.push(
-            button(
-                t,
-                k,
-                &strip.eq[band].label,
-                killed,
-                accent,
-                cx,
-                move |this| {
-                    this.mixer.strips[ch].kill_pressed(band);
-                },
-            )
-            .child(tip_overlay(
-                t,
-                format!("kill-{ch}-{band}"),
-                format!("Kill {} band", strip.eq[band].label),
-            )),
-        );
-        out.push(knob_view(
+    for (row, cell) in KNOB_ORDER.iter().zip(&column.knobs) {
+        let (model, label, target) = match *row {
+            KnobRow::Gain => (&strip.trim, labels.gain, Target::Trim(ch)),
+            KnobRow::Filter => (&strip.filter, labels.filter, Target::Filter(ch)),
+            KnobRow::Band(b) => (&strip.eq[b], strip.eq[b].label.as_str(), Target::Eq(ch, b)),
+        };
+        out.extend(knob_cell(
             shell,
-            lay.eq[band],
-            &strip.eq[band],
-            Target::Eq(ch, band),
-            card,
-            (false, KnobRole::Band, Some(accent)),
+            cell,
+            (model, label, target),
+            (card, hue, ch == 1),
             cx,
         ));
     }
-    out.push(knob_view(
-        shell,
-        lay.filter,
-        &strip.filter,
-        Target::Filter(ch),
-        card,
-        (true, KnobRole::Wide, Some(accent)),
-        cx,
-    ));
-    out.push(button(
-        t,
-        lay.pfl,
-        channel_labels().cue,
-        strip.pfl,
-        accent,
-        cx,
-        move |this| {
-            this.mixer.strips[ch].pfl_pressed();
-        },
-    ));
-    out.push(button(t, lay.fx, "FX", false, accent, cx, move |this| {
-        this.mixer.request_fx(ch);
-    }));
     let fader = &strip.fader;
     let target = Target::Channel(ch);
     let popup = shell
         .is_dragging(target)
         .then(|| Readout::Gain.text(fader.value()));
-    out.push(slider_with_popup(
-        t,
-        lay.fader,
-        (fader.value(), fader.min, fader.max),
-        target,
-        abs(lay.fader),
-        popup.as_deref(),
-        cx,
-    ));
+    let abs = Rect::new(
+        card.x + column.fader.x,
+        card.y + column.fader.y,
+        column.fader.w,
+        column.fader.h,
+    );
+    out.push(
+        fader_paint::fader(
+            t,
+            column.fader,
+            &FaderFace::channel(FaderLaw::Channel).for_density(&metrics(t)),
+            FaderLaw::Channel.pos_of(fader.value() as f32),
+            hue,
+            target,
+            abs,
+            popup.as_deref(),
+            cx,
+        )
+        .child(slider_focus(t, target, cx)),
+    );
     let bars = [bar_state(&strip.meter.left), bar_state(&strip.meter.right)];
     out.push(stereo_meter(
         t,
-        lay.meter,
-        lay.meter_labels,
+        column.meter,
+        false,
         bars,
         cx,
         move |this| {
@@ -212,46 +162,67 @@ fn channel(
             meter.right.click();
         },
     ));
+    let cue = if strip.pfl { Face::On } else { Face::Rest };
+    out.push(
+        place(column.cue).child(
+            face_button(t, labels.cue, (cue, hue), cx, move |this, _, _| {
+                this.mixer.strips[ch].pfl_pressed();
+            })
+            .size_full()
+            .child(tip_overlay(t, format!("pfl-{ch}"), "Headphone cue")),
+        ),
+    );
     let assigned = strip.assign;
-    for (k, label) in ASSIGN_LABELS.iter().enumerate() {
-        out.push(button(
-            t,
-            lay.assign[k],
-            label,
-            assigned == k,
-            accent,
-            cx,
-            move |this| {
-                this.mixer.strips[ch].assign_pressed(k);
-            },
-        ));
-    }
+    out.push(
+        place(column.assign).child(
+            face_button(
+                t,
+                ASSIGN_LABELS[assigned % 3],
+                (Face::Rest, hue),
+                cx,
+                move |this, _, _| {
+                    let next = (this.mixer.strips[ch].assign + 1) % ASSIGN_LABELS.len();
+                    this.mixer.strips[ch].assign_pressed(next);
+                },
+            )
+            .size_full()
+            .child(tip_overlay(
+                t,
+                format!("assign-{ch}"),
+                "Crossfader side: Thru, A or B (press for the next)",
+            )),
+        ),
+    );
     out
 }
 
-/// A knob at `rect` for `model`. `labelled` prints its name beside or below it; `role` sizes the
-/// cap; `accent` colours its value arc. The value is in the popup (while dragged or hovered).
-fn knob_view(
+/// A knob and its caption (the label over the value in mono) at `cell`. An EQ band's caption is
+/// its kill switch: a press toggles the kill and a killed band shows the word "kill".
+fn knob_cell(
     shell: &Shell,
-    rect: Rect,
-    model: &Knob,
-    target: Target,
-    card: Rect,
-    (labelled, role, accent): (bool, KnobRole, Option<Colour>),
+    cell: &KnobCell,
+    (model, label, target): (&Knob, &str, Target),
+    (card, hue, text_right): (Rect, Colour, bool),
     cx: &mut Context<Shell>,
-) -> Div {
-    let abs = Rect::new(card.x + rect.x, card.y + rect.y, rect.w, rect.h);
+) -> Vec<Div> {
+    let t = &shell.theme;
     let readout = model.text();
-    let label = if labelled && rect.w >= MIN_LABELLED_KNOB {
-        model.label.as_str()
-    } else {
-        ""
+    let abs = Rect::new(
+        card.x + cell.knob.x,
+        card.y + cell.knob.y,
+        cell.knob.w,
+        cell.knob.h,
+    );
+    let role = match target {
+        Target::Eq(..) => KnobRole::Band,
+        Target::CueMix | Target::CueLevel => KnobRole::Cue,
+        _ => KnobRole::Wide,
     };
-    knob_face_with(
-        &shell.theme,
-        rect,
+    let knob = knob_face_with(
+        t,
+        cell.knob,
         KnobFace {
-            label,
+            label: "",
             readout: &readout,
             detent: model.detent,
             active: shell.shows_value(target),
@@ -260,273 +231,280 @@ fn knob_view(
         (target, abs),
         KnobLook {
             role,
-            accent,
+            accent: Some(hue),
             dragging: shell.is_dragging(target),
             disabled: false,
+            density: crate::controls::density(),
+            value_beside: false,
         },
         cx,
+    );
+    let killed = match target {
+        Target::Eq(ch, band) => Some((ch, band, shell.mixer.strips[ch].is_killed(band))),
+        _ => None,
+    };
+    let value = match killed {
+        Some((.., true)) => KILL_WORD.to_owned(),
+        _ => caption_value(&readout),
+    };
+    let value_colour = if matches!(killed, Some((.., true))) {
+        t.text_primary
+    } else {
+        t.text_secondary
+    };
+    let text = place(cell.text)
+        .flex()
+        .flex_col()
+        .justify_center()
+        .when(!text_right, |el| el.items_end())
+        .whitespace_nowrap()
+        .child(
+            div()
+                .type_role(t, TypeRole::Label)
+                .text_color(paint(t.text_muted))
+                .child(label.to_owned()),
+        )
+        .child(numeral(t, Numeral::Value, value).text_color(paint(value_colour)));
+    let text = match killed {
+        Some((ch, band, on)) => kill_switch(shell, text, (ch, band, on), cx),
+        None => text,
+    };
+    vec![knob, text]
+}
+
+/// Makes a band's caption its kill switch: a tab stop, a tonal step under the pointer, the deck
+/// tint while killed, and a press (or Enter) toggling the kill.
+fn kill_switch(
+    shell: &Shell,
+    text: Div,
+    (ch, band, killed): (usize, usize, bool),
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let look = LookAndFeel::from_tokens(t);
+    let hue = t.accent_for(ch as i32);
+    let id = format!("kill-{ch}-{band}");
+    let handle = crate::controls::focus_handle(&id, cx);
+    let hover = look.face(Face::Hover, hue).fill;
+    let lit = look.face(Face::On, hue);
+    let el = text
+        .rounded(px(t.control_radius))
+        .px(px(metrics(t).space[0]))
+        .when(killed, |el| {
+            el.bg(paint(lit.fill))
+                .border_1()
+                .border_color(paint(lit.edge))
+        });
+    div().child(
+        el.id(SharedString::from(id))
+            .role(gpui::accesskit::Role::Button)
+            .aria_label(format!("Kill {}", shell.mixer.strips[ch].eq[band].label))
+            .track_focus(&handle)
+            .child(focus_layer(look.focus, t.control_radius, Some(handle)))
+            .hover(move |s| s.bg(paint(hover)))
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.mixer.strips[ch].kill_pressed(band);
+                cx.notify();
+            }))
+            .child(tip_overlay(
+                t,
+                format!("kill-tip-{ch}-{band}"),
+                "Kill this band",
+            )),
     )
 }
 
-/// The master section: the MASTER caption, the tapered master fader (+6 dB at the top, unity at
-/// 3/4) beside its taller stereo meter, and the held peak in dB under them.
-fn master(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
-    let t = &shell.theme;
-    let lay = MasterSection::layout(bounds, t);
-    let m = &shell.mixer.master;
-    let bars = [bar_state(&m.meter.left), bar_state(&m.meter.right)];
-    let fader_abs = Rect::new(
-        card.x + lay.fader.x,
-        card.y + lay.fader.y,
-        lay.fader.w,
-        lay.fader.h,
-    );
-    let popup = shell
-        .is_dragging(Target::Master)
-        .then(|| Readout::Gain.text(m.fader.value()));
-    let peak = bars[0].hold.max(bars[1].hold);
-    let peak_text = MeterScale::from_tokens(t).peak_text(peak);
-    vec![
-        caption(t, lay.title, "MASTER"),
-        slider_with_popup(
-            t,
-            lay.fader,
-            (m.fader.value(), m.fader.range.min, m.fader.range.max),
-            Target::Master,
-            fader_abs,
-            popup.as_deref(),
-            cx,
-        ),
-        stereo_meter(t, lay.meter, lay.meter_labels, bars, cx, |this| {
-            let meter = &mut this.mixer.master.meter;
-            meter.left.click();
-            meter.right.click();
-        }),
-        mark(t, lay.readout, &peak_text),
-    ]
-}
-
-/// The crossfader: A and B outside the ends of a wide fader, and under it both curves as buttons
-/// with the engine's curve lit.
-fn crossfader(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
-    let t = &shell.theme;
-    let lay = CrossfaderSection::layout(bounds, t);
-    let x = &shell.mixer.crossfader;
-    let abs = Rect::new(
-        card.x + lay.slider.x,
-        card.y + lay.slider.y,
-        lay.slider.w,
-        lay.slider.h,
-    );
-    let selected = x.selected_curve();
-    let accent = t.accent_for(0);
-    let mut out = vec![
-        mark(t, lay.a_mark, "A"),
-        slider_with_popup(
-            t,
-            lay.slider,
-            (x.slider.value(), x.slider.min, x.slider.max),
-            Target::Crossfader,
-            abs,
-            None,
-            cx,
-        ),
-        mark(t, lay.b_mark, "B"),
-    ];
-    for (i, label) in CURVE_LABELS.iter().enumerate() {
-        out.push(
-            button(
-                t,
-                lay.curve[i],
-                label,
-                selected == i,
-                accent,
-                cx,
-                move |this| {
-                    this.mixer.crossfader.curve_pressed(i);
-                },
-            )
-            .child(tip_overlay(
-                t,
-                format!("curve-{i}"),
-                CURVE_TIPS[i].to_owned(),
-            )),
-        );
-    }
-    out
-}
-
-/// Headphone cue blend and phones level, stacked under one HEADPHONES caption.
-fn cue(shell: &Shell, bounds: Rect, card: Rect, cx: &mut Context<Shell>) -> Vec<Div> {
-    let t = &shell.theme;
-    let lay = CueSection::layout(bounds, t);
-    let c = &shell.mixer.cue;
-    let accent = Some(t.accent_for(0));
-    vec![
-        caption(t, lay.caption, "HEADPHONES"),
-        knob_view(
-            shell,
-            lay.mix,
-            &c.mix,
-            Target::CueMix,
-            card,
-            (true, KnobRole::Cue, accent),
-            cx,
-        ),
-        knob_view(
-            shell,
-            lay.level,
-            &c.level,
-            Target::CueLevel,
-            card,
-            (true, KnobRole::Cue, accent),
-            cx,
-        ),
-    ]
-}
-
-/// The FX page: scope buttons, unit selector, enable, the mix knob and the unit's parameters.
-pub(crate) fn fx_page(
+/// The master fader (+6 dB at the top, unity at 3/4) beside the master meter.
+fn master(
     shell: &Shell,
-    bounds: Rect,
+    fader_rect: Rect,
+    meter_rect: Rect,
     card: Rect,
     cx: &mut Context<Shell>,
 ) -> Vec<Div> {
     let t = &shell.theme;
-    let fx = &shell.mixer.fx;
-    let lay = fx.layout(bounds, t);
-    let accent = t.accent_for(0);
-    let mut out = Vec::new();
-
-    for (s, rect) in lay.scopes.iter().enumerate() {
-        out.push(button(
+    let m = &shell.mixer.master;
+    let bars = [bar_state(&m.meter.left), bar_state(&m.meter.right)];
+    let abs = Rect::new(
+        card.x + fader_rect.x,
+        card.y + fader_rect.y,
+        fader_rect.w,
+        fader_rect.h,
+    );
+    let popup = shell
+        .is_dragging(Target::Master)
+        .then(|| Readout::Gain.text(m.fader.value()));
+    vec![
+        fader_paint::fader(
             t,
-            *rect,
-            &FxPanel::scope_label(s),
-            fx.scope() == s,
-            accent,
+            fader_rect,
+            &FaderFace::master(FaderLaw::Master).for_density(&metrics(t)),
+            FaderLaw::Master.pos_of(m.fader.value() as f32),
+            t.text_primary,
+            Target::Master,
+            abs,
+            popup.as_deref(),
             cx,
-            move |this| {
-                this.mixer.fx.set_scope(s);
-            },
-        ));
-    }
+        )
+        .child(slider_focus(t, Target::Master, cx))
+        .child(tip_overlay(t, "master-tip", "Master level")),
+        stereo_meter(t, meter_rect, false, bars, cx, |this| {
+            let meter = &mut this.mixer.master.meter;
+            meter.left.click();
+            meter.right.click();
+        }),
+    ]
+}
+
+/// The crossfader between the A and B tags.
+fn crossfader(shell: &Shell, rect: Rect, card: Rect, cx: &mut Context<Shell>) -> Div {
+    let t = &shell.theme;
+    let x = &shell.mixer.crossfader;
+    let abs = Rect::new(card.x + rect.x, card.y + rect.y, rect.w, rect.h);
+    let pos = crate::drag::fraction(x.slider.value(), x.slider.min, x.slider.max) as f32;
+    fader_paint::crossfader(
+        t,
+        rect,
+        pos,
+        t.text_primary,
+        Target::Crossfader,
+        abs,
+        None,
+        cx,
+    )
+    .child(slider_focus(t, Target::Crossfader, cx))
+}
+
+/// The crossfader curve: one button showing the engine's curve; a press takes the next one.
+fn curve(shell: &Shell, rect: Rect, cx: &mut Context<Shell>) -> Div {
+    let t = &shell.theme;
+    let selected = shell.mixer.crossfader.selected_curve();
+    let label = CURVE_LABELS[selected % CURVE_LABELS.len()];
+    place(rect).child(
+        face_button(t, label, (Face::Rest, t.text_primary), cx, |this, _, _| {
+            this.mixer.crossfader.curve_cycled();
+        })
+        .size_full()
+        .child(tip_overlay(
+            t,
+            "curve-tip",
+            CURVE_TIPS[selected % CURVE_TIPS.len()],
+        )),
+    )
+}
+
+/// The FX drawer of deck `index`'s FX tab at `area` (card coordinates): the rack scopes (master
+/// and each channel), the unit and its switch, then the mix and the unit's parameters as knobs
+/// with their values beside them, and the beat the unit syncs to.
+pub(crate) fn fx_drawer(
+    shell: &Shell,
+    index: usize,
+    card: Rect,
+    area: Rect,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let t = &shell.theme;
+    let m = metrics(t);
+    let fx = &shell.mixer.fx;
+    let hue = t.accent_for(index as i32);
+    let h = px(m.control_height);
+    let scopes: Vec<String> = (0..fx.num_scopes()).map(FxPanel::scope_label).collect();
+    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
     let names = fx.unit_names();
     let unit = fx.unit_index();
-    let unit_label = names.get(unit).cloned().unwrap_or_default();
     let count = names.len().max(1);
-    out.push(button(
-        t,
-        lay.unit_box,
-        &unit_label,
-        false,
-        accent,
-        cx,
-        move |this| {
-            let next = (this.mixer.fx.unit_index() + 1) % count;
-            this.mixer.fx.set_unit(next);
-        },
-    ));
-    out.push(button(
-        t,
-        lay.enable,
-        "On",
-        fx.enabled(),
-        accent,
-        cx,
-        |this| {
-            this.mixer.fx.enable_pressed();
-        },
-    ));
-    if let Some(rect) = lay.knobs.first() {
-        out.push(knob_view(
+    let unit_label = names.get(unit).cloned().unwrap_or_default();
+    let top = div()
+        .flex()
+        .items_center()
+        .gap(px(m.space[2]))
+        .child(segmented(
+            t,
+            &scope_refs,
+            (Some(fx.scope()), hue),
+            cx,
+            |this: &mut Shell, s| {
+                this.mixer.fx.set_scope(s);
+            },
+        ))
+        .child(
+            face_button(t, &unit_label, (Face::Rest, hue), cx, move |this, _, _| {
+                let next = (this.mixer.fx.unit_index() + 1) % count;
+                this.mixer.fx.set_unit(next);
+            })
+            .h(h)
+            .flex_none(),
+        )
+        .child(
+            face_button(
+                t,
+                "On",
+                (if fx.enabled() { Face::On } else { Face::Rest }, hue),
+                cx,
+                |this, _, _| {
+                    this.mixer.fx.enable_pressed();
+                },
+            )
+            .h(h)
+            .flex_none(),
+        )
+        .child(
+            numeral(t, Numeral::Value, fx.beat_label().to_owned())
+                .text_color(paint(t.text_secondary)),
+        );
+    let mut el =
+        place(area).child(place(Rect::sized(area.w, m.control_height.round() as i32)).child(top));
+    let k = m.knob_size.round() as i32;
+    let labels =
+        std::iter::once(fx.mix.label.as_str()).chain(fx.params.iter().map(|p| p.label.as_str()));
+    let text_w = om_ui::widgets::mixer::fx_knob_text_width(&m, t.type_label, labels);
+    let cell_w = k + m.space[1].round() as i32 + text_w;
+    let row_y = m.control_height.round() as i32 + m.space[2].round() as i32;
+    let knobs = std::iter::once((&fx.mix, Target::FxMix)).chain(
+        fx.params
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (k, Target::FxParam(i))),
+    );
+    let per_row = ((area.w + m.space[3] as i32) / (cell_w + m.space[3] as i32)).max(1);
+    for (i, (model, target)) in knobs.enumerate() {
+        let (col, row) = (i as i32 % per_row, i as i32 / per_row);
+        let x = col * (cell_w + m.space[3] as i32);
+        let y = row_y + row * (k + m.space[2] as i32);
+        if y + k > area.h {
+            break;
+        }
+        let row_rect = Rect::new(x, y, cell_w, k);
+        let cell = KnobCell {
+            knob: Rect::new(row_rect.x, row_rect.y, k, k),
+            text: Rect::new(
+                row_rect.x + k + m.space[1] as i32,
+                row_rect.y,
+                cell_w - k - m.space[1] as i32,
+                k,
+            ),
+        };
+        let abs_card = Rect::new(card.x + area.x, card.y + area.y, area.w, area.h);
+        el = el.children(knob_cell(
             shell,
-            *rect,
-            &fx.mix,
-            Target::FxMix,
-            card,
-            (true, KnobRole::Fx, Some(accent)),
+            &cell,
+            (model, &model.label, target),
+            (abs_card, hue, true),
             cx,
         ));
     }
-    for (i, param) in fx.params.iter().enumerate() {
-        if let Some(rect) = lay.knobs.get(i + 1) {
-            out.push(knob_view(
-                shell,
-                *rect,
-                param,
-                Target::FxParam(i),
-                card,
-                (true, KnobRole::Fx, Some(accent)),
-                cx,
-            ));
-        }
-    }
-    out.push(caption(t, lay.beat, fx.beat_label()));
-    out
+    el
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fader_paint::{FaderFace, FaderLaw, FaderPlan};
-    use crate::knob_paint::knob_geometry;
-    use om_ui::main_layout::{channel_slot, page_for, CellKind, LayoutState};
-    use om_ui::theme::ThemeTokens;
 
-    const SIZES: [(i32, i32); 4] = [(1280, 720), (1280, 800), (1920, 1080), (2560, 1440)];
-
-    /// The channel strip card the standard page gives channel `ch` at a window size.
-    fn strip_card(size: (i32, i32), ch: usize) -> Rect {
-        let t = ThemeTokens::builtin_dark();
-        let needs = om_ui::header_layout::HeaderNeeds {
-            automix: true,
-            record: true,
-            settings: true,
-            notice: false,
-        };
-        let page = page_for(2, size, 0, t.gap, LayoutState::default(), needs);
-        let want = CellKind::Slot(channel_slot(ch));
-        let cell = page.cells.iter().find(|c| c.kind == want).expect("strip");
-        Rect::sized(cell.bounds.w, cell.bounds.h)
-    }
-
-    fn cap(rect: Rect, role: KnobRole) -> f32 {
-        knob_geometry(rect.w as f32, rect.h as f32, 0.0, role).cap_diameter()
-    }
-
-    /// knobs.md section 3: trim, EQ and filter caps are 32 px (28 at the least). At 1280 wide the
-    /// strip must give the 32 px cap, not the 30 px the old width left.
     #[test]
-    fn strip_knobs_get_the_researched_cap_sizes() {
-        let t = ThemeTokens::builtin_dark();
-        for size in SIZES {
-            let lay = ChannelStrip::layout(strip_card(size, 0), &t);
-            let full = size.1 >= 800;
-            let want = if full { 31.99 } else { 28.0 };
-            for (name, c) in [
-                ("trim", cap(lay.trim, KnobRole::Wide)),
-                ("filter", cap(lay.filter, KnobRole::Wide)),
-                ("high", cap(lay.eq[2], KnobRole::Band)),
-                ("mid", cap(lay.eq[1], KnobRole::Band)),
-                ("low", cap(lay.eq[0], KnobRole::Band)),
-            ] {
-                assert!(c >= want, "{size:?}: {name} cap {c}");
-            }
-        }
-    }
-
-    /// faders-meters.md section 3: major ticks are labelled. The channel fader needs 58 px for its
-    /// labels; the strip must supply it at 1280 wide.
-    #[test]
-    fn the_channel_fader_prints_its_tick_labels_at_every_window_size() {
-        let t = ThemeTokens::builtin_dark();
-        for size in SIZES {
-            let lay = ChannelStrip::layout(strip_card(size, 1), &t);
-            assert!(lay.fader.w >= 58, "{size:?}: fader {} px wide", lay.fader.w);
-            let face = FaderFace::channel(FaderLaw::Channel);
-            let plan = FaderPlan::new(lay.fader.w, lay.fader.h, &face, 0.5);
-            assert!(!plan.labels.is_empty(), "{size:?}: no tick labels");
-        }
+    fn a_caption_drops_the_unit_its_label_names() {
+        assert_eq!(caption_value("+4.0 dB"), "+4.0");
+        assert_eq!(caption_value("-inf"), "-inf");
+        assert_eq!(caption_value("65 %"), "65");
     }
 }

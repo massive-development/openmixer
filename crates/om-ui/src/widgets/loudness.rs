@@ -115,6 +115,21 @@ pub struct LoudnessLayout {
 
 /// Height the open panel needs, in px.
 pub const PANEL_HEIGHT: i32 = ROW_HEIGHT * 5 + CAPTION_HEIGHT + 6 * ROW_GAP;
+/// Width of the open panel, in px.
+pub const PANEL_WIDTH: i32 = 224;
+
+/// Where the open panel drops down: under the header's loudness toggle `toggle`, `gap` below the
+/// strip's bottom edge `header_bottom`, its right edge on the toggle's, kept inside a window
+/// `window_w` wide.
+pub fn panel_rect(toggle: Rect, header_bottom: i32, gap: i32, window_w: i32) -> Rect {
+    let x = (toggle.right() - PANEL_WIDTH).clamp(0, (window_w - PANEL_WIDTH).max(0));
+    Rect::new(
+        x,
+        header_bottom + gap,
+        PANEL_WIDTH.min(window_w),
+        PANEL_HEIGHT,
+    )
+}
 
 /// The loudness panel: the latest reading as a view, and whether the panel is open.
 #[derive(Debug, Clone, PartialEq)]
@@ -366,20 +381,26 @@ mod tests {
     }
 
     #[test]
-    fn the_mixer_module_leaves_room_for_the_toggle_and_the_open_panel() {
-        use crate::theme::ThemeTokens;
-        use crate::widgets::mixer::MixerPanel;
+    fn the_panel_drops_down_under_the_header_toggle() {
+        use crate::header_layout::{header_height, header_rects, HeaderNeeds};
+        use crate::theme::{Density, ThemeTokens};
         let theme = ThemeTokens::builtin_dark();
-        for (w, h) in [(253, 262), (386, 354)] {
-            let l = MixerPanel::module_layout(Rect::sized(w, h), &theme);
-            let card = Rect::sized(w, h);
-            assert!(card.contains(&l.loudness_panel), "{w}x{h}");
-            assert!(l.loudness.h >= 20, "{w}x{h}: toggle {} px", l.loudness.h);
-            assert!(!l.loudness.intersects(&l.fx), "{w}x{h}");
-            assert!(!l.loudness.intersects(&l.loudness_panel));
-            assert!(l.loudness_panel.h >= PANEL_HEIGHT, "{w}x{h}");
-            assert!(!l.loudness_panel.intersects(&l.master));
-            assert!(!l.loudness_panel.intersects(&l.crossfader));
+        for density in [Density::Roomy, Density::Compact] {
+            let m = theme.metrics(density);
+            for w in [1280, 1920] {
+                let rects = header_rects(w, m, HeaderNeeds::default());
+                let toggle = rects.loudness;
+                assert!(toggle.h >= 20, "{w}: toggle {} px", toggle.h);
+                let (button, summary) = LoudnessPanel::toggle_layout(toggle);
+                assert!(
+                    button.w > 0 && summary.w >= 40,
+                    "{w}: {button:?} {summary:?}"
+                );
+                let panel = panel_rect(toggle, header_height(m), 4, w);
+                assert!(panel.y >= rects.bar.bottom() && panel.right() <= w);
+                assert_eq!(panel.right(), toggle.right());
+                assert_eq!(panel.h, PANEL_HEIGHT);
+            }
         }
     }
 }

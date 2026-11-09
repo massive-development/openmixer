@@ -16,7 +16,7 @@ openmixer/
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── controllers/          # Controller map notes
-│   ├── design/               # E1 brand note, UI research, review gates
+│   ├── design/               # Faceplate decisions, E1 brand note (superseded), UI research, review gates
 │   ├── legal/                # Legal documentation and the asset provenance record
 │   ├── screenshots/          # Staged window screenshots and REVIEW.md
 │   ├── spikes/               # Spike notes and the decision record (DECISIONS.md)
@@ -24,7 +24,7 @@ openmixer/
 │   └── superpowers/          # Historical design specs and plans
 ├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports
-├── resources/                # Built-in theme JSON, generic controller maps, bundled Inter font
+├── resources/                # Built-in theme JSON, generic controller maps, bundled fonts
 ├── spikes/                   # Throwaway spikes (gpui-window, cpal-out, stretch), each its own Cargo workspace
 ├── tests/tools/              # Unit tests for the Python tools
 ├── tools/                    # check_docs_rust.py, progress_heatmap.py, issue_heatmap.py, screenshots.sh, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh, graphify_rebuild.py
@@ -89,7 +89,7 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 - `om-engine::recorder` (`Recorder::new() -> (RecorderTap, RecorderControl)`; the tap is in `DjEngineAudio` and taps the final master output, the control is `DjEngine::recorder()`). Audio thread: `rtrb` push only, drops counted, no allocation (`alloc_guard` test). Control: `start(&RecordSettings)`, `stop() -> RecordSummary`, `status()`. Writer thread, streaming WAV, crash-safe header, split and low-disk rules are described in `docs/PROGRESS.md`. Ids `record.start|stop|toggle` are the reserved `Namespace::Record`, served by `openmixer::record_service::RecordService`; `StateId::Record*` reads come from `EngineSnapshot.record`. Prefs version 4 `record`. Recordings are a user-visible file output: tests only write to temp dirs.
 - `om-engine::loudness` (`Loudness::create() -> (LoudnessTap, LoudnessControl)`; the tap is in `DjEngineAudio` next to the recorder tap, the control is `DjEngine::loudness()`). EBU R128 metering of the master bus with the `ebur128` crate 0.1.11 (not `ebur128-stream`), in histogram mode so memory stays bounded and nothing allocates in steady state (queue mode does; `tests/loudness_alloc.rs`). Audio thread: `rtrb` push only, drops counted, no allocation. Off until `enable()`, which starts the worker the first time. A worker thread feeds `LoudnessAnalyser` and publishes through atomics; `reading() -> LoudnessReading` (momentary, short-term, integrated LUFS, LRA in LU, true peak per channel in dBTP; `-inf` means nothing yet) is the UI meter's read API, `reset()` clears integrated, LRA and peak. Conformance tests (`loudness/tests.rs`) use signals synthesised from EBU Tech 3341/3342, not the official zip (the EBU site refuses automated downloads); cases 6 to 8 and the programme cases are not covered.
 - Loudness meter in the UI (`om-ui::widgets::loudness`, `om-ui-gpui::loudness_paint`): `Shell::new` calls `loudness().enable()` once and the UI tick stores `reading()` in a `LoudnessPanel`. `LoudnessView` turns a reading into bar fills, one-decimal texts (em dash for `-inf`), the clip flag (true peak above -1 dBTP) and the dropped-frames warning. The mixer module has a LUFS toggle (with the momentary value) between the FX toggle and the headphone knobs; it opens the panel over the headphone knobs (M and S bars, I, LRA, TP, Reset, warning). Rendering is checked in the headless gpui tests only, not on a GPU.
-- UI (Wave 8 UI): the header Record button is `om-ui-gpui::record_button` (draws `om_ui::record_bar` with `recordRed` and the other theme tokens; a click and the `r` key both send `record.toggle`; `Shell::typing()` keeps `r` a letter in the library search, the sampler path field, the debug column and the open settings card). The Recording settings tab is `om-ui-gpui::settings_view::recording` over `RecordSettingsPage`; its folder is typed in the shared text entry (`EntryKind::RecordFolder`). The app pushes the stored settings into the service through `AppRecordHost`. `--demo-record` records into a scratch folder for `tools/screenshots.sh main-record`; `--settings=recording` (and `automix`) open those tabs.
+- UI (Wave 8 UI): the header Record button is `om-ui-gpui::record_button` (draws `om_ui::record_bar` with the `playhead` signal red (`ThemeTokens::record_red()`; the old `recordRed` key still loads as `playhead`) and the other theme tokens; a click and the `r` key both send `record.toggle`; `Shell::typing()` keeps `r` a letter in the library search, the sampler path field, the debug column and the open settings card). The Recording settings tab is `om-ui-gpui::settings_view::recording` over `RecordSettingsPage`; its folder is typed in the shared text entry (`EntryKind::RecordFolder`). The app pushes the stored settings into the service through `AppRecordHost`. `--demo-record` records into a scratch folder for `tools/screenshots.sh main-record`; `--settings=recording` (and `automix`) open those tabs.
 
 ### Automix (Wave 7 A1-A6, Todo 38; settings page and bar, Todo 29)
 
@@ -166,10 +166,11 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 - **Resampling and loudness:** `rubato` (offline resampling, deck varispeed), `ebur128` (EBU R128 metering)
 - **RT plumbing:** `rtrb` (SPSC), atomics for the pulled `EngineSnapshot`, `assert_no_alloc` in tests (`arc-swap` is not used)
 
-### ADR-0005 to ADR-0007
+### ADR-0005 to ADR-0008
 - **0005 Experience-first product bar:** `docs/PRODUCT.md` is the bar; interface work is judged by looking at it
 - **0006 Controller map provenance:** maps are written clean-room from the MIDI spec and the maintainer's own hardware traces
 - **0007 CLAP hosting with clack:** accepted; `om-plugins` hosts CLAP plugins behind the `clap` feature, beside the C ABI (`clack-*` pinned `=0.2.0`)
+- **0008 The Machined Faceplate supersedes E1 on look:** accepted; `docs/design-system/DESIGN.md` is the look (warm matte neutrals, etched 1px lines, no glow, four muted deck hues each with its letter, signal red for playhead and record only, every number in mono). Phase 0 answers and the open owner decisions: `docs/design/faceplate-decisions.md`
 
 ## Pull Request Workflow (required)
 
@@ -233,11 +234,16 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 Colours, radii, border widths, insets and font sizes come from the theme, never from literals in view code.
 
 1. Read the theme's tokens (`om_ui::theme::ThemeTokens`, built from `resources/themes/*.json`).
-2. Get the control's recipe from `om_ui::style::LookAndFeel::from_tokens(t)`: `button` (idle, hover, active, disabled), `lit_button(accent)`, `knob`, `fader`, `tabs`, `tooltip`, `text_field` (idle, focus), `meter`, `panel`, `panel_caption`, `separator`, `drop_target`.
-3. In `om-ui-gpui`, draw with `paint::skin(el, &style)` for a box, `paint::border(el, width)` for a bare border, and `paint(colour)` for a colour. Radii and insets come from the style fields, not literals.
+2. Get the control's recipe from `om_ui::style::LookAndFeel::from_tokens(t)`: `face(Face, hue)` for any pressable control (rest, hover, pressed, on, on + hover, playing, disabled; `focus` is the 2px ring), `button` (idle, hover, active, disabled), `lit_button(accent)`, `knob`, `fader`, `tabs`, `tooltip`, `text_field` (idle, focus), `meter`, `panel`, `panel_caption`, `separator`, `drop_target`. Nothing glows: depth is the 1px etched edge, the 1px top highlight and, under knob and fader caps only, the one small drop.
+3. In `om-ui-gpui`, draw a control face with `paint::face(el, &face_style)` (or a part from `parts`, or `controls::face_button` for an interactive button), a box with `paint::skin(el, &style)`, a bare border with `paint::border(el, width)`, and a colour with `paint(colour)`. Radii and insets come from the style fields and sizes from the density's `DensityMetrics`, not literals. `examples/controls_gallery.rs` shows every part in every state, theme and density.
 4. A value no token covers: add a token field in `theme/tokens.rs` (default in `builtin_dark`), a reader in `theme/json.rs` (range-checked, with a key in the matching section), and a value in both built-in theme JSON files. Old theme files stay valid because a missing key inherits the default.
 5. Add the new style to `LookAndFeel::entries()` so the contrast and live-switch tests cover it. Text on a control needs contrast 3.0 (control) or 4.5 (body) against its fill over both backdrop ends; disabled controls are exempt.
 6. `crates/om-ui-gpui/tests/style_lint.rs` fails on raw colour calls (`rgb(`, `rgba(`, `hsla(`, `from_argb(`, bare 6 or 8 digit hex) in `src/`. Only `paint.rs` may name them.
+7. Type: set text with a tier, `el.type_role(t, TypeRole::Label)` (`om-ui-gpui::font::TypeExt`; tiers in `om_ui::theme::TypeRole`), and draw every number with `font::numeral(t, Numeral::Value | Readout, text)`, which is always the mono family. `crates/om-ui-gpui/tests/type_lint.rs` fails on a family named outside `font.rs`, a number source drawn without `numeral`, the 10 px `Numeral::Scale` outside the fader dB scale, and a literal text size under 11 px.
+
+8. Hue: a deck hue (`t.accent_for(deck)`) only on something that names that deck, beside its letter. Chrome that belongs to no deck (settings chips, header switches, the sampler) lights in the text colour; `LookAndFeel::accent` is that neutral, so pass the deck's hue explicitly where a control is a deck's.
+
+Themes and type (Machined Faceplate, ADR 0008): the built-in themes are `resources/themes/openmixer-{dark,daylight,harbour}.json` (ids `openmixer.dark`, `openmixer.daylight`, `openmixer.harbour`; harbour is derived from dark and unsourced). A theme holds both metric sets, Roomy and Compact (`ThemeTokens::metrics(Density)`, JSON section `density.roomy` / `density.compact`, defaults from DESIGN.md); the window picks one with `main_layout::resolve_density` from the Appearance preference (Automatic picks by height; an explicit Roomy gives way to Compact where the library would lose its rows). Old E1 theme files still load: retired glass and glow keys warn, `recordRed` and `backdropTop` are read as `playhead` and `ground`. Fonts are bundled in `resources/fonts/` with their licences: Sansation Bold (display, 21 px and up only), Source Sans 3 Regular and Medium (all interface text) and Ubuntu Mono Regular (every number; the family has no 500, so DESIGN.md's 500 numerals draw in Regular) and Bold (deck letters and state words such as LOCK and CLIP). GPUI has no letter-spacing, so no tier carries any. Inter is no longer bundled.
 
 gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
 

@@ -441,6 +441,11 @@ fn header_shows_track_info_and_effective_bpm() {
 
     let empty = TrackHeader::new(binding(&rig, 1));
     assert_eq!(empty.text().title, "No track loaded");
+    assert_eq!(
+        empty.text().remaining,
+        "--",
+        "no track, no time left to show"
+    );
 }
 
 #[test]

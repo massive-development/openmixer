@@ -1,5 +1,7 @@
 //! Shared control drawing and pointer wiring: push buttons, sliders, knobs and meters. Positions
 //! are relative to the parent card (which is positioned); `abs` gives window coordinates for drags.
+//! Buttons take the face states of `om_ui::style::Face` (drawn by `parts`): hover one tonal step
+//! up, pressed into the well, the deck tint when on, and the 2px focus ring for keyboard focus.
 //!
 //! Knobs and faders print no value at rest. The value appears in a popup above the control while
 //! it is dragged, and for knobs while the pointer hovers it (the hover is Shell state, so a hidden
@@ -9,28 +11,26 @@
 use crate::app::Shell;
 use crate::drag::{fraction, Target};
 use crate::fader_paint::{self, FaderFace, FaderLaw};
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::knob_paint::{
     angle_of, in_kill_zone, knob_geometry, paint_knob, sweep_fraction, value_of_fraction,
-    KnobColours, KnobPaintState, KnobRole, POPUP_LIFT,
+    KnobColours, KnobGeom, KnobPaintState, KnobRole, POPUP_LIFT,
 };
 use crate::meter_paint;
-use crate::paint::{paint, place, shadow, skin};
+use crate::paint::{face, focus_layer, paint, place, skin};
+use crate::parts::{face_box, pad_face, PadState};
 use gpui::{
-    canvas, div, prelude::*, px, Bounds, ClickEvent, Context, Div, Hsla, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseUpEvent, Pixels, ScrollEvent, SharedString, Window,
+    canvas, div, prelude::*, px, App, Bounds, ClickEvent, Context, Div, FocusHandle, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseUpEvent, Pixels, ScrollEvent, SharedString, Stateful, Window,
 };
-use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
-use gpui_kit::component::Sizable as _;
 use om_ui::geometry::Rect;
-use om_ui::style::LookAndFeel;
-use om_ui::theme::{Colour, ThemeTokens};
+use om_ui::style::{Face, LookAndFeel};
+use om_ui::theme::{Colour, Density, DensityMetrics, ThemeTokens, TypeRole};
 
-/// Smallest text drawn on a control, in px.
-const MIN_TEXT_PX: f32 = 12.0;
 /// A knob cell this tall or taller puts its label under the knob; shorter ones put it beside.
 const LABEL_BELOW_MIN_H: i32 = 48;
 /// Gap between the left edge of a cell and a knob that has its label beside it, px. Unsourced.
-const KNOB_EDGE_PAD: f32 = 4.0;
+pub const KNOB_EDGE_PAD: f32 = 4.0;
 /// Space between a knob's track and a label beside it, px. Unsourced.
 const LABEL_GAP: f32 = 6.0;
 /// Pixels one wheel line is worth when the wheel reports pixels.
@@ -98,7 +98,227 @@ pub fn is_reset_click(click_count: usize, ctrl_or_cmd: bool) -> bool {
     click_count >= 2 || ctrl_or_cmd
 }
 
-/// A labelled push button. `accent` is its colour when lit. Idle buttons take the hover fill.
+/// The metric set the window lays out with this frame (the density preference, resolved for the
+/// window by `main_layout::resolve_density`); the gallery draws both.
+pub fn metrics(t: &ThemeTokens) -> DensityMetrics {
+    *t.metrics(density())
+}
+
+thread_local! {
+    /// The density the window lays out with this frame (set by the shell before it draws).
+    static DENSITY: std::cell::Cell<Density> = const { std::cell::Cell::new(Density::Roomy) };
+}
+
+/// Sets the density the controls of this frame are drawn in (see [`metrics`]).
+pub(crate) fn set_density(density: Density) {
+    DENSITY.with(|d| d.set(density));
+}
+
+/// The density the window lays out with this frame.
+pub fn density() -> Density {
+    DENSITY.with(std::cell::Cell::get)
+}
+
+/// When a [`press_button`] or a pad acts: on the pointer's press (transport, pads: timing
+/// matters) or on its release (everything else).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fires {
+    OnPress,
+    OnRelease,
+}
+
+/// A button like [`face_button`] that acts on the pointer's press, not its release (Play, Cue and
+/// the pads, where timing matters); Enter or Space acts while it has keyboard focus.
+pub fn press_button<V: 'static>(
+    t: &ThemeTokens,
+    label: &str,
+    (state, hue): (Face, Colour),
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
+    let look = LookAndFeel::from_tokens(t);
+    let style = look.face(state, hue);
+    let id = next_button_id(label);
+    let el = face_box(t, &style, label.to_owned())
+        .relative()
+        .px(px(metrics(t).space[3]))
+        .id(SharedString::from(id.clone()))
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(label.to_owned());
+    if state == Face::Disabled {
+        return el;
+    }
+    let handle = focus_handle(&id, cx);
+    let (hover, pressed) = (
+        look.face(state.hovered(), hue),
+        look.face(Face::Pressed, hue),
+    );
+    let el = el
+        .track_focus(&handle)
+        .child(focus_layer(look.focus, style.radius, Some(handle)))
+        .hover(move |s| face(s, &hover))
+        .active(move |s| face(s, &pressed));
+    wire_press(el, Fires::OnPress, cx, move |this, _, window, cx| {
+        on_press(this, window, cx)
+    })
+}
+
+/// Wires `el` to run `on_press` with the event's modifiers, on the pointer's press or release
+/// (`fires`) and on Enter or Space with keyboard focus. A press never takes keyboard focus.
+fn wire_press<V: 'static>(
+    el: Stateful<Div>,
+    fires: Fires,
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, gpui::Modifiers, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
+    let on_press = std::rc::Rc::new(on_press);
+    let down = std::rc::Rc::clone(&on_press);
+    el.on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+            window.prevent_default();
+            if fires == Fires::OnPress {
+                down(this, ev.modifiers, window, cx);
+                cx.notify();
+            }
+        }),
+    )
+    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+        let keyboard = matches!(ev, ClickEvent::Keyboard(_));
+        if keyboard || fires == Fires::OnRelease {
+            on_press(this, ev.modifiers(), window, cx);
+            cx.notify();
+        }
+    }))
+}
+
+/// A hot cue or loop pad at `rect` (parent coordinates): the [`pad_face`] in `state`, stretched to
+/// the rect, focusable, acting on the pointer's press (with its modifiers) or on Enter or Space. A
+/// disabled pad takes no input.
+pub fn pad_button(
+    t: &ThemeTokens,
+    rect: Rect,
+    (number, name): (&str, &str),
+    (state, hue): (PadState, Colour),
+    id: &str,
+    cx: &mut Context<Shell>,
+    on_press: impl Fn(&mut Shell, gpui::Modifiers) + 'static,
+) -> Div {
+    let m = metrics(t);
+    let look = LookAndFeel::from_tokens(t);
+    let el = pad_face(t, &m, (number, name), state, hue)
+        .w(px(rect.w as f32))
+        .h(px(rect.h as f32))
+        .relative()
+        .id(SharedString::from(id.to_owned()))
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(format!("{number} {name}"));
+    if state == PadState::Disabled {
+        return place(rect).child(el);
+    }
+    let handle = focus_handle(id, cx);
+    let el = el
+        .track_focus(&handle)
+        .child(focus_layer(look.focus, m.panel_radius, Some(handle)));
+    let wired = wire_press(el, Fires::OnPress, cx, move |this, mods, _, _| {
+        on_press(this, mods)
+    });
+    place(rect).child(wired)
+}
+
+/// An interactive segmented control: one bordered group of `labels` divided by 1px lines, segment
+/// `selected` lit in `hue`. Each segment is a tab stop; a click or Enter selects it.
+pub fn segmented<V: 'static>(
+    t: &ThemeTokens,
+    labels: &[&str],
+    (selected, hue): (Option<usize>, Colour),
+    cx: &mut Context<V>,
+    on_select: impl Fn(&mut V, usize) + Clone + 'static,
+) -> Div {
+    let m = metrics(t);
+    let look = LookAndFeel::from_tokens(t);
+    let group = look.faces.segment(false, hue);
+    let mut el = div()
+        .flex()
+        .flex_none()
+        .h(px(m.control_height))
+        .rounded(px(group.radius))
+        .border_1()
+        .border_color(paint(group.edge));
+    for (i, text) in labels.iter().enumerate() {
+        let style = look.faces.segment(selected == Some(i), hue);
+        let hover = look.face(Face::Hover, hue);
+        let id = next_button_id(text);
+        let handle = focus_handle(&id, cx);
+        let mut seg = div()
+            .relative()
+            .flex()
+            .items_center()
+            .h_full()
+            .px(px(m.space[3]))
+            .bg(paint(style.fill))
+            .text_color(paint(style.text))
+            .whitespace_nowrap()
+            .type_role(t, TypeRole::Label)
+            .child((*text).to_owned());
+        if i > 0 {
+            seg = seg.border_l_1().border_color(paint(group.edge));
+        }
+        let seg = seg
+            .id(SharedString::from(id))
+            .role(gpui::accesskit::Role::Tab)
+            .aria_label((*text).to_owned())
+            .track_focus(&handle)
+            .child(focus_layer(look.focus, group.radius, Some(handle)));
+        let seg = if selected == Some(i) {
+            seg
+        } else {
+            seg.hover(move |s| s.bg(paint(hover.fill)).text_color(paint(hover.text)))
+        };
+        let select = on_select.clone();
+        el = el.child(wire_press(
+            seg,
+            Fires::OnRelease,
+            cx,
+            move |this, _, _, _| select(this, i),
+        ));
+    }
+    el
+}
+
+/// A layer over a fader or slider that makes it a tab stop: while it has keyboard focus the ring
+/// shows and the arrow, Page and Home/End keys move `target` (see [`key_step`]). It takes no
+/// pointer press of its own, so the drag under it still works.
+pub fn slider_focus(t: &ThemeTokens, target: Target, cx: &mut Context<Shell>) -> Stateful<Div> {
+    let look = LookAndFeel::from_tokens(t);
+    let id = format!("slider-{target:?}");
+    let handle = focus_handle(&id, cx);
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .id(SharedString::from(id))
+        .role(gpui::accesskit::Role::Slider)
+        .track_focus(&handle)
+        .child(focus_layer(
+            look.focus,
+            metrics(t).control_radius,
+            Some(handle),
+        ))
+        .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+            let keys = &ev.keystroke;
+            if keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt {
+                return;
+            }
+            if this.knob_key(target, keys.key.as_str(), keys.modifiers.shift) {
+                cx.stop_propagation();
+                cx.notify();
+            }
+        }))
+}
+
+/// A labelled push button at `rect`. `accent` lights it ("on") when `lit`.
 pub fn button(
     t: &ThemeTokens,
     rect: Rect,
@@ -108,14 +328,7 @@ pub fn button(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell) + 'static,
 ) -> Div {
-    let look = LookAndFeel::from_tokens(t);
-    let wrap = place(rect).rounded(px(t.control_radius));
-    let wrap = if lit {
-        shadow(wrap, &look.glow(accent))
-    } else {
-        wrap
-    };
-    wrap.child(
+    place(rect).child(
         push_button(t, label, lit.then_some(accent), cx, move |this, _, _| {
             on_press(this)
         })
@@ -149,35 +362,90 @@ fn next_button_id(label: &str) -> String {
     })
 }
 
-/// A `gpui-component` [`Button`] that runs `on_press` on the shell. `lit` is
-/// the accent it takes as its fill (a switch that is on), or `None` for a plain raised button,
-/// which follows the component theme (see `theme_bridge`).
-pub fn push_button(
+/// A push button that runs `on_press` on the view. `lit` is the deck hue it shows "on" in (a
+/// toggle that is on), or `None` for a button at rest. See [`face_button`].
+pub fn push_button<V: 'static>(
     t: &ThemeTokens,
     label: &str,
     lit: Option<Colour>,
-    cx: &mut Context<Shell>,
-    on_press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
-) -> Button {
-    let button = Button::new(SharedString::from(next_button_id(label)))
-        .label(label.to_owned())
-        .xsmall()
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
+    let (state, hue) = match lit {
+        Some(hue) => (Face::On, hue),
+        None => (Face::Rest, t.text_primary),
+    };
+    face_button(t, label, (state, hue), cx, on_press)
+}
+
+thread_local! {
+    /// The focus handle of each focusable control, by element id, so a control keeps its keyboard
+    /// focus from frame to frame and its focus ring can ask whether it has it.
+    static FOCUS: std::cell::RefCell<std::collections::HashMap<String, FocusHandle>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Every tab stop a control has registered on this thread, by element id (the keyboard-walk test).
+#[cfg(test)]
+pub(crate) fn registered_focus_handles() -> Vec<(String, FocusHandle)> {
+    FOCUS.with(|handles| {
+        handles
+            .borrow()
+            .iter()
+            .map(|(id, h)| (id.clone(), h.clone()))
+            .collect()
+    })
+}
+
+/// The focus handle of the control with element id `id`: a tab stop, made on first use.
+pub(crate) fn focus_handle(id: &str, cx: &App) -> FocusHandle {
+    FOCUS.with(|handles| {
+        handles
+            .borrow_mut()
+            .entry(id.to_owned())
+            .or_insert_with(|| cx.focus_handle().tab_stop(true))
+            .clone()
+    })
+}
+
+/// A button in `state` (`Rest`, `On`, `Playing` or `Disabled`; `hue` lights the last three) that
+/// runs `on_press` on a click, or on Enter or Space while it has keyboard focus. The pointer takes
+/// it one tonal step up and a press sinks it into the well; keyboard focus draws the 2px ring.
+/// A disabled button takes no input and no focus. Its size is the caller's (a rect or a flex row).
+pub fn face_button<V: 'static>(
+    t: &ThemeTokens,
+    label: &str,
+    (state, hue): (Face, Colour),
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
+    let look = LookAndFeel::from_tokens(t);
+    let style = look.face(state, hue);
+    let id = next_button_id(label);
+    let el = face_box(t, &style, label.to_owned())
+        .relative()
+        .px(px(metrics(t).space[3]))
+        .id(SharedString::from(id.clone()))
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(label.to_owned());
+    if state == Face::Disabled {
+        return el;
+    }
+    let handle = focus_handle(&id, cx);
+    let (hover, pressed) = (
+        look.face(state.hovered(), hue),
+        look.face(Face::Pressed, hue),
+    );
+    el.track_focus(&handle)
+        .child(focus_layer(look.focus, style.radius, Some(handle)))
+        .hover(move |s| face(s, &hover))
+        .active(move |s| face(s, &pressed))
+        // Keyboard focus only: a click does not take focus from the window's keys.
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             on_press(this, window, cx);
             cx.notify();
-        }));
-    let Some(accent) = lit else {
-        return button;
-    };
-    let look = LookAndFeel::from_tokens(t);
-    let fill = Hsla::from(paint(look.lit_button(accent).fill));
-    button.custom(
-        ButtonCustomVariant::new(cx)
-            .color(fill)
-            .foreground(Hsla::from(paint(look.lit_text)))
-            .hover(fill)
-            .active(fill),
-    )
+        }))
 }
 
 /// A transparent layer over its parent that shows `text` in a tooltip bubble while the pointer
@@ -219,14 +487,21 @@ pub fn draggable(el: Div, target: Target, abs: Rect, cx: &mut Context<Shell>) ->
     )
 }
 
-/// A value popup centred above a control `width` px wide, drawn at `top` (negative: above). It has
-/// no pointer handling, so it never takes a press from what lies under it.
-fn popup(t: &ThemeTokens, width: i32, top: f32, text: &str) -> Div {
+/// A value popup centred above a control `width` px wide, drawn at `top` (negative: above): the
+/// control's name, when given, then its value in mono. It has no pointer handling, so it never
+/// takes a press from what lies under it.
+fn popup(t: &ThemeTokens, width: i32, top: f32, name: Option<&str>, value: &str) -> Div {
     let look = LookAndFeel::from_tokens(t);
-    let chip = skin(div().px(px(6.)).py(px(1.)), &look.tooltip)
-        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
-        .whitespace_nowrap()
-        .child(text.to_owned());
+    let mut chip = skin(div().px(px(6.)).py(px(1.)), &look.tooltip)
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .type_role(t, TypeRole::Label)
+        .whitespace_nowrap();
+    if let Some(name) = name {
+        chip = chip.child(name.to_owned());
+    }
+    let chip = chip.child(numeral(t, Numeral::Value, value.to_owned()));
     div()
         .absolute()
         .left(px(0.))
@@ -262,9 +537,10 @@ pub fn slider_with_popup(
     cx: &mut Context<Shell>,
 ) -> Div {
     let vertical = rect.h >= rect.w;
+    // A channel fader's cap line is its deck's colour; the others are ivory.
     let accent = match target {
         Target::Channel(ch) => t.accent_for(ch as i32),
-        _ => t.brand,
+        _ => t.text_primary,
     };
     if target == Target::Crossfader && !vertical {
         let pos = fraction(value, min, max) as f32;
@@ -299,7 +575,7 @@ pub fn slider_with_popup(
     let track = skin(place(rect), &look.fader.track);
     let mut track = track.child(skin(thumb, &look.fader.thumb));
     if let Some(text) = popup_text {
-        track = track.child(popup(t, rect.w, -POPUP_LIFT, text));
+        track = track.child(popup(t, rect.w, -POPUP_LIFT, None, text));
     }
     draggable(track, target, abs, cx)
 }
@@ -381,22 +657,33 @@ pub fn knob(
 }
 
 /// How a rotary knob is drawn beyond what [`KnobFace`] says. The default is a band (EQ) knob in
-/// the first channel accent, idle and enabled.
+/// the first channel accent, idle and enabled, at the window's density.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KnobLook {
-    /// Largest cap and label placement; see [`KnobRole`].
+    /// Where the label goes; see [`KnobRole`].
     pub role: KnobRole,
     /// The value arc colour (the strip accent); the theme's first accent when None.
     pub accent: Option<Colour>,
-    /// Being dragged: a heavier arc.
+    /// Being dragged: the arc lifts toward the pointer colour.
     pub dragging: bool,
     /// Nothing to control (an empty sampler pad): faded, no input, no popup.
     pub disabled: bool,
+    /// The knob's diameter comes from this density's metric set (34 Roomy, 26 Compact).
+    pub density: Density,
+    /// The value in mono beside the knob at rest (DESIGN.md Components, "Knobs"), instead of only
+    /// in the popup. Needs room to the knob's right.
+    pub value_beside: bool,
+}
+
+/// How far a focus ring reaches outside the control it rings, px.
+pub(crate) fn ring_reach(t: &ThemeTokens) -> f32 {
+    let ring = LookAndFeel::from_tokens(t).focus;
+    ring.offset + ring.width
 }
 
 /// The caption line under a knob whose label sits below it, px.
 fn label_line_height(t: &ThemeTokens) -> f32 {
-    (t.type_caption.max(MIN_TEXT_PX) + 2.0).ceil()
+    (t.type_label * TypeRole::Label.line_height()).ceil()
 }
 
 /// A rotary knob with the default look. See [`knob_face_with`].
@@ -412,13 +699,125 @@ pub fn knob_face(
     knob_face_with(t, rect, face, range, (target, abs), KnobLook::default(), cx)
 }
 
-/// A rotary knob in `rect`: a 270 degree arc with the value from the detent (or minimum), a cap
-/// with a pointer, the label below or beside it, and, while `face.active`, the value in a popup.
-/// `at` is the target and the rect's window coordinates.
+/// Where a knob and its label sit in a rect `w` x `h`: the geometry, and whether the label goes
+/// below (tall cells, the EQ) or beside (short ones).
+fn knob_layout(
+    t: &ThemeTokens,
+    (w, h): (i32, i32),
+    label: &str,
+    knob_look: &KnobLook,
+) -> (KnobGeom, bool) {
+    let show_label = !label.is_empty() && knob_look.role.shows_label();
+    let label_below = show_label && h >= LABEL_BELOW_MIN_H;
+    // The focus ring reaches past the arc; the label below keeps clear of it.
+    let label_h = if label_below {
+        label_line_height(t) + ring_reach(t)
+    } else {
+        0.0
+    };
+    let size = t.metrics(knob_look.density).knob_size;
+    let mut geom = knob_geometry(w as f32, h as f32, label_h, size);
+    if (show_label && !label_below) || knob_look.value_beside {
+        // Room for the label or value: the knob moves to the left edge instead of the middle.
+        let (_, _, side) = geom.bbox();
+        geom.cx = side / 2.0 + KNOB_EDGE_PAD;
+    }
+    (geom, label_below)
+}
+
+/// What [`knob_body`] paints and prints.
+#[derive(Debug, Clone, Copy)]
+pub struct KnobBody<'a> {
+    pub geom: KnobGeom,
+    pub state: KnobPaintState,
+    pub colours: KnobColours,
+    pub label: &'a str,
+    pub label_below: bool,
+    /// The value printed beside the knob, when shown at rest.
+    pub value: Option<&'a str>,
+}
+
+/// The drawn part of a knob in `rect` (no input): the painted knob, its label below or beside it,
+/// and the value in mono beside it. With `focus`, the ring follows that handle's keyboard focus;
+/// without, `body.state.focused` decides (the gallery).
+pub fn knob_body(
+    t: &ThemeTokens,
+    rect: Rect,
+    body: KnobBody<'_>,
+    focus: Option<FocusHandle>,
+) -> Div {
+    let look = LookAndFeel::from_tokens(t);
+    let (state, colours, geom) = (body.state, body.colours, body.geom);
+    let painter = canvas(
+        |_, _, _| (),
+        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
+            let mut state = state;
+            if let Some(h) = &focus {
+                state.focused = h.is_focused(window) && window.last_input_was_keyboard();
+            }
+            paint_knob(window, bounds.origin, &state, &colours);
+        },
+    )
+    .absolute()
+    .size_full();
+    let fade = if state.disabled { 0.4 } else { 1.0 };
+    let mut outer = place(rect)
+        .type_role(t, TypeRole::Label)
+        .text_color(paint(look.knob.label.text.with_multiplied_alpha(fade)))
+        .child(painter);
+    let (_, _, side) = geom.bbox();
+    let beside = geom.cx + side / 2.0 + LABEL_GAP;
+    let column = |left: f32, top: f32, w: f32, h: f32| {
+        div()
+            .absolute()
+            .left(px(left))
+            .top(px(top))
+            .w(px(w.max(0.)))
+            .h(px(h))
+            .flex()
+            .items_center()
+            .overflow_hidden()
+            .whitespace_nowrap()
+    };
+    let (w, h) = (rect.w as f32, rect.h as f32);
+    if !body.label.is_empty() {
+        let label = if body.label_below {
+            let line = label_line_height(t);
+            if body.value.is_some() {
+                // The value sits beside: the label starts under the knob's left edge, unclipped.
+                let left = (geom.cx - side / 2.0).max(0.0);
+                column(left, h - line, w - left, line)
+            } else {
+                column(0.0, h - line, w, line).justify_center()
+            }
+        } else {
+            column(beside, 0.0, w - beside, h)
+        };
+        outer = outer.child(label.child(body.label.to_owned()));
+    }
+    if let Some(value) = body
+        .value
+        .filter(|_| body.label_below || body.label.is_empty())
+    {
+        let top = geom.cy - h / 2.0;
+        outer = outer.child(
+            column(beside, top, w - beside, h)
+                .text_color(paint(look.knob.readout.text.with_multiplied_alpha(fade)))
+                .child(numeral(t, Numeral::Value, value.to_owned())),
+        );
+    }
+    outer
+}
+
+/// A rotary knob in `rect`: the 2px arc with the value from the detent (or minimum), the raised cap
+/// with its pointer, the label below or beside it, the value beside it when `value_beside` is set,
+/// and, while `face.active`, the value in a popup. `at` is the target and the rect's window
+/// coordinates.
 ///
 /// Only the disc of the knob takes the pointer: the wide trim bar is not one big button. It
 /// responds to a press (drag; double-click or ctrl/cmd-click reset), shift (fine), the wheel, and
-/// the keys of [`key_step`] when focused. Hovering tells the Shell, which turns `active` on.
+/// the keys of [`key_step`] when focused, which also draws its focus ring. Hovering tells the
+/// Shell, which turns `active` on.
 pub fn knob_face_with(
     t: &ThemeTokens,
     rect: Rect,
@@ -429,20 +828,7 @@ pub fn knob_face_with(
     cx: &mut Context<Shell>,
 ) -> Div {
     let look = LookAndFeel::from_tokens(t);
-    let show_label = !face.label.is_empty() && knob_look.role.shows_label();
-    // Tall cells (the EQ) put the label under the knob; short ones put it beside.
-    let label_below = show_label && rect.h >= LABEL_BELOW_MIN_H;
-    let label_h = if label_below {
-        label_line_height(t)
-    } else {
-        0.0
-    };
-    let mut geom = knob_geometry(rect.w as f32, rect.h as f32, label_h, knob_look.role);
-    if show_label && !label_below {
-        // Room for the label: the knob moves to the left edge instead of the middle.
-        let (_, _, side) = geom.bbox();
-        geom.cx = side / 2.0 + KNOB_EDGE_PAD;
-    }
+    let (geom, label_below) = knob_layout(t, (rect.w, rect.h), face.label, &knob_look);
     let detent = face.detent.filter(|d| *d > min && *d < max);
     let state = KnobPaintState {
         geom,
@@ -453,131 +839,107 @@ pub fn knob_face_with(
         hovered: face.active && !knob_look.disabled,
         active: knob_look.dragging,
         disabled: knob_look.disabled,
+        focused: false,
     };
     let colours = KnobColours::new(&look, t, knob_look.accent.unwrap_or(look.knob.fill));
-    let painter = canvas(
-        |_, _, _| (),
-        move |bounds: Bounds<Pixels>, _, window: &mut Window, _| {
-            paint_knob(window, bounds.origin, &state, &colours);
-        },
-    )
-    .absolute()
-    .size_full();
-
-    let mut outer = place(rect)
-        .text_size(px(t.type_caption.max(MIN_TEXT_PX)))
-        .text_color(paint(
-            look.knob
-                .label
-                .text
-                .with_multiplied_alpha(if knob_look.disabled { 0.4 } else { 1.0 }),
-        ))
-        .child(painter);
-
-    if show_label {
-        let label = if label_below {
-            div()
-                .absolute()
-                .left(px(0.))
-                .top(px(rect.h as f32 - label_h))
-                .w(px(rect.w as f32))
-                .h(px(label_h))
-                .flex()
-                .items_center()
-                .justify_center()
-        } else {
-            let (_, _, side) = geom.bbox();
-            let left = geom.cx + side / 2.0 + LABEL_GAP;
-            div()
-                .absolute()
-                .left(px(left))
-                .top(px(0.))
-                .w(px((rect.w as f32 - left).max(0.)))
-                .h(px(rect.h as f32))
-                .flex()
-                .items_center()
-        };
-        outer = outer.child(
-            label
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .child(face.label.to_owned()),
-        );
-    }
+    let id = format!("knob-{target:?}");
+    let handle = (!knob_look.disabled).then(|| focus_handle(&id, cx));
+    let label = if knob_look.role.shows_label() {
+        face.label
+    } else {
+        ""
+    };
+    let body = KnobBody {
+        geom,
+        state,
+        colours,
+        label,
+        label_below,
+        value: knob_look.value_beside.then_some(face.readout),
+    };
+    let mut outer = knob_body(t, rect, body, handle.clone());
 
     // The pressable part is the knob's bounding square, and a press outside the disc itself is
     // ignored. The popup is the wrapper's other child, so it exists (and takes the pointer) only
     // while shown, and then it takes nothing.
-    let (bx, by, side) = geom.bbox();
+    // A Compact knob is drawn 26 px but takes the pointer over the minimum target around it.
+    let (_, _, side) = geom.bbox();
+    let reach = side.max(t.min_pointer_target);
     let hit_rect = Rect::new(
-        bx.floor() as i32,
-        by.floor() as i32,
-        side.ceil() as i32,
-        side.ceil() as i32,
+        (geom.cx - reach / 2.0).floor() as i32,
+        (geom.cy - reach / 2.0).floor() as i32,
+        reach.ceil() as i32,
+        reach.ceil() as i32,
     );
-    let hit = place(hit_rect).id(gpui::ElementId::Name(format!("knob-{target:?}").into()));
-    let hit = if knob_look.disabled {
-        hit
-    } else {
-        hit.tab_index(0)
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                    let local_x = f32::from(ev.position.x) - abs.x as f32;
-                    let local_y = f32::from(ev.position.y) - abs.y as f32;
-                    if !geom.hits(local_x, local_y) {
-                        return;
-                    }
-                    let reset = is_reset_click(
-                        ev.click_count,
-                        ev.modifiers.control || ev.modifiers.platform,
-                    );
-                    if reset && this.reset_target(target) {
-                        this.end_drag();
-                    } else {
-                        this.begin_drag_fine(target, abs, ev.position, ev.modifiers.shift);
-                    }
-                    cx.notify();
-                }),
-            )
-            .on_scroll(cx.listener(move |this, ev: &ScrollEvent, _, cx| {
-                let lines = f64::from(f32::from(ev.delta.pixel_delta(px(WHEEL_LINE_PX)).y))
-                    / f64::from(WHEEL_LINE_PX);
-                if lines != 0.0 {
-                    this.knob_wheel(target, lines, ev.modifiers.shift);
-                    cx.stop_propagation();
-                    cx.notify();
-                }
-            }))
-            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
-                let keys = &ev.keystroke;
-                if keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt {
-                    return;
-                }
-                if this.knob_key(target, keys.key.as_str(), keys.modifiers.shift) {
-                    cx.stop_propagation();
-                    cx.notify();
-                }
-            }))
-            .on_hover(cx.listener(move |this, over: &bool, _, cx| {
-                if *over {
-                    this.hovered = Some(target);
-                } else if this.hovered == Some(target) {
-                    this.hovered = None;
-                }
-                cx.notify();
-            }))
+    let hit = place(hit_rect).id(gpui::ElementId::Name(id.into()));
+    let hit = match handle {
+        None => hit,
+        Some(handle) => knob_input(hit.track_focus(&handle), target, abs, (geom, reach), cx),
     };
     outer = outer.child(hit);
     if face.active && !knob_look.disabled {
-        let text = if face.label.is_empty() {
-            face.readout.to_owned()
-        } else {
-            format!("{} {}", face.label, face.readout)
-        };
-        outer = outer.child(popup(t, rect.w, geom.popup_top(rect.y as f32), &text));
+        let name = (!face.label.is_empty()).then_some(face.label);
+        let top = geom.popup_top(rect.y as f32);
+        outer = outer.child(popup(t, rect.w, top, name, face.readout));
     }
     outer
+}
+
+/// The pointer, wheel and key handling of a knob's hit square.
+fn knob_input(
+    hit: Stateful<Div>,
+    target: Target,
+    abs: Rect,
+    (geom, reach): (KnobGeom, f32),
+    cx: &mut Context<Shell>,
+) -> Stateful<Div> {
+    hit.on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+            let local_x = f32::from(ev.position.x) - abs.x as f32;
+            let local_y = f32::from(ev.position.y) - abs.y as f32;
+            if !geom.hits_within(local_x, local_y, reach / 2.0) {
+                return;
+            }
+            let reset = is_reset_click(
+                ev.click_count,
+                ev.modifiers.control || ev.modifiers.platform,
+            );
+            if reset && this.reset_target(target) {
+                this.end_drag();
+            } else {
+                this.begin_drag_fine(target, abs, ev.position, ev.modifiers.shift);
+            }
+            cx.notify();
+        }),
+    )
+    .on_scroll(cx.listener(move |this, ev: &ScrollEvent, _, cx| {
+        let lines = f64::from(f32::from(ev.delta.pixel_delta(px(WHEEL_LINE_PX)).y))
+            / f64::from(WHEEL_LINE_PX);
+        if lines != 0.0 {
+            this.knob_wheel(target, lines, ev.modifiers.shift);
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }))
+    .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+        let keys = &ev.keystroke;
+        if keys.modifiers.control || keys.modifiers.platform || keys.modifiers.alt {
+            return;
+        }
+        if this.knob_key(target, keys.key.as_str(), keys.modifiers.shift) {
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }))
+    .on_hover(cx.listener(move |this, over: &bool, _, cx| {
+        if *over {
+            this.hovered = Some(target);
+        } else if this.hovered == Some(target) {
+            this.hovered = None;
+        }
+        cx.notify();
+    }))
 }
 
 /// One side of a stereo meter, as the view model reports it.
@@ -606,13 +968,23 @@ pub fn stereo_meter(
     meter_paint::segmented_meter(t, rect, labels, bars, cx, on_click)
 }
 
-/// A text caption at `rect` (parent coordinates). 12 px at least.
+/// A text caption at `rect` (parent coordinates), in the label tier.
 pub fn caption(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
     let style = LookAndFeel::from_tokens(t).panel_caption;
     place(rect)
-        .text_size(px(style.font_size.max(MIN_TEXT_PX)))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(style.text))
         .child(text.to_owned())
+}
+
+/// A number caption at `rect` (parent coordinates): [`caption`] for a value, in mono.
+pub fn value_caption(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
+    let style = LookAndFeel::from_tokens(t).panel_caption;
+    place(rect)
+        .text_color(paint(style.text))
+        .whitespace_nowrap()
+        .overflow_hidden()
+        .child(numeral(t, Numeral::Value, text.to_owned()))
 }
 
 /// Text centred in `rect`, for a label that rides on another control (the end marks of the
@@ -623,9 +995,19 @@ pub fn mark(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(MIN_TEXT_PX))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(t.text_secondary))
         .child(text.to_owned())
+}
+
+/// [`mark`] for a value (a meter's peak readout), in mono.
+pub fn value_mark(t: &ThemeTokens, rect: Rect, text: &str) -> Div {
+    place(rect)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(paint(t.text_secondary))
+        .child(numeral(t, Numeral::Value, text.to_owned()))
 }
 
 /// Releases the drag when the pointer goes up anywhere in the window.

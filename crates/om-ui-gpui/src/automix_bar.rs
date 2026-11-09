@@ -7,6 +7,7 @@
 //! `automix.skip` and `automix.cancel` ids.
 
 use crate::app::Shell;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::paint::{paint, place};
 use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent};
 use om_core::{AutomixSnapshot, ParameterTarget};
@@ -18,7 +19,7 @@ use om_ui::geometry::Rect;
 use om_ui::preferences::AutomixPrefs;
 use om_ui::settings::LENGTH_CHOICES;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::ThemeTokens;
+use om_ui::theme::{ThemeTokens, TypeRole};
 
 /// Reads the automix snapshot on the window thread (the service is shared, so this is cheap).
 pub type AutomixSnapshotFn = std::sync::Arc<dyn Fn() -> AutomixSnapshot + Send + Sync>;
@@ -54,7 +55,7 @@ fn bar_chip(
         .border_color(paint(t.border))
         .bg(paint(t.surface_raised))
         .text_color(paint(t.text_primary))
-        .text_size(px(t.type_small))
+        .type_role(t, TypeRole::Label)
         .whitespace_nowrap()
         .child(label.to_owned());
     on_press(chip, cx, press)
@@ -74,7 +75,7 @@ fn segmented_switch(t: &ThemeTokens, enabled: bool, height: f32, cx: &mut Contex
             .justify_center()
             .bg(paint(style.fill))
             .text_color(paint(style.text))
-            .text_size(px(style.font_size))
+            .type_role(t, TypeRole::Label)
             .child(label.to_owned());
         on_press(el, cx, move |this| {
             this.settings_mut(|s| s.automix_set_enabled(target))
@@ -115,7 +116,8 @@ pub(crate) fn automix_bar_view(
     let actions = bar.actions();
     let fraction = bar.progress as f32;
     let height = rect.h as f32;
-    let accent = t.accents.first().copied().unwrap_or(t.surface_hover);
+    // The bar belongs to no deck: its progress is drawn in the text colour, not a deck hue.
+    let accent = t.text_primary;
     let length = bar.length_beats;
     let next_length = LENGTH_CHOICES
         .iter()
@@ -129,12 +131,11 @@ pub(crate) fn automix_bar_view(
         .items_center()
         .gap(px(ROW_GAP))
         .px(px(ROW_PADDING))
-        .text_size(px(t.type_small))
+        .type_role(t, TypeRole::Label)
         .text_color(paint(t.text_primary))
         .child(
             div()
                 .flex_none()
-                .text_size(px(t.type_caption))
                 .text_color(paint(t.text_muted))
                 .child(TOGGLE_LABEL),
         )
@@ -152,15 +153,10 @@ pub(crate) fn automix_bar_view(
             .border_1()
             .border_color(paint(t.border))
             .bg(paint(t.surface_raised))
-            .text_size(px(t.type_small))
+            .type_role(t, TypeRole::Label)
             .text_color(paint(t.text_primary))
-            .child(
-                div()
-                    .text_size(px(t.type_caption))
-                    .text_color(paint(t.text_muted))
-                    .child("Transition"),
-            )
-            .child(format!("{length} beats"));
+            .child(div().text_color(paint(t.text_muted)).child("Transition"))
+            .child(numeral(t, Numeral::Value, format!("{length} beats")));
         row = row.child(on_press(chip, cx, move |this| {
             this.settings_mut(|s| s.automix_set_length(i64::from(next_length)))
         }));
@@ -180,7 +176,8 @@ pub(crate) fn automix_bar_view(
         let (text, colour) = if bar.error.is_empty() {
             (bar.next.clone(), t.text_primary)
         } else {
-            (bar.error.clone(), t.meter_high)
+            // An error is stated in words; red is kept for the playhead and recording.
+            (bar.error.clone(), t.text_primary)
         };
         row = row.child(
             div()
@@ -218,12 +215,11 @@ pub(crate) fn automix_bar_view(
                         ),
                 )
                 .child(
-                    div()
+                    numeral(t, Numeral::Value, bar.remaining.clone())
                         .w(px(REMAINING_WIDTH))
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .text_color(paint(t.text_secondary))
-                        .child(bar.remaining.clone()),
+                        .text_color(paint(t.text_secondary)),
                 ),
         );
     }

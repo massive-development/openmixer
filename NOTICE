@@ -14,6 +14,18 @@ This file lists third-party components used in OpenMixer.
 | lofty 0.25 | MIT OR Apache-2.0 | https://github.com/Serial-ATA/lofty-rs |
 | ONNX Runtime 1.x (optional `onnx` feature, via ort) | MIT | https://github.com/microsoft/onnxruntime |
 
+## Fonts
+
+Bundled unmodified in `resources/fonts/` and compiled into the binary; each keeps its own licence, whose text sits beside it.
+
+| Font | License | Source |
+|------|---------|--------|
+| Sansation Bold 1.301 (Bernd Montag; Reserved Font Name "Sansation") | SIL OFL 1.1 (`Sansation-OFL.txt`) | https://github.com/google/fonts/tree/main/ofl/sansation |
+| Source Sans 3 Regular and Medium 3.052 (Adobe; Reserved Font Name "Source") | SIL OFL 1.1 (`SourceSans3-OFL.txt`) | https://github.com/adobe-fonts/source-sans |
+| Ubuntu Mono Regular and Bold 0.80 (Canonical Ltd.) | Ubuntu Font Licence 1.0 (`UbuntuMono-UFL.txt`) | https://github.com/google/fonts/tree/main/ufl/ubuntumono |
+
+Ubuntu and Canonical are registered trademarks of Canonical Ltd.; the font licence grants no trademark rights.
+
 ## Notes
 
 - Model weights (e.g. Demucs stems) are never shipped or committed; they are downloaded on first use after the user accepts the model licence (`om-stems`)

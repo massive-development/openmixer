@@ -1,14 +1,15 @@
-//! Application shell: the themed main window. Lays the decks, the mixer and the library placeholder
-//! out with om-ui's `MainLayout` rectangles, owns the om-ui widget models, and ticks the engine's
-//! control side once per frame.
+//! Application shell: the themed main window. Lays the faceplate out with om-ui's rect contract
+//! (`main_layout::page_for`, in the density the preference resolves to for the window), owns the
+//! om-ui widget models, and ticks the engine's control side once per frame.
 
 use crate::controls::release_on;
 use crate::debug_panel::{decks_section, device_rows, parameter_rows, DeckControls, DeviceStatus};
-use crate::deck_view::deck_card;
+use crate::deck_view::{deck_card, head_card, tempo_card};
 use crate::drag::Drag;
+use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::library::{LibraryPanel, SharedHub};
 use crate::library_view::{library_card, LibraryTable};
-use crate::mixer_view::{channel_card, mixer_card};
+use crate::mixer_view::mixer_card;
 use crate::paint::{paint, place};
 use crate::sampler_view::sampler_card;
 use crate::settings_view::{SettingsOptions, SettingsState};
@@ -30,14 +31,14 @@ use om_ui::binding::DeckBinding;
 use om_ui::binding::MixerBinding;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::{
-    channel_of_slot, page_for, visible_cells, CellKind, LayoutPlan, LayoutState, PlacedCell,
-    LIBRARY_SLOT, MIN_WINDOW, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
+    deck_of_head, page_for, resolve_density, CellKind, LayoutState, PlacedCell, LIBRARY_SLOT,
+    MIN_WINDOW, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT, TEMPO_SLOT,
 };
 use om_ui::meter::meter_params;
 use om_ui::sample_bank::SampleBank;
 use om_ui::sampler_binding::SamplerBinding;
 use om_ui::style::LookAndFeel;
-use om_ui::theme::{ThemeRegistry, ThemeTokens};
+use om_ui::theme::{Density, DensityChoice, ThemeRegistry, ThemeTokens, TypeRole};
 use om_ui::widgets::deck::{DeckWidget, TrackInfo, WaveformMeta};
 use om_ui::widgets::loudness::LoudnessPanel;
 use om_ui::widgets::mixer::MixerPanel;
@@ -62,6 +63,10 @@ pub struct SceneOptions {
     pub platter: bool,
     /// Press this sampler pad once its sample has loaded.
     pub press_pad: Option<usize>,
+    /// Open these drawer tabs: (deck, tab).
+    pub deck_tabs: Vec<(usize, om_ui::widgets::deck::PadMode)>,
+    /// Start with the library band hidden.
+    pub library_hidden: bool,
 }
 
 /// What the caller decides before the window opens.
@@ -158,6 +163,8 @@ pub struct Shell {
     pending_pad: Option<usize>,
     /// The window's size in px, as the last frame saw it (the library sizes itself from it).
     pub(crate) window_size: (i32, i32),
+    /// The density this frame lays out with: the preference, resolved for the window's height.
+    pub(crate) density: Density,
     /// The OS media session (media keys, now-playing), once started.
     pub(crate) media: Option<crate::media_keys::MediaSession>,
     /// Starting the media session was tried (it is tried once).
@@ -207,23 +214,10 @@ pub fn load_theme() -> ThemeTokens {
     registry.current().clone()
 }
 
-/// Cells for a window of `window` size whose layout area (banner and top bar excluded) is `area`,
-/// in draw order. A window under [`MIN_WINDOW`] shows two decks and no sampler rather than
-/// shrinking its controls (see [`LayoutPlan::for_window`]).
-pub fn cells_for(
-    engine_decks: usize,
-    window: (i32, i32),
-    area: Rect,
-    gap: i32,
-    state: LayoutState,
-) -> Vec<PlacedCell> {
-    let plan = LayoutPlan::for_window(engine_decks, window, gap, state);
-    visible_cells(&plan.spec, plan.decks, area, gap)
-}
-
 impl Shell {
     /// The window's root state. Creates the widget models over the engine's control surface.
-    pub(crate) fn new(
+    /// Public for offscreen captures, which open it in a headless window.
+    pub fn new(
         engine: Arc<DjEngine>,
         router: Arc<ParameterRouter>,
         theme: ThemeTokens,
@@ -274,7 +268,7 @@ impl Shell {
         if let Err(error) = engine.loudness().enable() {
             eprintln!("loudness meter unavailable: {error}");
         }
-        Self {
+        let mut shell = Self {
             engine,
             router,
             theme,
@@ -306,6 +300,7 @@ impl Shell {
             sampler_open: scene.sampler_open,
             pending_pad: scene.press_pad,
             window_size: (0, 0),
+            density: Density::Roomy,
             media: None,
             media_tried: false,
             was_recording: false,
@@ -317,7 +312,14 @@ impl Shell {
             frames_out,
             frame_stats: std::env::var_os("OPENMIXER_FRAME_STATS")
                 .map(|_| crate::frame_stats::FrameStats::default()),
+        };
+        shell.performance = scene.library_hidden;
+        for (deck, tab) in &scene.deck_tabs {
+            if *deck < shell.decks.len() {
+                shell.select_pad_mode(*deck, *tab);
+            }
         }
+        shell
     }
 
     /// The layout state the user has chosen: performance mode and the sampler drawer.
@@ -327,6 +329,13 @@ impl Shell {
             sampler_open: self.sampler_open,
             sampler_visible: true,
         }
+    }
+
+    /// The density the user chose on the Appearance page (Automatic without settings).
+    pub(crate) fn density_choice(&self) -> DensityChoice {
+        self.settings
+            .as_ref()
+            .map_or(DensityChoice::Automatic, |s| s.prefs.density)
     }
 
     /// The deck's 'Load stems' / 'Stems off' action. A failure is kept for the stems caption.
@@ -448,7 +457,7 @@ impl Shell {
             .flex()
             .flex_col()
             .gap(px(2.))
-            .text_size(px(t.type_caption))
+            .type_role(t, TypeRole::Label)
             .child(decks_section(t, &self.deck_controls, &playing, cx));
         for (label, id, value) in lines {
             let row = div()
@@ -466,7 +475,7 @@ impl Shell {
                         .text_color(paint(look.popup_hint.text))
                         .child(id),
                 )
-                .child(div().text_color(paint(look.popup.text)).child(value));
+                .child(numeral(t, Numeral::Value, value).text_color(paint(look.popup.text)));
             body = body.child(row);
         }
         place(bounds)
@@ -518,10 +527,9 @@ impl Shell {
             CellKind::Deck(index) => deck_card(self, *index, cell.bounds, cx),
             CellKind::Slot(name) if name == STAGE_SLOT => stage_card(self, cell.bounds, cx),
             CellKind::Slot(name) if name == MIXER_SLOT => mixer_card(self, cell.bounds, cx),
-            CellKind::Slot(name)
-                if channel_of_slot(name).is_some_and(|ch| ch < self.mixer.strips.len()) =>
-            {
-                channel_card(self, channel_of_slot(name).unwrap_or(0), cell.bounds, cx)
+            CellKind::Slot(name) if name == TEMPO_SLOT => tempo_card(self, cell.bounds),
+            CellKind::Slot(name) if deck_of_head(name).is_some_and(|d| d < self.decks.len()) => {
+                head_card(self, deck_of_head(name).unwrap_or(0), cell.bounds, cx)
             }
             CellKind::Slot(name) if name == SAMPLER_SLOT => {
                 let focus = self
@@ -588,15 +596,16 @@ impl Render for Shell {
         } else {
             0
         };
-        let gap = self.theme.gap;
         self.window_size = (width, height);
+        self.density = resolve_density(self.density_choice(), &self.theme, (width, height));
+        crate::controls::set_density(self.density);
         let page = page_for(
             self.engine.num_decks(),
             (width, height),
             debug_w,
-            gap,
             self.layout_state(),
             self.header_needs(),
+            (&self.theme, self.density),
         );
         let top = page.area.y;
 
@@ -605,7 +614,9 @@ impl Render for Shell {
                 .size_full()
                 .relative()
                 .font(crate::font::interface_font(&self.theme))
-                .bg(paint(self.theme.backdrop_top))
+                // The window's rem is the component library's (`theme_bridge::component_rem`).
+                .text_size(px(self.theme.type_body))
+                .bg(paint(self.theme.ground))
                 .text_color(paint(self.theme.text_primary))
                 .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
                     // `r` toggles recording unless a text field or the settings card takes the key.
@@ -638,6 +649,9 @@ impl Render for Shell {
                 Rect::new(width - debug_w, top, debug_w, (height - top).max(0)),
                 cx,
             ));
+        }
+        if let Some(panel) = self.loudness_overlay(&page.header, width, cx) {
+            root = root.child(panel);
         }
         if let Some(overlay) = self.settings_overlay(Rect::new(0, 0, width, height), window, cx) {
             root = root.child(overlay);

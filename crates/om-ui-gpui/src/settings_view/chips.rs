@@ -4,8 +4,10 @@
 
 use super::*;
 use crate::controls::push_button;
+use crate::font::TypeExt as _;
 use gpui_kit::component::input::Input;
 use om_ui::style::LookAndFeel;
+use om_ui::theme::TypeRole;
 
 /// Height of a chip, px.
 const CHIP_H: f32 = 28.0;
@@ -68,18 +70,19 @@ pub(super) fn choice_row(t: &ThemeTokens, title: &str, chips: Div) -> Div {
         .child(
             div()
                 .text_color(paint(caption.text))
-                .text_size(px(caption.font_size))
+                .type_role(t, TypeRole::Label)
                 .mb(px(4.))
                 .child(title.to_owned()),
         )
         .child(div().flex().flex_wrap().child(chips))
 }
 
+/// A sentence under a row: body size, in the caption colour.
 pub(super) fn note(t: &ThemeTokens, text: &str) -> Div {
     let caption = LookAndFeel::from_tokens(t).panel_caption;
     div()
         .text_color(paint(caption.text))
-        .text_size(px(caption.font_size))
+        .type_role(t, TypeRole::Body)
         .mb(px(8.))
         .child(text.to_owned())
 }
@@ -130,12 +133,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_accent_falls_back_to_the_surface_when_the_theme_has_none() {
+    fn a_lit_chip_is_neutral_never_a_deck_hue() {
         let mut themes = ThemeRegistry::new();
         themes.load_builtins();
-        themes.select(ThemeRegistry::DEFAULT_ID);
-        let mut tokens = themes.current().clone();
-        tokens.accents.clear();
-        assert_eq!(accent_of(&tokens), tokens.surface_raised);
+        assert!(!themes.themes().is_empty());
+        for entry in themes.themes() {
+            let (id, tokens) = (&entry.info.id, &entry.tokens);
+            assert_eq!(accent_of(tokens), tokens.text_primary, "{id}");
+            assert!(!tokens.accents.contains(&accent_of(tokens)), "{id}");
+        }
     }
 }

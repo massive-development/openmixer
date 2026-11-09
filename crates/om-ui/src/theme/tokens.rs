@@ -1,5 +1,7 @@
 //! Theme tokens: colours, spacing, shape, type scale, widget metrics and translucency. The built-in dark theme is defined here too.
 
+use super::density::{Density, DensityMetrics};
+
 /// An ARGB colour, stored as `0xAARRGGBB`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Colour(u32);
@@ -85,23 +87,22 @@ const fn stop(pos: f32, hue: f32, saturation: f32, lightness: f32) -> WaveStop {
 /// Every design token one theme sets. Field names are snake case.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeTokens {
-    // Backdrop: gradient plus two soft glows the glass surfaces pick up.
-    pub backdrop_top: Colour,
-    pub backdrop_bottom: Colour,
-    pub glow_cool: Colour,
-    pub glow_warm: Colour,
-    // Glass surfaces, from the card itself to the sunken wells that hold tracks and meters.
+    /// Window background (Matte Ground).
+    pub ground: Colour,
+    /// Faceplate panel, control face (buttons, pads, knob bodies), its hover step, and the
+    /// recessed Ink Well that holds waveforms and meters.
     pub surface: Colour,
     pub surface_raised: Colour,
     pub surface_hover: Colour,
     pub well: Colour,
-    /// Decorative hairline between and around surfaces. Deliberately quiet (about 1.4:1); anything
-    /// that must be *found* (a control's outline, a marker) uses `border_strong` (>= 3:1).
+    /// Etched 1px line between and around parts. Decorative; anything that must be *found* (a
+    /// control's outline, a marker) uses `border_strong` (>= 3:1).
     pub border: Colour,
-    /// Outline of an interactive control; WCAG 1.4.11 non-text contrast (>= 3:1) on every surface.
+    /// Graphic edge: >= 3:1 on panel and control, for edges that are the only cue.
     pub border_strong: Colour,
     /// Keyboard focus ring; >= 3:1 on every surface.
     pub focus_ring: Colour,
+    /// The 1px top highlight on raised faces, drawn at `edge_highlight_alpha`.
     pub highlight: Colour,
     pub shadow: Colour,
     pub text_primary: Colour,
@@ -112,12 +113,13 @@ pub struct ThemeTokens {
     pub meter_low: Colour,
     pub meter_mid: Colour,
     pub meter_high: Colour,
-    /// The Record button's dot and the recording state (armed or running).
-    pub record_red: Colour,
-    /// Semantic colours (chrome, markers and state; never a deck identity and never waveform).
-    /// Cue point and "main" marker.
+    /// Signal red: the playhead and the recording state, nothing else.
+    pub playhead: Colour,
+    /// Semantic colours (chrome and state; never a deck identity and never waveform). The
+    /// waveform's cue flags and loop region take the deck colour (comp 4a), not these.
+    /// Cue chrome.
     pub cue: Colour,
-    /// Loop region and loop-active state.
+    /// Loop chrome.
     pub loop_mark: Colour,
     /// Sync engaged.
     pub sync_on: Colour,
@@ -125,17 +127,11 @@ pub struct ThemeTokens {
     /// Clip, error and record.
     pub danger: Colour,
     pub master: Colour,
-    /// Waveform band colours (bass / mids / highs).
-    /// The OpenMixer signature colour (E1). Reserved for brand marks and the "now" cues (the
-    /// playhead, the master); it is never one of the deck accents.
-    pub brand: Colour,
     /// BPM, key and time numerals, and the dimmer colour of their unit labels.
     pub readout: Colour,
     pub readout_dim: Colour,
-    /// Menus, tooltips and knob/fader caps.
+    /// Menus, tooltips and the header strip.
     pub popup: Colour,
-    pub cap_top: Colour,
-    pub cap_bottom: Colour,
     /// Tint of a deck or pad a library track is dragged over.
     pub drop_target: Colour,
     /// One per deck or channel; indices wrap. Never empty in a usable theme.
@@ -151,17 +147,18 @@ pub struct ThemeTokens {
     pub card_radius: f32,
     pub control_radius: f32,
 
-    // Type scale (px height).
-    pub type_small: f32,
-    pub type_caption: f32,
+    // Type scale (px), the tiers of DESIGN.md; see [`crate::theme::TypeRole`] for family and weight.
+    /// Wordmark and page titles, and section headings (display family, never below 21).
+    pub type_display: f32,
+    pub type_headline: f32,
+    /// Interface text and prose (never below 12), and control labels (never below 11).
     pub type_body: f32,
     pub type_label: f32,
-    pub type_title: f32,
-    pub type_heading: f32,
-    pub type_mono: f32,
-    /// Large numerals for BPM and time, and the smaller companion size (key, remaining time).
-    pub type_readout: f32,
-    pub type_readout_small: f32,
+    /// Values in mono, and the primary readouts (BPM, key, time).
+    pub type_numeral: f32,
+    pub type_numeral_large: f32,
+    /// The fader dB scale ticks: the one text below the label size.
+    pub type_scale: f32,
 
     // Deck widget metrics (px) and overlay strengths (0..1 alpha).
     pub deck_header_height: f32,
@@ -172,12 +169,20 @@ pub struct ThemeTokens {
     pub deck_min_zoom_height: f32,
     pub deck_readout_width: f32,
     pub deck_range_box_height: f32,
+    /// Waveform marks (comp 4a): playhead and cue guide widths, the cue guide's share of the deck
+    /// colour, bar and beat lines' share of the text colour, the loop fill's of the deck colour.
     pub playhead_width: f32,
     pub cue_marker_width: f32,
+    pub cue_guide_alpha: f32,
     pub grid_bar_alpha: f32,
     pub grid_beat_alpha: f32,
     pub loop_active_alpha: f32,
     pub loop_idle_alpha: f32,
+    /// An "on" control: deck hue tinted over the control face and its border, and both on hover.
+    pub deck_tint_alpha: f32,
+    pub deck_border_alpha: f32,
+    pub deck_tint_hover_alpha: f32,
+    pub deck_border_hover_alpha: f32,
 
     // Mixer metrics (px) and meter ballistics (dB / seconds); meter_clip_level is a linear peak.
     pub mixer_knob_height: f32,
@@ -238,6 +243,13 @@ pub struct ThemeTokens {
     pub lamp_height: f32,
     pub meter_headroom: f32,
     pub disabled_alpha: f32,
+    /// Strength (0..1 alpha) of the etched line (`border`) and of the top highlight (`highlight`).
+    pub edge_line_alpha: f32,
+    pub edge_highlight_alpha: f32,
+
+    // Roomy and Compact metric sets; see [`ThemeTokens::metrics`].
+    pub roomy: DensityMetrics,
+    pub compact: DensityMetrics,
 
     // Waveform colour (`waveform` section): the hue curve and the limits that keep it legible.
     // unused since the band palette; remove in a theme cleanup
@@ -255,18 +267,19 @@ pub struct ThemeTokens {
     pub wave_spread_narrow: f32,
     pub wave_spread_wide: f32,
     pub wave_spread_saturation: f32,
-    // Depth, glow and motion (E1). Glow is the accent of a lit control spilled around it.
-    pub glow_alpha: f32,
-    pub glow_radius: f32,
+    // The one small drop under raised controls, and motion.
     pub shadow_blur: f32,
     pub shadow_offset_y: f32,
     pub motion_fast_ms: f32,
     pub motion_base_ms: f32,
 
-    /// Interface font family (registered by the front end) and whether numerals are tabular.
-    pub font_family: String,
+    /// Font families (registered by the front end): wordmark and headings, interface text, and
+    /// every number. `tabular_numerals` asks the body family for `tnum`.
+    pub font_display: String,
+    pub font_body: String,
+    pub font_mono: String,
     pub tabular_numerals: bool,
-    /// Reduced-motion preference: transitions collapse to zero length and glow pulses stop.
+    /// Reduced-motion preference: transitions collapse to zero length.
     pub reduced_motion: bool,
 
     /// Scales the alpha of surface, raised and hover (glass strength).
@@ -279,62 +292,56 @@ impl ThemeTokens {
     /// The built-in dark theme. Also the fallback for anything a theme file leaves out.
     pub fn builtin_dark() -> Self {
         Self {
-            // Opaque palette: contrast no longer depends on what sits behind a surface.
-            backdrop_top: Colour::from_argb(0xFF0B_0D12),
-            backdrop_bottom: Colour::from_argb(0xFF0B_0D12),
-            glow_cool: Colour::from_argb(0x0F00_C2FF),
-            glow_warm: Colour::from_argb(0x0AFF_6B35),
-            surface: Colour::from_argb(0xFF12_151C),
-            surface_raised: Colour::from_argb(0xFF1A_1F2B),
-            surface_hover: Colour::from_argb(0xFF1C_222E),
-            well: Colour::from_argb(0xFF07_090D),
-            border: Colour::from_argb(0xFF2A_3142),
-            border_strong: Colour::from_argb(0xFF5F_6A85),
-            focus_ring: Colour::from_argb(0xFFF2_F4F8),
-            highlight: Colour::from_argb(0x26FF_FFFF),
-            shadow: Colour::from_argb(0x6600_0000),
-            text_primary: Colour::from_argb(0xFFF2_F4F8),
-            text_secondary: Colour::from_argb(0xFFA9_B1C3),
-            text_muted: Colour::from_argb(0xFF80_89A0),
-            on_accent: Colour::from_argb(0xFF0B_0D12),
-            meter_low: Colour::from_argb(0xFF2E_E59D),
-            meter_mid: Colour::from_argb(0xFFFF_C83D),
-            meter_high: Colour::from_argb(0xFFFF_3B4E),
-            record_red: Colour::from_argb(0xFFFF_3B4E),
-            cue: Colour::from_argb(0xFFFF_6B35),
-            loop_mark: Colour::from_argb(0xFF2E_E59D),
-            sync_on: Colour::from_argb(0xFF19_D3A2),
-            warning: Colour::from_argb(0xFFFF_C83D),
-            danger: Colour::from_argb(0xFFFF_3B4E),
-            master: Colour::from_argb(0xFFE2_E8F0),
-            popup: Colour::from_argb(0xFF1A_1F2B),
-            cap_top: Colour::from_argb(0xFF2C_3446),
-            cap_bottom: Colour::from_argb(0xFF16_1B26),
-            drop_target: Colour::from_argb(0x402A_6F9E),
-            brand: Colour::from_argb(0xFFFF_6B35),
-            readout: Colour::from_argb(0xFFF2_F4F8),
-            readout_dim: Colour::from_argb(0xFFA9_B1C3),
+            // DESIGN.md front matter (dark). Semantic roles it does not name (cue, loop, sync,
+            // warning, master, popup, drop target) reuse its neutrals until Phases 3 and 4.
+            ground: Colour::from_argb(0xFF12_1211),
+            surface: Colour::from_argb(0xFF18_1816),
+            surface_raised: Colour::from_argb(0xFF22_211E),
+            surface_hover: Colour::from_argb(0xFF2B_2A26),
+            well: Colour::from_argb(0xFF0A_0A09),
+            border: Colour::from_argb(0xFF30_2E2A),
+            border_strong: Colour::from_argb(0xFF75_716A),
+            focus_ring: Colour::from_argb(0xFFEC_E8DF),
+            highlight: Colour::from_argb(0xFFFF_FFFF),
+            shadow: Colour::from_argb(0x8000_0000),
+            text_primary: Colour::from_argb(0xFFEC_E8DF),
+            text_secondary: Colour::from_argb(0xFFBA_B4A7),
+            text_muted: Colour::from_argb(0xFF9D_978B),
+            on_accent: Colour::from_argb(0xFF12_1211),
+            // Grey ramp, red above -3 dB.
+            meter_low: Colour::from_argb(0xFF9D_978B),
+            meter_mid: Colour::from_argb(0xFFBA_B4A7),
+            meter_high: Colour::from_argb(0xFFEF_5A3F),
+            playhead: Colour::from_argb(0xFFEF_5A3F),
+            cue: Colour::from_argb(0xFFEC_E8DF),
+            loop_mark: Colour::from_argb(0xFF9D_978B),
+            sync_on: Colour::from_argb(0xFFEC_E8DF),
+            warning: Colour::from_argb(0xFFEC_E8DF),
+            danger: Colour::from_argb(0xFFEF_5A3F),
+            master: Colour::from_argb(0xFFEC_E8DF),
+            popup: Colour::from_argb(0xFF22_211E),
+            drop_target: Colour::from_argb(0x1FEC_E8DF),
+            readout: Colour::from_argb(0xFFEC_E8DF),
+            readout_dim: Colour::from_argb(0xFFBA_B4A7),
             accents: builtin_accents(),
 
-            // Spacing scale 4/8/12/16/24/32: card pad and card gap 16, in-group 8.
-            gap: 16,
-            pad: 16,
+            // Fibonacci steps (SPACE_SCALE): card pad and card gap 13, in-group 8.
+            gap: 13,
+            pad: 13,
             inner_gap: 8,
             min_target: 44.0,
             min_pointer_target: 32.0,
-            card_radius: 14.0,
-            control_radius: 8.0,
+            card_radius: 3.0,
+            control_radius: 2.0,
 
-            // Type scale 12/14/16/20/28/40; nothing below 12.
-            type_small: 12.0,
-            type_caption: 12.0,
-            type_body: 14.0,
-            type_label: 16.0,
-            type_title: 20.0,
-            type_heading: 20.0,
-            type_mono: 16.0,
-            type_readout: 40.0,
-            type_readout_small: 28.0,
+            // DESIGN.md type scale: display 34, headline 21, body 13, label 11, numerals 13 and 21.
+            type_display: 34.0,
+            type_headline: 21.0,
+            type_body: 13.0,
+            type_label: 11.0,
+            type_numeral: 13.0,
+            type_numeral_large: 21.0,
+            type_scale: 10.0,
 
             deck_header_height: 52.0,
             deck_overview_height: 40.0,
@@ -345,11 +352,16 @@ impl ThemeTokens {
             deck_readout_width: 78.0,
             deck_range_box_height: 24.0,
             playhead_width: 2.0,
-            cue_marker_width: 2.0,
-            grid_bar_alpha: 0.55,
-            grid_beat_alpha: 0.4,
-            loop_active_alpha: 0.25,
+            cue_marker_width: 1.0,
+            cue_guide_alpha: 0.45,
+            grid_bar_alpha: 0.14,
+            grid_beat_alpha: 0.05,
+            loop_active_alpha: 0.14,
             loop_idle_alpha: 0.08,
+            deck_tint_alpha: 0.22,
+            deck_border_alpha: 0.70,
+            deck_tint_hover_alpha: 0.32,
+            deck_border_hover_alpha: 0.85,
 
             mixer_knob_height: 70.0,
             mixer_button_height: 26.0,
@@ -406,6 +418,11 @@ impl ThemeTokens {
             lamp_height: 8.0,
             meter_headroom: 14.0,
             disabled_alpha: 0.4,
+            edge_line_alpha: 1.0,
+            edge_highlight_alpha: 0.04,
+
+            roomy: DensityMetrics::roomy(),
+            compact: DensityMetrics::compact(),
 
             wave_stops: builtin_wave_stops(),
             wave_saturation_max: 0.9,
@@ -415,14 +432,14 @@ impl ThemeTokens {
             wave_spread_narrow: 1.0,
             wave_spread_wide: 3.5,
             wave_spread_saturation: 0.5,
-            glow_alpha: 0.45,
-            glow_radius: 10.0,
-            shadow_blur: 18.0,
-            shadow_offset_y: 6.0,
+            shadow_blur: 3.0,
+            shadow_offset_y: 2.0,
             motion_fast_ms: 90.0,
             motion_base_ms: 180.0,
 
-            font_family: DEFAULT_FONT_FAMILY.to_owned(),
+            font_display: DISPLAY_FONT_FAMILY.to_owned(),
+            font_body: BODY_FONT_FAMILY.to_owned(),
+            font_mono: MONO_FONT_FAMILY.to_owned(),
             tabular_numerals: true,
             reduced_motion: false,
 
@@ -443,6 +460,19 @@ impl ThemeTokens {
         palette[(index.rem_euclid(n)) as usize]
     }
 
+    /// The record dot and recording state share the playhead's signal red (the Signal Rule).
+    pub fn record_red(&self) -> Colour {
+        self.playhead
+    }
+
+    /// The metric set for `density`.
+    pub fn metrics(&self, density: Density) -> &DensityMetrics {
+        match density {
+            Density::Roomy => &self.roomy,
+            Density::Compact => &self.compact,
+        }
+    }
+
     /// Surface colour with the theme's glass strength applied.
     pub fn surface_scaled(&self) -> Colour {
         self.surface.with_multiplied_alpha(self.surface_opacity)
@@ -461,18 +491,21 @@ impl ThemeTokens {
     }
 }
 
-/// Family name of the bundled interface font (Inter, SIL OFL 1.1; see `resources/fonts`).
-pub const DEFAULT_FONT_FAMILY: &str = "Inter";
+/// Family names of the bundled fonts (`resources/fonts`): Sansation (SIL OFL 1.1), Source Sans 3
+/// (SIL OFL 1.1) and Ubuntu Mono (Ubuntu Font Licence 1.0).
+pub const DISPLAY_FONT_FAMILY: &str = "Sansation";
+pub const BODY_FONT_FAMILY: &str = "Source Sans 3";
+pub const MONO_FONT_FAMILY: &str = "Ubuntu Mono";
 
-/// The spacing scale (px): 4, 8, 12, 16, 24, 32. Layout values come from here.
-pub const SPACE_SCALE: [f32; 6] = [4.0, 8.0, 12.0, 16.0, 24.0, 32.0];
+/// The Roomy spacing scale (px): Fibonacci 3, 5, 8, 13, 21, 34. Layout values come from here.
+pub const SPACE_SCALE: [f32; 6] = DensityMetrics::roomy().space;
 
-/// Deck identity colours A..D: chrome only (never the waveform), always paired with the deck letter.
+/// Deck identity colours A..D (amber, slate, sage, clay), always paired with the deck letter.
 const BUILTIN_ACCENTS: [Colour; 4] = [
-    Colour::from_argb(0xFF00_C2FF),
-    Colour::from_argb(0xFFFF_4D8D),
-    Colour::from_argb(0xFFB3_88FF),
-    Colour::from_argb(0xFFC6_F135),
+    Colour::from_argb(0xFFE3_A24F),
+    Colour::from_argb(0xFF86_A9CB),
+    Colour::from_argb(0xFF9C_B585),
+    Colour::from_argb(0xFFC9_705C),
 ];
 
 /// Bass red through orange, green, cyan and blue to violet, then a wash toward white for the air.

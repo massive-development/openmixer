@@ -6,14 +6,13 @@ use super::{
     hotcues::HotcuePads,
     loops::{LoopControls, LoopFrame},
     pitch::PitchFader,
-    px,
     transport::TransportPanel,
 };
 use crate::binding::DeckBinding;
 use crate::format;
 use crate::geometry::Rect;
 use crate::stem_binding::StemBinding;
-use crate::theme::ThemeTokens;
+use crate::theme::DensityMetrics;
 use crate::waveform::{self, StripCache, StripPlan, View};
 use om_core::param_id::DeckParam;
 use om_engine::grid::BeatGrid;
@@ -44,6 +43,15 @@ pub fn format_time(seconds: f64, remaining: bool) -> String {
 pub fn format_bpm(bpm: f64) -> String {
     if bpm > 0.0 {
         format!("{bpm:.1}")
+    } else {
+        "--".to_owned()
+    }
+}
+
+/// The master tempo as the deck header row shows it: two decimals (comp "120.00"), or `--`.
+pub fn format_tempo(bpm: f64) -> String {
+    if bpm > 0.0 {
+        format!("{bpm:.2}")
     } else {
         "--".to_owned()
     }
@@ -130,7 +138,11 @@ impl TrackHeader {
             key: deck_header::format_key(&self.info, self.key_notation),
             bpm: format_bpm(self.effective_bpm()),
             elapsed: format_time(position, false),
-            remaining: format_time(length - position, true),
+            remaining: if length > 0.0 {
+                format_time(length - position, true)
+            } else {
+                "--".to_owned()
+            },
             remaining_warn: deck_header::remaining_warning(length - position, length),
             sync: deck.sync,
             master: deck.sync_master,
@@ -431,173 +443,150 @@ pub fn grid_lines_for(grid: &dyn BeatGrid, view: &View) -> Vec<GridLine> {
     lines
 }
 
-/// Rectangles of one deck card, from the theme metrics.
+/// Rectangles of one deck's controls in the controls row (comp 4a/4b): the pitch fader along the
+/// outside edge, then the transport row, the Hot cues / Loop / Stems / FX tabs, the 4 x 2 pad grid
+/// and the options row under it. Deck B's are mirrored so each deck reads from its outside edge.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeckLayout {
-    pub header: Rect,
-    pub overview: Rect,
+    /// The pitch fader, the full height of the controls, at the outside edge.
     pub pitch: Rect,
-    pub zoom: Rect,
-    /// Hidden on a short deck so it does not overlap the controls.
-    pub zoom_visible: bool,
-    pub hotcues: Rect,
-    pub loops: Rect,
+    /// Play, Cue, then Sync and Key lock at the far end.
     pub transport: Rect,
-    /// Tab strip under the drawer: Cues / Stems / More.
+    /// The segmented tabs that pick what the drawer shows.
     pub tabs: Rect,
-    /// The stems drawer. Only set while [`PadMode::Stems`] is open, then it takes the place of
-    /// the hotcue pads and the loop row.
-    pub stems: Rect,
+    /// The 4 x 2 pad grid (hot cues or loop sizes).
+    pub pads: Rect,
+    /// The row of toggles under the pads.
+    pub options: Rect,
+    /// Everything under the tabs: the stems rows, the effects and the platter take it whole.
+    pub drawer: Rect,
+    /// Deck B: rows start at the right and run leftward.
+    pub mirrored: bool,
 }
 
-impl DeckLayout {
-    /// Every rectangle empty and the zoom hidden: the start of a layout that sets only some parts.
-    pub fn empty() -> Self {
-        Self {
-            header: Rect::default(),
-            overview: Rect::default(),
-            pitch: Rect::default(),
-            zoom: Rect::default(),
-            zoom_visible: false,
-            hotcues: Rect::default(),
-            loops: Rect::default(),
-            transport: Rect::default(),
-            tabs: Rect::default(),
-            stems: Rect::default(),
-        }
-    }
-}
-
-// Deck control metrics (px), local until they move into theme tokens. Touch-size floors: the
-// transport and the hotcue pads are at least 44 px, every other clickable at least 32 px.
-// Gap 6 = inner gap 8 / (4/3); the 4 px stem row gap is the half-step below it.
-pub const TRANSPORT_HEIGHT: i32 = 44;
-pub const CUE_PAD_MIN: i32 = 44;
-pub const CUE_PAD_MAX: i32 = 56;
-pub const LOOP_ROW_HEIGHT: i32 = 36;
-pub const TAB_HEIGHT: i32 = 32;
-pub const STEM_ROW_HEIGHT: i32 = 32;
-pub const STEM_ROW_GAP: i32 = 4;
-pub const CONTROL_GAP: i32 = 6;
-pub const PITCH_WIDTH: i32 = 64;
-/// Height of the controls column in its default (Cues) mode: transport, two pad rows, loop row and
-/// tab strip with the gaps between them.
-pub const CONTROLS_HEIGHT: i32 =
-    TRANSPORT_HEIGHT + CUE_PAD_MIN * 2 + LOOP_ROW_HEIGHT + TAB_HEIGHT + CONTROL_GAP * 5;
-
-/// What the drawer under the transport shows. The default is the hotcue pads; the others are one
-/// tap away, so a deck is one row of essentials until the DJ asks for more.
+/// What the drawer under the tabs shows (the comp's segmented control).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PadMode {
     #[default]
     Cues,
+    Loop,
     Stems,
-    /// Master, key lock, quantize and slip.
-    More,
+    Fx,
 }
 
 impl PadMode {
-    pub const ALL: [PadMode; 3] = [PadMode::Cues, PadMode::Stems, PadMode::More];
+    pub const ALL: [PadMode; 4] = [PadMode::Cues, PadMode::Loop, PadMode::Stems, PadMode::Fx];
 
     pub const fn label(self) -> &'static str {
         match self {
-            PadMode::Cues => "CUES",
-            PadMode::Stems => "STEMS",
-            PadMode::More => "MORE",
+            PadMode::Cues => "Hot cues",
+            PadMode::Loop => "Loop",
+            PadMode::Stems => "Stems",
+            PadMode::Fx => "FX",
         }
     }
 
     pub const fn tooltip(self) -> &'static str {
         match self {
-            PadMode::Cues => "Hotcue pads",
+            PadMode::Cues => "Hot cue pads, tempo leader, snap, slip and platter",
+            PadMode::Loop => "Loop sizes, halve, double and loop on or off",
             PadMode::Stems => "Stem mute, solo, volume and filter",
-            PadMode::More => "Master, key lock, quantize and slip",
+            PadMode::Fx => "The effect rack of this deck's channel",
         }
     }
-}
 
-/// Equal cells across the tab strip.
-pub fn tab_rects(tabs: Rect) -> [Rect; 3] {
-    let mut area = tabs;
-    let cell = (area.w - CONTROL_GAP * 2) / 3;
-    std::array::from_fn(|_| {
-        let r = area.remove_left(cell);
-        area.remove_left(CONTROL_GAP);
-        r
-    })
-}
-
-/// The controls column inside `area`: transport on top, the tab strip at the bottom, between them
-/// the drawer. In [`PadMode::Stems`] the drawer is the stems; otherwise it is the pads (hotcues or
-/// the More toggles) over the loop row.
-fn controls_in(mut area: Rect, mode: PadMode) -> DeckLayout {
-    let transport = area.remove_top(TRANSPORT_HEIGHT);
-    area.remove_top(CONTROL_GAP);
-    let tabs = area.remove_bottom(TAB_HEIGHT);
-    area.remove_bottom(CONTROL_GAP);
-    if mode == PadMode::Stems {
-        return DeckLayout {
-            transport,
-            tabs,
-            stems: area,
-            ..DeckLayout::empty()
-        };
+    /// Whether the pad grid and the options row are shown (else the drawer is one area).
+    pub const fn has_pads(self) -> bool {
+        matches!(self, PadMode::Cues | PadMode::Loop)
     }
-    let loops = area.remove_bottom(LOOP_ROW_HEIGHT);
-    area.remove_bottom(CONTROL_GAP);
+}
+
+/// Pads per row of the grid.
+pub const PAD_COLUMNS: usize = 4;
+/// Pads in the grid: two rows.
+pub const PAD_COUNT: usize = 8;
+
+fn space(m: &DensityMetrics, step: usize) -> i32 {
+    m.space[step].round() as i32
+}
+
+/// Width of the pitch fader column: one knob wide.
+pub fn pitch_width(m: &DensityMetrics) -> i32 {
+    m.knob_size.round() as i32
+}
+
+/// Height of the pad grid: two pads and the gap between them.
+pub fn pad_grid_height(m: &DensityMetrics) -> i32 {
+    2 * m.pad_size.round() as i32 + space(m, 1)
+}
+
+/// Height the deck controls need: transport and tabs rows, the pad grid and the options row, `s3`
+/// apart.
+pub fn controls_height(m: &DensityMetrics) -> i32 {
+    let h = m.control_height.round() as i32;
+    3 * h + pad_grid_height(m) + 3 * space(m, 2)
+}
+
+/// Lays out deck controls in `bounds` (the deck cell); `mirrored` for deck B.
+pub fn deck_controls_layout(bounds: Rect, m: &DensityMetrics, mirrored: bool) -> DeckLayout {
+    let h = m.control_height.round() as i32;
+    let (gap, row_gap) = (space(m, 3), space(m, 2));
+    let mut area = bounds;
+    let pitch = if mirrored {
+        area.remove_right(pitch_width(m))
+    } else {
+        area.remove_left(pitch_width(m))
+    };
+    if mirrored {
+        area.remove_right(gap);
+    } else {
+        area.remove_left(gap);
+    }
+    let transport = area.remove_top(h);
+    area.remove_top(row_gap);
+    let tabs = area.remove_top(h);
+    area.remove_top(row_gap);
+    let drawer = area;
+    let pads = area.remove_top(pad_grid_height(m));
+    area.remove_top(row_gap);
+    let options = area.remove_top(h);
     DeckLayout {
+        pitch,
         transport,
         tabs,
-        loops,
-        hotcues: area,
-        ..DeckLayout::empty()
+        pads,
+        options,
+        drawer,
+        mirrored,
     }
 }
 
-/// The deck card of a stage deck in its default mode; see [`deck_controls_layout_for`].
-pub fn deck_controls_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
-    deck_controls_layout_for(bounds, theme, PadMode::Cues)
+/// With the platter open the options row moves to the drawer's foot and the platter takes the
+/// drawer above it (the pads' height alone is too short for a disc in Compact). Returns
+/// `(platter, options)`.
+pub fn platter_layout(l: &DeckLayout, m: &DensityMetrics) -> (Rect, Rect) {
+    let mut drawer = l.drawer;
+    let options = drawer.remove_bottom(m.control_height.round() as i32);
+    drawer.remove_bottom(space(m, 2));
+    (drawer, options)
 }
 
-/// The deck card of a stage deck: no header, overview or zoomed waveform (the stage above draws
-/// those), only the controls: the transport on top, the drawer for `mode` under it and the tab
-/// strip at the bottom, with the pitch column on the right.
-pub fn deck_controls_layout_for(bounds: Rect, theme: &ThemeTokens, mode: PadMode) -> DeckLayout {
-    let mut area = bounds.reduced(theme.pad, theme.pad);
-    let pitch = area.remove_right(PITCH_WIDTH);
-    area.remove_right(theme.inner_gap);
-    DeckLayout {
-        pitch,
-        ..controls_in(area, mode)
-    }
-}
-
-/// Places the deck card's parts inside `bounds` (the card itself). Mirrors `DeckWidget::resized`.
-pub fn deck_layout(bounds: Rect, theme: &ThemeTokens) -> DeckLayout {
-    deck_layout_for(bounds, theme, PadMode::Cues)
-}
-
-/// [`deck_layout`] with the drawer for `mode`.
-pub fn deck_layout_for(bounds: Rect, theme: &ThemeTokens, mode: PadMode) -> DeckLayout {
-    let gap = theme.inner_gap;
-    let mut area = bounds.reduced(theme.pad, theme.pad);
-    let header = area.remove_top(px(theme.deck_header_height).max(deck_header::HEADER_HEIGHT));
-    let overview = area.remove_top(px(theme.deck_overview_height));
-    area.remove_top(gap);
-    let pitch = area.remove_right(PITCH_WIDTH);
-    area.remove_right(gap);
-    let controls = controls_in(area.remove_bottom(CONTROLS_HEIGHT.min(area.h)), mode);
-    area.remove_bottom(gap);
-    let zoom_visible = area.h >= px(theme.deck_min_zoom_height);
-    let zoom = if area.h > 0 { area } else { Rect::default() };
-    DeckLayout {
-        header,
-        overview,
-        pitch,
-        zoom,
-        zoom_visible,
-        ..controls
-    }
+/// The eight pads of the grid in `area`: four columns of equal width, two rows, `gap` apart, in
+/// reading order (deck B's grid is not mirrored: pad 1 stays top left, like the comp).
+pub fn pad_grid(area: Rect, gap: i32) -> [Rect; PAD_COUNT] {
+    let cols = PAD_COLUMNS as i32;
+    let w = ((area.w - gap * (cols - 1)) / cols).max(0);
+    let h = ((area.h - gap) / 2).max(0);
+    std::array::from_fn(|i| {
+        let (col, row) = ((i % PAD_COLUMNS) as i32, (i / PAD_COLUMNS) as i32);
+        let x = area.x + (w + gap) * col;
+        let width = if col + 1 == cols {
+            (area.right() - x).max(0)
+        } else {
+            w
+        };
+        Rect::new(x, area.y + (h + gap) * row, width, h)
+    })
 }
 
 /// One deck: the models of its parts, wired to the same engine deck.
@@ -651,6 +640,7 @@ impl DeckWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::{Density, ThemeTokens};
 
     #[test]
     fn time_and_bpm_read_as_the_header_shows_them() {
@@ -659,63 +649,81 @@ mod tests {
         assert_eq!(format_time(-3.0, false), "0:00.0");
         assert_eq!(format_bpm(0.0), "--");
         assert_eq!(format_bpm(127.96), "128.0");
+        assert_eq!(format_tempo(120.0), "120.00");
+        assert_eq!(format_tempo(0.0), "--");
+    }
+
+    fn metric_sets() -> [DensityMetrics; 2] {
+        let t = ThemeTokens::builtin_dark();
+        [*t.metrics(Density::Roomy), *t.metrics(Density::Compact)]
     }
 
     #[test]
-    fn deck_layout_hides_the_zoom_on_a_short_deck() {
-        let theme = ThemeTokens::builtin_dark();
-        let short = deck_layout(Rect::sized(560, 330), &theme);
-        assert!(!short.zoom_visible);
-        assert!(!short.zoom.intersects(&short.transport));
-        assert!(!short.hotcues.intersects(&short.loops));
-
-        let tall = deck_layout(Rect::sized(560, 520), &theme);
-        assert!(tall.zoom_visible);
-        assert!(!tall.zoom.intersects(&tall.transport));
-    }
-
-    #[test]
-    fn every_pad_mode_fits_without_overlap_at_the_smallest_controls_height() {
-        let theme = ThemeTokens::builtin_dark();
-        // 290 px wide and as tall as the layout guarantees the controls row (CONTROLS_MIN_HEIGHT).
-        let card = Rect::sized(290, 262);
-        for mode in PadMode::ALL {
-            let l = deck_controls_layout_for(card, &theme, mode);
-            let parts = [l.pitch, l.transport, l.tabs, l.hotcues, l.loops, l.stems];
-            for (i, a) in parts.iter().enumerate() {
-                assert!(card.contains(a), "{mode:?}: {a:?} escapes the card");
-                for b in &parts[i + 1..] {
-                    assert!(!a.intersects(b), "{mode:?}: {a:?} overlaps {b:?}");
+    fn the_controls_hold_every_part_without_overlap_in_both_densities() {
+        for m in metric_sets() {
+            let card = Rect::new(0, 0, 400, controls_height(&m));
+            for mirrored in [false, true] {
+                let l = deck_controls_layout(card, &m, mirrored);
+                let parts = [l.pitch, l.transport, l.tabs, l.pads, l.options];
+                for (i, a) in parts.iter().enumerate() {
+                    assert!(card.contains(a), "{a:?} escapes the card");
+                    assert!(!a.is_empty(), "{a:?} is empty");
+                    for b in &parts[i + 1..] {
+                        assert!(!a.intersects(b), "{a:?} overlaps {b:?}");
+                    }
                 }
-            }
-            assert!(l.transport.h >= 44 && l.tabs.h >= 32);
-            if mode == PadMode::Stems {
-                assert!(l.stems.h >= STEM_ROW_HEIGHT * 4 + STEM_ROW_GAP * 3, "{l:?}");
-            } else {
-                assert!(l.hotcues.h >= CUE_PAD_MIN * 2 + CONTROL_GAP, "{l:?}");
-                assert!(l.loops.h >= 32);
+                assert!(card.contains(&l.drawer) && !l.drawer.intersects(&l.tabs));
+                assert_eq!(l.transport.h, m.control_height as i32);
+                assert_eq!(l.pads.h, pad_grid_height(&m));
             }
         }
     }
 
     #[test]
-    fn deck_parts_fit_inside_the_card_at_the_default_size() {
-        let theme = ThemeTokens::builtin_dark();
-        // 16px card padding and 40px control rows need ~560px of height for every part.
-        let card = Rect::sized(560, 600);
-        let l = deck_layout(card, &theme);
-        for part in [
-            l.header,
-            l.overview,
-            l.pitch,
-            l.zoom,
-            l.hotcues,
-            l.loops,
-            l.transport,
-            l.tabs,
-        ] {
-            assert!(!part.is_empty(), "{part:?}");
-            assert!(card.contains(&part), "{part:?} escapes the card");
+    fn the_platter_takes_the_drawer_above_the_options_row() {
+        for m in metric_sets() {
+            let card = Rect::new(0, 0, 400, controls_height(&m));
+            let l = deck_controls_layout(card, &m, false);
+            let (platter, options) = platter_layout(&l, &m);
+            assert!(l.drawer.contains(&platter) && l.drawer.contains(&options));
+            assert!(platter.bottom() <= options.y);
+            assert_eq!(options.bottom(), l.drawer.bottom());
+            assert!(platter.h >= l.pads.h);
+        }
+    }
+
+    #[test]
+    fn deck_b_mirrors_deck_a() {
+        for m in metric_sets() {
+            let card = Rect::new(500, 0, 400, controls_height(&m));
+            let a = deck_controls_layout(card, &m, false);
+            let b = deck_controls_layout(card, &m, true);
+            assert_eq!(
+                a.pitch.x, card.x,
+                "A's pitch sits at its outside (left) edge"
+            );
+            assert_eq!(b.pitch.right(), card.right(), "B's at its right edge");
+            assert_eq!(a.transport.w, b.transport.w);
+            assert_eq!(a.transport.right(), card.right());
+            assert_eq!(b.transport.x, card.x);
+        }
+    }
+
+    #[test]
+    fn pads_are_the_density_height_in_a_four_by_two_grid() {
+        for m in metric_sets() {
+            let area = Rect::new(10, 20, 403, pad_grid_height(&m));
+            let gap = m.space[1] as i32;
+            let pads = pad_grid(area, gap);
+            for (i, p) in pads.iter().enumerate() {
+                assert_eq!(p.h, m.pad_size as i32, "pad {i}");
+                assert!(area.contains(p));
+                for q in &pads[i + 1..] {
+                    assert!(!p.intersects(q));
+                }
+            }
+            assert_eq!(pads[3].right(), area.right());
+            assert_eq!(pads[4].y, pads[0].bottom() + gap);
         }
     }
 }

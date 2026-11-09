@@ -1,6 +1,12 @@
-//! Data-driven arrangement of the main window: rows of cells, each a deck or a named slot (mixer,
-//! library, or anything a plugin registers). Pure geometry, so adding decks later is a data change.
-//! JSON form:
+//! The main window's rect contract: the faceplate of `docs/design-system/Design System.dc.html`
+//! sections 4a (Roomy) and 4b (Compact). Top to bottom: the header strip; the deck header row (deck
+//! A's header, the master tempo over the mixer column, deck B's header mirrored); the stage (both
+//! zoomed waveforms, stacked, full width); the controls row (deck A, the mixer, deck B mirrored);
+//! the library band with the sampler drawer beside it. Both densities go through this one code
+//! path; only the metric set differs. Pure geometry.
+//!
+//! The generic grid ([`LayoutSpec`], [`compute_layout`]) is kept for data-driven layouts. Its JSON
+//! form:
 //!
 //! ```json
 //! {"rows":[{"height":0.66,"cells":[{"deck":0},{"slot":"mixer","weight":0.4},{"deck":1}]},
@@ -8,116 +14,64 @@
 //! ```
 
 use crate::geometry::Rect;
-use crate::header_layout::{header_rects, HeaderNeeds, HeaderRects};
+use crate::header_layout::{header_height, header_rects, HeaderNeeds, HeaderRects};
+use crate::theme::{Density, DensityChoice, DensityMetrics, ThemeTokens};
 use serde_json::{json, Map, Value};
 
-/// Name of the mixer module slot: page tabs, master, crossfader and headphone cue, between the decks'
-/// controls. The channel strips are separate slots, one beside each deck (see [`channel_slot`]).
+/// The mixer column in the controls row: EQ and filter for both channels, the faders, the
+/// crossfader and the master section.
 pub const MIXER_SLOT: &str = "mixer";
-/// Name of the library slot.
+/// The library band.
 pub const LIBRARY_SLOT: &str = "library";
-/// Prefix of a channel strip's slot name; the channel number follows (`channel:0`).
-pub const CHANNEL_SLOT_PREFIX: &str = "channel:";
-/// Share of the deck rows' width one channel strip takes in the standard layout (13% of the
-/// window's width, never below [`CHANNEL_MIN_WIDTH`]).
-pub const CHANNEL_WEIGHT: f32 = 0.14;
-/// A channel strip is never narrower than this, in px.
-pub const CHANNEL_MIN_WIDTH: i32 = 112;
-/// Share of the deck rows' width the stage and the controls below it take.
-pub const CENTRE_WEIGHT: f32 = 1.0;
-/// Name of the waveform stage: the decks' headers, overviews and zoomed waveforms, across the top.
+/// The waveform stage: both zoomed waveforms, stacked, full width.
 pub const STAGE_SLOT: &str = "stage";
-/// Share of the deck rows' height the waveform stage takes in the standard layout.
-pub const STAGE_SHARE: f32 = 0.50;
-/// The same share in performance mode, when the library band is gone and the stage grows.
-pub const PERFORMANCE_STAGE_SHARE: f32 = 0.62;
-/// Height the deck controls row needs (transport, hotcues, loops and the stems row), in px. On a
-/// short window the stage and the library band give up height before the controls do.
-pub const CONTROLS_MIN_HEIGHT: i32 = 262;
-/// Smallest window the layout is designed for. Below it the layout degrades (see
-/// [`LayoutPlan::for_window`]) instead of shrinking its controls.
+/// The master tempo, over the mixer column in the deck header row.
+pub const TEMPO_SLOT: &str = "tempo";
+/// The sampler drawer, beside the library in the same band.
+pub const SAMPLER_SLOT: &str = "sampler";
+/// Prefix of a deck header's slot name; the deck number follows (`head:0`).
+pub const HEAD_SLOT_PREFIX: &str = "head:";
+/// Decks the faceplate shows: A and B (plan D3). Further engine decks are not placed.
+pub const FACEPLATE_DECKS: usize = 2;
+/// Smallest window the layout is designed for. Below it the layout degrades (the sampler drawer
+/// goes) instead of shrinking its controls.
 pub const MIN_WINDOW: (i32, i32) = (1280, 720);
-/// Height of the header strip in a window at least 900 px tall, in px.
-pub const HEADER_HEIGHT_TALL: i32 = 40;
-/// Height of the header strip in a shorter window, in px.
-pub const HEADER_HEIGHT_SHORT: i32 = 36;
-
-/// Window width under which the library drops its Genre and Added columns and narrows the sidebar.
-pub const COMPACT_WINDOW_WIDTH: i32 = 1400;
-
-/// Sizes of the library browser's parts, in px (plan, Rect contract).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LibraryMetrics {
-    pub row_h: i32,
-    pub header_h: i32,
-    pub toolbar_h: i32,
-    pub sidebar_w: i32,
-}
-
-/// Library sizes for a window: rows 28 px (24 under 900 px tall), header 28, toolbar 36, sidebar
-/// 170 (160 under 1400 px wide). The plan's contract names only `window_h`; the sidebar rule needs
-/// the width too.
-pub fn library_metrics(window_w: i32, window_h: i32) -> LibraryMetrics {
-    LibraryMetrics {
-        row_h: if window_h < 900 { 24 } else { 28 },
-        header_h: 28,
-        toolbar_h: 36,
-        sidebar_w: if window_w < COMPACT_WINDOW_WIDTH {
-            160
-        } else {
-            170
-        },
-    }
-}
-
-/// The header strip's height for a window `window_h` px tall.
-pub fn header_height(window_h: i32) -> i32 {
-    if window_h >= 900 {
-        HEADER_HEIGHT_TALL
-    } else {
-        HEADER_HEIGHT_SHORT
-    }
-}
-/// Smallest the library band may get, in px: toolbar, header and a handful of rows.
-pub const LIBRARY_MIN_HEIGHT: i32 = 150;
+/// Share of the height the stage and the library split that the library takes. Unsourced: about
+/// the comp's split at 1440x900.
+pub const LIBRARY_SHARE: f32 = 0.4;
+/// Rows the library band shows at least (the column header counts as one). Unsourced.
+pub const LIBRARY_MIN_ROWS: i32 = 4;
+/// Space between the two stacked waveforms (comp 4a: 2 px).
+pub const WAVE_GAP: i32 = 2;
+/// A zoomed waveform shorter than this is not drawn.
+pub const MIN_WAVE_HEIGHT: i32 = 32;
+/// Automatic density picks Roomy only while each waveform keeps at least this height. Unsourced:
+/// the Fibonacci step above Roomy's 55 px pad.
+pub const ROOMY_MIN_WAVE: i32 = 89;
 /// Width of the sampler drawer while collapsed, in px: a handle that opens it.
 pub const COLLAPSED_DRAWER_WIDTH: i32 = 56;
-/// Name of the sampler strip: eight pads beside the library, in the same band.
-pub const SAMPLER_SLOT: &str = "sampler";
-/// Share of the library band's width the sampler strip takes.
+/// Share of the library band's width the open sampler drawer takes.
 pub const SAMPLER_WEIGHT: f32 = 0.34;
-/// Share of the window height the deck rows take in the standard layout; the library band gets
-/// the rest (about 28% of the window).
-pub const DECK_ROWS_SHARE: f32 = 0.71;
-/// Share of a deck card's width the mixer module takes between the decks' controls (deck cards
-/// weigh 1.0).
-pub const MIXER_WEIGHT: f32 = 0.72;
 
-/// Slot name of channel `index`'s strip.
-pub fn channel_slot(index: usize) -> String {
-    format!("{CHANNEL_SLOT_PREFIX}{index}")
+/// Slot name of deck `index`'s header.
+pub fn head_slot(index: usize) -> String {
+    format!("{HEAD_SLOT_PREFIX}{index}")
 }
 
-/// The channel number in a slot name made by [`channel_slot`].
-pub fn channel_of_slot(name: &str) -> Option<usize> {
-    name.strip_prefix(CHANNEL_SLOT_PREFIX)?.parse().ok()
+/// The deck number in a slot name made by [`head_slot`].
+pub fn deck_of_head(name: &str) -> Option<usize> {
+    name.strip_prefix(HEAD_SLOT_PREFIX)?.parse().ok()
 }
 
-/// The weight, against the library's 1.0, that makes the collapsed sampler drawer
-/// [`COLLAPSED_DRAWER_WIDTH`] px wide in a band of `(width, gap)`.
-pub fn collapsed_drawer_weight(band: Option<(i32, i32)>) -> f32 {
-    let Some((width, gap)) = band else {
-        return SAMPLER_WEIGHT / (1.0 - SAMPLER_WEIGHT);
-    };
-    let usable = (width - gap).max(COLLAPSED_DRAWER_WIDTH + 1) as f32;
-    let handle = COLLAPSED_DRAWER_WIDTH as f32;
-    handle / (usable - handle)
+/// Deck B, and every second deck after it, is drawn mirrored so it reads from its outside edge.
+pub fn is_mirrored(deck: usize) -> bool {
+    deck % 2 == 1
 }
 
 /// What the user has opened or closed, as far as the page layout goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LayoutState {
-    /// Performance mode: the library band is gone and the stage grows.
+    /// The library band is hidden (header LIBRARY toggle, Tab) and the stage grows.
     pub performance: bool,
     /// The sampler drawer is open (collapsed it is a narrow handle beside the library).
     pub sampler_open: bool,
@@ -126,7 +80,7 @@ pub struct LayoutState {
 }
 
 impl Default for LayoutState {
-    /// Library mode, sampler collapsed.
+    /// Library shown, sampler collapsed.
     fn default() -> Self {
         Self {
             performance: false,
@@ -143,41 +97,80 @@ impl LayoutState {
     }
 }
 
-/// The layout for one window size: the spec, how many decks it can honestly show, and what was
-/// given up to fit.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LayoutPlan {
-    pub spec: LayoutSpec,
-    /// Decks the plan shows: all of them in a window of at least [`MIN_WINDOW`], two below it.
-    pub decks: usize,
-    /// True when the window is smaller than [`MIN_WINDOW`].
-    pub degraded: bool,
-    pub sampler_visible: bool,
+/// The spacing of the faceplate for one metric set (DESIGN.md Layout): the window keeps `s4` above
+/// the header and `s5` at the sides and bottom; rows are `s4` apart and columns `s5`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Spacing {
+    pub margin: i32,
+    pub row_gap: i32,
+    pub column_gap: i32,
 }
 
-impl LayoutPlan {
-    /// Plans a `window` (width, height) with `engine_decks` decks. At or above [`MIN_WINDOW`]
-    /// everything is shown. Below it the layout keeps its controls at full size and gives up
-    /// things instead: decks beyond the second, and the sampler drawer.
-    pub fn for_window(
-        engine_decks: usize,
-        window: (i32, i32),
-        gap: i32,
-        mut state: LayoutState,
-    ) -> Self {
-        let degraded = window.0 < MIN_WINDOW.0 || window.1 < MIN_WINDOW.1;
-        let decks = if degraded {
-            engine_decks.min(2)
-        } else {
-            engine_decks
-        };
-        state.sampler_visible = !degraded;
-        let spec = LayoutSpec::build(decks, &state, Some((window.0, gap)));
+impl Spacing {
+    pub fn of(m: &DensityMetrics) -> Self {
         Self {
-            spec,
-            decks,
-            degraded,
-            sampler_visible: state.sampler_visible && !state.performance,
+            margin: m.space[4].round() as i32,
+            row_gap: m.space[3].round() as i32,
+            column_gap: m.space[4].round() as i32,
+        }
+    }
+}
+
+/// Sizes of the library browser's parts, in px: rows of the density's row height (34 Roomy, 26
+/// Compact), the column header and the toolbar one control high, and the comp's 160 px sidebar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LibraryMetrics {
+    pub row_h: i32,
+    pub header_h: i32,
+    pub toolbar_h: i32,
+    pub sidebar_w: i32,
+    /// Space around and between the parts.
+    pub pad: i32,
+}
+
+/// Width of the library sidebar (comp 4a).
+pub const LIBRARY_SIDEBAR_WIDTH: i32 = 160;
+
+impl LibraryMetrics {
+    /// The band's height with the toolbar, the column header and `rows` rows.
+    pub fn min_height(&self, rows: i32) -> i32 {
+        self.toolbar_h + self.header_h + rows * self.row_h + 3 * self.pad
+    }
+}
+
+/// The library's sizes for one metric set.
+pub fn library_metrics(m: &DensityMetrics) -> LibraryMetrics {
+    let h = m.control_height.round() as i32;
+    LibraryMetrics {
+        row_h: m.row_height.round() as i32,
+        header_h: h,
+        toolbar_h: h,
+        sidebar_w: LIBRARY_SIDEBAR_WIDTH,
+        pad: m.space[1].round() as i32,
+    }
+}
+
+/// Heights of the rows that do not stretch, for one theme and density.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bands {
+    pub header: i32,
+    /// The deck header row: title block, readouts and the overview strip.
+    pub head: i32,
+    /// The controls row: the taller of the deck controls and the mixer column.
+    pub controls: i32,
+    /// The library band's floor: toolbar and [`LIBRARY_MIN_ROWS`] rows.
+    pub library_min: i32,
+}
+
+impl Bands {
+    pub fn of(t: &ThemeTokens, m: &DensityMetrics) -> Self {
+        let deck = crate::widgets::deck::controls_height(m);
+        let mixer = crate::widgets::mixer::column_height(m);
+        Self {
+            header: header_height(m),
+            head: crate::widgets::deck_header::head_height(t, m),
+            controls: deck.max(mixer),
+            library_min: library_metrics(m).min_height(LIBRARY_MIN_ROWS),
         }
     }
 }
@@ -185,14 +178,223 @@ impl LayoutPlan {
 /// What fills a cell.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CellKind {
-    /// A deck by index.
+    /// A deck's controls by index.
     Deck(usize),
     /// A named slot, filled by the app or a later task.
     Slot(String),
-    /// Rows laid out inside the cell: how a column of the window holds stacked parts. The placed
-    /// result holds the inner cells, never the group itself.
+    /// Rows laid out inside the cell (generic grid only). The placed result holds the inner cells,
+    /// never the group itself.
     Rows(Vec<RowSpec>),
 }
+
+impl CellKind {
+    pub fn is_deck(&self) -> bool {
+        matches!(self, CellKind::Deck(_))
+    }
+
+    /// The slot named `name`.
+    pub fn slot(name: &str) -> Self {
+        CellKind::Slot(name.to_owned())
+    }
+}
+
+/// A cell placed inside the window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedCell {
+    pub kind: CellKind,
+    pub bounds: Rect,
+}
+
+/// The whole main window: the header strip's parts and every placed cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Page {
+    pub header: HeaderRects,
+    /// The metric set the page was laid out with.
+    pub density: Density,
+    /// The decks and slots, in draw order, all inside [`Page::area`].
+    pub cells: Vec<PlacedCell>,
+    /// The window under the header strip and left of the debug column.
+    pub area: Rect,
+    /// The window is smaller than [`MIN_WINDOW`]: the sampler drawer is left out.
+    pub degraded: bool,
+}
+
+impl Page {
+    /// The bounds of the cell of `kind`, if the page has one.
+    pub fn cell(&self, kind: &CellKind) -> Option<Rect> {
+        self.cells
+            .iter()
+            .find(|c| &c.kind == kind)
+            .map(|c| c.bounds)
+    }
+}
+
+/// The density a window lays out with: for `Automatic` Roomy while each waveform keeps
+/// [`ROOMY_MIN_WAVE`] px with the library shown, and Compact below that or under [`MIN_WINDOW`].
+/// An explicit Roomy is kept while the library still shows [`LIBRARY_MIN_ROWS`] rows; in a
+/// shorter window it falls back to Compact rather than leave a band with no rows.
+pub fn resolve_density(choice: DensityChoice, t: &ThemeTokens, window: (i32, i32)) -> Density {
+    match choice {
+        DensityChoice::Roomy if roomy_keeps_the_library(t, window) => Density::Roomy,
+        DensityChoice::Automatic if roomy_fits(t, window) => Density::Roomy,
+        _ => Density::Compact,
+    }
+}
+
+/// Whether the Roomy metric set leaves both waveforms [`ROOMY_MIN_WAVE`] tall in `window`.
+fn roomy_fits(t: &ThemeTokens, window: (i32, i32)) -> bool {
+    !is_degraded(window)
+        && roomy_page(t, window)
+            .cell(&CellKind::slot(STAGE_SLOT))
+            .is_some_and(|stage| stage.h >= 2 * ROOMY_MIN_WAVE + WAVE_GAP)
+}
+
+/// Whether the Roomy library band in `window` holds its floor of [`LIBRARY_MIN_ROWS`] rows.
+fn roomy_keeps_the_library(t: &ThemeTokens, window: (i32, i32)) -> bool {
+    let floor = Bands::of(t, t.metrics(Density::Roomy)).library_min;
+    !is_degraded(window)
+        && roomy_page(t, window)
+            .cell(&CellKind::slot(LIBRARY_SLOT))
+            .is_some_and(|band| band.h >= floor)
+}
+
+fn roomy_page(t: &ThemeTokens, window: (i32, i32)) -> Page {
+    page_for(
+        FACEPLATE_DECKS,
+        window,
+        0,
+        LayoutState::default(),
+        HeaderNeeds::default(),
+        (t, Density::Roomy),
+    )
+}
+
+fn is_degraded(window: (i32, i32)) -> bool {
+    window.0 < MIN_WINDOW.0 || window.1 < MIN_WINDOW.1
+}
+
+/// The three columns of the deck header and controls rows: deck A, the mixer, deck B. The mixer
+/// keeps its density width ([`DensityMetrics::mixer_width`]) while the decks get at least as much;
+/// in a narrower window it gives way first.
+pub fn columns(content: Rect, m: &DensityMetrics, gap: i32) -> [Rect; 3] {
+    let usable = (content.w - 2 * gap).max(0);
+    let mixer_w = (m.mixer_width.round() as i32).min(usable / 3);
+    let deck_w = (usable - mixer_w) / 2;
+    let a = Rect::new(content.x, content.y, deck_w, content.h);
+    let mixer = Rect::new(a.right() + gap, content.y, mixer_w, content.h);
+    let b_x = mixer.right() + gap;
+    let b = Rect::new(b_x, content.y, (content.right() - b_x).max(0), content.h);
+    [a, mixer, b]
+}
+
+/// Heights of the stage and the library band from the `flexible` height they share: the library
+/// takes [`LIBRARY_SHARE`] but at least its floor, unless that would leave the stage less than two
+/// readable waveforms (a window below the design size), when the share alone applies.
+fn split_stage_and_library(flexible: i32, library_min: i32) -> (i32, i32) {
+    let flexible = flexible.max(0);
+    let share = (flexible as f32 * LIBRARY_SHARE).round() as i32;
+    let wanted = share.max(library_min);
+    let stage_floor = 2 * MIN_WAVE_HEIGHT + WAVE_GAP;
+    let library = if flexible - wanted >= stage_floor {
+        wanted
+    } else {
+        share
+    };
+    (flexible - library, library)
+}
+
+/// Lays out a `window` (width, height) with `engine_decks` decks for `state`: the header strip
+/// across the top and, under it, the faceplate rows, with `debug_w` px kept free at the right for
+/// the debug column. `look` is the theme and the density to lay out with (see
+/// [`resolve_density`]). A deck the engine lacks is not placed.
+pub fn page_for(
+    engine_decks: usize,
+    window: (i32, i32),
+    debug_w: i32,
+    state: LayoutState,
+    header: HeaderNeeds,
+    (t, density): (&ThemeTokens, Density),
+) -> Page {
+    let m = t.metrics(density);
+    let space = Spacing::of(m);
+    let bands = Bands::of(t, m);
+    let degraded = is_degraded(window);
+    let right = (window.0 - debug_w).max(0);
+    let area = Rect::new(0, bands.header, right, (window.1 - bands.header).max(0));
+    let content = Rect::new(
+        space.margin,
+        bands.header + space.row_gap,
+        (right - 2 * space.margin).max(0),
+        (window.1 - bands.header - space.row_gap - space.margin).max(0),
+    );
+    let mut body = content;
+    let head_row = body.remove_top(bands.head);
+    body.remove_top(space.row_gap);
+    let library_shown = !state.performance;
+    let fixed = bands.controls + space.row_gap * if library_shown { 2 } else { 1 };
+    let (stage_h, library_h) = if library_shown {
+        split_stage_and_library(body.h - fixed, bands.library_min)
+    } else {
+        ((body.h - fixed).max(0), 0)
+    };
+    let stage = body.remove_top(stage_h);
+    body.remove_top(space.row_gap);
+    let controls_row = body.remove_top(bands.controls);
+    body.remove_top(space.row_gap);
+    let band = body.remove_top(library_h);
+
+    let decks = engine_decks.min(FACEPLATE_DECKS);
+    let [head_a, tempo, head_b] = columns(head_row, m, space.column_gap);
+    let [deck_a, mixer, deck_b] = columns(controls_row, m, space.column_gap);
+    let mut cells = vec![
+        (CellKind::Slot(head_slot(0)), head_a, decks > 0),
+        (CellKind::slot(TEMPO_SLOT), tempo, true),
+        (CellKind::Slot(head_slot(1)), head_b, decks > 1),
+        (CellKind::slot(STAGE_SLOT), stage, true),
+        (CellKind::Deck(0), deck_a, decks > 0),
+        (CellKind::slot(MIXER_SLOT), mixer, true),
+        (CellKind::Deck(1), deck_b, decks > 1),
+    ];
+    if library_shown {
+        let sampler = state.sampler_visible && !degraded;
+        let (library, drawer) = band_cells(band, state.sampler_open, sampler, space.column_gap);
+        cells.push((CellKind::slot(LIBRARY_SLOT), library, true));
+        if let Some(drawer) = drawer {
+            cells.push((CellKind::slot(SAMPLER_SLOT), drawer, true));
+        }
+    }
+    Page {
+        header: header_rects(window.0, m, header),
+        density,
+        cells: cells
+            .into_iter()
+            .filter(|(_, _, shown)| *shown)
+            .map(|(kind, bounds, _)| PlacedCell { kind, bounds })
+            .collect(),
+        area,
+        degraded,
+    }
+}
+
+/// The library band split into the library and, when `sampler`, the sampler drawer at its right:
+/// a [`COLLAPSED_DRAWER_WIDTH`] handle, or [`SAMPLER_WEIGHT`] of the band while open.
+fn band_cells(band: Rect, open: bool, sampler: bool, gap: i32) -> (Rect, Option<Rect>) {
+    if !sampler {
+        return (band, None);
+    }
+    let usable = (band.w - gap).max(0);
+    let drawer_w = if open {
+        (usable as f32 * SAMPLER_WEIGHT).round() as i32
+    } else {
+        COLLAPSED_DRAWER_WIDTH.min(usable)
+    };
+    let mut library = band;
+    let drawer = library.remove_right(drawer_w);
+    library.remove_right(gap);
+    (library, Some(drawer))
+}
+
+// ---- The generic grid --------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellSpec {
@@ -202,12 +404,6 @@ pub struct CellSpec {
     /// Smallest width in px (0 = none). A cell that its share would leave narrower takes this
     /// instead, and the cells without a floor give up the difference.
     pub min_width: i32,
-}
-
-impl CellKind {
-    pub fn is_deck(&self) -> bool {
-        matches!(self, CellKind::Deck(_))
-    }
 }
 
 impl CellSpec {
@@ -257,6 +453,7 @@ pub struct RowSpec {
     pub cells: Vec<CellSpec>,
 }
 
+/// A data-driven arrangement: rows of cells, each a deck or a named slot.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LayoutSpec {
     pub rows: Vec<RowSpec>,
@@ -271,108 +468,7 @@ pub enum LayoutError {
     Malformed(&'static str),
 }
 
-/// A cell placed inside the window.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlacedCell {
-    pub kind: CellKind,
-    pub bounds: Rect,
-}
-
 impl LayoutSpec {
-    /// Channel strips at the window's left and right edges, the stage over the decks' controls
-    /// between them, and the library and the open sampler strip across the bottom. Further decks
-    /// (and their strips) get a row of full cards below the first.
-    pub fn standard(num_decks: usize) -> Self {
-        Self::build(
-            num_decks,
-            &LayoutState::default().with_sampler_open(true),
-            None,
-        )
-    }
-
-    /// The layout for a UI `state`. `band` is the library band's `(width, gap)`, needed to size the
-    /// collapsed sampler drawer in px; `None` gives the open drawer its usual share.
-    pub fn build(num_decks: usize, state: &LayoutState, band: Option<(i32, i32)>) -> Self {
-        let stage_share = if state.performance {
-            PERFORMANCE_STAGE_SHARE
-        } else {
-            STAGE_SHARE
-        };
-        let centre = CellSpec::rows(
-            vec![
-                RowSpec {
-                    height: stage_share,
-                    min_height: 0,
-                    cells: vec![CellSpec::slot(STAGE_SLOT, 1.0)],
-                },
-                RowSpec {
-                    height: 1.0 - stage_share,
-                    min_height: CONTROLS_MIN_HEIGHT,
-                    cells: match num_decks {
-                        0 | 1 => vec![CellSpec::deck(0), CellSpec::slot(MIXER_SLOT, MIXER_WEIGHT)],
-                        _ => vec![
-                            CellSpec::deck(0),
-                            CellSpec::slot(MIXER_SLOT, MIXER_WEIGHT),
-                            CellSpec::deck(1),
-                        ],
-                    },
-                },
-            ],
-            CENTRE_WEIGHT,
-        );
-        let mut top = vec![
-            CellSpec::slot(&channel_slot(0), CHANNEL_WEIGHT).with_min_width(CHANNEL_MIN_WIDTH),
-            centre,
-        ];
-        if num_decks > 1 {
-            top.push(
-                CellSpec::slot(&channel_slot(1), CHANNEL_WEIGHT).with_min_width(CHANNEL_MIN_WIDTH),
-            );
-        }
-        let deck_share = if state.performance {
-            1.0
-        } else {
-            DECK_ROWS_SHARE
-        };
-        let mut rows = vec![RowSpec {
-            height: deck_share,
-            min_height: 0,
-            cells: top,
-        }];
-        if num_decks > 2 {
-            rows.push(RowSpec {
-                height: deck_share,
-                min_height: 0,
-                cells: (2..num_decks)
-                    .flat_map(|d| {
-                        [
-                            CellSpec::deck(d),
-                            CellSpec::slot(&channel_slot(d), CHANNEL_WEIGHT)
-                                .with_min_width(CHANNEL_MIN_WIDTH),
-                        ]
-                    })
-                    .collect(),
-            });
-        }
-        if !state.performance {
-            let mut band_cells = vec![CellSpec::slot(LIBRARY_SLOT, 1.0)];
-            if state.sampler_visible {
-                let weight = if state.sampler_open {
-                    SAMPLER_WEIGHT / (1.0 - SAMPLER_WEIGHT)
-                } else {
-                    collapsed_drawer_weight(band)
-                };
-                band_cells.push(CellSpec::slot(SAMPLER_SLOT, weight));
-            }
-            rows.push(RowSpec {
-                height: 1.0 - DECK_ROWS_SHARE,
-                min_height: LIBRARY_MIN_HEIGHT,
-                cells: band_cells,
-            });
-        }
-        Self { rows }
-    }
-
     /// Parses the JSON form. Every row needs cells and a positive height; every cell needs exactly
     /// one of `deck` (a non-negative integer) or `slot` (a name), and a positive `weight` (default 1).
     pub fn from_json(json: &str) -> Result<Self, LayoutError> {
@@ -462,20 +558,26 @@ fn parse_row(row: &Value) -> Result<RowSpec, LayoutError> {
         .iter()
         .map(parse_cell)
         .collect::<Result<Vec<_>, _>>()?;
-    let min_height = match row.get("minHeight") {
-        None => 0,
-        Some(v) => v
-            .as_u64()
-            .and_then(|m| i32::try_from(m).ok())
-            .ok_or(LayoutError::Malformed(
-                "row minHeight must be a non-negative integer",
-            ))?,
-    };
+    let min_height = non_negative(
+        row.get("minHeight"),
+        "row minHeight must be a non-negative integer",
+    )?;
     Ok(RowSpec {
         height: height as f32,
         min_height,
         cells,
     })
+}
+
+/// An optional non-negative integer field; 0 when absent.
+fn non_negative(value: Option<&Value>, error: &'static str) -> Result<i32, LayoutError> {
+    match value {
+        None => Ok(0),
+        Some(v) => v
+            .as_u64()
+            .and_then(|m| i32::try_from(m).ok())
+            .ok_or(LayoutError::Malformed(error)),
+    }
 }
 
 fn parse_cell(value: &Value) -> Result<CellSpec, LayoutError> {
@@ -491,10 +593,7 @@ fn parse_cell(value: &Value) -> Result<CellSpec, LayoutError> {
     if weight.is_nan() || weight <= 0.0 {
         return Err(LayoutError::Malformed("cell weight must be positive"));
     }
-    let deck = obj.get("deck");
-    let slot = obj.get("slot");
-    let rows = obj.get("rows");
-    let kind = match (deck, slot, rows) {
+    let kind = match (obj.get("deck"), obj.get("slot"), obj.get("rows")) {
         (None, None, Some(r)) => {
             let rows = r
                 .as_array()
@@ -521,15 +620,10 @@ fn parse_cell(value: &Value) -> Result<CellSpec, LayoutError> {
             ))
         }
     };
-    let min_width = match obj.get("minWidth") {
-        None => 0,
-        Some(v) => v
-            .as_u64()
-            .and_then(|m| i32::try_from(m).ok())
-            .ok_or(LayoutError::Malformed(
-                "cell minWidth must be a non-negative integer",
-            ))?,
-    };
+    let min_width = non_negative(
+        obj.get("minWidth"),
+        "cell minWidth must be a non-negative integer",
+    )?;
     Ok(CellSpec {
         kind,
         weight: weight as f32,
@@ -647,8 +741,8 @@ pub fn compute_layout(spec: &LayoutSpec, area: Rect, gap: i32) -> Vec<PlacedCell
     placed
 }
 
-/// Cells the main view can show with `engine_decks` decks: a deck the engine lacks is skipped
-/// rather than failing a bad layout file.
+/// Cells of a generic layout the view can show with `engine_decks` decks: a deck the engine lacks
+/// is skipped rather than failing a bad layout file.
 pub fn visible_cells(
     spec: &LayoutSpec,
     engine_decks: usize,
@@ -664,49 +758,23 @@ pub fn visible_cells(
         .collect()
 }
 
-/// The whole main window: the header strip's parts and every placed cell.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Page {
-    pub header: HeaderRects,
-    /// The decks and slots, in draw order, all inside [`Page::area`].
-    pub cells: Vec<PlacedCell>,
-    /// The window under the header strip and left of the debug column. The cells end a `gap`
-    /// above its bottom edge, so no card touches the window's border.
-    pub area: Rect,
-}
-
-/// Lays out a `window` (width, height): the header strip (see [`header_height`]) and, under it, the
-/// layout for `state`, with `engine_decks` decks, `gap` between cells and `debug_w` px kept free
-/// at the right for the debug column. A deck the engine lacks is skipped.
-pub fn page_for(
-    engine_decks: usize,
-    window: (i32, i32),
-    debug_w: i32,
-    gap: i32,
-    state: LayoutState,
-    header: HeaderNeeds,
-) -> Page {
-    let header_h = header_height(window.1);
-    let rects = header_rects(window.0, header_h, header);
-    let area = Rect::new(
-        0,
-        header_h,
-        (window.0 - debug_w).max(0),
-        (window.1 - header_h).max(0),
-    );
-    // The bottom margin keeps the library and sampler cards off the window's edge.
-    let layout_area = Rect::new(area.x, area.y, area.w, (area.h - gap).max(0));
-    let plan = LayoutPlan::for_window(engine_decks, (area.w, window.1), gap, state);
-    Page {
-        header: rects,
-        cells: visible_cells(&plan.spec, plan.decks, layout_area, gap),
-        area,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn theme() -> ThemeTokens {
+        ThemeTokens::builtin_dark()
+    }
+
+    fn page(window: (i32, i32), density: Density, state: LayoutState) -> Page {
+        let needs = HeaderNeeds {
+            automix: true,
+            record: true,
+            settings: true,
+            notice: false,
+        };
+        page_for(2, window, 0, state, needs, (&theme(), density))
+    }
 
     #[test]
     fn rows_need_cells_and_a_positive_height() {
@@ -723,326 +791,141 @@ mod tests {
         assert!(LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":-1}]}]}"#).is_err());
     }
 
-    const SIZES: [(i32, i32); 4] = [(1280, 720), (1280, 800), (1920, 1080), (2560, 1440)];
-    const GAP: i32 = 12;
-    const FULL: HeaderNeeds = HeaderNeeds {
-        automix: true,
-        record: true,
-        settings: true,
-        notice: false,
-    };
-
-    /// Every state the page has: library or performance mode, sampler open or collapsed.
-    fn states() -> Vec<LayoutState> {
-        let mut states = Vec::new();
-        for performance in [false, true] {
-            for sampler_open in [false, true] {
-                states.push(LayoutState {
-                    performance,
-                    sampler_open,
-                    sampler_visible: true,
-                });
-            }
-        }
-        states
-    }
-
-    fn page(decks: usize, size: (i32, i32), state: LayoutState) -> Page {
-        page_for(decks, size, 0, GAP, state, FULL)
-    }
-
-    fn cell(page: &Page, kind: CellKind) -> Rect {
-        page.cells
-            .iter()
-            .find(|c| c.kind == kind)
-            .unwrap_or_else(|| panic!("no {kind:?} cell"))
-            .bounds
-    }
-
-    fn slot(name: &str) -> CellKind {
-        CellKind::Slot(name.into())
+    #[test]
+    fn head_slot_names_round_trip() {
+        assert_eq!(deck_of_head(&head_slot(1)), Some(1));
+        assert_eq!(deck_of_head("mixer"), None);
+        assert_eq!(deck_of_head("head:x"), None);
+        assert!(!is_mirrored(0) && is_mirrored(1));
     }
 
     #[test]
-    fn cells_sit_under_the_header_inside_the_area_and_never_overlap() {
-        for (w, h) in SIZES {
-            for decks in [2, 4] {
-                for state in states() {
-                    let page = page(decks, (w, h), state);
-                    let header_h = header_height(h);
-                    assert_eq!(page.area, Rect::new(0, header_h, w, h - header_h));
-                    let bar = page.header.all();
-                    for (i, a) in page.cells.iter().enumerate() {
-                        let b = a.bounds;
-                        assert!(
-                            page.area.contains(&b),
-                            "{w}x{h} {state:?}: {:?} leaves the area",
-                            a.kind
-                        );
-                        assert!(b.y >= header_h);
-                        for part in &bar {
-                            assert!(!overlaps(b, *part), "{w}x{h}: {b:?} over {part:?}");
-                        }
-                        for other in &page.cells[i + 1..] {
-                            assert!(
-                                !overlaps(b, other.bounds),
-                                "{w}x{h} {state:?}: {:?} vs {:?}",
-                                a.kind,
-                                other.kind
-                            );
-                        }
-                    }
-                }
+    fn the_mixer_column_keeps_its_density_width_and_the_decks_share_the_rest() {
+        let t = theme();
+        for density in [Density::Roomy, Density::Compact] {
+            let m = t.metrics(density);
+            let [a, mixer, b] = columns(Rect::new(21, 0, 1398, 10), m, 21);
+            assert_eq!(mixer.w, m.mixer_width as i32, "{density:?}");
+            assert!((a.w - b.w).abs() <= 1);
+            assert_eq!(b.right(), 21 + 1398);
+            assert_eq!((a.right() + 21, mixer.right() + 21), (mixer.x, b.x));
+        }
+    }
+
+    #[test]
+    fn the_tempo_sits_over_the_mixer_and_the_heads_over_their_decks() {
+        for density in [Density::Roomy, Density::Compact] {
+            let p = page((1440, 900), density, LayoutState::default());
+            let at = |k: CellKind| p.cell(&k).expect("cell");
+            let tempo = at(CellKind::slot(TEMPO_SLOT));
+            let mixer = at(CellKind::slot(MIXER_SLOT));
+            assert_eq!((tempo.x, tempo.w), (mixer.x, mixer.w));
+            for d in 0..2 {
+                let (head, deck) = (at(CellKind::Slot(head_slot(d))), at(CellKind::Deck(d)));
+                assert_eq!((head.x, head.w), (deck.x, deck.w));
             }
         }
     }
 
     #[test]
-    fn strips_stage_and_cards_line_up() {
-        for (w, h) in SIZES {
-            for state in states() {
-                let page = page(2, (w, h), state);
-                let stage = cell(&page, slot(STAGE_SLOT));
-                let (s0, s1) = (
-                    cell(&page, slot(&channel_slot(0))),
-                    cell(&page, slot(&channel_slot(1))),
-                );
-                let (d0, d1) = (
-                    cell(&page, CellKind::Deck(0)),
-                    cell(&page, CellKind::Deck(1)),
-                );
-                let mixer = cell(&page, slot(MIXER_SLOT));
-                for strip in [s0, s1] {
-                    assert_eq!(strip.y, stage.y, "{w}x{h}: strip top is the stage top");
-                    assert_eq!(strip.bottom(), d0.bottom(), "{w}x{h}: strip bottom");
-                    assert!(strip.w >= CHANNEL_MIN_WIDTH, "{w}x{h}: strip {}", strip.w);
-                }
-                assert_eq!((d0.bottom(), mixer.bottom()), (d1.bottom(), d0.bottom()));
-                assert!((s0.w - s1.w).abs() <= 1, "{w}x{h}: strips differ");
-                assert!(
-                    (d0.w - d1.w).abs() <= 1,
-                    "{w}x{h}: decks {} vs {}",
-                    d0.w,
-                    d1.w
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_library_keeps_a_margin_above_the_window_bottom() {
-        for (w, h) in SIZES {
-            for decks in [2, 4] {
-                for open in [false, true] {
-                    let state = LayoutState::default().with_sampler_open(open);
-                    let page = page(decks, (w, h), state);
-                    assert_eq!(cell(&page, slot(LIBRARY_SLOT)).bottom(), h - GAP);
-                    assert_eq!(cell(&page, slot(SAMPLER_SLOT)).bottom(), h - GAP);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn a_short_window_keeps_the_controls_and_the_library_and_squeezes_the_stage() {
-        let short = page(2, (1280, 720), LayoutState::default());
-        assert!(cell(&short, CellKind::Deck(0)).h >= CONTROLS_MIN_HEIGHT);
-        assert!(cell(&short, slot(LIBRARY_SLOT)).h >= LIBRARY_MIN_HEIGHT);
-        let tall = page(2, (1280, 800), LayoutState::default());
-        assert!(
-            cell(&tall, slot(STAGE_SLOT)).h > cell(&short, slot(STAGE_SLOT)).h,
-            "the stage gives up height first"
-        );
-    }
-
-    /// The strip contract: at the smallest window the strip's inner width holds three 32 px EQ caps
-    /// (each needs cap + 2 x (3 px gap + 1.25 px half stroke) = 41 px, knobs.md section 3) and a
-    /// fader wide enough for its tick labels beside the labelled meter (faders-meters.md section 3).
-    #[test]
-    fn a_strip_holds_three_full_size_eq_caps_and_a_labelled_fader() {
-        let t = crate::theme::ThemeTokens::builtin_dark();
-        let pad = t.mixer_pad_x as i32;
-        for (w, h) in SIZES {
-            let page = page(2, (w, h), LayoutState::default());
-            for ch in 0..2 {
-                let strip = cell(&page, slot(&channel_slot(ch)));
-                let inner = strip.w - 2 * pad;
-                assert!(inner >= 3 * 41, "{w}x{h}: {inner} px for three EQ caps");
-                let need = t.mixer_fader_width as i32
-                    + crate::widgets::channel::STRIP_GAP
-                    + crate::meter::column_width(t.mixer_meter_width, true);
-                assert!(
-                    inner >= need,
-                    "{w}x{h}: {inner} px < {need} for the fader group"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_standard_proportions_follow_the_design() {
-        for (w, h) in [(1280, 800), (1920, 1080), (2560, 1440)] {
-            let page = page(2, (w, h), LayoutState::default());
-            let stage = cell(&page, slot(STAGE_SLOT));
-            let deck = cell(&page, CellKind::Deck(0));
-            let rows = (deck.bottom() - stage.y) as f32;
-            let stage_share = stage.h as f32 / rows;
-            assert!(
-                (0.45..=0.55).contains(&stage_share),
-                "{w}x{h}: stage {stage_share}"
-            );
-            let mixer = cell(&page, slot(MIXER_SLOT)).w as f32 / w as f32;
-            assert!((0.18..=0.26).contains(&mixer), "{w}x{h}: mixer {mixer}");
-            let strip = cell(&page, slot(&channel_slot(0))).w as f32 / w as f32;
-            assert!((0.07..=0.13).contains(&strip), "{w}x{h}: strip {strip}");
-        }
-        // At 720 the controls floor takes the height, so the stage is a little under half.
-        let short = page(2, (1280, 720), LayoutState::default());
-        let stage = cell(&short, slot(STAGE_SLOT));
-        let rows = (cell(&short, CellKind::Deck(0)).bottom() - stage.y) as f32;
-        assert!((0.40..=0.55).contains(&(stage.h as f32 / rows)));
-    }
-
-    #[test]
-    fn performance_mode_grows_the_stage_and_drops_the_band() {
-        let normal = page(2, (1920, 1080), LayoutState::default());
+    fn performance_mode_drops_the_band_and_grows_the_stage() {
+        let normal = page((1440, 900), Density::Roomy, LayoutState::default());
         let perf = page(
-            2,
-            (1920, 1080),
+            (1440, 900),
+            Density::Roomy,
             LayoutState {
                 performance: true,
                 ..LayoutState::default()
             },
         );
-        assert!(cell(&perf, slot(STAGE_SLOT)).h > cell(&normal, slot(STAGE_SLOT)).h + 100);
-        assert!(perf
-            .cells
-            .iter()
-            .all(|c| c.kind != slot(LIBRARY_SLOT) && c.kind != slot(SAMPLER_SLOT)));
-        assert_eq!(cell(&perf, CellKind::Deck(0)).bottom(), 1080 - GAP);
+        let stage = |p: &Page| p.cell(&CellKind::slot(STAGE_SLOT)).expect("stage").h;
+        assert!(stage(&perf) > stage(&normal) + 100);
+        assert!(perf.cell(&CellKind::slot(LIBRARY_SLOT)).is_none());
+        assert!(perf.cell(&CellKind::slot(SAMPLER_SLOT)).is_none());
+    }
+
+    #[test]
+    fn the_sampler_drawer_is_a_handle_or_its_share_of_the_band() {
+        let closed = page((1440, 900), Density::Roomy, LayoutState::default());
+        let drawer = closed.cell(&CellKind::slot(SAMPLER_SLOT)).expect("drawer");
+        assert_eq!(drawer.w, COLLAPSED_DRAWER_WIDTH);
+        let open = page(
+            (1440, 900),
+            Density::Roomy,
+            LayoutState::default().with_sampler_open(true),
+        );
+        let drawer = open.cell(&CellKind::slot(SAMPLER_SLOT)).expect("drawer");
+        let band = 1440 - 2 * 21 - 21;
+        assert!((drawer.w as f32 / band as f32 - SAMPLER_WEIGHT).abs() < 0.01);
+        let small = page((1024, 640), Density::Compact, LayoutState::default());
+        assert!(small.degraded);
+        assert!(small.cell(&CellKind::slot(SAMPLER_SLOT)).is_none());
+    }
+
+    #[test]
+    fn automatic_density_is_roomy_on_tall_windows_and_compact_on_short_ones() {
+        let t = theme();
+        let auto = |w: (i32, i32)| resolve_density(DensityChoice::Automatic, &t, w);
+        assert_eq!(auto((1440, 900)), Density::Roomy);
+        assert_eq!(auto((1920, 1080)), Density::Roomy);
+        assert_eq!(auto((1280, 720)), Density::Compact);
+        assert_eq!(auto((1280, 800)), Density::Compact);
+        assert_eq!(auto((900, 1000)), Density::Compact, "degraded is Compact");
+        let roomy = |w: (i32, i32)| resolve_density(DensityChoice::Roomy, &t, w);
+        assert_eq!(
+            roomy((1280, 800)),
+            Density::Roomy,
+            "an explicit choice wins where it fits"
+        );
+        assert_eq!(
+            roomy((1280, 720)),
+            Density::Compact,
+            "but never empties the library"
+        );
+        let compact = resolve_density(DensityChoice::Compact, &t, (1920, 1080));
+        assert_eq!(compact, Density::Compact);
+    }
+
+    #[test]
+    fn every_density_choice_keeps_the_library_rows_from_the_minimum_window_up() {
+        let t = theme();
+        let choices = [
+            DensityChoice::Automatic,
+            DensityChoice::Roomy,
+            DensityChoice::Compact,
+        ];
+        for w in [MIN_WINDOW.0, 1440, 1920] {
+            for h in (MIN_WINDOW.1..=1200).step_by(8) {
+                for choice in choices {
+                    let density = resolve_density(choice, &t, (w, h));
+                    let floor = Bands::of(&t, t.metrics(density)).library_min;
+                    let band = page((w, h), density, LayoutState::default())
+                        .cell(&CellKind::slot(LIBRARY_SLOT))
+                        .expect("library band");
+                    assert!(
+                        band.h >= floor,
+                        "{choice:?} {w}x{h}: band {} < {floor}",
+                        band.h
+                    );
+                }
+            }
+        }
     }
 
     #[test]
     fn the_debug_column_is_kept_out_of_the_area() {
-        let page = page_for(2, (1920, 1080), 300, GAP, LayoutState::default(), FULL);
-        assert_eq!(page.area.w, 1620);
-        assert!(page.cells.iter().all(|c| c.bounds.right() <= 1620));
-        assert_eq!(page.header.bar.w, 1920, "the header spans the window");
-    }
-
-    #[test]
-    fn library_metrics_follow_the_window() {
-        let tall = library_metrics(1920, 1080);
-        assert_eq!(
-            (tall.row_h, tall.header_h, tall.toolbar_h, tall.sidebar_w),
-            (28, 28, 36, 170)
-        );
-        let small = library_metrics(1280, 720);
-        assert_eq!((small.row_h, small.sidebar_w), (24, 160));
-        assert_eq!(library_metrics(1280, 800).row_h, 24);
-        assert_eq!(library_metrics(1400, 900).row_h, 28);
-        assert_eq!(library_metrics(1400, 900).sidebar_w, 170);
-    }
-
-    #[test]
-    fn a_cell_floor_round_trips_through_json() {
-        let spec = LayoutSpec::standard(2);
-        let parsed = LayoutSpec::from_json(&spec.to_json()).expect("round trip");
-        assert_eq!(parsed, spec);
-        assert!(spec.to_json().contains("\"minWidth\":112"));
-        let plain = LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":0}]}]}"#).expect("parses");
-        assert_eq!(plain.rows[0].cells[0].min_width, 0);
-        assert!(
-            LayoutSpec::from_json(r#"{"rows":[{"cells":[{"deck":0,"minWidth":-1}]}]}"#).is_err()
-        );
-    }
-
-    fn overlaps(a: Rect, b: Rect) -> bool {
-        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-    }
-
-    fn band_cell(spec: &LayoutSpec, w: i32, slot: &str) -> Option<Rect> {
-        compute_layout(spec, Rect::new(0, 0, w, 700), 12)
-            .into_iter()
-            .find(|c| c.kind == CellKind::Slot(slot.into()))
-            .map(|c| c.bounds)
-    }
-
-    #[test]
-    fn the_collapsed_sampler_drawer_is_a_narrow_handle_at_any_width() {
-        for w in [1280, 1600, 1920, 2560] {
-            let plan = LayoutPlan::for_window(2, (w, 800), 12, LayoutState::default());
-            let drawer = band_cell(&plan.spec, w, SAMPLER_SLOT).expect("drawer");
-            assert!(
-                (drawer.w - COLLAPSED_DRAWER_WIDTH).abs() <= 2,
-                "{w}: handle is {} px",
-                drawer.w
-            );
-            let library = band_cell(&plan.spec, w, LIBRARY_SLOT).expect("library");
-            assert!(
-                library.w > w * 9 / 10 - 40,
-                "{w}: the library takes the band"
-            );
-        }
-    }
-
-    #[test]
-    fn an_open_drawer_takes_its_share_of_the_band() {
-        let state = LayoutState::default().with_sampler_open(true);
-        let plan = LayoutPlan::for_window(2, (1280, 800), 12, state);
-        let drawer = band_cell(&plan.spec, 1280, SAMPLER_SLOT).expect("drawer");
-        let share = drawer.w as f32 / (1280.0 - 12.0);
-        assert!((share - SAMPLER_WEIGHT).abs() < 0.01, "share {share}");
-        assert!(drawer.w >= 250, "room for the pads");
-    }
-
-    #[test]
-    fn performance_mode_drops_the_library_band_and_grows_the_stage() {
-        let area = Rect::new(0, 32, 1280, 688);
-        let normal = LayoutPlan::for_window(2, (1280, 720), 12, LayoutState::default());
-        let perf = LayoutPlan::for_window(
+        let needs = HeaderNeeds::default();
+        let p = page_for(
             2,
-            (1280, 720),
-            12,
-            LayoutState {
-                performance: true,
-                ..LayoutState::default()
-            },
+            (1920, 1080),
+            300,
+            LayoutState::default(),
+            needs,
+            (&theme(), Density::Roomy),
         );
-        let stage = |plan: &LayoutPlan| {
-            compute_layout(&plan.spec, area, 12)
-                .into_iter()
-                .find(|c| c.kind == CellKind::Slot(STAGE_SLOT.into()))
-                .expect("stage")
-                .bounds
-        };
-        assert!(stage(&perf).h > stage(&normal).h + 100);
-        let placed = compute_layout(&perf.spec, area, 12);
-        assert!(placed
-            .iter()
-            .all(|c| c.kind != CellKind::Slot(LIBRARY_SLOT.into())
-                && c.kind != CellKind::Slot(SAMPLER_SLOT.into())));
-        assert!(!perf.sampler_visible);
-        for c in &placed {
-            assert!(area.contains(&c.bounds), "{c:?}");
-        }
-    }
-
-    #[test]
-    fn a_small_window_keeps_two_decks_and_hides_the_sampler() {
-        let big = LayoutPlan::for_window(4, (1920, 1080), 12, LayoutState::default());
-        assert_eq!(big.decks, 4);
-        assert!(!big.degraded && big.sampler_visible);
-        for window in [(1100, 720), (1280, 640), (1024, 600)] {
-            let plan = LayoutPlan::for_window(4, window, 12, LayoutState::default());
-            assert!(plan.degraded, "{window:?}");
-            assert_eq!(plan.decks, 2, "{window:?}");
-            assert_eq!(plan.spec.deck_count(), 2);
-            assert!(!plan.sampler_visible);
-            assert!(!plan.spec.slot_names().contains(&SAMPLER_SLOT.to_owned()));
-        }
-        let exact = LayoutPlan::for_window(2, MIN_WINDOW, 12, LayoutState::default());
-        assert!(!exact.degraded, "the minimum itself is fully supported");
+        assert_eq!(p.area.w, 1620);
+        assert!(p.cells.iter().all(|c| c.bounds.right() <= 1620));
+        assert_eq!(p.header.bar.w, 1920, "the header spans the window");
     }
 
     #[test]

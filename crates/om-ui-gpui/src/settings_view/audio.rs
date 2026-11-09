@@ -2,6 +2,7 @@
 
 use super::chips::*;
 use super::*;
+use crate::font::{numeral, Numeral};
 
 /// Plain values the Audio page shows, read once per frame.
 pub(super) struct AudioView {
@@ -96,12 +97,8 @@ pub(super) fn audio_page(t: &ThemeTokens, view: &AudioView, cx: &mut Context<She
             "Master and headphone mixes go to the chosen stereo pairs of the output device.",
         ));
     }
-    column.child(
-        div()
-            .text_color(paint(t.text_secondary))
-            .text_size(px(t.type_caption))
-            .child(view.readout.clone()),
-    )
+    column
+        .child(numeral(t, Numeral::Value, view.readout.clone()).text_color(paint(t.text_secondary)))
 }
 
 impl SettingsState {

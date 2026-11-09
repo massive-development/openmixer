@@ -1,55 +1,337 @@
-//! Main layout cases, plus the MainView placement rules.
+//! The main window's rect contract (the faceplate, comp 4a/4b) at every window size the app must
+//! lay out, in both densities, plus the generic data-driven grid.
 
 use om_ui::geometry::Rect;
+use om_ui::header_layout::HeaderNeeds;
 use om_ui::main_layout::{
-    channel_of_slot, channel_slot, compute_layout, visible_cells, CellKind, LayoutSpec,
-    LIBRARY_SLOT, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
+    compute_layout, deck_of_head, head_slot, page_for, resolve_density, visible_cells, CellKind,
+    LayoutSpec, LayoutState, Page, LIBRARY_SLOT, MIN_WINDOW, MIXER_SLOT, SAMPLER_SLOT, STAGE_SLOT,
+    TEMPO_SLOT,
+};
+use om_ui::theme::{Density, DensityChoice, ThemeTokens};
+use om_ui::widgets::deck::deck_controls_layout;
+use om_ui::widgets::deck_header::head_layout;
+use om_ui::widgets::mixer::column_layout;
+use om_ui::widgets::stage::stage_layout;
+
+/// Window sizes the app must lay out cleanly: the 1280x720 minimum (`MIN_WINDOW`), the comp's
+/// 1440x900, full HD, and two sizes under the minimum that must still not overlap.
+const WINDOWS: [(i32, i32); 5] = [
+    (1280, 720),
+    (900, 600),
+    (1024, 640),
+    (1440, 900),
+    (1920, 1080),
+];
+const DENSITIES: [Density; 2] = [Density::Roomy, Density::Compact];
+const FULL: HeaderNeeds = HeaderNeeds {
+    automix: true,
+    record: true,
+    settings: true,
+    notice: false,
 };
 
+/// Every state the page has: library shown or hidden, sampler open or collapsed.
+fn states() -> Vec<LayoutState> {
+    let mut out = Vec::new();
+    for performance in [false, true] {
+        for sampler_open in [false, true] {
+            out.push(LayoutState {
+                performance,
+                sampler_open,
+                sampler_visible: true,
+            });
+        }
+    }
+    out
+}
+
+fn page(window: (i32, i32), density: Density, state: LayoutState) -> Page {
+    page_for(
+        2,
+        window,
+        0,
+        state,
+        FULL,
+        (&ThemeTokens::builtin_dark(), density),
+    )
+}
+
+fn each_page(mut check: impl FnMut((i32, i32), Density, LayoutState, &Page)) {
+    for window in WINDOWS {
+        for density in DENSITIES {
+            for state in states() {
+                check(window, density, state, &page(window, density, state));
+            }
+        }
+    }
+}
+
+fn cell(page: &Page, kind: CellKind) -> Rect {
+    page.cell(&kind)
+        .unwrap_or_else(|| panic!("no {kind:?} cell"))
+}
+
+fn slot(name: &str) -> CellKind {
+    CellKind::Slot(name.to_owned())
+}
+
+fn assert_disjoint(label: &str, parts: &[Rect]) {
+    for (i, a) in parts.iter().enumerate() {
+        for b in &parts[i + 1..] {
+            assert!(!a.intersects(b), "{label}: {a:?} overlaps {b:?}");
+        }
+    }
+}
+
 #[test]
-fn standard_two_deck_layout_is_strips_beside_the_stage_and_controls_then_the_library() {
-    let spec = LayoutSpec::standard(2);
-    assert_eq!(spec.rows.len(), 2);
-    assert_eq!(spec.deck_count(), 2);
-    assert_eq!(
-        spec.slot_names(),
-        [
-            channel_slot(0).as_str(),
-            STAGE_SLOT,
-            MIXER_SLOT,
-            channel_slot(1).as_str(),
-            LIBRARY_SLOT,
-            SAMPLER_SLOT
-        ]
+fn every_cell_is_inside_the_window_under_the_header_and_none_overlap() {
+    each_page(|(w, h), density, state, page| {
+        let label = format!("{w}x{h} {density:?} {state:?}");
+        let window = Rect::sized(w, h);
+        let bar = page.header.all();
+        for part in &bar {
+            assert!(
+                page.header.bar.contains(part),
+                "{label}: {part:?} leaves the header"
+            );
+        }
+        assert_disjoint(&label, &bar);
+        let cells: Vec<Rect> = page.cells.iter().map(|c| c.bounds).collect();
+        for c in &page.cells {
+            assert!(
+                window.contains(&c.bounds),
+                "{label}: {:?} leaves the window",
+                c.kind
+            );
+            assert!(
+                page.area.contains(&c.bounds),
+                "{label}: {:?} leaves the area",
+                c.kind
+            );
+            assert!(
+                c.bounds.y >= page.header.bar.bottom(),
+                "{label}: {:?}",
+                c.kind
+            );
+        }
+        assert_disjoint(&label, &cells);
+    });
+}
+
+#[test]
+fn the_rows_run_header_heads_stage_controls_library() {
+    each_page(|(w, h), density, state, page| {
+        let label = format!("{w}x{h} {density:?} {state:?}");
+        let head = cell(page, CellKind::Slot(head_slot(0)));
+        let stage = cell(page, slot(STAGE_SLOT));
+        let deck = cell(page, CellKind::Deck(0));
+        assert!(head.bottom() <= stage.y, "{label}: heads above the stage");
+        assert!(
+            stage.bottom() <= deck.y,
+            "{label}: stage above the controls"
+        );
+        for d in 0..2 {
+            assert_eq!(cell(page, CellKind::Deck(d)).y, deck.y, "{label}");
+            assert_eq!(
+                cell(page, CellKind::Slot(head_slot(d))).y,
+                head.y,
+                "{label}"
+            );
+        }
+        assert_eq!(cell(page, slot(MIXER_SLOT)).y, deck.y);
+        assert_eq!(cell(page, slot(TEMPO_SLOT)).y, head.y);
+        if state.performance {
+            assert!(page.cell(&slot(LIBRARY_SLOT)).is_none(), "{label}");
+            return;
+        }
+        let library = cell(page, slot(LIBRARY_SLOT));
+        for c in &page.cells {
+            if c.kind != slot(LIBRARY_SLOT) && c.kind != slot(SAMPLER_SLOT) {
+                assert!(
+                    c.bounds.bottom() <= library.y,
+                    "{label}: {:?} reaches into the library band",
+                    c.kind
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn deck_b_mirrors_deck_a_about_the_mixer() {
+    each_page(|(w, h), density, state, page| {
+        let label = format!("{w}x{h} {density:?} {state:?}");
+        let (a, mixer, b) = (
+            cell(page, CellKind::Deck(0)),
+            cell(page, slot(MIXER_SLOT)),
+            cell(page, CellKind::Deck(1)),
+        );
+        assert!(a.right() <= mixer.x && mixer.right() <= b.x, "{label}");
+        assert!((a.w - b.w).abs() <= 1, "{label}: decks {} and {}", a.w, b.w);
+        assert_eq!(
+            mixer.x - a.right(),
+            b.x - mixer.right(),
+            "{label}: equal gaps"
+        );
+        let tempo = cell(page, slot(TEMPO_SLOT));
+        assert_eq!(
+            (tempo.x, tempo.w),
+            (mixer.x, mixer.w),
+            "{label}: tempo over the mixer"
+        );
+    });
+}
+
+#[test]
+fn the_mixer_column_is_320_roomy_and_260_compact_from_the_minimum_window() {
+    for window in WINDOWS.into_iter().filter(|w| w.0 >= MIN_WINDOW.0) {
+        for (density, width) in [(Density::Roomy, 320), (Density::Compact, 260)] {
+            let p = page(window, density, LayoutState::default());
+            assert_eq!(
+                cell(&p, slot(MIXER_SLOT)).w,
+                width,
+                "{window:?} {density:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_parts_of_every_deck_head_and_deck_fit_their_cells() {
+    let t = ThemeTokens::builtin_dark();
+    each_page(|(w, h), density, state, page| {
+        let label = format!("{w}x{h} {density:?} {state:?}");
+        let m = t.metrics(density);
+        for d in 0..2 {
+            let mirrored = d == 1;
+            let deck = cell(page, CellKind::Deck(d));
+            let l = deck_controls_layout(deck, m, mirrored);
+            let parts = [l.pitch, l.transport, l.tabs, l.pads, l.options];
+            for p in &parts {
+                assert!(
+                    deck.contains(p),
+                    "{label}: deck {d} part {p:?} leaves {deck:?}"
+                );
+            }
+            assert_disjoint(&label, &parts);
+            let head = cell(page, CellKind::Slot(head_slot(d)));
+            let hl = head_layout(head, &t, m, mirrored);
+            let parts = [
+                hl.tag,
+                hl.cover,
+                hl.title,
+                hl.readouts[0],
+                hl.readouts[1],
+                hl.readouts[2],
+                hl.overview,
+            ];
+            for p in &parts {
+                assert!(
+                    head.contains(p),
+                    "{label}: head {d} part {p:?} leaves {head:?}"
+                );
+            }
+            assert_disjoint(&label, &parts);
+        }
+    });
+}
+
+#[test]
+fn the_mixer_column_fits_its_cell() {
+    let t = ThemeTokens::builtin_dark();
+    each_page(|(w, h), density, state, page| {
+        let label = format!("{w}x{h} {density:?} {state:?}");
+        let mixer = cell(page, slot(MIXER_SLOT));
+        let l = column_layout(mixer, t.metrics(density));
+        let mut parts = vec![
+            l.master_fader,
+            l.master_meter,
+            l.crossfader,
+            l.curve,
+            l.tags[0],
+            l.tags[1],
+            l.phones_mix.bounds(),
+            l.phones_level.bounds(),
+        ];
+        for c in &l.channels {
+            parts.extend(c.knobs.iter().map(|k| k.bounds()));
+            parts.extend([c.fader, c.meter, c.cue, c.assign]);
+        }
+        for p in &parts {
+            assert!(
+                mixer.contains(p),
+                "{label}: mixer part {p:?} leaves {mixer:?}"
+            );
+        }
+        assert_disjoint(&label, &parts);
+    });
+}
+
+/// At the sizes the app opens at (the minimum and up) with the density Automatic picks, both
+/// waveforms are drawn, and with the library shown it has at least four rows.
+#[test]
+fn the_waveforms_and_the_library_stay_usable_from_the_minimum_window() {
+    let t = ThemeTokens::builtin_dark();
+    for window in WINDOWS.into_iter().filter(|w| w.0 >= MIN_WINDOW.0) {
+        let density = resolve_density(DensityChoice::Automatic, &t, window);
+        let p = page(window, density, LayoutState::default());
+        let stage = cell(&p, slot(STAGE_SLOT));
+        let strips = stage_layout(stage, 2);
+        assert_eq!(strips.len(), 2, "{window:?} {density:?}: {stage:?}");
+        assert!(strips.iter().all(|s| stage.contains(s)));
+        let library = cell(&p, slot(LIBRARY_SLOT));
+        let metrics = om_ui::main_layout::library_metrics(t.metrics(density));
+        assert!(
+            library.h >= metrics.min_height(4),
+            "{window:?}: library {library:?}"
+        );
+    }
+}
+
+#[test]
+fn the_header_holds_its_parts_and_the_automix_bar_from_the_minimum_width() {
+    for window in WINDOWS.into_iter().filter(|w| w.0 >= MIN_WINDOW.0) {
+        for density in DENSITIES {
+            let p = page(window, density, LayoutState::default());
+            let bar = p.header.automix.expect("automix bar");
+            assert!(bar.w >= 300, "{window:?} {density:?}: bar is {} px", bar.w);
+            assert!(p.header.record.is_some() && p.header.settings.is_some());
+        }
+    }
+}
+
+#[test]
+fn head_slot_names_round_trip() {
+    assert_eq!(deck_of_head(&head_slot(0)), Some(0));
+    assert_eq!(deck_of_head(STAGE_SLOT), None);
+}
+
+#[test]
+fn a_one_deck_engine_places_no_deck_b() {
+    let p = page_for(
+        1,
+        (1440, 900),
+        0,
+        LayoutState::default(),
+        FULL,
+        (&ThemeTokens::builtin_dark(), Density::Roomy),
     );
-    let top = &spec.rows[0].cells;
-    assert_eq!(top.len(), 3, "strip, centre column, strip");
-    assert!(matches!(top[1].kind, CellKind::Rows(_)));
+    assert!(p.cell(&CellKind::Deck(1)).is_none());
+    assert!(p.cell(&CellKind::Slot(head_slot(1))).is_none());
+    assert!(p.cell(&CellKind::Deck(0)).is_some());
 }
 
-#[test]
-fn four_decks_add_a_row_and_keep_the_slots() {
-    let spec = LayoutSpec::standard(4);
-    assert_eq!(spec.deck_count(), 4);
-    assert_eq!(spec.rows.len(), 3);
-    // Stage, mixer module, library, sampler and one strip per deck.
-    assert_eq!(spec.slot_names().len(), 8);
-}
+// ---- The generic grid --------------------------------------------------------------------------
 
-#[test]
-fn channel_slot_names_round_trip() {
-    assert_eq!(channel_of_slot(&channel_slot(3)), Some(3));
-    assert_eq!(channel_of_slot("mixer"), None);
-    assert_eq!(channel_of_slot("channel:x"), None);
-}
+const TWO_ROWS: &str = r#"{"rows":[{"height":0.66,"cells":[{"deck":0},{"slot":"mixer","weight":0.4},{"deck":1}]},{"height":0.34,"minHeight":150,"cells":[{"slot":"library"}]}]}"#;
 
 #[test]
 fn cells_tile_the_area_without_overlap() {
+    let spec = LayoutSpec::from_json(TWO_ROWS).expect("layout");
     let area = Rect::new(10, 20, 1000, 700);
-    let placed = compute_layout(&LayoutSpec::standard(2), area, 8);
-    // Strip, stage, deck 0, mixer, deck 1, strip, library, sampler: groups are flattened.
-    assert_eq!(placed.len(), 8);
-    assert!(placed.iter().all(|p| !matches!(p.kind, CellKind::Rows(_))));
+    let placed = compute_layout(&spec, area, 8);
+    assert_eq!(placed.len(), 4);
     for (i, a) in placed.iter().enumerate() {
         assert!(area.contains(&a.bounds));
         assert!(!a.bounds.is_empty());
@@ -57,18 +339,16 @@ fn cells_tile_the_area_without_overlap() {
             assert!(!a.bounds.intersects(&b.bounds));
         }
     }
-    let last = &placed[7];
+    let last = &placed[3];
     assert_eq!(
         last.bounds.right(),
         area.right(),
         "the last cell absorbs rounding"
     );
     assert_eq!(last.bounds.bottom(), area.bottom());
-    let (deck0, mixer) = (&placed[2], &placed[3]);
-    assert!(mixer.bounds.w > 0);
     assert!(
-        mixer.bounds.w < deck0.bounds.w,
-        "mixer weight is smaller than a deck's"
+        placed[1].bounds.w < placed[0].bounds.w,
+        "mixer weight is smaller"
     );
 }
 
@@ -82,8 +362,7 @@ fn nested_rows_parse_round_trip_and_reject_bad_input() {
         LayoutSpec::from_json(&spec.to_json()).expect("round trip"),
         spec
     );
-    let placed = compute_layout(&spec, Rect::sized(100, 90), 0);
-    assert_eq!(placed.len(), 3);
+    assert_eq!(compute_layout(&spec, Rect::sized(100, 90), 0).len(), 3);
     for bad in [
         r#"{"rows":[{"cells":[{"rows":[]}]}]}"#,
         r#"{"rows":[{"cells":[{"rows":[{"cells":[]}]}]}]}"#,
@@ -95,11 +374,10 @@ fn nested_rows_parse_round_trip_and_reject_bad_input() {
 
 #[test]
 fn json_round_trips_and_bad_input_is_rejected() {
-    let spec = LayoutSpec::standard(4);
+    let spec = LayoutSpec::from_json(TWO_ROWS).expect("layout");
     let parsed = LayoutSpec::from_json(&spec.to_json()).expect("round trip");
-    assert_eq!(parsed.deck_count(), 4);
-    assert_eq!(parsed.rows.len(), spec.rows.len());
-    assert_eq!(parsed.to_json(), spec.to_json());
+    assert_eq!(parsed, spec);
+    assert!(spec.to_json().contains("minHeight"));
     for bad in [
         "",
         "{}",
@@ -109,6 +387,7 @@ fn json_round_trips_and_bad_input_is_rejected() {
         r#"{"rows":[{"cells":[{"deck":0,"slot":"x"}]}]}"#,
         r#"{"rows":[{"cells":[{"deck":0,"weight":0}]}]}"#,
         r#"{"rows":[{"height":-1,"cells":[{"deck":0}]}]}"#,
+        r#"{"rows":[{"minHeight":-5,"cells":[{"deck":0}]}]}"#,
         "not json",
     ] {
         assert!(LayoutSpec::from_json(bad).is_err(), "accepted {bad:?}");
@@ -116,246 +395,9 @@ fn json_round_trips_and_bad_input_is_rejected() {
 }
 
 #[test]
-fn hand_written_json_is_accepted() {
-    let spec = LayoutSpec::from_json(
-        r#"{"rows":[{"height":1,"cells":[{"deck":0},{"slot":"mixer","weight":0.5},{"deck":1},{"slot":"plugin.x"}]}]}"#,
-    )
-    .expect("hand-written layout");
-    assert_eq!(spec.slot_names(), ["mixer", "plugin.x"]);
-}
-
-#[test]
-fn an_empty_spec_places_nothing() {
+fn an_empty_spec_places_nothing_and_missing_decks_are_skipped() {
     assert!(compute_layout(&LayoutSpec::default(), Rect::sized(100, 100), 4).is_empty());
-}
-
-#[test]
-fn decks_the_engine_lacks_are_not_placed() {
-    let area = Rect::sized(1600, 1000);
-    let shown = visible_cells(&LayoutSpec::standard(4), 2, area, 8);
-    assert!(shown
-        .iter()
-        .all(|c| !matches!(c.kind, CellKind::Deck(d) if d >= 2)));
-    assert_eq!(shown.iter().filter(|c| c.kind.is_deck()).count(), 2);
-}
-
-#[test]
-fn mixer_sits_between_the_decks_and_the_library_is_below() {
-    let area = Rect::sized(1280, 800);
-    let placed = visible_cells(&LayoutSpec::standard(2), 2, area, 12);
-    let find = |kind: CellKind| placed.iter().find(|c| c.kind == kind).expect("cell").bounds;
-    let d0 = find(CellKind::Deck(0));
-    let d1 = find(CellKind::Deck(1));
-    let mixer = find(CellKind::Slot(MIXER_SLOT.into()));
-    let library = find(CellKind::Slot(LIBRARY_SLOT.into()));
-    let sampler = find(CellKind::Slot(SAMPLER_SLOT.into()));
-    assert!(d0.right() < mixer.x);
-    assert!(mixer.right() < d1.x);
-    assert!(library.y > d0.bottom());
-    assert_eq!(
-        sampler.y, library.y,
-        "the sampler strip shares the library band"
-    );
-    assert!(
-        library.right() < sampler.x,
-        "the strip sits beside the library"
-    );
-    assert!(!d0.intersects(&mixer) && !d1.intersects(&mixer) && !mixer.intersects(&library));
-    assert!(!sampler.intersects(&library) && !sampler.intersects(&mixer));
-}
-
-/// Window sizes the app must lay out cleanly: the common ones and the 1280x720 minimum
-/// (`MIN_WINDOW`; the window cannot be resized below it).
-const WINDOWS: [(i32, i32); 3] = [(1280, 800), (1280, 720), (1920, 1080)];
-
-#[test]
-fn library_band_is_below_decks_and_mixer_at_every_window_size() {
-    use om_ui::theme::ThemeTokens;
-    use om_ui::widgets::deck::deck_controls_layout;
-    let t = ThemeTokens::builtin_dark();
-    for (w, h) in WINDOWS {
-        // Banner (24) and header strip above the layout, as the app has them.
-        let top = 24 + 36;
-        let window = Rect::sized(w, h);
-        let area = Rect::new(0, top, w, h - top);
-        let placed = compute_layout(&LayoutSpec::standard(2), area, t.gap);
-        let library = placed
-            .iter()
-            .find(|p| p.kind == CellKind::Slot(LIBRARY_SLOT.to_owned()))
-            .expect("library cell");
-        for (i, a) in placed.iter().enumerate() {
-            assert!(window.contains(&a.bounds), "{w}x{h}: {a:?} outside window");
-            for b in &placed[i + 1..] {
-                assert!(
-                    !a.bounds.intersects(&b.bounds),
-                    "{w}x{h}: {a:?} overlaps {b:?}"
-                );
-            }
-            // The library and the sampler strip share the bottom band; everything else sits above it.
-            let in_band =
-                |k: &CellKind| *k == library.kind || *k == CellKind::Slot(SAMPLER_SLOT.to_owned());
-            if !in_band(&a.kind) {
-                assert!(
-                    a.bounds.bottom() <= library.bounds.y,
-                    "{w}x{h}: {:?} reaches into the library band",
-                    a.kind
-                );
-            }
-            // Every control of a deck card (pads, loops, transport, stems) is inside the card.
-            if a.kind.is_deck() {
-                let card = Rect::sized(a.bounds.w, a.bounds.h);
-                let l = deck_controls_layout(card, &t);
-                let parts = [l.pitch, l.hotcues, l.loops, l.transport, l.tabs, l.stems];
-                for (i, p) in parts.iter().enumerate() {
-                    assert!(
-                        card.contains(p),
-                        "{w}x{h}: deck part {i} {p:?} outside card"
-                    );
-                    for q in &parts[i + 1..] {
-                        assert!(
-                            !p.intersects(q),
-                            "{w}x{h}: deck parts {p:?} and {q:?} overlap"
-                        );
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// The deck controls and the waveform stage at the four window sizes the screenshots use. The main
-/// area is the window less a 48 px header. Every part sits inside its cell and no two parts overlap;
-/// the stems row is present and each zoomed waveform is tall enough to read.
-#[test]
-fn deck_controls_and_stage_fit_without_overlap_at_every_window_size() {
-    use om_ui::geometry::Rect as R;
-    use om_ui::widgets::deck::deck_controls_layout;
-    use om_ui::widgets::stage::stage_layout;
-    let theme = om_ui::theme::ThemeTokens::builtin_dark();
-    for (width, height) in [(1280, 800), (1280, 720), (1920, 1080)] {
-        let area = R::new(0, 48, width, height - 48);
-        let spec = LayoutSpec::standard(2);
-        for cell in compute_layout(&spec, area, 8) {
-            let card = R::sized(cell.bounds.w, cell.bounds.h);
-            let mut parts = Vec::new();
-            match &cell.kind {
-                CellKind::Deck(_) => {
-                    let l = deck_controls_layout(card, &theme);
-                    assert!(l.tabs.h >= 32, "{width}x{height}: no tab strip");
-                    parts = vec![l.pitch, l.hotcues, l.loops, l.transport, l.tabs];
-                }
-                CellKind::Slot(name) if name == STAGE_SLOT => {
-                    let layouts = stage_layout(card, &theme, 2);
-                    assert_eq!(layouts.len(), 2);
-                    for l in &layouts {
-                        assert!(
-                            l.zoom_visible,
-                            "{width}x{height}: the zoomed waveform is hidden (zoom {:?})",
-                            l.zoom
-                        );
-                        parts.extend([l.header, l.overview, l.zoom]);
-                    }
-                }
-                CellKind::Slot(_) | CellKind::Rows(_) => {}
-            }
-            for part in &parts {
-                assert!(
-                    card.contains(part),
-                    "{width}x{height}: {:?} {part:?} leaves its cell",
-                    cell.kind
-                );
-            }
-            for (i, a) in parts.iter().enumerate() {
-                for b in &parts[i + 1..] {
-                    assert!(
-                        !a.intersects(b),
-                        "{width}x{height}: {:?} {a:?} overlaps {b:?}",
-                        cell.kind
-                    );
-                }
-            }
-        }
-    }
-}
-
-/// The sampler strip is at least 250 px wide and 100 px tall at the three sizes (the smallest is the
-/// minimum window), so its pads and controls stay usable.
-#[test]
-fn sampler_strip_has_room_in_the_library_band() {
-    for (w, h) in WINDOWS {
-        let area = Rect::new(0, 60, w, h - 60);
-        let placed = compute_layout(&LayoutSpec::standard(2), area, 8);
-        let strip = placed
-            .iter()
-            .find(|p| p.kind == CellKind::Slot(SAMPLER_SLOT.to_owned()))
-            .expect("sampler cell");
-        assert!(strip.bounds.w >= 250, "{w}x{h}: strip {:?}", strip.bounds);
-        assert!(strip.bounds.h >= 100, "{w}x{h}: strip {:?}", strip.bounds);
-    }
-}
-
-/// The automix bar shares the header strip above the layout: at every window size it fits in the
-/// strip (left of the other header parts), inside the window, and above the cells, so the deck
-/// rows keep the room they had before the bar existed.
-#[test]
-fn automix_bar_fits_in_the_header_strip_at_every_size() {
-    use om_ui::header_layout::HeaderNeeds;
-    use om_ui::main_layout::{page_for, LayoutState};
-    let t = om_ui::theme::ThemeTokens::builtin_dark();
-    let needs = HeaderNeeds {
-        automix: true,
-        record: true,
-        settings: true,
-        notice: false,
-    };
-    for (w, h) in WINDOWS {
-        let page = page_for(2, (w, h), 0, t.gap, LayoutState::default(), needs);
-        let strip = page.header.automix.expect("bar");
-        assert!(
-            page.header.bar.contains(&strip),
-            "{w}x{h}: bar {strip:?} outside the header"
-        );
-        assert!(strip.w >= 300, "{w}x{h}: bar is {} px", strip.w);
-        for cell in &page.cells {
-            assert!(
-                !cell.bounds.intersects(&strip),
-                "{w}x{h}: {:?} under the bar",
-                cell.kind
-            );
-        }
-    }
-}
-
-#[test]
-fn a_row_floor_holds_on_a_short_window_and_the_other_rows_give_way() {
-    use om_ui::main_layout::{CONTROLS_MIN_HEIGHT, MIN_WINDOW};
-    let spec = LayoutSpec::standard(2);
-    let area = Rect::new(0, 60, MIN_WINDOW.0, MIN_WINDOW.1 - 60);
-    let placed = compute_layout(&spec, area, 12);
-    let find = |kind: CellKind| placed.iter().find(|c| c.kind == kind).expect("cell").bounds;
-    assert!(find(CellKind::Deck(0)).h >= CONTROLS_MIN_HEIGHT);
-    let tall = compute_layout(&spec, Rect::new(0, 60, 1920, 1020), 12);
-    let stage = |cells: &[om_ui::main_layout::PlacedCell]| {
-        cells
-            .iter()
-            .find(|c| c.kind == CellKind::Slot(STAGE_SLOT.into()))
-            .expect("stage")
-            .bounds
-            .h
-    };
-    assert!(
-        stage(&tall) > stage(&placed),
-        "the stage takes the spare height"
-    );
-}
-
-#[test]
-fn min_height_round_trips_through_json_and_rejects_nonsense() {
-    let spec = LayoutSpec::standard(2);
-    assert!(spec.to_json().contains("minHeight"));
-    assert_eq!(
-        LayoutSpec::from_json(&spec.to_json()).expect("round trip"),
-        spec
-    );
-    assert!(LayoutSpec::from_json(r#"{"rows":[{"minHeight":-5,"cells":[{"deck":0}]}]}"#).is_err());
+    let spec = LayoutSpec::from_json(TWO_ROWS).expect("layout");
+    let shown = visible_cells(&spec, 1, Rect::sized(1600, 1000), 8);
+    assert_eq!(shown.iter().filter(|c| c.kind.is_deck()).count(), 1);
 }

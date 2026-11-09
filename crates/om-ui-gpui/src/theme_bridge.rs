@@ -8,10 +8,21 @@ use crate::paint::paint;
 use gpui::{px, App, Hsla};
 use gpui_kit::component::{ActiveTheme as _, Theme, ThemeColor, ThemeMode};
 use om_ui::style::LookAndFeel;
-use om_ui::theme::{Colour, ThemeTokens};
+use om_ui::theme::{Colour, FontSlot, ThemeTokens};
 
 /// Share of the focus colour mixed into a selected sidebar row's fill. Unsourced; small.
 const SELECT_TINT: f32 = 0.18;
+
+/// The component library sizes its text in rems of `Theme::font_size`: buttons, inputs and tabs
+/// at 0.875 rem, extra-small buttons at 0.75 rem.
+const COMPONENT_TEXT_REM: f32 = 0.875;
+const COMPONENT_XSMALL_REM: f32 = 0.75;
+
+/// The component rem (px) that puts its usual text on the body tier and its extra-small text no
+/// lower than the label tier.
+pub fn component_rem(t: &ThemeTokens) -> f32 {
+    (t.type_body / COMPONENT_TEXT_REM).max(t.type_label / COMPONENT_XSMALL_REM)
+}
 
 /// A token as the component library's colour type.
 fn component_colour(colour: Colour) -> Hsla {
@@ -40,10 +51,11 @@ pub fn mode_of(t: &ThemeTokens) -> ThemeMode {
 }
 
 /// The component colours `t` implies, laid over `base` (the library's own scheme, which keeps the
-/// roles a theme has no token for, such as the chart palette).
+/// roles a theme has no token for, such as the chart palette). Buttons take the faceplate faces:
+/// rest, one tonal step on hover, the well when pressed, secondary text at rest.
 pub fn colours(t: &ThemeTokens, base: ThemeColor) -> ThemeColor {
     let look = LookAndFeel::from_tokens(t);
-    let accent = t.accents.first().copied().unwrap_or(t.brand);
+    let accent = t.accent_for(0);
     let accent_hover = tinted(accent, t.text_primary, 0.12);
     let accent_active = tinted(accent, t.well, 0.2);
     let (idle, hover, pressed) = (
@@ -121,28 +133,39 @@ pub fn colours(t: &ThemeTokens, base: ThemeColor) -> ThemeColor {
         drop_target: component_colour(t.drop_target),
         title_bar: component_colour(t.popup),
         title_bar_border: component_colour(t.border),
-        link: component_colour(t.brand),
+        link: component_colour(t.text_primary),
         ..base
     }
 }
 
 /// Makes the component library follow `t`: its light or dark scheme, its colours, the control
-/// radius and the body type size. Safe to call again on a theme change.
+/// radius, the families and the type size ([`component_rem`]). Safe to call again on a theme
+/// change.
 pub fn apply(cx: &mut App, t: &ThemeTokens) {
     let mode = mode_of(t);
     // A mode switch loads the registered scheme, so the colours go in a second pass.
     Theme::change(mode, None, cx);
     let base = cx.theme().colors;
-    let (radius, size) = (px(t.control_radius), px(t.type_body));
-    let family = t.font_family.clone();
+    let (radius, size, mono_size) = (
+        px(t.control_radius),
+        px(component_rem(t)),
+        px(t.type_numeral),
+    );
+    let family = crate::font::family(t, FontSlot::Body);
+    let mono = crate::font::family(t, FontSlot::Mono);
     let colours = colours(t, base);
     Theme::update(cx, |theme| {
         theme.colors = colours;
         theme.radius = radius;
         theme.radius_lg = radius;
         theme.font_size = size;
-        theme.font_family = family.into();
+        theme.font_family = family;
+        theme.mono_font_family = mono;
+        theme.mono_font_size = mono_size;
+        // No drops on component controls, and the ring outside the edge for keyboard focus: the
+        // nearest the library has to the faceplate's 2px ring at a 2px offset.
         theme.shadow = false;
+        theme.focus_ring = true;
     });
 }
 
@@ -160,6 +183,17 @@ mod tests {
                 .expect("built-in theme");
             parse_theme(json).expect("theme parses").tokens
         })
+    }
+
+    /// The component library's small text lands on the body tier and its extra-small button
+    /// labels stay at or above the label floor (11 px), in every built-in theme.
+    #[test]
+    fn component_text_meets_the_body_and_label_tiers() {
+        for t in themes() {
+            let rem = component_rem(&t);
+            assert!((rem * COMPONENT_TEXT_REM - t.type_body).abs() < 1e-3);
+            assert!(rem * COMPONENT_XSMALL_REM >= t.type_label);
+        }
     }
 
     #[test]
@@ -187,7 +221,7 @@ mod tests {
     #[test]
     fn a_selected_row_reads_in_every_theme_at_wcag() {
         for t in themes() {
-            let ground = over(t.well, over(t.surface, t.backdrop_bottom));
+            let ground = over(t.well, over(t.surface, t.ground));
             let fill = over(selected_row_fill(&t), ground);
             assert!(contrast_ratio(t.focus_ring, fill) >= 3.0, "indicator 3:1");
             assert!(
