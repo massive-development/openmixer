@@ -13,6 +13,7 @@ This index contains all Architecture Decision Records (ADRs) for the OpenMixer p
 | 0005 | Experience-first product bar | Accepted |
 | 0006 | Controller map provenance | Accepted |
 | 0007 | CLAP plugin hosting with clack | Accepted |
+| 0008 | The Machined Faceplate supersedes E1 on look | Accepted |
 
 ## ADR Templates
 
@@ -58,3 +59,4 @@ Links to relevant documents, discussions, or resources.
 - 2026-10-28 - ADR 0006 created
 - 2026-11-06 - ADR 0007 proposed
 - 2026-11-07 - ADR 0007 accepted
+- 2026-11-08 - ADR 0008 accepted (Machined Faceplate supersedes E1)
