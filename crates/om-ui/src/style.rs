@@ -274,7 +274,7 @@ impl LookAndFeel {
                 track: t.border,
                 pointer: t.text_primary,
                 drop: lift,
-                kill: t.danger,
+                kill: t.text_primary,
             },
             fader: FaderStyle {
                 track: shape(
@@ -994,7 +994,10 @@ mod tests {
             let t = builtin(id);
             let look = LookAndFeel::from_tokens(&t);
             assert_eq!(look.knob.pointer, t.text_primary);
-            assert_eq!(look.knob.kill, t.danger);
+            assert_eq!(
+                look.knob.kill, t.text_primary,
+                "the Signal Rule keeps red off a kill"
+            );
             assert_eq!(
                 look.knob.track, t.border,
                 "the canvas track is the etched line"

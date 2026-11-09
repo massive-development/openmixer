@@ -557,6 +557,16 @@ pub fn deck_controls_layout(bounds: Rect, m: &DensityMetrics, mirrored: bool) ->
     }
 }
 
+/// With the platter open the options row moves to the drawer's foot and the platter takes the
+/// drawer above it (the pads' height alone is too short for a disc in Compact). Returns
+/// `(platter, options)`.
+pub fn platter_layout(l: &DeckLayout, m: &DensityMetrics) -> (Rect, Rect) {
+    let mut drawer = l.drawer;
+    let options = drawer.remove_bottom(m.control_height.round() as i32);
+    drawer.remove_bottom(space(m, 2));
+    (drawer, options)
+}
+
 /// The eight pads of the grid in `area`: four columns of equal width, two rows, `gap` apart, in
 /// reading order (deck B's grid is not mirrored: pad 1 stays top left, like the comp).
 pub fn pad_grid(area: Rect, gap: i32) -> [Rect; PAD_COUNT] {
@@ -662,6 +672,19 @@ mod tests {
                 assert_eq!(l.transport.h, m.control_height as i32);
                 assert_eq!(l.pads.h, pad_grid_height(&m));
             }
+        }
+    }
+
+    #[test]
+    fn the_platter_takes_the_drawer_above_the_options_row() {
+        for m in metric_sets() {
+            let card = Rect::new(0, 0, 400, controls_height(&m));
+            let l = deck_controls_layout(card, &m, false);
+            let (platter, options) = platter_layout(&l, &m);
+            assert!(l.drawer.contains(&platter) && l.drawer.contains(&options));
+            assert!(platter.bottom() <= options.y);
+            assert_eq!(options.bottom(), l.drawer.bottom());
+            assert!(platter.h >= l.pads.h);
         }
     }
 

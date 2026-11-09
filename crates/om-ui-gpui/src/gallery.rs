@@ -303,16 +303,19 @@ fn knobs(t: &ThemeTokens, m: &DensityMetrics) -> Vec<Div> {
     let look = LookAndFeel::from_tokens(t);
     let colours = KnobColours::new(&look, t, t.accent_for(0));
     let label_h = (t.type_label * TypeRole::Label.line_height()).ceil();
+    // The focus ring reaches past the arc: the label sits below its reach, not under it.
+    let reach = crate::controls::ring_reach(t).ceil();
     let (w, h) = (
         m.knob_size + 2.0 * crate::controls::KNOB_EDGE_PAD + VALUE_W,
-        m.knob_size + label_h,
+        m.knob_size + 2.0 * reach + label_h,
     );
     knob_specs()
         .into_iter()
         .map(|k| {
             let (min, detent, max) = k.range;
-            let mut geom = knob_geometry(w, h, label_h, m.knob_size);
+            let mut geom = knob_geometry(w, h, label_h + reach, m.knob_size);
             geom.cx = m.knob_size / 2.0 + crate::controls::KNOB_EDGE_PAD;
+            geom.cy += reach / 2.0;
             let (hovered, active, focused, disabled) = k.flags;
             let state = KnobPaintState {
                 geom,

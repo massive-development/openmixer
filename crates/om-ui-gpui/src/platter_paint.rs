@@ -457,15 +457,24 @@ mod tests {
     }
 
     #[test]
-    fn a_platter_fits_inside_a_260_px_card_without_touching_the_transport() {
-        use om_ui::theme::ThemeTokens;
-        use om_ui::widgets::deck::{deck_controls_layout_for, PadMode};
+    fn a_platter_fits_in_the_pads_without_touching_the_transport() {
+        use om_ui::theme::{Density, ThemeTokens};
+        use om_ui::widgets::deck::{controls_height, deck_controls_layout, platter_layout};
         let theme = ThemeTokens::builtin_dark();
-        let l = deck_controls_layout_for(Rect::sized(290, 262), &theme, PadMode::Cues);
-        let drawer = crate::deck_view::drawer_rect(&l);
-        let r = platter_rect(drawer);
-        assert!(r.w >= MIN_DIAMETER, "{r:?} in {drawer:?}");
-        assert!(Rect::sized(290, 262).contains(&r));
-        assert!(!r.intersects(&l.transport) && !r.intersects(&l.tabs) && !r.intersects(&l.pitch));
+        for density in [Density::Roomy, Density::Compact] {
+            let m = theme.metrics(density);
+            // The controls row is as tall as the taller of the deck controls and the mixer.
+            let row_h = controls_height(m).max(om_ui::widgets::mixer::column_height(m));
+            let card = Rect::sized(290, row_h);
+            let l = deck_controls_layout(card, m, false);
+            let (disc, options) = platter_layout(&l, m);
+            let r = platter_rect(disc);
+            assert!(r.w >= MIN_DIAMETER, "{density:?}: {r:?} in {disc:?}");
+            assert!(card.contains(&r));
+            assert!(
+                !r.intersects(&l.transport) && !r.intersects(&l.tabs) && !r.intersects(&l.pitch)
+            );
+            assert!(!r.intersects(&options));
+        }
     }
 }
