@@ -1,11 +1,11 @@
-//! The waveform palette: fixed band hues, additive blending, contrast on both themes, colour-blind
-//! separation, mono ordering and the bucketing the painter draws with.
+//! The waveform palette: the Low-Band default, fixed band hues, additive blending, contrast on both
+//! themes, colour-blind separation, mono ordering and the bucketing the painter draws with.
 
-use om_ui::style::{contrast_ratio, relative_luminance};
+use om_ui::style::{contrast_ratio, over, relative_luminance};
 use om_ui::theme::{parse_theme, Colour, ThemeTokens};
 use om_ui::waveform::{
-    bucket_key, cap_keys, strip_well, weights, Column, Key, Palette, WaveStyle, GRID_COLOUR,
-    MAX_BUCKETS, PLAYHEAD_COLOUR, PLAYHEAD_HALO_COLOUR,
+    bucket_key, cap_keys, strip_well, weights, Column, Key, Palette, StripInk, WaveStyle,
+    MAX_BUCKETS,
 };
 
 fn theme(json: &str) -> ThemeTokens {
@@ -57,7 +57,7 @@ fn saturation(c: Colour) -> f32 {
 }
 
 fn dark_palette(style: WaveStyle) -> Palette {
-    Palette::new(style, strip_well(&dark()))
+    Palette::new(style, strip_well(&dark(), style))
 }
 
 fn column(peak: f32, low: f32, mid: f32, high: f32) -> Column {
@@ -158,40 +158,69 @@ fn quiet_columns_never_fall_below_the_brightness_floor() {
 
 #[test]
 fn every_style_is_legible_on_both_themes() {
-    // The strip is dark in every theme, so the bands, the grid and the playhead are measured
-    // against the same dark well (user decision), and every one of them is asserted.
-    assert_eq!(strip_well(&dark()), strip_well(&daylight()));
+    // The earlier styles keep their dark strip in every theme (user decision); the Low-Band style
+    // draws on the theme's Ink Well (DESIGN.md), so its ground follows the theme.
+    let legacy = WaveStyle::ALL
+        .into_iter()
+        .filter(|s| *s != WaveStyle::LowBand);
+    for style in legacy {
+        assert_eq!(strip_well(&dark(), style), strip_well(&daylight(), style));
+    }
+    let low = WaveStyle::LowBand;
+    assert_ne!(strip_well(&dark(), low), strip_well(&daylight(), low));
     for (name, tokens) in [("dark", dark()), ("daylight", daylight())] {
-        let well = strip_well(&tokens);
         for style in WaveStyle::ALL {
-            let p = Palette::new(style, well);
-            eprintln!(
-                "{name} {style:?}: {:06X} {:06X} {:06X} silhouette {:06X}",
-                p.low.argb() & 0xFFFFFF,
-                p.mid.argb() & 0xFFFFFF,
-                p.high.argb() & 0xFFFFFF,
-                p.silhouette.argb() & 0xFFFFFF
-            );
-            for (band, colour) in [("low", p.low), ("mid", p.mid), ("high", p.high)] {
-                let ratio = contrast_ratio(colour, well);
-                assert!(ratio >= 3.0, "{style:?} {band} on {name}: {ratio:.2}");
+            for deck in 0..4 {
+                legible(name, &StripInk::new(&tokens, style, deck));
             }
-            assert!(
-                contrast_ratio(p.silhouette, well) >= 3.0,
-                "{style:?} silhouette on {name}"
-            );
         }
-        let grid = contrast_ratio(GRID_COLOUR, well);
-        let head = contrast_ratio(PLAYHEAD_COLOUR, well);
-        // Bar numbers are text: 4.5:1 (WCAG 1.4.3), at their painted alpha of 0.85.
-        let numbers = contrast_ratio(om_ui::style::over(GRID_COLOUR.with_alpha(0.85), well), well);
-        eprintln!("{name}: grid {grid:.2}:1, playhead {head:.2}:1, bar numbers {numbers:.2}:1");
-        assert!(grid >= 3.0 && head >= 3.0 && numbers >= 4.5, "{name}");
-        // Beat lines are drawn at alpha 0.25 and bar lines at 0.70; composited on the well, the
-        // bar line must hold 3:1.
-        let bar = om_ui::style::over(GRID_COLOUR.with_alpha(0.70), well);
-        assert!(contrast_ratio(bar, well) >= 3.0, "bar line on {name}");
-        assert_eq!(PLAYHEAD_HALO_COLOUR.alpha(), 1.0);
+    }
+}
+
+/// Bands, silhouette, deck colour and playhead hold 3:1 on the well (WCAG 1.4.11); bar numbers,
+/// text, 4.5:1 (1.4.3). The grid is not asserted: DESIGN.md sets bar lines at 14% and beat lines
+/// at 5% of the text colour, deliberately faint guides (the old 3:1 bar line at 70% white is
+/// superseded); the bar numbers carry the bar position.
+fn legible(name: &str, ink: &StripInk) {
+    let (p, well, style) = (ink.palette(), ink.well, ink.style);
+    eprintln!(
+        "{name} {style:?}: {:06X} {:06X} {:06X} silhouette {:06X} on {:06X}",
+        p.low.argb() & 0xFFFFFF,
+        p.mid.argb() & 0xFFFFFF,
+        p.high.argb() & 0xFFFFFF,
+        p.silhouette.argb() & 0xFFFFFF,
+        well.argb() & 0xFFFFFF
+    );
+    let lines = [
+        ("low", p.low),
+        ("mid", p.mid),
+        ("high", p.high),
+        ("silhouette", p.silhouette),
+        ("deck", ink.deck),
+        ("playhead", ink.playhead),
+    ];
+    for (what, colour) in lines {
+        let ratio = contrast_ratio(colour, well);
+        assert!(ratio >= 3.0, "{style:?} {what} on {name}: {ratio:.2}");
+    }
+    let numbers = contrast_ratio(over(ink.number, well), well);
+    assert!(
+        numbers >= 4.5,
+        "{style:?} bar numbers on {name}: {numbers:.2}"
+    );
+    let flag = contrast_ratio(ink.on_deck, ink.deck);
+    assert!(flag >= 4.5, "{style:?} cue number on {name}: {flag:.2}");
+}
+
+#[test]
+fn low_band_takes_the_deck_colour_and_the_text_colour() {
+    for (name, tokens) in [("dark", dark()), ("daylight", daylight())] {
+        for deck in 0..4 {
+            let p = StripInk::new(&tokens, WaveStyle::LowBand, deck).palette();
+            assert_eq!(p.low, tokens.accent_for(deck as i32), "{name} deck {deck}");
+            assert_eq!(p.high, tokens.text_primary, "{name}");
+            assert_eq!(p.colour([1.0, 0.2, 0.9]), p.low, "one body colour");
+        }
     }
 }
 
@@ -244,7 +273,7 @@ fn separation(p: &Palette, m: &[[f32; 3]; 3]) -> f32 {
 
 #[test]
 fn the_colour_blind_palette_keeps_the_bands_apart() {
-    let well = strip_well(&dark());
+    let well = strip_well(&dark(), WaveStyle::ColourBlind);
     let safe = Palette::new(WaveStyle::ColourBlind, well);
     let plain = Palette::new(WaveStyle::Colour, well);
     for (name, m) in [("deuteranopia", &DEUTERANOPIA), ("protanopia", &PROTANOPIA)] {
@@ -364,7 +393,7 @@ fn capping_merges_the_rarest_key_into_its_nearest() {
 
 #[test]
 fn the_played_part_keeps_its_hue_and_the_non_text_contrast_floor() {
-    let well = strip_well(&dark());
+    let well = strip_well(&dark(), WaveStyle::Colour);
     for style in [WaveStyle::Colour, WaveStyle::ColourBlind, WaveStyle::Mono] {
         let p = Palette::new(style, well);
         for (low, mid, high) in [
@@ -413,7 +442,9 @@ fn style_names_round_trip() {
         WaveStyle::from_name("colour-blind"),
         Some(WaveStyle::ColourBlind)
     );
+    assert_eq!(WaveStyle::from_name("low-band"), Some(WaveStyle::LowBand));
     assert_eq!(WaveStyle::from_name("rainbow"), None);
     assert_eq!(WaveStyle::from_name(""), None);
-    assert_eq!(WaveStyle::default(), WaveStyle::Colour);
+    // Decision D4 (docs/design/faceplate-decisions.md): Low-Band is the default.
+    assert_eq!(WaveStyle::default(), WaveStyle::LowBand);
 }

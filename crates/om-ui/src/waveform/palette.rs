@@ -1,17 +1,23 @@
-//! Waveform colour: three fixed band hues (low red, mid green, high blue; the role convention
-//! Serato documents, see docs/design/research/waveform.md section 2) blended per column from the
-//! band peaks the way Mixxx's RGB waveform does: the colour is the sum of the three band colours
-//! weighted by the bands' linear peaks, divided by its largest channel (rgbsignal.frag,
+//! Waveform colour. The default Low-Band style (DESIGN.md, the Low-Band Rule) draws the body in
+//! the deck colour and the high band in the theme's text colour on top, on the theme's Ink Well;
+//! both colours come from the theme ([`Palette::low_band`]).
+//!
+//! The other styles are the earlier palettes, kept selectable. The Colour style blends three fixed
+//! band hues (low red, mid green, high blue; the role convention Serato documents, see
+//! docs/design/research/waveform.md section 2) per column from the band peaks the way Mixxx's RGB
+//! waveform does: the colour is the sum of the three band colours weighted by the bands' linear
+//! peaks, divided by its largest channel (rgbsignal.frag,
 //! https://raw.githubusercontent.com/mixxxdj/mixxx/main/res/shaders/rgbsignal.frag). Band peaks are
 //! used as they are, not squashed, so a column's hue follows the ratios of its bands and a loud
 //! full-range column with a strong bass reads orange, not white.
 //!
-//! The strip is dark in every theme ([`WAVE_WELL`], by the user's decision), so the additive blend
-//! never runs on a light ground. Palettes are fitted to it (3:1, WCAG 1.4.11).
+//! The earlier styles stay on a dark strip in every theme ([`WAVE_WELL`], by the user's decision),
+//! so the additive blend never runs on a light ground. Palettes are fitted to their ground (3:1,
+//! WCAG 1.4.11).
 //!
 //! Painting can only afford a few distinct colours per strip (one path each), so the weights are
 //! quantised to a [`Key`] and the painter draws one shape per key ([`cap_keys`] limits how many).
-//! Pure: no painting. The values are local to the waveform and do not come from the theme.
+//! Pure: no painting.
 
 use super::Column;
 use crate::style::{contrast_ratio, relative_luminance};
@@ -20,8 +26,10 @@ use crate::theme::{Colour, ThemeTokens};
 /// Which palette draws the waveform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum WaveStyle {
-    /// Fixed red, green and blue band hues, blended per column.
+    /// The body in the deck colour, the high band in the text colour on top (DESIGN.md).
     #[default]
+    LowBand,
+    /// Fixed red, green and blue band hues, blended per column.
     Colour,
     /// Three nested silhouettes, one colour per band.
     ThreeBand,
@@ -32,7 +40,8 @@ pub enum WaveStyle {
 }
 
 impl WaveStyle {
-    pub const ALL: [WaveStyle; 4] = [
+    pub const ALL: [WaveStyle; 5] = [
+        WaveStyle::LowBand,
         WaveStyle::Colour,
         WaveStyle::ThreeBand,
         WaveStyle::Mono,
@@ -42,6 +51,7 @@ impl WaveStyle {
     /// The name used in preferences and `OPENMIXER_WAVE_STYLE`.
     pub const fn name(self) -> &'static str {
         match self {
+            WaveStyle::LowBand => "low-band",
             WaveStyle::Colour => "colour",
             WaveStyle::ThreeBand => "three-band",
             WaveStyle::Mono => "mono",
@@ -91,10 +101,12 @@ pub const LINE_CONTRAST: f32 = 3.0;
 /// Contrast of text on the strip (bar numbers): WCAG 2.2 success criterion 1.4.3 Contrast
 /// (Minimum), 4.5:1 (https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
 pub const TEXT_CONTRAST: f32 = 4.5;
-/// The background of the overview and zoomed strips in every theme: the dark theme's well
-/// (resources/themes/openmixer-dark.json, `#07090D`). Kept dark in the light theme too (user
-/// decision), so the additive blend and white grid and playhead always have a dark ground.
+/// The background of the strips in the earlier styles, in every theme: the old dark theme's well
+/// (`#07090D`). Kept dark in the light theme too (user decision), so the additive blend and the
+/// white grid always have a dark ground. The Low-Band style draws on the theme's `well` instead.
 pub const WAVE_WELL: Colour = Colour::from_argb(0xFF07_090D);
+/// Opacity of the Low-Band style's high band over the deck colour (comp 4a: text at 55%).
+pub const LOW_BAND_HIGH_ALPHA: f32 = 0.55;
 
 fn rgb(c: Colour) -> [f32; 3] {
     let a = c.argb();
@@ -132,9 +144,13 @@ pub fn ensure_contrast(c: Colour, background: Colour, ratio: f32) -> Colour {
     from_rgb(target)
 }
 
-/// The colour the waveform strips are painted on: [`WAVE_WELL`] whatever the theme.
-pub fn strip_well(_theme: &ThemeTokens) -> Colour {
-    WAVE_WELL
+/// The opaque colour the waveform strips are painted on: the theme's Ink Well for the Low-Band
+/// style, [`WAVE_WELL`] whatever the theme for the earlier styles.
+pub fn strip_well(theme: &ThemeTokens, style: WaveStyle) -> Colour {
+    match style {
+        WaveStyle::LowBand => crate::style::over(theme.well, theme.ground),
+        _ => WAVE_WELL,
+    }
 }
 
 /// The three weights of a column, each 0..=1, in low, mid, high order. All zero for a silent one.
@@ -158,9 +174,11 @@ pub struct Palette {
 
 impl Palette {
     /// The palette for `style` on a strip whose background is `well` (opaque). Every colour is
-    /// brought to [`BODY_CONTRAST`] against it.
+    /// brought to [`BODY_CONTRAST`] against it. The Low-Band style needs the deck and text colours
+    /// ([`Palette::low_band`]); here it falls back to the silhouette grey and near-white.
     pub fn new(style: WaveStyle, well: Colour) -> Self {
         let (low, mid, high) = match style {
+            WaveStyle::LowBand => (DARK_SILHOUETTE, DARK_SILHOUETTE, HIGH_COLOUR),
             WaveStyle::Colour => (DARK_LOW, DARK_MID, DARK_HIGH),
             WaveStyle::ThreeBand => (LOW_COLOUR, MID_COLOUR, HIGH_COLOUR),
             WaveStyle::ColourBlind => (SAFE_LOW, SAFE_MID, SAFE_HIGH),
@@ -182,6 +200,20 @@ impl Palette {
         }
     }
 
+    /// The Low-Band palette: the body (low and mid) in `deck`, the high band in `ink` (drawn at
+    /// [`LOW_BAND_HIGH_ALPHA`]), each fitted to [`BODY_CONTRAST`] on `well`.
+    pub fn low_band(well: Colour, deck: Colour, ink: Colour) -> Self {
+        let fit = |c| ensure_contrast(c, well, BODY_CONTRAST);
+        Self {
+            style: WaveStyle::LowBand,
+            well,
+            low: fit(deck),
+            mid: fit(deck),
+            high: fit(ink),
+            silhouette: fit(DARK_SILHOUETTE),
+        }
+    }
+
     /// The three band colours, low first.
     pub fn bands(&self) -> [Colour; 3] {
         [self.low, self.mid, self.high]
@@ -193,6 +225,10 @@ impl Palette {
         let total: f32 = w.iter().sum();
         if total <= f32::EPSILON {
             return self.at_floor(self.silhouette);
+        }
+        if self.style == WaveStyle::LowBand {
+            // One body colour; the high band is a separate layer, not a hue.
+            return self.low;
         }
         let bands = self.bands().map(rgb);
         if self.style == WaveStyle::Mono {
