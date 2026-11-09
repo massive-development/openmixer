@@ -456,7 +456,10 @@ pub(crate) fn fx_drawer(
     let mut el =
         place(area).child(place(Rect::sized(area.w, m.control_height.round() as i32)).child(top));
     let k = m.knob_size.round() as i32;
-    let cell_w = k + m.space[1].round() as i32 + om_ui::widgets::mixer::knob_text_width(&m);
+    let labels =
+        std::iter::once(fx.mix.label.as_str()).chain(fx.params.iter().map(|p| p.label.as_str()));
+    let text_w = om_ui::widgets::mixer::fx_knob_text_width(&m, t.type_label, labels);
+    let cell_w = k + m.space[1].round() as i32 + text_w;
     let row_y = m.control_height.round() as i32 + m.space[2].round() as i32;
     let knobs = std::iter::once((&fx.mix, Target::FxMix)).chain(
         fx.params

@@ -15,7 +15,7 @@ use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::library::{KeyOutcome, LibraryPanel, RowView};
 use crate::paint::{paint, place, skin};
 use gpui::{
-    div, prelude::*, px, App, Context, Div, Entity, FocusHandle, Focusable as _, Hsla,
+    div, prelude::*, px, relative, App, Context, Div, Entity, FocusHandle, Focusable as _, Hsla,
     KeyDownEvent, MouseButton, MouseDownEvent, Render, WeakEntity, Window,
 };
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -454,7 +454,9 @@ impl TableDelegate for LibraryTable {
         let el = if spec.numeric {
             self.shell
                 .read_with(cx, |shell, _| {
+                    // The body's line box, so the digits share the baseline of the text cells.
                     numeral(&shell.theme, Numeral::Value, text.clone())
+                        .line_height(relative(TypeRole::Body.line_height()))
                 })
                 .unwrap_or_else(|_| div().child(text))
         } else {
@@ -724,12 +726,14 @@ pub fn library_card(
         } else {
             (t.text_secondary, None)
         };
+        // The label clears the selection bar by a spacing step instead of touching it.
+        let inset = SIDEBAR_BAR_W + 8. + 12. * line.depth as f32;
         tree = tree.child(
             ListItem::new(("sidebar-row", index))
                 .selected(line.selected)
                 .h(px(line_h))
                 .py(px(0.))
-                .pl(px(4. + 12. * line.depth as f32))
+                .pl(px(inset))
                 .rounded(px(3.))
                 .type_role(&t, TypeRole::Body)
                 .text_color(paint(text))
@@ -737,9 +741,10 @@ pub fn library_card(
                     // Selection is a fill and a bar in the focus colour, so it does not rest on
                     // tone alone (labels-layout.md item 5).
                     el.child(
+                        // Placed from the label's box (the item's inner row), back to the edge.
                         div()
                             .absolute()
-                            .left(px(0.))
+                            .left(px(1. - inset))
                             .top(px(2.))
                             .bottom(px(2.))
                             .w(px(SIDEBAR_BAR_W))
