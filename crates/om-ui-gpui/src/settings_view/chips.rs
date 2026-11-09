@@ -133,12 +133,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_accent_falls_back_to_the_surface_when_the_theme_has_none() {
+    fn a_lit_chip_is_neutral_never_a_deck_hue() {
         let mut themes = ThemeRegistry::new();
         themes.load_builtins();
-        themes.select(ThemeRegistry::DEFAULT_ID);
-        let mut tokens = themes.current().clone();
-        tokens.accents.clear();
-        assert_eq!(accent_of(&tokens), tokens.surface_raised);
+        assert!(!themes.themes().is_empty());
+        for entry in themes.themes() {
+            let (id, tokens) = (&entry.info.id, &entry.tokens);
+            assert_eq!(accent_of(tokens), tokens.text_primary, "{id}");
+            assert!(!tokens.accents.contains(&accent_of(tokens)), "{id}");
+        }
     }
 }
