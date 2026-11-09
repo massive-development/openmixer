@@ -366,10 +366,11 @@ impl Shell {
         settings.poll_midi_inputs(Instant::now());
         settings.mapping_tick();
         let w = CARD_WIDTH.min(area.w - 2 * CARD_MARGIN).max(0);
-        // The Appearance page is short: its card fits the content instead of showing empty space.
+        // The Appearance page is short: its card fits the content (themes and density) instead of
+        // showing empty space.
         let wanted =
             if settings.panel.page_kind(settings.panel.current()) == Some(PageKind::Appearance) {
-                CARD_HEIGHT * 5 / 9
+                CARD_HEIGHT * 7 / 9
             } else {
                 CARD_HEIGHT
             };
