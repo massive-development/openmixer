@@ -152,17 +152,33 @@ pub struct ColumnShape {
     /// Colour weights of the three bands (see [`super::weights`]); the colour is drawn per column
     /// from these.
     pub weights: [f32; 3],
+    /// The high band's share of the column, `compress(high peak / peak)`, never smoothed.
+    pub high_share: f32,
+}
+
+impl ColumnShape {
+    /// Low-Band heights (0..=1 of the half-height): the body in the deck colour, and the high band
+    /// on top as its share of the body, so the highs never outgrow the body (comps 4a and 4b).
+    pub fn low_band(&self) -> (f32, f32) {
+        (self.body, self.body * self.high_share)
+    }
 }
 
 /// The shape of a column. Without spectrum the key is the zero key (grey).
 pub fn column_shape(c: &Column, reference: impl Into<Reference>, spectral: bool) -> ColumnShape {
     let reference: Reference = reference.into();
     let silhouette = compress(c.peak / reference.peak.max(f32::EPSILON));
+    let high_share = if spectral && c.peak > f32::EPSILON {
+        compress(c.high / c.peak)
+    } else {
+        0.0
+    };
     ColumnShape {
         silhouette,
         body: compress(c.loudness / reference.loudness.max(f32::EPSILON)).min(silhouette),
         bands: band_heights(c, reference.peak, spectral),
         weights: if spectral { weights(c) } else { [0.0; 3] },
+        high_share,
     }
 }
 
@@ -367,6 +383,28 @@ mod tests {
             assert_ne!(other.weights, shape.weights, "only the colour changes");
         }
         assert!((shape.silhouette - compress(0.7 / 0.9)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn low_band_highs_sit_inside_the_body_in_proportion_to_the_high_band() {
+        let hat = column_shape(&column(0.6, 0.1, 0.2, 0.5), 1.0, true);
+        let kick = column_shape(&column(0.6, 0.6, 0.1, 0.05), 1.0, true);
+        let (body, high) = hat.low_band();
+        assert_eq!(body, hat.body);
+        assert!(high > 0.0 && high <= body, "{high} of {body}");
+        assert!(
+            kick.low_band().1 < high,
+            "a kick has fewer highs than a hat"
+        );
+        let unanalysed = column_shape(&column(0.6, 0.6, 0.0, 0.5), 1.0, false);
+        assert_eq!(unanalysed.low_band().1, 0.0, "no spectrum, no high layer");
+        // Comps 4a/4b: the high layer is 0.30 to 0.65 of the body; a fifth to a half of the peak
+        // in the high band lands there.
+        for share in [0.2f32, 0.5] {
+            let r = column_shape(&column(0.8, 0.8, 0.2, 0.8 * share), 1.0, true);
+            let ratio = r.low_band().1 / r.low_band().0;
+            assert!((0.3..=0.68).contains(&ratio), "{share}: {ratio}");
+        }
     }
 
     #[test]

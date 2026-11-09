@@ -3,12 +3,13 @@
 //! `shape_px`) and a software fill in place of GPUI paths. Nothing is played, cached or committed.
 //!
 //! cargo run --release -p om-ui --example wave_strips -- [--out DIR] [--theme dark|daylight|FILE]
-//!     [--style colour|three-band|mono|colour-blind] [--zoom FRAMES_PER_PIXEL] [--width PX]
-//!     (--synthetic | TRACK...)
+//!     [--style low-band|colour|three-band|mono|colour-blind] [--zoom FRAMES_PER_PIXEL]
+//!     [--width PX] (--synthetic | TRACK...)
 //!
 //! `--synthetic` analyses `om_analysis::demo_loop` (no input needed). Without `--theme` both
-//! built-in themes are drawn; without `--style` the Colour style. The painter reads the style from
-//! the `OPENMIXER_WAVE_STYLE` environment variable the same way.
+//! built-in themes are drawn; without `--style` the Low-Band style in deck A's colour. The painter
+//! reads the style from the `OPENMIXER_WAVE_STYLE` environment variable the same way. The overview
+//! has its played part (the first 30%) shaded and the strips a centred playhead, as in comp 4a.
 
 mod png;
 
@@ -19,8 +20,8 @@ use om_analysis::{
 use om_ui::style::over;
 use om_ui::theme::{parse_theme, parse_theme_file, Colour, ThemeTokens};
 use om_ui::waveform::{
-    column_shapes, overview_column, shape_px, strip_column, strip_well, weights, Band, ColumnShape,
-    Palette, Reference, WaveStyle,
+    column_shapes, overview_column, shape_px, strip_column, weights, Band, ColumnShape, Palette,
+    Reference, StripInk, WaveStyle, LOW_BAND_HIGH_ALPHA, OVERVIEW_PLAYED_SHADE_ALPHA,
 };
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -129,7 +130,7 @@ fn parse_args() -> Result<Options, String> {
         }
     }
     if o.styles.is_empty() {
-        o.styles.push(WaveStyle::Colour);
+        o.styles.push(WaveStyle::LowBand);
     }
     if o.tracks.is_empty() && !o.synthetic {
         return Err(USAGE.into());
@@ -138,7 +139,8 @@ fn parse_args() -> Result<Options, String> {
 }
 
 /// Draws one column the way the painter does: the peak silhouette at low alpha, then the body in
-/// its bucket's colour; the three-band style draws three nested bars instead.
+/// its colour; the three-band style draws three nested bars, Low-Band the body in the deck colour
+/// and the highs in the text colour on top.
 fn draw_column(
     image: &mut Image,
     x: usize,
@@ -159,6 +161,11 @@ fn draw_column(
     let h = height as f32;
     if !spectral {
         bar(image, shape_px(shape.silhouette, h), palette.silhouette);
+    } else if palette.style == WaveStyle::LowBand {
+        let (body, high) = shape.low_band();
+        bar(image, shape_px(body, h), palette.low);
+        let highs = palette.high.with_alpha(LOW_BAND_HIGH_ALPHA);
+        bar(image, shape_px(high, h), highs);
     } else if palette.style == WaveStyle::ThreeBand {
         for (band, colour) in Band::ALL.into_iter().zip(palette.bands()) {
             bar(image, shape_px(shape.bands.get(band), h), colour);
@@ -201,8 +208,8 @@ fn draw_shapes(
     }
 }
 
-/// Beat and bar lines over a strip, in the grid colour at the painter's alphas (white on dark).
-fn draw_grid(image: &mut Image, top: usize, centre: f64, zoom: f64, bpm: f64, grid: Colour) {
+/// Beat and bar lines over a strip, as the painter draws them (1 px, the theme's strengths).
+fn draw_grid(image: &mut Image, top: usize, centre: f64, zoom: f64, bpm: f64, ink: &StripInk) {
     let beat = RATE * 60.0 / bpm;
     let first = ((centre - image.width as f64 / 2.0 * zoom) / beat)
         .floor()
@@ -213,23 +220,27 @@ fn draw_grid(image: &mut Image, top: usize, centre: f64, zoom: f64, bpm: f64, gr
         if x < 0.0 || x >= image.width as f64 {
             continue;
         }
-        let bar = n % 4 == 0;
-        let (width, alpha) = if bar { (2, 0.70) } else { (1, 0.25) };
-        for dx in 0..width {
-            image.blend(x as usize + dx, top, STRIP_HEIGHT, grid.with_alpha(alpha));
-        }
+        image.blend(x as usize, top, STRIP_HEIGHT, ink.grid(n % 4 == 0));
     }
 }
 
-fn render(
-    data: &WaveformData,
-    o: &Options,
-    well: Colour,
-    palette: &Palette,
-    grid: Option<f64>,
-) -> Image {
+/// The playhead, `ink.playhead_width` px of signal red at `x`.
+fn draw_playhead(image: &mut Image, x: usize, top: usize, height: usize, ink: &StripInk) {
+    let width = ink.playhead_width.round().max(1.0) as usize;
+    for dx in 0..width {
+        image.blend(
+            (x + dx).saturating_sub(width / 2),
+            top,
+            height,
+            ink.playhead,
+        );
+    }
+}
+
+fn render(data: &WaveformData, o: &Options, ink: &StripInk, grid: Option<f64>) -> Image {
     let height = OVERVIEW_HEIGHT + STRIP_SPOTS.len() * (STRIP_HEIGHT + GAP) + GAP + KEY_HEIGHT;
-    let mut image = Image::new(o.width, height, well);
+    let palette = &ink.palette();
+    let mut image = Image::new(o.width, height, ink.well);
     let points = &data.overview().points;
     let reference = Reference::of(points);
     let spectral = data.has_spectrum();
@@ -238,6 +249,14 @@ fn render(
         Some(overview_column(points, i, o.width))
     });
     draw_shapes(&mut image, 0, OVERVIEW_HEIGHT, &overview, palette, spectral);
+    let played = o.width * 3 / 10;
+    if let Some(shade) = ink.played_shade {
+        let shade = shade.with_alpha(OVERVIEW_PLAYED_SHADE_ALPHA);
+        for x in 0..played {
+            image.blend(x, 0, OVERVIEW_HEIGHT, shade);
+        }
+    }
+    draw_playhead(&mut image, played, 0, OVERVIEW_HEIGHT, ink);
 
     let length = data.num_samples() as f64;
     let level = data.level_for(o.zoom);
@@ -250,9 +269,9 @@ fn render(
         });
         draw_shapes(&mut image, top, STRIP_HEIGHT, &shapes, palette, spectral);
         if let Some(bpm) = grid {
-            let grid_colour = Colour::from_argb(0xFFFF_FFFF);
-            draw_grid(&mut image, top, centre, o.zoom, bpm, grid_colour);
+            draw_grid(&mut image, top, centre, o.zoom, bpm, ink);
         }
+        draw_playhead(&mut image, o.width / 2, top, STRIP_HEIGHT, ink);
     }
 
     // Key row: the three band colours pure, then a ramp from the first band to the second to the
@@ -350,11 +369,11 @@ fn load(path: &Path) -> Result<AudioClip, String> {
 
 fn write(options: &Options, stem: &str, data: &WaveformData, grid: Option<f64>) {
     for (name, tokens) in &options.themes {
-        let well = strip_well(tokens);
-        // The strip is drawn over an opaque colour; PNG has no alpha here.
-        let well = over(well, Colour::from_argb(0xFF00_0000));
         for &style in &options.styles {
-            let palette = Palette::new(style, well);
+            let mut ink = StripInk::new(tokens, style, 0);
+            // The strip is drawn over an opaque colour; PNG has no alpha here.
+            ink.well = over(ink.well, Colour::from_argb(0xFF00_0000));
+            let palette = ink.palette();
             println!("  {name} / {}", style.name());
             report(
                 &format!("{name}-{}", style.name()),
@@ -362,7 +381,7 @@ fn write(options: &Options, stem: &str, data: &WaveformData, grid: Option<f64>) 
                 options.width,
                 &palette,
             );
-            let image = render(data, options, well, &palette, grid);
+            let image = render(data, options, &ink, grid);
             let file = options
                 .out
                 .join(format!("{stem}-{name}-{}.png", style.name()));
