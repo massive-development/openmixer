@@ -1,8 +1,8 @@
-//! The appearance page: the theme picker.
+//! The appearance page: the theme picker and the density (Automatic, Roomy or Compact).
 
 use super::{set_if_changed, SettingsError, SettingsResult};
 use crate::preferences::Preferences;
-use crate::theme::ThemeRegistry;
+use crate::theme::{DensityChoice, ThemeRegistry};
 
 /// Appearance page: lists the registry's themes and stores the chosen id.
 pub struct AppearanceSettingsPage<'a> {
@@ -31,13 +31,23 @@ impl<'a> AppearanceSettingsPage<'a> {
         }
         Ok(set_if_changed(&mut self.prefs.theme, id.to_owned()))
     }
+
+    /// The stored density choice.
+    pub fn density(&self) -> DensityChoice {
+        self.prefs.density
+    }
+
+    /// Stores the density; `true` when it changed.
+    pub fn pick_density(&mut self, choice: DensityChoice) -> bool {
+        set_if_changed(&mut self.prefs.density, choice)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::preferences::Preferences;
-    use crate::theme::ThemeRegistry;
+    use crate::theme::{DensityChoice, ThemeRegistry};
 
     #[test]
     fn appearance_lists_the_registry_and_stores_the_pick() {
@@ -56,6 +66,17 @@ mod tests {
         assert_eq!(page.pick(&other).ok(), Some(true));
         assert_eq!(page.pick(&other).ok(), Some(false));
         assert_eq!(prefs.theme, other);
+    }
+
+    #[test]
+    fn the_density_is_stored_once() {
+        let mut prefs = Preferences::default();
+        let themes = ThemeRegistry::new();
+        let mut page = AppearanceSettingsPage::new(&mut prefs, &themes);
+        assert_eq!(page.density(), DensityChoice::Automatic);
+        assert!(page.pick_density(DensityChoice::Compact));
+        assert!(!page.pick_density(DensityChoice::Compact));
+        assert_eq!(prefs.density, DensityChoice::Compact);
     }
 
     #[test]

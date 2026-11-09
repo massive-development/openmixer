@@ -78,6 +78,7 @@ mod tests {
     fn customised() -> Preferences {
         Preferences {
             theme: "openmixer.daylight".into(),
+            density: crate::theme::DensityChoice::Compact,
             audio: AudioPrefs {
                 device_state: String::new(),
                 master_pair: 2,

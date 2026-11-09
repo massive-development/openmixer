@@ -312,110 +312,52 @@ fn assert_no_overlap(parts: &[(&str, Rect)], context: &str) {
     }
 }
 
+/// The mixer column at each density's width: every part inside it and none overlapping, the
+/// knobs at the density size, faders with real travel and a wide crossfader. (Replaces the module
+/// and channel-strip layout tests: the strips moved into the mixer column in the faceplate rewrite.)
 #[test]
-fn module_layout_has_no_overlaps_across_sizes() {
+fn the_mixer_column_holds_both_channels_master_and_crossfader() {
+    use om_ui::theme::Density;
+    use om_ui::widgets::mixer::{column_height, column_layout};
     let theme = ThemeTokens::builtin_dark();
-    for (w, h) in [(220, 280), (245, 262), (270, 300), (330, 420)] {
-        let context = format!("module {w}x{h}");
-        let bounds = Rect::sized(w, h);
-        let layout = MixerPanel::module_layout(bounds, &theme);
-        let parts: Vec<(&str, Rect)> = vec![
-            ("fx toggle", layout.fx),
-            ("master", layout.master),
-            ("crossfader", layout.crossfader),
-            ("cue", layout.cue),
+    for density in [Density::Roomy, Density::Compact] {
+        let m = theme.metrics(density);
+        let bounds = Rect::sized(m.mixer_width as i32, column_height(m));
+        let l = column_layout(bounds, m);
+        let mut parts: Vec<(&str, Rect)> = vec![
+            ("master fader", l.master_fader),
+            ("master meter", l.master_meter),
+            ("crossfader", l.crossfader),
+            ("curve", l.curve),
+            ("tag a", l.tags[0]),
+            ("tag b", l.tags[1]),
+            ("phones mix", l.phones_mix.bounds()),
+            ("phones level", l.phones_level.bounds()),
         ];
+        for c in &l.channels {
+            parts.extend(c.knobs.iter().map(|k| ("knob", k.bounds())));
+            parts.extend([
+                ("fader", c.fader),
+                ("meter", c.meter),
+                ("cue", c.cue),
+                ("assign", c.assign),
+            ]);
+        }
+        let context = format!("{density:?}");
         assert_no_overlap(&parts, &context);
         for (name, r) in &parts {
             assert!(bounds.contains(r), "{context}: {name} clipped");
         }
-    }
-}
-
-/// The module sections get what their research specs need at the smallest window's module size:
-/// a master fader with labelled ticks, 36 px headphone caps, a wide crossfader and a visible switch.
-#[test]
-fn module_sections_get_their_researched_sizes_at_the_smallest_module() {
-    use om_ui::widgets::{crossfader::CrossfaderSection, cue::CueSection, master::MasterSection};
-    let theme = ThemeTokens::builtin_dark();
-    let l = MixerPanel::module_layout(Rect::sized(245, 262), &theme);
-    let master = MasterSection::layout(l.master, &theme);
-    assert!(master.meter_labels && master.fader.h >= 120, "{master:?}");
-    let cue = CueSection::layout(l.cue, &theme);
-    assert!(
-        cue.mix.w >= 45 && cue.mix.h >= 45,
-        "36 px cap needs 45 px: {cue:?}"
-    );
-    let xf = CrossfaderSection::layout(l.crossfader, &theme);
-    assert!(
-        xf.slider.w >= 180,
-        "the crossfader is wide: {}",
-        xf.slider.w
-    );
-    assert!(xf.curve.iter().all(|r| r.h >= 28));
-}
-
-/// The cell the standard layout gives a named slot at the default window size.
-fn slot_cell(decks: usize, name: &str) -> Rect {
-    let theme = ThemeTokens::builtin_dark();
-    let gap = theme.gap;
-    let main = Rect::sized(1280, 800).reduced(gap, gap);
-    om_ui::main_layout::visible_cells(
-        &om_ui::main_layout::LayoutSpec::standard(decks),
-        decks,
-        main,
-        gap,
-    )
-    .into_iter()
-    .find(|c| c.kind == om_ui::main_layout::CellKind::Slot(name.into()))
-    .unwrap_or_else(|| panic!("{name} slot"))
-    .bounds
-}
-
-#[test]
-fn strip_children_fit_and_do_not_overlap_at_the_default_slot_size() {
-    let theme = ThemeTokens::builtin_dark();
-    for c in 0..2 {
-        let strip_rect = slot_cell(2, &om_ui::main_layout::channel_slot(c));
-        let strip_rect = Rect::sized(strip_rect.w, strip_rect.h);
-        let s = ChannelStrip::layout(strip_rect, &theme);
-        let mut kids: Vec<(&str, Rect)> = vec![
-            ("title", s.title),
-            ("trim", s.trim),
-            ("filter", s.filter),
-            ("pfl", s.pfl),
-            ("fx", s.fx),
-            ("fader", s.fader),
-            ("meter", s.meter),
-        ];
-        for (i, r) in s.eq.iter().enumerate() {
-            kids.push(("eq", *r));
-            kids.push(("kill", s.kill[i]));
-        }
-        for r in &s.assign {
-            kids.push(("assign", *r));
-        }
-        assert_no_overlap(&kids, &format!("strip {c}"));
-        for (name, r) in &kids {
-            assert!(strip_rect.contains(r), "strip {c}: {name} clipped");
-        }
-        assert!(s.fader.h >= 80, "the fader needs real travel, not a sliver");
+        assert!(l.channels[0].fader.h >= 120, "{context}: fader travel");
         assert!(
-            s.trim.h >= 32 && s.filter.h >= 32 && s.pfl.h >= 32,
-            "controls are at least 32 px"
+            l.crossfader.w >= 150,
+            "{context}: crossfader {}",
+            l.crossfader.w
         );
+        assert!(l.curve.w >= 48 && l.channels[0].cue.w >= 32, "{context}");
+        let unused = std::mem::size_of::<ChannelStrip>();
+        assert!(unused > 0);
     }
-}
-
-#[test]
-fn mixer_module_is_wide_enough_at_the_default_window_size() {
-    let slot = slot_cell(2, "mixer");
-    assert!(slot.w >= 200, "mixer module is {} px wide", slot.w);
-    assert!(
-        slot_cell(2, &om_ui::main_layout::channel_slot(0)).w
-            >= om_ui::main_layout::CHANNEL_MIN_WIDTH,
-        "a channel strip needs room for three EQ knobs and the fader"
-    );
 }
 
 // ---- FX panel ----

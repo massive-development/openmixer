@@ -9,6 +9,47 @@ pub enum Density {
     Compact,
 }
 
+/// The density the user asked for on the Appearance page. `Automatic` picks Roomy when the window
+/// is tall enough for it and Compact otherwise (`main_layout::resolve_density`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DensityChoice {
+    #[default]
+    Automatic,
+    Roomy,
+    Compact,
+}
+
+impl DensityChoice {
+    pub const ALL: [DensityChoice; 3] = [
+        DensityChoice::Automatic,
+        DensityChoice::Roomy,
+        DensityChoice::Compact,
+    ];
+
+    /// The preferences file's spelling.
+    pub const fn id(self) -> &'static str {
+        match self {
+            DensityChoice::Automatic => "automatic",
+            DensityChoice::Roomy => "roomy",
+            DensityChoice::Compact => "compact",
+        }
+    }
+
+    /// The Appearance page's label.
+    pub const fn label(self) -> &'static str {
+        match self {
+            DensityChoice::Automatic => "Automatic",
+            DensityChoice::Roomy => "Roomy",
+            DensityChoice::Compact => "Compact",
+        }
+    }
+
+    /// The choice spelled `id`; `None` for anything else.
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.id() == id)
+    }
+}
+
 /// Sizes (px) that change with density. Layout reads them through [`super::ThemeTokens::metrics`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DensityMetrics {
@@ -113,6 +154,15 @@ mod tests {
         assert_eq!(compact.space[1..], roomy.space[..5]);
         assert!(roomy.steps_rise() && compact.steps_rise());
         assert_eq!(Density::default(), Density::Roomy);
+    }
+
+    #[test]
+    fn a_density_choice_round_trips_through_its_id() {
+        for choice in DensityChoice::ALL {
+            assert_eq!(DensityChoice::from_id(choice.id()), Some(choice));
+        }
+        assert_eq!(DensityChoice::from_id("tiny"), None);
+        assert_eq!(DensityChoice::default(), DensityChoice::Automatic);
     }
 
     #[test]

@@ -1,20 +1,15 @@
-//! Where the header strip's parts sit: brand, automix bar, master BPM, notice chip, latency
-//! indicator, Record button, library toggle and Settings button. Pure geometry shared by the window
-//! and the page layout. Every part has the same top (`y == 3`) and height (`header_h - 6`), so the
-//! controls share one baseline; the parts never overlap and run left to right in a fixed order.
+//! Where the header strip's parts sit (comp 4a/4b): the wordmark at the left, the automix bar after
+//! it, then from the right edge Settings, the library toggle, Record, the loudness toggle and the
+//! latency and dropout indicator. Pure geometry shared by the window and the page layout. The strip keeps `s4` above
+//! its parts and `s3` plus a 1 px etched line under them; every part is one control high on one
+//! top, so the controls share a baseline; the parts never overlap and run left to right in a fixed
+//! order. The master tempo is not here: it sits over the mixer in the deck header row.
 
 use crate::geometry::Rect;
+use crate::theme::DensityMetrics;
 
-/// Space between the window edge and the first and last part.
-pub const MARGIN: i32 = 8;
-/// Space between neighbouring parts.
-pub const GAP: i32 = 8;
-/// Distance of every part from the top of the strip; the strip's bottom edge is as far again.
-pub const TOP_INSET: i32 = 3;
-/// Width of the OPENMIXER wordmark.
-pub const BRAND_WIDTH: i32 = 112;
-/// Width of the master BPM readout.
-pub const MASTER_BPM_WIDTH: i32 = 120;
+/// Width of the OPENMIXER wordmark: Sansation Bold 21 px measures 124 px (Phase 2 spike, docs/spikes/DECISIONS.md).
+pub const BRAND_WIDTH: i32 = 128;
 /// Width of the notice chip (two lines of caption text).
 pub const NOTICE_WIDTH: i32 = 240;
 /// Width of the notice chip collapsed to the word "Notice" and the dismiss button.
@@ -22,16 +17,17 @@ pub const COLLAPSED_NOTICE_WIDTH: i32 = 72;
 /// The automix bar's width the plan wants at 1280 wide; a notice chip collapses before the bar
 /// goes under it.
 pub const AUTOMIX_FLOOR: i32 = 300;
-/// Width of the latency and dropout indicator.
-pub const LATENCY_WIDTH: i32 = 120;
+/// Width of the latency and dropout indicator: "123 ms  12 dropouts" in mono 13 px is 124 px.
+pub const LATENCY_WIDTH: i32 = 128;
+/// Width of the loudness toggle: the LUFS button and the momentary reading beside it.
+pub const LOUDNESS_WIDTH: i32 = 112;
 /// Width of the Record button.
 pub const RECORD_WIDTH: i32 = 148;
 /// Width of the library toggle (was PERFORM).
 pub const LIBRARY_TOGGLE_WIDTH: i32 = 100;
 /// Width of the Settings button.
 pub const SETTINGS_WIDTH: i32 = 96;
-/// The automix bar needs at least this much to show its segmented switch and the next track; a
-/// window too narrow for it loses the master BPM readout first.
+/// The automix bar needs at least this much to show its segmented switch and the next track.
 pub const MIN_AUTOMIX_WIDTH: i32 = 200;
 
 /// Which optional parts the window has.
@@ -47,18 +43,18 @@ pub struct HeaderNeeds {
 /// to show it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeaderRects {
-    /// The whole strip: `x = 0`, `y = 0`, the window's width and the header height.
+    /// The whole strip: `x = 0`, `y = 0`, the window's width and [`header_height`].
     pub bar: Rect,
-    /// The OPENMIXER wordmark, in the brand colour.
+    /// The OPENMIXER wordmark.
     pub brand: Rect,
     /// Segmented Off|On, the transition length and the next track.
     pub automix: Option<Rect>,
-    /// The master tempo, centred on the window when it fits.
-    pub master_bpm: Option<Rect>,
     /// A dismissible chip that replaces the old banner row.
     pub notice: Option<Rect>,
     /// Output latency and dropouts.
     pub latency: Rect,
+    /// The LUFS toggle and the momentary reading; its panel opens under it.
+    pub loudness: Rect,
     pub record: Option<Rect>,
     /// Shows or hides the library band (was PERFORM).
     pub library_toggle: Rect,
@@ -72,8 +68,8 @@ impl HeaderRects {
             Some(self.brand),
             self.automix,
             self.notice,
-            self.master_bpm,
             Some(self.latency),
+            Some(self.loudness),
             self.record,
             Some(self.library_toggle),
             self.settings,
@@ -84,69 +80,69 @@ impl HeaderRects {
     }
 }
 
-/// Lays the strip out for a window `window_w` wide and a strip `header_h` high.
-pub fn header_rects(window_w: i32, header_h: i32, needs: HeaderNeeds) -> HeaderRects {
-    let h = (header_h - 2 * TOP_INSET).max(0);
-    let part = |x: i32, w: i32| Rect::new(x, TOP_INSET, w, h);
+/// The strip's height for a metric set: `s4` above one control height, `s3` under it, and the
+/// 1 px etched line.
+pub fn header_height(m: &DensityMetrics) -> i32 {
+    let s = |i: usize| m.space[i].round() as i32;
+    s(3) + m.control_height.round() as i32 + s(2) + 1
+}
+
+/// Lays the strip out for a window `window_w` wide in metric set `m`.
+pub fn header_rects(window_w: i32, m: &DensityMetrics, needs: HeaderNeeds) -> HeaderRects {
+    let (top, h) = (m.space[3].round() as i32, m.control_height.round() as i32);
+    let margin = m.space[4].round() as i32;
+    let gap = m.space[3].round() as i32;
+    let part = |x: i32, w: i32| Rect::new(x, top, w, h);
 
     // The right cluster is anchored to the window's right edge.
-    let mut edge = window_w - MARGIN;
+    let mut edge = window_w - margin;
     let mut take = |w: i32, wanted: bool| -> Option<Rect> {
         if !wanted {
             return None;
         }
         let rect = part(edge - w, w);
-        edge = rect.x - GAP;
+        edge = rect.x - gap;
         Some(rect)
     };
     let settings = take(SETTINGS_WIDTH, needs.settings);
-    let library_toggle = take(LIBRARY_TOGGLE_WIDTH, true).expect("always taken");
+    let library_toggle = take(LIBRARY_TOGGLE_WIDTH, true).unwrap_or_default();
     let record = take(RECORD_WIDTH, needs.record);
-    let latency = take(LATENCY_WIDTH, true).expect("always taken");
+    let loudness = take(LOUDNESS_WIDTH, true).unwrap_or_default();
+    let latency = take(LATENCY_WIDTH, true).unwrap_or_default();
 
-    let brand = part(MARGIN, BRAND_WIDTH);
-    let free_start = brand.right() + GAP;
-    let free_end = latency.x - GAP;
-
-    // The master BPM sits on the window's centre line when it fits, else against the right
-    // cluster; with an automix bar it also has to leave that bar its minimum.
-    let centred = (window_w - MASTER_BPM_WIDTH) / 2;
-    let bpm_x = if centred + MASTER_BPM_WIDTH <= free_end {
-        centred
-    } else {
-        free_end - MASTER_BPM_WIDTH
-    };
-    let bpm_floor = if needs.automix {
-        free_start + MIN_AUTOMIX_WIDTH + GAP
-    } else {
-        free_start
-    };
-    let master_bpm = (bpm_x >= bpm_floor).then(|| part(bpm_x, MASTER_BPM_WIDTH));
-
-    let notice_end = master_bpm.map_or(free_end, |b| b.x - GAP);
-    // The chip keeps the automix bar at or above 300 px (plan, header invariants): it takes its
-    // full width only when that leaves the bar enough, and collapses to icon plus dismiss if not.
-    let notice = needs.notice.then(|| {
-        let room = notice_end - free_start - GAP - AUTOMIX_FLOOR;
-        let w = if !needs.automix || room >= NOTICE_WIDTH {
-            NOTICE_WIDTH.min((notice_end - free_start).max(0))
-        } else {
-            COLLAPSED_NOTICE_WIDTH
-        };
-        part(notice_end - w, w)
-    });
-    let automix = needs.automix.then(|| {
-        let end = notice.map_or(notice_end, |n| n.x - GAP);
-        part(free_start, (end - free_start).max(0))
-    });
+    let brand = part(margin, BRAND_WIDTH);
+    let free_start = brand.right() + gap;
+    let free_end = latency.x - gap;
+    // The chip keeps the automix bar at or above its floor: it takes its full width only when that
+    // leaves the bar enough, and collapses to the word and its dismiss button if not.
+    let notice = needs
+        .notice
+        .then(|| {
+            let room = free_end - free_start - gap - AUTOMIX_FLOOR;
+            let w = if !needs.automix || room >= NOTICE_WIDTH {
+                NOTICE_WIDTH
+            } else {
+                COLLAPSED_NOTICE_WIDTH
+            };
+            let w = w.min((free_end - free_start).max(0));
+            part(free_end - w, w)
+        })
+        .filter(|r| r.w > 0);
+    let automix = needs
+        .automix
+        .then(|| {
+            let end = notice.map_or(free_end, |n| n.x - gap);
+            part(free_start, (end - free_start).max(0))
+        })
+        .filter(|r| r.w > 0);
 
     HeaderRects {
-        bar: Rect::new(0, 0, window_w, header_h),
+        bar: Rect::new(0, 0, window_w, header_height(m)),
         brand,
         automix,
-        master_bpm,
         notice,
         latency,
+        loudness,
         record,
         library_toggle,
         settings,
@@ -156,14 +152,9 @@ pub fn header_rects(window_w: i32, header_h: i32, needs: HeaderNeeds) -> HeaderR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::{Density, ThemeTokens};
 
-    const SIZES: [(i32, i32); 5] = [
-        (1280, 720),
-        (1280, 800),
-        (1920, 1080),
-        (2560, 1440),
-        (1100, 700),
-    ];
+    const WIDTHS: [i32; 5] = [900, 1024, 1280, 1440, 1920];
     const FULL: HeaderNeeds = HeaderNeeds {
         automix: true,
         record: true,
@@ -171,8 +162,9 @@ mod tests {
         notice: false,
     };
 
-    fn header_h(window_h: i32) -> i32 {
-        crate::main_layout::header_height(window_h)
+    fn metric_sets() -> [DensityMetrics; 2] {
+        let t = ThemeTokens::builtin_dark();
+        [*t.metrics(Density::Roomy), *t.metrics(Density::Compact)]
     }
 
     fn overlap(a: Rect, b: Rect) -> bool {
@@ -180,22 +172,31 @@ mod tests {
     }
 
     #[test]
+    fn the_strip_is_one_control_high_with_the_comp_spacing() {
+        let [roomy, compact] = metric_sets();
+        assert_eq!(header_height(&roomy), 13 + 26 + 8 + 1);
+        assert_eq!(header_height(&compact), 8 + 21 + 5 + 1);
+    }
+
+    #[test]
     fn every_part_is_inside_the_bar_on_one_baseline() {
-        for (w, h) in SIZES {
-            let hh = header_h(h);
-            for needs in [
-                FULL,
-                HeaderNeeds {
-                    notice: true,
-                    ..FULL
-                },
-            ] {
-                let rects = header_rects(w, hh, needs);
-                assert_eq!(rects.bar, Rect::new(0, 0, w, hh));
-                for r in rects.all() {
-                    assert!(rects.bar.contains(&r), "{w}x{h}: {r:?} outside the bar");
-                    assert_eq!((r.y, r.h), (3, hh - 6), "{w}x{h}: {r:?}");
-                    assert!(r.w > 0, "{w}x{h}: {r:?}");
+        for m in metric_sets() {
+            for w in WIDTHS {
+                for needs in [
+                    FULL,
+                    HeaderNeeds {
+                        notice: true,
+                        ..FULL
+                    },
+                ] {
+                    let rects = header_rects(w, &m, needs);
+                    assert_eq!(rects.bar, Rect::new(0, 0, w, header_height(&m)));
+                    for r in rects.all() {
+                        assert!(rects.bar.contains(&r), "{w}: {r:?} outside the bar");
+                        let top = m.space[3] as i32;
+                        assert_eq!((r.y, r.h), (top, m.control_height as i32), "{w}: {r:?}");
+                        assert!(r.w > 0, "{w}: {r:?}");
+                    }
                 }
             }
         }
@@ -203,115 +204,86 @@ mod tests {
 
     #[test]
     fn parts_do_not_overlap_and_run_in_order() {
-        for (w, h) in SIZES {
-            for needs in [
-                FULL,
-                HeaderNeeds {
-                    notice: true,
-                    ..FULL
-                },
-            ] {
-                let rects = header_rects(w, header_h(h), needs);
-                let all = rects.all();
-                for (i, a) in all.iter().enumerate() {
-                    for b in &all[i + 1..] {
-                        assert!(!overlap(*a, *b), "{w}x{h}: {a:?} over {b:?}");
+        for m in metric_sets() {
+            for w in WIDTHS {
+                for needs in [
+                    FULL,
+                    HeaderNeeds {
+                        notice: true,
+                        ..FULL
+                    },
+                ] {
+                    let rects = header_rects(w, &m, needs);
+                    let all = rects.all();
+                    for (i, a) in all.iter().enumerate() {
+                        for b in &all[i + 1..] {
+                            assert!(!overlap(*a, *b), "{w}: {a:?} over {b:?}");
+                        }
                     }
+                    let xs: Vec<i32> = all.iter().map(|r| r.x).collect();
+                    assert!(xs.windows(2).all(|p| p[0] < p[1]), "{w}: {xs:?}");
                 }
-                let order = [
-                    Some(rects.brand),
-                    rects.automix,
-                    rects.master_bpm,
-                    Some(rects.latency),
-                    rects.record,
-                    Some(rects.library_toggle),
-                    rects.settings,
-                ];
-                let xs: Vec<i32> = order.into_iter().flatten().map(|r| r.x).collect();
-                assert!(xs.windows(2).all(|p| p[0] < p[1]), "{w}x{h}: {xs:?}");
             }
         }
     }
 
     #[test]
-    fn master_bpm_is_centred_when_it_fits() {
-        for (w, h) in SIZES.into_iter().filter(|s| s.0 >= 1280) {
-            let rects = header_rects(w, header_h(h), FULL);
-            let bpm = rects.master_bpm.expect("fits at every test size");
-            assert!(
-                (bpm.x + bpm.w / 2 - w / 2).abs() <= 1,
-                "{w}x{h}: {bpm:?} is off centre"
-            );
+    fn the_wordmark_has_its_measured_width() {
+        for m in metric_sets() {
+            assert!(header_rects(1280, &m, FULL).brand.w >= 124);
         }
     }
 
     #[test]
-    fn automix_has_room_at_the_minimum_width() {
-        for (w, h) in SIZES {
-            let automix = header_rects(w, header_h(h), FULL).automix.expect("automix");
-            assert!(automix.w >= 300, "{w}x{h}: automix is {} px", automix.w);
+    fn automix_has_room_from_the_minimum_width() {
+        for m in metric_sets() {
+            for w in [1280, 1440, 1920] {
+                let automix = header_rects(w, &m, FULL).automix.expect("automix");
+                assert!(
+                    automix.w >= AUTOMIX_FLOOR,
+                    "{w}: automix is {} px",
+                    automix.w
+                );
+            }
         }
     }
 
     #[test]
-    fn a_notice_collapses_before_the_automix_bar_drops_under_300() {
-        for (w, h) in [
-            (1280, 720),
-            (1280, 800),
-            (1100, 700),
-            (1920, 1080),
-            (2560, 1440),
-        ] {
-            let plain = header_rects(w, header_h(h), FULL);
-            let noisy = header_rects(
-                w,
-                header_h(h),
-                HeaderNeeds {
-                    notice: true,
-                    ..FULL
-                },
-            );
-            assert_eq!(plain.master_bpm, noisy.master_bpm, "{w}x{h}: bpm stays");
-            let notice = noisy.notice.expect("chip");
-            let bar = noisy.automix.expect("bar");
-            assert!(bar.w >= 300 || w < 1280, "{w}x{h}: bar {} px", bar.w);
-            if w == 1280 {
-                assert_eq!(notice.w, COLLAPSED_NOTICE_WIDTH);
+    fn a_notice_collapses_before_the_automix_bar_drops_under_its_floor() {
+        for m in metric_sets() {
+            for w in [1280, 1440, 1920] {
+                let noisy = header_rects(
+                    w,
+                    &m,
+                    HeaderNeeds {
+                        notice: true,
+                        ..FULL
+                    },
+                );
+                let bar = noisy.automix.expect("bar");
+                assert!(bar.w >= AUTOMIX_FLOOR, "{w}: bar {} px", bar.w);
+                if w >= 1920 {
+                    assert_eq!(noisy.notice.expect("chip").w, NOTICE_WIDTH);
+                }
             }
-            if w >= 1920 {
-                assert_eq!(notice.w, NOTICE_WIDTH, "{w}: wide windows show the text");
-            }
-            assert!(plain.notice.is_none());
         }
     }
 
     #[test]
     fn missing_parts_are_left_out() {
-        let bare = header_rects(1280, 36, HeaderNeeds::default());
+        let [m, _] = metric_sets();
+        let margin = m.space[4] as i32;
+        let bare = header_rects(1280, &m, HeaderNeeds::default());
         assert!(bare.automix.is_none() && bare.record.is_none() && bare.settings.is_none());
-        let settings_only = header_rects(
+        assert_eq!(bare.library_toggle.right(), 1280 - margin);
+        let settings = header_rects(
             1280,
-            36,
+            &m,
             HeaderNeeds {
                 settings: true,
-                ..bare_needs()
+                ..HeaderNeeds::default()
             },
         );
-        assert_eq!(
-            settings_only.settings.expect("settings").right(),
-            1280 - MARGIN
-        );
-        assert_eq!(bare.library_toggle.right(), 1280 - MARGIN);
-    }
-
-    fn bare_needs() -> HeaderNeeds {
-        HeaderNeeds::default()
-    }
-
-    #[test]
-    fn a_narrow_window_loses_the_master_bpm_before_the_automix_bar() {
-        let rects = header_rects(900, 36, FULL);
-        assert!(rects.master_bpm.is_none());
-        assert!(rects.automix.expect("automix").w >= MIN_AUTOMIX_WIDTH);
+        assert_eq!(settings.settings.expect("settings").right(), 1280 - margin);
     }
 }

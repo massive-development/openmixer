@@ -6,7 +6,8 @@
 //! status colours of the header (sync on, time running out) and do not follow the deck accent.
 
 use super::deck::TrackInfo;
-use crate::theme::Colour;
+use crate::geometry::Rect;
+use crate::theme::{Colour, DensityMetrics, ThemeTokens, TypeRole};
 
 /// Remaining time at or below which the countdown turns red, in seconds.
 pub const REMAINING_WARN_SECS: f64 = 30.0;
@@ -127,6 +128,97 @@ pub const CUE_PALETTE: [Colour; 8] = [
     Colour::from_argb(0xFFA7_88FF), // violet
     Colour::from_argb(0xFFFF_6FC4), // pink
 ];
+
+/// Line height of the deck title and artist (comp deck header: 1.2).
+pub const TITLE_LINE: f32 = 1.2;
+/// Width of each readout column (BPM, key, remaining), px: the widest text each shows in the
+/// readout numeral size ("128.0", "12B", "-12:34.5") with a little room.
+pub const READOUT_WIDTHS: [i32; 3] = [64, 40, 96];
+
+fn step(m: &DensityMetrics, i: usize) -> i32 {
+    m.space[i].round() as i32
+}
+
+/// Height of the overview strip under a deck header (comp: `s5`).
+pub fn overview_height(m: &DensityMetrics) -> i32 {
+    step(m, 4)
+}
+
+/// Height of the title block and the readouts: a readout numeral over its caption, or the title
+/// over the artist, whichever is taller, `s2` apart.
+pub fn head_text_height(t: &ThemeTokens, m: &DensityMetrics) -> i32 {
+    let readout = t.type_numeral_large + t.type_label * TypeRole::Label.line_height();
+    let title = 2.0 * t.type_body * TITLE_LINE;
+    (readout.max(title) + m.space[1]).ceil() as i32
+}
+
+/// Height of a deck header cell: the text, `s3`, the overview strip.
+pub fn head_height(t: &ThemeTokens, m: &DensityMetrics) -> i32 {
+    head_text_height(t, m) + step(m, 2) + overview_height(m)
+}
+
+/// Where a deck header's parts sit in its cell (comp 4a deck header): the deck tag, the cover,
+/// the title and artist, the readouts (BPM, key, remaining) and the overview strip under them.
+/// Deck B's run from the right edge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadLayout {
+    pub tag: Rect,
+    pub cover: Rect,
+    pub title: Rect,
+    /// BPM, key and remaining: deck A's run left to right toward the tempo, deck B's mirror them.
+    pub readouts: [Rect; 3],
+    pub overview: Rect,
+}
+
+/// Lays out deck header `bounds`; `mirrored` for deck B. The readouts sit at the inner end (next
+/// to the master tempo), the tag at the outer end; a narrow cell gives up the title first.
+pub fn head_layout(
+    bounds: Rect,
+    t: &ThemeTokens,
+    m: &DensityMetrics,
+    mirrored: bool,
+) -> HeadLayout {
+    let text_h = head_text_height(t, m);
+    let mut area = bounds;
+    let overview = area.remove_bottom(overview_height(m));
+    area.remove_bottom(step(m, 2));
+    let mut line = Rect::new(area.x, area.y, area.w, text_h.min(area.h));
+    let tag_side = (t.type_numeral * 1.618).round() as i32;
+    let (gap, readout_gap) = (step(m, 3), step(m, 4));
+    let outer = |line: &mut Rect, w: i32| {
+        if mirrored {
+            line.remove_right(w)
+        } else {
+            line.remove_left(w)
+        }
+    };
+    let tag_cell = outer(&mut line, tag_side);
+    outer(&mut line, gap);
+    let cover_w = text_h.min(line.w);
+    let cover = outer(&mut line, cover_w);
+    outer(&mut line, gap);
+    let inner = |line: &mut Rect, w: i32| {
+        if mirrored {
+            line.remove_left(w)
+        } else {
+            line.remove_right(w)
+        }
+    };
+    // From the inner end: remaining nearest the tempo, then key, then BPM (A); B mirrors it.
+    let remaining = inner(&mut line, READOUT_WIDTHS[2]);
+    inner(&mut line, readout_gap);
+    let key = inner(&mut line, READOUT_WIDTHS[1]);
+    inner(&mut line, readout_gap);
+    let bpm = inner(&mut line, READOUT_WIDTHS[0]);
+    inner(&mut line, gap);
+    HeadLayout {
+        tag: tag_cell.with_size_keeping_centre(tag_cell.w, tag_side.min(tag_cell.h)),
+        cover,
+        title: line,
+        readouts: [bpm, key, remaining],
+        overview,
+    }
+}
 
 #[cfg(test)]
 mod tests {

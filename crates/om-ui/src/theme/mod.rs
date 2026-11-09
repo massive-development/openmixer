@@ -8,7 +8,7 @@ mod tokens;
 mod typography;
 
 pub use builtin::BUILTIN_THEMES;
-pub use density::{Density, DensityMetrics};
+pub use density::{Density, DensityChoice, DensityMetrics};
 pub use json::{
     parse_colour_hex, parse_theme, parse_theme_file, ParsedTheme, ThemeError, ThemeInfo,
 };
