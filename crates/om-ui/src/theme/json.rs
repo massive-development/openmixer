@@ -134,6 +134,7 @@ mod deck_keys {
         "rangeBoxHeight" => deck_range_box_height: 0.0, MAX_PX;
         "playheadWidth" => playhead_width: 0.0, MAX_RADIUS;
         "cueMarkerWidth" => cue_marker_width: 0.0, MAX_RADIUS;
+        "cueGuideAlpha" => cue_guide_alpha: 0.0, 1.0;
         "gridBarAlpha" => grid_bar_alpha: 0.0, 1.0;
         "gridBeatAlpha" => grid_beat_alpha: 0.0, 1.0;
         "loopActiveAlpha" => loop_active_alpha: 0.0, 1.0;

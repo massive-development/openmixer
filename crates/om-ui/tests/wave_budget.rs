@@ -1,13 +1,15 @@
 //! The pure part of the waveform frame budget on a six minute demo loop: building the overview
-//! columns of two decks, rendering the cached zoomed strips, and the per-frame scroll path
-//! (`visible()`, the pixel tiles and one colour per column). Numbers are printed (`-- --nocapture`). The always-on test
+//! columns of two decks, rendering the cached zoomed strips, and the per-frame scroll path: for
+//! the Colour style `visible()`, the pixel tiles and one colour per column; for the Low-Band
+//! default `visible()` and the two envelope heights per column the painter's two paths are built
+//! from. Numbers are printed (`-- --nocapture`). The always-on test
 //! asserts with 5 times headroom in release builds only (debug builds print); the strict plan
 //! numbers (50 ms build, 0.3 ms per strip per frame) are `--ignored`, run by hand with `--release`.
 
 use om_analysis::{demo_loop, AudioClip, NullAnalysisContext, WaveformBuilder, WaveformData};
 use om_ui::waveform::{
-    column_tiles, overview_shapes, strip_well, BandStrip, Palette, Reference, StripSource, View,
-    WaveStyle,
+    column_tiles, overview_shapes, shape_px, strip_well, BandStrip, Palette, Reference,
+    StripSource, View, WaveStyle,
 };
 use std::time::{Duration, Instant};
 
@@ -31,6 +33,7 @@ fn six_minutes() -> (WaveformData, i64) {
 struct Measured {
     build: Duration,
     frame: Duration,
+    low_band_frame: Duration,
     quads: usize,
     columns: usize,
 }
@@ -66,7 +69,10 @@ fn measure() -> Measured {
     // One frame of scrolling, per strip: the visible window, its tiles and a colour per column.
     let palette = Palette::new(
         WaveStyle::Colour,
-        strip_well(&om_ui::theme::ThemeTokens::builtin_dark()),
+        strip_well(
+            &om_ui::theme::ThemeTokens::builtin_dark(),
+            WaveStyle::Colour,
+        ),
     );
     let strip = &strips[0];
     let mut frame = Duration::MAX;
@@ -86,9 +92,24 @@ fn measure() -> Measured {
         quads = tiles.len();
         columns = visible.len();
     }
+    // The Low-Band frame: the visible window and the body and high heights of every column.
+    let mut low_band_frame = Duration::MAX;
+    for attempt in 0..50 {
+        let v = view(length / 3 + attempt * 400);
+        let started = Instant::now();
+        let visible = strip.visible(&v);
+        let mut extent = 0.0f32;
+        for (_, c) in &visible {
+            let (body, high) = c.low_band();
+            extent += shape_px(body, STRIP_HEIGHT as f32) + shape_px(high, STRIP_HEIGHT as f32);
+        }
+        low_band_frame = low_band_frame.min(started.elapsed());
+        std::hint::black_box((&visible, extent));
+    }
     Measured {
         build,
         frame,
+        low_band_frame,
         quads,
         columns,
     }
@@ -98,13 +119,15 @@ fn measure() -> Measured {
 fn the_waveform_stays_inside_its_budget() {
     let m = measure();
     println!(
-        "waveform budget: build {:?} (limit {BUILD_LIMIT:?}), scroll frame {:?} per strip (limit {FRAME_LIMIT:?}), {} quads for {} columns",
-        m.build, m.frame, m.quads, m.columns
+        "waveform budget: build {:?} (limit {BUILD_LIMIT:?}), scroll frame {:?} per strip (limit {FRAME_LIMIT:?}), {} quads for {} columns; Low-Band frame {:?} per strip (two paths)",
+        m.build, m.frame, m.quads, m.columns, m.low_band_frame
     );
     assert_eq!(m.quads, m.columns, "one quad per column");
     if !cfg!(debug_assertions) {
         assert!(m.build < BUILD_LIMIT * HEADROOM, "build {:?}", m.build);
         assert!(m.frame < FRAME_LIMIT * HEADROOM, "frame {:?}", m.frame);
+        let low = m.low_band_frame;
+        assert!(low < FRAME_LIMIT * HEADROOM, "Low-Band frame {low:?}");
     }
 }
 
@@ -112,7 +135,11 @@ fn the_waveform_stays_inside_its_budget() {
 #[ignore = "strict plan numbers; run by hand with --release -- --ignored --nocapture"]
 fn the_waveform_meets_the_strict_budget() {
     let m = measure();
-    println!("strict: build {:?}, frame {:?}", m.build, m.frame);
+    println!(
+        "strict: build {:?}, frame {:?}, Low-Band frame {:?}",
+        m.build, m.frame, m.low_band_frame
+    );
     assert!(m.build < BUILD_LIMIT, "build {:?}", m.build);
     assert!(m.frame < FRAME_LIMIT, "frame {:?}", m.frame);
+    assert!(m.low_band_frame < FRAME_LIMIT, "{:?}", m.low_band_frame);
 }
