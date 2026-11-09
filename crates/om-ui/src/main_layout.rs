@@ -229,33 +229,44 @@ impl Page {
     }
 }
 
-/// The density a window lays out with: the user's choice, or for `Automatic` Roomy while each
-/// waveform keeps [`ROOMY_MIN_WAVE`] px with the library shown, and Compact below that or under
-/// [`MIN_WINDOW`].
+/// The density a window lays out with: for `Automatic` Roomy while each waveform keeps
+/// [`ROOMY_MIN_WAVE`] px with the library shown, and Compact below that or under [`MIN_WINDOW`].
+/// An explicit Roomy is kept while the library still shows [`LIBRARY_MIN_ROWS`] rows; in a
+/// shorter window it falls back to Compact rather than leave a band with no rows.
 pub fn resolve_density(choice: DensityChoice, t: &ThemeTokens, window: (i32, i32)) -> Density {
     match choice {
-        DensityChoice::Roomy => Density::Roomy,
-        DensityChoice::Compact => Density::Compact,
+        DensityChoice::Roomy if roomy_keeps_the_library(t, window) => Density::Roomy,
         DensityChoice::Automatic if roomy_fits(t, window) => Density::Roomy,
-        DensityChoice::Automatic => Density::Compact,
+        _ => Density::Compact,
     }
 }
 
 /// Whether the Roomy metric set leaves both waveforms [`ROOMY_MIN_WAVE`] tall in `window`.
 fn roomy_fits(t: &ThemeTokens, window: (i32, i32)) -> bool {
-    if is_degraded(window) {
-        return false;
-    }
-    let page = page_for(
+    !is_degraded(window)
+        && roomy_page(t, window)
+            .cell(&CellKind::slot(STAGE_SLOT))
+            .is_some_and(|stage| stage.h >= 2 * ROOMY_MIN_WAVE + WAVE_GAP)
+}
+
+/// Whether the Roomy library band in `window` holds its floor of [`LIBRARY_MIN_ROWS`] rows.
+fn roomy_keeps_the_library(t: &ThemeTokens, window: (i32, i32)) -> bool {
+    let floor = Bands::of(t, t.metrics(Density::Roomy)).library_min;
+    !is_degraded(window)
+        && roomy_page(t, window)
+            .cell(&CellKind::slot(LIBRARY_SLOT))
+            .is_some_and(|band| band.h >= floor)
+}
+
+fn roomy_page(t: &ThemeTokens, window: (i32, i32)) -> Page {
+    page_for(
         FACEPLATE_DECKS,
         window,
         0,
         LayoutState::default(),
         HeaderNeeds::default(),
         (t, Density::Roomy),
-    );
-    page.cell(&CellKind::slot(STAGE_SLOT))
-        .is_some_and(|stage| stage.h >= 2 * ROOMY_MIN_WAVE + WAVE_GAP)
+    )
 }
 
 fn is_degraded(window: (i32, i32)) -> bool {
@@ -860,8 +871,45 @@ mod tests {
         assert_eq!(auto((1280, 720)), Density::Compact);
         assert_eq!(auto((1280, 800)), Density::Compact);
         assert_eq!(auto((900, 1000)), Density::Compact, "degraded is Compact");
-        let roomy = resolve_density(DensityChoice::Roomy, &t, (1280, 720));
-        assert_eq!(roomy, Density::Roomy, "an explicit choice wins");
+        let roomy = |w: (i32, i32)| resolve_density(DensityChoice::Roomy, &t, w);
+        assert_eq!(
+            roomy((1280, 800)),
+            Density::Roomy,
+            "an explicit choice wins where it fits"
+        );
+        assert_eq!(
+            roomy((1280, 720)),
+            Density::Compact,
+            "but never empties the library"
+        );
+        let compact = resolve_density(DensityChoice::Compact, &t, (1920, 1080));
+        assert_eq!(compact, Density::Compact);
+    }
+
+    #[test]
+    fn every_density_choice_keeps_the_library_rows_from_the_minimum_window_up() {
+        let t = theme();
+        let choices = [
+            DensityChoice::Automatic,
+            DensityChoice::Roomy,
+            DensityChoice::Compact,
+        ];
+        for w in [MIN_WINDOW.0, 1440, 1920] {
+            for h in (MIN_WINDOW.1..=1200).step_by(8) {
+                for choice in choices {
+                    let density = resolve_density(choice, &t, (w, h));
+                    let floor = Bands::of(&t, t.metrics(density)).library_min;
+                    let band = page((w, h), density, LayoutState::default())
+                        .cell(&CellKind::slot(LIBRARY_SLOT))
+                        .expect("library band");
+                    assert!(
+                        band.h >= floor,
+                        "{choice:?} {w}x{h}: band {} < {floor}",
+                        band.h
+                    );
+                }
+            }
+        }
     }
 
     #[test]

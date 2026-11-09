@@ -82,7 +82,7 @@ fn density_row(t: &ThemeTokens, settings: &mut SettingsState, cx: &mut Context<S
         .child(choice_row(t, "Density", chips))
         .child(note(
             t,
-            "Roomy has bigger targets and more air; Compact gives the waveforms the height. Automatic uses Roomy when the window is tall enough for it.",
+            "Roomy has bigger targets and more air; Compact gives the waveforms the height. Automatic uses Roomy when the window is tall enough for it, and Roomy itself gives way to Compact in a window too short to keep the library rows.",
         ))
 }
 
