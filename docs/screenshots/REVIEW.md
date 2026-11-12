@@ -189,3 +189,21 @@ Still wrong or open:
 - `settings-library`: the stem model sentence runs past the card's right edge ("... were added. Load").
 - No harbour scene exists in the script. Demo tracks are still synthetic.
 
+## Fix pass on the recapture's defects (2026-11-12)
+
+Five scenes recaptured and looked at after the fixes: `main-dark`, `meters-lit-dark`, `main-automix`, `debug-panel`, `settings-library`. The first four are replaced here. `main-automix.png` and the other 16 tracked captures predate this pass: they still show "8 beats le" and an empty deck B.
+
+| Defect | Status | Cause and change |
+|---|---|---|
+| Two CLIP words overlapped ("CLIPLIP") | fixed | Each 7 px meter drew its own word (about 24 px) and the channel A and master meters sit 14 px apart. The mixer now draws one word in the gap between channel A's fader and the master fader (`ColumnLayout::clip_word`), lit while any of the three meters holds a clip; each meter's red top segment says which. A lone meter (the gallery) keeps its own word. |
+| "8 beats le" in the automix bar | fixed | `REMAINING_WIDTH` was 72 px; the 13 px mono numeral needs 6.5 px a letter, so "128 beats left" needs 91. Now 92, with a test. |
+| Debug panel squeezed deck A's title to "s…" | fixed | A deck head whose title would get under 96 px gives up the (often empty) cover slot and closes the readout gaps. With the debug column open the titles read "smoke_0" / "Sine Collective". |
+| Stem model sentence ran past the Library card | fixed | A settings row's content sat in a flex row with no width cap, so text took its full width instead of wrapping. The content is capped at the row's width. |
+| Deck B empty; `main-dark` at the track start | fixed | A demo run loads the second generated track (now a 126 BPM loop, not a 2 s sweep) into deck B and parks decks A and B at 16 s and 8 s. Scenes still place deck A themselves; the automix demo is unchanged. |
+
+Still wrong or open:
+- `main-automix`: during a transition at 1280 px the next-track name gets about 50 px ("Next: Clic", a hard cut: an ellipsis left only "Next…"); the header gives the bar a fixed strip.
+- `settings-library`: the wrapped sentence pushes "Clear stem cache…" to the card's bottom edge; the page scrolls.
+- `debug-panel`: deck B's artist still truncates ("Test Tone O…").
+- The 17 tracked captures not retaken; no harbour scene; synthetic demo tracks.
+

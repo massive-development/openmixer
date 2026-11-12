@@ -74,7 +74,8 @@ pub(super) fn choice_row(t: &ThemeTokens, title: &str, chips: Div) -> Div {
                 .mb(px(4.))
                 .child(title.to_owned()),
         )
-        .child(div().flex().flex_wrap().child(chips))
+        // Capped at the card's width, or a long sentence runs past its edge instead of wrapping.
+        .child(div().flex().flex_wrap().child(chips.max_w_full()))
 }
 
 /// A sentence under a row: body size, in the caption colour.

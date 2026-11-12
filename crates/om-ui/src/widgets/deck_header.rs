@@ -134,6 +134,8 @@ pub const TITLE_LINE: f32 = 1.2;
 /// Width of each readout column (BPM, key, remaining), px: the widest text each shows in the
 /// readout numeral size ("128.0", "12B", "-12:34.5") with a little room.
 pub const READOUT_WIDTHS: [i32; 3] = [64, 40, 96];
+/// A title narrower than this takes the cover's place, px: about a dozen letters of a track name.
+pub const MIN_TITLE_WIDTH: i32 = 96;
 
 fn step(m: &DensityMetrics, i: usize) -> i32 {
     m.space[i].round() as i32
@@ -171,7 +173,7 @@ pub struct HeadLayout {
 }
 
 /// Lays out deck header `bounds`; `mirrored` for deck B. The readouts sit at the inner end (next
-/// to the master tempo), the tag at the outer end; a narrow cell gives up the title first.
+/// to the master tempo), the tag at the outer end; a narrow cell gives up the cover, then the title.
 pub fn head_layout(
     bounds: Rect,
     t: &ThemeTokens,
@@ -194,9 +196,17 @@ pub fn head_layout(
     };
     let tag_cell = outer(&mut line, tag_side);
     outer(&mut line, gap);
+    let readouts_w = READOUT_WIDTHS.iter().sum::<i32>() + 2 * readout_gap + gap;
     let cover_w = text_h.min(line.w);
-    let cover = outer(&mut line, cover_w);
-    outer(&mut line, gap);
+    let keeps_cover = line.w - cover_w - gap - readouts_w >= MIN_TITLE_WIDTH;
+    let cover = outer(&mut line, if keeps_cover { cover_w } else { 0 });
+    // A narrow head also closes the readouts up, so the title keeps a few more letters.
+    let readout_gap = if keeps_cover {
+        outer(&mut line, gap);
+        readout_gap
+    } else {
+        step(m, 2)
+    };
     let inner = |line: &mut Rect, w: i32| {
         if mirrored {
             line.remove_left(w)
@@ -229,6 +239,27 @@ mod tests {
             key: key.into(),
             camelot: camelot.into(),
             ..Default::default()
+        }
+    }
+
+    fn head(width: i32, mirrored: bool) -> HeadLayout {
+        let t = ThemeTokens::builtin_dark();
+        let m = *t.metrics(crate::theme::Density::Roomy);
+        let bounds = Rect::sized(width, head_height(&t, &m));
+        head_layout(bounds, &t, &m, mirrored)
+    }
+
+    /// 333 px is the deck head beside the debug column at 1280 px, where the title was "s…".
+    #[test]
+    fn a_narrow_head_gives_up_the_cover_before_the_title() {
+        for mirrored in [false, true] {
+            let wide = head(520, mirrored);
+            assert!(!wide.cover.is_empty() && wide.title.w >= MIN_TITLE_WIDTH);
+            let narrow = head(333, mirrored);
+            assert!(narrow.cover.is_empty(), "{:?}", narrow.cover);
+            assert!(narrow.title.w >= 60, "title is {} px", narrow.title.w);
+            assert!(!narrow.title.intersects(&narrow.readouts[0]));
+            assert!(!narrow.title.intersects(&narrow.tag));
         }
     }
 

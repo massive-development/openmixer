@@ -25,6 +25,10 @@ const PLATTER_START_SECONDS: f64 = 8.0;
 /// Where the `track` scene starts, as a fraction of the track (past the intro).
 const TRACK_START: f64 = 0.25;
 
+/// Where a demo run parks a paused deck, in seconds from the start (deck A, deck B): a playhead at
+/// frame 0 leaves the left half of the zoomed waveform empty.
+pub const PARK_SECONDS: [f64; 2] = [16.0, 8.0];
+
 /// What to set on deck A once its track is loaded.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeckPlan {
@@ -80,13 +84,42 @@ pub fn deck_plan(scene: DemoScene, length: i64, rate: f64) -> DeckPlan {
     }
 }
 
-/// Applies `scene` to deck A: waits (bounded) for the track's length, then sets the plan.
-pub fn apply(scene: DemoScene, engine: &DjEngine) {
-    let deck = engine.deck(0);
+/// The frame `seconds` into a track, or its middle when the track is shorter than that.
+pub fn park_frame(seconds: f64, length: i64, rate: f64) -> i64 {
+    let frame = (seconds * rate) as i64;
+    if frame < length {
+        frame.max(0)
+    } else {
+        length.max(0) / 2
+    }
+}
+
+/// Parks paused deck `index` at its [`PARK_SECONDS`] once its track's length is known (bounded).
+pub fn park(engine: &DjEngine, index: usize) {
+    let Some(seconds) = PARK_SECONDS.get(index) else {
+        return;
+    };
+    let deck = engine.deck(index);
+    wait_for_length(engine, index);
+    deck.seek(park_frame(
+        *seconds,
+        deck.length_frames(),
+        deck.file_sample_rate(),
+    ));
+}
+
+fn wait_for_length(engine: &DjEngine, index: usize) {
+    let deck = engine.deck(index);
     let deadline = Instant::now() + Duration::from_secs(10);
     while deck.length_frames() <= 0 && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// Applies `scene` to deck A: waits (bounded) for the track's length, then sets the plan.
+pub fn apply(scene: DemoScene, engine: &DjEngine) {
+    let deck = engine.deck(0);
+    wait_for_length(engine, 0);
     let plan = deck_plan(scene, deck.length_frames(), deck.file_sample_rate());
     for (pad, frame) in &plan.cues {
         deck.set_hotcue(*pad, *frame);
@@ -136,6 +169,13 @@ mod tests {
         // Demo tracks peak at 0.25; the clip level is 0.99.
         assert!(0.25 * plan.trim.expect("a trim") >= 0.99);
         assert!(plan.play);
+    }
+
+    #[test]
+    fn a_parked_deck_sits_inside_its_track() {
+        assert_eq!(park_frame(16.0, 64 * 44_100, RATE), 16 * 44_100);
+        assert_eq!(park_frame(16.0, LEN, RATE), LEN / 2, "a 2 s track");
+        assert_eq!(park_frame(8.0, 0, RATE), 0, "no track");
     }
 
     #[test]
