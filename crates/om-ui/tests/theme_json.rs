@@ -266,7 +266,7 @@ fn meter_colours_keep_three_to_one_on_their_well_in_every_built_in_theme() {
     }
 }
 
-// ---- Faceplate tokens (docs/design-system/DESIGN.md) ----
+// ---- Faceplate tokens (openmixer-workbench/docs/design-system/DESIGN.md) ----
 
 const BUILT_INS: [(&str, &str); 3] = [
     (

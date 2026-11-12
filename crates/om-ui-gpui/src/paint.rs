@@ -1,7 +1,7 @@
 //! Conversions from om-ui's models to GPUI values (colours, absolutely placed boxes) and the depth
 //! of the faceplate: a 1px edge, a 1px top highlight inside it, the inset shadow of a press, the
 //! one small drop under a raised cap, and the keyboard focus ring. Nothing here glows or blurs
-//! beyond the drop. How GPUI draws each one: `docs/spikes/DECISIONS.md`, "Faceplate P3".
+//! beyond the drop. How GPUI draws each one: `openmixer-workbench/docs/spikes/DECISIONS.md`, "Faceplate P3".
 
 use gpui::{
     canvas, div, point, prelude::*, px, quad, rgba, transparent_black, BorderStyle, Bounds,

@@ -1,5 +1,5 @@
 //! The plugin API a plugin implements and the services the host offers it. Plugins are trait objects: in-process,
-//! or a shared library behind the C ABI adapted by the loader (see `docs/spikes/DECISIONS.md`, "Plugins: in-process
+//! or a shared library behind the C ABI adapted by the loader (see `openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: in-process
 //! only" and "Plugins: C ABI dynamic loading").
 
 use om_core::ParameterTarget;

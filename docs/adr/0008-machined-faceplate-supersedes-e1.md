@@ -4,13 +4,13 @@
 
 Accepted
 
-Decided by the project owner on 2026-11-08 (Phase 0 of the faceplate redesign; the answers are recorded in [`docs/design/faceplate-decisions.md`](../design/faceplate-decisions.md)). Docs only: no code changes with this ADR. The app keeps its E1 tokens until the build phases migrate them.
+Decided by the project owner on 2026-11-08 (Phase 0 of the faceplate redesign; the answers are recorded in [`openmixer-workbench/docs/design/faceplate-decisions.md`](https://github.com/massive-development/openmixer-workbench/blob/main/docs/design/faceplate-decisions.md)). Docs only: no code changes with this ADR. The app keeps its E1 tokens until the build phases migrate them.
 
 ## Context
 
-[`docs/design/E1-brand.md`](../design/E1-brand.md) set the app's first look: a "lit console in a dark room" with an ember brand colour for the playhead, master and wordmark, cool deck accents (glacier, orchid, mint, brass), a near-black ground with a violet cast, translucent glass cards, and the rule "active means glow" (a lit control carries a soft halo in its accent). The bundled interface font is Inter.
+[`openmixer-workbench/docs/design/E1-brand.md`](https://github.com/massive-development/openmixer-workbench/blob/main/docs/design/E1-brand.md) set the app's first look: a "lit console in a dark room" with an ember brand colour for the playhead, master and wordmark, cool deck accents (glacier, orchid, mint, brass), a near-black ground with a violet cast, translucent glass cards, and the rule "active means glow" (a lit control carries a soft halo in its accent). The bundled interface font is Inter.
 
-The project's design system, the Machined Faceplate (`docs/design-system/DESIGN.md`, with the canvas `Design System.dc.html`), replaces that look. The website already uses it; the app is the last surface still on E1. `docs/PRODUCT.md` item 4 asked for "glow and contrast on active states", which contradicts the new system's "no glow" rule, so the bar and the look have to be brought back into line before code is written.
+The project's design system, the Machined Faceplate (`openmixer-workbench/docs/design-system/DESIGN.md`, with the canvas `Design System.dc.html`), replaces that look. The website already uses it; the app is the last surface still on E1. `docs/PRODUCT.md` item 4 asked for "glow and contrast on active states", which contradicts the new system's "no glow" rule, so the bar and the look have to be brought back into line before code is written.
 
 ## Decision
 
@@ -41,8 +41,8 @@ E1's other rules survive where the faceplate has no conflicting rule: restraint 
 
 ## References
 
-- `docs/design-system/DESIGN.md` and `docs/design-system/Design System.dc.html` (the system)
-- [`docs/design/faceplate-decisions.md`](../design/faceplate-decisions.md) (Phase 0 answers)
-- [`docs/design/E1-brand.md`](../design/E1-brand.md) (superseded look)
-- [`docs/PRODUCT.md`](../PRODUCT.md) (the bar), [`docs/design/review-gates.md`](../design/review-gates.md)
+- `openmixer-workbench/docs/design-system/DESIGN.md` and `openmixer-workbench/docs/design-system/Design System.dc.html` (the system)
+- [`openmixer-workbench/docs/design/faceplate-decisions.md`](https://github.com/massive-development/openmixer-workbench/blob/main/docs/design/faceplate-decisions.md) (Phase 0 answers)
+- [`openmixer-workbench/docs/design/E1-brand.md`](https://github.com/massive-development/openmixer-workbench/blob/main/docs/design/E1-brand.md) (superseded look)
+- [`docs/PRODUCT.md`](../PRODUCT.md) (the bar), [`openmixer-workbench/docs/design/review-gates.md`](https://github.com/massive-development/openmixer-workbench/blob/main/docs/design/review-gates.md)
 - ADR 0001 (clean room), ADR 0005 (experience-first product bar)

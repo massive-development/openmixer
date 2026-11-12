@@ -3,7 +3,7 @@
 //! A plugin library exports `extern "C" fn openmixer_plugin_entry() -> *const PluginVTable`. The
 //! table's first field is the ABI version; the host reads it before anything else. Versions
 //! [`PLUGIN_ABI_MIN`] to [`PLUGIN_ABI_VERSION`] are accepted and anything else is refused without
-//! calling the table (`docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading" and "ABI 2").
+//! calling the table (`openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading" and "ABI 2").
 //! `include/openmixer_plugin.h` is the same contract for C and C++ plugins.
 //!
 //! - Version 1: `info`, `create`, `destroy`, `process` (returns nothing). No prepare, no parameters.

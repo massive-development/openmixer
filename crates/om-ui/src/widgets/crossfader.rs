@@ -1,6 +1,6 @@
 //! Crossfader: a wide horizontal fader with A and B printed outside its ends, and a two-state curve
 //! switch (Linear / Power) under it. Routes `mixer.crossfader` and `mixer.crossfader.curve`; the
-//! selector mirrors the engine. Spec: `docs/design/research/faders-meters.md` section 3.
+//! selector mirrors the engine. Spec: `openmixer-workbench/docs/design/research/faders-meters.md` section 3.
 
 use crate::binding::{curve_from_index, curve_index, MixerBinding};
 use crate::control::Ranged;

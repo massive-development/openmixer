@@ -2,7 +2,7 @@
   "id": "openmixer.daylight",
   "name": "Daylight",
   "author": "OpenMixer",
-  "notes": "Machined Faceplate, light. Values from docs/design-system/DESIGN.md (light column); highlight strength, shadow and the hover tone from the Design System canvas light block (its hover equals the control face). Unsourced: cue, loopMark, syncOn, warning, master, brand, popup and dropTarget reuse the neutrals.",
+  "notes": "Machined Faceplate, light. Values from openmixer-workbench/docs/design-system/DESIGN.md (light column); highlight strength, shadow and the hover tone from the Design System canvas light block (its hover equals the control face). Unsourced: cue, loopMark, syncOn, warning, master, brand, popup and dropTarget reuse the neutrals.",
   "colours": {
     "ground": "#FFEBE8E1",
     "surface": "#FFF4F2EC",

@@ -1,4 +1,4 @@
-//! The main window's rect contract: the faceplate of `docs/design-system/Design System.dc.html`
+//! The main window's rect contract: the faceplate of `openmixer-workbench/docs/design-system/Design System.dc.html`
 //! sections 4a (Roomy) and 4b (Compact). Top to bottom: the header strip; the deck header row (deck
 //! A's header, the master tempo over the mixer column, deck B's header mirrored); the stage (both
 //! zoomed waveforms, stacked, full width); the controls row (deck A, the mixer, deck B mirrored);

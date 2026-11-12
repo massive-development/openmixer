@@ -1,7 +1,7 @@
 //! Rotary knob maths and painting. The maths is plain functions over `f64`/`f32` so it runs
 //! headless; painting is a thin layer over it.
 //!
-//! Angles are degrees clockwise from 12 o'clock. The sweep is 270 degrees (spec: `docs/design/
+//! Angles are degrees clockwise from 12 o'clock. The sweep is 270 degrees (spec: `openmixer-workbench/docs/design/
 //! research/knobs.md` section 3), leaving a 90 degree gap at the bottom.
 
 use crate::paint::{paint, paint_focus_ring, paint_raised};

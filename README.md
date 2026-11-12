@@ -29,7 +29,7 @@ OpenMixer is built under a strict clean-room doctrine:
 
 ## Technology
 
-OpenMixer is written in Rust (toolchain and MSRV 1.95, pinned in `rust-toolchain.toml`) with [GPUI](https://www.gpui.rs/) for the UI. The workspace uses `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1, and the app chrome (buttons, inputs, the library table, tabs, dialogs, toasts) is built on `gpui-component`; knobs, faders, meters, waveforms and the deck controls are painted by our own code. The stack decision is in [ADR 0004](docs/adr/0004-stack-rust-gpui.md); the platform refresh decisions are in `docs/spikes/DECISIONS.md`.
+OpenMixer is written in Rust (toolchain and MSRV 1.95, pinned in `rust-toolchain.toml`) with [GPUI](https://www.gpui.rs/) for the UI. The workspace uses `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1, and the app chrome (buttons, inputs, the library table, tabs, dialogs, toasts) is built on `gpui-component`; knobs, faders, meters, waveforms and the deck controls are painted by our own code. The stack decision is in [ADR 0004](docs/adr/0004-stack-rust-gpui.md); the platform refresh decisions are in `openmixer-workbench/docs/spikes/DECISIONS.md`.
 
 
 ## Documentation
@@ -39,13 +39,11 @@ OpenMixer is written in Rust (toolchain and MSRV 1.95, pinned in `rust-toolchain
 | [README.md](README.md) | Project overview (this file) |
 | [docs/PRODUCT.md](docs/PRODUCT.md) | **What the product has to be: the bar every area is measured against** |
 | [ROADMAP.md](ROADMAP.md) | Tracks, waves and key decisions |
-| [agents.md](agents.md) | **AI Agent setup and implementation guide** |
+| [AGENTS.md](AGENTS.md) | **Agent and developer setup and implementation guide** |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
-| [TODO.md](TODO.md) | Implementation task list |
 | [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md) | Design patterns in use and when to reuse them |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Per-task progress, gaps, and where to help |
 | [docs/adr/INDEX.md](docs/adr/INDEX.md) | Architecture decisions |
-| [docs/spikes/DECISIONS.md](docs/spikes/DECISIONS.md) | Spike results and dated technical decisions |
+| [Workbench](https://github.com/massive-development/openmixer-workbench) | Planning, spikes, design research and progress tracking (separate repository) |
 | [docs/testing/hardware-checklist.md](docs/testing/hardware-checklist.md) | What a person has to confirm on real hardware after the platform refresh |
 | [docs/legal/](docs/legal/) | Legal documentation |
 
@@ -60,9 +58,9 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 sudo apt-get install pkg-config libasound2-dev libdbus-1-dev
 ```
 
-GPUI system dependencies are documented in `docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen).
+GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen).
 
-Optional: `sccache` shares compiled dependencies between worktrees (setup in `agents.md`); `libdbus-1-dev` is required on Linux by the default `realtime-dbus` feature (real-time priority for the audio callback); `--no-default-features` builds without it.
+Optional: `sccache` shares compiled dependencies between worktrees (setup in `AGENTS.md`); `libdbus-1-dev` is required on Linux by the default `realtime-dbus` feature (real-time priority for the audio callback); `--no-default-features` builds without it.
 
 **macOS and Windows:** not runtime targets yet (Windows and macOS support is later). CI checks Linux only, so no extra system packages are listed for them yet.
 
@@ -183,11 +181,10 @@ fixtures/                               # Small test inputs: controller maps and
 resources/controllers/                  # Generic controller maps
 resources/fonts/                        # Bundled Sansation, Source Sans 3 (SIL OFL 1.1), Ubuntu Mono (UFL 1.0)
 resources/themes/                       # Built-in theme JSON
-spikes/                                 # Throwaway spikes, each its own Cargo workspace (see docs/spikes/)
 tools/                                  # Helpers: progress and issue heatmaps, docs check, screenshots, htdemucs export, CLAP leak check
 ```
 
-Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `agents.md` lists what each crate owns and how to add a control id.
+Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `AGENTS.md` lists what each crate owns and how to add a control id.
 
 ## Implementation Waves
 
@@ -205,11 +202,11 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | 8 | Pro features (recording, broadcast, DVS, video) | 🟡 Partial: mix recording (master-output WAV, ids, prefs, Recording settings tab, header Record button and `r` shortcut; not heard); broadcast, DVS and video not started |
 | 9 | Release | ⬜ Not started |
 
-The engine, analysis, library and MIDI work is verified headlessly on Linux; the Wave 5 UI is partial. Next: the Before-Wave-7 list in [TODO.md](TODO.md), then Wave 7.
+The engine, analysis, library and MIDI work is verified headlessly on Linux; the Wave 5 UI is partial. Task-level planning lives in the [workbench](https://github.com/massive-development/openmixer-workbench).
 
 **Platform refresh (issues #218 to #229, #241, #250):** done and tested headlessly, not yet confirmed on real hardware. It moved the UI to `gpui-pre` 0.3.10 with `gpui-kit` and `gpui-component`, the toolchain to Rust 1.95, MIDI to `midir`, resampling and deck varispeed to `rubato`, added EBU R128 loudness metering (`ebur128`, with a panel in the mixer), OS media keys (`souvlaki`), GPUI file pickers, clipboard and notifications, SQLite `synchronous=NORMAL` in WAL mode for the library and analysis cache, hot-loop bounds-check work with `divan` benches, and CLAP plugin hosting behind the `clap` feature (ADR 0007; first-run, state and latency work still in progress). Real-time priority for the audio callback (issue #244) is on hold. The list of things a person has to check is `docs/testing/hardware-checklist.md`.
 
-See [TODO.md](TODO.md) for the task list and [docs/PROGRESS.md](docs/PROGRESS.md) for what each task entails, what is done, and what is missing.
+See the [workbench](https://github.com/massive-development/openmixer-workbench) for the task list and per-task progress.
 
 ## Important Notices
 
@@ -227,7 +224,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `TODO.md`, then Wave 7. See `docs/spikes/DECISIONS.md`.
+**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7. See `openmixer-workbench/docs/spikes/DECISIONS.md`.
 
 **Known gaps, honestly listed:**
 
@@ -239,10 +236,10 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - The platform refresh (UI on `gpui-component`, `midir`, `rubato`, media keys, desktop integration) was built on a host with no display, GPU, MIDI device or audio session. Visual parity with the older screenshots, real MIDI ports and the media keys are unverified; `docs/testing/hardware-checklist.md` lists what to confirm
 - Deck varispeed through rubato (issue #241, sinc 128 by default, linear fallback): the last ~130 source frames of a track (about 3 ms) are not played, and no listening check has been done
 - HID (Todo 35) and plug-and-play controller maps (Todo 34). The mapping editor (Todo 36) is done at logic and view level; it is not verified with hardware
-- Dynamic plugin loading (Todo 10a): shared libraries load over a versioned C ABI (`PluginLoader::load`, ADR in `docs/spikes/DECISIONS.md`) (ABI 2 has `prepare`, sample rate and parameters; ABI 1 plugins still load). They are tested with in-tree plugins, one of them built from the C header alone (`crates/om-plugins/include/openmixer_plugin.h`); nothing from another language or a real third party has been tried. Plugins must catch their own panics and report a fault; the host passes audio through for a faulted instance
+- Dynamic plugin loading (Todo 10a): shared libraries load over a versioned C ABI (`PluginLoader::load`, ADR in `openmixer-workbench/docs/spikes/DECISIONS.md`) (ABI 2 has `prepare`, sample rate and parameters; ABI 1 plugins still load). They are tested with in-tree plugins, one of them built from the C header alone (`crates/om-plugins/include/openmixer_plugin.h`); nothing from another language or a real third party has been tried. Plugins must catch their own panics and report a fault; the host passes audio through for a faulted instance
 - Windows (WASAPI) and macOS (CoreAudio) runtime targets: later. The cpal device has not been run on a real ALSA or PipeWire device
 - Visual verification of the GPUI window: the UI verification gate (Todo 31) runs at the logic layer. The staged screenshots were checked by eye (`docs/screenshots/REVIEW.md`), but no live window on a real display has been checked
-- LookAndFeel (25): since the move to `gpui-component` (#223) buttons, inputs, the library table, sidebar rows, settings tabs, dialogs and toasts are component widgets themed through `om-ui-gpui::theme_bridge`, and the list below predates that move; `om_ui::style` derives every control style from the tokens and the custom-painted gpui controls draw from it; the library table, its scroll thumb and the automix switch draw from the new scroll bar, table and toggle styles; the platter switch, transport toggle pills, settings chips (MIDI toggles included), the settings card and the debug column draw from it too; the settings mapping table, Stems and Appearance text and menus are still on the old paths, and nothing has been checked on a live display. See "Styling a control" in `agents.md`. The debug panel's per-deck load and play (26a) is wired
+- LookAndFeel (25): since the move to `gpui-component` (#223) buttons, inputs, the library table, sidebar rows, settings tabs, dialogs and toasts are component widgets themed through `om-ui-gpui::theme_bridge`, and the list below predates that move; `om_ui::style` derives every control style from the tokens and the custom-painted gpui controls draw from it; the library table, its scroll thumb and the automix switch draw from the new scroll bar, table and toggle styles; the platter switch, transport toggle pills, settings chips (MIDI toggles included), the settings card and the debug column draw from it too; the settings mapping table, Stems and Appearance text and menus are still on the old paths, and nothing has been checked on a live display. See "Styling a control" in `AGENTS.md`. The debug panel's per-deck load and play (26a) is wired
 - FFmpeg decode backend (Todo 8b, optional `ffmpeg` cargo feature, off by default): a fallback for the sampler, decks, stems and analysis when symphonia rejects a format (the file is decoded once to memory, capped at about 11 minutes for decks). The real-ffmpeg tests passed locally on ffmpeg 6.1.1 and skip where no ffmpeg or encoder is installed; CI runs the fake-ffmpeg tests (`cargo test` with the `ffmpeg` features) and is not known to have a real one
 - Cover art shows in the deck card header only (PNG and JPEG; no track detail view; the cache is not invalidated on rescan); not seen on a display
 - Playlist editing (Todo 28): reorder by dragging a track onto a row, a top-level New folder and nesting by drag are built; the gpui drag and drop is compile-checked only, not seen on a display

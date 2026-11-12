@@ -26,7 +26,7 @@ allow = [
     "GPL-3.0-or-later",
     "AGPL-3.0-only",
     # GPL-2.0-or-later: Rubber Band (rubberband-sys, via om-stretch). Chosen in
-    # docs/spikes/DECISIONS.md (time-stretch: Rubber Band R3 behind a Stretcher trait).
+    # openmixer-workbench/docs/spikes/DECISIONS.md (time-stretch: Rubber Band R3 behind a Stretcher trait).
     "GPL-2.0-or-later",
     # Apache-2.0 WITH LLVM-exception: ar_archive_writer (build-time, via gpui's stacker/psm chain).
     "Apache-2.0 WITH LLVM-exception",

@@ -7,8 +7,6 @@ graphify-out/
 .claude/
 /target
 __pycache__/
-spikes/**/target/
-spikes/stretch/out/
 
 # Python wheels and virtualenvs (stray downloads; never commit)
 *.whl

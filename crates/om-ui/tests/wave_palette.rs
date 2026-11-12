@@ -445,6 +445,6 @@ fn style_names_round_trip() {
     assert_eq!(WaveStyle::from_name("low-band"), Some(WaveStyle::LowBand));
     assert_eq!(WaveStyle::from_name("rainbow"), None);
     assert_eq!(WaveStyle::from_name(""), None);
-    // Decision D4 (docs/design/faceplate-decisions.md): Low-Band is the default.
+    // Decision D4 (openmixer-workbench/docs/design/faceplate-decisions.md): Low-Band is the default.
     assert_eq!(WaveStyle::default(), WaveStyle::LowBand);
 }

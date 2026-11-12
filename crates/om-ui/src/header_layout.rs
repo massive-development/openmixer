@@ -8,7 +8,7 @@
 use crate::geometry::Rect;
 use crate::theme::DensityMetrics;
 
-/// Width of the OPENMIXER wordmark: Sansation Bold 21 px measures 124 px (Phase 2 spike, docs/spikes/DECISIONS.md).
+/// Width of the OPENMIXER wordmark: Sansation Bold 21 px measures 124 px (Phase 2 spike, openmixer-workbench/docs/spikes/DECISIONS.md).
 pub const BRAND_WIDTH: i32 = 128;
 /// Width of the notice chip (two lines of caption text).
 pub const NOTICE_WIDTH: i32 = 240;

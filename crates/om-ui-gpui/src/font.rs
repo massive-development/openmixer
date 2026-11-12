@@ -2,7 +2,7 @@
 //! Medium (SIL OFL 1.1) and Ubuntu Mono Regular and Bold (Ubuntu Font Licence 1.0) are compiled in and
 //! registered with GPUI's text system at start-up; their licences sit beside them in
 //! `resources/fonts`. GPUI picks the nearest weight among the static faces of one family, so
-//! Source Sans 3's two files share one family name (docs/spikes/DECISIONS.md, "Faceplate P2").
+//! Source Sans 3's two files share one family name (openmixer-workbench/docs/spikes/DECISIONS.md, "Faceplate P2").
 //!
 //! The theme names the three families (`font.display`, `font.body`, `font.mono`); a theme that
 //! names another installed family gets that one. Every number goes through [`numeral`].

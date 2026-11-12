@@ -2,7 +2,7 @@
 //!
 //! Build it as a shared library and drop the `.so`/`.dll`/`.dylib` into the plugin folder. The
 //! host finds `openmixer_plugin_entry` and checks the table version (see `om_plugins::abi` and
-//! `docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading").
+//! `openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading").
 //!
 //! The table is mirrored here rather than imported from `om-plugins`: a C-ABI plugin depends only
 //! on the layout, as a C plugin would on a header.

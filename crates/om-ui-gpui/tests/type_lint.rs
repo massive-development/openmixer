@@ -1,4 +1,4 @@
-//! Lint: the type rules of `docs/design-system/DESIGN.md` in view code. Grep-based, so it runs
+//! Lint: the type rules of `openmixer-workbench/docs/design-system/DESIGN.md` in view code. Grep-based, so it runs
 //! headless. Families are chosen only by the type tiers in `font.rs`; numbers are drawn through
 //! `font::numeral` (the Mono Numbers Rule); the 10 px scale tier is only the fader dB scale; no
 //! literal text size is below the 11 px label floor. The sizes of the tiers themselves are checked

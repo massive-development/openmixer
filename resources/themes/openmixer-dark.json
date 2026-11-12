@@ -2,7 +2,7 @@
   "id": "openmixer.dark",
   "name": "Midnight",
   "author": "OpenMixer",
-  "notes": "Machined Faceplate, dark. Neutrals, deck hues, signal red, spacing, radii and density from docs/design-system/DESIGN.md. Unsourced: cue, loopMark, syncOn, warning, master, brand, popup and dropTarget reuse the neutrals until the control and waveform phases.",
+  "notes": "Machined Faceplate, dark. Neutrals, deck hues, signal red, spacing, radii and density from openmixer-workbench/docs/design-system/DESIGN.md. Unsourced: cue, loopMark, syncOn, warning, master, brand, popup and dropTarget reuse the neutrals until the control and waveform phases.",
   "colours": {
     "ground": "#FF121211",
     "surface": "#FF181816",

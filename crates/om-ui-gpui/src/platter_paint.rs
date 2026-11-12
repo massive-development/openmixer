@@ -3,7 +3,7 @@
 //! no artwork, see the module note in `waveform_paint`). Everything here that decides a position or
 //! an angle is pure and tested first; the painting turns the polylines into GPUI paths.
 //!
-//! Conventions, not copied art (ADR 0001): see `docs/design/research/deck-controls.md` section 3.
+//! Conventions, not copied art (ADR 0001): see `openmixer-workbench/docs/design/research/deck-controls.md` section 3.
 //! Scratch (the inner 85 %) maps drag angle to track position; the outer 15 % is the pitch bend
 //! band, painted but not wired because the engine has no non-destructive nudge (Part B3).
 

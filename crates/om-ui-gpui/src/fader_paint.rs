@@ -1,7 +1,7 @@
 //! Fader painting: the taper maths, the tick model, the cap and slot geometry, and the GPUI
 //! painters for the channel/master fader, the pitch fader and the crossfader.
 //!
-//! Plan: `docs/superpowers/plans/2026-10-24-ui-faders-meters.md` (option 3 of its taper decision).
+//! Plan: `openmixer-workbench/docs/superpowers/plans/2026-10-24-ui-faders-meters.md` (option 3 of its taper decision).
 //! The stored parameter stays a LINEAR gain; a [`FaderLaw`] maps it to where the cap sits on screen
 //! and back. Nothing here changes what a stored value sounds like. Conventions only (ADR 0001).
 //!

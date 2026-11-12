@@ -6,14 +6,14 @@ Accepted (supersedes ADR 0002). The project moved from C++/JUCE to Rust; the tag
 
 Superseded in part (2026-10-27): the stack table and consequences below are the 2026-10-18 decision and are left as written. What changed since, checked against the tree:
 
-- **Plugins:** not "CLAP-first". The C ABI loaded with `libloading` (`om-plugins`) was chosen on 2026-10-26; see "Plugins: C ABI dynamic loading (Todo 10a)" in `docs/spikes/DECISIONS.md`.
+- **Plugins:** not "CLAP-first". The C ABI loaded with `libloading` (`om-plugins`) was chosen on 2026-10-26; see "Plugins: C ABI dynamic loading (Todo 10a)" in `openmixer-workbench/docs/spikes/DECISIONS.md`.
 - **Stems:** no longer deferred. `om-stems` has an ONNX Runtime backend (`ort`, feature `onnx`, off by default); the real htdemucs model is not yet run on real audio.
 - **Workspace:** also `om-automix`, `om-stems`, `om-stretch`, `om-plugins`, `om-testing` and `om-ui-gpui`.
 - **MIDI:** `midir` is not used. The Linux backend is the ALSA sequencer (`alsa` crate, `om-midi`); macOS and Windows have none; HID (Todo 35) is not started.
 - **Not in the tree:** `criterion`, `arc-swap`, `anyhow` and a `cargo audit` run. `proptest` is used in `om-core`, `om-library` and `om-automix`.
 - **CI:** Linux only, not cross-platform from the first crate; macOS and Windows return in the porting phase (`.github/workflows/rust.yml`).
 
-Update (2026-11-07), after the platform refresh (details in `docs/spikes/DECISIONS.md`):
+Update (2026-11-07), after the platform refresh (details in `openmixer-workbench/docs/spikes/DECISIONS.md`):
 
 - **GPUI:** `gpui =0.2.2` is replaced by `gpui-pre` 0.3.10 (imported as `gpui`) with `gpui-kit` 0.8.1 and `gpui-component`; the toolchain and MSRV are Rust 1.95. The app chrome is built on `gpui-component`; knobs, faders, meters and waveforms stay custom-painted.
 - **MIDI:** `midir` is used again: `MidirBackend` in `om-midi` replaced the direct ALSA backend (#220).
@@ -44,7 +44,7 @@ Key choices:
 | Audio I/O | `cpal` for the engine output callback. `rodio` is acceptable only for non-critical audio such as library preview. |
 | Decode / tags | `symphonia`; `lofty` |
 | FFT / DSP | `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp` |
-| Time-stretch / keylock | Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Decided by the author; no pure-Rust candidate passed the design bar in stereo in the spike (`docs/spikes/DECISIONS.md`) |
+| Time-stretch / keylock | Rubber Band R3 via FFI in `om-stretch` (the one `unsafe` crate), behind a `Stretcher` trait so Signalsmith or a pure-Rust engine can be swapped in later. Decided by the author; no pure-Rust candidate passed the design bar in stereo in the spike (`openmixer-workbench/docs/spikes/DECISIONS.md`) |
 | MIDI | `midir`; HID later |
 | Library | `rusqlite` (bundled SQLite) |
 | RT plumbing | `rtrb` (SPSC), `arc-swap`, `assert_no_alloc` in tests |
@@ -72,7 +72,7 @@ GPUI is accepted. The first spike was a hard gate, now closed on Linux:
 - a GPUI window with a custom-painted waveform on Linux (Windows and macOS come later);
 - a note on whether GPUI must be pinned to a git commit of Zed (resolved: `gpui =0.2.2` is on crates.io, so no git pin is needed).
 
-Status: CLOSED on Linux. WSL2 X11 ran (window not visually seen, probably software-rendered; the Wayland backend panics on WSLg). A native-Linux run on a real GPU is nice-to-have and not blocking. Windows and macOS checks come later (see `docs/spikes/DECISIONS.md`).
+Status: CLOSED on Linux. WSL2 X11 ran (window not visually seen, probably software-rendered; the Wayland backend panics on WSLg). A native-Linux run on a real GPU is nice-to-have and not blocking. Windows and macOS checks come later (see `openmixer-workbench/docs/spikes/DECISIONS.md`).
 
 If the Linux gate fails, the fallback is to switch toolkit (iced first,
 then Slint). We do not drop the platform or stop the project. WSL-only trouble
@@ -94,6 +94,6 @@ Licence impact: ADR 0002's dependency licences are re-checked under `cargo deny`
 
 ## References
 
-- Original design (historical): `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
+- Original design (historical): `openmixer-workbench/docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
 - Reference implementation: git tag `cpp-final` (main @ c6d2747)
 - ADR 0001 (Clean-Room Doctrine), ADR 0002 (superseded), ADR 0003 (AGPLv3, no CLA)

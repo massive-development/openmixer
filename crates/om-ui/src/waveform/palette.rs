@@ -4,7 +4,7 @@
 //!
 //! The other styles are the earlier palettes, kept selectable. The Colour style blends three fixed
 //! band hues (low red, mid green, high blue; the role convention Serato documents, see
-//! docs/design/research/waveform.md section 2) per column from the band peaks the way Mixxx's RGB
+//! openmixer-workbench/docs/design/research/waveform.md section 2) per column from the band peaks the way Mixxx's RGB
 //! waveform does: the colour is the sum of the three band colours weighted by the bands' linear
 //! peaks, divided by its largest channel (rgbsignal.frag,
 //! https://raw.githubusercontent.com/mixxxdj/mixxx/main/res/shaders/rgbsignal.frag). Band peaks are

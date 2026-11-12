@@ -21,7 +21,7 @@ The roadmap grew out of the C++ port: nine waves ordered engine first, with the 
 - Visual and workflow quality becomes a first-class deliverable with its own track and checklist, instead of a by-product of the interface wave.
 - Engine work no longer implicitly outranks interface work in planning.
 - Reviews gain a check (see CONTRIBUTING.md, "Experience bar") and a cost: screenshots and a real-music pass on interface PRs.
-- The wave numbers in `TODO.md` and `docs/PROGRESS.md` remain as stable identifiers; they no longer imply an order.
+- The wave numbers in `openmixer-workbench/TODO.md` and `openmixer-workbench/docs/PROGRESS.md` remain as stable identifiers; they no longer imply an order.
 
 ## References
 

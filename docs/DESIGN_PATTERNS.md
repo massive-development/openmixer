@@ -68,12 +68,12 @@ pub trait AudioCallback: Send {
 - **Where:** each `crates/om-<area>` in the Cargo workspace (`Cargo.toml` `members`).
 - **Why:** shared, independently testable modules.
 - **Reuse when:** every new area (analysis, library, midi, ui).
-- **Notes:** dependencies point toward `om-core` (see `agents.md`). Library crates never depend on the `openmixer` binary.
+- **Notes:** dependencies point toward `om-core` (see `AGENTS.md`). Library crates never depend on the `openmixer` binary.
 
 ### Typed control surface (ParamId, Command, typed targets, string façade)
 - **Where:** `om-core` (`param_id/` `ParamId` and `ParamError`; `command.rs` `Command`, `CommandSink`, `CommandError`; `parameter.rs` `ParamTarget`, and the string `ParameterTarget` façade; `router.rs` `ParameterRouter`). Typed targets: `om-engine` (`deck.rs`, `deck_control.rs`, `sync.rs`, `mixer/control.rs`, `fx_routing.rs`).
 - **Why:** an id string is parsed once, on the control thread, into a `ParamId`. Engine targets match on the enum, so a malformed id fails at parse time and no engine object carries its own string parser.
-- **Reuse when:** adding any user-controllable parameter (a MIDI map target, a UI control, a test driver). Add the grammar and variant in `ParamId`, then match it in the owning target. The steps are in `agents.md`, "How to add a control id".
+- **Reuse when:** adding any user-controllable parameter (a MIDI map target, a UI control, a test driver). Add the grammar and variant in `ParamId`, then match it in the owning target. The steps are in `AGENTS.md`, "How to add a control id".
 - **Notes:**
   - `ParamId` is the canonical form: `FromStr` parses and `Display` prints the canonical id (`hotcue01` prints `hotcue1`). The namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler` and `automix` are reserved: a malformed id in them is an error. Any other prefix parses to `ParamId::Ext`, which plugins own.
   - `ParameterRouter::dispatch(&ParamId, f64)` routes each typed id to the `ParamTarget` registered for its `Namespace` (`register_typed`). A target's `set_param` returns `false` for variants it does not own.
@@ -106,7 +106,7 @@ pub trait AudioCallback: Send {
 ### Plugin registry / extension points (in-process, or shared libraries over a C ABI)
 - **Where:** `om-plugins` (`api.rs` plugin and host traits, `registry.rs`, `catalog.rs`, `abi.rs` and `loader.rs` for C-ABI shared libraries). - **Why:** users add audio stages, MIDI maps and parameter targets without touching core and without any signing or allow-list.
 - **Reuse when:** a new feature should be replaceable: add a registration method to the owning registry, never a hardcoded path.
-- **Notes:** dynamic loading uses a versioned C ABI, chosen over WASM and source-only plugins (see `docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). Loading a dynamic library needs `unsafe`; it is confined to `abi.rs` and `loader.rs` in `om-plugins` (the rest of the crate denies it). A loaded library is adapted to `Plugin`, so the registry has one path for both kinds. Extension points stay as traits and registries inside their crates.
+- **Notes:** dynamic loading uses a versioned C ABI, chosen over WASM and source-only plugins (see `openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). Loading a dynamic library needs `unsafe`; it is confined to `abi.rs` and `loader.rs` in `om-plugins` (the rest of the crate denies it). A loaded library is adapted to `Plugin`, so the registry has one path for both kinds. Extension points stay as traits and registries inside their crates.
 
 ### Theme tokens + theme registry (extension point)
 - **Where:** `om-ui` `theme/` (`tokens.rs` `ThemeTokens`, `json.rs` loader, `registry.rs` `ThemeRegistry`, `builtin.rs`).
@@ -214,7 +214,7 @@ pub trait AudioCallback: Send {
 - **Notes:** `analyze(&self)` may run concurrently. The registry hands out `Arc<dyn Analyzer + Send + Sync>`, so removal during a running job is safe.
 
 ### Safe wrapper over a native library (pimpl replacement)
-- **Where:** `om-stretch` (`rubberband.rs` `RubberBandStretcher` behind the `Stretcher` trait, FFI calls in `ffi.rs`; see `docs/spikes/DECISIONS.md`)
+- **Where:** `om-stretch` (`rubberband.rs` `RubberBandStretcher` behind the `Stretcher` trait, FFI calls in `ffi.rs`; see `openmixer-workbench/docs/spikes/DECISIONS.md`)
 - **Why:** keeps the dependency's raw types out of the engine's public API and states the real-time contract in one place.
 - **Reuse when:** wrapping any external DSP or codec library (ONNX Runtime via `ort` is the Rust path for stems).
 - **Notes:** the struct owns the native handle and frees it in `Drop`; a private module replaces the pimpl. `prepare()` allocates (control thread); other calls are audio-thread and allocation-free. Only the wrapper's module may contain `unsafe` (a per-module `allow`), each block with a `// SAFETY:` line, and the load/teardown path is leak-checked.

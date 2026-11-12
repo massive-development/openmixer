@@ -3,7 +3,7 @@
 //! A `.so`/`.dll`/`.dylib` exporting `openmixer_plugin_entry` (see [`crate::abi`]) is opened with
 //! `libloading`, its table is checked, and the library is adapted to [`Plugin`]: the registry
 //! treats it like an in-process plugin. The adapter registers one stage; each stage holds one
-//! plugin instance per channel. The decision is in `docs/spikes/DECISIONS.md`, "Plugins: C ABI
+//! plugin instance per channel. The decision is in `openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: C ABI
 //! dynamic loading".
 //!
 //! Version 2 plugins add `prepare` (forwarded by the stage's `ProcessStage::prepare`) and

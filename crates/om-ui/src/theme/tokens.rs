@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn the_meter_zones_start_at_minus_12_and_minus_3_db() {
-        // docs/design/research/faders-meters.md section 3 (a proposal there, kept small).
+        // openmixer-workbench/docs/design/research/faders-meters.md section 3 (a proposal there, kept small).
         let t = ThemeTokens::builtin_dark();
         assert_eq!((t.meter_mid_db, t.meter_high_db), (-12.0, -3.0));
         // The shipped theme files agree, daylight included.

@@ -1,5 +1,5 @@
 //! Control faces: the state set of a pressable control (button, pad, toggle, segment) from the
-//! Design System canvas, section 5 "States" (`docs/design-system`). Depth is a 1px etched edge and
+//! Design System canvas, section 5 "States" (`openmixer-workbench/docs/design-system`). Depth is a 1px etched edge and
 //! a 1px top highlight; an active control is told apart by fill, edge and a word, never by light.
 //!
 //! The deck tint mixes in OkLab, which keeps the deck's hue at any share. The canvas mixes with CSS

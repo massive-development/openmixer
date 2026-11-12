@@ -10,9 +10,9 @@ Update (2026-11-07): the loader, parameters, the plugin window and a test fixtur
 
 ## Context
 
-`om-plugins` loads our own plugins through a C ABI with `libloading` (`abi.rs`, `loader.rs`; ABI versions 1 and 2; `docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). It is mono, in-place, one `process` call per channel, with an optional JSON parameter list and no GUI. Only plugins written against `include/openmixer_plugin.h` can run. Most effects, instruments and utilities that users own ship as CLAP, VST3 or AU, so a user cannot bring "their" reverb into OpenMixer.
+`om-plugins` loads our own plugins through a C ABI with `libloading` (`abi.rs`, `loader.rs`; ABI versions 1 and 2; `openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). It is mono, in-place, one `process` call per channel, with an optional JSON parameter list and no GUI. Only plugins written against `include/openmixer_plugin.h` can run. Most effects, instruments and utilities that users own ship as CLAP, VST3 or AU, so a user cannot bring "their" reverb into OpenMixer.
 
-`agents.md` ("Extensibility") says users must always be able to load external plugins and that we add no allow-lists, signing or lockdown. Opt-in safety warnings are fine.
+`AGENTS.md` ("Extensibility") says users must always be able to load external plugins and that we add no allow-lists, signing or lockdown. Opt-in safety warnings are fine.
 
 CLAP (CLever Audio Plugin) is an open, MIT-licensed C ABI plugin standard. `clack` is a set of Rust wrappers for it. This ADR decides whether and how to host CLAP plugins with `clack-host` and `clack-extensions`.
 
@@ -49,7 +49,7 @@ Enable only the extensions we use: `audio-ports`, `params`, `state`, `latency`, 
 
 `PluginEntry::load` needs `unsafe`. The workspace forbids `unsafe_code`; `om-plugins` denies it and allows it only in `abi.rs` and `loader.rs` (see `lib.rs`), which exist to load shared libraries.
 
-Decision (maintainer-approved, Decisions 3): add one module, `om-plugins/src/clap` (feature `clap`), with `#[allow(unsafe_code)]` on the loading file only, as `abi` and `loader` have it. It holds the single `unsafe { PluginEntry::load(path) }` call with a `// SAFETY:` line (the user chose to load this file; the entry is then used only through clack's safe API; clack keeps the library loaded while any instance created from the entry lives). Everything else stays safe Rust in sibling files that keep `deny(unsafe_code)`, including the GUI bridge, because `Window::from_window` is safe. Avoid `Window::borrow_handle_unchecked`, which is `unsafe`. The `unsafe` surface grows by one call site, and `agents.md` ("Unsafe") and CONTRIBUTING then name this module beside `abi` and `loader`.
+Decision (maintainer-approved, Decisions 3): add one module, `om-plugins/src/clap` (feature `clap`), with `#[allow(unsafe_code)]` on the loading file only, as `abi` and `loader` have it. It holds the single `unsafe { PluginEntry::load(path) }` call with a `// SAFETY:` line (the user chose to load this file; the entry is then used only through clack's safe API; clack keeps the library loaded while any instance created from the entry lives). Everything else stays safe Rust in sibling files that keep `deny(unsafe_code)`, including the GUI bridge, because `Window::from_window` is safe. Avoid `Window::borrow_handle_unchecked`, which is `unsafe`. The `unsafe` surface grows by one call site, and `AGENTS.md` ("Unsafe") and CONTRIBUTING then name this module beside `abi` and `loader`.
 
 Alternatives:
 
@@ -101,14 +101,14 @@ A third-party plugin that crashes takes OpenMixer down mid-set. clack states tha
 
 1. Sign-off on this ADR: done (Decisions).
 2. Proof of concept on a branch, not merged: load one CLAP plugin (a `clack-plugin` gain example), activate, process a buffer offline, and open its GUI embedded on X11 inside a GPUI window. This settles the embedding risk and the `libloading` pin.
-3. Land the loader: `om-plugins/src/clap` behind feature `clap` (off by default until it passes on all CI platforms), one `unsafe` call, `cargo deny` check, workspace pin, `agents.md` and CONTRIBUTING updated for the new allowed module.
+3. Land the loader: `om-plugins/src/clap` behind feature `clap` (off by default until it passes on all CI platforms), one `unsafe` call, `cargo deny` check, workspace pin, `AGENTS.md` and CONTRIBUTING updated for the new allowed module.
 4. Stereo stage kind in the engine and `om-plugins`, so a CLAP effect gets both channels in one call, with latency reported through the `latency` extension for delay compensation. Instruments (note ports) and sidechain each need their own design and come later.
-5. Parameters: map CLAP parameters to the existing parameter targets (`register_target`) and the router, honouring the router rules in `agents.md` (a slow `set_parameter` stalls dispatch, so hand work to a queue).
+5. Parameters: map CLAP parameters to the existing parameter targets (`register_target`) and the router, honouring the router rules in `AGENTS.md` (a slow `set_parameter` stalls dispatch, so hand work to a queue).
 6. State: persist plugin state (`state` extension) in preferences, next to the rack it belongs to.
 7. GUI: embedded on X11, Win32, Cocoa; floating on Wayland; generic panel fallback.
 8. The plugin folder scan accepts `.clap` files; the preferences UI lists them and warns on first load.
 
-Each step is its own PR, with `docs/progress.json`, `TODO.md` and `docs/PROGRESS.md` updated when task status changes.
+Each step is its own PR, with `openmixer-workbench/docs/progress.json`, `openmixer-workbench/TODO.md` and `openmixer-workbench/docs/PROGRESS.md` updated when task status changes.
 
 ## Test plan
 
@@ -162,8 +162,8 @@ Where the build differs from, or settled a question in, the text above.
 ## References
 
 - Issue #225 (P7); #218 and #219 (gpui-kit, `gpui-pre` 0.3.10)
-- `crates/om-plugins/src/abi.rs`, `loader.rs`, `lib.rs`; `docs/spikes/DECISIONS.md` ("Plugins: C ABI dynamic loading", "ABI 2")
-- `agents.md` ("Unsafe", "Extensibility", "Plugin control targets")
+- `crates/om-plugins/src/abi.rs`, `loader.rs`, `lib.rs`; `openmixer-workbench/docs/spikes/DECISIONS.md` ("Plugins: C ABI dynamic loading", "ABI 2")
+- `AGENTS.md` ("Unsafe", "Extensibility", "Plugin control targets")
 - ADR 0004 (Rust with GPUI; plugins superseded in part)
 - clack: https://github.com/prokopyl/clack, https://crates.io/crates/clack-host, https://crates.io/crates/clack-extensions, https://docs.rs/clack-host/0.2.0
 - CLAP: https://github.com/free-audio/clap

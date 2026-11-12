@@ -6,14 +6,14 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 
 ### For AI Agents
 
-1. **Read `agents.md` first** - Contains complete setup instructions
-2. **Check the plan** - `TODO.md` (the Before-Wave-7 list and the wave sections) and `ROADMAP.md`
+1. **Read `AGENTS.md` first** - Contains complete setup instructions
+2. **Check the plan** - `ROADMAP.md` (task-level notes live in the [workbench](https://github.com/massive-development/openmixer-workbench))
 3. **Create/update tasks** - Use `todowrite` tool to track progress
 4. **Verify each change** - Run `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`
 
 ### For Humans
 
-1. Set up development environment (see `agents.md` and the Building section of `README.md`)
+1. Set up development environment (see `AGENTS.md` and the Building section of `README.md`)
 2. Fork the repository
 3. Create a feature branch
 4. Follow the clean-room doctrine
@@ -23,7 +23,7 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 ### AI Agent Checklist
 
 **Before implementing:**
-- [ ] Read `agents.md` for context
+- [ ] Read `AGENTS.md` for context
 - [ ] Identify the track (see `ROADMAP.md`), and the wave and todo number
 - [ ] Read `docs/PRODUCT.md` if the change touches what a DJ sees or reaches
 - [ ] Check ADRs for design decisions
@@ -68,19 +68,18 @@ All changes — including those by AI agents and maintainers — land through a 
 
 1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
 2. Open a PR into `main` with `gh pr create --base main`. The description must include:
-   - **Summary:** what changed and why (link the Todo number from `TODO.md`).
+   - **Summary:** what changed and why (link the issue).
    - **Changes:** key files/crates modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, `cargo clippy`, `cargo fmt --check`, `cargo deny check`, manual checks).
    - **Follow-ups / known gaps:** anything left undone.
-3. Update `TODO.md`, `docs/progress.json` (then run `python3 tools/progress_heatmap.py`) and `docs/PROGRESS.md` in the same PR when task status changes.
-4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact. GitHub stacks are the preferred way to manage these: install `gh extension install github/gh-stack`, then `gh stack init`, `gh stack add` and `gh stack submit`; `gh stack link <pr>...` links PRs that already exist. Update a stacked branch by merging the parent in and pushing normally; do not use `gh stack rebase` or `gh stack sync`, which rewrite pushed history.
+3. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
+4. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact. GitHub stacks are the preferred way to manage these: install `gh extension install github/gh-stack`, then `gh stack init`, `gh stack add` and `gh stack submit`; `gh stack link <pr>...` links PRs that already exist. Update a stacked branch by merging the parent in and pushing normally; do not use `gh stack rebase` or `gh stack sync`, which rewrite pushed history.
 
 ## Rust Standards & Memory Safety (required)
 
 All code must follow idiomatic Rust (edition 2021, MSRV per `rust-version` in the workspace `Cargo.toml`). The Rust API Guidelines and the Rust reference are the reference. Unsafe or leaking code is not acceptable.
 
-- **Unsafe policy:** `unsafe` is allowed where necessary, anywhere in the repo, provided there are no memory leaks. The workspace `unsafe_code = "forbid"` lint stays on, so each use is a per-module `#[allow(unsafe_code)]` exception, and every `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on. Current exception modules: `om-stretch/src/ffi.rs` (Rubber Band R3 binding behind a `Stretcher` trait, see `docs/spikes/DECISIONS.md`); in `om-plugins` (under that crate's `deny`) `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (CLAP hosting, ADR 0007); plus the test and example plugin fixtures under `examples/plugins/` and `crates/om-plugins/tests/clap_leak.rs`. Any new FFI or load/teardown path needs a leak check (a counting allocator or valgrind; see `tools/clap_leak_check.sh` and `crates/om-plugins/tests/clap_leak.rs`).
+- **Unsafe policy:** `unsafe` is allowed where necessary, anywhere in the repo, provided there are no memory leaks. The workspace `unsafe_code = "forbid"` lint stays on, so each use is a per-module `#[allow(unsafe_code)]` exception, and every `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on. Current exception modules: `om-stretch/src/ffi.rs` (Rubber Band R3 binding behind a `Stretcher` trait, see `openmixer-workbench/docs/spikes/DECISIONS.md`); in `om-plugins` (under that crate's `deny`) `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (CLAP hosting, ADR 0007); plus the test and example plugin fixtures under `examples/plugins/` and `crates/om-plugins/tests/clap_leak.rs`. Any new FFI or load/teardown path needs a leak check (a counting allocator or valgrind; see `tools/clap_leak_check.sh` and `crates/om-plugins/tests/clap_leak.rs`).
 - **Ownership:** let ownership and borrowing express lifetimes. Use `Box`, `Arc` or `Rc` only where ownership is genuinely needed; no `Box::leak` or `mem::forget` to silence the borrow checker.
 - **Idioms:** iterators over index loops where clearer, `?` for error propagation, enums with exhaustive `match`, `#[must_use]` where a result must not be ignored, `Option`/`Result` instead of sentinel values.
 - **Errors:** `thiserror` in library crates; the `openmixer` binary has its own `AppError` (`anyhow` is not a dependency). Avoid `unwrap()` and `expect()` outside tests and documented invariants.
@@ -128,7 +127,7 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 
 Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
 
-1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base, then `docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md` and `TODO.md`.
+1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base, then `docs/DESIGN_PATTERNS.md`.
 2. **Read narrowly:** read only the needed line ranges or symbols, not whole files; prefer grep/glob to locate code. Do not re-read files already in context.
 3. **Delegate broad searches** to a search subagent so only conclusions return to the main context.
 4. **Keep the graph fresh:** after structural changes (new crates, moved modules) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
@@ -144,12 +143,6 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 - **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source. The plugin API exists in `om-plugins`: in-process plugins, a versioned C ABI, and CLAP hosting behind the `clap` feature (ADR 0007; first-run, state and latency work in progress).
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
-
-## Progress Files (required)
-
-Every PR that completes or advances a task must update, in the same PR:
-- `TODO.md` (tick items), `docs/progress.json` (status) and `docs/PROGRESS.md` (done/missing detail)
-- the heatmap: `python3 tools/progress_heatmap.py` (CI's progress check fails if `docs/progress-heatmap.svg` is stale)
 
 ## CI Workflow Changes (required)
 
@@ -260,11 +253,11 @@ valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 ### Minimum System
 
 - **Rust** toolchain pinned in `rust-toolchain.toml` (1.95, the workspace MSRV; installed with rustup; `rustfmt` and `clippy` included)
-- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `docs/spikes/gpui.md`; `libdbus-1-dev` for the real-time priority feature `realtime-dbus` (on by default; `--no-default-features` builds without it)
+- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `openmixer-workbench/docs/spikes/gpui.md`; `libdbus-1-dev` for the real-time priority feature `realtime-dbus` (on by default; `--no-default-features` builds without it)
 - **cargo-deny** for `cargo deny check`
 - **sccache (optional, Linux):** `~/.cargo/config.toml` with `[build]`, `rustc-wrapper = "sccache"` and `incremental = false` shares compiled dependencies between worktrees.
 - **Cost rule for agents:** while working, `cargo check -p <crate>` and tests of the touched crates with `-j 4`; full clippy, workspace tests and `cargo deny check` once per PR, at the end; at most two parallel agents on the 12-core shared host.
-- **Audio libraries:** see `agents.md`
+- **Audio libraries:** see `AGENTS.md`
 
 ### Debug Build
 
@@ -341,15 +334,11 @@ All pull requests must:
 ## Support
 
 **Documentation:**
-- `agents.md` - Full setup and implementation guide
+- `AGENTS.md` - Full setup and implementation guide
 - `README.md` - Project overview
-- `docs/superpowers/specs/2026-10-18-rust-rewrite-design.md` - original design (historical)
+- original design and early plans (historical): the [workbench](https://github.com/massive-development/openmixer-workbench)
 - `docs/adr/` - Architecture decisions
 - `docs/legal/` - Legal documentation
-
-**Plans:**
-- `docs/superpowers/plans/` - early implementation plans (historical)
-- `TODO.md` - Task list
 
 ---
 

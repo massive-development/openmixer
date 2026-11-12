@@ -2,7 +2,7 @@
 //! outputs, open an input with a byte callback, open an output, and report hot-plug changes.
 //!
 //! The concrete backends are [`crate::MidirBackend`] (all platforms, on `midir`: the ALSA
-//! sequencer, CoreMIDI or WinMM) and [`crate::MockBackend`] (tests); see `docs/spikes/DECISIONS.md`.
+//! sequencer, CoreMIDI or WinMM) and [`crate::MockBackend`] (tests); see `openmixer-workbench/docs/spikes/DECISIONS.md`.
 
 use crate::error::MidiError;
 

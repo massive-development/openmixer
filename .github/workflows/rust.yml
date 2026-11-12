@@ -22,7 +22,7 @@ jobs:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # Linux only for now; macOS and Windows return in the porting phase (see docs/spikes/DECISIONS.md "CI status by platform").
+    # Linux only for now; macOS and Windows return in the porting phase (see openmixer-workbench/docs/spikes/DECISIONS.md "CI status by platform").
     strategy:
       fail-fast: false
       matrix:
@@ -141,17 +141,6 @@ jobs:
             sleep 20
           done
           exit 1
-
-  # The progress heatmap must match docs/progress.json (stdlib only).
-  progress-check:
-    name: progress heatmap is current
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Check heatmap is current
-        run: python3 tools/progress_heatmap.py --check
 
   # The ASIO SDK must never be committed (ADR 0001). Searches every tracked
   # file except the docs, the workflows, the markdown policy docs and NOTICE, which name the rule.

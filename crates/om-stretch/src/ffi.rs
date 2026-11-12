@@ -4,7 +4,7 @@
 //! `Vec` of channel pointers on every call, which allocates on the audio thread. Here the pointer
 //! arrays are allocated once in [`Engine::new`] and refilled in place, so the per-block calls
 //! allocate nothing on this side. Rubber Band's own allocations are a separate question (see the
-//! crate docs and `docs/spikes/stretch.md`).
+//! crate docs and `openmixer-workbench/docs/spikes/stretch.md`).
 
 #![allow(unsafe_code)]
 

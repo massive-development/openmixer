@@ -42,7 +42,7 @@ impl Default for MeterParams {
         Self {
             floor_db: -48.0,
             clip_level: 0.99,
-            // 20 dB per 1.5 s (docs/design/research/faders-meters.md, section 3; the figure is a
+            // 20 dB per 1.5 s (openmixer-workbench/docs/design/research/faders-meters.md, section 3; the figure is a
             // proposal there, derived from PPM fall times cited from secondary sources).
             release_db_per_second: 13.0,
             hold_seconds: 1.0,

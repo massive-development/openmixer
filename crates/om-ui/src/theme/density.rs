@@ -1,5 +1,5 @@
 //! Density: the Roomy and Compact metric sets a theme defines and the preferences choose between.
-//! Compact is Roomy shifted one Fibonacci step down (`docs/design-system/DESIGN.md`, Layout).
+//! Compact is Roomy shifted one Fibonacci step down (`openmixer-workbench/docs/design-system/DESIGN.md`, Layout).
 
 /// Which metric set the window lays out with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

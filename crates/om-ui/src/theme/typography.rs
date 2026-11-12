@@ -1,4 +1,4 @@
-//! The type tiers of `docs/design-system/DESIGN.md`: which family, size, weight and line height
+//! The type tiers of `openmixer-workbench/docs/design-system/DESIGN.md`: which family, size, weight and line height
 //! each one is set in. Sizes are theme tokens; families come from the theme's `font` section.
 
 use super::tokens::ThemeTokens;
