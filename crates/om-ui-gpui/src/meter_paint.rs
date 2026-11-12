@@ -244,6 +244,8 @@ pub struct MeterFace {
     pub shared_lamp: bool,
     /// A numeric peak readout under the bars (master).
     pub readout: bool,
+    /// The CLIP word above the bars. Off where meters sit closer than the word is wide.
+    pub word: bool,
 }
 
 impl MeterFace {
@@ -254,6 +256,15 @@ impl MeterFace {
             lamp_h: (look.meter.lamp_height.round() as i32).max(MIN_LAMP_HEIGHT),
             shared_lamp: false,
             readout: false,
+            word: true,
+        }
+    }
+
+    /// A channel meter that leaves the CLIP word to its owner (the mixer draws one for all three).
+    pub fn lamp_only(t: &ThemeTokens) -> Self {
+        Self {
+            word: false,
+            ..Self::channel(t)
         }
     }
 
@@ -264,6 +275,7 @@ impl MeterFace {
             lamp_h: ch.lamp_h + MASTER_LAMP_EXTRA,
             shared_lamp: true,
             readout: true,
+            word: true,
         }
     }
 }
@@ -367,10 +379,8 @@ impl MeterPlan {
             Rect::new(left, y, right - left, h)
         };
         let readout = face.readout.then(|| span(headroom + well_h, READOUT_H));
-        let clip = sides
-            .iter()
-            .any(|s| s.lamp_lit)
-            .then(|| span(0, headroom.max(1)));
+        let clip =
+            (face.word && sides.iter().any(|s| s.lamp_lit)).then(|| span(0, headroom.max(1)));
         Self {
             marks,
             sides,
@@ -463,16 +473,31 @@ pub fn segmented_meter(
     cx: &mut Context<Shell>,
     on_click: impl Fn(&mut Shell) + 'static,
 ) -> Div {
-    meter_with_face(
-        t,
-        rect,
-        labels,
-        bars,
-        MeterFace::channel(t),
-        None,
-        cx,
-        on_click,
-    )
+    let face = MeterFace::channel(t);
+    meter_with_face(t, rect, labels, bars, face, None, cx, on_click)
+}
+
+/// [`segmented_meter`] without the CLIP word: the top segments still turn red.
+pub fn lamp_meter(
+    t: &ThemeTokens,
+    rect: Rect,
+    bars: [BarState; 2],
+    cx: &mut Context<Shell>,
+    on_click: impl Fn(&mut Shell) + 'static,
+) -> Div {
+    let face = MeterFace::lamp_only(t);
+    meter_with_face(t, rect, false, bars, face, None, cx, on_click)
+}
+
+/// The CLIP word in `rect`, for an owner that draws one word for several [`lamp_meter`]s.
+pub fn clip_word(t: &ThemeTokens, rect: Rect) -> Div {
+    let colour = LookAndFeel::from_tokens(t).meter.clip;
+    place(rect)
+        .flex()
+        .justify_center()
+        .items_center()
+        .whitespace_nowrap()
+        .child(state_word(t, "CLIP", colour))
 }
 
 /// [`segmented_meter`] for the master: taller shared clip lamp and a numeric peak readout under
@@ -567,14 +592,7 @@ pub fn meter_face(
         );
     }
     if let Some(r) = plan.clip {
-        el = el.child(
-            place(r)
-                .flex()
-                .justify_center()
-                .items_center()
-                .whitespace_nowrap()
-                .child(state_word(t, "CLIP", m.clip)),
-        );
+        el = el.child(clip_word(t, r));
     }
     if let (Some(r), Some(text)) = (plan.readout, readout) {
         el = el.child(

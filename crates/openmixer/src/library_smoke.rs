@@ -92,14 +92,14 @@ pub fn write_sweep_track(
 
 /// Length of the demo loop track: long enough for its four-bar breakdown (16 bars or more).
 const LOOP_SECONDS: f64 = 64.0;
-/// Tempo of the demo loop track.
-const LOOP_BPM: f64 = 124.0;
+/// Tempos of the demo loop tracks: the first two generated tracks, one for each deck.
+const LOOP_BPMS: [f64; 2] = [124.0, 126.0];
 
 /// The synthetic kick/bass/hat loop (`om_analysis::demo_loop`) as a WAV, so the demo waveform has
 /// real shape.
-pub fn write_loop_track(path: &Path, tags: &[(&str, &str)]) -> io::Result<()> {
+pub fn write_loop_track(path: &Path, bpm: f64, tags: &[(&str, &str)]) -> io::Result<()> {
     let rate = f64::from(RATE);
-    let samples = om_analysis::demo_loop(LOOP_SECONDS, LOOP_BPM, rate);
+    let samples = om_analysis::demo_loop(LOOP_SECONDS, bpm, rate);
     write_pcm(path, LOOP_SECONDS, tags, move |n| {
         let s = samples.get(n as usize).copied().unwrap_or(0.0);
         (s * f32::from(i16::MAX)) as i16
@@ -214,10 +214,9 @@ pub fn ingest_generated_plus(
             ("IGNR", genre.to_owned()),
         ];
         let tags = tags.each_ref().map(|(k, v)| (*k, v.as_str()));
-        if i == 0 {
-            write_loop_track(&path, &tags)?;
-        } else {
-            write_sweep_track(&path, low, high, &tags)?;
+        match LOOP_BPMS.get(i) {
+            Some(bpm) => write_loop_track(&path, *bpm, &tags)?,
+            None => write_sweep_track(&path, low, high, &tags)?,
         }
     }
     watch_and_wait(services, &music, TRACKS + extra)
@@ -312,14 +311,25 @@ pub fn load_first_into_deck0(
     loader: &mut TrackLoader,
     engine: &DjEngine,
 ) -> Result<i64, AppError> {
+    load_nth_into_deck(services, loader, engine, 0, 0)
+}
+
+/// Loads ingested track `nth` (by path) into `deck` through the loader. Returns its id.
+pub fn load_nth_into_deck(
+    services: &mut LibraryServices,
+    loader: &mut TrackLoader,
+    engine: &DjEngine,
+    nth: usize,
+    deck: usize,
+) -> Result<i64, AppError> {
     let mut tracks = services.library().tracks().all()?;
     tracks.sort_by(|a, b| a.path.cmp(&b.path));
-    let first = tracks
+    let track = tracks
         .into_iter()
-        .next()
-        .ok_or(AppError::Smoke("the library is empty"))?;
-    loader.load_track(engine, services, 0, &first, false)?;
-    Ok(first.id)
+        .nth(nth)
+        .ok_or(AppError::Smoke("the library has too few tracks"))?;
+    loader.load_track(engine, services, deck, &track, false)?;
+    Ok(track.id)
 }
 
 #[cfg(test)]

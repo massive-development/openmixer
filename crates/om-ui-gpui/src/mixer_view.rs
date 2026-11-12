@@ -9,13 +9,14 @@
 
 use crate::app::Shell;
 use crate::controls::{
-    face_button, knob_face_with, metrics, segmented, slider_focus, stereo_meter, tip_overlay,
-    BarState, KnobFace, KnobLook,
+    face_button, knob_face_with, metrics, segmented, slider_focus, tip_overlay, BarState, KnobFace,
+    KnobLook,
 };
 use crate::drag::Target;
 use crate::fader_paint::{self, FaderFace, FaderLaw};
 use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::knob_paint::KnobRole;
+use crate::meter_paint::{clip_word, lamp_meter};
 use crate::paint::{focus_layer, paint, place};
 use crate::parts::deck_tag;
 use gpui::{div, prelude::*, px, ClickEvent, Context, Div, MouseButton, SharedString};
@@ -50,6 +51,10 @@ pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
         }
     }
     root = root.children(master(shell, l.master_fader, l.master_meter, card, cx));
+    if shell.mixer.any_clip_latched() {
+        let headroom = t.meter_headroom.round() as i32;
+        root = root.child(clip_word(t, l.clip_word(headroom)));
+    }
     for (ch, tag) in l.tags.iter().enumerate() {
         let hue = t.accent_for(ch as i32);
         root = root.child(
@@ -150,18 +155,11 @@ fn channel(
         .child(slider_focus(t, target, cx)),
     );
     let bars = [bar_state(&strip.meter.left), bar_state(&strip.meter.right)];
-    out.push(stereo_meter(
-        t,
-        column.meter,
-        false,
-        bars,
-        cx,
-        move |this| {
-            let meter = &mut this.mixer.strips[ch].meter;
-            meter.left.click();
-            meter.right.click();
-        },
-    ));
+    out.push(lamp_meter(t, column.meter, bars, cx, move |this| {
+        let meter = &mut this.mixer.strips[ch].meter;
+        meter.left.click();
+        meter.right.click();
+    }));
     let cue = if strip.pfl { Face::On } else { Face::Rest };
     out.push(
         place(column.cue).child(
@@ -349,7 +347,7 @@ fn master(
         )
         .child(slider_focus(t, Target::Master, cx))
         .child(tip_overlay(t, "master-tip", "Master level")),
-        stereo_meter(t, meter_rect, false, bars, cx, |this| {
+        lamp_meter(t, meter_rect, bars, cx, |this| {
             let meter = &mut this.mixer.master.meter;
             meter.left.click();
             meter.right.click();

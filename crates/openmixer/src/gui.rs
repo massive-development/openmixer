@@ -51,7 +51,7 @@ pub fn main(args: &[String]) -> ExitCode {
     // `--demo-map`: the merged fixture controller maps, loaded into a temporary map file on a mock
     // MIDI backend, so the mapping editor is populated (see `openmixer::demo_map`).
     let demo_map = openmixer::flags::demo_map(args);
-    // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
+    // `--demo-library`: like the smoke run's library (generated tracks; here both decks are loaded) but the
     // window stays open; used by tools/screenshots.sh.
     // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
     // automix bar shows the next track and its transition (see docs/screenshots/REVIEW.md).
@@ -249,6 +249,19 @@ pub fn main(args: &[String]) -> ExitCode {
             library_smoke::load_first_into_deck0(&mut hub.services, &mut hub.loader, &engine)
         {
             smoke_error = Some(error);
+        }
+    }
+    // A demo window shows both decks loaded and parked inside their tracks; the automix demo
+    // loads deck B itself and a scene places deck A.
+    if let (Some(hub), true, None) = (&library, demo && !automix_demo, &smoke_error) {
+        let mut hub = hub.borrow_mut();
+        let hub = &mut *hub;
+        match library_smoke::load_nth_into_deck(&mut hub.services, &mut hub.loader, &engine, 1, 1) {
+            Ok(_) => openmixer::demo_scene::park(&engine, 1),
+            Err(error) => eprintln!("openmixer: demo deck B: {error}"),
+        }
+        if scene.is_none() {
+            openmixer::demo_scene::park(&engine, 0);
         }
     }
     if let (Some(scene), None) = (scene, &smoke_error) {
