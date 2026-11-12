@@ -149,7 +149,7 @@ Looked at by eye: `main-dark`, `main-daylight`, `main-stems`, `meters-lit-dark`,
 
 How: no display was available, so the real main window (`Shell` over the real engine, the mock device, the generated demo library, deck A on the Cues scene, deck B loaded) was rendered offscreen with gpui's headless wgpu renderer on lavapipe, at 2x scale, by a scratch harness that is not in the repo. Matrix: dark, daylight and harbour x Roomy and Compact x 1280x720, 1440x900 and 1920x1080 (18 captures), plus the Loop and FX tabs (dark Roomy 1440x900, daylight Compact 1280x720), the Stems tab with the platter (dark Compact 1280x720), the library hidden (harbour Compact 1280x720), the sampler open (dark, Automatic, 1920x1080), the Appearance settings and the debug panel, an empty library with no deck loaded (dark Roomy 1440x900, daylight Compact 1280x720) and a library row whose file went missing (dark Compact and daylight Roomy, 1440x900). Each was looked at against `openmixer-workbench/docs/design-system/Design System.dc.html` sections 4a, 4b, Light mode and States (read as text; no browser was available to render the canvas).
 
-**The PNGs in this folder were not refreshed.** They come from `tools/screenshots.sh`, which captures the binary's window on X11 with its own demo flags (`--demo-library`, `--demo-scene=…`, `--demo-automix`, `--demo-record`, `--settings=…`); the headless harness sets up a similar but not identical state and cannot run those paths, so its images would not be what the script produces. The tracked captures therefore still show the E1 window until `tools/screenshots.sh` is run with `OUT_DIR=docs/screenshots` on a display. The README screenshot is unchanged for the same reason.
+**The PNGs in this folder were not refreshed in Phase 6** (they were on 2026-11-12, see the last section). They come from `tools/screenshots.sh`, which captures the binary's window on X11 with its own demo flags (`--demo-library`, `--demo-scene=…`, `--demo-automix`, `--demo-record`, `--settings=…`); the headless harness sets up a similar but not identical state and cannot run those paths, so its images would not be what the script produces. The tracked captures therefore still show the E1 window until `tools/screenshots.sh` is run with `OUT_DIR=docs/screenshots` on a display. The README screenshot is unchanged for the same reason.
 
 | # | Found | Status | What changed / why not |
 |---|---|---|---|
@@ -169,3 +169,23 @@ How: no display was available, so the real main window (`Shell` over the real en
 Looked at, no defect beyond the above: the header (wordmark, latency, LUFS, Record, LIBRARY, Settings), both deck headers with their letters, the master tempo, the two waveforms (Low-Band style, signal-red playhead, cue flags with numbers, loop region, bar numbers), the mixer column, the crossfader with its A and B tags, the hot cue pads, the debug panel, and the Appearance card in all three themes where captured. Daylight and harbour hold the same structure as dark. Deck letters sit beside every deck hue (tags, crossfader, library rows), LOCK and CLIP are words (deck view and meter), and the error row states its reason in words.
 
 Not verified: a live window on a real display (hover, press, keyboard focus rings as they appear, drag), real music in the waveforms and the library, frame times, and the `tools/screenshots.sh` scene set.
+
+## Recapture on the faceplate (2026-11-12)
+
+All 21 scenes of `tools/screenshots.sh` were recaptured from the real window (debug build, X11 on WSLg, 1280x800, `--mock-device`) and copied here, so the tracked captures and the README now show the Machined Faceplate.
+
+- A demo run on `--mock-device` no longer shows the "Demo mode: no audio output" notice; it covered deck B's header in every capture. `--mock-device` without a demo flag still shows it.
+- The `--demo-library` scenes (main, debug panel, settings tabs) now wait 8 s, so deck A's waveform, BPM and key are drawn. `main-waveform` is now the same picture as `main-dark`.
+- The MIDI, Library and Mapping tabs print temp paths (`/tmp/om-shots.*`, `/tmp/openmixer-smoke-*`). They follow `TMPDIR`: capture with a neutral one, or a home folder name ends up in the picture.
+
+Looked at by eye, all 21: no notice, no personal path, no overlap or clipping seen. Dark and daylight hold the same structure; cue flags, the loop region, lit meters with CLIP, the platter, the stems tab, the open sampler, the automix bar mid-transition and the recording timer all show.
+
+Still wrong or open:
+- Deck B is empty in every scene but `main-automix`, so half the window shows dashed, disabled controls.
+- `main-dark` sits at the track start: the left half of the zoomed waveform is empty.
+- `meters-lit-*`: the two CLIP words above the channel meters overlap each other ("CLIPLIP").
+- `main-automix`: the "beats left" text is cut ("8 beats le") beside Skip and Cancel.
+- `debug-panel`: deck A's title and artist are squeezed to "s…" and "Si…".
+- `settings-library`: the stem model sentence runs past the card's right edge ("... were added. Load").
+- No harbour scene exists in the script. Demo tracks are still synthetic.
+

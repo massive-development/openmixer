@@ -1,5 +1,6 @@
 //! `--features gui`: opens the GPUI window over a DjEngine. The device is output only. Without a
 //! device (or with `--mock-device`) the engine runs on the silent mock device and a banner says so.
+//! A demo run (`--demo-*`) on `--mock-device` shows no banner.
 //! `--smoke` renders a fixed number of frames and exits 0; with the library it also ingests generated
 //! tracks into a temporary library, loads one into deck A and checks the deck and the table after
 //! the frames. `--debug-panel` shows the device, latency and raw parameter panel. The settings
@@ -150,7 +151,8 @@ pub fn main(args: &[String]) -> ExitCode {
     let (output, banner) = if mock {
         (
             mock_output(),
-            Some(om_ui::labels::notice_text(om_ui::labels::Notice::Demo).to_owned()),
+            // A staged demo run is for screenshots: the notice would cover deck B's header.
+            (!demo_run).then(|| om_ui::labels::notice_text(om_ui::labels::Notice::Demo).to_owned()),
         )
     } else {
         let cpal = SharedOutput::new(OutputSettings::new(Box::new(CpalBackend)));
