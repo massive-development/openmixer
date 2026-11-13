@@ -259,13 +259,19 @@ pub fn tempo_card(shell: &Shell, cell: Rect) -> Div {
 
 // ---- The zoomed waveform ---------------------------------------------------------------------
 
-/// A number placed inside a strip (a bar number).
-fn strip_number(t: &ThemeTokens, x: f32, y: f32, colour: gpui::Rgba, text: String) -> Div {
+/// How much of the well shows through the plate behind a strip's text. Unsourced: enough that a
+/// waveform peak or the playhead under the text does not break its letters.
+const PLATE_ALPHA: f32 = 0.8;
+
+/// A number placed inside a strip (a bar number), on a plate of the well so peaks do not cross it.
+fn strip_number(t: &ThemeTokens, x: f32, y: f32, ink: &StripInk, text: String) -> Div {
     numeral(t, Numeral::Value, text)
         .absolute()
         .left(px(x))
         .top(px(y))
-        .text_color(colour)
+        .px(px(metrics(t).space[0]))
+        .bg(paint(ink.well.with_alpha(PLATE_ALPHA)))
+        .text_color(paint(ink.number))
 }
 
 /// Deck `index`'s zoomed waveform at `area` (stage coordinates): the strip, bar numbers, the loop
@@ -300,14 +306,13 @@ pub(crate) fn zoom(shell: &Shell, index: usize, area: Rect, cx: &mut Context<She
         .overflow_hidden()
         .bg(paint(ink.well))
         .child(strip);
-    let number_colour = paint(ink.number);
     for line in &grid {
         if let Some(n) = line.bar_number {
             el = el.child(strip_number(
                 t,
-                line.x as f32 + 4.0,
+                line.x as f32 + 1.0,
                 height - BAR_NUMBER_SIZE - 6.0,
-                number_colour,
+                &ink,
                 n.to_string(),
             ));
         }
@@ -319,7 +324,10 @@ pub(crate) fn zoom(shell: &Shell, index: usize, area: Rect, cx: &mut Context<She
                 div()
                     .absolute()
                     .left(px((region.x0 as f32).max(0.0) + 8.0))
-                    .bottom(px(5.))
+                    // Its own lane above the bar numbers, or "Loop" prints over a number.
+                    .bottom(px(BAR_NUMBER_SIZE + 12.0))
+                    .px(px(metrics(t).space[0]))
+                    .bg(paint(ink.well.with_alpha(PLATE_ALPHA)))
                     .type_role(t, TypeRole::Label)
                     .text_color(paint(ink.loop_edge(region.looping)))
                     .child(caption),
@@ -389,9 +397,7 @@ pub fn deck_card(shell: &Shell, index: usize, card: Rect, cx: &mut Context<Shell
             .children(loop_pads(shell, index, &l, &snap, cx))
             .child(options(shell, index, (l.options, l.mirrored), &snap, cx)),
         PadMode::Stems => root.children(stems(shell, index, card, l.drawer, cx)),
-        PadMode::Fx => root.child(crate::mixer_view::fx_drawer(
-            shell, index, card, l.drawer, cx,
-        )),
+        PadMode::Fx => root.child(crate::mixer_view::fx_drawer(shell, card, l.drawer, cx)),
     };
     load_on_drop(root, t, index, cx)
 }
@@ -753,8 +759,8 @@ fn options(
         };
         row = row
             .child(switch)
-            .child(step("Halve", false, cx))
-            .child(step("Double", true, cx))
+            .child(step("½", false, cx))
+            .child(step("2×", true, cx))
             .child(toggle(TransportButton::Quantize, cx));
     } else {
         let on = platter_state(index).on;

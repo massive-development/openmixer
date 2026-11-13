@@ -207,3 +207,32 @@ Still wrong or open:
 - `debug-panel`: deck B's artist still truncates ("Test Tone O…").
 - The 17 tracked captures not retaken; no harbour scene; synthetic demo tracks.
 
+
+## Design-system polish pass (2026-11-12)
+
+A four-part review (captures by eye, colour and states, type and spacing, components against the canvas) listed the gaps; this pass fixes the ones that need no owner decision. Looked at after the fixes: `main-automix`, `main-record`, `sampler-open-dark`, `main-dark`, `cues-loop-dark`, `settings-library`. `main-dark`, `cues-loop-dark` and `settings-library` are replaced here; the other tracked captures predate the pass.
+
+Fixed:
+- Automix Start, Skip, Cancel, the Off/On switch and the transition chip, the Record button, the sampler pads and the EQ kill button are built from the shared faces: hover, pressed, the keyboard focus ring. The transition chip is one line; the recording readout fits its box; the progress bar keeps the 3 px radius.
+- A selected library row keeps its loaded-on-deck edge or its unplayable edge; the empty table's line is in the body tier and muted.
+- Bar numbers and the loop caption sit on a plate of the well, in separate lanes, bar numbers in the secondary text colour.
+- The FX drawer lights in its scope's channel hue, and in the text colour on the master scope.
+- Numbers inside phrases are mono: settings chips ("48000 Hz", "5 min"), the library count, the automix next-track line.
+- Settings chips are the density's control height on scale spacing; a lone On chip is an Off | On switch.
+- The demo no longer forces a 120 BPM grid on deck A, so the deck head and the library agree (124.0).
+- Loop halve and double read ½ and 2× (canvas States, "Loop active").
+- Dead pre-faceplate sizes and colours are deleted from `widgets/deck_header.rs` and `widgets/hotcues.rs`.
+
+Open, each needs an owner decision:
+- Red above -3 dB in the meters and on the LUFS readout (DESIGN.md prose says playhead, record and clip only; the canvas Meter row says red above -3 dB).
+- The 16 px Roomy deck title in the canvas; the code draws 13 px in both densities.
+- Selection uses deck B's slate, as the spec says.
+- Daylight control edges at about 1.5:1 on the panel.
+- The selected-deck outline in DESIGN.md, and the splash loader canvas: neither is built.
+
+Open, not started:
+- The library toolbar is cut, not reflowed, when the sampler or debug column is open.
+- The FX panel, sampler strip and loudness panel lay out with fixed sizes in both densities.
+- No bar or beat counter in the deck head; no "L R" caption under the master meter; no caption on the master fader.
+- The settings card changes height between tabs.
+- Legacy theme tokens (`library_*`, `disabledAlpha`, `translucency`) are still read from the JSON.

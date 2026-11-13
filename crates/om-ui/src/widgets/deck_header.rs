@@ -7,62 +7,10 @@
 
 use super::deck::TrackInfo;
 use crate::geometry::Rect;
-use crate::theme::{Colour, DensityMetrics, ThemeTokens, TypeRole};
+use crate::theme::{DensityMetrics, ThemeTokens, TypeRole};
 
 /// Remaining time at or below which the countdown turns red, in seconds.
 pub const REMAINING_WARN_SECS: f64 = 30.0;
-
-/// Time-remaining numeral: the largest number in the header.
-pub const TIME_REMAINING_SIZE: f32 = 38.0;
-/// Effective BPM numeral.
-pub const BPM_SIZE: f32 = 28.0;
-/// Key numeral.
-pub const KEY_SIZE: f32 = 28.0;
-/// Elapsed time, title and artist (secondary text).
-pub const ELAPSED_SIZE: f32 = 14.0;
-pub const TITLE_SIZE: f32 = 16.0;
-pub const ARTIST_SIZE: f32 = 13.0;
-/// Smallest text anywhere on a deck: captions, chips, tab labels.
-pub const MIN_TEXT_SIZE: f32 = 12.0;
-/// Height of the stage header band and of a deck card's own header.
-pub const HEADER_HEIGHT: i32 = 60;
-/// The deck letter badge is a square this wide.
-pub const BADGE_SIZE: i32 = 28;
-
-/// Fill of the SYNC button and chip while sync is on.
-pub const SYNC_ON: Colour = Colour::from_argb(0xFF19_D3A2);
-/// Countdown under [`REMAINING_WARN_SECS`].
-pub const WARN_RED: Colour = Colour::from_argb(0xFFFF_3B4E);
-/// Text on [`SYNC_ON`] and on the cue palette: near-black for contrast on the bright fills.
-pub const ON_BRIGHT: Colour = Colour::from_argb(0xFF0B_0F14);
-
-/// Type sizes of the header numerals for a header `width` px wide. The full sizes need about 520 px;
-/// narrower headers (the 1024 px window gives each deck about 370) step down so the title keeps
-/// room, but never below the 22 px numeral and 28 px countdown.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HeaderMetrics {
-    pub time: f32,
-    pub number: f32,
-}
-
-pub fn header_metrics(width: i32) -> HeaderMetrics {
-    if width >= 520 {
-        HeaderMetrics {
-            time: TIME_REMAINING_SIZE,
-            number: BPM_SIZE,
-        }
-    } else if width >= 430 {
-        HeaderMetrics {
-            time: 32.0,
-            number: 24.0,
-        }
-    } else {
-        HeaderMetrics {
-            time: 28.0,
-            number: 22.0,
-        }
-    }
-}
 
 /// Letter badge of a deck: A, B, C, D, ... so the identity is not carried by colour alone.
 pub fn deck_letter(index: usize) -> char {
@@ -116,18 +64,6 @@ pub fn loop_label(beats: f64) -> String {
         format!("{beats:.1}")
     }
 }
-
-/// Eight cue colours, hot to cool, bright enough for [`ON_BRIGHT`] text.
-pub const CUE_PALETTE: [Colour; 8] = [
-    Colour::from_argb(0xFFFF_5468), // red
-    Colour::from_argb(0xFFFF_9248), // orange
-    Colour::from_argb(0xFFFF_D84A), // yellow
-    Colour::from_argb(0xFF7B_E05A), // green
-    Colour::from_argb(0xFF2E_D8C0), // teal
-    Colour::from_argb(0xFF4F_B4FF), // blue
-    Colour::from_argb(0xFFA7_88FF), // violet
-    Colour::from_argb(0xFFFF_6FC4), // pink
-];
 
 /// Line height of the deck title and artist (comp deck header: 1.2).
 pub const TITLE_LINE: f32 = 1.2;
@@ -293,23 +229,10 @@ mod tests {
     }
 
     #[test]
-    fn the_countdown_is_always_the_largest_number() {
-        for width in [300, 370, 450, 520, 900] {
-            let m = header_metrics(width);
-            assert!(m.time > m.number, "{width}: {m:?}");
-            assert!(m.number > ELAPSED_SIZE);
-        }
-        assert_eq!(header_metrics(900).time, TIME_REMAINING_SIZE);
-    }
-
-    #[test]
-    fn deck_letters_and_cue_palette() {
+    fn deck_letters_run_from_a() {
         assert_eq!(
             (0..4).map(deck_letter).collect::<String>(),
             "ABCD".to_owned()
         );
-        let mut seen = CUE_PALETTE.to_vec();
-        seen.dedup();
-        assert_eq!(seen.len(), 8, "eight distinct cue colours");
     }
 }

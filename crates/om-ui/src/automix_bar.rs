@@ -13,7 +13,7 @@ pub const TOGGLE_LABEL: &str = "AUTOMIX";
 pub const LABEL_WIDTH: f32 = 52.0;
 /// The segmented Off | On switch.
 pub const SWITCH_WIDTH: f32 = 76.0;
-/// The transition length chip: a `TRANSITION` caption over `16 beats`.
+/// The transition length chip: `16 beats` on one line (the control height has no room for two).
 pub const LENGTH_WIDTH: f32 = 64.0;
 /// The running state word (`Loading`, `Armed`, `Mixing`).
 pub const STATE_WIDTH: f32 = 60.0;

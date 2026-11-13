@@ -122,7 +122,7 @@ impl StripInk {
                 GRID_COLOUR
             },
             number: if low_band {
-                t.text_muted
+                t.text_secondary
             } else {
                 GRID_COLOUR.with_alpha(LEGACY_NUMBER_ALPHA)
             },

@@ -3,14 +3,39 @@
 //! action is a toast (see `Shell::push_notice`).
 
 use super::*;
-use crate::controls::push_button;
-use crate::font::TypeExt as _;
+use crate::controls::{face_button_with, metrics, push_button, segmented};
+use crate::font::{mixed, TypeExt as _};
 use gpui_kit::component::input::Input;
-use om_ui::style::LookAndFeel;
+use om_ui::style::{Face, LookAndFeel};
 use om_ui::theme::TypeRole;
 
-/// Height of a chip, px.
-const CHIP_H: f32 = 28.0;
+/// A chip's box: the density's control height, a scale step from its neighbours.
+fn chip_box(t: &ThemeTokens, button: impl IntoElement) -> Div {
+    let m = metrics(t);
+    div()
+        .h(px(m.control_height))
+        .mr(px(m.space[1]))
+        .mb(px(m.space[1]))
+        .flex_none()
+        .child(button)
+}
+
+/// An Off | On switch: the lit half is the state, so it does not read as an action. `toggle` runs
+/// when the other half is chosen.
+pub(crate) fn switch(
+    t: &ThemeTokens,
+    on: bool,
+    cx: &mut Context<Shell>,
+    toggle: impl Fn(&mut Shell) + Clone + 'static,
+) -> Div {
+    let lit = (Some(usize::from(on)), accent_of(t));
+    let group = segmented(t, &["Off", "On"], lit, cx, move |this: &mut Shell, i| {
+        if (i == 1) != on {
+            toggle(this);
+        }
+    });
+    chip_box(t, group)
+}
 
 /// A flow-layout button: a labelled chip that runs `on_press` on the Shell when clicked. Lit
 /// chips are switches on; the rest are raised buttons.
@@ -32,15 +57,11 @@ pub(crate) fn chip_with_window(
     cx: &mut Context<Shell>,
     on_press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
 ) -> Div {
-    let button = push_button(t, label, lit.then(|| accent_of(t)), cx, on_press)
-        .h_full()
-        .px(px(10.));
-    div()
-        .h(px(CHIP_H))
-        .mr(px(6.))
-        .mb(px(6.))
-        .flex_none()
-        .child(button)
+    let state = if lit { Face::On } else { Face::Rest };
+    // A chip's label may hold a number ("48000 Hz", "5 min"), which is set in mono.
+    let text = mixed(t, TypeRole::Label, label);
+    let button = face_button_with(t, label, text, (state, accent_of(t)), cx, on_press).h_full();
+    chip_box(t, button)
 }
 
 /// A chip that opens the platform's file dialog for the text field `kind`; the picked path is
@@ -50,14 +71,8 @@ pub(crate) fn browse_chip(t: &ThemeTokens, kind: EntryKind, cx: &mut Context<She
     let button = push_button(t, "Browse…", None, cx, move |this, _, cx| {
         this.browse(kind, cx)
     })
-    .h_full()
-    .px(px(10.));
-    div()
-        .h(px(CHIP_H))
-        .mr(px(6.))
-        .mb(px(6.))
-        .flex_none()
-        .child(button)
+    .h_full();
+    chip_box(t, button)
 }
 
 /// A labelled row of chips.
@@ -66,12 +81,12 @@ pub(super) fn choice_row(t: &ThemeTokens, title: &str, chips: Div) -> Div {
     div()
         .flex()
         .flex_col()
-        .mb(px(10.))
+        .mb(px(metrics(t).space[2]))
         .child(
             div()
                 .text_color(paint(caption.text))
                 .type_role(t, TypeRole::Label)
-                .mb(px(4.))
+                .mb(px(metrics(t).space[0]))
                 .child(title.to_owned()),
         )
         // Capped at the card's width, or a long sentence runs past its edge instead of wrapping.
@@ -84,7 +99,7 @@ pub(super) fn note(t: &ThemeTokens, text: &str) -> Div {
     div()
         .text_color(paint(caption.text))
         .type_role(t, TypeRole::Body)
-        .mb(px(8.))
+        .mb(px(metrics(t).space[2]))
         .child(text.to_owned())
 }
 

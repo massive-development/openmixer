@@ -3,17 +3,21 @@
 //! the key both use). While a text field or the settings card takes typed keys, `r` is a letter.
 
 use crate::app::Shell;
+use crate::controls::{focus_handle, metrics};
 use crate::font::{numeral, Numeral, TypeExt as _};
-use crate::paint::{face, paint, place};
-use gpui::{div, prelude::*, px, Context, Div, Focusable as _, MouseButton, MouseDownEvent};
+use crate::paint::{face, focus_layer, paint, place};
+use gpui::{div, prelude::*, px, ClickEvent, Context, Div, Focusable as _, MouseButton};
 use om_core::{ParameterTarget, RecordSnapshot};
 use om_ui::geometry::Rect;
 use om_ui::record_bar::RecordBar;
 use om_ui::style::{Face, FaceStyle, LookAndFeel};
 use om_ui::theme::{ThemeTokens, TypeRole};
 
-/// Width of each channel's peak track in the button.
-const PEAK_WIDTH: f32 = 36.0;
+/// Width of each channel's peak track in the button: what is left of the button's width after
+/// the dot, "00:00" and "12.3 MB" in mono.
+const PEAK_WIDTH: f32 = 24.0;
+/// The button's element id, and its tab stop.
+const BUTTON_ID: &str = "record-button";
 /// Height of each channel's peak track.
 const PEAK_HEIGHT: f32 = 3.0;
 
@@ -27,6 +31,7 @@ pub(crate) fn record_button(
     cx: &mut Context<Shell>,
 ) -> Div {
     let bar = RecordBar::new(snapshot, "");
+    let m = metrics(t);
     let red = paint(t.record_red());
     let mut dot = div()
         .flex_none()
@@ -41,8 +46,8 @@ pub(crate) fn record_button(
     let mut row = div()
         .flex()
         .items_center()
-        .gap(px(6.))
-        .px(px(8.))
+        .gap(px(m.space[1]))
+        .px(px(m.space[2]))
         .size_full()
         .overflow_hidden()
         .type_role(t, TypeRole::Label)
@@ -70,8 +75,8 @@ pub(crate) fn record_button(
         row = row.child(
             numeral(t, Numeral::Value, format!("!{}", snapshot.dropped_frames))
                 .flex_none()
-                .px(px(4.))
-                .rounded(px(3.))
+                .px(px(m.space[0]))
+                .rounded(px(t.control_radius))
                 .bg(paint(t.meter_mid))
                 .text_color(paint(t.on_accent)),
         );
@@ -82,36 +87,44 @@ pub(crate) fn record_button(
                 .flex_none()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(px(m.space[0]))
                 .child(peak_track(t, bar.peak_left))
                 .child(peak_track(t, bar.peak_right)),
         );
     }
-    let (rest, hover) = faces(t, bar.recording);
-    face(place(rect), &rest)
+    let [rest, hover, pressed] = faces(t, bar.recording);
+    let look = LookAndFeel::from_tokens(t);
+    let handle = focus_handle(BUTTON_ID, cx);
+    let button = face(div().relative().size_full(), &rest)
+        .id(BUTTON_ID)
+        .role(gpui::accesskit::Role::Button)
+        .aria_label("Record")
+        .track_focus(&handle)
+        .child(focus_layer(look.focus, rest.radius, Some(handle)))
         .hover(move |s| face(s, &hover))
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseDownEvent, _, cx| {
-                this.press_record();
-                cx.notify();
-            }),
-        )
-        .child(row)
+        .active(move |s| face(s, &pressed))
+        // Keyboard focus only: a click does not take focus from the window's keys.
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.press_record();
+            cx.notify();
+        }))
+        .child(row);
+    place(rect).child(button)
 }
 
-/// The button's face at rest and under the pointer; recording draws the edge in record red.
-fn faces(t: &ThemeTokens, recording: bool) -> (FaceStyle, FaceStyle) {
+/// The button's face at rest, under the pointer and pressed; recording draws the edge in record
+/// red.
+fn faces(t: &ThemeTokens, recording: bool) -> [FaceStyle; 3] {
     let look = LookAndFeel::from_tokens(t);
-    let edge = |f: FaceStyle| FaceStyle {
-        edge: if recording { t.record_red() } else { f.edge },
-        ..f
-    };
     let hue = t.record_red();
-    (
-        edge(look.face(Face::Rest, hue)),
-        edge(look.face(Face::Hover, hue)),
-    )
+    [Face::Rest, Face::Hover, Face::Pressed].map(|state| {
+        let f = look.face(state, hue);
+        FaceStyle {
+            edge: if recording { hue } else { f.edge },
+            ..f
+        }
+    })
 }
 
 /// One channel's peak: a thin track with the level filled in.
