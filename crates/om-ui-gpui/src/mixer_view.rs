@@ -402,20 +402,18 @@ fn curve(shell: &Shell, rect: Rect, cx: &mut Context<Shell>) -> Div {
     )
 }
 
-/// The FX drawer of deck `index`'s FX tab at `area` (card coordinates): the rack scopes (master
+/// The FX drawer of a deck's FX tab at `area` (card coordinates): the rack scopes (master
 /// and each channel), the unit and its switch, then the mix and the unit's parameters as knobs
 /// with their values beside them, and the beat the unit syncs to.
-pub(crate) fn fx_drawer(
-    shell: &Shell,
-    index: usize,
-    card: Rect,
-    area: Rect,
-    cx: &mut Context<Shell>,
-) -> Div {
+pub(crate) fn fx_drawer(shell: &Shell, card: Rect, area: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let m = metrics(t);
     let fx = &shell.mixer.fx;
-    let hue = t.accent_for(index as i32);
+    // The rack's hue names the channel it works on; the master scope is no deck's.
+    let hue = match fx.scope() {
+        0 => t.text_primary,
+        channel => t.accent_for(channel as i32 - 1),
+    };
     let h = px(m.control_height);
     let scopes: Vec<String> = (0..fx.num_scopes()).map(FxPanel::scope_label).collect();
     let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();

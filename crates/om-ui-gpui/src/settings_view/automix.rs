@@ -22,14 +22,6 @@ impl AutomixControl for NoAutomix {
     }
 }
 
-fn on_off(on: bool) -> &'static str {
-    if on {
-        "On"
-    } else {
-        "Off"
-    }
-}
-
 pub(super) fn automix_page(
     t: &ThemeTokens,
     settings: &SettingsState,
@@ -48,7 +40,7 @@ pub(super) fn automix_page(
     column = column.child(choice_row(
         t,
         "Automix",
-        row_of(vec![chip(t, on_off(enabled), enabled, cx, move |this| {
+        row_of(vec![switch(t, enabled, cx, move |this| {
             this.settings_mut(|s| s.automix_set_enabled(!enabled))
         })]),
     ));
@@ -104,7 +96,7 @@ pub(super) fn automix_page(
     column = column.child(choice_row(
         t,
         "Smart picks (key and tempo)",
-        row_of(vec![chip(t, on_off(smart), smart, cx, move |this| {
+        row_of(vec![switch(t, smart, cx, move |this| {
             this.settings_mut(|s| s.automix_set_smart(!smart))
         })]),
     ));
@@ -127,13 +119,9 @@ pub(super) fn automix_page(
     column = column.child(choice_row(
         t,
         "Start the next track at the end",
-        row_of(vec![chip(
-            t,
-            on_off(autostart),
-            autostart,
-            cx,
-            move |this| this.settings_mut(|s| s.automix_set_autostart(!autostart)),
-        )]),
+        row_of(vec![switch(t, autostart, cx, move |this| {
+            this.settings_mut(|s| s.automix_set_autostart(!autostart))
+        })]),
     ));
     column.child(note(
         t,

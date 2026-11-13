@@ -54,9 +54,4 @@ impl HotcuePads {
         let cues = self.binding.state().hotcues;
         std::array::from_fn(|i| cues[i].is_some())
     }
-
-    /// The colour of pad `index`'s cue (wraps past the palette).
-    pub fn colour(index: usize) -> crate::theme::Colour {
-        super::deck_header::CUE_PALETTE[index % super::deck_header::CUE_PALETTE.len()]
-    }
 }

@@ -414,10 +414,9 @@ pub fn main(args: &[String]) -> ExitCode {
         settings: Some(settings),
         library: library.clone(),
         library_rows_out: smoke.then(|| Arc::clone(&rows_out)),
-        // The demo's tracks are sweeps with no tempo: give deck A a fixed grid once its
-        // analysis lands, so screenshots show beat ticks.
-        // (Not for a real track: its own analysis supplies the grid.)
-        demo_grid_bpm: (demo && scene != Some(DemoScene::Track)).then_some(120.0),
+        // Deck A's demo track is a loop with a tempo: its own analysis supplies the grid, so the
+        // deck and the library show the same BPM.
+        demo_grid_bpm: None,
         scene: scene_options(scene),
         samples,
         on_frame: Some(automix_frame),

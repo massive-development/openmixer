@@ -118,6 +118,30 @@ pub fn numeral(t: &ThemeTokens, size: Numeral, text: impl Into<SharedString>) ->
     div().type_role(t, size.role()).child(text.into())
 }
 
+/// True for a word that is a number as the window prints one: `48000`, `-3.5`, `1:04`, `8A`.
+pub fn is_number_word(word: &str) -> bool {
+    let digits = word.trim_start_matches(['-', '+', '\u{2212}']);
+    digits.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// A phrase with numbers in it ("48000 Hz", "3 of 120 tracks"): the words in `role`, each number
+/// in mono (the Mono Numbers Rule), on one baseline.
+pub fn mixed(t: &ThemeTokens, role: TypeRole, text: &str) -> Div {
+    let space = t.type_size(role) * 0.25;
+    let row = div()
+        .flex()
+        .items_baseline()
+        .gap(px(space))
+        .whitespace_nowrap();
+    text.split_whitespace().fold(row, |row, word| {
+        row.child(if is_number_word(word) {
+            numeral(t, Numeral::Value, word.to_owned())
+        } else {
+            div().type_role(t, role).child(word.to_owned())
+        })
+    })
+}
+
 /// The size of a [`mark`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkSize {
@@ -145,6 +169,16 @@ pub fn mark(t: &ThemeTokens, size: MarkSize, text: impl Into<SharedString>) -> D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn words_that_start_with_a_digit_are_numbers() {
+        for word in ["48000", "-3.5", "1:04", "8A", "128.0", "+2"] {
+            assert!(is_number_word(word), "{word}");
+        }
+        for word in ["Hz", "tracks", "of", "-", "Next:", "\u{b7}"] {
+            assert!(!is_number_word(word), "{word}");
+        }
+    }
 
     #[test]
     fn each_bundled_face_is_a_truetype_file() {

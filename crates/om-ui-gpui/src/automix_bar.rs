@@ -8,7 +8,7 @@
 
 use crate::app::Shell;
 use crate::controls::{face_button, face_button_with, metrics, segmented_even, tip_overlay};
-use crate::font::{numeral, Numeral, TypeExt as _};
+use crate::font::{mixed, numeral, Numeral, TypeExt as _};
 use crate::paint::{paint, place};
 use gpui::{div, prelude::*, px, Context, Div, Stateful};
 use om_core::{AutomixSnapshot, ParameterTarget};
@@ -127,9 +127,8 @@ pub(crate) fn automix_bar_view(
                 .flex_1()
                 .min_w(px(0.))
                 .overflow_hidden()
-                .whitespace_nowrap()
                 .text_color(paint(colour))
-                .child(text),
+                .child(mixed(t, TypeRole::Label, &text)),
         );
     } else {
         row = row.child(div().flex_1());

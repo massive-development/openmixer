@@ -62,7 +62,7 @@ pub(super) fn recording_page(
     column = column.child(choice_row(
         t,
         "Stop when the disk is nearly full",
-        row_of(vec![chip(t, on_off(on), on, cx, move |this| {
+        row_of(vec![switch(t, on, cx, move |this| {
             this.settings_mut(|s| s.record_set_stop_on_low_disk(!on))
         })]),
     ));
@@ -82,14 +82,6 @@ pub(super) fn recording_page(
     );
     column = column.child(note(t, &status));
     column
-}
-
-fn on_off(on: bool) -> &'static str {
-    if on {
-        "On"
-    } else {
-        "Off"
-    }
 }
 
 impl SettingsState {
