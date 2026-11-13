@@ -18,7 +18,7 @@ use crate::knob_paint::{
 };
 use crate::meter_paint;
 use crate::paint::{face, focus_layer, paint, place, skin};
-use crate::parts::{face_box, pad_face, PadState};
+use crate::parts::{face_box, label as face_label, pad_face, PadState};
 use gpui::{
     canvas, div, prelude::*, px, App, Bounds, ClickEvent, Context, Div, FocusHandle, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseUpEvent, Pixels, ScrollEvent, SharedString, Stateful, Window,
@@ -231,7 +231,29 @@ pub fn pad_button(
 pub fn segmented<V: 'static>(
     t: &ThemeTokens,
     labels: &[&str],
+    lit: (Option<usize>, Colour),
+    cx: &mut Context<V>,
+    on_select: impl Fn(&mut V, usize) + Clone + 'static,
+) -> Div {
+    segmented_group(t, labels, lit, false, cx, on_select)
+}
+
+/// [`segmented`] for a group of a set width: the segments share it evenly, text centred.
+pub fn segmented_even<V: 'static>(
+    t: &ThemeTokens,
+    labels: &[&str],
+    lit: (Option<usize>, Colour),
+    cx: &mut Context<V>,
+    on_select: impl Fn(&mut V, usize) + Clone + 'static,
+) -> Div {
+    segmented_group(t, labels, lit, true, cx, on_select)
+}
+
+fn segmented_group<V: 'static>(
+    t: &ThemeTokens,
+    labels: &[&str],
     (selected, hue): (Option<usize>, Colour),
+    even: bool,
     cx: &mut Context<V>,
     on_select: impl Fn(&mut V, usize) + Clone + 'static,
 ) -> Div {
@@ -263,6 +285,9 @@ pub fn segmented<V: 'static>(
             .child((*text).to_owned());
         if i > 0 {
             seg = seg.border_l_1().border_color(paint(group.edge));
+        }
+        if even {
+            seg = seg.flex_1().justify_center().px(px(0.));
         }
         let seg = seg
             .id(SharedString::from(id))
@@ -419,15 +444,35 @@ pub fn face_button<V: 'static>(
     cx: &mut Context<V>,
     on_press: impl Fn(&mut V, &mut Window, &mut Context<V>) + 'static,
 ) -> Stateful<Div> {
+    let style = LookAndFeel::from_tokens(t).face(state, hue);
+    let text = face_label(t, &style, label.to_owned());
+    face_button_with(t, label, text, (state, hue), cx, on_press)
+}
+
+/// [`face_button`] around `content` (a number in mono, say) instead of a label; `name` is what a
+/// screen reader says and what tells its focus apart.
+pub fn face_button_with<V: 'static>(
+    t: &ThemeTokens,
+    name: &str,
+    content: impl IntoElement,
+    (state, hue): (Face, Colour),
+    cx: &mut Context<V>,
+    on_press: impl Fn(&mut V, &mut Window, &mut Context<V>) + 'static,
+) -> Stateful<Div> {
     let look = LookAndFeel::from_tokens(t);
     let style = look.face(state, hue);
-    let id = next_button_id(label);
-    let el = face_box(t, &style, label.to_owned())
+    let id = next_button_id(name);
+    let el = face(div(), &style)
+        .flex()
+        .items_center()
+        .justify_center()
+        .whitespace_nowrap()
+        .child(content)
         .relative()
         .px(px(metrics(t).space[3]))
         .id(SharedString::from(id.clone()))
         .role(gpui::accesskit::Role::Button)
-        .aria_label(label.to_owned());
+        .aria_label(name.to_owned());
     if state == Face::Disabled {
         return el;
     }

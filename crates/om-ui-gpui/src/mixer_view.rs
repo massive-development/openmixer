@@ -283,7 +283,9 @@ fn kill_switch(
     let hue = t.accent_for(ch as i32);
     let id = format!("kill-{ch}-{band}");
     let handle = crate::controls::focus_handle(&id, cx);
-    let hover = look.face(Face::Hover, hue).fill;
+    // A killed band keeps its tint under the pointer: the "on + hover" face, not the plain one.
+    let hover = look.face(if killed { Face::OnHover } else { Face::Hover }, hue);
+    let pressed = look.face(Face::Pressed, hue).fill;
     let lit = look.face(Face::On, hue);
     let el = text
         .rounded(px(t.control_radius))
@@ -299,7 +301,15 @@ fn kill_switch(
             .aria_label(format!("Kill {}", shell.mixer.strips[ch].eq[band].label))
             .track_focus(&handle)
             .child(focus_layer(look.focus, t.control_radius, Some(handle)))
-            .hover(move |s| s.bg(paint(hover)))
+            .hover(move |s| {
+                let s = s.bg(paint(hover.fill));
+                if killed {
+                    s.border_color(paint(hover.edge))
+                } else {
+                    s
+                }
+            })
+            .active(move |s| s.bg(paint(pressed)))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.mixer.strips[ch].kill_pressed(band);

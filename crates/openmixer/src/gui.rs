@@ -260,7 +260,8 @@ pub fn main(args: &[String]) -> ExitCode {
             Ok(_) => openmixer::demo_scene::park(&engine, 1),
             Err(error) => eprintln!("openmixer: demo deck B: {error}"),
         }
-        if scene.is_none() {
+        // The sampler and stems scenes stage only the window, so deck A is parked for them too.
+        if matches!(scene, None | Some(DemoScene::Sampler | DemoScene::Stems)) {
             openmixer::demo_scene::park(&engine, 0);
         }
     }

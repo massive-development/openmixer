@@ -7,99 +7,60 @@
 //! `automix.skip` and `automix.cancel` ids.
 
 use crate::app::Shell;
+use crate::controls::{face_button, face_button_with, metrics, segmented_even, tip_overlay};
 use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::paint::{paint, place};
-use gpui::{div, prelude::*, px, Context, Div, MouseButton, MouseDownEvent};
+use gpui::{div, prelude::*, px, Context, Div, Stateful};
 use om_core::{AutomixSnapshot, ParameterTarget};
 use om_ui::automix_bar::{
-    AutomixBar, LENGTH_WIDTH, PROGRESS_WIDTH, REMAINING_WIDTH, ROW_GAP, ROW_PADDING, STATE_WIDTH,
-    SWITCH_WIDTH, TOGGLE_LABEL,
+    AutomixBar, CANCEL_WIDTH, LENGTH_WIDTH, PROGRESS_WIDTH, REMAINING_WIDTH, ROW_GAP, ROW_PADDING,
+    SKIP_WIDTH, START_WIDTH, STATE_WIDTH, SWITCH_WIDTH, TOGGLE_LABEL,
 };
 use om_ui::geometry::Rect;
 use om_ui::preferences::AutomixPrefs;
 use om_ui::settings::LENGTH_CHOICES;
-use om_ui::style::LookAndFeel;
+use om_ui::style::Face;
 use om_ui::theme::{ThemeTokens, TypeRole};
 
 /// Reads the automix snapshot on the window thread (the service is shared, so this is cheap).
 pub type AutomixSnapshotFn = std::sync::Arc<dyn Fn() -> AutomixSnapshot + Send + Sync>;
 
-/// A press handler for the bar's chips.
-fn on_press(el: Div, cx: &mut Context<Shell>, press: impl Fn(&mut Shell) + 'static) -> Div {
-    el.on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-            press(this);
-            cx.notify();
-        }),
-    )
-}
-
-/// A chip in the bar, as tall as the bar's content. The row's own gap spaces it.
+/// A chip in the bar: a face button `width` wide, so the row is as wide as the layout test adds up.
 fn bar_chip(
     t: &ThemeTokens,
-    label: &str,
-    height: f32,
+    (label, width): (&str, f32),
     cx: &mut Context<Shell>,
     press: impl Fn(&mut Shell) + 'static,
-) -> Div {
-    let chip = div()
-        .flex()
+) -> Stateful<Div> {
+    let rest = (Face::Rest, t.text_primary);
+    face_button(t, label, rest, cx, move |this, _, _| press(this))
         .flex_none()
-        .items_center()
-        .justify_center()
-        .h(px(height))
-        .px(px(10.))
-        .rounded(px(t.control_radius))
-        .border_1()
-        .border_color(paint(t.border))
-        .bg(paint(t.surface_raised))
-        .text_color(paint(t.text_primary))
-        .type_role(t, TypeRole::Label)
-        .whitespace_nowrap()
-        .child(label.to_owned());
-    on_press(chip, cx, press)
+        .h_full()
+        .w(px(width))
+        .px(px(0.))
 }
 
-/// The segmented Off | On switch: the lit half is the state. Both halves, the divider and the
-/// frame come from the theme's toggle style.
-fn segmented_switch(t: &ThemeTokens, enabled: bool, height: f32, cx: &mut Context<Shell>) -> Div {
-    let toggle = LookAndFeel::from_tokens(t).toggle;
-    let half = |label: &str, lit: bool, target: bool, cx: &mut Context<Shell>| {
-        let style = if lit { toggle.on } else { toggle.off };
-        let el = div()
-            .flex()
-            .flex_1()
-            .h_full()
-            .items_center()
-            .justify_center()
-            .bg(paint(style.fill))
-            .text_color(paint(style.text))
-            .type_role(t, TypeRole::Label)
-            .child(label.to_owned());
-        on_press(el, cx, move |this| {
-            this.settings_mut(|s| s.automix_set_enabled(target))
-        })
-    };
-    div()
-        .flex()
-        .flex_none()
-        .w(px(SWITCH_WIDTH))
-        .h(px(height))
-        .rounded(px(toggle.on.radius))
-        .border_1()
-        .border_color(paint(toggle.on.border))
-        .overflow_hidden()
-        .child(half("Off", !enabled, false, cx))
-        // The divider reuses the knob style: its fill, and its border width as the line width.
-        .child(
-            div()
-                .flex_none()
-                .w(px(toggle.knob.border_width.round().max(1.0)))
-                .h_full()
-                .bg(paint(toggle.knob.fill)),
-        )
-        .child(half("On", enabled, true, cx))
+/// The segmented Off | On switch: the lit half is the state, in the text colour (no deck owns it).
+fn segmented_switch(t: &ThemeTokens, enabled: bool, cx: &mut Context<Shell>) -> Div {
+    let lit = (Some(usize::from(enabled)), t.text_primary);
+    segmented_even(t, &["Off", "On"], lit, cx, |this: &mut Shell, i| {
+        this.settings_mut(|s| s.automix_set_enabled(i == 1))
+    })
+    .w(px(SWITCH_WIDTH))
+}
+
+/// The transition length, one line in mono; a press steps to the next choice.
+fn length_chip(t: &ThemeTokens, length: i32, next: i32, cx: &mut Context<Shell>) -> Stateful<Div> {
+    let text = numeral(t, Numeral::Value, format!("{length} beats"));
+    let rest = (Face::Rest, t.text_primary);
+    face_button_with(t, "Transition length", text, rest, cx, move |this, _, _| {
+        this.settings_mut(|s| s.automix_set_length(i64::from(next)))
+    })
+    .flex_none()
+    .h_full()
+    .w(px(LENGTH_WIDTH))
+    .px(px(0.))
+    .child(tip_overlay(t, "automix-length-tip", "Transition length"))
 }
 
 /// Draws the bar into `rect` from the snapshot and the stored preferences. Style and the default
@@ -115,7 +76,7 @@ pub(crate) fn automix_bar_view(
     let enabled = bar.enabled;
     let actions = bar.actions();
     let fraction = bar.progress as f32;
-    let height = rect.h as f32;
+    let m = metrics(t);
     // The bar belongs to no deck: its progress is drawn in the text colour, not a deck hue.
     let accent = t.text_primary;
     let length = bar.length_beats;
@@ -139,27 +100,9 @@ pub(crate) fn automix_bar_view(
                 .text_color(paint(t.text_muted))
                 .child(TOGGLE_LABEL),
         )
-        .child(segmented_switch(t, enabled, height, cx));
+        .child(segmented_switch(t, enabled, cx));
     if enabled && !bar.running {
-        let chip = div()
-            .flex()
-            .flex_none()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .w(px(LENGTH_WIDTH))
-            .h(px(height))
-            .rounded(px(t.control_radius))
-            .border_1()
-            .border_color(paint(t.border))
-            .bg(paint(t.surface_raised))
-            .type_role(t, TypeRole::Label)
-            .text_color(paint(t.text_primary))
-            .child(div().text_color(paint(t.text_muted)).child("Transition"))
-            .child(numeral(t, Numeral::Value, format!("{length} beats")));
-        row = row.child(on_press(chip, cx, move |this| {
-            this.settings_mut(|s| s.automix_set_length(i64::from(next_length)))
-        }));
+        row = row.child(length_chip(t, length, next_length, cx));
     }
     if enabled && bar.running {
         row = row.child(
@@ -201,8 +144,8 @@ pub(crate) fn automix_bar_view(
                 .child(
                     div()
                         .w(px(PROGRESS_WIDTH))
-                        .h(px(8.))
-                        .rounded(px(4.))
+                        .h(px(m.space[2]))
+                        .rounded(px(t.control_radius))
                         .bg(paint(t.surface_raised))
                         .border_1()
                         .border_color(paint(t.border))
@@ -210,7 +153,7 @@ pub(crate) fn automix_bar_view(
                             div()
                                 .h_full()
                                 .w(px(PROGRESS_WIDTH * fraction))
-                                .rounded(px(4.))
+                                .rounded(px(t.control_radius))
                                 .bg(paint(accent)),
                         ),
                 )
@@ -224,17 +167,17 @@ pub(crate) fn automix_bar_view(
         );
     }
     if actions.start {
-        row = row.child(bar_chip(t, "Start", height, cx, |this| {
+        row = row.child(bar_chip(t, ("Start", START_WIDTH), cx, |this| {
             this.press_automix("automix.start")
         }));
     }
     if actions.skip {
-        row = row.child(bar_chip(t, "Skip", height, cx, |this| {
+        row = row.child(bar_chip(t, ("Skip", SKIP_WIDTH), cx, |this| {
             this.press_automix("automix.skip")
         }));
     }
     if actions.cancel {
-        row = row.child(bar_chip(t, "Cancel", height, cx, |this| {
+        row = row.child(bar_chip(t, ("Cancel", CANCEL_WIDTH), cx, |this| {
             this.press_automix("automix.cancel")
         }));
     }
