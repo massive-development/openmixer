@@ -53,6 +53,14 @@ impl MixerPanel {
         self.page
     }
 
+    /// True while any channel or the master holds a clip: the column's one CLIP word shows.
+    pub fn any_clip_latched(&self) -> bool {
+        let meters = self.strips.iter().map(|s| &s.meter);
+        meters
+            .chain([&self.master.meter])
+            .any(|m| m.left.is_latched() || m.right.is_latched())
+    }
+
     /// Mixer strips and sections are shown on the mixer page only.
     pub fn mixer_visible(&self) -> bool {
         self.page == Page::Mixer
@@ -166,6 +174,16 @@ pub struct ColumnLayout {
     pub curve: Rect,
     pub phones_mix: KnobCell,
     pub phones_level: KnobCell,
+}
+
+impl ColumnLayout {
+    /// The one CLIP word's slot, `height` tall above the wells: between channel A's fader and the
+    /// master fader, the only gap near the meters that no fader cap crosses.
+    pub fn clip_word(&self, height: i32) -> Rect {
+        let a = &self.channels[0];
+        let left = a.fader.right();
+        Rect::new(left, a.meter.y, self.master_fader.x - left, height)
+    }
 }
 
 fn step(m: &DensityMetrics, i: usize) -> i32 {
@@ -423,6 +441,24 @@ mod tests {
             let [a, b] = &l.channels;
             assert!(a.fader.right() <= l.master_meter.x && l.master_fader.right() <= b.fader.x);
             assert_eq!(a.fader.h, b.fader.h);
+        }
+    }
+
+    /// Three meters 7 px wide cannot each carry a 24 px word, so the column has one slot for it.
+    #[test]
+    fn the_clip_word_has_a_slot_clear_of_the_fader_caps() {
+        for density in [Density::Roomy, Density::Compact] {
+            let (_, _, l) = column(density);
+            let slot = l.clip_word(14);
+            let label = ThemeTokens::builtin_dark().type_label;
+            assert!(slot.w as f32 >= 4.0 * 0.5 * label, "{density:?}: {slot:?}");
+            for fader in [l.channels[0].fader, l.master_fader, l.channels[1].fader] {
+                assert!(
+                    !slot.intersects(&fader),
+                    "{density:?}: {slot:?} over {fader:?}"
+                );
+            }
+            assert_eq!(slot.y, l.master_meter.y);
         }
     }
 

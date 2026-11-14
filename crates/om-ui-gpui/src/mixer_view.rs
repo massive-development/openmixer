@@ -9,13 +9,14 @@
 
 use crate::app::Shell;
 use crate::controls::{
-    face_button, knob_face_with, metrics, segmented, slider_focus, stereo_meter, tip_overlay,
-    BarState, KnobFace, KnobLook,
+    face_button, knob_face_with, metrics, segmented, slider_focus, tip_overlay, BarState, KnobFace,
+    KnobLook,
 };
 use crate::drag::Target;
 use crate::fader_paint::{self, FaderFace, FaderLaw};
 use crate::font::{numeral, Numeral, TypeExt as _};
 use crate::knob_paint::KnobRole;
+use crate::meter_paint::{clip_word, lamp_meter};
 use crate::paint::{focus_layer, paint, place};
 use crate::parts::deck_tag;
 use gpui::{div, prelude::*, px, ClickEvent, Context, Div, MouseButton, SharedString};
@@ -50,6 +51,10 @@ pub fn mixer_card(shell: &Shell, card: Rect, cx: &mut Context<Shell>) -> Div {
         }
     }
     root = root.children(master(shell, l.master_fader, l.master_meter, card, cx));
+    if shell.mixer.any_clip_latched() {
+        let headroom = t.meter_headroom.round() as i32;
+        root = root.child(clip_word(t, l.clip_word(headroom)));
+    }
     for (ch, tag) in l.tags.iter().enumerate() {
         let hue = t.accent_for(ch as i32);
         root = root.child(
@@ -150,18 +155,11 @@ fn channel(
         .child(slider_focus(t, target, cx)),
     );
     let bars = [bar_state(&strip.meter.left), bar_state(&strip.meter.right)];
-    out.push(stereo_meter(
-        t,
-        column.meter,
-        false,
-        bars,
-        cx,
-        move |this| {
-            let meter = &mut this.mixer.strips[ch].meter;
-            meter.left.click();
-            meter.right.click();
-        },
-    ));
+    out.push(lamp_meter(t, column.meter, bars, cx, move |this| {
+        let meter = &mut this.mixer.strips[ch].meter;
+        meter.left.click();
+        meter.right.click();
+    }));
     let cue = if strip.pfl { Face::On } else { Face::Rest };
     out.push(
         place(column.cue).child(
@@ -285,7 +283,9 @@ fn kill_switch(
     let hue = t.accent_for(ch as i32);
     let id = format!("kill-{ch}-{band}");
     let handle = crate::controls::focus_handle(&id, cx);
-    let hover = look.face(Face::Hover, hue).fill;
+    // A killed band keeps its tint under the pointer: the "on + hover" face, not the plain one.
+    let hover = look.face(if killed { Face::OnHover } else { Face::Hover }, hue);
+    let pressed = look.face(Face::Pressed, hue).fill;
     let lit = look.face(Face::On, hue);
     let el = text
         .rounded(px(t.control_radius))
@@ -301,7 +301,15 @@ fn kill_switch(
             .aria_label(format!("Kill {}", shell.mixer.strips[ch].eq[band].label))
             .track_focus(&handle)
             .child(focus_layer(look.focus, t.control_radius, Some(handle)))
-            .hover(move |s| s.bg(paint(hover)))
+            .hover(move |s| {
+                let s = s.bg(paint(hover.fill));
+                if killed {
+                    s.border_color(paint(hover.edge))
+                } else {
+                    s
+                }
+            })
+            .active(move |s| s.bg(paint(pressed)))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.mixer.strips[ch].kill_pressed(band);
@@ -349,7 +357,7 @@ fn master(
         )
         .child(slider_focus(t, Target::Master, cx))
         .child(tip_overlay(t, "master-tip", "Master level")),
-        stereo_meter(t, meter_rect, false, bars, cx, |this| {
+        lamp_meter(t, meter_rect, bars, cx, |this| {
             let meter = &mut this.mixer.master.meter;
             meter.left.click();
             meter.right.click();
@@ -394,20 +402,18 @@ fn curve(shell: &Shell, rect: Rect, cx: &mut Context<Shell>) -> Div {
     )
 }
 
-/// The FX drawer of deck `index`'s FX tab at `area` (card coordinates): the rack scopes (master
+/// The FX drawer of a deck's FX tab at `area` (card coordinates): the rack scopes (master
 /// and each channel), the unit and its switch, then the mix and the unit's parameters as knobs
 /// with their values beside them, and the beat the unit syncs to.
-pub(crate) fn fx_drawer(
-    shell: &Shell,
-    index: usize,
-    card: Rect,
-    area: Rect,
-    cx: &mut Context<Shell>,
-) -> Div {
+pub(crate) fn fx_drawer(shell: &Shell, card: Rect, area: Rect, cx: &mut Context<Shell>) -> Div {
     let t = &shell.theme;
     let m = metrics(t);
     let fx = &shell.mixer.fx;
-    let hue = t.accent_for(index as i32);
+    // The rack's hue names the channel it works on; the master scope is no deck's.
+    let hue = match fx.scope() {
+        0 => t.text_primary,
+        channel => t.accent_for(channel as i32 - 1),
+    };
     let h = px(m.control_height);
     let scopes: Vec<String> = (0..fx.num_scopes()).map(FxPanel::scope_label).collect();
     let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();

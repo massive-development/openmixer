@@ -76,13 +76,9 @@ pub(super) fn library_page(
         }));
     }
     let scan_on = settings.prefs.library.scan_on_start;
-    let on_start = chip(
-        t,
-        if scan_on { "On" } else { "Off" },
-        scan_on,
-        cx,
-        move |this| this.settings_mut(|s| s.library_set_scan_on_start(!scan_on)),
-    );
+    let on_start = switch(t, scan_on, cx, move |this| {
+        this.settings_mut(|s| s.library_set_scan_on_start(!scan_on))
+    });
 
     let mut column = div()
         .flex()

@@ -5,15 +5,18 @@
 //! comes up. Models come from `om-ui`'s `SamplerBinding`; the layout from `widgets::sampler_strip`.
 
 use crate::app::Shell;
-use crate::controls::{button, caption, knob_face_with, value_caption, KnobFace, KnobLook};
+use crate::controls::{
+    button, caption, focus_handle, knob_face_with, metrics, value_caption, KnobFace, KnobLook,
+};
 use crate::drag::Target;
-use crate::font::{numeral, Numeral, TypeExt as _};
+use crate::font::TypeExt as _;
 use crate::knob_paint::KnobRole;
-use crate::paint::{paint, place, skin};
+use crate::paint::{focus_layer, paint, place, skin};
+use crate::parts::{pad_face, PadState};
 use crate::text_entry::{apply_key, EntryKey};
 use gpui::{
-    div, prelude::*, px, Context, Div, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
-    MouseDownEvent, MouseUpEvent,
+    prelude::*, px, ClickEvent, Context, Div, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
+    MouseDownEvent, MouseUpEvent, SharedString,
 };
 use om_engine::sampler::{PadMode, MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
 use om_ui::geometry::Rect;
@@ -334,8 +337,9 @@ pub fn sampler_card(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     root
 }
 
-/// One pad: a click selects and presses it, the release ends a gate. Lit while playing, filled when
-/// loaded, outlined when empty, and marked with the accent when selected.
+/// One pad: the shared pad face (playing, set, empty; dashed while its sample decodes), a tab stop
+/// with the focus ring. A press selects and plays it and the release ends a gate; Enter or Space
+/// taps it. The selected pad's edge is the text colour.
 fn pad_tile(
     shell: &Shell,
     rect: Rect,
@@ -345,51 +349,51 @@ fn pad_tile(
     cx: &mut Context<Shell>,
 ) -> Div {
     let t = &shell.theme;
-    let look = LookAndFeel::from_tokens(t);
+    let m = metrics(t);
     let index = pad.pad;
-    let style = if pad.playing {
-        look.lit_button(accent)
-    } else if pad.loaded {
-        look.button.idle
-    } else {
-        look.panel
+    let state = match (pad.loading, pad.playing, pad.loaded) {
+        (true, _, _) => PadState::Disabled,
+        (_, true, _) => PadState::Playing,
+        (_, _, true) => PadState::Set,
+        _ => PadState::Empty,
     };
     let name: String = pad.name.chars().take(PAD_NAME_CHARS).collect();
-    // A loaded pad shows its key over its name: on one line "5 Tone A" filled a 56 px pad.
     let key = if pad.missing {
         format!("{} !", pad.key)
     } else {
         pad.key.to_string()
     };
-    let mut text = div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .child(numeral(t, Numeral::Value, key));
-    if pad.loaded {
-        text = text.child(name);
+    let id = format!("sampler-pad-{index}");
+    let handle = focus_handle(&id, cx);
+    let ring = LookAndFeel::from_tokens(t).focus;
+    let mut face = pad_face(t, &m, (&key, &name), state, accent)
+        .w(px(rect.w as f32))
+        .h(px(rect.h as f32))
+        .relative();
+    if pad.selected {
+        face = face.border_color(paint(t.text_primary));
     }
-    let border_colour = if pad.selected { accent } else { style.border };
-    let mut el = skin(
-        place(rect)
-            .flex()
-            .items_center()
-            .justify_center()
-            .type_role(t, TypeRole::Label),
-        &style,
-    )
-    .border_color(paint(border_colour))
-    .child(text)
-    .on_mouse_down(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-            window.focus(&focus, cx);
-            this.sampler_press(index);
-            cx.notify();
-        }),
-    );
-    if pad.loading {
-        el = el.opacity(0.6);
-    }
-    el
+    let el = face
+        .id(SharedString::from(id))
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(format!("Pad {key} {name}"))
+        .track_focus(&handle)
+        .child(focus_layer(ring, m.panel_radius, Some(handle)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                // The strip takes the keys (1 to 8), not the pad.
+                window.focus(&focus, cx);
+                this.sampler_press(index);
+                cx.notify();
+            }),
+        )
+        .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
+            if matches!(ev, ClickEvent::Keyboard(_)) {
+                this.sampler_press(index);
+                this.sampler_release();
+                cx.notify();
+            }
+        }));
+    place(rect).child(el)
 }

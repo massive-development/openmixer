@@ -13,12 +13,13 @@ pub const TOGGLE_LABEL: &str = "AUTOMIX";
 pub const LABEL_WIDTH: f32 = 52.0;
 /// The segmented Off | On switch.
 pub const SWITCH_WIDTH: f32 = 76.0;
-/// The transition length chip: a `TRANSITION` caption over `16 beats`.
+/// The transition length chip: `16 beats` on one line (the control height has no room for two).
 pub const LENGTH_WIDTH: f32 = 64.0;
 /// The running state word (`Loading`, `Armed`, `Mixing`).
 pub const STATE_WIDTH: f32 = 60.0;
 pub const PROGRESS_WIDTH: f32 = 40.0;
-pub const REMAINING_WIDTH: f32 = 72.0;
+/// The beats-left text: `128 beats left` in the 13 px mono numeral (6.5 px a letter).
+pub const REMAINING_WIDTH: f32 = 92.0;
 pub const START_WIDTH: f32 = 44.0;
 pub const SKIP_WIDTH: f32 = 36.0;
 pub const CANCEL_WIDTH: f32 = 48.0;
@@ -429,6 +430,17 @@ mod tests {
                 running <= available,
                 "running row needs {running} px of {available}"
             );
+        }
+    }
+
+    /// The mono numeral advances half its size a letter; 72 px cut "8 beats left" to "8 beats le".
+    #[test]
+    fn the_beats_left_text_fits_its_box() {
+        let advance = crate::theme::ThemeTokens::builtin_dark().type_numeral * 0.5;
+        for beats in [1.0, 8.0, 32.0, 128.0] {
+            let text = remaining_text(beats);
+            let needs = text.chars().count() as f32 * advance;
+            assert!(needs <= REMAINING_WIDTH, "{text:?} needs {needs} px");
         }
     }
 

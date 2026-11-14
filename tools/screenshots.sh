@@ -22,6 +22,7 @@
 # (--demo-automix: click tracks, automix on, deck A playing) and is captured after a delay. main-stems loads deck A's track with its stems
 # (the mock separator, --mock-stems) so the stem pads are live.
 # main-dark also shows the library browser (the demo library is loaded in every scene).
+# The MIDI, Library and Mapping tabs print temp paths, which follow TMPDIR: keep it neutral (/tmp).
 #
 set -euo pipefail
 
@@ -139,6 +140,16 @@ declare -A scenes=(
 )
 # Seconds to wait before a scene is captured (the automix demo deck plays from the start).
 declare -A delays=(
+  # The demo-library scenes wait for deck A's analysis, so the waveform and BPM are drawn.
+  [main-dark]=8
+  [main-daylight]=8
+  [main-stems]=8
+  [debug-panel]=8
+  [settings-audio]=8
+  [settings-appearance]=8
+  [settings-midi]=8
+  [settings-library]=8
+  [settings-recording]=8
   [main-automix]=19
   [main-waveform]=8
   [main-record]=4

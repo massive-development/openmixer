@@ -51,7 +51,7 @@ impl PadState {
 }
 
 /// A label set in the control-label tier, heavier when the face asks for it (playing).
-fn label(t: &ThemeTokens, style: &FaceStyle, text: impl Into<SharedString>) -> Div {
+pub(crate) fn label(t: &ThemeTokens, style: &FaceStyle, text: impl Into<SharedString>) -> Div {
     let el = div().type_role(t, TypeRole::Label).child(text.into());
     if style.strong {
         el.font_weight(FontWeight::SEMIBOLD)

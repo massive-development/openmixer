@@ -1,5 +1,6 @@
 //! `--features gui`: opens the GPUI window over a DjEngine. The device is output only. Without a
 //! device (or with `--mock-device`) the engine runs on the silent mock device and a banner says so.
+//! A demo run (`--demo-*`) on `--mock-device` shows no banner.
 //! `--smoke` renders a fixed number of frames and exits 0; with the library it also ingests generated
 //! tracks into a temporary library, loads one into deck A and checks the deck and the table after
 //! the frames. `--debug-panel` shows the device, latency and raw parameter panel. The settings
@@ -50,7 +51,7 @@ pub fn main(args: &[String]) -> ExitCode {
     // `--demo-map`: the merged fixture controller maps, loaded into a temporary map file on a mock
     // MIDI backend, so the mapping editor is populated (see `openmixer::demo_map`).
     let demo_map = openmixer::flags::demo_map(args);
-    // `--demo-library`: like the smoke run's library (generated tracks, deck A loaded) but the
+    // `--demo-library`: like the smoke run's library (generated tracks; here both decks are loaded) but the
     // window stays open; used by tools/screenshots.sh.
     // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
     // automix bar shows the next track and its transition (see docs/screenshots/REVIEW.md).
@@ -150,7 +151,8 @@ pub fn main(args: &[String]) -> ExitCode {
     let (output, banner) = if mock {
         (
             mock_output(),
-            Some(om_ui::labels::notice_text(om_ui::labels::Notice::Demo).to_owned()),
+            // A staged demo run is for screenshots: the notice would cover deck B's header.
+            (!demo_run).then(|| om_ui::labels::notice_text(om_ui::labels::Notice::Demo).to_owned()),
         )
     } else {
         let cpal = SharedOutput::new(OutputSettings::new(Box::new(CpalBackend)));
@@ -247,6 +249,20 @@ pub fn main(args: &[String]) -> ExitCode {
             library_smoke::load_first_into_deck0(&mut hub.services, &mut hub.loader, &engine)
         {
             smoke_error = Some(error);
+        }
+    }
+    // A demo window shows both decks loaded and parked inside their tracks; the automix demo
+    // loads deck B itself and a scene places deck A.
+    if let (Some(hub), true, None) = (&library, demo && !automix_demo, &smoke_error) {
+        let mut hub = hub.borrow_mut();
+        let hub = &mut *hub;
+        match library_smoke::load_nth_into_deck(&mut hub.services, &mut hub.loader, &engine, 1, 1) {
+            Ok(_) => openmixer::demo_scene::park(&engine, 1),
+            Err(error) => eprintln!("openmixer: demo deck B: {error}"),
+        }
+        // The sampler and stems scenes stage only the window, so deck A is parked for them too.
+        if matches!(scene, None | Some(DemoScene::Sampler | DemoScene::Stems)) {
+            openmixer::demo_scene::park(&engine, 0);
         }
     }
     if let (Some(scene), None) = (scene, &smoke_error) {
@@ -398,10 +414,9 @@ pub fn main(args: &[String]) -> ExitCode {
         settings: Some(settings),
         library: library.clone(),
         library_rows_out: smoke.then(|| Arc::clone(&rows_out)),
-        // The demo's tracks are sweeps with no tempo: give deck A a fixed grid once its
-        // analysis lands, so screenshots show beat ticks.
-        // (Not for a real track: its own analysis supplies the grid.)
-        demo_grid_bpm: (demo && scene != Some(DemoScene::Track)).then_some(120.0),
+        // Deck A's demo track is a loop with a tempo: its own analysis supplies the grid, so the
+        // deck and the library show the same BPM.
+        demo_grid_bpm: None,
         scene: scene_options(scene),
         samples,
         on_frame: Some(automix_frame),

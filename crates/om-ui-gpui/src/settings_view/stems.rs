@@ -115,7 +115,7 @@ pub(super) fn stems_section(
     }
 
     let auto = settings.prefs.stems.auto_prepare;
-    let auto_chip = chip(t, if auto { "On" } else { "Off" }, auto, cx, move |this| {
+    let auto_chip = switch(t, auto, cx, move |this| {
         this.settings_mut(|s| s.stems_set_auto_prepare(!auto))
     });
 

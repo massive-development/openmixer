@@ -468,14 +468,20 @@ impl TableDelegate for LibraryTable {
     fn render_empty(
         &mut self,
         _: &mut Window,
-        _: &mut Context<TableState<Self>>,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .px(px(8.))
-            .child("No tracks match")
+        let empty = div().size_full().flex().items_center();
+        let Some(shell) = self.shell.upgrade() else {
+            return empty;
+        };
+        shell.read_with(cx, |shell, _| {
+            let t = &shell.theme;
+            empty
+                .px(px(crate::controls::metrics(t).space[3]))
+                .type_role(t, TypeRole::Body)
+                .text_color(paint(t.text_muted))
+                .child("No tracks match")
+        })
     }
 }
 
@@ -509,11 +515,18 @@ impl RowLook {
     /// the tempo fits too.
     fn fill_and_edge(&self, row: &RowView) -> (Option<Hsla>, Option<Hsla>) {
         let shade = |c: Colour| Hsla::from(paint(c));
+        let loaded = row
+            .on_deck
+            .map(|d| shade(self.accents[d % self.accents.len()].with_alpha(LOADED_EDGE)));
         if row.selected {
-            return (
-                Some(shade(self.selection.with_alpha(SELECTED_TINT))),
-                Some(shade(self.selection.with_alpha(SELECTED_EDGE))),
-            );
+            // Selection is the fill; a loaded or unplayable row keeps its own edge under it.
+            let edge = match (&row.error, loaded) {
+                (Some(_), _) => shade(self.error_edge),
+                (None, Some(deck)) => deck,
+                (None, None) => shade(self.selection.with_alpha(SELECTED_EDGE)),
+            };
+            let fill = shade(self.selection.with_alpha(SELECTED_TINT));
+            return (Some(fill), Some(edge));
         }
         if row.error.is_some() {
             return (None, Some(shade(self.error_edge)));
@@ -526,10 +539,7 @@ impl RowLook {
             };
             shade(self.master.with_alpha(alpha))
         });
-        let edge = row
-            .on_deck
-            .map(|d| shade(self.accents[d % self.accents.len()].with_alpha(LOADED_EDGE)));
-        (fill, edge)
+        (fill, loaded)
     }
 }
 
@@ -897,7 +907,11 @@ pub fn library_card(
         .items_center()
         .text_color(paint(status_colour))
         .overflow_hidden()
-        .child(om_ui::labels::library_status(&status, count));
+        .child(crate::font::mixed(
+            &t,
+            TypeRole::Label,
+            &om_ui::labels::library_status(&status, count),
+        ));
 
     let list = div()
         .absolute()
@@ -978,10 +992,23 @@ mod tests {
     #[test]
     fn a_selected_row_is_the_slate_tint_with_its_edge() {
         let t = ThemeTokens::builtin_dark();
-        let (fill, edge) = RowLook::from_tokens(&t).fill_and_edge(&row(true, Some(0), None));
+        let (fill, edge) = RowLook::from_tokens(&t).fill_and_edge(&row(true, None, None));
         let slate = t.accent_for(1);
         assert_eq!(fill, Some(shade(slate.with_alpha(0.18))));
         assert_eq!(edge, Some(shade(slate.with_alpha(0.55))));
+    }
+
+    /// Canvas States: "Selection is not the same as loaded".
+    #[test]
+    fn a_selected_row_keeps_its_loaded_or_unplayable_edge() {
+        let t = ThemeTokens::builtin_dark();
+        let look = RowLook::from_tokens(&t);
+        let slate = shade(t.accent_for(1).with_alpha(0.18));
+        let (fill, edge) = look.fill_and_edge(&row(true, Some(0), None));
+        assert_eq!(fill, Some(slate));
+        assert_eq!(edge, Some(shade(t.accent_for(0).with_alpha(0.40))));
+        let (_, edge) = look.fill_and_edge(&row(true, None, Some("can't read file")));
+        assert_eq!(edge, Some(shade(t.border_strong)));
     }
 
     #[test]

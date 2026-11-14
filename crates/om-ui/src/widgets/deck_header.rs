@@ -7,62 +7,10 @@
 
 use super::deck::TrackInfo;
 use crate::geometry::Rect;
-use crate::theme::{Colour, DensityMetrics, ThemeTokens, TypeRole};
+use crate::theme::{DensityMetrics, ThemeTokens, TypeRole};
 
 /// Remaining time at or below which the countdown turns red, in seconds.
 pub const REMAINING_WARN_SECS: f64 = 30.0;
-
-/// Time-remaining numeral: the largest number in the header.
-pub const TIME_REMAINING_SIZE: f32 = 38.0;
-/// Effective BPM numeral.
-pub const BPM_SIZE: f32 = 28.0;
-/// Key numeral.
-pub const KEY_SIZE: f32 = 28.0;
-/// Elapsed time, title and artist (secondary text).
-pub const ELAPSED_SIZE: f32 = 14.0;
-pub const TITLE_SIZE: f32 = 16.0;
-pub const ARTIST_SIZE: f32 = 13.0;
-/// Smallest text anywhere on a deck: captions, chips, tab labels.
-pub const MIN_TEXT_SIZE: f32 = 12.0;
-/// Height of the stage header band and of a deck card's own header.
-pub const HEADER_HEIGHT: i32 = 60;
-/// The deck letter badge is a square this wide.
-pub const BADGE_SIZE: i32 = 28;
-
-/// Fill of the SYNC button and chip while sync is on.
-pub const SYNC_ON: Colour = Colour::from_argb(0xFF19_D3A2);
-/// Countdown under [`REMAINING_WARN_SECS`].
-pub const WARN_RED: Colour = Colour::from_argb(0xFFFF_3B4E);
-/// Text on [`SYNC_ON`] and on the cue palette: near-black for contrast on the bright fills.
-pub const ON_BRIGHT: Colour = Colour::from_argb(0xFF0B_0F14);
-
-/// Type sizes of the header numerals for a header `width` px wide. The full sizes need about 520 px;
-/// narrower headers (the 1024 px window gives each deck about 370) step down so the title keeps
-/// room, but never below the 22 px numeral and 28 px countdown.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HeaderMetrics {
-    pub time: f32,
-    pub number: f32,
-}
-
-pub fn header_metrics(width: i32) -> HeaderMetrics {
-    if width >= 520 {
-        HeaderMetrics {
-            time: TIME_REMAINING_SIZE,
-            number: BPM_SIZE,
-        }
-    } else if width >= 430 {
-        HeaderMetrics {
-            time: 32.0,
-            number: 24.0,
-        }
-    } else {
-        HeaderMetrics {
-            time: 28.0,
-            number: 22.0,
-        }
-    }
-}
 
 /// Letter badge of a deck: A, B, C, D, ... so the identity is not carried by colour alone.
 pub fn deck_letter(index: usize) -> char {
@@ -117,23 +65,13 @@ pub fn loop_label(beats: f64) -> String {
     }
 }
 
-/// Eight cue colours, hot to cool, bright enough for [`ON_BRIGHT`] text.
-pub const CUE_PALETTE: [Colour; 8] = [
-    Colour::from_argb(0xFFFF_5468), // red
-    Colour::from_argb(0xFFFF_9248), // orange
-    Colour::from_argb(0xFFFF_D84A), // yellow
-    Colour::from_argb(0xFF7B_E05A), // green
-    Colour::from_argb(0xFF2E_D8C0), // teal
-    Colour::from_argb(0xFF4F_B4FF), // blue
-    Colour::from_argb(0xFFA7_88FF), // violet
-    Colour::from_argb(0xFFFF_6FC4), // pink
-];
-
 /// Line height of the deck title and artist (comp deck header: 1.2).
 pub const TITLE_LINE: f32 = 1.2;
 /// Width of each readout column (BPM, key, remaining), px: the widest text each shows in the
 /// readout numeral size ("128.0", "12B", "-12:34.5") with a little room.
 pub const READOUT_WIDTHS: [i32; 3] = [64, 40, 96];
+/// A title narrower than this takes the cover's place, px: about a dozen letters of a track name.
+pub const MIN_TITLE_WIDTH: i32 = 96;
 
 fn step(m: &DensityMetrics, i: usize) -> i32 {
     m.space[i].round() as i32
@@ -171,7 +109,7 @@ pub struct HeadLayout {
 }
 
 /// Lays out deck header `bounds`; `mirrored` for deck B. The readouts sit at the inner end (next
-/// to the master tempo), the tag at the outer end; a narrow cell gives up the title first.
+/// to the master tempo), the tag at the outer end; a narrow cell gives up the cover, then the title.
 pub fn head_layout(
     bounds: Rect,
     t: &ThemeTokens,
@@ -194,9 +132,17 @@ pub fn head_layout(
     };
     let tag_cell = outer(&mut line, tag_side);
     outer(&mut line, gap);
+    let readouts_w = READOUT_WIDTHS.iter().sum::<i32>() + 2 * readout_gap + gap;
     let cover_w = text_h.min(line.w);
-    let cover = outer(&mut line, cover_w);
-    outer(&mut line, gap);
+    let keeps_cover = line.w - cover_w - gap - readouts_w >= MIN_TITLE_WIDTH;
+    let cover = outer(&mut line, if keeps_cover { cover_w } else { 0 });
+    // A narrow head also closes the readouts up, so the title keeps a few more letters.
+    let readout_gap = if keeps_cover {
+        outer(&mut line, gap);
+        readout_gap
+    } else {
+        step(m, 2)
+    };
     let inner = |line: &mut Rect, w: i32| {
         if mirrored {
             line.remove_left(w)
@@ -232,6 +178,27 @@ mod tests {
         }
     }
 
+    fn head(width: i32, mirrored: bool) -> HeadLayout {
+        let t = ThemeTokens::builtin_dark();
+        let m = *t.metrics(crate::theme::Density::Roomy);
+        let bounds = Rect::sized(width, head_height(&t, &m));
+        head_layout(bounds, &t, &m, mirrored)
+    }
+
+    /// 333 px is the deck head beside the debug column at 1280 px, where the title was "s…".
+    #[test]
+    fn a_narrow_head_gives_up_the_cover_before_the_title() {
+        for mirrored in [false, true] {
+            let wide = head(520, mirrored);
+            assert!(!wide.cover.is_empty() && wide.title.w >= MIN_TITLE_WIDTH);
+            let narrow = head(333, mirrored);
+            assert!(narrow.cover.is_empty(), "{:?}", narrow.cover);
+            assert!(narrow.title.w >= 60, "title is {} px", narrow.title.w);
+            assert!(!narrow.title.intersects(&narrow.readouts[0]));
+            assert!(!narrow.title.intersects(&narrow.tag));
+        }
+    }
+
     #[test]
     fn key_shows_one_notation_with_a_fallback() {
         let both = info("Am", "8A");
@@ -262,23 +229,10 @@ mod tests {
     }
 
     #[test]
-    fn the_countdown_is_always_the_largest_number() {
-        for width in [300, 370, 450, 520, 900] {
-            let m = header_metrics(width);
-            assert!(m.time > m.number, "{width}: {m:?}");
-            assert!(m.number > ELAPSED_SIZE);
-        }
-        assert_eq!(header_metrics(900).time, TIME_REMAINING_SIZE);
-    }
-
-    #[test]
-    fn deck_letters_and_cue_palette() {
+    fn deck_letters_run_from_a() {
         assert_eq!(
             (0..4).map(deck_letter).collect::<String>(),
             "ABCD".to_owned()
         );
-        let mut seen = CUE_PALETTE.to_vec();
-        seen.dedup();
-        assert_eq!(seen.len(), 8, "eight distinct cue colours");
     }
 }
