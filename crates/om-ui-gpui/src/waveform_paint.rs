@@ -16,11 +16,11 @@ use gpui::{
 use om_analysis::WaveformData;
 use om_ui::theme::Colour;
 use om_ui::waveform::{
-    column_tiles, overview_shapes, played_edge, playhead_rect, shape_px, Band, BandStrip,
-    ColumnShape, OverviewMarkers, Palette, Reference, StripInk, StripSlot, StripSource, View,
-    WaveStyle, BAR_LINE_WIDTH, BEAT_LINE_WIDTH, LOOP_EDGE_WIDTH, LOW_BAND_HIGH_ALPHA,
+    column_tiles, overview_shapes, played_edge, playhead_rect, playhead_sides, shape_px, Band,
+    BandStrip, ColumnShape, OverviewMarkers, Palette, Reference, StripInk, StripSlot, StripSource,
+    View, WaveStyle, BAR_LINE_WIDTH, BEAT_LINE_WIDTH, LOOP_EDGE_WIDTH, LOW_BAND_HIGH_ALPHA,
     OVERVIEW_CUE_FLAG, OVERVIEW_PLAYED_SHADE_ALPHA, OVERVIEW_TICK_ALPHA, OVERVIEW_TICK_HEIGHT,
-    PLAYHEAD_HALO,
+    PLAYHEAD_HALO, PLAYHEAD_KEYLINE,
 };
 use om_ui::widgets::deck::GridLine;
 use std::cell::{Cell, RefCell};
@@ -318,21 +318,17 @@ fn paint_layers(
     }
 }
 
-/// The playhead, `ink.playhead_width` px of signal red, with the earlier styles' halo.
+/// The playhead, `ink.playhead_width` px of signal red, with the earlier styles' halo or else a
+/// well-colour keyline, so it separates from a same-hue waveform.
 fn playhead(window: &mut Window, bounds: Bounds<Pixels>, x: f64, height: f32, ink: &StripInk) {
     let (left, width) = playhead_rect(x, ink.playhead_width);
-    if let Some(halo) = ink.halo {
-        let c = paint(halo);
-        quad(
-            window,
-            bounds,
-            left - PLAYHEAD_HALO,
-            0.0,
-            PLAYHEAD_HALO,
-            height,
-            c,
-        );
-        quad(window, bounds, left + width, 0.0, PLAYHEAD_HALO, height, c);
+    let (side, band) = match ink.halo {
+        Some(halo) => (halo, PLAYHEAD_HALO),
+        None => (ink.well, PLAYHEAD_KEYLINE),
+    };
+    let c = paint(side);
+    for (l, w) in playhead_sides(x, ink.playhead_width, band) {
+        quad(window, bounds, l, 0.0, w, height, c);
     }
     quad(
         window,

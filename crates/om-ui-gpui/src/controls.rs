@@ -625,6 +625,46 @@ pub fn slider_with_popup(
     draggable(track, target, abs, cx)
 }
 
+/// A horizontal level slider: the recessed slot filled in `fill` from the rest point (zero, or the
+/// centre detent of a bipolar range) to the value, and the fader cap on top. Drawn in `rect`
+/// (parent coordinates) and made draggable with `abs`.
+pub fn level_slider(
+    t: &ThemeTokens,
+    rect: Rect,
+    (value, min, max): (f64, f64, f64),
+    (target, fill): (Target, Colour),
+    abs: Rect,
+    cx: &mut Context<Shell>,
+) -> Div {
+    let look = LookAndFeel::from_tokens(t);
+    let thumb_px = look.fader.thumb_size.round() as i32;
+    let bw = look.fader.track.border_width.round() as i32;
+    let travel = (rect.w - thumb_px).max(0) as f32;
+    // Children sit inside the slot's edge; `at` maps a fraction to the cap's centre there.
+    let at = |f: f64| (f as f32 * travel) as i32 + thumb_px / 2 - bw;
+    let (rest, here) = (
+        at(fraction(0.0_f64.clamp(min, max), min, max)),
+        at(fraction(value, min, max)),
+    );
+    let inner_h = (rect.h - 2 * bw).max(1);
+    let lit = Rect::new(rest.min(here), 0, (here - rest).abs(), inner_h);
+    let radius = (look.fader.track.radius - bw as f32).max(0.0);
+    let mut track =
+        skin(place(rect), &look.fader.track).child(place(lit).bg(paint(fill)).rounded(px(radius)));
+    // A bipolar range keeps its centre detent visible over the fill.
+    if min < 0.0 && max > 0.0 {
+        let detent = Rect::new(rest, 1, 1, (inner_h - 2).max(1));
+        track = track.child(place(detent).bg(paint(t.text_muted)));
+    }
+    let cap = Rect::new(here - thumb_px / 2, -bw, thumb_px, rect.h);
+    draggable(
+        track.child(fader_paint::slider_cap(t, cap, t.text_primary)),
+        target,
+        abs,
+        cx,
+    )
+}
+
 /// What a knob prints and where its detent is.
 #[derive(Debug, Clone, Copy)]
 pub struct KnobFace<'a> {

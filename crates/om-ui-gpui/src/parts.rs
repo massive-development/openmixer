@@ -112,7 +112,7 @@ pub fn pad_face(
     let style = FaceStyle {
         radius: m.panel_radius,
         ..match state {
-            PadState::Empty => look.faces.empty_pad(),
+            PadState::Empty => look.faces.empty_pad(hue),
             PadState::Set => look.faces.pad(hue),
             PadState::Playing => look.face(Face::Playing, hue),
             PadState::Disabled => look.face(Face::Disabled, hue),
@@ -248,6 +248,6 @@ mod tests {
         let roomy = t.metrics(Density::Roomy);
         let compact = t.metrics(Density::Compact);
         assert_eq!((roomy.pad_size * GOLDEN).round(), 89.0);
-        assert_eq!((compact.pad_size * GOLDEN).round(), 55.0);
+        assert_eq!((compact.pad_size * GOLDEN).round(), 65.0);
     }
 }

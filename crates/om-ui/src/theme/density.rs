@@ -85,7 +85,7 @@ impl DensityMetrics {
             space: [2.0, 3.0, 5.0, 8.0, 13.0, 21.0],
             control_height: 21.0,
             knob_size: 26.0,
-            pad_size: 34.0,
+            pad_size: 40.0,
             row_height: 26.0,
             mixer_width: 260.0,
             panel_radius: 2.0,

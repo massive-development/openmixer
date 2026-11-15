@@ -259,7 +259,7 @@ fn knob_cell(
         .child(
             div()
                 .type_role(t, TypeRole::Label)
-                .text_color(paint(t.text_muted))
+                .text_color(paint(t.text_secondary))
                 .child(label.to_owned()),
         )
         .child(numeral(t, Numeral::Value, value).text_color(paint(value_colour)));

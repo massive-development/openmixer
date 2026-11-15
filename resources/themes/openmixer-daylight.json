@@ -58,7 +58,7 @@
   "density": {
     "roomy": { "s1": 3, "s2": 5, "s3": 8, "s4": 13, "s5": 21, "s6": 34, "controlHeight": 26, "knobSize": 34, "padSize": 55,
                "rowHeight": 34, "mixerWidth": 320, "panelRadius": 3, "controlRadius": 2 },
-    "compact": { "s1": 2, "s2": 3, "s3": 5, "s4": 8, "s5": 13, "s6": 21, "controlHeight": 21, "knobSize": 26, "padSize": 34,
+    "compact": { "s1": 2, "s2": 3, "s3": 5, "s4": 8, "s5": 13, "s6": 21, "controlHeight": 21, "knobSize": 26, "padSize": 40,
                  "rowHeight": 26, "mixerWidth": 260, "panelRadius": 2, "controlRadius": 2 }
   },
   "waveform": { "saturationMax": 0.85, "lightnessMin": 0.3, "lightnessMax": 0.6, "floorDb": -42, "spreadNarrow": 1.0,

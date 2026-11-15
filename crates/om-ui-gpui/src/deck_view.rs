@@ -8,7 +8,7 @@
 
 use crate::app::Shell;
 use crate::controls::{
-    face_button, metrics, pad_button, press_button, segmented, slider, slider_focus,
+    face_button, level_slider, metrics, pad_button, press_button, segmented, slider_focus,
 };
 use crate::drag::Target;
 use crate::fader_paint;
@@ -31,14 +31,16 @@ use om_core::DeckSnapshot;
 use om_ui::geometry::Rect;
 use om_ui::main_layout::is_mirrored;
 use om_ui::stem_binding::{MAX_VOLUME, STEM_NAMES};
-use om_ui::style::{Face, LookAndFeel};
+use om_ui::style::{tint, Face, LookAndFeel};
 use om_ui::theme::{Colour, ThemeTokens, TypeRole};
 use om_ui::waveform::CUE_STACK_STEP;
 use om_ui::waveform::{
-    cue_flags, StripInk, View, BAR_NUMBER_SIZE, CUE_FLAG_HEIGHT, CUE_FLAG_WIDTH,
+    bar_number_top, cue_flags, flag_rows, loop_caption_top, StripInk, View, CUE_FLAG_HEIGHT,
+    CUE_FLAG_WIDTH,
 };
 use om_ui::widgets::deck::{
-    deck_controls_layout, pad_grid, platter_layout, DeckLayout, PadMode, PAD_COUNT,
+    deck_controls_layout, pad_grid, platter_layout, transport_height, DeckLayout, PadMode,
+    PAD_COUNT,
 };
 use om_ui::widgets::deck_header::{deck_letter, head_layout, TITLE_LINE};
 use om_ui::widgets::hotcues::Modifiers;
@@ -311,7 +313,7 @@ pub(crate) fn zoom(shell: &Shell, index: usize, area: Rect, cx: &mut Context<She
             el = el.child(strip_number(
                 t,
                 line.x as f32 + 1.0,
-                height - BAR_NUMBER_SIZE - 6.0,
+                bar_number_top(height),
                 &ink,
                 n.to_string(),
             ));
@@ -320,12 +322,14 @@ pub(crate) fn zoom(shell: &Shell, index: usize, area: Rect, cx: &mut Context<She
     if let Some(region) = &loop_region {
         let caption = region.caption();
         if !caption.is_empty() {
+            let caption_h = t.type_size(TypeRole::Label) * TypeRole::Label.line_height();
+            let rows = flag_rows(&flags);
             el = el.child(
                 div()
                     .absolute()
                     .left(px((region.x0 as f32).max(0.0) + 8.0))
-                    // Its own lane above the bar numbers, or "Loop" prints over a number.
-                    .bottom(px(BAR_NUMBER_SIZE + 12.0))
+                    // Top lane under the cue flags, so "Loop" never prints over a bar number.
+                    .top(px(loop_caption_top(height, rows, caption_h)))
                     .px(px(metrics(t).space[0]))
                     .bg(paint(ink.well.with_alpha(PLATE_ALPHA)))
                     .type_role(t, TypeRole::Label)
@@ -456,6 +460,7 @@ fn transport(
     let t = &shell.theme;
     let m = metrics(t);
     let h = px(m.control_height);
+    let play_h = px(transport_height(&m) as f32);
     let hue = hue(t, index);
     let loaded = snap.loaded;
     let play_face = match (loaded, snap.playing) {
@@ -470,9 +475,9 @@ fn transport(
         cx,
         press(index, TransportButton::Play),
     )
-    .h(h)
+    .h(play_h)
     .flex_none()
-    .min_w(px(m.control_height * 3.0));
+    .min_w(px(m.control_height * 4.0));
     let cue = press_button(
         t,
         "Cue",
@@ -480,7 +485,7 @@ fn transport(
         cx,
         press(index, TransportButton::Cue),
     )
-    .h(h)
+    .h(play_h)
     .flex_none();
     let sync = face_button(
         t,
@@ -835,13 +840,14 @@ fn stems(shell: &Shell, index: usize, card: Rect, area: Rect, cx: &mut Context<S
                 .size_full(),
             ),
         );
+        let fill = stem_fill(t, hue, !state.muted);
         let volume = Target::StemVolume(index, stem);
         parts.push(
-            slider(
+            level_slider(
                 t,
                 row.volume,
                 (f64::from(state.gain), 0.0, MAX_VOLUME),
-                volume,
+                (volume, fill),
                 abs(row.volume),
                 cx,
             )
@@ -849,22 +855,29 @@ fn stems(shell: &Shell, index: usize, card: Rect, area: Rect, cx: &mut Context<S
         );
         let filter = Target::StemFilter(index, stem);
         parts.push(
-            slider(
+            level_slider(
                 t,
                 row.filter,
                 (f64::from(state.filter), -1.0, 1.0),
-                filter,
+                (filter, fill),
                 abs(row.filter),
                 cx,
-            )
-            .child(
-                place(Rect::new(row.filter.w / 2, 2, 1, (row.filter.h - 4).max(1)))
-                    .bg(paint(t.text_muted)),
             )
             .child(slider_focus(t, filter, cx)),
         );
     }
     parts
+}
+
+/// A stem slider's fill: the deck hue strong in the slot while the stem plays (the deck's edge
+/// share), faint while it is muted (the deck's face tint), so level and state read at a glance.
+fn stem_fill(t: &ThemeTokens, hue: Colour, playing: bool) -> Colour {
+    let share = if playing {
+        t.deck_border_alpha
+    } else {
+        t.deck_tint_alpha
+    };
+    tint(t.well, hue, share)
 }
 
 // ---- The platter ---------------------------------------------------------------------------

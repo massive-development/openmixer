@@ -603,6 +603,18 @@ fn cap(t: &ThemeTokens, rect: Rect, line_rect: Rect, line: Colour, bands: Bands)
         .child(painter)
 }
 
+/// A horizontal slider's cap at `rect`: the fader cap turned a quarter, its line down the middle
+/// in `line`.
+pub fn slider_cap(t: &ThemeTokens, rect: Rect, line: Colour) -> Div {
+    let line_rect = Rect::new(
+        rect.x + rect.w / 2 - CAP_LINE_H / 2,
+        rect.y,
+        CAP_LINE_H,
+        rect.h,
+    );
+    cap(t, rect, line_rect, line, Bands::Columns)
+}
+
 /// The hover-tone bands across a cap `w` x `h`, every other [`BAND_PX`] from the top (or left).
 fn paint_bands(
     window: &mut Window,

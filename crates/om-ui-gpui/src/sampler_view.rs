@@ -134,7 +134,7 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
     let t = &shell.theme;
     let look = LookAndFeel::from_tokens(t);
     let hover = look.button.hover.fill;
-    // The letters clip inside the handle so a short band never spills them over its neighbours.
+    // One horizontal word reads at a glance; it clips so a short band never spills it.
     let letters = gpui::div()
         .size_full()
         .flex()
@@ -143,7 +143,9 @@ fn collapsed_handle(shell: &Shell, card: Rect, focus: FocusHandle, cx: &mut Cont
         .justify_center()
         .gap(px(4.))
         .overflow_hidden()
-        .children("SAMPLER".chars().map(|c| gpui::div().child(c.to_string())))
+        .whitespace_nowrap()
+        .text_color(paint(t.text_secondary))
+        .child("Sampler")
         .child("\u{203A}");
     skin(place(card), &look.button.idle)
         .type_role(t, TypeRole::Label)

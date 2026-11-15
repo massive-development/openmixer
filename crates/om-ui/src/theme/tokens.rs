@@ -419,7 +419,7 @@ impl ThemeTokens {
             meter_headroom: 14.0,
             disabled_alpha: 0.4,
             edge_line_alpha: 1.0,
-            edge_highlight_alpha: 0.04,
+            edge_highlight_alpha: 0.08,
 
             roomy: DensityMetrics::roomy(),
             compact: DensityMetrics::compact(),
