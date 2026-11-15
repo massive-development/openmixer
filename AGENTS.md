@@ -33,16 +33,15 @@ openmixer/
 
 Dependencies point toward `om-core` (see "Modularity" above). The README architecture section has the directory tree; this is what each crate owns.
 
-- **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
-- **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops, sampler, recorder and the EBU R128 loudness meter. Decks resample through `rubato` (`deck/playback/varispeed.rs`, sinc 128 by default, linear for rate 0, steps outside 0.25..=2.0, exact unity and key-lock). Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
-- **`om-audio`, `om-dsp`, `om-stretch`**: device layer (cpal; the `realtime-dbus` feature, on by default in `openmixer`, asks rtkit for real-time priority on Linux and needs `libdbus-1-dev`), DSP, and key-lock time-stretch (FFI `unsafe` in `om-stretch/src/ffi.rs`).
-- **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`. `om-midi` talks to hardware through `MidirBackend` (`midir`; port ids are `Client:Port`, without the sequencer address) or the mock backend. `om-library` and the analysis cache open SQLite with `journal_mode=WAL` and `synchronous=NORMAL`. `om-plugins` loads in-process plugins and C-ABI shared libraries, and with the `clap` feature (off by default, ADR 0007) CLAP plugins through `clack` (`clap/`, with a worker thread per instance); the CLAP first-run warning, state and latency work is in progress.
-- **`om-stems`**: streamed `StemSeparator` over `HtDemucsPipeline`, `StemCache`, `StemService` (one worker, explicit submit only). Details: [docs/features/stems.md](docs/features/stems.md).
-- **`om-automix`** (pure, depends on `om-core` only, control thread, never the audio thread): planner, controller, queue rules and the typed `automix` target; the app side is `automix_service`, `automix_host` and `automix_queue` in `openmixer`. Cancel rules and ids: [docs/features/automix.md](docs/features/automix.md).
-- **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
-- **`om-ui-gpui`** (workspace member, the default `gui` feature): GPUI drawing and events over `om-ui` models. It builds on `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1; buttons, inputs, the library `DataTable`, sidebar rows, settings tabs, dialogs and toasts are `gpui-component` widgets themed by `theme_bridge`; knobs, faders, meters, waveforms, the platter and the sampler pads stay custom-painted. `desktop` and `media_keys` hold the file pickers, clipboard, notifications and OS media keys (`souvlaki`); `plugin_window` hosts a CLAP plugin's window.
-- **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
+- `om-core`: no I/O; `ParamId`, `Command`/`CommandSink`, `ParameterRouter`, `EngineSnapshot`, `WorkerPool`.
+- `om-engine`: audio thread (decks, mixer, FX, sync, sampler, recorder, loudness); implements `ParamTarget`.
+- `om-audio`, `om-dsp`, `om-stretch`: device layer (cpal), DSP, key-lock (FFI `unsafe` only in `om-stretch/src/ffi.rs`).
+- `om-analysis`, `om-library`, `om-midi`, `om-plugins`: control-side services with typed errors.
+- `om-stems`, `om-automix`: see [docs/features/stems.md](docs/features/stems.md) and [docs/features/automix.md](docs/features/automix.md).
+- `om-ui` (no window) and `om-ui-gpui` (GPUI drawing, the `gui` feature): view-models and rendering.
+- `openmixer`: binary and composition root (`Services`, `AppComposition`, `AppError`).
 
+Full per-crate detail: [docs/crates.md](docs/crates.md).
 
 Control paths, and what is live today:
 - **UI (production window):** `DeckBinding::typed` and `MixerBinding::typed` send `Command::Param { id, value }` through the router's `CommandSink`, with no string formatting or parsing. The binding constructors without a sink (`new`) write through the string façade; the widget test rig uses them.
@@ -78,35 +77,12 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 
 ## Architecture Decisions
 
-### ADR-0001: Clean-Room Doctrine
-- **Features** are free (methods of operation)
-- **Expression** is not (names, logos, artwork)
-- No Mixxx code reuse (clean-room)
-- All assets must be original
+Full summaries: [docs/adr/SUMMARY.md](docs/adr/SUMMARY.md); records in `docs/adr/`.
 
-### ADR-0002: Technology Stack (superseded)
-- Superseded by ADR-0004.
-
-### ADR-0003: Licensing
-- **Pure AGPLv3** (no Contributor CLA)
-- Simple contribution process
-- DCO sign-off required
-
-### ADR-0004: Technology Stack - Rust with GPUI
-- **Language / UI:** Rust (toolchain and MSRV 1.95), with GPUI for the UI: `gpui-pre` 0.3.10 imported as `gpui`, `gpui-kit` 0.8.1 and `gpui-component` (gate closed on Linux)
-- **Audio I/O:** `cpal` for the engine output callback; `rodio` is acceptable only for non-critical audio such as library preview (not used so far)
-- **Decode / tags:** `symphonia`; `lofty`
-- **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
-- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (`unsafe` confined to `ffi.rs`), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `openmixer-workbench/docs/spikes/DECISIONS.md`)
-- **MIDI:** `midir` on every platform (`MidirBackend` in `om-midi`; the earlier direct ALSA backend is gone, see `openmixer-workbench/docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
-- **Resampling and loudness:** `rubato` (offline resampling, deck varispeed), `ebur128` (EBU R128 metering)
-- **RT plumbing:** `rtrb` (SPSC), atomics for the pulled `EngineSnapshot`, `assert_no_alloc` in tests (`arc-swap` is not used)
-
-### ADR-0005 to ADR-0008
-- **0005 Experience-first product bar:** `docs/PRODUCT.md` is the bar; interface work is judged by looking at it
-- **0006 Controller map provenance:** maps are written clean-room from the MIDI spec and the maintainer's own hardware traces
-- **0007 CLAP hosting with clack:** accepted; `om-plugins` hosts CLAP plugins behind the `clap` feature, beside the C ABI (`clack-*` pinned `=0.2.0`)
-- **0008 The Machined Faceplate supersedes E1 on look:** accepted; `openmixer-workbench/docs/design-system/DESIGN.md` is the look (warm matte neutrals, etched 1px lines, no glow, four muted deck hues each with its letter, signal red for playhead and record only, every number in mono). Phase 0 answers and the open owner decisions: `openmixer-workbench/docs/design/faceplate-decisions.md`
+- 0001 clean-room: features are free, expression (names, logos, artwork) is not; no Mixxx code.
+- 0003 pure AGPLv3, no CLA, DCO sign-off.
+- 0004 Rust with GPUI (`gpui-pre` imported as `gpui`, `gpui-kit`, `gpui-component`).
+- 0005/0008: `docs/PRODUCT.md` is the experience bar; the Machined Faceplate look is in `openmixer-workbench/docs/design-system/DESIGN.md`.
 
 ## Pull Request Workflow (required)
 
@@ -165,21 +141,7 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 
 ## Styling a control (LookAndFeel)
 
-Colours, radii, border widths, insets and font sizes come from the theme, never from literals in view code.
-
-1. Read the theme's tokens (`om_ui::theme::ThemeTokens`, built from `resources/themes/*.json`).
-2. Get the control's recipe from `om_ui::style::LookAndFeel::from_tokens(t)`: `face(Face, hue)` for any pressable control (rest, hover, pressed, on, on + hover, playing, disabled; `focus` is the 2px ring), `button` (idle, hover, active, disabled), `lit_button(accent)`, `knob`, `fader`, `tabs`, `tooltip`, `text_field` (idle, focus), `meter`, `panel`, `panel_caption`, `separator`, `drop_target`. Nothing glows: depth is the 1px etched edge, the 1px top highlight and, under knob and fader caps only, the one small drop.
-3. In `om-ui-gpui`, draw a control face with `paint::face(el, &face_style)` (or a part from `parts`, or `controls::face_button` for an interactive button), a box with `paint::skin(el, &style)`, a bare border with `paint::border(el, width)`, and a colour with `paint(colour)`. Radii and insets come from the style fields and sizes from the density's `DensityMetrics`, not literals. `examples/controls_gallery.rs` shows every part in every state, theme and density.
-4. A value no token covers: add a token field in `theme/tokens.rs` (default in `builtin_dark`), a reader in `theme/json.rs` (range-checked, with a key in the matching section), and a value in both built-in theme JSON files. Old theme files stay valid because a missing key inherits the default.
-5. Add the new style to `LookAndFeel::entries()` so the contrast and live-switch tests cover it. Text on a control needs contrast 3.0 (control) or 4.5 (body) against its fill over both backdrop ends; disabled controls are exempt.
-6. `crates/om-ui-gpui/tests/style_lint.rs` fails on raw colour calls (`rgb(`, `rgba(`, `hsla(`, `from_argb(`, bare 6 or 8 digit hex) in `src/`. Only `paint.rs` may name them.
-7. Type: set text with a tier, `el.type_role(t, TypeRole::Label)` (`om-ui-gpui::font::TypeExt`; tiers in `om_ui::theme::TypeRole`), and draw every number with `font::numeral(t, Numeral::Value | Readout, text)`, which is always the mono family. `crates/om-ui-gpui/tests/type_lint.rs` fails on a family named outside `font.rs`, a number source drawn without `numeral`, the 10 px `Numeral::Scale` outside the fader dB scale, and a literal text size under 11 px.
-
-8. Hue: a deck hue (`t.accent_for(deck)`) only on something that names that deck, beside its letter. Chrome that belongs to no deck (settings chips, header switches, the sampler) lights in the text colour; `LookAndFeel::accent` is that neutral, so pass the deck's hue explicitly where a control is a deck's.
-
-Themes and type (Machined Faceplate, ADR 0008): the built-in themes are `resources/themes/openmixer-{dark,daylight,harbour}.json` (ids `openmixer.dark`, `openmixer.daylight`, `openmixer.harbour`; harbour is derived from dark and unsourced). A theme holds both metric sets, Roomy and Compact (`ThemeTokens::metrics(Density)`, JSON section `density.roomy` / `density.compact`, defaults from DESIGN.md); the window picks one with `main_layout::resolve_density` from the Appearance preference (Automatic picks by height; an explicit Roomy gives way to Compact where the library would lose its rows). Old E1 theme files still load: retired glass and glow keys warn, `recordRed` and `backdropTop` are read as `playhead` and `ground`. Fonts are bundled in `resources/fonts/` with their licences: Sansation Bold (display, 21 px and up only), Source Sans 3 Regular and Medium (all interface text) and Ubuntu Mono Regular (every number; the family has no 500, so DESIGN.md's 500 numerals draw in Regular) and Bold (deck letters and state words such as LOCK and CLIP). GPUI has no letter-spacing, so no tier carries any. Inter is no longer bundled.
-
-gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
+Colours, radii, borders, insets and font sizes come from theme tokens, never literals in view code. Get recipes from `om_ui::style::LookAndFeel::from_tokens`, draw with `paint::face`/`paint::skin`, set text with `type_role` and numbers with `font::numeral` (always mono). `style_lint.rs` and `type_lint.rs` fail on raw colours, font families and sub-11 px text. A deck hue only on something that names that deck. Full recipe and the token-adding steps: [docs/styling.md](docs/styling.md).
 
 ## Experience bar (required for anything a DJ sees)
 
@@ -314,20 +276,7 @@ incremental = false
 
 ## Common Issues
 
-### Issue: cpal fails to build on Linux (missing `alsa.pc`)
-**Solution:** Install `libasound2-dev pkg-config`
-
-### Issue: `rubberband-sys` fails with a missing `libclang`
-**Solution:** Install `libclang-dev` (bindgen needs it)
-
-### Issue: `libdbus-1` not found
-**Solution:** Install `libdbus-1-dev`; the default `realtime-dbus` feature of `openmixer` needs it. Build with `--no-default-features` to go without it (the souvlaki media keys use zbus and do not need it)
-
-### Issue: `cargo deny check` fails on a licence
-**Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
-
-### Issue: GPUI fails to start on WSL
-**Solution:** WSL-only trouble is a dev-loop issue, not a gate failure (ADR 0004). Check the GPU/Vulkan setup with `vulkaninfo --summary` and record the result in `openmixer-workbench/docs/spikes/DECISIONS.md`
+Missing `alsa.pc`, `libclang`, `libdbus-1`, cargo-deny licences, GPUI on WSL: [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Verification
 
