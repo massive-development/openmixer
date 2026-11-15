@@ -6,7 +6,7 @@ Thank you for your interest in contributing to OpenMixer! This document outlines
 
 ### For AI Agents
 
-1. **Read `AGENTS.md` first** - Contains complete setup instructions
+1. **Read `AGENTS.md` first** - Short rules, with links to the build guide (`docs/guidelines/build.md`)
 2. **Check the plan** - `ROADMAP.md` (task-level notes live in the [workbench](https://github.com/massive-development/openmixer-workbench))
 3. **Create/update tasks** - Use `todowrite` tool to track progress
 4. **Verify each change** - Run `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`
@@ -257,7 +257,7 @@ valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 - **cargo-deny** for `cargo deny check`
 - **sccache (optional, Linux):** `~/.cargo/config.toml` with `[build]`, `rustc-wrapper = "sccache"` and `incremental = false` shares compiled dependencies between worktrees.
 - **Cost rule for agents:** while working, `cargo check -p <crate>` and tests of the touched crates with `-j 4`; full clippy, workspace tests and `cargo deny check` once per PR, at the end; at most two parallel agents on the 12-core shared host.
-- **Audio libraries:** see `AGENTS.md`
+- **Audio libraries:** see `docs/dependencies.md`
 
 ### Debug Build
 
@@ -334,7 +334,7 @@ All pull requests must:
 ## Support
 
 **Documentation:**
-- `AGENTS.md` - Full setup and implementation guide
+- `AGENTS.md` - Agent entry point; links to the build, PR and style guides in `docs/`
 - `README.md` - Project overview
 - original design and early plans (historical): the [workbench](https://github.com/massive-development/openmixer-workbench)
 - `docs/adr/` - Architecture decisions

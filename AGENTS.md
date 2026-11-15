@@ -1,434 +1,47 @@
 # OpenMixer - Agent Instructions
 
-## Overview
+Clean-room, original DJ software in Rust with GPUI (ADR 0001, 0004). Detail lives in `docs/`; read a linked doc only when you touch that area. Directory tree: [docs/project-structure.md](docs/project-structure.md).
 
-OpenMixer is a clean-room, legally original implementation of professional DJ software, written in Rust with GPUI for the UI. This document provides instructions for any AI agent to understand the codebase and continue development.
+## Crates
 
-## Project Structure
+Dependencies point toward `om-core`: `openmixer` -> `om-ui` -> `om-engine`/`om-library`/`om-analysis`/`om-midi` -> `om-dsp`/`om-audio` -> `om-core`. Library crates never depend on the binary or `om-ui`.
 
-```
-openmixer/
-├── .github/workflows/        # rust.yml (the Rust CI, every PR; weekly soak) and issue-heatmap.yml
-├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
-│   └── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
-├── docs/
-│   ├── adr/                  # Architecture Decision Records
-│   ├── controllers/          # Controller map notes
-│   ├── legal/                # Legal documentation and the asset provenance record
-│   ├── screenshots/          # Staged window screenshots and REVIEW.md
-│   └── testing/              # Hardware checklist (after the platform refresh)
-├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
-├── fixtures/                 # Small test inputs: controller maps and traces, library exports
-├── resources/                # Built-in theme JSON, generic controller maps, bundled fonts
-├── tools/                    # issue_heatmap.py, screenshots.sh, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh
-├── Cargo.toml                # Workspace manifest
-├── Cargo.lock
-├── rust-toolchain.toml       # Pinned toolchain
-├── rustfmt.toml
-├── clippy.toml
-└── deny.toml                 # Licence and ban policy (cargo deny), including what the GPUI tree needs
-```
+- `om-core`: no I/O; `ParamId`, `Command`/`CommandSink`, `ParameterRouter`, `EngineSnapshot`, `WorkerPool`.
+- `om-engine`: audio thread (decks, mixer, FX, sync, sampler, recorder, loudness).
+- `om-audio`, `om-dsp`, `om-stretch`: device layer, DSP, key-lock (FFI `unsafe` only in `om-stretch/src/ffi.rs`).
+- `om-analysis`, `om-library`, `om-midi`, `om-plugins`, `om-stems`, `om-automix`: control-side services.
+- `om-ui` (no window), `om-ui-gpui` (GPUI), `openmixer` (binary, composition root).
 
-## Architecture and Crate Responsibilities
+Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/features/sampler.md), [stems](docs/features/stems.md), [recording](docs/features/recording.md), [automix](docs/features/automix.md), [mapping editor](docs/features/mapping-editor.md). Control paths, adding a control id, demo flags: [docs/guidelines/control-ids.md](docs/guidelines/control-ids.md).
 
-Dependencies point toward `om-core` (see "Modularity" above). The README architecture section has the directory tree; this is what each crate owns.
+## Hard rules
 
-- **`om-core`** (no I/O): `ParamId` (control ids, parsed once, canonical `Display`), `Command` and `CommandSink`, `ParameterRouter` (typed dispatch plus the string façade), `StateId` and `EngineSnapshot` (pulled engine state), `WorkerPool` (job queue), `LockExt`, and the `ParamTarget` trait. Typed error enums: `ParamError`, `CommandError`.
-- **`om-engine`** (audio thread): decks, mixer, FX racks, sync, loops, sampler, recorder and the EBU R128 loudness meter. Decks resample through `rubato` (`deck/playback/varispeed.rs`, sinc 128 by default, linear for rate 0, steps outside 0.25..=2.0, exact unity and key-lock). Implements `ParamTarget` for each typed target; `DjEngine::snapshot()` builds the snapshot on the control thread.
-- **`om-audio`, `om-dsp`, `om-stretch`**: device layer (cpal; the `realtime-dbus` feature, on by default in `openmixer`, asks rtkit for real-time priority on Linux and needs `libdbus-1-dev`), DSP, and key-lock time-stretch (FFI `unsafe` in `om-stretch/src/ffi.rs`).
-- **`om-analysis`, `om-library`, `om-midi`, `om-stems`, `om-plugins`**: control-side services with their own typed errors. `om-analysis` runs its jobs on `WorkerPool`. `om-midi` talks to hardware through `MidirBackend` (`midir`; port ids are `Client:Port`, without the sequencer address) or the mock backend. `om-library` and the analysis cache open SQLite with `journal_mode=WAL` and `synchronous=NORMAL`. `om-plugins` loads in-process plugins and C-ABI shared libraries, and with the `clap` feature (off by default, ADR 0007) CLAP plugins through `clack` (`clap/`, with a worker thread per instance); the CLAP first-run warning, state and latency work is in progress.
-- **`om-stems` detail:** `StemSeparator` v2 is streamed (`separate_to(StereoSource, StemSink, ctx)`); `HtDemucsPipeline<I: StemInference>` does resampling, 7.8 s segments with overlap-add and STFT in Rust; `OrtInference` (ONNX Runtime) exists only with `--features onnx` (off by default, downloads the runtime at build time; own blocking CI job). `StemCache` (`cache.rs`, `wav.rs`) holds the stems under `<library folder>/stems`; `StemService` (`service.rs`, on `WorkerPool`, one worker) separates a track on explicit submit only and records `track_stems` through `om-library`, so `om-stems` depends on `om-library`. The app attaches it with `AppComposition::attach_stems` (`Services.stems`): the mock with `--mock-stems`, else htdemucs when built with `onnx` and installed. Real htdemucs is exported with `tools/export_htdemucs.py` (STFT-outside variant, checked against Demucs by `crates/om-stems/tests/htdemucs_reference.rs`; not yet listened to).
-- **`om-automix`** (pure, depends on `om-core` only, control thread; never touches the audio thread): `stem_fade` (S8) holds `StemFade` ramps and `StemFadePlan`, the builders and `StemFadeRunner`. Automix proper (Todo 38):
-  - `planner`/`plan`: `DefaultPlanner` implements `TransitionPlanner::plan(out, inc, style, opts) -> Result<TransitionPlan, PlanError>` over `DeckInfo` (grid, Camelot, sections, mix points, stems, length, bpm). Beats are the outgoing deck's. Styles `Auto, Crossfade, BassSwap, EchoOut, Cut, StemBridge` (`om_core::AutomixStyle`); `Auto` picks by key (clash gives EchoOut), tempo gap (wider than 6% gives Cut), stems on both decks (BassSwap) and sections; length 8/16/32 beats, start on a bar at the mix-out point or later than playhead plus lead. BassSwap and StemBridge fall back to Crossfade unless both decks have stems; their stem start gains and mutes come from the `EngineSnapshot`. Errors: `NoGrid, InvalidBpm, BpmRatio, OutgoingTooShort, IncomingTooShort, NoRoom, SameDeck`.
-  - `controller`: `AutomixController::tick(now, &EngineSnapshot, &dyn CommandSink, &mut dyn AutomixHost)` runs Idle, Loading, Armed, Transitioning, Cleanup. Each tick it sends the plan's value at the outgoing deck's beat for every control that changed (a pure function of the beat, so a stalled clock still lands every control exactly), and runs the stem plan through `StemFadeRunner`. `AutomixHost` (queue, load, analysis lookup, underrun count) is implemented by the app; the host is built on the control thread. `AutomixControl` is the typed `automix` target (`automix.enable | start | cancel | skip | style`), which only records a request.
-  - `queue`: the `AutomixQueue` trait and `select_next` (recent plays and unanalysed tracks skipped with reasons, playlists in order, search shuffled with an injected RNG, smart key and BPM preference).
-  - ids used by a plan: `deck.<d>.play | sync | sync.master`, `mixer.crossfader`, `mixer.ch<N>.eq.low | filter`, `fx.ch<N>.fx<U>.enable | mix` (a free echo unit, unit 0 preferred), `stem.<d>.<s>.volume | mute`. Deck n is mixer channel n; decks 0 and 2 sit on the crossfader's left.
-  - **Cancel rules (the user always wins):** a control that differs from the value automix last set (crossfader, either channel fader, EQ, filter, sync, play), a deck paused, unloaded, loaded over or seeked, `notify_user_input(id)` from the binding layer, `automix.cancel`, `automix.enable` off, or a rise in the host's underrun count (which also turns automix off) cancels the plan. Nothing is sent to a control the user moved; the crossfader, faders, play and seek are never put back; EQ, filter and FX moves go back to their plan-time values (`restore_on_cancel`) and stem moves follow `stem_cancel`. The track is not retried. Three load failures in a row turn automix off. A refused pair (planner error) on an automix pick is re-picked from the queue up to `MAX_PLAN_RETRIES` (3) times; a track the user cued is never re-picked.
-  - **Skip (`automix.skip`):** while armed the pick is abandoned (not mixed in, left stale on its deck, not offered again for the same outgoing track, via `next_pick` and `MAX_PICK_TRIES`); while loading the press waits for the load and then does the same; during a transition the plan lands at its end after the input check (`last_error` "transition skipped"); idle reports "nothing to skip". A cued track is left alone and its outgoing track gets no automatic transition.
-  - **Crossfader routing:** when the routing reassigns a channel, the ramp starts from the outgoing side's edge (not the current crossfader position), so a centred crossfader does not dip.
-- **Automix in the app** (`openmixer`): `automix_service` (`AutomixShared`: target, published `AutomixSnapshot`, host factory; `AutomixRunner`, stepped by the control thread, builds a snapshot only while automix is on or busy) and `automix_queue` (`LibraryQueue` over its own `Library` handle). The composition registers `Namespace::Automix`. `AutomixShared::overlay` puts the controller's snapshot into an `EngineSnapshot` (the engine leaves `automix` at its default). `Command::Automix` is routed by the router's sink to the same target.
-- **`om-ui`** (no window): binds ids built from `ParamId`, lists learnable targets, holds settings, preferences and the `MidiHost` trait, and the themes.
-- **`om-ui-gpui`** (workspace member, the default `gui` feature): GPUI drawing and events over `om-ui` models. It builds on `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1; buttons, inputs, the library `DataTable`, sidebar rows, settings tabs, dialogs and toasts are `gpui-component` widgets themed by `theme_bridge`; knobs, faders, meters, waveforms, the platter and the sampler pads stay custom-painted. `desktop` and `media_keys` hold the file pickers, clipboard, notifications and OS media keys (`souvlaki`); `plugin_window` hosts a CLAP plugin's window.
-- **`openmixer`** (binary, composition root): `Services` (typed optional services), `AppComposition`, `AppError`, `EngineStateReader` (a `StateReader` over a fresh snapshot), and the MIDI service that implements `MidiHost`.
+- **PRs only.** Never push or merge to `main`. Branch from `main`, `gh pr create --base main`, merge commits (no squash); the description has Summary, Changes, Testing and Follow-ups, and states whether it touches an extension point. Fix stale docs (`README.md` too) in the same PR. Workflow changes need a local `act` run. [Details](docs/guidelines/pull-requests.md).
+- **Audio thread:** no allocation, locks, blocking calls, I/O or logging; no string ids parsed there. Writers never write engine state directly; readers pull an `EngineSnapshot`. Guard with `assert_no_alloc` tests.
+- **Plugin targets:** `set_parameter` must never block; hand work to a thread and return `true`.
+- **Rust:** `unsafe` only in the listed per-module exceptions with `// SAFETY:` and a leak check; no `unwrap`/`expect` on file, MIDI or user input; `thiserror` in libraries, `AppError` in the binary; `tracing` for logs. [Full standards](docs/guidelines/rust.md).
+- **Style of code:** one-line comments that say why; small functions (about 10 lines); one responsibility per module; engine, analysis, library and MIDI crates testable headless.
+- **Large new subsystem:** read and update `docs/DESIGN_PATTERNS.md` first.
+- **UI:** colours, sizes and fonts come from theme tokens, never literals; numbers use `font::numeral`. A UI change needs a screenshot you have looked at, judged as a DJ would. [Styling](docs/styling.md), [experience bar](docs/guidelines/experience-bar.md).
+- **Extensibility:** do not hardcode what a plugin could replace; no signing or allow-lists on plugins. [Details](docs/guidelines/extensibility.md).
+- **Demo flags:** a new `--demo-*` flag goes in `openmixer::flags::DEMO_FLAGS` and never writes the user's files.
+- **Never play audio;** use the mock device. Screenshots only with `import -silent` into temp dirs, at most 6 per task.
+- **Knowledge first, read narrowly:** check `graphify-out/`, `openmixer-workbench/docs/PROGRESS.md` and `docs/DESIGN_PATTERNS.md` before searching; read line ranges, not whole files. [Details](docs/guidelines/knowledge-reuse.md).
 
-Control paths, and what is live today:
-- **UI (production window):** `DeckBinding::typed` and `MixerBinding::typed` send `Command::Param { id, value }` through the router's `CommandSink`, with no string formatting or parsing. The binding constructors without a sink (`new`) write through the string façade; the widget test rig uses them.
-- **MIDI mappings and plugins:** the string façade, `ParameterTarget::set_parameter(&str, f64)` on the router. It parses the id once there and dispatches typed ids the same way.
-- **Typed entry point:** `Command` and `CommandSink` are used by tests, by automix and by the Wave 7 features. The router's sink accepts `Command::Param` and `Command::Automix` (routed to the `automix` target). `LoadStems` and `SamplerAssign` are handled by `DjEngine::command_sink(fallback)` (`EngineCommands`): `DjEngine::register_stem_set(dir)` turns a stem directory into the `StemSetRef` handle the command carries, `DjEngine::register_sample(Arc<Sample>)` / `load_sample(path)` the `SampleId` for `SamplerAssign`; the router's sink still rejects both.
+## Build and test
 
-### Sampler (Wave 7 P1/P3, Todo 40 engine level)
-
-- `om-engine::sampler`: 8 pads, each with 4 sounding voices (8 slots, so stolen and released voices can fade out while new ones start); every voice is preallocated. `Sample` is interleaved stereo `Arc<[f32]>` plus rate and name, decoded off the audio thread by `Sample::load(path, engine_rate)` (symphonia through `SourceReader`, mono duplicated, rubato FFT resample, capped at 60 s / 64 MiB, non-finite values zeroed).
-- `SamplerControl` (control side, `Send + Sync`, `&self`): `assign`, `clear`, `trigger(pad, velocity)`, `trigger_with(.., mode)`, `release`, `stop_all`, `set_gain` (0..1.5), `set_pitch` (semitones, +-24, varispeed with cubic interpolation), `set_mode` (`PadMode::OneShot|Gate|Loop`), `set_master_gain`, `reclaim`, `snapshot`. Assign, clear, trigger, release and stop go over an `rtrb` ring of plain `SamplerCmd`s; gain, pitch and mode are latest-wins atomics, so they are never lost. A full ring drops a trigger, release or stop and counts it (`dropped_commands`); `assign`/`clear` return `QueueFull`. A trigger with no free voice slot is dropped and counted too.
-- `SamplerAudio` (audio side, a `ProcessStage` that adds to the buffers, owned by the `Mixer` via `attach_sampler`): no allocation, lock or drop. Samples the audio thread lets go of (a replaced pad sample, a finished voice) return on a second ring and are freed by `SamplerControl::reclaim` (called by `assign`, `clear` and every `DjEngine::update_control` tick, ~30 Hz). The audio side works without it: a finished voice whose sample is the pad's current one just decrements (the pad slot keeps the last reference), otherwise its sample goes to the ring, else parks in the voice's own `limbo` slot (the voice is reusable at once and retries each block). Gate pads also have a latest-wins `held` flag (set before a trigger is queued, cleared before a release is queued) polled each block, so a Release lost to a full command ring still ends the gate voice. Voice start fades in over 32 frames, release, steal, stop and clear fade out over 5 ms. One-shot ignores release, gate fades on release, loop wraps (interpolation wraps too) and LATCHES: a press starts it, a second press fades it out (5 ms) and starts nothing; release, note-off and `trigger` 0 never stop a loop, `stop_all` and `clear` do. The fifth trigger on a pad steals the oldest voice. A non-looping sample fades over its last 32 output frames instead of cutting. A trigger and release in the same block still sounds a short tap (start ramp, then the fade).
-- Mix point: after the channels are summed, before the master gain, the master inserts and the meters. The master fader scales the sampler, a master-insert limiter sees it, and the cue mix hears it. The mixer has no limiter or clamp of its own.
-- Ids (`DjEngine::register` adds the `sampler` namespace): `sampler.pad<0..7>.trigger` (value is the velocity 0..1, above 1 clamps; 0 or less releases, which only ends gate voices; on a loop pad a second non-zero trigger stops it), `.gate` (0.5 or more presses with velocity 1 and gate behaviour for that voice whatever the pad mode, below 0.5 releases: one id for note on and off), `.volume` (0..1.5), `.pitch` (-12..12). NaN and infinity are rejected. Read ids (`StateId::Sampler`): `sampler.pad<n>.loaded|playing|volume|pitch|mode` (mode 0 one-shot, 1 gate, 2 loop). `EngineSnapshot.sampler` is `SamplerSnapshot { pads: [PadSnapshot; 8], voices_active, dropped_cmds }`. Example map with LED rules: `fixtures/controllers/sampler_map.json`; the MIDI learn list offers the eight triggers.
-- Sample bank (P2, `om-ui::sample_bank`): `<data dir>/samples/` holds the WAV files and `sampler.json` (`{"version":1,"pads":[{"pad","file","name","gain","pitch","mode":"oneShot|gate|loop"}]}`; `file` relative to the folder or absolute). `SampleBank::open` reads it (a corrupt file goes to `sampler.json.bad`, a newer version is refused and never overwritten), `apply` sets gain, pitch and mode and queues each existing file for decode on a worker (a missing file leaves the pad empty with a note), `import_file` decodes first and then copies in (`name-2.wav` on a clash), `pump` installs finished decodes through `Command::SamplerAssign` (the control timer pumps once the bank is attached), `save` writes temp-then-rename. A failed decode keeps the pad's sample. `AppComposition::attach_samples` runs after the device starts (so decodes use the engine rate); `--demo-library` writes eight generated samples into its scratch folder (`openmixer::sampler_demo`).
-- Pad view-model (P4, `om-ui::sampler_binding::SamplerBinding`): eight `PadView`s from `EngineSnapshot.sampler` and the bank; `press` sends `sampler.pad<N>.trigger` (one-shot, loop) or `.gate` 1.0 (gate pads, held until `release`) as typed `Command::Param`s; `set_gain|set_pitch|set_mode|cycle_mode` store through the bank; `load`/`load_typed_path` and `clear`. Keys 1 to 8 press pads while the strip has focus (the library search and the settings text fields keep their keys). Layout in `om-ui::widgets::sampler_strip`: a 4x2 grid and a control column (mode, load and clear, gain and pitch steppers), in the library band (`SAMPLER_SLOT`, 34% of its width).
-- Soak and gate (P5): the short and 10-minute soaks trigger random one-shot and loop pads, hold gates for 0.2 to 1.5 s, mix the three modes, and replace pad 3's sample at 10 s; the UI gate presses a kick and holds a gate through the view-model. All use the same invariants as before (no non-finite, overflow or steady underruns; the xrun budget).
-- Not verified: by ear (the mock device is silent), by eye on the real window (screenshots only), and the 10-minute soak and gate runs (ignored tests).
-
-### Stem mode in the engine (Wave 7 S5)
-
-- A deck plays from stems after `Deck::load_stems(dir)` (`dir/{drums,bass,vocals,other}.wav`, the `om-stems` cache layout, same rate as the track, length within 16 frames). The main file stays loaded for metadata and length; `clear_stems()` returns to it; `load` of another track also leaves stem mode and resets the mixer.
-- The decoder thread reads the four files in lockstep into the one frame ring, 8 floats per frame (L/R of drums, bass, vocals, other). The ring stride (2 or 8) travels with the decoder's ack, so the audio thread adopts it exactly when it drains the stale ring; prefetch slots carry a stride too and are only used when it matches. A hand-over bumps the load id and the decoder produces nothing from new sources until it has acknowledged the epoch that names them.
-- The 8-to-2 mix (`om_dsp::StemMixer`) runs in `Playback::pull_frame`, before the interpolator and before key-lock: still exactly one interpolator and one stretcher per deck. All position logic is frame-index based and unchanged.
-- Control: `Deck::stem_control() -> Arc<StemMixerControl>` (atomics), ids `stem.<deck>.<0..3>.volume|mute|filter` (stem order: drums, bass, vocals, other), read back through `EngineSnapshot.stems` and `StateId::Stem`. Stem state belongs to the deck's `Shared`, so it resets on `load` and persists across `load_stems` and `clear_stems`.
-
-Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
-
-### Mix recording (Wave 8, Todo 41)
-
-- `om-engine::recorder` (`Recorder::new() -> (RecorderTap, RecorderControl)`; the tap is in `DjEngineAudio` and taps the final master output, the control is `DjEngine::recorder()`). Audio thread: `rtrb` push only, drops counted, no allocation (`alloc_guard` test). Control: `start(&RecordSettings)`, `stop() -> RecordSummary`, `status()`. Writer thread, streaming WAV, crash-safe header, split and low-disk rules are described in `openmixer-workbench/docs/PROGRESS.md`. Ids `record.start|stop|toggle` are the reserved `Namespace::Record`, served by `openmixer::record_service::RecordService`; `StateId::Record*` reads come from `EngineSnapshot.record`. Prefs version 4 `record`. Recordings are a user-visible file output: tests only write to temp dirs.
-- `om-engine::loudness` (`Loudness::create() -> (LoudnessTap, LoudnessControl)`; the tap is in `DjEngineAudio` next to the recorder tap, the control is `DjEngine::loudness()`). EBU R128 metering of the master bus with the `ebur128` crate 0.1.11 (not `ebur128-stream`), in histogram mode so memory stays bounded and nothing allocates in steady state (queue mode does; `tests/loudness_alloc.rs`). Audio thread: `rtrb` push only, drops counted, no allocation. Off until `enable()`, which starts the worker the first time. A worker thread feeds `LoudnessAnalyser` and publishes through atomics; `reading() -> LoudnessReading` (momentary, short-term, integrated LUFS, LRA in LU, true peak per channel in dBTP; `-inf` means nothing yet) is the UI meter's read API, `reset()` clears integrated, LRA and peak. Conformance tests (`loudness/tests.rs`) use signals synthesised from EBU Tech 3341/3342, not the official zip (the EBU site refuses automated downloads); cases 6 to 8 and the programme cases are not covered.
-- Loudness meter in the UI (`om-ui::widgets::loudness`, `om-ui-gpui::loudness_paint`): `Shell::new` calls `loudness().enable()` once and the UI tick stores `reading()` in a `LoudnessPanel`. `LoudnessView` turns a reading into bar fills, one-decimal texts (em dash for `-inf`), the clip flag (true peak above -1 dBTP) and the dropped-frames warning. The mixer module has a LUFS toggle (with the momentary value) between the FX toggle and the headphone knobs; it opens the panel over the headphone knobs (M and S bars, I, LRA, TP, Reset, warning). Rendering is checked in the headless gpui tests only, not on a GPU.
-- UI (Wave 8 UI): the header Record button is `om-ui-gpui::record_button` (draws `om_ui::record_bar` with the `playhead` signal red (`ThemeTokens::record_red()`; the old `recordRed` key still loads as `playhead`) and the other theme tokens; a click and the `r` key both send `record.toggle`; `Shell::typing()` keeps `r` a letter in the library search, the sampler path field, the debug column and the open settings card). The Recording settings tab is `om-ui-gpui::settings_view::recording` over `RecordSettingsPage`; its folder is typed in the shared text entry (`EntryKind::RecordFolder`). The app pushes the stored settings into the service through `AppRecordHost`. `--demo-record` records into a scratch folder for `tools/screenshots.sh main-record`; `--settings=recording` (and `automix`) open those tabs.
-
-### Automix (Wave 7 A1-A6, Todo 38; settings page and bar, Todo 29)
-
-- Crates: `om-automix` (planner, controller, queue rules, `AutomixControl` target; no engine or audio dependency, enforced by `openmixer/tests/automix_safety.rs`), `openmixer` (`automix_service` runner and shared handle, `automix_host` over the library and the track loader, `automix_queue` library queue, `automix_settings` page control and apply), `om-ui` (`settings/automix.rs` page model, `automix_bar.rs` view-model, `library::SearchFeed`), `om-ui-gpui` (`settings_view/automix.rs`, `automix_bar.rs`).
-- Ids: `automix.enable`, `automix.style` (0 Auto, 1 Crossfade, 2 BassSwap, 3 EchoOut, 4 Cut, 5 StemBridge), `automix.start`, `automix.cancel` and `automix.skip` (presses, value 0.5 or more). They are typed `Namespace::Automix`; a press only records a request that the controller reads on its next step.
-- Tick: the 30 Hz foreground timer (`CONTROL_TICK`) calls `AutomixRunner::step`, which reads `DjEngine::snapshot()` and calls `AutomixController::tick` with that copy, a `CommandSink` (an `AutomixSink`, which the input observer does not see) and the host. The controller takes no lock and holds no engine reference. Changes from the Automix page reach it through `AutomixShared::update_config` (applied on the next step) and `AutomixControl` setters; the host reads `SharedQueueSettings` before each pick.
-- Controller cache: a deck's `DeckInfo` is cached only once it has a grid, so a track loaded before its analysis finished is read again.
-- Cancel rules: a moved watched control, a paused, unloaded or seeked deck, `automix.cancel`, disabling, or an underrun cancels; the user's value stays, EQ/FX/filter moves are put back. Echo-out reads the outgoing rack from `EngineSnapshot.fx` (`FxSnapshot.channels[ch][unit]`: effect name, enabled, mix; filled by `FxRouting::snapshot` on the control thread): it uses the configured unit (`echo_unit`, 0 by default) when that unit runs the `echo` effect and is off, else the first other free echo unit, and puts that unit's switch and mix back to what they were (not fixed at off and zero) on finish and cancel. With no free echo unit the planner falls back to Crossfade (Auto's tempo-gap Cut is unchanged); a snapshot that does not list the rack (a test double) keeps the configured unit. A user move while Loading or Armed drops the run and leaves that pair alone (`stepped aside`).
-- Prefs (version 3, `automix` section, each value clamped or defaulted on its own): `enabled`, `style` (0 to 4), `lengthBeats` (8, 16 or 32), `queuePlaylist` (0 is the whole library), `queueSearch` (the library browser's live search; wins over the playlist), `smart`, `minBpmGapPercent` (0 to 20), `autostartAtEnd`. Edits go through `AutomixSettingsPage` (stored, saved once, applied live). The window applies the stored settings at start-up with `apply_automix_prefs`.
-- Queue: `QueueSource::Playlist` plays in order and wraps; `Search` and `CurrentSearch` shuffle; `smart` turns on the key and tempo preference. Only tracks with a beat grid (analysis cache) are picked. An empty pick fails the run and suppresses that deck; the demo waits for analysis for this reason.
-- Bar: the header strip's left part (`BAR_HEIGHT` 32, Settings button keeps the right 96 px). Enable, style and length edit the settings; Start now, Skip and Cancel press the ids. `can_skip` is true while enabled and Loading, Armed or Transitioning (Idle and Finishing have nothing to skip); the Skip chip sends `automix.skip` only then. The fixed widths (`STATE_WIDTH`, `PROGRESS_WIDTH`, `REMAINING_WIDTH`, `ROW_GAP`) live in `om-ui::automix_bar`, and a test estimates the row against the width left at `MIN_WINDOW` (1024) after the Record button and the Settings reserve; the estimate has not been checked by eye.
-- Demo: `--demo-automix` (gui) ingests three 24 s click tracks at 120, 122 and 124 BPM, turns automix on in memory, waits for every track's grid and starts deck A on the mock device. Scene `main-automix` in `tools/screenshots.sh`.
-- Not verified: by ear (silent mock device), the transitions on real decks, and the bar at widths other than 1280x800 (the screenshot size) by eye.
-
-### Mapping editor (Todo 36, logic and view level)
-
-- `om-midi/src/editor.rs` (`MapEditor`): the edit model over `MidiMapper`. Add, delete, duplicate, undo and redo, conflicts and resolution, learn (`learn_selected`, `learn_new`, `poll_learn`), save with a `.bak`, import, export, reset to the default map, and the unsaved guard. Edits reach the running mapper at once.
-- `om-ui/src/mapping_editor.rs` (`MappingEditorPage`): the view-model over `MapEditor`: filter, rows, the binding form, the monitor lines, status text. `tick()` completes a learn; it is called from the UI pump.
-- `om-ui-gpui/src/settings_view/mapping.rs`: the Mapping settings tab. `SettingsState::mapping_tick` is called every frame by `Shell::tick` (`om-ui-gpui/src/app.rs`), not only while the overlay is drawn, so a learn started and then closed is still recorded.
-- `openmixer/src/composition.rs`: `AppComposition::mapping_editor()` builds the page over the attached MIDI service (`None` until `attach_midi`). `--settings=mapping` opens the tab.
-- Demo: `--demo-map` merges the fixture maps into `<scratch>/map/demo-map.json` on the mock controller.
-- Demo flags (`--demo-map`, `--demo-library`, `--demo-automix`, `--demo-record`) are listed in `openmixer::flags::DEMO_FLAGS`. A demo run never writes the user's files: `composition::prefs_save_target` sends settings saves to `<scratch>/preferences.json` when `flags::demo_run` is true, and the recording and map paths also live in the scratch folder. Any new `--demo-*` flag must be added to `DEMO_FLAGS`, and its state must stay in memory or in the scratch folder. Covered by `openmixer/tests/demo_prefs.rs`.
-
-### Plugin control targets
-
-- A plugin registers its target with the router (`register_target`, a string prefix). The router holds its reentrant gate across every target call, and registration and unregistration wait on the same gate. So a slow or blocking `set_parameter` stalls MIDI and UI dispatch for everything else. Do not block, wait on I/O or take a long lock in `set_parameter`; hand the work to a thread or queue and return `true` at once.
-
-### How to add a control id
-
-1. `om-core/src/param_id/mod.rs`: add the variant to the owning enum (`DeckParam`, `MixerParam`, ...) and its line in the grammar doc comment.
-2. `om-core/src/param_id/parse.rs`: parse it in the sub-namespace `FromStr`. `Display` in `mod.rs` must print it back exactly.
-3. `om-core/src/param_id/tests.rs`: add the id to `GOLDEN`. Every id must round-trip canonically.
-4. The owning target's `set_param` match arm (for example `om-engine/src/mixer/control.rs` or `deck_control.rs`): handle the variant and return `true`. Return `false` for variants it does not own.
-5. If the value is readable: add a `StateId` variant (`om-core/src/state_id.rs`), a field on `DeckSnapshot` or `MixerSnapshot` with its read arm (`om-core/src/snapshot.rs`), and fill the field in `DjEngine::snapshot()` (`om-engine/src/dj_engine.rs`).
-6. If a UI control or MIDI target uses it: build the id from `ParamId` in `om-ui/src/binding.rs`, and list it in `learnable_targets` (`om-ui/src/settings/midi.rs`) when MIDI learn should reach it.
-7. Test with `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-core -p om-engine`, and add a binding test in `om-ui` when step 6 applies.
-
-
-## Architecture Decisions
-
-### ADR-0001: Clean-Room Doctrine
-- **Features** are free (methods of operation)
-- **Expression** is not (names, logos, artwork)
-- No Mixxx code reuse (clean-room)
-- All assets must be original
-
-### ADR-0002: Technology Stack (superseded)
-- Superseded by ADR-0004.
-
-### ADR-0003: Licensing
-- **Pure AGPLv3** (no Contributor CLA)
-- Simple contribution process
-- DCO sign-off required
-
-### ADR-0004: Technology Stack - Rust with GPUI
-- **Language / UI:** Rust (toolchain and MSRV 1.95), with GPUI for the UI: `gpui-pre` 0.3.10 imported as `gpui`, `gpui-kit` 0.8.1 and `gpui-component` (gate closed on Linux)
-- **Audio I/O:** `cpal` for the engine output callback; `rodio` is acceptable only for non-critical audio such as library preview (not used so far)
-- **Decode / tags:** `symphonia`; `lofty`
-- **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
-- **Time-stretch:** decided: Rubber Band R3 via FFI in `om-stretch` (`unsafe` confined to `ffi.rs`), behind a `Stretcher` trait; no pure-Rust candidate passed the stereo CPU bar (see `openmixer-workbench/docs/spikes/DECISIONS.md`)
-- **MIDI:** `midir` on every platform (`MidirBackend` in `om-midi`; the earlier direct ALSA backend is gone, see `openmixer-workbench/docs/spikes/DECISIONS.md`); **Library:** `rusqlite` (bundled SQLite)
-- **Resampling and loudness:** `rubato` (offline resampling, deck varispeed), `ebur128` (EBU R128 metering)
-- **RT plumbing:** `rtrb` (SPSC), atomics for the pulled `EngineSnapshot`, `assert_no_alloc` in tests (`arc-swap` is not used)
-
-### ADR-0005 to ADR-0008
-- **0005 Experience-first product bar:** `docs/PRODUCT.md` is the bar; interface work is judged by looking at it
-- **0006 Controller map provenance:** maps are written clean-room from the MIDI spec and the maintainer's own hardware traces
-- **0007 CLAP hosting with clack:** accepted; `om-plugins` hosts CLAP plugins behind the `clap` feature, beside the C ABI (`clack-*` pinned `=0.2.0`)
-- **0008 The Machined Faceplate supersedes E1 on look:** accepted; `openmixer-workbench/docs/design-system/DESIGN.md` is the look (warm matte neutrals, etched 1px lines, no glow, four muted deck hues each with its letter, signal red for playhead and record only, every number in mono). Phase 0 answers and the open owner decisions: `openmixer-workbench/docs/design/faceplate-decisions.md`
-
-## Pull Request Workflow (required)
-
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
-
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
-2. Open a PR into `main` with `gh pr create --base main`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, `cargo deny`, the `onnx` job, the ASIO SDK guard) runs on every pull request. The description must include:
-   - **Summary:** what changed and why (link the issue).
-   - **Changes:** key crates/modules added or modified.
-   - **Testing:** commands run and results (`cargo test --workspace`, manual checks).
-   - **Follow-ups / known gaps:** anything left undone.
-3. Docs match the repo before the PR opens: check `README.md` (status, screenshots, build notes), and any doc the change touches against the current code, and fix stale claims in the same PR. Outdated docs send people to rebuild or fix what already exists or is in flight.
-4. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-5. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact.
-
-## Rust Standards & Memory Safety (required)
-
-All code must follow Rust best practices (edition 2021, toolchain pinned in `rust-toolchain.toml`). Outdated, unsafe or leaking code is not acceptable.
-
-- **Ownership:** owned values and borrows by default. Use `Arc` only when ownership is genuinely shared across threads, and `Rc` never on the audio path. Pass data by value or by reference; avoid `'static` leaks and `Box::leak`.
-- **Unsafe:** allowed where necessary, anywhere in the repo, provided there are no memory leaks. The workspace `unsafe_code = "forbid"` lint stays on; each use is a per-module `#[allow(unsafe_code)]` exception. Current exception modules: `om-stretch/src/ffi.rs` (Rubber Band R3 behind a `Stretcher` trait; see openmixer-workbench/docs/spikes/DECISIONS.md); in `om-plugins` `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (ADR 0007); plus the plugin fixtures under `examples/plugins/` and `crates/om-plugins/tests/clap_leak.rs`. Every `unsafe` block has a `// SAFETY:` line stating the invariant, and any new FFI or load/teardown path needs a leak check (counting allocator or valgrind): `crates/om-plugins/tests/clap_leak.rs` and `tools/clap_leak_check.sh` (valgrind) guard the CLAP path.
-- **Idioms:** `enum`s and `match` for state and commands, newtypes for ids and units, `Option`/`Result` instead of sentinel values, `?` for propagation, `#[must_use]` where a result must not be ignored, iterators over index loops where clearer. Prefer `&str`/`&[T]` parameters.
-- **Errors:** `thiserror` for typed errors in library crates; the `openmixer` binary uses its own `AppError` (`anyhow` is not a dependency). Do not `unwrap()`/`expect()` on input from files, the network, MIDI or the user; tests may.
-- **Logging:** `tracing` macros with structured fields. Never log from the audio thread.
-- **Concurrency:** no shared mutable state between the audio thread and other threads except through the designated channels: `rtrb` SPSC rings and atomics (the `EngineSnapshot` is pulled from atomics). Document the thread that owns each type in its module doc.
-- **Real-time safety (audio thread):** no allocation, locks (`Mutex`, `RwLock`), blocking channel calls, file or network I/O, or syscalls in the render path. Create buffers and graphs off the audio thread. Enforce this in tests with `assert_no_alloc` around the render function; a failing check is a bug, not a flaky test.
-- **Hot loops:** in per-sample audio and analysis loops use `zip`/`iter` over pre-sliced buffers (or `as_chunks`) instead of indexing, so the bounds checks drop out (#226); check a change with the `divan` benches (`cargo bench -p om-engine`, `-p om-analysis`).
-- **Lints:** `cargo clippy --all-targets -- -D warnings` must pass. Do not add `#[allow(...)]` to get past a lint without a comment stating why.
-- **Licences and bans:** `cargo deny check` must pass (`deny.toml`). New dependencies must be AGPL-compatible.
-- **Adopting crates:** well-established crates (cpal, symphonia, rusqlite, midir and similar) are adopted directly; reserve spikes for genuine unknowns.
-- **Check current guidance:** when unsure about an API, check docs.rs for the crate version in `Cargo.lock` rather than reusing older patterns from memory.
-
-## Comments & Function Size (required)
-
-- **Comments are short.** One line, stating *why* (not what). No paragraph or block comments describing what code does.
-- **Long explanation = refactor.** If a function needs a long comment to be understood, split it into smaller, well-named functions instead.
-- **Rule of 10 (goal, not a requirement):** aim for functions of about 10 lines or fewer. Exceed it only when splitting would hurt clarity.
-- **Doc comments (`///`)** are for public items only, one or two lines each.
-- Prefer self-describing names over comments. Delete comments that restate the code.
-
-## Modularity (required)
-
-- **No monolithic files.** One focused responsibility per module; split anything that grows large or mixes concerns.
-- **Crates per area.** Put reusable code in a Cargo library crate under `crates/om-<area>` and depend on it where needed, instead of duplicating code or piling it into the `openmixer` binary.
-- **Keep dependencies one-way.** Arrows point toward `om-core`: `openmixer` -> `om-ui` -> `om-engine` / `om-library` / `om-analysis` / `om-midi` -> `om-dsp` / `om-audio` -> `om-core`. Library crates must not depend on the binary or on `om-ui`, and must be testable on their own.
-- **Headless first.** Engine, analysis, library and MIDI crates must be fully testable without a window.
-
-## Architecture & Design Patterns (required)
-
-Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new `crates/om-<area>`):
-
-1. Read `docs/DESIGN_PATTERNS.md` and review how similar code is already structured.
-2. Reuse an existing pattern wherever it fits rather than inventing a new one.
-3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
-4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
-
-## Styling a control (LookAndFeel)
-
-Colours, radii, border widths, insets and font sizes come from the theme, never from literals in view code.
-
-1. Read the theme's tokens (`om_ui::theme::ThemeTokens`, built from `resources/themes/*.json`).
-2. Get the control's recipe from `om_ui::style::LookAndFeel::from_tokens(t)`: `face(Face, hue)` for any pressable control (rest, hover, pressed, on, on + hover, playing, disabled; `focus` is the 2px ring), `button` (idle, hover, active, disabled), `lit_button(accent)`, `knob`, `fader`, `tabs`, `tooltip`, `text_field` (idle, focus), `meter`, `panel`, `panel_caption`, `separator`, `drop_target`. Nothing glows: depth is the 1px etched edge, the 1px top highlight and, under knob and fader caps only, the one small drop.
-3. In `om-ui-gpui`, draw a control face with `paint::face(el, &face_style)` (or a part from `parts`, or `controls::face_button` for an interactive button), a box with `paint::skin(el, &style)`, a bare border with `paint::border(el, width)`, and a colour with `paint(colour)`. Radii and insets come from the style fields and sizes from the density's `DensityMetrics`, not literals. `examples/controls_gallery.rs` shows every part in every state, theme and density.
-4. A value no token covers: add a token field in `theme/tokens.rs` (default in `builtin_dark`), a reader in `theme/json.rs` (range-checked, with a key in the matching section), and a value in both built-in theme JSON files. Old theme files stay valid because a missing key inherits the default.
-5. Add the new style to `LookAndFeel::entries()` so the contrast and live-switch tests cover it. Text on a control needs contrast 3.0 (control) or 4.5 (body) against its fill over both backdrop ends; disabled controls are exempt.
-6. `crates/om-ui-gpui/tests/style_lint.rs` fails on raw colour calls (`rgb(`, `rgba(`, `hsla(`, `from_argb(`, bare 6 or 8 digit hex) in `src/`. Only `paint.rs` may name them.
-7. Type: set text with a tier, `el.type_role(t, TypeRole::Label)` (`om-ui-gpui::font::TypeExt`; tiers in `om_ui::theme::TypeRole`), and draw every number with `font::numeral(t, Numeral::Value | Readout, text)`, which is always the mono family. `crates/om-ui-gpui/tests/type_lint.rs` fails on a family named outside `font.rs`, a number source drawn without `numeral`, the 10 px `Numeral::Scale` outside the fader dB scale, and a literal text size under 11 px.
-
-8. Hue: a deck hue (`t.accent_for(deck)`) only on something that names that deck, beside its letter. Chrome that belongs to no deck (settings chips, header switches, the sampler) lights in the text colour; `LookAndFeel::accent` is that neutral, so pass the deck's hue explicitly where a control is a deck's.
-
-Themes and type (Machined Faceplate, ADR 0008): the built-in themes are `resources/themes/openmixer-{dark,daylight,harbour}.json` (ids `openmixer.dark`, `openmixer.daylight`, `openmixer.harbour`; harbour is derived from dark and unsourced). A theme holds both metric sets, Roomy and Compact (`ThemeTokens::metrics(Density)`, JSON section `density.roomy` / `density.compact`, defaults from DESIGN.md); the window picks one with `main_layout::resolve_density` from the Appearance preference (Automatic picks by height; an explicit Roomy gives way to Compact where the library would lose its rows). Old E1 theme files still load: retired glass and glow keys warn, `recordRed` and `backdropTop` are read as `playhead` and `ground`. Fonts are bundled in `resources/fonts/` with their licences: Sansation Bold (display, 21 px and up only), Source Sans 3 Regular and Medium (all interface text) and Ubuntu Mono Regular (every number; the family has no 500, so DESIGN.md's 500 numerals draw in Regular) and Bold (deck letters and state words such as LOCK and CLIP). GPUI has no letter-spacing, so no tier carries any. Inter is no longer bundled.
-
-gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
-
-## Experience bar (required for anything a DJ sees)
-
-`docs/PRODUCT.md` is the bar and ADR 0005 the decision. Interface work is not a wave and is not finished when the logic tests pass.
-
-- **Look at it.** A PR that changes what the window shows includes a screenshot from `tools/screenshots.sh`, and you have looked at it (not just that it rendered). Say what you saw and what is still wrong.
-- **Use real music** for anything involving waveforms, the library, analysis or colour. The demo tracks are synthetic sweeps and hide most defects; `cargo run -p om-ui --example wave_strips -- TRACK...` renders a real track's waveform strips to PNG.
-- **Judge it as a DJ would.** At the default window size and the minimum (`MIN_WINDOW`), can a DJ read the playing deck's BPM, key, time and phrase position at a glance, and reach EQ, transport and pads without looking? If not, say so in the PR.
-- **Layout and look may change.** Replace a layout or control when a better one is found. Keep the tests that guard function (no overlap, no clipping, the minimum window); update the ones that only recorded the old arrangement.
-- **Tokens, not literals** still applies (see "Styling a control"); if the look you need has no token, add one.
-- **Clean-room still applies.** Borrow the reason a layout works, not another product's names, icons, artwork or pixel layout.
-
-## Token Efficiency & Knowledge Reuse (required)
-
-Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
-
-1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base (e.g. the `lumen-kb` MCP `search_kb`), then `openmixer-workbench/docs/PROGRESS.md`, `docs/DESIGN_PATTERNS.md` and `openmixer-workbench/TODO.md`.
-2. **Read narrowly:** read only the needed line ranges or symbols, not whole files; prefer grep/glob to locate code. Do not re-read files already in context.
-3. **Delegate broad searches** to a search subagent so only conclusions return to the main context.
-4. **Keep the graph fresh:** after structural changes (new crates, moved files) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
-5. **Don't recompute:** reuse existing results (test output, benchmarks, analysis) instead of re-running or re-deriving them.
-6. **Keep outputs lean:** trim command output (`| tail`, `-q`), and keep PR descriptions and reports concise.
-
-## Extensibility & User Freedom (required)
-
-Users must always be able to modify OpenMixer with external plugins. Nothing may be locked down.
-
-- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, skins).
-- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (serde-loaded files) over fixed code paths.
-- **Stable plugin API:** keep extension traits small, documented and versioned; don't break them silently. Plugins must not need to modify core source.
-- **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
-- **Plugins load in-process, from a C-ABI shared library, or (feature `clap`) as CLAP plugins.** `om-plugins` has the plugin API, registry and loaders (see `openmixer-workbench/docs/spikes/DECISIONS.md` and ADR 0007). Keep new extension points as traits and registries in the owning crate, so they can be exposed later without restructuring. A plugin's own state (`Plugin::save_state` / `restore_state`, opaque bytes) is kept by the registry and stored by the app in `plugin-state.json` beside the preferences (`openmixer::plugin_state`, versioned; ADR 0007 step 6).
-- **PR check:** every PR must state whether it adds, changes or could block an extension point.
-
-## CI Workflow Changes (required)
-
-Any change to `.github/workflows/` must be tested locally with [`act`](https://github.com/nektos/act) before opening the PR.
-
-1. Run the affected job(s): `act -j <job> [-W .github/workflows/<file>.yml]` (add `--container-architecture linux/amd64` if needed). List jobs with `act -l`.
-2. Fix failures locally; don't push to find out.
-3. Put the `act` command and result in the PR's Testing section. Note anything `act` can't cover (e.g. macOS/Windows runners, secrets).
-
-## Build Instructions
-
-### Dependencies
-
-- **Rust toolchain:** install with `rustup`. The version is pinned in `rust-toolchain.toml` and selected automatically.
-- **Linux audio:** `cpal` needs ALSA development headers and `pkg-config`:
+Linux needs `libasound2-dev pkg-config libclang-dev libdbus-1-dev`. Everything else (soak, benches, optional features, sccache, test helpers in `om-testing`): [docs/guidelines/build.md](docs/guidelines/build.md).
 
 ```bash
-sudo apt-get install libasound2-dev pkg-config libclang-dev libdbus-1-dev
-```
-
-`libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is for the default `realtime-dbus` feature; `--no-default-features` builds without it.
-
-- **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
-- GPUI platform dependencies (Linux) are documented in `openmixer-workbench/docs/spikes/gpui.md`.
-- **Crates added in the platform refresh:**
-  - `gpui-pre` (renamed to `gpui`) with `gpui-kit` (which brings `gpui-component`), the GPUI base for `om-ui-gpui`.
-  - `rubato`: sample-rate conversion (sampler load, stems) and deck varispeed.
-  - `ebur128`: EBU R128 loudness metering in `om-engine`.
-  - `midir`: MIDI I/O in `om-midi`.
-  - `souvlaki`: OS media controls in `om-ui-gpui`.
-  - `walkdir`: library folder scans in `om-library`; `bytemuck`: sample casts in the optional ffmpeg decode path of `om-engine`.
-  - `divan` (dev-dependency): benches in `om-engine` and `om-analysis`.
-  - Not adopted after evaluation: `rfd`, `arboard`, `tray-icon` (GPUI's file picker and clipboard cover the first two, the third cannot work under GPUI's loop; `openmixer-workbench/docs/spikes/DECISIONS.md`).
-  - `clack-host`, `clack-extensions`, `clack-plugin`: CLAP hosting, behind the optional `clap` feature of `om-plugins`.
-  - `cpal` `realtime-dbus`: `om-audio` feature (needs `libdbus-1-dev`) for Linux real-time priority; `openmixer` forwards it and enables it by default.
-
-### Build Commands
-
-```bash
-# Build the whole workspace
-cargo build --workspace
-
-# Release build
-cargo build --release --workspace
-
-# Run tests
-cargo test --workspace
-
-# Engine soak: 30 s paced mix (in cargo test --workspace); 10-minute gate: --ignored, 10 min wall time
-cargo test -p om-audio --test soak
-cargo test -p om-audio --test soak -- --ignored --nocapture
-
-# Format, lint and licence gates (run all before opening a PR)
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo deny check
-
-# Startup smoke check
+cargo check -p <crate>                      # while working
+nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p <crate>
+cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo deny check   # once per PR
 cargo run -p openmixer -- --smoke
-
-# Benchmarks (divan)
-cargo bench -p om-engine
-cargo bench -p om-analysis
-
-# Optional features: CLAP hosting, real stem separation, ffmpeg decode fallback
-cargo build -p openmixer --features clap
-cargo test -p om-stems --features onnx
-cargo test -p om-engine -p om-analysis --features om-engine/ffmpeg,om-analysis/ffmpeg
 ```
 
-Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
+- **WSL:** one cargo process at a time, never in the background, never clippy and test in one command, `flock /tmp/openmixer-cargo.lock` when sharing a checkout. Check `free -m`; skip the gui crate under 6 GB free. GUI runs need `WAYLAND_DISPLAY=`. More in `build.md`.
+- **Before a PR:** `cargo test --workspace`, fmt, clippy and deny clean. Build problems: [docs/troubleshooting.md](docs/troubleshooting.md).
 
-### Build setup and cost rule
+## Decisions and references
 
-- **sccache (Linux, optional):** to share compiled dependencies between worktrees, install `sccache` and put this in `~/.cargo/config.toml`:
-
-```toml
-[build]
-rustc-wrapper = "sccache"
-incremental = false
-```
-
-- **Cost rule for agents:** while working use `cargo check -p <crate>` and the touched crates' tests with `-j 4`. Run full clippy, workspace tests and `cargo deny check` once per PR, at the end. At most two parallel agents on the 12-core shared host.
-
-### Working on a constrained machine (WSL)
-
-- WSL crashes under heavy builds. Run `nice -n 19 env CARGO_BUILD_JOBS=3 cargo ...`, one cargo process at a time, never in the background, and never clippy and test in one command. Agents sharing a checkout serialise with `flock /tmp/openmixer-cargo.lock`.
-- Agents on separate worktrees that share a `CARGO_TARGET_DIR` can see each other's output as fresh: touch the files you changed before testing, and check the new tests actually ran.
-- Check `free -m` first. Do not build the gui crate unless more than 6 GB is free.
-- GUI build (`openmixer-workbench/docs/spikes/gpui.md`): run with `WAYLAND_DISPLAY=` to force X11. For the link error `unable to find library -lxkbcommon-x11`, symlink `libxkbcommon-x11.so.0` into a shim directory and pass `RUSTFLAGS="-L <shim dir>"`; the proper fix is `sudo apt install libxkbcommon-x11-dev`. The gui crate tests need this too.
-- `soak_short` (`crates/om-audio/tests/soak.rs`) can flake once under load; rerun it alone.
-- Git corruption recovery: delete zero-byte files under `.git/objects`, run `git fetch --refetch origin`, then reset the branch to `origin/<branch>`.
-- Never play audio; use the mock device. Screenshots only with `import -silent` (see `tools/screenshots.sh`), into temp dirs, at most 6 per task.
-- Agents default to haiku; use sonnet for audio-thread or design-heavy work. Review once per phase. Push after every step.
-
-### Test support
-
-`crates/om-testing` holds the helpers the crates share in their tests: `wav` (fixture writers and a reader), `signals` (deterministic sines, noise and impulse trains), `level` (dB, peak and RMS), `wait` (`wait_until` and `assert_eventually!`) and `fs::TempDir`. Reuse these instead of writing a new WAV writer, sine or poll loop. Waits poll for the condition they expect, with a timeout; never sleep a fixed time to wait for something to happen. It is a dev-dependency only: no shipped crate may depend on it.
-
-## Code Patterns
-
-### Memory Safety
-
-- Values are owned by default; use `Box`, `Vec` and `Arc` deliberately
-- `unsafe` only in the per-module exceptions listed under "Rust Standards", each with a `// SAFETY:` comment and no leaks
-- Types are not `Clone` or `Copy` unless copying is meaningful
-- Allocation happens off the audio thread; `assert_no_alloc` guards the render path in tests
-
-### Crate and Module Layout
-
-```rust
-// crates/om-engine/src/lib.rs
-#![forbid(unsafe_code)]
-
-mod deck;
-mod mixer;
-
-pub use deck::{Deck, DeckId};
-pub use mixer::Mixer;
-```
-
-### Error Handling
-
-- Library crates: `thiserror` enums per module, returned as `Result<T, Error>`
-- Binary: `AppError` (`crates/openmixer/src/error.rs`) with `#[from]` for each subsystem error; `anyhow` is not used
-- Log errors with `tracing::error!` (or `warn!`) and include the failing id or path as a field
-- Never panic on bad input; do not use `unwrap()` on file, network or MIDI data
-
-### Testing
-
-- TDD for engine and analysis logic
-- Golden-vector fixtures (kept in the crates' test modules and `fixtures/`)
-- Property tests (`proptest`) for parsers and search
-- Metric tests for DSP accuracy; `divan` benchmarks (`cargo bench -p om-engine`, `-p om-analysis`) for the audio-thread and analysis hot loops
-- Real-time tests: render the engine inside `assert_no_alloc`
-- Screenshot tests for UI (planned)
-
-## Common Issues
-
-### Issue: cpal fails to build on Linux (missing `alsa.pc`)
-**Solution:** Install `libasound2-dev pkg-config`
-
-### Issue: `rubberband-sys` fails with a missing `libclang`
-**Solution:** Install `libclang-dev` (bindgen needs it)
-
-### Issue: `libdbus-1` not found
-**Solution:** Install `libdbus-1-dev`; the default `realtime-dbus` feature of `openmixer` needs it. Build with `--no-default-features` to go without it (the souvlaki media keys use zbus and do not need it)
-
-### Issue: `cargo deny check` fails on a licence
-**Solution:** Find the crate with `cargo deny check licenses`; replace it or confirm the licence is AGPL-compatible before adding it to `deny.toml`
-
-### Issue: GPUI fails to start on WSL
-**Solution:** WSL-only trouble is a dev-loop issue, not a gate failure (ADR 0004). Check the GPU/Vulkan setup with `vulkaninfo --summary` and record the result in `openmixer-workbench/docs/spikes/DECISIONS.md`
-
-## Verification
-
-After each wave:
-1. All tests pass (`cargo test --workspace`)
-2. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo deny check` are clean
-3. Real-time allocation checks pass (`assert_no_alloc` in tests); sanitizer runs planned for concurrent code
-4. Evidence file updated: `.omo/evidence/task-<N>-openmixer-dj-app.*`
-
-## References
-
-- Design (historical): `openmixer-workbench/docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
-- ADR 0004 (Rust with GPUI): `docs/adr/0004-stack-rust-gpui.md`
-- cpal: https://docs.rs/cpal
-- rtrb: https://docs.rs/rtrb
-- rubato: https://docs.rs/rubato
-- ebur128: https://docs.rs/ebur128
-- midir: https://docs.rs/midir
-- rusqlite: https://docs.rs/rusqlite
-- Rubber Band: https://breakfastquay.com/rubberband/
-- Clean-Room Doctrine: docs/adr/0001-clean-room-doctrine.md
+ADR summaries: [docs/adr/SUMMARY.md](docs/adr/SUMMARY.md). Product bar: `docs/PRODUCT.md`. Crate and doc links: [docs/references.md](docs/references.md). Crates adopted in the platform refresh: [docs/dependencies.md](docs/dependencies.md).
