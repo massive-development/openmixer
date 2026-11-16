@@ -10,7 +10,7 @@ use om_ui::labels::{notice_text, Notice};
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
-use om_ui_tauri::{DeckLibrary, LibrarySetup, RunOptions, ShellError};
+use om_ui_tauri::{DeckLibrary, LibrarySetup, RunOptions, ShellError, ShellTheme};
 use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::{library_options, AppComposition};
 use openmixer::flags::DemoScene;
@@ -82,7 +82,8 @@ fn run_window(smoke: bool, demo: Option<Demo>, scratch: Option<&Path>) -> ExitCo
         bench_seconds: None,
     };
     let router = Arc::clone(&composition.router);
-    let result = om_ui_tauri::run(engine, router, theme_css(&composition), library, options);
+    let theme = shell_theme(&composition, engine.num_decks());
+    let result = om_ui_tauri::run(engine, router, theme, library, options);
     output.lock().stop();
     report(result, smoke)
 }
@@ -143,11 +144,17 @@ fn load_demo_decks(
     Ok(())
 }
 
-/// The active theme (the saved one, or `OPENMIXER_THEME`) as CSS, at the opening density.
-fn theme_css(composition: &AppComposition) -> String {
+/// The active theme (the saved one, or `OPENMIXER_THEME`) as CSS at the opening density, and the
+/// waveform lane ink of each of the engine's `decks`.
+fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
     let tokens = composition.themes.current();
     let density = resolve_density(composition.prefs.density, tokens, WINDOW_SIZE);
-    om_ui_bridge::theme_css(tokens, density)
+    ShellTheme {
+        css: om_ui_bridge::theme_css(tokens, density),
+        strip_inks: (0..decks)
+            .map(|deck| om_ui_tauri::strip_ink_dto(tokens, deck))
+            .collect(),
+    }
 }
 
 fn report(result: Result<(), ShellError>, smoke: bool) -> ExitCode {

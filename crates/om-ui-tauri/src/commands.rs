@@ -5,6 +5,7 @@ use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
 use crate::stream::{PacketSink, StreamConfig};
 use crate::stream_slot::StreamSlot;
+use crate::strip_ink::StripInkDto;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui_bridge::{dispatch_control, slice_control_ids, FILL, PLAYED_BRIGHTNESS};
@@ -19,6 +20,7 @@ use tauri::{AppHandle, State};
 /// What the commands share for the life of the window.
 pub(crate) struct ShellState {
     pub(crate) theme_css: String,
+    pub(crate) strip_inks: Vec<StripInkDto>,
     pub(crate) smoke: bool,
     pub(crate) ready: Arc<AtomicBool>,
     pub(crate) ready_signal: Sender<()>,
@@ -67,6 +69,16 @@ pub fn waveform_style() -> WaveformStyle {
         fill: FILL,
         played_brightness: PLAYED_BRIGHTNESS,
     }
+}
+
+/// Deck `deck`'s waveform lane colours and marker sizes.
+#[tauri::command]
+pub fn strip_ink(deck: usize, state: State<'_, ShellState>) -> Result<StripInkDto, String> {
+    state
+        .strip_inks
+        .get(deck)
+        .cloned()
+        .ok_or_else(|| format!("no strip ink for deck {deck}"))
 }
 
 /// Writes one control: the id is parsed and validated here, off the audio thread.
