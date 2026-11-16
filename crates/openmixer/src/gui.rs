@@ -31,7 +31,7 @@ use openmixer::flags::DemoScene;
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
 use openmixer::record_service::AppRecordHost;
-use openmixer::startup::{mock_output, start_output};
+use openmixer::startup::{ingest_demo_tracks, load_demo_deck_b, mock_output, start_output};
 use openmixer::AppError;
 use std::cell::RefCell;
 use std::process::ExitCode;
@@ -67,15 +67,13 @@ pub fn main(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let user_track =
-        openmixer::flags::demo_track(std::env::var_os(openmixer::flags::DEMO_TRACK_ENV));
-    if scene == Some(DemoScene::Track) && user_track.is_none() {
-        eprintln!(
-            "openmixer: --demo-scene=track needs {} set to an audio file",
-            openmixer::flags::DEMO_TRACK_ENV
-        );
-        return ExitCode::FAILURE;
-    }
+    let user_track = match openmixer::startup::demo_user_track(scene) {
+        Ok(track) => track,
+        Err(message) => {
+            eprintln!("openmixer: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
     let mock_stems = openmixer::flags::mock_stems(args) || scene == Some(DemoScene::Stems);
     let demo = args.iter().any(|a| a == "--demo-library")
         || automix_demo
@@ -197,16 +195,10 @@ pub fn main(args: &[String]) -> ExitCode {
                 library_smoke::ingest_demo_automix(&mut services, root).and_then(|count| {
                     library_smoke::queue_all_for_analysis(&mut services).map(|_| count)
                 })
-            } else if let (Some(DemoScene::Track), Some(source)) = (scene, &user_track) {
-                // The user's file is linked into the scratch folder (never copied) and ingested
-                // with the generated tracks; it sorts first, so deck A loads it.
-                library_smoke::link_user_track(root, source)
-                    .and_then(|_| library_smoke::ingest_generated_plus(&mut services, root, 1))
-                    .and_then(|count| {
-                        library_smoke::queue_all_for_analysis(&mut services).map(|_| count)
-                    })
             } else {
-                library_smoke::ingest_generated(&mut services, root)
+                // `--demo-scene=track` links the user's file (never a copy); it sorts first, so
+                // deck A loads it.
+                ingest_demo_tracks(&mut services, root, scene, user_track.as_deref())
             };
             if let Err(error) = ingest {
                 smoke_error = Some(error);
@@ -250,14 +242,7 @@ pub fn main(args: &[String]) -> ExitCode {
     if let (Some(hub), true, None) = (&library, demo && !automix_demo, &smoke_error) {
         let mut hub = hub.borrow_mut();
         let hub = &mut *hub;
-        match library_smoke::load_nth_into_deck(&mut hub.services, &mut hub.loader, &engine, 1, 1) {
-            Ok(_) => openmixer::demo_scene::park(&engine, 1),
-            Err(error) => eprintln!("openmixer: demo deck B: {error}"),
-        }
-        // The sampler and stems scenes stage only the window, so deck A is parked for them too.
-        if matches!(scene, None | Some(DemoScene::Sampler | DemoScene::Stems)) {
-            openmixer::demo_scene::park(&engine, 0);
-        }
+        load_demo_deck_b(&mut hub.services, &mut hub.loader, &engine, scene);
     }
     if let (Some(scene), None) = (scene, &smoke_error) {
         openmixer::demo_scene::apply(scene, &engine);

@@ -28,7 +28,7 @@ use om_plugins::{InsertAt, InsertPoint, PluginError, PluginRegistry};
 use om_stems::{ModelManifest, StemSeparator, StemService, WeightManager};
 use om_ui::library::{default_options, LibraryServices, Options};
 use om_ui::mapping_editor::MappingEditorPage;
-use om_ui::preferences::{self, Preferences};
+use om_ui::preferences::{self, LibraryPrefs, Preferences};
 use om_ui::preferences_applier::PreferencesApplier;
 use om_ui::sample_bank::{self, SampleBank};
 use om_ui::settings::{MidiHost, PluginHost};
@@ -49,6 +49,22 @@ const GIB: u64 = 1024 * 1024 * 1024;
 
 /// Environment variable that selects a theme for the session (wins over the saved preference).
 pub const THEME_ENV: &str = "OPENMIXER_THEME";
+
+/// Library options for `db_path` (`None`: `OPENMIXER_LIBRARY_DB` or the user data folder) with
+/// the preferences' scan settings; errors go to stderr. Shared with the Tauri window, which opens
+/// its demo library on its own control thread.
+pub fn library_options(prefs: &LibraryPrefs, db_path: Option<PathBuf>) -> Options {
+    let mut options = match db_path {
+        Some(path) => Options::for_path(path.to_string_lossy().into_owned()),
+        None => default_options(),
+    };
+    options.scan_on_start = prefs.scan_on_start;
+    options.scan_interval_ms = i64::from(prefs.scan_interval_minutes.max(1)) * 60_000;
+    options.on_error = Some(Box::new(|message| {
+        eprintln!("openmixer: library: {message}")
+    }));
+    options
+}
 
 /// Where the settings overlay saves preferences. A demo run (any `--demo-*` flag, see
 /// `flags::demo_run`) saves into `scratch` instead, so a demo never writes the user's file.
@@ -225,16 +241,7 @@ impl AppComposition {
     /// data folder) when `None`. The scan interval and scan-on-start come from the preferences and
     /// apply from this start on. A library that cannot open leaves the hook empty and returns why.
     pub fn attach_library(&mut self, db_path: Option<PathBuf>) -> Result<(), AppError> {
-        let mut options = match db_path {
-            Some(path) => Options::for_path(path.to_string_lossy().into_owned()),
-            None => default_options(),
-        };
-        options.scan_on_start = self.prefs.library.scan_on_start;
-        options.scan_interval_ms =
-            i64::from(self.prefs.library.scan_interval_minutes.max(1)) * 60_000;
-        options.on_error = Some(Box::new(|message| {
-            eprintln!("openmixer: library: {message}")
-        }));
+        let options = library_options(&self.prefs.library, db_path);
         self.library_db = Some(options.db_path.clone());
         self.services.library = Some(LibraryServices::create(options)?);
         Ok(())
