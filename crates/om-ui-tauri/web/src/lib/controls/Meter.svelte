@@ -82,10 +82,23 @@
 
 <style>
   .meter {
+    position: relative;
     display: flex;
     gap: var(--om-inset-small);
     height: 100%;
     min-height: 0;
+  }
+
+  /* A mark at each threshold, past both sides of the bars, so the zones read without their colours. */
+  .meter::before {
+    content: '';
+    position: absolute;
+    inset: 0 calc(-1 * var(--om-inset-large));
+    background:
+      linear-gradient(var(--om-border-strong), var(--om-border-strong)) 0 calc(100% - var(--mid-at)) / 100%
+        var(--om-border-width) no-repeat,
+      linear-gradient(var(--om-border-strong), var(--om-border-strong)) 0 calc(100% - var(--high-at)) / 100%
+        var(--om-border-width) no-repeat;
   }
 
   /* The three zones split at the theme's thresholds, under a segmented mask and the cover. */

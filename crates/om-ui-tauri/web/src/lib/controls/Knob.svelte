@@ -82,6 +82,7 @@
 <div class="cell" class:mirrored>
   <div
     class="knob"
+    class:detent={spec !== undefined && spec.detent !== null}
     role="slider"
     tabindex="0"
     aria-label={name}
@@ -136,6 +137,18 @@
     position: absolute;
     inset: min(0px, (var(--om-density-knob-size) - var(--om-min-pointer-target)) / 2 - var(--om-border-width));
     border-radius: 50%;
+  }
+
+  /* The centre mark over a knob with a detent: where the pointer rests. */
+  .detent::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + var(--om-inset-small));
+    width: var(--om-border-width);
+    height: var(--om-inset-large);
+    margin-left: calc(var(--om-border-width) / -2);
+    background: var(--om-border-strong);
   }
 
   .knob i {

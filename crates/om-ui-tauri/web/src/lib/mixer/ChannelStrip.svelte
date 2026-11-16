@@ -61,7 +61,7 @@
 <style>
   .strip {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-rows: var(--om-mixer-title-height) minmax(0, 1fr);
     grid-template-areas:
       'title title title'
@@ -72,7 +72,6 @@
   }
 
   .mirrored {
-    grid-template-columns: auto auto minmax(0, 1fr);
     grid-template-areas:
       'title title title'
       'meter fader knobs';
@@ -113,8 +112,11 @@
     justify-items: end;
   }
 
+  /* The slack of the strip is shared either side of the fader, so it stands midway between the
+     knob labels and the meter. */
   .fader {
     grid-area: fader;
+    justify-self: center;
     min-height: 0;
   }
 

@@ -194,6 +194,7 @@
 
 <div
   class="overview"
+  class:idle={!(length > 0)}
   bind:this={box}
   style:background={ink?.well}
   role="slider"
@@ -247,6 +248,16 @@
     inset: 0;
     width: 100%;
     height: 100%;
+  }
+
+  /* An empty deck has no position to show. */
+  .idle {
+    cursor: default;
+  }
+
+  .idle .played,
+  .idle .playhead {
+    visibility: hidden;
   }
 
   .played {

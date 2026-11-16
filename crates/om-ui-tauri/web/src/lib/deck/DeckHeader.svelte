@@ -47,7 +47,7 @@
     <!-- The region's name already says which deck this is. -->
     <div class="letter" aria-hidden="true">{letter(deck)}</div>
     <div class="track">
-      <div class="title">{info?.titleText ?? ''}</div>
+      <div class="title" class:empty={!loaded}>{info?.titleText ?? ''}</div>
       <div class="artist">{loaded ? (info?.artist ?? '') : ''}</div>
     </div>
     <div class="stat">
@@ -115,6 +115,12 @@
     font-weight: 500;
   }
 
+  /* An empty deck's words step back. */
+  .empty {
+    color: var(--om-text-muted);
+    font-weight: 400;
+  }
+
   .artist {
     color: var(--om-text-muted);
     font-size: var(--om-type-body);
@@ -124,19 +130,23 @@
     text-align: right;
   }
 
+  /* The label and numeral tiers' own line heights, so the pair keeps inside the row at 125% text. */
   .label {
     display: block;
     color: var(--om-text-muted);
     font-size: var(--om-type-label);
     font-weight: 500;
+    line-height: 1.2;
     text-transform: uppercase;
   }
 
   .stat b {
     display: block;
     color: var(--om-readout);
+    margin-top: var(--om-inset-small);
     font-size: var(--om-type-numeral-large);
     font-weight: 400;
+    line-height: 1;
   }
 
   /* Room for -mm:ss.t, so the column does not shift as minutes change. */
