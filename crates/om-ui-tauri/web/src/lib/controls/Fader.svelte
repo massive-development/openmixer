@@ -13,9 +13,11 @@
     /** Vertical faders read 1 at the top; the crossfader is horizontal. */
     horizontal?: boolean;
     label?: string;
+    /** Whether a double-click restores the default. */
+    resettable?: boolean;
   }
 
-  let { key, spec, value, stamp, horizontal = false, label = '' }: Props = $props();
+  let { key, spec, value, stamp, horizontal = false, label = '', resettable = true }: Props = $props();
 
   const held = new Held();
   let shown = $state(0);
@@ -64,7 +66,7 @@
   }
 
   function onDoubleClick(): void {
-    if (!spec) return;
+    if (!spec || !resettable) return;
     held.begin(spec.default);
     send(spec.default);
     held.end();

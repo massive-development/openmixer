@@ -70,7 +70,8 @@
   </div>
   {#if controls[tempoKey]}
     <div class="tempo">
-      <Fader key={tempoKey} spec={controls[tempoKey]} value={rate} stamp={snapshot?.receivedAt ?? 0} />
+      <!-- As in GPUI: an accidental double-click mid-mix must not jump the tempo. -->
+      <Fader key={tempoKey} spec={controls[tempoKey]} value={rate} stamp={snapshot?.receivedAt ?? 0} resettable={false} />
       <span class="num pitch">{pitch}</span>
     </div>
   {/if}
