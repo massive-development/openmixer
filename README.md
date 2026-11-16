@@ -58,7 +58,7 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 sudo apt-get install pkg-config libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 ```
 
-GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen). `libwebkit2gtk-4.1-dev` is for the Tauri trial window (`om-ui-tauri`, ADR 0009): the crate is a workspace member, so workspace builds need it even though the `gui-tauri` feature is off by default. Its front end needs Node 22.12 or newer (npm).
+GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen). `libwebkit2gtk-4.1-dev` is for the Tauri trial window (`om-ui-tauri`, ADR 0009): the crate is a workspace member, so workspace builds need it even though the `gui-tauri` feature is off by default. Its front end needs Node 22.12 or newer, or 24, with npm; see `docs/guidelines/build.md`.
 
 Optional: `sccache` shares compiled dependencies between worktrees (setup in `docs/guidelines/build.md`); `libdbus-1-dev` is required on Linux by the default `realtime-dbus` feature (real-time priority for the audio callback); `--no-default-features` builds without it.
 
@@ -135,13 +135,13 @@ cargo run -p openmixer -- --mock-device              # the window (dev builds op
 cargo run -p openmixer -- --headless --smoke         # startup check, no window
 cargo run -p openmixer -- --version
 
-# Tauri trial window (ADR 0009; mock device only): build the front end first
+# Tauri trial window (ADR 0009; mock device only): build the front end first, then the binary
 (cd crates/om-ui-tauri/web && npm ci && npm run build)
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke   # exits 0 once the page has painted
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-library
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke   # exits 0 once the page has a packet and has painted
 ```
 
-The Tauri window is a trial beside GPUI (ADR 0009): it opens four empty, themed layout regions for now, runs only on the mock device, and GPUI stays the default window.
+The Tauri window is a trial behind the `gui-tauri` feature, not the product's interface (ADR 0009). It shows the decks screen only: two deck headers with overviews, GPU-drawn waveform lanes, transport, hot cues, loops, the two-channel mixer and meters, on the real engine and only on the mock device. GPUI stays the default and only shipping window; whether the trial goes further is decided by a measurement that has not been made yet. Details: [docs/features/tauri-trial.md](docs/features/tauri-trial.md).
 
 The GPUI window is the default build and needs the `-dev` packages listed in the `check` job of `.github/workflows/rust.yml` (on Linux: `libxkbcommon-x11-dev`, Wayland, fontconfig, freetype, Vulkan). `--no-default-features` builds the headless binary without it. The staged screenshots were checked by eye (see `docs/screenshots/REVIEW.md`); a live window on a real display, at the minimum size, has not been checked.
 
@@ -178,7 +178,7 @@ crates/
 ├── om-plugins/   # In-process plugin API and registry; C-ABI shared-library loading; CLAP hosting behind the `clap` feature
 ├── om-ui/        # UI logic without a window: themes, preferences, mixer, deck and library view models
 ├── om-ui-gpui/   # GPUI window on gpui-kit and gpui-component (the openmixer `gui` feature, on by default)
-├── om-ui-bridge/ # Toolkit-free wire formats for a web front end: snapshot packet, waveform peaks, theme CSS, control dispatch
+├── om-ui-bridge/ # Trial (ADR 0009): wire formats for a web front end: snapshot packet, waveform peaks, theme CSS, control specs and dispatch
 ├── om-ui-tauri/  # Trial Tauri v2 window and Svelte front end (ADR 0009; the openmixer `gui-tauri` feature, off by default)
 ├── om-testing/   # Test-only helpers shared by the crates (WAV fixtures, signal generators); dev-dependency only
 └── openmixer/    # Binary and composition root: --smoke, --mock-device, settings, plugins
@@ -186,11 +186,11 @@ examples/plugins/gain-plugin/           # Example in-process plugin
 examples/plugins/gain-plugin-cdylib/    # Example C-ABI plugin (ABI 1), built as a shared library
 examples/plugins/param-plugin-cdylib/   # Example C-ABI plugin (ABI 2: prepare, parameters)
 examples/plugins/clap-gain-fixture/     # CLAP test fixture plugin (built with clack-plugin)
-fixtures/                               # Small test inputs: controller maps and traces, library exports
+fixtures/                               # Small test inputs: controller maps and traces, library exports, the web front end's golden packet
 resources/controllers/                  # Generic controller maps
 resources/fonts/                        # Bundled Sansation, Source Sans 3 (SIL OFL 1.1), Ubuntu Mono (UFL 1.0)
 resources/themes/                       # Built-in theme JSON
-tools/                                  # Helpers: progress and issue heatmaps, docs check, screenshots, htdemucs export, CLAP leak check
+tools/                                  # Helpers: issue heatmap, screenshots, htdemucs export and reference, CLAP leak check, UI bench (Tauri trial)
 ```
 
 Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `docs/crates.md` lists what each crate owns and `docs/guidelines/control-ids.md` how to add a control id.
@@ -233,7 +233,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 
 ## Status
 
-**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7. See `openmixer-workbench/docs/spikes/DECISIONS.md`.
+**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. A trial Tauri v2 window for the decks screen (ADR 0009, `gui-tauri` feature, mock device only) is built; its measurement and the decision are pending. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7. See `openmixer-workbench/docs/spikes/DECISIONS.md`.
 
 **Known gaps, honestly listed:**
 
