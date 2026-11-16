@@ -1,6 +1,7 @@
 <script lang="ts">
   import { loopName } from '../a11y';
   import Button from '../controls/Button.svelte';
+  import Icon from '../icons/Icon.svelte';
   import { control, type Controls, type DeckInfo } from '../ipc';
   import type { DeckFrame } from '../packet';
   import { loopBeats, loopButtons } from './pads';
@@ -37,7 +38,7 @@
 
 {#if sizes.length > 0}
   <div class="loops" role="group" aria-label="Loop">
-    <span class="label" aria-hidden="true">Loop</span>
+    <span class="label" aria-hidden="true"><Icon name="loop" />Loop</span>
     {#each sizes as size (size.key)}
       <Button
         on={lit(size.beats)}

@@ -2,6 +2,7 @@
   import { hotcueName } from '../a11y';
   import Button from '../controls/Button.svelte';
   import { formatTime } from '../format';
+  import Icon from '../icons/Icon.svelte';
   import { control, type Controls, type DeckInfo, type StripInk } from '../ipc';
   import { hotcueKeys } from './pads';
 
@@ -60,7 +61,8 @@
       onkeydown={(e) => onKeyDown(n, e)}
     >
       <span class="pad">
-        <span class="top"><span class="n num">{pad.label}</span></span>
+        <!-- The flag marks a pad that holds a cue, so a set pad does not rest on its colour. -->
+        <span class="top"><span class="n num">{pad.label}</span>{#if cue !== null}<Icon name="cue" />{/if}</span>
         <span class="t num">{cue === null ? '' : formatTime(cue)}</span>
       </span>
     </Button>
