@@ -14,6 +14,7 @@ members = [
     "crates/om-plugins",
     "crates/om-stems",
     "crates/om-ui-gpui",
+    "crates/om-ui-bridge",
     "crates/om-testing",
     "examples/plugins/gain-plugin",
     "examples/plugins/gain-plugin-cdylib",
@@ -44,6 +45,7 @@ om-stretch = { path = "crates/om-stretch" }
 om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
 om-ui-gpui = { path = "crates/om-ui-gpui" }
+om-ui-bridge = { path = "crates/om-ui-bridge" }
 audioadapter-buffers = "5.1"
 ebur128 = "0.1.11"
 rtrb = "0.4"
