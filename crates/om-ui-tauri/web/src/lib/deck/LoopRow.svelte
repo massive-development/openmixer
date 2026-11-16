@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { loopName } from '../a11y';
   import Button from '../controls/Button.svelte';
   import { control, type Controls, type DeckInfo } from '../ipc';
   import type { DeckFrame } from '../packet';
@@ -18,6 +19,7 @@
 
   const sizes = $derived(loopButtons(controls, deck));
   const exitKey = $derived(`deck${deck}.loop.exit`);
+  const loaded = $derived(frame?.loaded ?? false);
   const beats = $derived(
     frame?.looping ? loopBeats(frame.loopStart, frame.loopEnd, info?.bpm ?? null, frame.fileRate) : 0,
   );
@@ -34,10 +36,17 @@
 </script>
 
 {#if sizes.length > 0}
-  <div class="loops">
-    <span class="label">Loop</span>
+  <div class="loops" role="group" aria-label="Loop">
+    <span class="label" aria-hidden="true">Loop</span>
     {#each sizes as size (size.key)}
-      <Button on={lit(size.beats)} onpress={() => press(size.key, size.beats)}>
+      <Button
+        on={lit(size.beats)}
+        pressed={lit(size.beats)}
+        tint="var(--om-accent-{deck})"
+        disabled={!loaded}
+        label={loopName(deck, size.beats, size.label)}
+        onpress={() => press(size.key, size.beats)}
+      >
         <span class="num">{size.label}</span>
       </Button>
     {/each}
@@ -54,7 +63,22 @@
     align-items: center;
   }
 
+  /* Too narrow for eight pointer targets in a row (1280 px windows): two rows of four. */
+  @container (max-width: 360px) {
+    .loops {
+      grid-auto-flow: row;
+      grid-template-columns: auto repeat(4, minmax(0, 1fr));
+    }
+
+    .label {
+      grid-row: span 2;
+    }
+  }
+
   .label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--om-density-space-3);
     padding-right: var(--om-inner-gap);
     color: var(--om-text-muted);
     font-size: var(--om-type-label);

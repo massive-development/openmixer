@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { letter } from '../a11y';
   import { interpolate } from '../clock';
   import { setText } from '../dom';
   import { formatBpm, formatTime } from '../format';
@@ -20,7 +21,6 @@
 
   const frame = $derived(snapshot?.decks[deck]);
   const loaded = $derived(frame?.loaded ?? false);
-  const letter = $derived(String.fromCharCode(65 + deck));
   const key = $derived(loaded ? (info?.keyText ?? '--') : '--');
   const bpm = $derived(loaded && info?.bpm && frame ? formatBpm(info.bpm * frame.rate) : '--');
 
@@ -44,7 +44,8 @@
 
 <div class="head" style:--hue="var(--om-accent-{deck})">
   <div class="row">
-    <div class="letter">{letter}</div>
+    <!-- The region's name already says which deck this is. -->
+    <div class="letter" aria-hidden="true">{letter(deck)}</div>
     <div class="track">
       <div class="title">{info?.titleText ?? ''}</div>
       <div class="artist">{loaded ? (info?.artist ?? '') : ''}</div>
@@ -77,7 +78,7 @@
 
   .row {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) auto auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: var(--om-gap);
     align-items: center;
     min-width: 0;
@@ -86,8 +87,9 @@
   .letter {
     display: grid;
     place-items: center;
-    width: 34px;
-    height: 34px;
+    /* The deck tag's rule at the headline size: the letter's size times the golden ratio. */
+    width: calc(var(--om-type-headline) * 1.618);
+    height: calc(var(--om-type-headline) * 1.618);
     border-radius: var(--om-control-radius);
     background: var(--hue);
     color: var(--om-on-accent);

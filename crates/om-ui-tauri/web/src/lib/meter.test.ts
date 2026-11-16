@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
-import { MAX_FALL, MIN_STEP, meterFall, meterFraction, meterZone, moved, type MeterScale } from './meter';
+import { MAX_FALL, MIN_STEP, meterFall, meterFraction, meterZone, moved, peakDb, type MeterScale } from './meter';
 
 // The table om-ui-bridge's `tests/meter_table.rs` also asserts against `om_ui::meter::MeterScale`.
 const table = new TextDecoder()
@@ -41,4 +41,13 @@ test('only a move past MIN_STEP is written', () => {
   expect(moved(0.5, 0.5 + MIN_STEP / 2)).toBe(false);
   expect(moved(0.5, 0.5 + MIN_STEP * 2)).toBe(true);
   expect(moved(0.002, 0)).toBe(true);
+});
+
+test('the spoken level is the louder side in whole decibels, held between the floor and 0 dB', () => {
+  expect(peakDb(0.25, 0.5, -48)).toBe(-6);
+  expect(peakDb(1, 0.1, -48)).toBe(0);
+  expect(peakDb(2, 0, -48)).toBe(0);
+  expect(peakDb(0, 0, -48)).toBe(-48);
+  expect(peakDb(0.0001, 0, -48)).toBe(-48);
+  expect(peakDb(Number.NaN, 0.5, -48)).toBe(-6);
 });

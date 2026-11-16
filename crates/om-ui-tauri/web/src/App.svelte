@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { deckName } from './lib/a11y';
   import DeckHeader from './lib/deck/DeckHeader.svelte';
   import DeckPanel from './lib/deck/DeckPanel.svelte';
   import { DeckData } from './lib/decks.svelte';
@@ -25,6 +26,8 @@
 
   // The slice shows two decks and their two channels.
   const DECKS = [0, 1];
+  // The page's grid areas of deck A and deck B.
+  const SIDES = ['a', 'b'];
   // A bench run lets the window settle after its first snapshot before it records.
   const BENCH_WARM_UP_MS = 3000;
 
@@ -110,23 +113,36 @@
 </script>
 
 {#if themed}
+  <!-- Source order is the reading and Tab order (deck A, mixer, deck B; a deck's header before its
+       panel); the grid areas put each region in its row. -->
   <main class="shell">
     <header class="top-bar">
-      <span class="wordmark">OPENMIXER</span>
-      <span class="hud num" bind:this={hud}></span>
+      <h1 class="wordmark">OPENMIXER</h1>
+      <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
+      <span class="hud num" bind:this={hud} aria-hidden="true"></span>
     </header>
-    <section class="deck-headers" aria-label="Deck headers">
-      {#each DECKS as deck (deck)}
+    {#snippet deckRegions(deck: number)}
+      <section class="region" style:grid-area="head-{SIDES[deck]}" aria-label="{deckName(deck)} track">
         <DeckHeader {deck} info={decks.infos[deck] ?? null} ink={decks.inks[deck] ?? null} {snapshot} />
-      {/each}
+      </section>
+      <section class="region" style:grid-area="deck-{SIDES[deck]}" aria-label="{deckName(deck)} controls">
+        <DeckPanel
+          {deck}
+          {controls}
+          info={decks.infos[deck] ?? null}
+          ink={decks.inks[deck] ?? null}
+          {snapshot}
+          mirrored={deck === 1}
+        />
+      </section>
+    {/snippet}
+    {@render deckRegions(DECKS[0])}
+    <section class="region mixer" aria-label="Mixer">
+      <Mixer {controls} {snapshot} />
     </section>
+    {@render deckRegions(DECKS[1])}
     <section class="waveforms" aria-label="Waveforms">
       <Waveforms {snapshot} {fpsCap} />
-    </section>
-    <section class="controls" aria-label="Controls">
-      <DeckPanel deck={0} {controls} info={decks.infos[0] ?? null} ink={decks.inks[0] ?? null} {snapshot} />
-      <Mixer {controls} {snapshot} />
-      <DeckPanel deck={1} {controls} info={decks.infos[1] ?? null} ink={decks.inks[1] ?? null} {snapshot} mirrored />
     </section>
   </main>
 {/if}
@@ -135,13 +151,22 @@
   /* The border colour shows only in the gaps, as the lines between regions. */
   .shell {
     display: grid;
+    /* The two middle columns are the mixer (492 px with the line between them); a deck's header
+       runs to the centre line over half of it. */
+    grid-template-columns: minmax(0, 1fr) 246px 245px minmax(0, 1fr);
     grid-template-rows: 44px 104px minmax(180px, 1fr) 372px;
+    grid-template-areas:
+      'top top top top'
+      'head-a head-a head-b head-b'
+      'wave wave wave wave'
+      'deck-a mixer mixer deck-b';
     gap: var(--om-border-width);
     height: 100%;
     background: var(--om-border);
   }
 
   .top-bar {
+    grid-area: top;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -150,9 +175,10 @@
   }
 
   .wordmark {
+    margin: 0;
     font-family: var(--om-font-display);
     font-weight: 700;
-    font-size: 21px;
+    font-size: var(--om-type-headline);
     letter-spacing: 0.14em;
     color: var(--om-text-primary);
   }
@@ -162,22 +188,19 @@
     font-size: var(--om-type-numeral);
   }
 
-  .deck-headers,
-  .controls {
+  /* One component fills each region. */
+  .region {
     display: grid;
-    gap: var(--om-border-width);
+    min-width: 0;
     min-height: 0;
   }
 
-  .deck-headers {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .controls {
-    grid-template-columns: minmax(0, 1fr) 492px minmax(0, 1fr);
+  .mixer {
+    grid-area: mixer;
   }
 
   .waveforms {
+    grid-area: wave;
     min-height: 0;
     background: var(--om-well);
   }

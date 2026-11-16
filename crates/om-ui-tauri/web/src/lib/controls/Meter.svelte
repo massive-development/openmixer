@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { dbFraction, meterFall, meterFraction, moved, type MeterScale } from '../meter';
+  import { meterText, Paced } from '../a11y';
+  import { dbFraction, meterFall, meterFraction, moved, peakDb, type MeterScale } from '../meter';
   import { ticker } from '../ticker';
 
   interface Props {
@@ -7,14 +8,23 @@
     left: number;
     right: number;
     scale: MeterScale;
+    /** What the meter measures, for assistive technology: `Channel A level`. */
+    label: string;
   }
 
-  let { left, right, scale }: Props = $props();
+  // The level reaches assistive technology at most four times a second, never per frame.
+  const SPOKEN_PERIOD_MS = 250;
+
+  let { left, right, scale, label }: Props = $props();
 
   const covers: HTMLElement[] = [];
   const target = new Float64Array(2);
   const shown = new Float64Array(2);
   const written = new Float64Array(2).fill(-1);
+  const paced = new Paced(SPOKEN_PERIOD_MS);
+  // The level last reported, and the one waiting for its turn.
+  let spoken: number | undefined = $state();
+  let latest: number | undefined;
 
   const midAt = $derived(`${dbFraction(scale.midDb, scale.floorDb) * 100}%`);
   const highAt = $derived(`${dbFraction(scale.highDb, scale.floorDb) * 100}%`);
@@ -22,18 +32,27 @@
   $effect(() => {
     target[0] = meterFraction(left, scale.floorDb);
     target[1] = meterFraction(right, scale.floorDb);
+    latest = Number.isFinite(scale.floorDb) ? peakDb(left, right, scale.floorDb) : undefined;
     ticker.wake(step);
   });
 
-  // One frame of both bars; runs while either is still falling.
-  function step(): boolean {
+  // One frame of both bars; runs while either is still falling or a level waits to be reported.
+  function step(now: number): boolean {
     let falling = false;
     for (let i = 0; i < 2; i++) {
       shown[i] = meterFall(shown[i], target[i]);
       if (shown[i] > target[i]) falling = true;
       if (moved(written[i], shown[i])) write(i);
     }
-    return falling;
+    return report(now) || falling;
+  }
+
+  // Hands the latest level to assistive technology when its turn comes; true while it waits.
+  function report(now: number): boolean {
+    if (latest === spoken) return false;
+    if (!paced.due(now)) return true;
+    spoken = latest;
+    return false;
   }
 
   // The well-coloured cover hides the bar above the level: one transform per bar.
@@ -46,7 +65,17 @@
   }
 </script>
 
-<div class="meter" style:--mid-at={midAt} style:--high-at={highAt}>
+<div
+  class="meter"
+  role="meter"
+  aria-label={label}
+  aria-valuemin={spoken === undefined ? undefined : scale.floorDb}
+  aria-valuemax={spoken === undefined ? undefined : 0}
+  aria-valuenow={spoken}
+  aria-valuetext={spoken === undefined ? undefined : meterText(spoken, scale.floorDb)}
+  style:--mid-at={midAt}
+  style:--high-at={highAt}
+>
   <div class="bar"><i bind:this={covers[0]}></i></div>
   <div class="bar"><i bind:this={covers[1]}></i></div>
 </div>

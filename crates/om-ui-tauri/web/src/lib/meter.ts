@@ -24,6 +24,16 @@ export function meterFraction(linear: number, floorDb: number): number {
   return linear > 0 ? dbFraction(20 * Math.log10(linear), floorDb) : 0;
 }
 
+/**
+ * The level a meter reports to assistive technology: the louder side in whole decibels, held to
+ * `floorDb..0`. Whole steps keep a moving level from changing the report on every packet.
+ */
+export function peakDb(left: number, right: number, floorDb: number): number {
+  const peak = Math.max(left > 0 ? left : 0, right > 0 ? right : 0);
+  if (!(peak > 0)) return floorDb;
+  return Math.min(Math.max(Math.round(20 * Math.log10(peak)), floorDb), 0);
+}
+
 /** The colour band a bar height falls in (`om_ui::meter::MeterScale::zone`). */
 export function meterZone(fraction: number, scale: MeterScale): MeterZone {
   const db = scale.floorDb + Math.min(Math.max(fraction, 0), 1) * -scale.floorDb;

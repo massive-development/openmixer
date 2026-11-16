@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { controlName, Paced, positionText } from '../a11y';
   import { interpolate } from '../clock';
   import { Held } from '../controls/drag';
+  import { sliderKey } from '../controls/keys';
   import { setStyle } from '../dom';
   import { control, deckPeaks, waveformStyle, type DeckInfo, type StripInk } from '../ipc';
   import type { Snapshot } from '../packet';
@@ -31,9 +33,15 @@
   let playedBrightness = $state(1);
   const held = new Held();
   let shownFrac = -1;
+  // The position reaches assistive technology once a second, never per frame.
+  const paced = new Paced(1000);
+  let spokenSeconds = $state(0);
 
   const seekKey = $derived(`deck${deck}.seek`);
   const length = $derived(snapshot?.decks[deck]?.length ?? 0);
+  const fileRate = $derived(snapshot?.decks[deck]?.fileRate ?? 0);
+  const totalSeconds = $derived(length > 0 && fileRate > 0 ? length / fileRate : 0);
+  const name = $derived(controlName(seekKey, ''));
   // A tick per set hot cue, at its share of the track.
   const cues = $derived(cueTicks(info, ink));
 
@@ -107,7 +115,14 @@
     if (!snap || !d) return false;
     const frac = held.shown(d.loaded && d.length > 0 ? interpolate(d, snap, now) / d.length : 0);
     if (frac !== shownFrac) place(frac);
+    speak(frac, now);
     return d.playing;
+  }
+
+  // Whole seconds, so a playing deck changes what is reported once a second at most.
+  function speak(frac: number, now: number): void {
+    const seconds = Math.floor(frac * totalSeconds);
+    if (seconds !== spokenSeconds && paced.due(now)) spokenSeconds = seconds;
   }
 
   function place(frac: number): void {
@@ -117,9 +132,7 @@
     ticker.drew();
   }
 
-  function seekTo(event: PointerEvent): void {
-    const r = box.getBoundingClientRect();
-    const frac = r.width > 0 ? Math.min(Math.max((event.clientX - r.left) / r.width, 0), 1) : 0;
+  function seekTo(frac: number): void {
     held.set(frac);
     place(frac);
     control(seekKey, seekValue(frac * length, length)).catch((error: unknown) =>
@@ -127,15 +140,32 @@
     );
   }
 
+  function pointerFrac(event: PointerEvent): number {
+    const r = box.getBoundingClientRect();
+    return r.width > 0 ? Math.min(Math.max((event.clientX - r.left) / r.width, 0), 1) : 0;
+  }
+
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== 0 || !(length > 0)) return;
     box.setPointerCapture(event.pointerId);
     held.begin(Math.max(shownFrac, 0));
-    seekTo(event);
+    seekTo(pointerFrac(event));
   }
 
   function onPointerMove(event: PointerEvent): void {
-    if (held.active) seekTo(event);
+    if (held.active) seekTo(pointerFrac(event));
+  }
+
+  // Arrows seek by a hundredth of the track, Shift or the page keys by a tenth; no key resets it.
+  function onKeyDown(event: KeyboardEvent): void {
+    if (!(length > 0)) return;
+    const next = sliderKey(event, Math.max(shownFrac, 0));
+    if (next === null || next === 'reset') return;
+    event.preventDefault();
+    held.begin(next);
+    seekTo(next);
+    held.end();
+    spokenSeconds = Math.floor(next * totalSeconds);
   }
 
   function onPointerUp(): void {
@@ -166,13 +196,22 @@
   class="overview"
   bind:this={box}
   style:background={ink?.well}
-  role="presentation"
+  role="slider"
+  tabindex={length > 0 ? 0 : -1}
+  aria-label={name}
+  aria-disabled={length > 0 ? undefined : true}
+  aria-valuemin={0}
+  aria-valuemax={Math.floor(totalSeconds)}
+  aria-valuenow={spokenSeconds}
+  aria-valuetext={positionText(spokenSeconds, totalSeconds)}
+  title={name}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
   onpointercancel={onPointerUp}
+  onkeydown={onKeyDown}
 >
-  <canvas bind:this={canvas}></canvas>
+  <canvas bind:this={canvas} aria-hidden="true"></canvas>
   <div
     class="played"
     bind:this={played}
