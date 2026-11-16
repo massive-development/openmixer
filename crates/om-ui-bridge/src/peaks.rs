@@ -1,8 +1,14 @@
 //! `WaveformData` levels packed as RGB bytes (low, mid, high) for one GPU texture upload per track.
+//! Each byte is the band height the GPUI strip draws for that point, so both windows agree.
 //! Runs on a control thread when a track's analysis lands.
 
 use om_analysis::{WaveformData, WaveformLevel, WaveformPoint};
-use om_ui::waveform::compress;
+use om_ui::waveform::{band_heights, column, reference_peak, BandHeights};
+
+/// Share of the half-height a full-scale column reaches; the shader scales heights by it.
+pub use om_ui::waveform::FILL;
+/// Brightness the played part of the track keeps; the shader dims by it.
+pub use om_ui::waveform::PLAYED_BRIGHTNESS;
 
 /// One level's place in [`PeakBlob::bytes`]: its resolution and point count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,22 +22,34 @@ pub struct PeakLevel {
 pub struct PeakBlob {
     pub sample_rate: f64,
     pub num_samples: i64,
+    /// False for a colourless silhouette: the whole height is in the low byte, drawn grey.
+    pub spectral: bool,
     pub levels: Vec<PeakLevel>,
     pub bytes: Vec<u8>,
 }
 
-/// Packs each level's points as low, mid, high bytes, compressed as the GPUI waveform draws them.
+/// Packs each level's points as low, mid, high bytes: the GPUI band height (0..=1, before
+/// `FILL`), normalised by the track's reference peak, times 255.
 pub fn pack_peaks(data: &WaveformData) -> PeakBlob {
-    let levels = data.levels();
-    let total: usize = levels.iter().map(|l| l.points.len()).sum();
+    let reference = reference_peak(&data.overview().points);
+    let spectral = data.has_spectrum();
+    let total: usize = data.levels().iter().map(|l| l.points.len()).sum();
     let mut bytes = Vec::with_capacity(total * 3);
-    levels.iter().for_each(|l| put_level(l, &mut bytes));
+    for level in data.levels() {
+        put_level(level, reference, spectral, &mut bytes);
+    }
     PeakBlob {
         sample_rate: data.sample_rate(),
         num_samples: data.num_samples(),
-        levels: levels.iter().map(peak_level).collect(),
+        spectral,
+        levels: peak_levels(data),
         bytes,
     }
+}
+
+/// The level table of [`pack_peaks`] without packing the bytes.
+pub fn peak_levels(data: &WaveformData) -> Vec<PeakLevel> {
+    data.levels().iter().map(peak_level).collect()
 }
 
 // The texture header is u32; levels beyond that range cannot occur for any real track.
@@ -42,43 +60,76 @@ fn peak_level(level: &WaveformLevel) -> PeakLevel {
     }
 }
 
-fn put_level(level: &WaveformLevel, out: &mut Vec<u8>) {
-    level.points.iter().for_each(|p| out.extend(point_rgb(p)));
+fn put_level(level: &WaveformLevel, reference: f32, spectral: bool, out: &mut Vec<u8>) {
+    for point in &level.points {
+        out.extend(point_rgb(point, reference, spectral));
+    }
 }
 
-fn point_rgb(p: &WaveformPoint) -> [u8; 3] {
-    [band_byte(p.low), band_byte(p.mid), band_byte(p.high)]
+// One point as the GPUI strip folds it into a column, so the heights are its heights.
+fn point_rgb(p: &WaveformPoint, reference: f32, spectral: bool) -> [u8; 3] {
+    let h: BandHeights = band_heights(&column(std::slice::from_ref(p)), reference, spectral);
+    [height_byte(h.low), height_byte(h.mid), height_byte(h.high)]
 }
 
-fn band_byte(v: f32) -> u8 {
-    (compress(v).clamp(0.0, 1.0) * 255.0).round() as u8
+fn height_byte(height: f32) -> u8 {
+    (height.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use om_ui::waveform::{compress, Reference};
 
     // One past om-analysis's private 2048-point overview size, so `new` adds exactly one level.
     const BASE_POINTS: usize = 2049;
 
-    fn fixture_with_low(low: f32) -> WaveformData {
-        let first = WaveformPoint {
+    fn point(peak: f32, low: f32, mid: f32, high: f32) -> WaveformPoint {
+        WaveformPoint {
+            min: -peak,
+            max: peak,
+            loudness: peak * 0.7,
             low,
-            mid: 0.25,
-            high: 0.0,
-            ..WaveformPoint::default()
-        };
-        let mut points = vec![WaveformPoint::default(); BASE_POINTS];
-        points[0] = first;
+            mid,
+            high,
+        }
+    }
+
+    fn data_of(points: Vec<WaveformPoint>) -> WaveformData {
+        let len = points.len();
         let base = WaveformLevel {
             samples_per_point: 256,
             points,
         };
-        WaveformData::new(44_100.0, (BASE_POINTS * 256) as i64, base)
+        WaveformData::new(44_100.0, (len * 256) as i64, base)
+    }
+
+    /// A track at full scale whose first point has `low` in the low band.
+    fn fixture_with_low(low: f32) -> WaveformData {
+        let mut points = vec![point(1.0, 1.0, 0.5, 0.2); BASE_POINTS];
+        points[0] = point(1.0, low, 0.25, 0.0);
+        data_of(points)
     }
 
     fn two_level_fixture() -> WaveformData {
         fixture_with_low(1.0)
+    }
+
+    /// A varied track: a ramp of peaks with every band balance.
+    fn ramp() -> WaveformData {
+        let points = (0..BASE_POINTS)
+            .map(|i| {
+                let peak = 0.05 + 0.9 * (i % 97) as f32 / 97.0;
+                let share = (i % 7) as f32 / 7.0;
+                point(peak, peak * share, peak * (1.0 - share), peak * 0.3)
+            })
+            .collect();
+        data_of(points)
+    }
+
+    fn gpui_byte(p: &WaveformPoint, reference: f32, band: usize) -> u8 {
+        let h = band_heights(&column(std::slice::from_ref(p)), reference, true);
+        ([h.low, h.mid, h.high][band] * 255.0).round() as u8
     }
 
     #[test]
@@ -87,7 +138,7 @@ mod tests {
         let blob = pack_peaks(&data);
         let levels = data.levels();
         assert_eq!(levels.len(), 2);
-        assert_eq!(blob.levels.len(), 2);
+        assert_eq!(blob.levels, peak_levels(&data));
         for (packed, level) in blob.levels.iter().zip(levels) {
             assert_eq!(packed.samples_per_point as usize, level.samples_per_point);
             assert_eq!(packed.len as usize, level.points.len());
@@ -96,8 +147,8 @@ mod tests {
         let total: usize = levels.iter().map(|l| l.points.len()).sum();
         assert_eq!(blob.bytes.len(), total * 3);
         assert_eq!(
-            (blob.sample_rate, blob.num_samples),
-            (44_100.0, data.num_samples())
+            (blob.sample_rate, blob.num_samples, blob.spectral),
+            (44_100.0, data.num_samples(), true)
         );
     }
 
@@ -107,6 +158,38 @@ mod tests {
         assert_eq!(blob.bytes[0], 255);
         assert_eq!(blob.bytes[1], (compress(0.25) * 255.0).round() as u8);
         assert_eq!(blob.bytes[2], 0);
+    }
+
+    #[test]
+    fn every_byte_is_the_gpui_band_height() {
+        let data = ramp();
+        let reference = Reference::of(&data.overview().points).peak;
+        let blob = pack_peaks(&data);
+        let points = data.levels().iter().flat_map(|l| &l.points);
+        for (p, rgb) in points.zip(blob.bytes.chunks_exact(3)) {
+            let expected = [0, 1, 2].map(|band| gpui_byte(p, reference, band));
+            assert_eq!(rgb, expected, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn a_quiet_track_fills_the_strip_like_gpui() {
+        // Every point peaks at 0.3, so the 95th percentile reference is 0.3.
+        let data = data_of(vec![point(0.3, 0.3, 0.075, 0.0); BASE_POINTS]);
+        assert!((Reference::of(&data.overview().points).peak - 0.3).abs() < 1e-6);
+        let blob = pack_peaks(&data);
+        assert_eq!(blob.bytes[0], 255, "the loudest low band is full height");
+        assert_eq!(blob.bytes[1], (compress(0.25) * 255.0).round() as u8);
+        assert_eq!(blob.bytes[2], 0);
+    }
+
+    #[test]
+    fn one_loud_transient_does_not_shrink_the_rest() {
+        let mut points = vec![point(0.4, 0.4, 0.0, 0.0); BASE_POINTS];
+        points[3] = point(1.0, 1.0, 0.0, 0.0);
+        let blob = pack_peaks(&data_of(points));
+        assert_eq!(blob.bytes[0], 255);
+        assert_eq!(blob.bytes[9], 255, "clamped, as GPUI clamps");
     }
 
     #[test]
