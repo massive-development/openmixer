@@ -255,7 +255,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - The weekly `soak` CI job (the two 10-minute soaks, `.github/workflows/rust.yml`, Sunday 03:00 UTC) has not run yet: `gh run list --event schedule` is empty (checked 2026-10-27), so the result is unknown
 - CI is Linux only; macOS and Windows legs are not in the check matrix
 - The headphone-cue second stream is unproven (it failed on WSLg)
-- The window-opening `--smoke` (without `--headless`) is not run in CI, and neither is the Tauri window (its front-end build, its tests and `--ui=tauri --smoke`)
+- The GPUI window-opening `--smoke` (without `--headless`) is not run in CI; the Tauri window is (the `web` job builds and tests the front end and runs `--ui=tauri --smoke` under Xvfb, Linux only)
 
 ---
 
