@@ -13,6 +13,8 @@ const DECK_LEN: usize = 40;
 const CHANNEL_LEN: usize = 32;
 const MASTER_LEN: usize = 16;
 const DECK_PAD: [u8; 7] = [0; 7];
+/// Largest deck or channel count the one-byte header fields hold.
+const MAX_COUNT: usize = u8::MAX as usize;
 
 /// Bytes in a packet for `decks` decks and `channels` mixer channels.
 pub fn packet_len(decks: usize, channels: usize) -> usize {
@@ -22,10 +24,13 @@ pub fn packet_len(decks: usize, channels: usize) -> usize {
 /// Clears `out` and writes `snap` into it; `age_ms` is the time from snapshot pull to send.
 pub fn pack_snapshot(snap: &EngineSnapshot, age_ms: f32, out: &mut Vec<u8>) {
     out.clear();
-    out.reserve(packet_len(snap.decks.len(), snap.mixer.channels.len()));
+    // The body holds no more than the saturated header counts say.
+    let decks = &snap.decks[..snap.decks.len().min(MAX_COUNT)];
+    let channels = &snap.mixer.channels[..snap.mixer.channels.len().min(MAX_COUNT)];
+    out.reserve(packet_len(decks.len(), channels.len()));
     put_header(snap, age_ms, out);
-    snap.decks.iter().for_each(|d| put_deck(d, out));
-    snap.mixer.channels.iter().for_each(|c| put_channel(c, out));
+    decks.iter().for_each(|d| put_deck(d, out));
+    channels.iter().for_each(|c| put_channel(c, out));
     put_master(&snap.mixer, out);
 }
 
@@ -170,6 +175,16 @@ mod tests {
         let mut out = vec![9u8; 500];
         pack_snapshot(&fixture(), 0.0, &mut out);
         assert_eq!(out.len(), 184);
+    }
+
+    #[test]
+    fn counts_and_body_agree_when_saturated() {
+        let mut snap = fixture();
+        snap.mixer.channels = vec![ChannelSnapshot::default(); 256];
+        let mut out = Vec::new();
+        pack_snapshot(&snap, 0.0, &mut out);
+        assert_eq!(out.len(), packet_len(snap.decks.len(), 255));
+        assert_eq!(out[7], 255);
     }
 
     #[test]
