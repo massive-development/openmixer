@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { isSmoke, ready, startStream, themeCss } from './lib/ipc';
-  import { firstPacket } from './lib/packet';
+  import { firstSnapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
   import { applyThemeCss } from './lib/theme';
 
@@ -14,7 +14,7 @@
       themed = true;
       await afterFirstPaint();
       // A smoke run proves the stream: it reports ready only after a valid packet arrives.
-      if (await isSmoke()) await firstPacket(startStream);
+      if (await isSmoke()) await firstSnapshot(startStream);
       await ready();
     } catch (error) {
       console.error('openmixer: the shell did not start', error);
