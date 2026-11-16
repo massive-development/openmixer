@@ -1,10 +1,10 @@
 /** `OMS1` read little-endian: the first four bytes of every snapshot packet. */
 export const PACKET_MAGIC = 0x4f4d5331;
 /** The packet layout this decoder reads. */
-export const PACKET_VERSION = 1;
+export const PACKET_VERSION = 2;
 
 const HEADER_LEN = 24;
-const DECK_LEN = 40;
+const DECK_LEN = 56;
 const CHANNEL_LEN = 32;
 const MASTER_LEN = 16;
 
@@ -19,6 +19,9 @@ export interface DeckFrame {
   looping: boolean;
   sync: boolean;
   keylock: boolean;
+  /** Loop bounds in source frames; both zero when no loop is set. */
+  loopStart: number;
+  loopEnd: number;
 }
 
 /** One mixer channel: its meter peaks and the controls it reports back. */
@@ -116,6 +119,8 @@ function readDeck(view: DataView, at: number): DeckFrame {
     looping: bit(2),
     sync: bit(3),
     keylock: bit(4),
+    loopStart: Number(view.getBigInt64(at + 40, true)),
+    loopEnd: Number(view.getBigInt64(at + 48, true)),
   };
 }
 

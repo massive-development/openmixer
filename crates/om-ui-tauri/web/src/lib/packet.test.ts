@@ -2,14 +2,24 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, test } from 'vitest';
 import { decodeSnapshot, firstSnapshot, packetLen, PACKET_MAGIC, tryDecode, type Snapshot, type StartStream } from './packet';
 
-const golden = readFileSync(new URL('../../../../../fixtures/ui-bridge/snapshot-v1.bin', import.meta.url));
+const golden = readFileSync(new URL('../../../../../fixtures/ui-bridge/snapshot-v2.bin', import.meta.url));
 const buf = golden.buffer.slice(golden.byteOffset, golden.byteOffset + golden.byteLength) as ArrayBuffer;
 
 test('decodes the golden packet', () => {
   const s = decodeSnapshot(buf, 1000);
   expect(s.decks).toHaveLength(2);
-  expect(s.decks[0]).toMatchObject({ position: 441000, length: 11025000, rate: 1.02, fileRate: 44100, loaded: true, playing: true });
-  expect(s.decks[1].loaded).toBe(false);
+  expect(s.decks[0]).toMatchObject({
+    position: 441000,
+    length: 11025000,
+    rate: 1.02,
+    fileRate: 44100,
+    loaded: true,
+    playing: true,
+    looping: true,
+    loopStart: 440000,
+    loopEnd: 450000,
+  });
+  expect(s.decks[1]).toMatchObject({ loaded: false, looping: false, loopStart: 0, loopEnd: 0 });
   expect(s.channels).toHaveLength(2);
   expect(s.channels[0]).toMatchObject({ left: 0.5, right: 0.25 });
   expect(s.channels[0].fader).toBeCloseTo(0.85);
@@ -21,9 +31,9 @@ test('decodes the golden packet', () => {
   expect(s.receivedAt).toBe(1000);
 });
 
-test('the golden packet is 184 bytes and starts with the little-endian magic', () => {
-  expect(packetLen(2, 2)).toBe(184);
-  expect(buf.byteLength).toBe(184);
+test('the golden packet is 216 bytes and starts with the little-endian magic', () => {
+  expect(packetLen(2, 2)).toBe(216);
+  expect(buf.byteLength).toBe(216);
   expect(new Uint8Array(buf).slice(0, 4)).toEqual(new Uint8Array([0x31, 0x53, 0x4d, 0x4f]));
   expect(new DataView(buf).getUint32(0, true)).toBe(PACKET_MAGIC);
 });
@@ -35,14 +45,16 @@ test('rejects a bad magic and a short buffer', () => {
   expect(() => decodeSnapshot(buf.slice(0, 20), 0)).toThrow('bad packet');
 });
 
-test('rejects a wrong version', () => {
-  const bad = buf.slice(0);
-  new DataView(bad).setUint16(4, 2, true);
-  expect(() => decodeSnapshot(bad, 0)).toThrow('bad packet');
+test('rejects a wrong version, including the loop-less version 1', () => {
+  for (const version of [1, 3]) {
+    const bad = buf.slice(0);
+    new DataView(bad).setUint16(4, version, true);
+    expect(() => decodeSnapshot(bad, 0)).toThrow('bad packet');
+  }
 });
 
 test('rejects a buffer shorter than its own deck and channel counts imply', () => {
-  expect(() => decodeSnapshot(buf.slice(0, 183), 0)).toThrow('bad packet');
+  expect(() => decodeSnapshot(buf.slice(0, 215), 0)).toThrow('bad packet');
   const more = buf.slice(0);
   new Uint8Array(more)[6] = 3;
   expect(() => decodeSnapshot(more, 0)).toThrow('bad packet');
