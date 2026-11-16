@@ -83,6 +83,18 @@ Measured on one machine with a working GPU path, 20 s runs, with a real track of
 5. Waveform visible within 500 ms of the analysis result being available.
 6. Scrubbing, zooming and every control in the slice work by hand on Windows.
 
+## Known gaps of the slice
+
+What the trial window does not yet match or prove, so the measurements are read against it:
+
+- **Channel faders map linearly.** The front end maps fader travel to gain linearly (`web/src/lib/controls/range.ts`); GPUI's channel and master faders use a dB taper (`FaderLaw` in `om-ui-gpui/src/fader_paint.rs`).
+- **Knobs do not snap to their detent while dragged.** GPUI snaps a dragged knob to its detent (`knob_paint::snap_with_bypass`); the front end only maps the travel around it.
+- **No CUE button.** The engine has no control id for it (`TransportButton::Cue` has no `DeckParam`); GPUI sends play 0 and seek 0 for it, the slice shows Play and Sync only.
+- **The beat grid on the generated demo tracks sits about half a beat off the kicks.** It is the analysed grid, the same data GPUI draws; it has not been checked against the GPUI window.
+- **Pointer interactions have not been exercised by hand:** knob and fader drags, pad and loop clicks, overview seek, lane scrub and wheel zoom.
+- **Mock device only.** The window runs only on the mock device, with no MIDI, no plugin state and no settings.
+- **CI does not build the trial yet.** No job builds the front end or runs `--features gui-tauri`. `om-ui-tauri` is a workspace member, so the `check` job's `cargo clippy --workspace` and `cargo test --workspace` already compile it, and its apt line lacks `libwebkit2gtk-4.1-dev`; the `soak` job builds only `om-audio` and `openmixer` without the feature. The workflow change needs a local `act` run with Docker. Proposed job change: set up Node 22 and run `npm ci && npm run build && npm test && npm run check` in `crates/om-ui-tauri/web`; add `libwebkit2gtk-4.1-dev` and `xvfb` to the Linux apt lines of the `check` and `soak` jobs; run `xvfb-run -a cargo test -p openmixer --features gui-tauri`.
+
 ## References
 
 - Plan: [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md)
