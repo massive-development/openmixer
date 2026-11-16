@@ -5298,6 +5298,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "om-ui-bridge"
+version = "0.1.0"
+dependencies = [
+ "om-analysis",
+ "om-core",
+ "om-ui",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "om-ui-gpui"
 version = "0.1.0"
 dependencies = [
