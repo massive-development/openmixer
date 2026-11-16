@@ -93,12 +93,12 @@ tools/ui-bench.sh                    runs either window and samples CPU (Task 11
 - Produces: the spec the remaining tasks cite. Status `Proposed (trial)` until Task 11 changes it.
 
 - [ ] **Step 1: Write ADR 0009.** Sections: Context, Decision, Evidence, Consequences, Exit criteria. Content that must appear:
-  - Context: GPUI needs hand-rolled controls and layout (`om-ui-gpui` paint modules, `om-ui` geometry modules); `gpui-component` is gated off on Linux (ADR 0004).
+  - Context: GPUI needs hand-rolled controls and layout (`om-ui-gpui` paint modules, `om-ui` geometry modules); ADR 0004's 2026-11-07 update puts the app chrome on `gpui-component` while knobs, faders, meters and waveforms stay custom-painted.
   - Decision: trial a Tauri v2 window beside GPUI behind `gui-tauri`. ADR 0004's UI choice stands until the trial ends. ADR 0008 (the look) is unchanged and is carried by CSS variables generated from the theme files.
   - Evidence, Windows, 1600×780, two decks playing, CPU as percent of one core summed over the app and its WebView2 processes: 43% at 120 fps; 26% capped to 60 fps; 17% capped to 30 fps; 13% paused; 35% with a 30 Hz stream against 49% at 120 Hz; 4 KB packets add 6 to 11 points; no frame over 20 ms except one 31 ms frame in the 120 Hz stream run; zero packets lost.
   - Evidence, limits: frame figures count animation callbacks, not presented frames; GPU load not measured; no GPUI baseline; nothing larger than 1600×780; Linux measured only under WSL software rendering, where `WEBKIT_DISABLE_DMABUF_RENDERER=1` cut CPU from 213% to 56%.
   - Rendering rules adopted: analyse once and upload peaks once as a texture; one shader draws all lanes; meters, playheads, bar numbers and cue flags move by CSS transform; skip the frame when nothing changed; write text only when it changes; 30 Hz stream with interpolation; small per-frame packets, bulk data once.
-  - Rejected: pre-rendered tile scrolling (must rebuild on zoom), batched canvas paths (1.4 GB and dropped frames).
+  - Rejected: pre-rendered tile scrolling (must rebuild on zoom), batched canvas paths (1.4 GB of memory and dropped frames).
   - Exit criteria: copy the thresholds from Task 11 Step 5.
 - [ ] **Step 2: Add the ADR to `docs/adr/INDEX.md` and a five-line summary to `docs/adr/SUMMARY.md`.**
 - [ ] **Step 3: Add a "Front-end bridge" entry to `docs/DESIGN_PATTERNS.md`** naming the two crates, the rule that `om-ui-bridge` has no window dependency, and the one-way data flow (snapshot out, `ParamId` dispatch in).
@@ -270,7 +270,9 @@ fn pack_peaks_empty_levels() {
   - `id` fails `ParamId::from_str` or `validate()` → `BridgeError::UnknownControl(id.to_owned())`.
   - `dispatch` returns `false` → `BridgeError::Rejected(id.to_owned())`.
 
-Read `docs/guidelines/control-ids.md` before writing the tests, and take the canonical id strings from it.
+Read `docs/guidelines/control-ids.md` and `crates/om-ui/src/binding.rs` before writing the tests. Ids are built from `ParamId` values and printed with `Display`; no id string is typed by hand, in Rust or in the front end.
+
+Also produce `pub fn slice_control_ids(decks: u8, channels: u8) -> Vec<(String, String)>`: pairs of a stable front-end key and the canonical id, for every control the decks slice uses. Keys: `deck{N}.play`, `deck{N}.cue`, `deck{N}.sync`, `deck{N}.tempo`, `deck{N}.seek`, `ch{N}.fader`, `ch{N}.trim`, `ch{N}.filter`, `ch{N}.eq.low`, `ch{N}.eq.mid`, `ch{N}.eq.high`, `mixer.crossfader`, `mixer.master`, with `N` from 0. Where the engine has no matching `ParamId` variant, leave the key out and list it in the task report. Add the test `slice_ids_round_trip`: every id parses back with `ParamId::from_str` to a value whose `Display` equals the id, and keys are unique.
 
 - [ ] **Step 1: Write the failing tests** using a `ParameterRouter` with one registered recording target (follow the pattern of the router's own tests in `crates/om-core/src/router.rs`):
 
@@ -304,7 +306,7 @@ fn unregistered_namespace_is_rejected() {
 }
 ```
 
-`DECK0_PLAY` is the canonical play id for deck index 0 from `control-ids.md`.
+`DECK0_PLAY` is the id for key `deck0.play` from `slice_control_ids(2, 2)`.
 
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement `dispatch_control`.**
@@ -320,11 +322,12 @@ fn unregistered_namespace_is_rejected() {
 
 **Interfaces:**
 - Consumes: `om_ui::theme::ThemeTokens` (see `crates/om-ui/src/theme/tokens.rs`), `ThemeRegistry::load_builtins()`, `ThemeRegistry::select(id)`, `ThemeRegistry::current()`.
-- Produces: `pub fn theme_css(tokens: &ThemeTokens) -> String` — one `:root { ... }` block. Variable names are `--om-` plus the theme JSON path in kebab-case:
-  - colours: `--om-colour-ground`, `--om-colour-surface-raised`, `--om-colour-text-primary`, … as `#rrggbb`, or `rgb(r g b / a)` when alpha is below 1.
-  - accents: `--om-accent-0` … `--om-accent-3`.
-  - spacing, radii, type sizes and every `deck.*`, `mixer.*`, `style.*` length: `px` values, e.g. `--om-spacing-gap: 13px`, `--om-type-numeral-large: 21px`, `--om-mixer-meter-width: 12px`.
-  - unitless values (alphas, dB, seconds) are emitted as plain numbers, e.g. `--om-deck-grid-bar-alpha: 0.14`.
+- Produces: `pub fn theme_css(tokens: &ThemeTokens) -> String` — one `:root { ... }` block. `ThemeTokens` is a flat struct; each variable is `--om-` plus the Rust field name in kebab-case:
+  - `Colour` fields: `--om-ground`, `--om-surface-raised`, `--om-text-primary`, `--om-playhead`, … as `#rrggbb`, or `rgb(r g b / a)` when alpha is below 1.
+  - `accents`: `--om-accent-0` … `--om-accent-N`.
+  - Lengths (gaps, radii, type sizes, heights, widths): `px` values, e.g. `--om-gap: 13px`, `--om-type-numeral-large: 21px`, `--om-mixer-meter-width: 12px`.
+  - Unitless fields (names ending `_alpha`, `_db`, `_seconds`, `_level`, and `type_scale`): plain numbers, e.g. `--om-grid-bar-alpha: 0.14`.
+  - Fields that are neither a colour nor a number (for example waveform colour stops) are skipped in this task.
   - Output is sorted by variable name so it is stable.
 
 - [ ] **Step 1: Write the failing tests** against the built-in `openmixer.dark` theme:
@@ -334,23 +337,23 @@ fn unregistered_namespace_is_rejected() {
 fn dark_theme_colours() {
     let css = theme_css(dark());
     assert!(css.starts_with(":root {"));
-    assert!(css.contains("--om-colour-ground: #121211;"));
-    assert!(css.contains("--om-colour-playhead: #ef5a3f;"));
+    assert!(css.contains("--om-ground: #121211;"));
+    assert!(css.contains("--om-playhead: #ef5a3f;"));
     assert!(css.contains("--om-accent-0: #e3a24f;"));
     assert!(css.contains("--om-accent-1: #86a9cb;"));
 }
 
 #[test]
 fn translucent_colour_keeps_alpha() {
-    assert!(theme_css(dark()).contains("--om-colour-shadow: rgb(0 0 0 / 0.5"));
+    assert!(theme_css(dark()).contains("--om-shadow: rgb(0 0 0 / 0.5"));
 }
 
 #[test]
 fn lengths_and_numbers() {
     let css = theme_css(dark());
-    assert!(css.contains("--om-spacing-gap: 13px;"));
+    assert!(css.contains("--om-gap: 13px;"));
     assert!(css.contains("--om-mixer-meter-width: 12px;"));
-    assert!(css.contains("--om-deck-grid-bar-alpha: 0.14;"));
+    assert!(css.contains("--om-grid-bar-alpha: 0.14;"));
 }
 
 #[test]
@@ -571,7 +574,7 @@ test('a paused deck does not advance', () => {
 
 Rendering rules, from ADR 0009:
 - One `RGB8` texture per deck, every level packed in rows 4096 texels wide; uploaded when `deck-changed` fires, never per frame.
-- One fragment shader draws each lane. Port `FS` from the spike's `ui/app.js`, with two changes: the level index, its row offset, length and `samplesPerPoint` come in as uniforms chosen by `pickLevel`, and colours come from uniforms read from `--om-*` variables (`--om-colour-well`, `--om-colour-text-primary`, `--om-colour-playhead`, `--om-accent-N`, `--om-deck-grid-bar-alpha`, `--om-deck-grid-beat-alpha`).
+- One fragment shader draws each lane. Port `FS` from the spike's `ui/app.js`, with two changes: the level index, its row offset, length and `samplesPerPoint` come in as uniforms chosen by `pickLevel`, and colours come from uniforms read from `--om-*` variables (`--om-well`, `--om-text-primary`, `--om-playhead`, `--om-accent-N`, `--om-grid-bar-alpha`, `--om-grid-beat-alpha`).
 - The played side is dimmed by the factor `PLAYED_BRIGHTNESS` (`0.45`) from `om_ui::waveform::bands`; expose it through `deck_info` or a constant kept beside the shader with a comment naming the Rust source.
 - Per frame: skip all GL and DOM work when no deck position, zoom or canvas size changed since the last frame.
 - With `fpsCap` set, skip animation callbacks that arrive sooner than `1000 / fpsCap - 2` ms after the last drawn frame.

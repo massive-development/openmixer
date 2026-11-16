@@ -34,7 +34,7 @@ Trial a Tauri v2 window beside the GPUI window, behind the `gui-tauri` feature a
 ### Rejected in the spike
 
 - **Pre-rendered tile scrolling:** the tiles must be rebuilt on every zoom.
-- **Batched canvas paths:** 1.4 GB and dropped frames.
+- **Batched canvas paths:** 1.4 GB of memory and dropped frames.
 
 ## Evidence
 
