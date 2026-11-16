@@ -14,6 +14,7 @@ This index contains all Architecture Decision Records (ADRs) for the OpenMixer p
 | 0006 | Controller map provenance | Accepted |
 | 0007 | CLAP plugin hosting with clack | Accepted |
 | 0008 | The Machined Faceplate supersedes E1 on look | Accepted |
+| 0009 | Trial a web front end (Tauri v2) beside GPUI | Proposed (trial) |
 
 ## ADR Templates
 
@@ -60,3 +61,4 @@ Links to relevant documents, discussions, or resources.
 - 2026-11-06 - ADR 0007 proposed
 - 2026-11-07 - ADR 0007 accepted
 - 2026-11-08 - ADR 0008 accepted (Machined Faceplate supersedes E1)
+- 2026-11-15 - ADR 0009 proposed (trial a Tauri v2 front end beside GPUI)
