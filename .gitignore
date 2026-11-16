@@ -11,3 +11,9 @@ __pycache__/
 # Python wheels and virtualenvs (stray downloads; never commit)
 *.whl
 .venv/
+
+# Tauri trial front end (crates/om-ui-tauri): build output, packages, copied fonts, generated schemas
+/crates/om-ui-tauri/web/dist/
+/crates/om-ui-tauri/web/node_modules/
+/crates/om-ui-tauri/web/public/fonts/
+/crates/om-ui-tauri/gen/

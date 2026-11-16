@@ -1,0 +1,22 @@
+[package]
+name = "om-ui-tauri"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Tauri v2 window for the web front end trial (ADR 0009)"
+
+[lints]
+workspace = true
+
+[dependencies]
+om-core.workspace = true
+om-engine.workspace = true
+tauri = "2"
+thiserror.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+tauri-build = "2"

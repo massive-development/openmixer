@@ -55,10 +55,10 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt-get install pkg-config libasound2-dev libdbus-1-dev
+sudo apt-get install pkg-config libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 ```
 
-GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen).
+GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen). `libwebkit2gtk-4.1-dev` is for the Tauri trial window (`om-ui-tauri`, ADR 0009): the crate is a workspace member, so workspace builds need it even though the `gui-tauri` feature is off by default. Its front end needs Node 22.12 or newer (npm).
 
 Optional: `sccache` shares compiled dependencies between worktrees (setup in `docs/guidelines/build.md`); `libdbus-1-dev` is required on Linux by the default `realtime-dbus` feature (real-time priority for the audio callback); `--no-default-features` builds without it.
 
@@ -134,13 +134,20 @@ export DISPLAY=127.0.0.1:0
 cargo run -p openmixer -- --mock-device              # the window (dev builds optimise the UI crates; use --release to judge smoothness)
 cargo run -p openmixer -- --headless --smoke         # startup check, no window
 cargo run -p openmixer -- --version
+
+# Tauri trial window (ADR 0009; mock device only): build the front end first
+(cd crates/om-ui-tauri/web && npm ci && npm run build)
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke   # exits 0 once the page has painted
 ```
+
+The Tauri window is a trial beside GPUI (ADR 0009): it opens four empty, themed layout regions for now, runs only on the mock device, and GPUI stays the default window.
 
 The GPUI window is the default build and needs the `-dev` packages listed in the `check` job of `.github/workflows/rust.yml` (on Linux: `libxkbcommon-x11-dev`, Wayland, fontconfig, freetype, Vulkan). `--no-default-features` builds the headless binary without it. The staged screenshots were checked by eye (see `docs/screenshots/REVIEW.md`); a live window on a real display, at the minimum size, has not been checked.
 
 Set `OPENMIXER_FRAME_STATS=1` to print frame-time percentiles to the terminal every five seconds. Other environment variables: `OPENMIXER_PREFS` (preferences file), `OPENMIXER_LIBRARY_DB` (library database), `OPENMIXER_THEME` (theme id for the session), `OPENMIXER_WINDOW=WIDTHxHEIGHT` (window size), `OPENMIXER_WAVE_STYLE` (waveform style), `OPENMIXER_MOCK_STEMS` (mock stem separator), `OPENMIXER_DEMO_TRACK` (a real file for the demo deck) and `OPENMIXER_FFMPEG` (the `ffmpeg` executable).
 
-Optional cargo features of the `openmixer` binary, all off by default: `clap` (CLAP plugin hosting through `om-plugins`, ADR 0007; Linux first), `onnx` (real stem separation through ONNX Runtime) and `ffmpeg` (decode fallback). `realtime-dbus` is on by default (Linux real-time priority; needs `libdbus-1-dev`); `--no-default-features` turns it off along with the window.
+Optional cargo features of the `openmixer` binary, all off by default: `clap` (CLAP plugin hosting through `om-plugins`, ADR 0007; Linux first), `onnx` (real stem separation through ONNX Runtime), `ffmpeg` (decode fallback) and `gui-tauri` (the Tauri trial window, ADR 0009, opened with `--ui=tauri`). `realtime-dbus` is on by default (Linux real-time priority; needs `libdbus-1-dev`); `--no-default-features` turns it off along with the window.
 
 ### Debug Build
 
@@ -171,6 +178,8 @@ crates/
 ├── om-plugins/   # In-process plugin API and registry; C-ABI shared-library loading; CLAP hosting behind the `clap` feature
 ├── om-ui/        # UI logic without a window: themes, preferences, mixer, deck and library view models
 ├── om-ui-gpui/   # GPUI window on gpui-kit and gpui-component (the openmixer `gui` feature, on by default)
+├── om-ui-bridge/ # Toolkit-free wire formats for a web front end: snapshot packet, waveform peaks, theme CSS, control dispatch
+├── om-ui-tauri/  # Trial Tauri v2 window and Svelte front end (ADR 0009; the openmixer `gui-tauri` feature, off by default)
 ├── om-testing/   # Test-only helpers shared by the crates (WAV fixtures, signal generators); dev-dependency only
 └── openmixer/    # Binary and composition root: --smoke, --mock-device, settings, plugins
 examples/plugins/gain-plugin/           # Example in-process plugin
@@ -246,7 +255,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - The weekly `soak` CI job (the two 10-minute soaks, `.github/workflows/rust.yml`, Sunday 03:00 UTC) has not run yet: `gh run list --event schedule` is empty (checked 2026-10-27), so the result is unknown
 - CI is Linux only; macOS and Windows legs are not in the check matrix
 - The headphone-cue second stream is unproven (it failed on WSLg)
-- The window-opening `--smoke` (without `--headless`) is not run in CI
+- The window-opening `--smoke` (without `--headless`) is not run in CI, and neither is the Tauri trial window (its front-end build, its tests and `--ui=tauri --smoke`)
 
 ---
 

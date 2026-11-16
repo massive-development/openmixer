@@ -24,4 +24,5 @@ pub mod plugin_state;
 pub mod plugins;
 pub mod record_service;
 pub mod sampler_demo;
+pub mod startup;
 pub mod stems_host;

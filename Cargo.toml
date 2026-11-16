@@ -15,6 +15,7 @@ members = [
     "crates/om-stems",
     "crates/om-ui-gpui",
     "crates/om-ui-bridge",
+    "crates/om-ui-tauri",
     "crates/om-testing",
     "examples/plugins/gain-plugin",
     "examples/plugins/gain-plugin-cdylib",
@@ -46,6 +47,7 @@ om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
 om-ui-gpui = { path = "crates/om-ui-gpui" }
 om-ui-bridge = { path = "crates/om-ui-bridge" }
+om-ui-tauri = { path = "crates/om-ui-tauri" }
 audioadapter-buffers = "5.1"
 ebur128 = "0.1.11"
 rtrb = "0.4"

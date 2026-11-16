@@ -11,6 +11,7 @@ sudo apt-get install libasound2-dev pkg-config libclang-dev libdbus-1-dev
 
 `libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is for the default `realtime-dbus` feature; `--no-default-features` builds without it.
 
+- **Tauri trial window (ADR 0009, `gui-tauri` feature, off by default):** `om-ui-tauri` is a workspace member, so every workspace build on Linux (`cargo check`, `clippy` and `test --workspace`) needs WebKitGTK: `sudo apt-get install libwebkit2gtk-4.1-dev` (it brings GTK 3 and libsoup 3). The front end in `crates/om-ui-tauri/web` needs Node 22.12 or newer with npm. Without a front-end build, `build.rs` writes a placeholder page so the crate still compiles, but the window stays blank and its `--smoke` fails.
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
 - GPUI platform dependencies (Linux) are documented in `openmixer-workbench/docs/spikes/gpui.md`.
 - Crates added in the platform refresh: see [docs/dependencies.md](docs/dependencies.md).
@@ -43,6 +44,11 @@ cargo run -p openmixer -- --smoke
 cargo bench -p om-engine
 cargo bench -p om-analysis
 
+# Tauri trial window (ADR 0009): build and test the front end, then run the window or its smoke check
+(cd crates/om-ui-tauri/web && npm ci && npm run build && npm test && npm run check)
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
+
 # Optional features: CLAP hosting, real stem separation, ffmpeg decode fallback
 cargo build -p openmixer --features clap
 cargo test -p om-stems --features onnx
@@ -68,6 +74,7 @@ incremental = false
 - WSL crashes under heavy builds. Run `nice -n 19 env CARGO_BUILD_JOBS=3 cargo ...`, one cargo process at a time, never in the background, and never clippy and test in one command. Agents sharing a checkout serialise with `flock /tmp/openmixer-cargo.lock`.
 - Agents on separate worktrees that share a `CARGO_TARGET_DIR` can see each other's output as fresh: touch the files you changed before testing, and check the new tests actually ran.
 - Check `free -m` first. Do not build the gui crate unless more than 6 GB is free.
+- The Tauri window also runs with `WAYLAND_DISPLAY=`; on Linux it sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` unless that is already set (ADR 0009: WSL software rendering). It runs only with `--mock-device`.
 - GUI build (`openmixer-workbench/docs/spikes/gpui.md`): run with `WAYLAND_DISPLAY=` to force X11. For the link error `unable to find library -lxkbcommon-x11`, symlink `libxkbcommon-x11.so.0` into a shim directory and pass `RUSTFLAGS="-L <shim dir>"`; the proper fix is `sudo apt install libxkbcommon-x11-dev`. The gui crate tests need this too.
 - `soak_short` (`crates/om-audio/tests/soak.rs`) can flake once under load; rerun it alone.
 - Git corruption recovery: delete zero-byte files under `.git/objects`, run `git fetch --refetch origin`, then reset the branch to `origin/<branch>`.

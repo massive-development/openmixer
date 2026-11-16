@@ -21,9 +21,7 @@ use om_ui_gpui::debug_panel::DeviceStatus;
 use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
 use openmixer::app_targets::AudioDeviceControl;
-use openmixer::audio_settings::{
-    CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
-};
+use openmixer::audio_settings::{CpalBackend, OutputSettings, SharedOutput};
 use openmixer::automix_host::AppAutomixHost;
 use openmixer::automix_queue::LibraryQueue;
 use openmixer::automix_service::AutomixRunner;
@@ -33,6 +31,7 @@ use openmixer::flags::DemoScene;
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
 use openmixer::record_service::AppRecordHost;
+use openmixer::startup::{mock_output, start_output};
 use openmixer::AppError;
 use std::cell::RefCell;
 use std::process::ExitCode;
@@ -173,12 +172,7 @@ pub fn main(args: &[String]) -> ExitCode {
     let started_with = (!mock && banner.is_none() && !stored.is_empty()).then_some(stored.as_str());
 
     // Preferences reach the output routing and the device of the output that was actually opened.
-    {
-        let mut settings = output.lock();
-        let pairs = settings.pairs();
-        composition.apply_preferences(&pairs, Some(&mut *settings), started_with);
-    }
-    if let Err(error) = output.lock().start(Box::new(audio)) {
+    if let Err(error) = start_output(&mut composition, &output, audio, started_with) {
         eprintln!("openmixer: could not start the audio device: {error}");
         return ExitCode::FAILURE;
     }
@@ -499,17 +493,6 @@ fn apply_changes(
     let pairs = settings.pairs();
     let device: &mut dyn AudioDeviceControl = &mut *settings;
     composition.apply_preferences(&pairs, Some(device), None);
-}
-
-/// The silent mock output, started by the window like the cpal one.
-fn mock_output() -> SharedOutput {
-    let backend: Box<dyn OutputBackend> = Box::new(MockBackend::default());
-    let output = SharedOutput::new(OutputSettings::new(backend));
-    if let Err(error) = output.lock().start_up("") {
-        // The default mock cannot fail to open; keep the window up with no device if it does.
-        eprintln!("openmixer: mock device: {error}");
-    }
-    output
 }
 
 /// The debug panel's view of the device, from its latency monitor.
