@@ -5,8 +5,8 @@ openmixer/
 ├── .github/workflows/        # rust.yml (the Rust CI, every PR; weekly soak) and issue-heatmap.yml
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   ├── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
-│   ├── om-ui-bridge/         # Trial (ADR 0009): snapshot packet, peaks, theme CSS, control specs and dispatch for a web front end
-│   └── om-ui-tauri/          # Trial (ADR 0009) Tauri v2 window (the `gui-tauri` feature, off by default); web/ Svelte front end, icons/
+│   ├── om-ui-bridge/         # ADR 0009: snapshot packet, peaks, theme CSS, control specs and dispatch for a web front end
+│   └── om-ui-tauri/          # ADR 0009 web front end: Tauri v2 window (the `gui-tauri` feature, off by default); web/ Svelte front end, icons/
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── controllers/          # Controller map notes

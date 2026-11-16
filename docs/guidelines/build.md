@@ -11,7 +11,7 @@ sudo apt-get install libasound2-dev pkg-config libclang-dev libdbus-1-dev
 
 `libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is for the default `realtime-dbus` feature; `--no-default-features` builds without it.
 
-- **WebKitGTK:** `om-ui-tauri` (the Tauri trial window) is a workspace member, so every workspace build on Linux needs `libwebkit2gtk-4.1-dev`; see "Tauri trial window" below.
+- **WebKitGTK:** `om-ui-tauri` (the Tauri window, the web front end of ADR 0009) is a workspace member, so every workspace build on Linux needs `libwebkit2gtk-4.1-dev`; see "Tauri window (web front end)" below.
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
 - GPUI platform dependencies (Linux) are documented in `openmixer-workbench/docs/spikes/gpui.md`.
 - Crates added in the platform refresh: see [docs/dependencies.md](../dependencies.md).
@@ -75,9 +75,9 @@ incremental = false
 - Never play audio; use the mock device. Screenshots only with `import -silent` (see `tools/screenshots.sh`), into temp dirs, at most 6 per task.
 - Agents default to haiku; use sonnet for audio-thread or design-heavy work. Review once per phase. Push after every step.
 
-## Tauri trial window
+## Tauri window (web front end)
 
-The trial window of ADR 0009 (`om-ui-tauri`, the `gui-tauri` feature of `openmixer`, off by default). What it is and how it works: [docs/features/tauri-trial.md](../features/tauri-trial.md).
+The web front end of ADR 0009 (`om-ui-tauri`, the `gui-tauri` feature of `openmixer`, off by default). What it is and how it works: [docs/features/tauri-trial.md](../features/tauri-trial.md).
 
 - **Linux packages:** `sudo apt-get install libwebkit2gtk-4.1-dev` (it brings GTK 3 and libsoup 3). `om-ui-tauri` is a workspace member, so `cargo check`, `clippy` and `test --workspace` need it even without the feature.
 - **Node:** 22.12 or newer, or 24, with npm (Vite 8 needs 20.19 or 22.12 and up; Vitest 5 needs 22.12, 24 or 26 and up). Ubuntu's packaged Node is older. Dependencies are pinned in `web/package-lock.json`; install with `npm ci`.

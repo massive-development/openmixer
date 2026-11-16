@@ -1,16 +1,16 @@
-# Tauri trial window (ADR 0009)
+# Web front end: the Tauri window (ADR 0009)
 
 ## What it is
 
-A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. It is a trial under [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) (status: Proposed, trial), carried out by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md). GPUI stays the default and the only shipping window; ADR 0004's UI choice stands until the trial's measurement task decides.
+A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. It was built as a trial by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md), and [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) was accepted on 2026-11-16 by the project owner's decision: the web front end is the direction for the interface. GPUI stays the default and the only shipping window until the cut-over plan lands.
 
 - Behind the `gui-tauri` cargo feature of `openmixer` (off by default) and the `--ui=tauri` flag.
 - Runs only on the silent mock device: `--ui=tauri` without `--mock-device` exits with an error. No MIDI, plugin state or settings reach it.
-- The measurement and the decision (plan Task 11, steps 4 to 6) are not done. The only numbers so far are tooling checks under WSL software rendering, not trial results.
+- The trial's measurement (plan Task 11, steps 4 and 5) was not run before acceptance; its exit criteria are kept in the ADR as targets for the migration. The only numbers so far are tooling checks under WSL software rendering.
 
 ## Build and run
 
-Linux packages: `libwebkit2gtk-4.1-dev` on top of the usual ones (see [build.md](../guidelines/build.md#tauri-trial-window)). Node: 22.12 or newer, or 24 (Vite 8 and Vitest 5 refuse older; Vitest also refuses 23 and 25).
+Linux packages: `libwebkit2gtk-4.1-dev` on top of the usual ones (see [build.md](../guidelines/build.md#tauri-window-web-front-end)). Node: 22.12 or newer, or 24 (Vite 8 and Vitest 5 refuse older; Vitest also refuses 23 and 25).
 
 ```bash
 cd crates/om-ui-tauri/web && npm ci && npm run build && cd -    # writes web/dist
@@ -84,7 +84,7 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
 ### Theme CSS
 
-`theme_css` returns one `:root { ... }` block that the front end puts in a `<style id="om-theme">` before its first paint. Naming and units are in [styling.md](../styling.md#the-web-front-end-tauri-trial).
+`theme_css` returns one `:root { ... }` block that the front end puts in a `<style id="om-theme">` before its first paint. Naming and units are in [styling.md](../styling.md#the-web-front-end-tauri-window).
 
 ## Threads
 
@@ -96,7 +96,7 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 | Control | `om-ui-control` | builds the demo library (the library services cannot move between threads), then at 30 Hz pumps the services and the track loader and emits `deck-changed` | when `run` sets its stop flag after the window closes; it is joined |
 | Watchdog | `om-ui-smoke` | smoke and bench runs only: waits for `ready` (60 s) or the bench report (60 s plus the bench length) | when the signal arrives; on timeout it exits the app with code 1 |
 
-Nothing in the trial runs on the audio thread or waits on a plugin.
+Nothing in the web window runs on the audio thread or waits on a plugin.
 
 ## Commands and events
 
@@ -212,7 +212,7 @@ Linux only; it never builds. It starts `OPENMIXER_BIN` (default `target/debug/op
 | `framesOver2xRefresh` | Intervals above twice the median interval |
 | `decksPlaying` | Decks playing when the recording ended |
 
-The frame figures count drawn animation callbacks, not presented frames. The only runs so far were checks of this tooling on WSL software rendering; they are not the trial's measurement, which needs a machine with a working GPU path, a GPUI baseline and a real track (ADR 0009, Exit criteria).
+The frame figures count drawn animation callbacks, not presented frames. The only runs so far were checks of this tooling on WSL software rendering; they are not a hardware comparison. Measuring the ADR's targets needs a machine with a working GPU path, a GPUI baseline and a real track (ADR 0009, Targets carried into the migration).
 
 ## Tests
 
@@ -231,6 +231,6 @@ CI runs none of the front-end steps or the feature's tests yet (ADR 0009, Known 
 
 See [ADR 0009, Known gaps of the slice](../adr/0009-web-front-end-tauri-trial.md#known-gaps-of-the-slice). Besides those: the mock-device notice is passed to the window (`RunOptions::banner`) but not shown.
 
-## What a later plan would add
+## What the later plans add
 
-Only if the trial passes (ADR 0009, Consequences): plan 2, the library, sampler, FX, stems, automix bar and loudness; plan 3, settings, the mapping editor, plugin windows, media keys, OS file drop and shortcuts; plan 4, test tooling parity, the cut-over, removing `om-ui-gpui`, and installers. If it fails, `crates/om-ui-tauri` and the `gui-tauri` feature are removed, and `om-ui-bridge` stays only if something else uses it.
+ADR 0009, Decision: plan 2, the library, sampler, FX, stems, automix bar and loudness; plan 3, settings, the mapping editor, plugin windows, media keys, OS file drop and shortcuts; plan 4, test tooling parity, the cut-over, removing `om-ui-gpui`, and installers.

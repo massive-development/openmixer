@@ -9,12 +9,12 @@ This index contains all Architecture Decision Records (ADRs) for the OpenMixer p
 | 0001 | Clean-Room Doctrine | Accepted |
 | 0002 | Technology Stack - JUCE with AGPLv3 | Superseded by ADR 0004 |
 | 0003 | Pure AGPLv3 with No Contributor CLA | Accepted |
-| 0004 | Technology Stack - Rust with GPUI | Accepted (superseded in part, see the note in the ADR) |
+| 0004 | Technology Stack - Rust with GPUI | Accepted (superseded in part, see the notes in the ADR; UI choice superseded in direction by ADR 0009) |
 | 0005 | Experience-first product bar | Accepted |
 | 0006 | Controller map provenance | Accepted |
 | 0007 | CLAP plugin hosting with clack | Accepted |
 | 0008 | The Machined Faceplate supersedes E1 on look | Accepted |
-| 0009 | Trial a web front end (Tauri v2) beside GPUI | Proposed (trial) |
+| 0009 | Move the interface to a web front end (Tauri v2) | Accepted (owner decision; exit criteria not measured) |
 
 ## ADR Templates
 
@@ -62,3 +62,4 @@ Links to relevant documents, discussions, or resources.
 - 2026-11-07 - ADR 0007 accepted
 - 2026-11-08 - ADR 0008 accepted (Machined Faceplate supersedes E1)
 - 2026-11-15 - ADR 0009 proposed (trial a Tauri v2 front end beside GPUI)
+- 2026-11-16 - ADR 0009 accepted by owner decision (exit criteria not measured); ADR 0004's UI choice superseded in direction
