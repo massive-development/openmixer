@@ -6,10 +6,12 @@
 mod control;
 mod peaks;
 mod snapshot_packet;
+mod theme_css;
 
 pub use control::{dispatch_control, slice_control_ids};
 pub use peaks::{pack_peaks, PeakBlob, PeakLevel};
 pub use snapshot_packet::{pack_snapshot, packet_len, PACKET_MAGIC, PACKET_VERSION};
+pub use theme_css::theme_css;
 
 /// Why the bridge refused a request from the front end.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
