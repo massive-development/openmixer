@@ -48,6 +48,9 @@ cargo bench -p om-analysis
 (cd crates/om-ui-tauri/web && npm ci && npm run build && npm test && npm run check)
 cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device
 cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
+# Trial measurement (Linux): CPU and memory of either window over N s, plus the Tauri frame report;
+# needs a built binary (OPENMIXER_BIN, default target/debug/openmixer). --ui-fps-cap=N (0 uncapped) caps the lanes.
+tools/ui-bench.sh tauri 20 --demo-library   # or: gpui 20 --demo-library; tools/ui-bench.sh --self-test
 
 # Optional features: CLAP hosting, real stem separation, ffmpeg decode fallback
 cargo build -p openmixer --features clap
