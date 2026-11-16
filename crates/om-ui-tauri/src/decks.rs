@@ -1,5 +1,6 @@
-//! What the front end knows of each deck's track: the track loader and a generation per deck that
-//! counts changes (track, waveform, hot cues). The control thread ticks it; the deck commands read
+//! What the front end knows of each deck's track: the track loader and two generations per deck,
+//! one counting every change (track, waveform, hot cues) and one counting waveform changes only, so
+//! the front end fetches and uploads peaks once per waveform. The control thread ticks it; the deck commands read
 //! it from Tauri's IPC threads. The library services stay on the control thread (they are not
 //! `Send`), so only the loader sits behind the lock.
 
@@ -31,6 +32,8 @@ pub struct DeckChanged {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DeckView {
     pub(crate) generation: u64,
+    /// Changes only with the waveform, the peaks `deck_peaks` returns.
+    pub(crate) peaks_generation: u64,
     pub(crate) track: TrackInfo,
     pub(crate) waveform: Option<Arc<WaveformData>>,
 }
@@ -47,6 +50,23 @@ struct Seen {
 struct Watch {
     seen: Seen,
     generation: u64,
+    peaks_generation: u64,
+}
+
+impl Watch {
+    /// Takes in what the deck is now; true when anything changed. Only a different waveform
+    /// (including none, or a first one) moves the peaks generation.
+    fn advance(&mut self, now: Seen) -> bool {
+        if self.seen == now {
+            return false;
+        }
+        if self.seen.waveform != now.waveform {
+            self.peaks_generation += 1;
+        }
+        self.seen = now;
+        self.generation += 1;
+        true
+    }
 }
 
 struct DeckState {
@@ -69,7 +89,7 @@ impl Decks {
         state.watches = (0..engine.num_decks())
             .map(|deck| Watch {
                 seen: seen(&state, engine, deck),
-                generation: 0,
+                ..Watch::default()
             })
             .collect();
         Self {
@@ -100,10 +120,11 @@ impl Decks {
     /// Deck `deck` as the commands report it; `None` when there is no such deck.
     pub(crate) fn read(&self, deck: usize) -> Option<DeckView> {
         let state = lock(&self.state);
-        let generation = state.watches.get(deck)?.generation;
+        let watch = state.watches.get(deck)?;
         let loader = state.loader.as_ref();
         Some(DeckView {
-            generation,
+            generation: watch.generation,
+            peaks_generation: watch.peaks_generation,
             track: loader.map(|l| l.track_info(deck)).unwrap_or_default(),
             waveform: loader.and_then(|l| l.waveform(deck)).cloned(),
         })
@@ -113,11 +134,9 @@ impl Decks {
 fn observe(state: &mut DeckState, engine: &DjEngine, deck: usize) -> Option<DeckChanged> {
     let now = seen(state, engine, deck);
     let watch = &mut state.watches[deck];
-    if watch.seen == now {
+    if !watch.advance(now) {
         return None;
     }
-    watch.seen = now;
-    watch.generation += 1;
     Some(DeckChanged {
         deck,
         generation: watch.generation,
@@ -173,6 +192,69 @@ mod tests {
         assert_eq!(decks.tick(&engine, None)[0].generation, 2);
         assert_eq!(decks.read(1).map(|v| v.generation), Some(2));
         assert_eq!(decks.read(0).map(|v| v.generation), Some(0));
+    }
+
+    fn seen_with(waveform: usize, cue: Option<i64>) -> Seen {
+        let mut hotcues = Cues::default();
+        hotcues[0] = cue;
+        Seen {
+            track: Some(1),
+            waveform,
+            hotcues,
+        }
+    }
+
+    fn watching(seen: Seen) -> Watch {
+        Watch {
+            seen,
+            ..Watch::default()
+        }
+    }
+
+    #[test]
+    fn a_hot_cue_change_leaves_the_peaks_generation() {
+        let mut watch = watching(seen_with(0x10, None));
+        assert!(watch.advance(seen_with(0x10, Some(44_100))));
+        assert_eq!((watch.generation, watch.peaks_generation), (1, 0));
+        assert!(!watch.advance(seen_with(0x10, Some(44_100))), "no change");
+        assert_eq!((watch.generation, watch.peaks_generation), (1, 0));
+    }
+
+    #[test]
+    fn a_new_waveform_bumps_both_generations() {
+        let mut watch = watching(seen_with(0x10, None));
+        assert!(watch.advance(seen_with(0x20, None)));
+        assert_eq!((watch.generation, watch.peaks_generation), (1, 1));
+    }
+
+    #[test]
+    fn unloading_or_a_first_waveform_bumps_both_generations() {
+        let mut watch = watching(seen_with(0x10, None));
+        let mut unloaded = seen_with(0, None);
+        unloaded.track = None;
+        assert!(watch.advance(unloaded));
+        assert_eq!((watch.generation, watch.peaks_generation), (1, 1));
+        assert!(watch.advance(seen_with(0x30, None)));
+        assert_eq!((watch.generation, watch.peaks_generation), (2, 2));
+    }
+
+    #[test]
+    fn a_title_only_change_leaves_the_peaks_generation() {
+        let mut watch = watching(seen_with(0x10, None));
+        let mut retitled = seen_with(0x10, None);
+        retitled.track = Some(2);
+        assert!(watch.advance(retitled));
+        assert_eq!((watch.generation, watch.peaks_generation), (1, 0));
+    }
+
+    #[test]
+    fn a_hot_cue_change_on_the_engine_reads_back_without_a_peaks_bump() {
+        let engine = engine();
+        let decks = Decks::new(&engine);
+        engine.deck(0).set_hotcue(1, 1_000);
+        decks.tick(&engine, None);
+        let view = decks.read(0).unwrap();
+        assert_eq!((view.generation, view.peaks_generation), (1, 0));
     }
 
     #[test]

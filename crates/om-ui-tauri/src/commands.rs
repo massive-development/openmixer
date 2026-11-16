@@ -165,7 +165,7 @@ pub fn start_stream(
         .map_err(|e| format!("could not start the stream: {e}"))
 }
 
-/// Deck `deck`'s packed waveform peaks; empty while it has none.
+/// Deck `deck`'s peaks generation (u64 LE) then its packed waveform peaks, none while it has none.
 #[tauri::command(async)]
 pub fn deck_peaks(
     deck: usize,

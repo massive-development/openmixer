@@ -2,6 +2,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { BenchStats } from './bench';
 import { tryDecode, type Snapshot } from './packet';
+import { decodePeaks, type Peaks } from './peaks';
 
 /** A front-end control key such as `deck0.play` or `mixer.crossfader`; `controls` lists them. */
 export type ControlKey = string;
@@ -46,7 +47,10 @@ export interface DeckInfo {
   spectral: boolean;
   levels: PeakLevel[];
   hotcues: (number | null)[];
+  /** Counts every change to the deck: track, waveform, hot cues. */
   generation: number;
+  /** Counts waveform changes only; the peaks are fetched again only when it moves. */
+  peaksGeneration: number;
   /** The title as GPUI's deck header prints it: the track's, or its words for an empty deck. */
   titleText: string;
   /** The key as GPUI's deck header prints it, or `--`. */
@@ -169,9 +173,11 @@ export async function control(key: ControlKey, value: number): Promise<void> {
 /** Deck `deck`'s track info and peak layout. */
 export const deckInfo = (deck: number): Promise<DeckInfo> => invoke<DeckInfo>('deck_info', { deck });
 
-/** Deck `deck`'s packed waveform peaks; empty while it has none. */
-export async function deckPeaks(deck: number): Promise<Uint8Array> {
-  return new Uint8Array(await invoke<ArrayBuffer>('deck_peaks', { deck }));
+/** Deck `deck`'s packed waveform peaks and their generation; no bytes while it has none. */
+export async function deckPeaks(deck: number): Promise<Peaks> {
+  const peaks = decodePeaks(await invoke<ArrayBuffer>('deck_peaks', { deck }));
+  if (!peaks) throw new Error(`deck ${deck}: peaks answer too short`);
+  return peaks;
 }
 
 /** Calls `cb` whenever a deck's track, waveform or cues change. */

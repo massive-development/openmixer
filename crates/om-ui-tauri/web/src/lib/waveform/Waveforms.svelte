@@ -11,8 +11,10 @@
     stripInk,
     waveformStyle,
     type DeckInfo,
+    type PeakLevel,
     type StripInk,
   } from '../ipc';
+  import { PeakSync } from '../peaks';
   import type { DeckFrame, Snapshot } from '../packet';
   import { WaveGl, laneInk, type LaneInk, type LanePaint, type PeakTexture } from './gl';
   import { ticker } from '../ticker';
@@ -42,6 +44,9 @@
   interface Lane {
     info: DeckInfo | null;
     peaks: PeakTexture | null;
+    /** The level layout of the uploaded peaks, which may be older than `info` for a moment. */
+    levels: PeakLevel[];
+    sync: PeakSync;
     ink: LaneInk | null;
     dto: StripInk | null;
     request: number;
@@ -110,6 +115,8 @@
     return {
       info: null,
       peaks: null,
+      levels: [],
+      sync: new PeakSync(),
       ink: null,
       dto: null,
       request: 0,
@@ -137,25 +144,48 @@
     positions = new Float64Array(count);
     inks = lanes.map((lane) => lane.dto);
     for (let i = first; i < count; i++) {
-      void loadTrack(i);
+      void loadInfo(i);
       void loadInk(i);
     }
     resizeLanes();
   }
 
-  async function loadTrack(deck: number): Promise<void> {
+  // Every deck-changed refreshes the info (cues, grid, title); peaks follow only a new waveform.
+  async function loadInfo(deck: number): Promise<void> {
     const lane = lanes[deck];
     const request = ++lane.request;
     try {
-      const [info, bytes] = await Promise.all([deckInfo(deck), deckPeaks(deck)]);
+      const info = await deckInfo(deck);
       if (request !== lane.request || lanes[deck] !== lane) return;
-      wgl?.release(lane.peaks);
-      lane.peaks = wgl && info.levels.length > 0 ? wgl.upload(info.levels, bytes) : null;
       lane.info = info;
       dirty = true;
+      const fetch = lane.sync.onInfo(info.peaksGeneration, info.levels.length > 0);
+      // A different waveform (or none) now: the old track's peaks are not shown under it.
+      if (lane.sync.showsOlder() || info.levels.length === 0) setPeaks(lane, null, []);
+      if (fetch) void loadPeaks(deck, lane, info.peaksGeneration);
     } catch (error) {
-      console.error(`openmixer: deck ${deck} track`, error);
+      console.error(`openmixer: deck ${deck} info`, error);
     }
+  }
+
+  async function loadPeaks(deck: number, lane: Lane, requested: number): Promise<void> {
+    try {
+      const peaks = await deckPeaks(deck);
+      if (lanes[deck] !== lane || !lane.sync.onPeaks(requested, peaks.generation)) return;
+      const levels = lane.info?.levels ?? [];
+      setPeaks(lane, wgl && levels.length > 0 ? wgl.upload(levels, peaks.bytes) : null, levels);
+    } catch (error) {
+      lane.sync.onFailed(requested);
+      console.error(`openmixer: deck ${deck} peaks`, error);
+    }
+  }
+
+  function setPeaks(lane: Lane, peaks: PeakTexture | null, levels: PeakLevel[]): void {
+    if (lane.peaks === peaks) return;
+    wgl?.release(lane.peaks);
+    lane.peaks = peaks;
+    lane.levels = levels;
+    dirty = true;
   }
 
   async function loadInk(deck: number): Promise<void> {
@@ -271,7 +301,7 @@
   }
 
   function fillLevel(p: LanePaint, lane: Lane): void {
-    const levels = lane.info?.levels ?? [];
+    const levels = lane.levels;
     const level = lane.peaks ? pickLevel(levels, lane.spp) : -1;
     p.peaks = lane.peaks;
     p.level = level;
@@ -391,7 +421,7 @@
     });
     observer.observe(root);
     const unlisten = onDeckChanged(({ deck }) => {
-      if (deck < lanes.length) void loadTrack(deck);
+      if (deck < lanes.length) void loadInfo(deck);
     });
     waveformStyle()
       .then((style) => {

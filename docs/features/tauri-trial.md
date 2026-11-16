@@ -74,9 +74,9 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
 ### Deck data
 
-- `deck_info(deck)` returns the track (`title`, `artist`, `bpm`, `key`), the header words GPUI's `TrackHeader` prints (`titleText`, `keyText`), `firstBeatFrame` (the beat grid's beat 0), `sampleRate`, `numSamples`, `spectral`, the peak level table `levels` (`samplesPerPoint`, `len` per level), `hotcues` (eight frames or null) and `generation`. A beat grid's BPM takes precedence over the track's, as in GPUI.
-- `deck_peaks(deck)` returns raw bytes (an `ArrayBuffer`): every level of the track's `WaveformData`, finest first, back to back, four bytes per point: body, low, mid, high. Each byte is the height (0 to 1 of the half-height, before `FILL`) the GPUI Low-Band strip draws for that point, normalised by the track's reference, times 255. With `spectral` false the whole height is in the low byte and the lane is a colourless silhouette. Empty while the deck has no waveform.
-- `deck-changed` (payload `{ deck, generation }`) is emitted from the control thread when a deck's track, waveform or hot cues change; the generation counts the changes. The deck headers and panels reload `deck_info`; the lanes reload `deck_info` and `deck_peaks`; the overview fetches the peaks again only when the track changed.
+- `deck_info(deck)` returns the track (`title`, `artist`, `bpm`, `key`), the header words GPUI's `TrackHeader` prints (`titleText`, `keyText`), `firstBeatFrame` (the beat grid's beat 0), `sampleRate`, `numSamples`, `spectral`, the peak level table `levels` (`samplesPerPoint`, `len` per level), `hotcues` (eight frames or null), `generation` (counts every change: track, waveform, hot cues) and `peaksGeneration` (counts waveform changes only: a new `WaveformData`, or going to or from none). A beat grid's BPM takes precedence over the track's, as in GPUI.
+- `deck_peaks(deck)` returns raw bytes (an `ArrayBuffer`): first the deck's `peaksGeneration` as a little-endian u64 (8 bytes, read together with the peaks so a late answer is recognised), then every level of the track's `WaveformData`, finest first, back to back, four bytes per point: body, low, mid, high. Each byte is the height (0 to 1 of the half-height, before `FILL`) the GPUI Low-Band strip draws for that point, normalised by the track's reference, times 255. With `spectral` false the whole height is in the low byte and the lane is a colourless silhouette. No peak bytes (only the 8-byte generation) while the deck has no waveform.
+- `deck-changed` (payload `{ deck, generation }`) is emitted from the control thread when a deck's track, waveform or hot cues change; the generation counts the changes. The deck headers, panels, lanes and overview reload `deck_info` on every event, so cue flags, cue ticks and titles follow at once. The lanes and the overview call `deck_peaks` (and the lanes upload a texture, the overview redraws its canvas) only when `peaksGeneration` differs from the one they last showed; a hot cue or title change fetches no peaks. An answer whose generation is not the newest the deck info named is dropped, so a late answer never replaces newer peaks (`lib/peaks.ts`, `PeakSync`).
 
 ### Strip ink and waveform style
 
@@ -113,7 +113,7 @@ Nothing in the trial runs on the audio thread or waits on a plugin.
 | `control` | `control(key, value)` (sends `{ id, value }`) | nothing, or the dispatch error |
 | `start_stream` | `startStream(onSnapshot)` (sends a `Channel`) | nothing; packets arrive on the channel |
 | `deck_info` | `deckInfo(deck)` | `DeckInfo`; an error for an unknown deck |
-| `deck_peaks` | `deckPeaks(deck)` | `Uint8Array` of packed peaks |
+| `deck_peaks` | `deckPeaks(deck)` | `{ generation, bytes }`: the peaks generation and the packed peaks |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
 
 The window's capability (`capabilities/default.json`) grants `core:default` to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images and the IPC endpoint.
@@ -121,7 +121,7 @@ The window's capability (`capabilities/default.json`) grants `core:default` to t
 ## Rendering, as implemented
 
 - **One shader for the zoomed lanes.** One WebGL2 canvas and one program (`waveform/shader.ts`, `gl.ts`) draw every deck's lane: one full-lane quad per deck, placed by the viewport. The shader picks a peak level for the zoom (`view.ts`, `pickLevel`) and takes the maximum over up to eight points per pixel. It draws the well, the body in the deck colour, the high band over it (body × high, so never taller than the body), the beat grid (bar lines stronger than beat lines; beat lines only when at least 10 px apart) and the playhead fixed at the centre.
-- **Peaks as a texture.** Each deck's levels are uploaded as one RGBA8 texture 4096 texels wide, each level starting on its own row. A lane uploads again whenever `deck-changed` arrives for its deck, which includes hot cue changes.
+- **Peaks as a texture.** Each deck's levels are uploaded as one RGBA8 texture 4096 texels wide, each level starting on its own row. A lane uploads once per waveform: only when the deck's `peaksGeneration` moves, never for a hot cue or title change, and it stops drawing the old track's peaks as soon as the info names a new waveform.
 - **The overview** is a 2D canvas drawn once per track and size; its played shade and playhead move by CSS transform.
 - **DOM overlays by transform.** Bar numbers (64 pooled elements per lane) and cue flags (8 per lane) move with `translate3d` and show or hide only when that changes; a bar number's text is written only when its number changes. Meters move one cover per bar with `scaleY`, fall at most 3% of the height per frame, and are written only when they moved more than 0.3%.
 - **One frame loop.** `ticker.ts` runs the one `requestAnimationFrame` loop: the lanes run every frame; the meters, the overview and the deck read-outs (elapsed, remaining) are woken by a snapshot or an input and stop when idle. Knobs and faders follow the snapshot through Svelte's own updates.
@@ -145,6 +145,7 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/bench.ts` | Frame recorder and the bench summary |
 | `lib/theme.ts` | Puts the theme CSS in its style element |
 | `lib/decks.svelte.ts` | Per-deck track info and ink, reloaded on `deck-changed` |
+| `lib/peaks.ts` | The `deck_peaks` answer and `PeakSync`: when peaks are fetched (a new `peaksGeneration` only) and which answer is shown |
 | `lib/meter.ts` | Meter scale, zones, fall and write threshold (`om_ui::meter::MeterScale`) |
 | `lib/a11y.ts` | Accessible names and value texts |
 | `lib/format.ts` | Read-out formatting |

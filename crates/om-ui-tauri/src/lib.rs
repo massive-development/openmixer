@@ -21,7 +21,7 @@ pub use bench::{parse_report, write_report, BenchError, BenchReport, Summary};
 pub use commands::RunConfig;
 pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
-pub use deck_info::{DeckInfo, PeakLevelDto};
+pub use deck_info::{DeckInfo, PeakLevelDto, PEAKS_HEADER_LEN};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup};
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
