@@ -27,6 +27,10 @@ fn main() -> ExitCode {
     args.retain(|a| a != "--headless");
     let tauri = args.iter().any(|a| a == "--ui=tauri");
     args.retain(|a| a != "--ui=tauri");
+    if !tauri && args.iter().any(|a| is_tauri_only(a)) {
+        eprintln!("openmixer: --ui-bench and --ui-fps-cap need --ui=tauri");
+        return ExitCode::FAILURE;
+    }
     if args.iter().any(|a| a == "--version") {
         println!("openmixer {}", om_core::VERSION);
         return ExitCode::SUCCESS;
@@ -70,6 +74,11 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The Tauri trial's frame flags, which no other window reads.
+fn is_tauri_only(arg: &str) -> bool {
+    arg.starts_with("--ui-bench") || arg.starts_with("--ui-fps-cap")
 }
 
 /// Builds the composition, starts the engine on the paced-free mock device, applies the saved
