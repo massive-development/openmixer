@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { controlName, valueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
   import { Held, faderValue } from './drag';
+  import { sliderKey } from './keys';
   import { toPosition, toValue } from './range';
 
   interface Props {
@@ -12,12 +14,11 @@
     stamp: number;
     /** Vertical faders read 1 at the top; the crossfader is horizontal. */
     horizontal?: boolean;
-    label?: string;
-    /** Whether a double-click restores the default. */
+    /** Whether a double-click, or Delete, restores the default. */
     resettable?: boolean;
   }
 
-  let { key, spec, value, stamp, horizontal = false, label = '', resettable = true }: Props = $props();
+  let { key, spec, value, stamp, horizontal = false, resettable = true }: Props = $props();
 
   const held = new Held();
   let shown = $state(0);
@@ -30,6 +31,8 @@
   });
 
   const position = $derived(spec ? toPosition(shown, spec) : 0);
+  const name = $derived(controlName(key, ''));
+  const text = $derived(valueText(key, shown, spec));
 
   function send(v: number): void {
     held.set(v);
@@ -65,11 +68,23 @@
     held.end();
   }
 
-  function onDoubleClick(): void {
-    if (!spec || !resettable) return;
-    held.begin(spec.default);
-    send(spec.default);
+  // One whole move: held as a drag is, so the thumb does not flick back before the engine answers.
+  function setTo(v: number): void {
+    held.begin(v);
+    send(v);
     held.end();
+  }
+
+  function onDoubleClick(): void {
+    if (spec && resettable) setTo(spec.default);
+  }
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (!spec) return;
+    const next = sliderKey(event, position);
+    if (next === null || (next === 'reset' && !resettable)) return;
+    event.preventDefault();
+    setTo(next === 'reset' ? spec.default : toValue(next, spec));
   }
 </script>
 
@@ -77,18 +92,21 @@
   class="fader"
   class:horizontal
   role="slider"
-  tabindex="-1"
-  aria-label={label}
+  tabindex="0"
+  aria-label={name}
   aria-valuenow={shown}
   aria-valuemin={spec?.min}
   aria-valuemax={spec?.max}
+  aria-valuetext={text}
   aria-orientation={horizontal ? 'horizontal' : 'vertical'}
+  title="{name}: {text}"
   style:--pos={position}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
   onpointercancel={onPointerUp}
   ondblclick={onDoubleClick}
+  onkeydown={onKeyDown}
 >
   <div class="slot"></div>
   {#if !horizontal}<div class="ticks"></div>{/if}

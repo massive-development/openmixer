@@ -45,6 +45,21 @@ body {
   font-size: var(--om-type-body);
 }
 
+/* Keyboard focus: the theme's ring, held clear of the control so it reads on any face. */
+:focus-visible {
+  outline: var(--om-focus-border-width) solid var(--om-focus-ring);
+  outline-offset: var(--om-inset-small);
+}
+
+/* Hover and press fades are decoration; waveforms and meters are content and keep moving. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+  }
+}
+
 /* Numbers: every digit the same width, so read-outs do not shift as they change. */
 .num {
   font-family: var(--om-font-mono);

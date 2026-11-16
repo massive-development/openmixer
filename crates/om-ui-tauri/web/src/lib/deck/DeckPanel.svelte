@@ -6,6 +6,7 @@
   import type { Controls, DeckInfo, StripInk } from '../ipc';
   import type { Snapshot } from '../packet';
   import { ticker } from '../ticker';
+  import DeckTag from './DeckTag.svelte';
   import HotcuePads from './HotcuePads.svelte';
   import LoopRow from './LoopRow.svelte';
   import Transport from './Transport.svelte';
@@ -48,9 +49,23 @@
   }
 </script>
 
+<!-- The tempo fader is first in deck A and last in deck B, so Tab follows the panel left to right. -->
+{#snippet tempo()}
+  {#if controls[tempoKey]}
+    <div class="tempo">
+      <!-- As in GPUI: an accidental double-click mid-mix must not jump the tempo. -->
+      <Fader key={tempoKey} spec={controls[tempoKey]} value={rate} stamp={snapshot?.receivedAt ?? 0} resettable={false} />
+      <!-- The fader's own value text and the Pitch read-out already say it. -->
+      <span class="num pitch" aria-hidden="true">{pitch}</span>
+    </div>
+  {/if}
+{/snippet}
+
 <div class="panel" class:mirrored>
+  {#if !mirrored}{@render tempo()}{/if}
   <div class="main">
     <div class="readouts">
+      <span class="tag"><DeckTag {deck} /></span>
       <div>
         <span class="label">BPM</span>
         <div class="bpm num">{bpm}</div>
@@ -64,17 +79,11 @@
         <b class="num" bind:this={elapsedEl}>--</b>
       </div>
     </div>
-    <HotcuePads {deck} {controls} {info} {ink} />
+    <HotcuePads {deck} {controls} {info} {ink} {loaded} />
     <LoopRow {deck} {controls} {info} {frame} />
     <Transport {deck} {controls} {frame} />
   </div>
-  {#if controls[tempoKey]}
-    <div class="tempo">
-      <!-- As in GPUI: an accidental double-click mid-mix must not jump the tempo. -->
-      <Fader key={tempoKey} spec={controls[tempoKey]} value={rate} stamp={snapshot?.receivedAt ?? 0} resettable={false} />
-      <span class="num pitch">{pitch}</span>
-    </div>
-  {/if}
+  {#if mirrored}{@render tempo()}{/if}
 </div>
 
 <style>
@@ -94,7 +103,6 @@
 
   /* Deck A's fader sits on the left (outer) edge, deck B's on the right. */
   .tempo {
-    order: -1;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--om-inner-gap);
@@ -102,16 +110,14 @@
     min-height: 0;
   }
 
-  .mirrored .tempo {
-    order: 1;
-  }
-
+  /* A size container: the loop row folds to two rows where eight targets do not fit. */
   .main {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto auto;
     gap: var(--om-gap);
     min-width: 0;
     min-height: 0;
+    container-type: inline-size;
   }
 
   .readouts {
@@ -120,6 +126,17 @@
     gap: var(--om-density-space-5);
     padding-bottom: var(--om-inner-gap);
     border-bottom: var(--om-border-width) solid var(--om-border);
+  }
+
+  /* The deck's tag sits at the panel's outer end, level with the BPM digits. */
+  .tag {
+    align-self: flex-end;
+    margin-bottom: calc((var(--om-type-display) - var(--om-type-numeral) * 1.618) / 2);
+  }
+
+  .mirrored .tag {
+    order: 1;
+    margin-left: auto;
   }
 
   .label {

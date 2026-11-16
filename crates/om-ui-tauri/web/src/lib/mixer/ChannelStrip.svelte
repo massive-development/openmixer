@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { letter } from '../a11y';
   import Fader from '../controls/Fader.svelte';
   import Knob from '../controls/Knob.svelte';
   import Meter from '../controls/Meter.svelte';
@@ -27,11 +28,12 @@
     { key: `ch${channel}.filter`, value: frame?.filter ?? 0 },
   ]);
   const faderKey = $derived(`ch${channel}.fader`);
-  const letter = $derived(String.fromCharCode(65 + channel));
+  const name = $derived(`Channel ${letter(channel)}`);
+  const titleId = $derived(`mixer-ch${channel}`);
 </script>
 
-<div class="strip" class:mirrored style:--hue="var(--om-accent-{channel})">
-  <h3><i></i>Channel {letter}</h3>
+<div class="strip" class:mirrored role="group" aria-labelledby={titleId} style:--hue="var(--om-accent-{channel})">
+  <h2 id={titleId}><i></i>{name}</h2>
   <div class="knobs">
     {#each knobs as knob (knob.key)}
       {#if controls[knob.key]}
@@ -52,7 +54,7 @@
     {/if}
   </div>
   <div class="meter">
-    <Meter left={frame?.left ?? 0} right={frame?.right ?? 0} {scale} />
+    <Meter left={frame?.left ?? 0} right={frame?.right ?? 0} {scale} label="{name} level" />
   </div>
 </div>
 
@@ -76,7 +78,7 @@
       'meter fader knobs';
   }
 
-  h3 {
+  h2 {
     grid-area: title;
     display: flex;
     align-items: center;
@@ -88,11 +90,11 @@
     text-transform: uppercase;
   }
 
-  .mirrored h3 {
+  .mirrored h2 {
     flex-direction: row-reverse;
   }
 
-  h3 i {
+  h2 i {
     width: var(--om-mixer-accent-dot);
     height: var(--om-mixer-accent-dot);
     border-radius: 50%;

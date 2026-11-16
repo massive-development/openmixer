@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { deckName } from '../a11y';
   import { interpolate } from '../clock';
+  import DeckTag from '../deck/DeckTag.svelte';
   import {
     control,
     deckInfo,
@@ -70,6 +72,12 @@
   // Mutated in place (never reassigned) so the template binds into the same objects.
   const lanes: Lane[] = [];
   let boxes: LaneRect[] = $state.raw([]);
+  // The picture's words: the lanes are drawn pixels, and each deck's position slider reads the time.
+  const summary = $derived(
+    boxes.length === 0
+      ? 'Waveforms'
+      : `Scrolling waveforms of ${boxes.map((_, i) => deckName(i)).join(' and ')}, top to bottom`,
+  );
   let inks: (StripInk | null)[] = $state.raw([]);
 
   let wgl: WaveGl | null = null;
@@ -413,12 +421,13 @@
   onpointercancel={onPointerUp}
   role="presentation"
 >
-  <canvas bind:this={canvas}></canvas>
+  <canvas bind:this={canvas}>{summary}</canvas>
   {#each boxes as box, i (i)}
     {#if i > 0}
       <div class="separator" style:top="{box.top}px" style:transform="translateY(-100%)"></div>
     {/if}
-    <div class="lane" style:top="{box.top}px" style:height="{box.height}px">
+    <!-- Bar numbers, cue flags and the deck letter repeat what the pads and headers already say. -->
+    <div class="lane" style:top="{box.top}px" style:height="{box.height}px" aria-hidden="true">
       {#each BAR_SLOTS as j (j)}
         <span
           class="bar num"
@@ -437,7 +446,7 @@
           >
         </div>
       {/each}
-      <span class="letter" style:color="var(--om-accent-{i})">{String.fromCharCode(65 + i)}</span>
+      <span class="letter"><DeckTag deck={i} /></span>
     </div>
   {/each}
 </div>
@@ -482,8 +491,6 @@
     position: absolute;
     top: var(--om-inner-gap);
     left: var(--om-inner-gap);
-    font-family: var(--om-font-display);
-    font-size: 13px;
   }
 
   .bar {

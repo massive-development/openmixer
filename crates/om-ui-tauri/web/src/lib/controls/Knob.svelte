@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { controlName, valueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
   import { Held, knobDelta } from './drag';
+  import { sliderKey } from './keys';
   import { toPosition, toValue } from './range';
 
   interface Props {
@@ -29,6 +31,8 @@
   });
 
   const angle = $derived(spec ? -135 + 270 * toPosition(shown, spec) : -135);
+  const name = $derived(controlName(key, label));
+  const text = $derived(valueText(key, shown, spec));
 
   function send(v: number): void {
     held.set(v);
@@ -55,11 +59,23 @@
     held.end();
   }
 
-  function onDoubleClick(): void {
-    if (!spec) return;
-    held.begin(spec.default);
-    send(spec.default);
+  // One whole move: held as a drag is, so the knob does not flick back before the engine answers.
+  function setTo(v: number): void {
+    held.begin(v);
+    send(v);
     held.end();
+  }
+
+  function onDoubleClick(): void {
+    if (spec) setTo(spec.default);
+  }
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (!spec) return;
+    const next = sliderKey(event, toPosition(shown, spec));
+    if (next === null) return;
+    event.preventDefault();
+    setTo(next === 'reset' ? spec.default : toValue(next, spec));
   }
 </script>
 
@@ -67,28 +83,33 @@
   <div
     class="knob"
     role="slider"
-    tabindex="-1"
-    aria-label={label}
+    tabindex="0"
+    aria-label={name}
     aria-valuenow={shown}
     aria-valuemin={spec?.min}
     aria-valuemax={spec?.max}
+    aria-valuetext={text}
+    title="{name}: {text}"
     style:--angle="{angle}deg"
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
     ondblclick={onDoubleClick}
+    onkeydown={onKeyDown}
   >
     <i></i>
   </div>
-  {#if label}<span class="label">{label}</span>{/if}
+  <!-- The slider's name already says it. -->
+  {#if label}<span class="label" aria-hidden="true">{label}</span>{/if}
 </div>
 
 <style>
+  /* The gap clears the focus ring, so the ring never crosses the label. */
   .cell {
     display: flex;
     align-items: center;
-    gap: var(--om-density-space-2);
+    gap: var(--om-density-space-3);
     min-width: 0;
   }
 
@@ -107,6 +128,14 @@
     box-shadow: 0 var(--om-shadow-offset-y) var(--om-shadow-blur) var(--om-shadow);
     cursor: ns-resize;
     touch-action: none;
+  }
+
+  /* A compact knob is smaller than a pointer target: the catch area grows to the theme's minimum. */
+  .knob::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, (var(--om-density-knob-size) - var(--om-min-pointer-target)) / 2 - var(--om-border-width));
+    border-radius: 50%;
   }
 
   .knob i {

@@ -35,10 +35,10 @@
 <div class="mixer">
   <div class="strips">
     <ChannelStrip channel={0} {controls} frame={snapshot?.channels[0]} {stamp} {scale} />
-    <div class="master">
-      <h3>{master?.label ?? ''}</h3>
+    <div class="master" role="group" aria-labelledby="mixer-master">
+      <h2 id="mixer-master">{master?.label ?? ''}</h2>
       <div class="meter">
-        <Meter left={snapshot?.master.left ?? 0} right={snapshot?.master.right ?? 0} {scale} />
+        <Meter left={snapshot?.master.left ?? 0} right={snapshot?.master.right ?? 0} {scale} label="Master level" />
       </div>
       {#if master}
         <Knob key="mixer.master" spec={master} value={snapshot?.master.gain ?? 0} {stamp} />
@@ -48,9 +48,10 @@
   </div>
   {#if crossfader}
     <div class="xf">
-      <span class="end" style:color="var(--om-accent-0)">A</span>
+      <!-- The crossfader's value text names the side it leans to. -->
+      <span class="end" style:color="var(--om-accent-0)" aria-hidden="true">A</span>
       <Fader key="mixer.crossfader" spec={crossfader} value={snapshot?.master.crossfader ?? 0} {stamp} horizontal />
-      <span class="end" style:color="var(--om-accent-1)">B</span>
+      <span class="end" style:color="var(--om-accent-1)" aria-hidden="true">B</span>
     </div>
   {/if}
 </div>
@@ -81,7 +82,7 @@
     min-height: 0;
   }
 
-  h3 {
+  h2 {
     margin: 0;
     color: var(--om-text-muted);
     font-size: var(--om-type-label);
