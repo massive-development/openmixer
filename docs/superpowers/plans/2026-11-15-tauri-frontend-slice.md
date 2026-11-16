@@ -76,7 +76,7 @@ crates/om-ui-tauri/                  the window; thin
     src/lib/mixer/{ChannelStrip,Mixer}.svelte (Task 10)
     src/lib/bench.ts                 frame statistics (Task 11)
 crates/openmixer/src/gui_tauri.rs    composition for the Tauri window (Task 6)
-fixtures/ui-bridge/snapshot-v1.bin   golden packet shared by Rust and TS tests (Task 2)
+fixtures/ui-bridge/snapshot-v2.bin   golden packet shared by Rust and TS tests (Task 2)
 docs/adr/0009-web-front-end-tauri-trial.md (Task 1)
 tools/ui-bench.sh                    runs either window and samples CPU (Task 11)
 ```
@@ -116,15 +116,15 @@ gh pr create --base main
 ### Task 2: Snapshot packet
 
 **Files:**
-- Create: `crates/om-ui-bridge/Cargo.toml`, `crates/om-ui-bridge/src/lib.rs`, `crates/om-ui-bridge/src/snapshot_packet.rs`, `fixtures/ui-bridge/snapshot-v1.bin`
+- Create: `crates/om-ui-bridge/Cargo.toml`, `crates/om-ui-bridge/src/lib.rs`, `crates/om-ui-bridge/src/snapshot_packet.rs`, `fixtures/ui-bridge/snapshot-v2.bin`
 - Modify: `Cargo.toml` (add `"crates/om-ui-bridge"` to `members`; add `om-ui-bridge = { path = "crates/om-ui-bridge" }` to `[workspace.dependencies]`)
 
 **Interfaces:**
 - Consumes: `om_core::EngineSnapshot` (`decks: Vec<DeckSnapshot>`, `mixer: MixerSnapshot`, `ticks: u64`).
 - Produces:
-  - `pub const PACKET_MAGIC: u32 = 0x4F4D_5331;` (`OMS1`), `pub const PACKET_VERSION: u16 = 1;`
+  - `pub const PACKET_MAGIC: u32 = 0x4F4D_5331;` (`OMS1`), `pub const PACKET_VERSION: u16 = 2;` (version 2 added the loop bounds; version 1 had a 40-byte deck block and is rejected)
   - `pub fn pack_snapshot(snap: &EngineSnapshot, age_ms: f32, out: &mut Vec<u8>)` — clears and fills `out`.
-  - `pub fn packet_len(decks: usize, channels: usize) -> usize` — `24 + decks * 40 + channels * 32 + 16`.
+  - `pub fn packet_len(decks: usize, channels: usize) -> usize` — `24 + decks * 56 + channels * 32 + 16`.
   - `#[derive(thiserror::Error)] pub enum BridgeError` in `lib.rs` with variants `UnknownControl(String)`, `NonFinite`, `Rejected(String)`.
 
 Packet layout, little-endian:
@@ -138,7 +138,7 @@ Packet layout, little-endian:
 | 8 | u64 | `ticks` |
 | 16 | f32 | `age_ms` (time from snapshot pull to send) |
 | 20 | u32 | reserved, zero |
-| 24 + 40·d | i64, i64, f64, f64, u8, 7 pad | per deck: `position_frames`, `length_frames`, `rate`, `file_sample_rate`, flags |
+| 24 + 56·d | i64, i64, f64, f64, u8, 7 pad, i64, i64 | per deck: `position_frames`, `length_frames`, `rate`, `file_sample_rate`, flags, `loop_start`, `loop_end` |
 | after decks, + 32·c | 8 × f32 | per channel: `peak_left`, `peak_right`, `fader`, `trim`, `filter`, `eq[0]`, `eq[1]`, `eq[2]` |
 | last 16 | 4 × f32 | `master_peak_left`, `master_peak_right`, `master_gain`, `crossfader` |
 
@@ -148,15 +148,15 @@ Deck flags: bit 0 `loaded`, bit 1 `playing`, bit 2 `looping`, bit 3 `sync`, bit 
 
 ```rust
 #[test]
-fn packet_len_two_decks_two_channels() { assert_eq!(packet_len(2, 2), 184); }
+fn packet_len_two_decks_two_channels() { assert_eq!(packet_len(2, 2), 216); }
 
 #[test]
 fn header_fields() {
     let mut out = Vec::new();
     pack_snapshot(&fixture(), 2.5, &mut out);
-    assert_eq!(out.len(), 184);
+    assert_eq!(out.len(), 216);
     assert_eq!(u32::from_le_bytes(out[0..4].try_into().unwrap()), PACKET_MAGIC);
-    assert_eq!(u16::from_le_bytes(out[4..6].try_into().unwrap()), 1);
+    assert_eq!(u16::from_le_bytes(out[4..6].try_into().unwrap()), 2);
     assert_eq!((out[6], out[7]), (2, 2));
     assert_eq!(f32::from_le_bytes(out[16..20].try_into().unwrap()), 2.5);
 }
@@ -168,7 +168,9 @@ fn deck_block() {
     assert_eq!(i64::from_le_bytes(out[24..32].try_into().unwrap()), 441_000);
     assert_eq!(i64::from_le_bytes(out[32..40].try_into().unwrap()), 11_025_000);
     assert_eq!(f64::from_le_bytes(out[40..48].try_into().unwrap()), 1.02);
-    assert_eq!(out[56], 0b0000_0011); // loaded and playing
+    assert_eq!(out[56], 0b0000_0111); // loaded, playing and looping
+    assert_eq!(i64::from_le_bytes(out[64..72].try_into().unwrap()), 440_000);
+    assert_eq!(i64::from_le_bytes(out[72..80].try_into().unwrap()), 450_000);
 }
 
 #[test]
@@ -176,30 +178,30 @@ fn channel_and_master_blocks() {
     let mut out = Vec::new();
     pack_snapshot(&fixture(), 0.0, &mut out);
     let f = |o: usize| f32::from_le_bytes(out[o..o + 4].try_into().unwrap());
-    assert_eq!((f(104), f(108), f(112)), (0.5, 0.25, 0.85)); // channel 0: peaks, fader
-    assert_eq!((f(168), f(172), f(180)), (0.75, 0.6, 0.5)); // master peaks, crossfader
+    assert_eq!((f(136), f(140), f(144)), (0.5, 0.25, 0.85)); // channel 0: peaks, fader
+    assert_eq!((f(200), f(204), f(212)), (0.75, 0.6, 0.5)); // master peaks, crossfader
 }
 
 #[test]
 fn reuses_the_buffer() {
     let mut out = vec![9u8; 500];
     pack_snapshot(&fixture(), 0.0, &mut out);
-    assert_eq!(out.len(), 184);
+    assert_eq!(out.len(), 216);
 }
 
 #[test]
 fn matches_golden_file() {
     let mut out = Vec::new();
     pack_snapshot(&fixture(), 2.5, &mut out);
-    assert_eq!(out, include_bytes!("../../../fixtures/ui-bridge/snapshot-v1.bin"));
+    assert_eq!(out, include_bytes!("../../../fixtures/ui-bridge/snapshot-v2.bin"));
 }
 ```
 
-`fixture()` builds an `EngineSnapshot` (use `Default` where the type has it) with two decks and two channels: deck 0 `loaded`, `playing`, `position_frames = 441_000`, `length_frames = 11_025_000`, `rate = 1.02`, `file_sample_rate = 44_100.0`; deck 1 all defaults; channel 0 peaks `0.5, 0.25` and `fader = 0.85`; master peaks `0.75, 0.6`; `crossfader = 0.5`; `ticks = 7`.
+`fixture()` builds an `EngineSnapshot` (use `Default` where the type has it) with two decks and two channels: deck 0 `loaded`, `playing`, `position_frames = 441_000`, `length_frames = 11_025_000`, `rate = 1.02`, `file_sample_rate = 44_100.0`, `looping`, `loop_start = 440_000`, `loop_end = 450_000`; deck 1 all defaults; channel 0 peaks `0.5, 0.25` and `fader = 0.85`; master peaks `0.75, 0.6`; `crossfader = 0.5`; `ticks = 7`.
 
 - [ ] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` — expected: does not compile, `pack_snapshot` not found.
 - [ ] **Step 3: Implement `packet_len` and `pack_snapshot`.** Crate dependencies: `om-core`, `om-analysis`, `om-ui`, `thiserror`. `#![forbid(unsafe_code)]`.
-- [ ] **Step 4: Write the golden file.** Add an `#[ignore]` test `write_golden` that writes `fixtures/ui-bridge/snapshot-v1.bin`; run it once with `cargo test -p om-ui-bridge write_golden -- --ignored`.
+- [ ] **Step 4: Write the golden file.** Add an `#[ignore]` test `write_golden` that writes `fixtures/ui-bridge/snapshot-v2.bin`; run it once with `cargo test -p om-ui-bridge write_golden -- --ignored`.
 - [ ] **Step 5: Run the tests.** Expected: 6 passed, 1 ignored.
 - [ ] **Step 6: Commit.** `git commit -m "feat(ui-bridge): binary snapshot packet"`
 
@@ -215,7 +217,7 @@ fn matches_golden_file() {
 - Produces:
   - `pub struct PeakLevel { pub samples_per_point: u32, pub len: u32 }`
   - `pub struct PeakBlob { pub sample_rate: f64, pub num_samples: i64, pub levels: Vec<PeakLevel>, pub bytes: Vec<u8> }`
-  - `pub fn pack_peaks(data: &WaveformData) -> PeakBlob` — `bytes` is every level in order, three bytes per point: low, mid, high, each `(compress(v).clamp(0.0, 1.0) * 255.0).round() as u8`.
+  - `pub fn pack_peaks(data: &WaveformData) -> PeakBlob` — `bytes` is every level in order, four bytes per point (`BYTES_PER_POINT`): body, low, mid, high. `body` is the GPUI Low-Band body (`column_shape(..).body`, loudness over the track's `Reference`); the bands are `band_heights` over the reference peak; each `(v.clamp(0.0, 1.0) * 255.0).round() as u8`.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -227,21 +229,21 @@ fn pack_peaks_layout() {
     assert_eq!(blob.levels.len(), 2);
     assert_eq!((blob.levels[0].samples_per_point, blob.levels[0].len), (256, 4));
     assert_eq!((blob.levels[1].samples_per_point, blob.levels[1].len), (512, 2));
-    assert_eq!(blob.bytes.len(), (4 + 2) * 3);
+    assert_eq!(blob.bytes.len(), (4 + 2) * 4);
 }
 
 #[test]
 fn pack_peaks_uses_band_compression() {
     let blob = pack_peaks(&two_level_fixture()); // point 0 has low = 1.0, mid = 0.25, high = 0.0
-    assert_eq!(blob.bytes[0], 255);
-    assert_eq!(blob.bytes[1], (compress(0.25) * 255.0).round() as u8);
-    assert_eq!(blob.bytes[2], 0);
+    assert_eq!(blob.bytes[1], 255); // byte 0 is the body
+    assert_eq!(blob.bytes[2], (compress(0.25) * 255.0).round() as u8);
+    assert_eq!(blob.bytes[3], 0);
 }
 
 #[test]
 fn pack_peaks_clamps_out_of_range() {
     let blob = pack_peaks(&fixture_with_low(3.0));
-    assert_eq!(blob.bytes[0], 255);
+    assert_eq!(blob.bytes[1], 255);
 }
 
 #[test]
@@ -499,7 +501,7 @@ fn stream_rate_is_respected() {
 - Create: `crates/om-ui-tauri/web/src/lib/ipc.ts`, `web/src/lib/clock.ts`, `web/src/lib/ipc.test.ts`, `web/src/lib/clock.test.ts`
 
 **Interfaces:**
-- Consumes: the packet layout (Task 2), `fixtures/ui-bridge/snapshot-v1.bin`, the commands and event of Task 7.
+- Consumes: the packet layout (Task 2), `fixtures/ui-bridge/snapshot-v2.bin`, the commands and event of Task 7.
 - Produces:
   - `interface DeckFrame { position: number; length: number; rate: number; fileRate: number; loaded: boolean; playing: boolean; looping: boolean; sync: boolean; keylock: boolean }`
   - `interface Snapshot { ticks: bigint; ageMs: number; receivedAt: number; decks: DeckFrame[]; channels: ChannelFrame[]; master: { left: number; right: number; gain: number; crossfader: number } }`
@@ -512,7 +514,7 @@ fn stream_rate_is_respected() {
 
 ```ts
 import { readFileSync } from 'node:fs';
-const golden = readFileSync('../../../fixtures/ui-bridge/snapshot-v1.bin');
+const golden = readFileSync('../../../fixtures/ui-bridge/snapshot-v2.bin');
 const buf = golden.buffer.slice(golden.byteOffset, golden.byteOffset + golden.byteLength);
 
 test('decodes the golden packet', () => {
@@ -573,9 +575,9 @@ test('a paused deck does not advance', () => {
   - `<Waveforms snapshot={...} visibleSeconds={8} fpsCap={60} />` — one canvas for all decks.
 
 Rendering rules, from ADR 0009:
-- One `RGB8` texture per deck, every level packed in rows 4096 texels wide; uploaded when `deck-changed` fires, never per frame.
+- One `RGBA8` texture per deck (body, low, mid, high), every level packed in rows 4096 texels wide; uploaded when `deck-changed` fires, never per frame.
 - One fragment shader draws each lane. Port `FS` from the spike's `ui/app.js`, with two changes: the level index, its row offset, length and `samplesPerPoint` come in as uniforms chosen by `pickLevel`, and colours come from uniforms read from `--om-*` variables (`--om-well`, `--om-text-primary`, `--om-playhead`, `--om-accent-N`, `--om-grid-bar-alpha`, `--om-grid-beat-alpha`).
-- The played side is dimmed by the factor `PLAYED_BRIGHTNESS` (`0.45`) from `om_ui::waveform::bands`; expose it through `deck_info` or a constant kept beside the shader with a comment naming the Rust source.
+- The played side is not shaded in the zoomed lanes, as in GPUI's Low-Band zoom strip (the centred playhead splits it); only the overview shades it, with `strip_ink`'s `playedShade` at `playedShadeAlpha`. A column with any height reaches at least `MIN_HALF_PX` (`waveform_style().minHalfPx`) from the centre line.
 - Per frame: skip all GL and DOM work when no deck position, zoom or canvas size changed since the last frame.
 - With `fpsCap` set, skip animation callbacks that arrive sooner than `1000 / fpsCap - 2` ms after the last drawn frame.
 - Bar numbers and cue flags are pooled DOM elements moved with `translate3d`; text is written only when it changes.
@@ -609,7 +611,7 @@ test('barStep', () => {
 - [ ] **Step 3: Implement `view.ts`.**
 - [ ] **Step 4: Run the tests.** Expected: 5 passed.
 - [ ] **Step 5: Implement `shader.ts` and `Waveforms.svelte`.** A deck whose `pickLevel` is `-1` draws only the well and the playhead.
-- [ ] **Step 6: Screenshot.** Run `WAYLAND_DISPLAY= cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-scene=cues`, capture the window with `import -silent`, and check as a DJ would: beats readable at 8 s, bar lines stronger than beat lines, playhead red and centred, played side dimmer, cue flags on their beats, deck hues correct.
+- [ ] **Step 6: Screenshot.** Run `WAYLAND_DISPLAY= cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-scene=cues`, capture the window with `import -silent`, and check as a DJ would: beats readable at 8 s, bar lines stronger than beat lines, playhead red and centred, played side not shaded, cue flags on their beats, deck hues correct.
 - [ ] **Step 7: Commit.** `git commit -m "feat(ui-tauri): GPU waveform lanes"`
 
 ---

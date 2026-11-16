@@ -38,6 +38,8 @@ export interface DeckChanged {
 export interface WaveformStyle {
   fill: number;
   playedBrightness: number;
+  /** A column with any height reaches at least this far from the centre line, in CSS px. */
+  minHalfPx: number;
 }
 
 /**
@@ -48,8 +50,12 @@ export interface StripInk {
   well: string;
   body: string;
   highs: string;
+  /** Opacity of the high band over the body (`LOW_BAND_HIGH_ALPHA`). */
   highsAlpha: number;
-  /** Covers the played part; null when the style dims it by `playedBrightness` instead. */
+  /**
+   * The overview covers its played part with this (the zoomed lanes do not shade it); null when the
+   * style dims it by `playedBrightness` instead.
+   */
   playedShade: string | null;
   playedShadeAlpha: number | null;
   gridBar: string;

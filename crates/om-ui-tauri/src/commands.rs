@@ -8,7 +8,7 @@ use crate::stream_slot::StreamSlot;
 use crate::strip_ink::StripInkDto;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
-use om_ui_bridge::{dispatch_control, slice_control_ids, FILL, PLAYED_BRIGHTNESS};
+use om_ui_bridge::{dispatch_control, slice_control_ids, FILL, MIN_HALF_PX, PLAYED_BRIGHTNESS};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +36,8 @@ pub struct WaveformStyle {
     pub fill: f32,
     /// Brightness the played part keeps.
     pub played_brightness: f32,
+    /// A column with any height reaches at least this far from the centre line, in px.
+    pub min_half_px: f32,
 }
 
 /// The active theme as one `:root` block of `--om-*` variables.
@@ -68,6 +70,7 @@ pub fn waveform_style() -> WaveformStyle {
     WaveformStyle {
         fill: FILL,
         played_brightness: PLAYED_BRIGHTNESS,
+        min_half_px: MIN_HALF_PX,
     }
 }
 

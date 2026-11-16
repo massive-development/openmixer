@@ -9,7 +9,10 @@ mod snapshot_packet;
 mod theme_css;
 
 pub use control::{dispatch_control, slice_control_ids};
-pub use peaks::{pack_peaks, peak_levels, PeakBlob, PeakLevel, FILL, PLAYED_BRIGHTNESS};
+pub use peaks::{
+    pack_peaks, peak_levels, PeakBlob, PeakLevel, BYTES_PER_POINT, FILL, MIN_HALF_PX,
+    PLAYED_BRIGHTNESS,
+};
 pub use snapshot_packet::{pack_snapshot, packet_len, PACKET_MAGIC, PACKET_VERSION};
 pub use theme_css::theme_css;
 
