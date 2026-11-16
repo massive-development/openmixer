@@ -15,3 +15,6 @@ om-core.workspace = true
 om-analysis.workspace = true
 om-ui.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+om-engine.workspace = true
