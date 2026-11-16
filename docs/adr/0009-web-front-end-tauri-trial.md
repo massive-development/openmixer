@@ -19,7 +19,7 @@ Trial a Tauri v2 window beside the GPUI window, behind the `gui-tauri` feature a
 - **ADR 0004's UI choice stands until the trial ends.** GPUI stays the default; nothing in `om-ui-gpui` is removed during the trial.
 - **ADR 0008 (the look) is unchanged.** The web front end carries it through CSS variables generated from the theme files, so the theme tokens stay the single source of colour, size and font.
 - **Structure.** A toolkit-free crate, `om-ui-bridge`, turns engine state into wire formats (binary snapshot packet, packed waveform peaks, theme CSS) and turns control messages into `ParamId` dispatches. A thin shell crate, `om-ui-tauri`, owns the window, the Tauri commands and a 30 Hz control-side stream thread. A Svelte front end draws the waveform with one WebGL2 shader and everything else with DOM and CSS transforms.
-- **Real-time rules are unchanged.** Nothing in the trial runs on the audio thread. The stream thread reads `DjEngine::snapshot()` only; control ids are parsed with `ParamId::from_str` in the Tauri command handler, on a control thread.
+- **Real-time rules are unchanged.** Nothing in the trial runs on the audio thread. The stream thread reads `DjEngine::snapshot()` only; control ids are parsed with `ParamId::from_str` in the Tauri `control` command, which runs on the window's main thread (so writes keep their order), never the audio thread.
 
 ### Rendering rules adopted
 
