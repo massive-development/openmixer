@@ -2,16 +2,24 @@
 //! on Tauri's IPC threads from the shared deck state and the engine's control side.
 
 use crate::decks::{DeckView, Decks};
+use om_core::ParameterTarget;
 use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
+use om_ui::binding::DeckBinding;
+use om_ui::widgets::deck::TrackHeader;
 use om_ui_bridge::{pack_peaks, peak_levels, PeakLevel};
 use serde::Serialize;
+use std::sync::Arc;
 
 /// A deck's track as the front end shows it; camelCase on the wire.
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeckInfo {
     pub title: String,
+    /// The title as GPUI's deck header prints it: the track's, or its empty-deck words.
+    pub title_text: String,
+    /// The key as GPUI's deck header prints it (its default notation), or `--`.
+    pub key_text: String,
     pub artist: String,
     pub bpm: Option<f64>,
     pub key: Option<String>,
@@ -44,14 +52,41 @@ impl From<PeakLevel> for PeakLevelDto {
 }
 
 /// Deck `deck`'s info, or why there is none.
-pub(crate) fn deck_info(decks: &Decks, engine: &DjEngine, deck: usize) -> Result<DeckInfo, String> {
+pub(crate) fn deck_info(
+    decks: &Decks,
+    engine: &Arc<DjEngine>,
+    deck: usize,
+) -> Result<DeckInfo, String> {
     let view = read(decks, engine, deck)?;
     let grid = engine.deck_control(deck).grid();
     let hotcues = engine
         .deck_snapshot(deck)
         .map(|s| s.hotcues.to_vec())
         .unwrap_or_default();
-    Ok(info_of(view, grid.as_deref(), hotcues))
+    let words = header_words(engine, deck, &view);
+    Ok(DeckInfo {
+        title_text: words.0,
+        key_text: words.1,
+        ..info_of(view, grid.as_deref(), hotcues)
+    })
+}
+
+/// The title and key GPUI's header model prints for this track.
+fn header_words(engine: &Arc<DjEngine>, deck: usize, view: &DeckView) -> (String, String) {
+    let binding = DeckBinding::new(Arc::clone(engine), Arc::new(NoWrites), deck);
+    let mut header = TrackHeader::new(binding);
+    header.set_track(view.track.clone());
+    let text = header.text();
+    (text.title, text.key)
+}
+
+/// The header model only reads; a write it might attempt goes nowhere.
+struct NoWrites;
+
+impl ParameterTarget for NoWrites {
+    fn set_parameter(&self, _id: &str, _value: f64) -> bool {
+        false
+    }
 }
 
 /// Deck `deck`'s packed peaks; empty while it has no waveform.
@@ -82,6 +117,8 @@ fn info_of(view: DeckView, grid: Option<&dyn BeatGrid>, hotcues: Vec<Option<i64>
         key: (!track.key.is_empty()).then_some(track.key),
         first_beat_frame: grid.map(|g| g.frame_at_beat(0.0)),
         title: track.title,
+        title_text: String::new(),
+        key_text: String::new(),
         artist: track.artist,
         sample_rate: waveform.map_or(0.0, |w| w.sample_rate()),
         num_samples: waveform.map_or(0, |w| w.num_samples()),
@@ -174,7 +211,7 @@ mod tests {
 
     #[test]
     fn an_out_of_range_deck_is_an_error_not_a_panic() {
-        let engine = DjEngine::new(2).0;
+        let engine = Arc::new(DjEngine::new(2).0);
         let decks = Decks::new(&engine);
         assert_eq!(deck_info(&decks, &engine, 2), Err("no deck 2".to_owned()));
         assert!(deck_peaks(&decks, &engine, usize::MAX).is_err());
@@ -184,5 +221,18 @@ mod tests {
             deck_info(&decks, &engine, 0).map(|i| i.hotcues.len()),
             Ok(cues)
         );
+    }
+
+    #[test]
+    fn the_header_words_are_gpui_s() {
+        let engine = Arc::new(DjEngine::new(1).0);
+        let (title, key) = header_words(&engine, 0, &view());
+        assert_eq!((title.as_str(), key.as_str()), ("Loop", "8A"));
+        let (empty, none) = header_words(&engine, 0, &DeckView::default());
+        assert!(
+            !empty.is_empty(),
+            "an empty deck prints GPUI's words, not nothing"
+        );
+        assert_eq!(none, "--");
     }
 }

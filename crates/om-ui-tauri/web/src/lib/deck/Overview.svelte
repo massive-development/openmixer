@@ -1,0 +1,238 @@
+<script lang="ts">
+  import { onMount, untrack } from 'svelte';
+  import { interpolate } from '../clock';
+  import { Held } from '../controls/drag';
+  import { setStyle } from '../dom';
+  import { control, deckPeaks, waveformStyle, type DeckInfo, type StripInk } from '../ipc';
+  import type { Snapshot } from '../packet';
+  import { ticker } from '../ticker';
+  import { seekValue } from '../waveform/view';
+  import { levelOffset, overviewColumns, overviewLevel } from './overview';
+
+  interface Props {
+    deck: number;
+    info: DeckInfo | null;
+    ink: StripInk | null;
+    snapshot: Snapshot | null;
+  }
+
+  let { deck, info, ink, snapshot }: Props = $props();
+
+  let box: HTMLDivElement;
+  let canvas: HTMLCanvasElement;
+  let played: HTMLDivElement;
+  let playhead: HTMLDivElement;
+  let width = $state(0);
+  let height = $state(0);
+  let peaks: Uint8Array | null = $state.raw(null);
+  let fill = 1;
+  let minHalfPx = 0;
+  // Without a played shade the style dims the played part to this brightness instead.
+  let playedBrightness = $state(1);
+  const held = new Held();
+  let shownFrac = -1;
+
+  const seekKey = $derived(`deck${deck}.seek`);
+  const length = $derived(snapshot?.decks[deck]?.length ?? 0);
+  // A tick per set hot cue, at its share of the track.
+  const cues = $derived(cueTicks(info, ink));
+
+  function cueTicks(i: DeckInfo | null, k: StripInk | null): { left: string; colour: string }[] {
+    if (!i || !k || !(i.numSamples > 0)) return [];
+    return i.hotcues.flatMap((frame, n) =>
+      frame === null ? [] : [{ left: `${(frame / i.numSamples) * 100}%`, colour: k.cues[n] ?? k.mainCue }],
+    );
+  }
+
+  // A hot cue change reloads the info but not the track, so only a new track or waveform refetches.
+  const trackKey = $derived(info ? `${info.titleText}|${info.numSamples}|${info.levels.length}` : '');
+
+  $effect(() => {
+    const key = trackKey;
+    if (key === '') return;
+    deckPeaks(deck)
+      .then((bytes) => {
+        if (key === trackKey) peaks = bytes;
+      })
+      .catch((error: unknown) => console.error(`openmixer: deck ${deck} overview`, error));
+  });
+
+  // Drawn once per track and size; the info is read as it is when the peaks arrive.
+  $effect(() => {
+    const [bytes, k, w, h] = [peaks, ink, width, height];
+    untrack(() => draw(info, k, bytes, w, h));
+  });
+
+  $effect(() => {
+    if (!snapshot) return;
+    held.onSnapshot();
+    ticker.wake(step);
+  });
+
+  // Drawn once per track and size: the Low-Band look, body then highs over it.
+  function draw(i: DeckInfo | null, k: StripInk | null, bytes: Uint8Array | null, w: number, h: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    const g = canvas.getContext('2d');
+    if (!g || !i || !k || !bytes) return;
+    const level = overviewLevel(i.levels, i.numSamples, canvas.width);
+    if (level < 0) return;
+    const l = i.levels[level];
+    const cols = overviewColumns(bytes, levelOffset(i.levels, level), l.len, l.samplesPerPoint, i.numSamples, canvas.width);
+    band(g, cols.body, k.body, 1);
+    band(g, cols.high, k.highs, k.highsAlpha);
+  }
+
+  function band(g: CanvasRenderingContext2D, heights: Float32Array, colour: string, alpha: number): void {
+    const h = canvas.height;
+    const half = (h / 2) * fill;
+    const minHalf = minHalfPx * (window.devicePixelRatio || 1);
+    g.globalAlpha = alpha;
+    g.fillStyle = colour;
+    g.beginPath();
+    for (let x = 0; x < heights.length; x++) {
+      if (heights[x] <= 0) continue;
+      const y = Math.max(heights[x] * half, minHalf);
+      g.rect(x, h / 2 - y, 1, 2 * y);
+    }
+    g.fill();
+    g.globalAlpha = 1;
+  }
+
+  // One frame of the played shade and playhead; runs while the deck plays.
+  function step(now: number): boolean {
+    const snap = snapshot;
+    const d = snap?.decks[deck];
+    if (!snap || !d) return false;
+    const frac = held.shown(d.loaded && d.length > 0 ? interpolate(d, snap, now) / d.length : 0);
+    if (frac !== shownFrac) place(frac);
+    return d.playing;
+  }
+
+  function place(frac: number): void {
+    shownFrac = frac;
+    setStyle(played, 'transform', `scaleX(${frac})`);
+    setStyle(playhead, 'transform', `translate3d(${frac * width}px,0,0)`);
+    ticker.drew();
+  }
+
+  function seekTo(event: PointerEvent): void {
+    const r = box.getBoundingClientRect();
+    const frac = r.width > 0 ? Math.min(Math.max((event.clientX - r.left) / r.width, 0), 1) : 0;
+    held.set(frac);
+    place(frac);
+    control(seekKey, seekValue(frac * length, length)).catch((error: unknown) =>
+      console.error('openmixer: seek', error),
+    );
+  }
+
+  function onPointerDown(event: PointerEvent): void {
+    if (event.button !== 0 || !(length > 0)) return;
+    box.setPointerCapture(event.pointerId);
+    held.begin(Math.max(shownFrac, 0));
+    seekTo(event);
+  }
+
+  function onPointerMove(event: PointerEvent): void {
+    if (held.active) seekTo(event);
+  }
+
+  function onPointerUp(): void {
+    held.end();
+  }
+
+  onMount(() => {
+    const observer = new ResizeObserver(([entry]) => {
+      width = entry.contentRect.width;
+      height = entry.contentRect.height;
+      shownFrac = -1;
+      ticker.wake(step);
+    });
+    observer.observe(box);
+    waveformStyle()
+      .then((style) => {
+        fill = style.fill;
+        minHalfPx = style.minHalfPx;
+        playedBrightness = style.playedBrightness;
+        draw(info, ink, peaks, width, height);
+      })
+      .catch((error: unknown) => console.error('openmixer: waveform style', error));
+    return () => observer.disconnect();
+  });
+</script>
+
+<div
+  class="overview"
+  bind:this={box}
+  style:background={ink?.well}
+  role="presentation"
+  onpointerdown={onPointerDown}
+  onpointermove={onPointerMove}
+  onpointerup={onPointerUp}
+  onpointercancel={onPointerUp}
+>
+  <canvas bind:this={canvas}></canvas>
+  <div
+    class="played"
+    bind:this={played}
+    style:background={ink?.playedShade ?? ink?.well}
+    style:opacity={ink?.playedShadeAlpha ?? 1 - playedBrightness}
+  ></div>
+  {#each cues as cue, n (n)}
+    <div class="cue" style:left={cue.left} style:background={cue.colour}></div>
+  {/each}
+  <div
+    class="playhead"
+    bind:this={playhead}
+    style:background={ink?.playhead}
+    style:width={ink ? `${ink.playheadWidth}px` : null}
+    style:margin-left={ink ? `${-ink.playheadWidth / 2}px` : null}
+  ></div>
+</div>
+
+<style>
+  .overview {
+    position: relative;
+    height: var(--om-deck-overview-height);
+    overflow: hidden;
+    border: var(--om-border-width) solid var(--om-border);
+    border-radius: var(--om-control-radius);
+    background: var(--om-well);
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .played {
+    position: absolute;
+    inset: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+    will-change: transform;
+    pointer-events: none;
+  }
+
+  .cue {
+    position: absolute;
+    top: 0;
+    width: var(--om-cue-marker-width);
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .playhead {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    will-change: transform;
+    pointer-events: none;
+  }
+</style>

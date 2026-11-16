@@ -1,13 +1,14 @@
 import { expect, test } from 'vitest';
-import { resolveControl } from './ipc';
+import { resolveControl, type ControlSpec } from './ipc';
 
-const ids = { 'deck0.play': 'deck.0.play', 'mixer.crossfader': 'mixer.crossfader' };
+const spec = (id: string): ControlSpec => ({ id, min: 0, max: 1, default: 0, detent: null, kind: 'toggle', label: '' });
+const controls = { 'deck0.play': spec('deck.0.play'), 'mixer.crossfader': spec('mixer.crossfader') };
 
-test('a known key resolves to its canonical id', () => {
-  expect(resolveControl(ids, 'deck0.play')).toBe('deck.0.play');
+test('a known key resolves to its spec', () => {
+  expect(resolveControl(controls, 'deck0.play').id).toBe('deck.0.play');
 });
 
 test('an unknown key throws', () => {
-  expect(() => resolveControl(ids, 'deck9.play')).toThrow('unknown control key: deck9.play');
-  expect(() => resolveControl(ids, 'toString')).toThrow('unknown control key: toString');
+  expect(() => resolveControl(controls, 'deck9.play')).toThrow('unknown control key: deck9.play');
+  expect(() => resolveControl(controls, 'toString')).toThrow('unknown control key: toString');
 });

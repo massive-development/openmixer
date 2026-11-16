@@ -13,6 +13,7 @@
   } from '../ipc';
   import type { DeckFrame, Snapshot } from '../packet';
   import { WaveGl, laneInk, type LaneInk, type LanePaint, type PeakTexture } from './gl';
+  import { ticker } from '../ticker';
   import { Scrub } from './scrub';
   import {
     BEATS_PER_BAR,
@@ -211,14 +212,16 @@
     return changed;
   }
 
-  function frame(now: number): void {
-    raf = requestAnimationFrame(frame);
+  // Runs on the window's shared frame loop; it draws only when a lane moved.
+  function frame(now: number): boolean {
     const snap = latest;
-    if (!snap || !wgl || !shouldDraw(now, lastDrawn, fpsCap) || !measure()) return;
-    if (snap.decks.length !== lanes.length || !moved(snap, performance.now())) return;
+    if (!snap || !wgl || !shouldDraw(now, lastDrawn, fpsCap) || !measure()) return true;
+    if (snap.decks.length !== lanes.length || !moved(snap, performance.now())) return true;
     dirty = false;
     lastDrawn = now;
     for (let i = 0; i < lanes.length; i++) drawLane(i, snap.decks[i]);
+    ticker.drew();
+    return true;
   }
 
   function drawLane(i: number, deck: DeckFrame): void {
@@ -371,8 +374,6 @@
     dragging = -1;
   }
 
-  let raf = 0;
-
   onMount(() => {
     seconds = visibleSeconds;
     wgl = WaveGl.create(canvas);
@@ -392,9 +393,9 @@
       })
       .catch((error: unknown) => console.error('openmixer: waveform style', error));
     root.addEventListener('wheel', onWheel, { passive: false });
-    raf = requestAnimationFrame(frame);
+    const stopFrames = ticker.add(frame);
     return () => {
-      cancelAnimationFrame(raf);
+      stopFrames();
       observer.disconnect();
       root.removeEventListener('wheel', onWheel);
       void unlisten.then((stop) => stop());
