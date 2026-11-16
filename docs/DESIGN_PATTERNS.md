@@ -388,6 +388,13 @@ pub trait AudioCallback: Send {
 - **Reuse when:** adopting a third-party widget library: map roles to tokens in one adapter and add no colours there (`tests/style_lint.rs` keeps raw colour calls out of views).
 - **Notes:** runs at start-up and on every theme change, on the window thread. Custom-painted controls (knobs, faders, meters, waveform) do not go through it.
 
+### Front-end bridge (planned)
+- **Where:** `om-ui-bridge` (toolkit-free) and `om-ui-tauri` (the window). Neither crate exists yet; both are added by `docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md` for the trial in ADR 0009.
+- **Why:** a web front end must not reach into the engine. `om-ui-bridge` turns engine state into wire formats (binary snapshot packet, packed waveform peaks, theme CSS) and control messages into `ParamId` dispatches; `om-ui-tauri` is a thin shell that owns the window, the Tauri commands and the stream thread.
+- **Reuse when:** any window that is not GPUI needs engine state or sends controls; put the conversion in `om-ui-bridge` and keep the shell thin.
+- **Rule:** `om-ui-bridge` has no window dependency (no Tauri, no GPUI, no webview) and is tested headless.
+- **Notes:** data flows one way in each direction. Out: a control-side stream thread reads `DjEngine::snapshot()` (30 Hz by default) and sends it as a packed little-endian binary packet; bulk data (peaks, theme) is sent once. In: the front end sends (control id, value); the command handler parses the id with `ParamId::from_str` on a control thread and dispatches it, never on the audio thread. Unknown ids and non-finite values are rejected with an error and nothing is dispatched.
+
 ## Idioms and their Rust equivalents
 
 What the code uses in place of common object-oriented patterns.

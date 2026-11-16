@@ -30,3 +30,9 @@
 - **0007 CLAP hosting with clack:** accepted; `om-plugins` hosts CLAP plugins behind the `clap` feature, beside the C ABI (`clack-*` pinned `=0.2.0`)
 - **0008 The Machined Faceplate supersedes E1 on look:** accepted; `openmixer-workbench/docs/design-system/DESIGN.md` is the look (warm matte neutrals, etched 1px lines, no glow, four muted deck hues each with its letter, signal red for playhead and record only, every number in mono). Phase 0 answers and the open owner decisions: `openmixer-workbench/docs/design/faceplate-decisions.md`
 
+## ADR-0009: Trial a web front end (Tauri v2) beside GPUI
+- **Status:** proposed (trial); ADR 0004's UI choice (GPUI) stands and stays the default until the trial ends; ADR 0008's look is unchanged and reaches the web front end as CSS variables generated from the theme files
+- **Shape:** `om-ui-bridge` (toolkit-free, headless-tested: snapshot packet, waveform peaks, theme CSS, `ParamId` dispatch) and `om-ui-tauri` (the window), behind the `gui-tauri` feature and `--ui=tauri`; decks screen only
+- **Spike evidence (Windows, 1600×780, two decks):** 26% of one core at a 60 fps cap, 13% paused; limits: animation callbacks not presented frames, no GPU load, no GPUI baseline, Linux only under WSL software rendering
+- **Gate:** passes only if all exit criteria in the ADR hold (frame intervals, 0.5 ms per-frame work, paused CPU at or below 15%, at most 15 points over GPUI at 60 fps, waveform within 500 ms, every control works by hand on Windows); then set to Accepted or Rejected
+
