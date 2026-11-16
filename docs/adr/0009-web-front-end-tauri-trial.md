@@ -107,7 +107,6 @@ What the trial window does not yet match or prove, so the measurements are read 
 - **Keyboard and assistive technology are checked by key injection and by reading the markup only.** Tab order, Space on a toggle, the slider keys (arrows, Shift, Home, End, Delete) and keyboard seek were driven with XTest key events under WSLg; no screen reader has been run against the window, and the zoomed lanes' scrub and wheel zoom have no keyboard path (the overview's position slider seeks).
 - **Text at 125% was simulated,** by scaling the type tokens; WebKitGTK's own text zoom and WebView2's text scaling have not been tried.
 - **Mock device only.** The window runs only on the mock device, with no MIDI, no plugin state and no settings.
-- **CI does not build the trial yet.** No job builds the front end or runs `--features gui-tauri`. `om-ui-tauri` is a workspace member, so the `check` job's `cargo clippy --workspace` and `cargo test --workspace` already compile it, and its apt line lacks `libwebkit2gtk-4.1-dev`; the `soak` job builds only `om-audio` and `openmixer` without the feature. The workflow change needs a local `act` run with Docker. Proposed job change: set up Node 22 and run `npm ci && npm run build && npm test && npm run check` in `crates/om-ui-tauri/web`; add `libwebkit2gtk-4.1-dev` and `xvfb` to the Linux apt lines of the `check` and `soak` jobs; run `xvfb-run -a cargo test -p openmixer --features gui-tauri`.
 
 ## References
 

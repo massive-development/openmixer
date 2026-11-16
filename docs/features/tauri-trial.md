@@ -225,7 +225,7 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 | `npm run check` | `svelte-check` with warnings as errors |
 | `tools/ui-bench.sh --self-test` | The bench script's arithmetic on a fake `/proc` |
 
-CI runs none of the front-end steps or the feature's tests yet (ADR 0009, Known gaps).
+CI runs the front-end steps and the `gui-tauri` tests in the `web` job of `.github/workflows/rust.yml` (Linux, under Xvfb); see [build.md](../guidelines/build.md#tauri-window-web-front-end).
 
 ## Known gaps
 
