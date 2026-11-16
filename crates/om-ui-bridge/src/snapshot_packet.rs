@@ -6,10 +6,10 @@ use om_core::{ChannelSnapshot, DeckSnapshot, EngineSnapshot, MixerSnapshot};
 /// `OMS1`: lets the front end reject a packet from another protocol.
 pub const PACKET_MAGIC: u32 = 0x4F4D_5331;
 /// Bumped whenever the layout changes.
-pub const PACKET_VERSION: u16 = 1;
+pub const PACKET_VERSION: u16 = 2;
 
 const HEADER_LEN: usize = 24;
-const DECK_LEN: usize = 40;
+const DECK_LEN: usize = 56;
 const CHANNEL_LEN: usize = 32;
 const MASTER_LEN: usize = 16;
 const DECK_PAD: [u8; 7] = [0; 7];
@@ -56,6 +56,9 @@ fn put_deck(deck: &DeckSnapshot, out: &mut Vec<u8>) {
     out.extend_from_slice(&deck.file_sample_rate.to_le_bytes());
     out.push(deck_flags(deck));
     out.extend_from_slice(&DECK_PAD);
+    // The front end wraps its interpolated position inside the loop between packets.
+    out.extend_from_slice(&deck.loop_start.to_le_bytes());
+    out.extend_from_slice(&deck.loop_end.to_le_bytes());
 }
 
 fn deck_flags(deck: &DeckSnapshot) -> u8 {
@@ -102,6 +105,9 @@ mod tests {
             length_frames: 11_025_000,
             rate: 1.02,
             file_sample_rate: 44_100.0,
+            looping: true,
+            loop_start: 440_000,
+            loop_end: 450_000,
             ..DeckSnapshot::default()
         };
         let ch0 = ChannelSnapshot {
@@ -131,19 +137,19 @@ mod tests {
 
     #[test]
     fn packet_len_two_decks_two_channels() {
-        assert_eq!(packet_len(2, 2), 184);
+        assert_eq!(packet_len(2, 2), 216);
     }
 
     #[test]
     fn header_fields() {
         let mut out = Vec::new();
         pack_snapshot(&fixture(), 2.5, &mut out);
-        assert_eq!(out.len(), 184);
+        assert_eq!(out.len(), 216);
         assert_eq!(
             u32::from_le_bytes(out[0..4].try_into().unwrap()),
             PACKET_MAGIC
         );
-        assert_eq!(u16::from_le_bytes(out[4..6].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(out[4..6].try_into().unwrap()), 2);
         assert_eq!((out[6], out[7]), (2, 2));
         assert_eq!(f32::from_le_bytes(out[16..20].try_into().unwrap()), 2.5);
     }
@@ -158,7 +164,10 @@ mod tests {
             11_025_000
         );
         assert_eq!(f64::from_le_bytes(out[40..48].try_into().unwrap()), 1.02);
-        assert_eq!(out[56], 0b0000_0011); // loaded and playing
+        assert_eq!(out[56], 0b0000_0111); // loaded, playing and looping
+        assert_eq!(i64::from_le_bytes(out[64..72].try_into().unwrap()), 440_000);
+        assert_eq!(i64::from_le_bytes(out[72..80].try_into().unwrap()), 450_000);
+        assert_eq!(i64::from_le_bytes(out[120..128].try_into().unwrap()), 0); // deck 1
     }
 
     #[test]
@@ -166,15 +175,15 @@ mod tests {
         let mut out = Vec::new();
         pack_snapshot(&fixture(), 0.0, &mut out);
         let f = |o: usize| f32::from_le_bytes(out[o..o + 4].try_into().unwrap());
-        assert_eq!((f(104), f(108), f(112)), (0.5, 0.25, 0.85)); // channel 0: peaks, fader
-        assert_eq!((f(168), f(172), f(180)), (0.75, 0.6, 0.5)); // master peaks, crossfader
+        assert_eq!((f(136), f(140), f(144)), (0.5, 0.25, 0.85)); // channel 0: peaks, fader
+        assert_eq!((f(200), f(204), f(212)), (0.75, 0.6, 0.5)); // master peaks, crossfader
     }
 
     #[test]
     fn reuses_the_buffer() {
         let mut out = vec![9u8; 500];
         pack_snapshot(&fixture(), 0.0, &mut out);
-        assert_eq!(out.len(), 184);
+        assert_eq!(out.len(), 216);
     }
 
     #[test]
@@ -193,7 +202,7 @@ mod tests {
         pack_snapshot(&fixture(), 2.5, &mut out);
         assert_eq!(
             out,
-            include_bytes!("../../../fixtures/ui-bridge/snapshot-v1.bin")
+            include_bytes!("../../../fixtures/ui-bridge/snapshot-v2.bin")
         );
     }
 
@@ -204,7 +213,7 @@ mod tests {
         pack_snapshot(&fixture(), 2.5, &mut out);
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../fixtures/ui-bridge/snapshot-v1.bin"
+            "/../../fixtures/ui-bridge/snapshot-v2.bin"
         );
         std::fs::write(path, out).unwrap();
     }
