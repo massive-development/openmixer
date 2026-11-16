@@ -4,11 +4,13 @@
 //! packed waveform peaks for the GPU. No window dependency, so it tests headless.
 
 mod control;
+mod control_spec;
 mod peaks;
 mod snapshot_packet;
 mod theme_css;
 
 pub use control::{dispatch_control, slice_control_ids};
+pub use control_spec::{slice_controls, ControlKind, ControlSpec};
 pub use peaks::{
     pack_peaks, peak_levels, PeakBlob, PeakLevel, BYTES_PER_POINT, FILL, MIN_HALF_PX,
     PLAYED_BRIGHTNESS,

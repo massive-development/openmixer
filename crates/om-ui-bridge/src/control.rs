@@ -2,8 +2,11 @@
 //! Runs on a control thread (the IPC command handler), never the audio thread.
 
 use crate::BridgeError;
-use om_core::param_id::{ChannelParam, DeckParam, EqBand, MixerParam, MAX_CHANNELS, MAX_DECKS};
+use om_core::param_id::{
+    ChannelParam, DeckParam, EqBand, MixerParam, HOTCUES_PER_DECK, MAX_CHANNELS, MAX_DECKS,
+};
 use om_core::{ParamId, ParameterRouter};
+use om_ui::widgets::loops::{loop_param, SIZES};
 
 /// Parses `id`, checks `value`, and dispatches once. Nothing is dispatched on an error.
 pub fn dispatch_control(router: &ParameterRouter, id: &str, value: f64) -> Result<(), BridgeError> {
@@ -28,13 +31,17 @@ fn parse_control(id: &str) -> Result<ParamId, BridgeError> {
 /// Stable front-end keys paired with canonical ids, for every control the decks slice uses.
 /// Indices past the engine's limits are dropped rather than producing ids that cannot validate.
 pub fn slice_control_ids(decks: u8, channels: u8) -> Vec<(String, String)> {
-    let decks = (0..decks.min(MAX_DECKS)).flat_map(deck_controls);
-    let channels = (0..channels.min(MAX_CHANNELS)).flat_map(channel_controls);
-    decks
-        .chain(channels)
-        .chain(master_controls())
+    slice_params(decks, channels)
+        .into_iter()
         .map(|(key, id)| (key, id.to_string()))
         .collect()
+}
+
+/// [`slice_control_ids`] with the ids still typed, for the range lookup.
+pub(crate) fn slice_params(decks: u8, channels: u8) -> Vec<(String, ParamId)> {
+    let decks = (0..decks.min(MAX_DECKS)).flat_map(deck_controls);
+    let channels = (0..channels.min(MAX_CHANNELS)).flat_map(channel_controls);
+    decks.chain(channels).chain(master_controls()).collect()
 }
 
 fn master_controls() -> impl Iterator<Item = (String, ParamId)> {
@@ -62,10 +69,36 @@ const CHANNEL_CONTROLS: [(&str, ChannelParam); 6] = [
     ("eq.high", ChannelParam::Eq(EqBand::High)),
 ];
 
+/// Transport, hot cues (`hotcue<i>`, `hotcue<i>.clear`) and loops (`loop.<beats>`, `loop.exit`).
 fn deck_controls(deck: u8) -> impl Iterator<Item = (String, ParamId)> {
-    DECK_CONTROLS
+    let transport = DECK_CONTROLS.into_iter().map(|(k, p)| (k.to_owned(), p));
+    let all = transport.chain(hotcue_controls()).chain(loop_controls());
+    all.map(move |(key, p)| (format!("deck{deck}.{key}"), ParamId::Deck { deck, p }))
+}
+
+fn hotcue_controls() -> impl Iterator<Item = (String, DeckParam)> {
+    (0..HOTCUES_PER_DECK).flat_map(|index| {
+        let set = (
+            format!("hotcue{index}"),
+            DeckParam::Hotcue {
+                index,
+                clear: false,
+            },
+        );
+        let clear = (
+            format!("hotcue{index}.clear"),
+            DeckParam::Hotcue { index, clear: true },
+        );
+        [set, clear]
+    })
+}
+
+// The sizes GPUI's loop row offers (`om_ui::widgets::loops::SIZES`), keyed by their beats.
+fn loop_controls() -> impl Iterator<Item = (String, DeckParam)> {
+    let sizes = SIZES
         .into_iter()
-        .map(move |(key, p)| (format!("deck{deck}.{key}"), ParamId::Deck { deck, p }))
+        .map(|beats| (format!("loop.{beats}"), loop_param(beats)));
+    sizes.chain([("loop.exit".to_owned(), DeckParam::LoopExit)])
 }
 
 fn channel_controls(ch: u8) -> impl Iterator<Item = (String, ParamId)> {
@@ -164,8 +197,14 @@ mod tests {
     #[test]
     fn slice_ids_cover_the_slice() {
         let ids = slice_control_ids(2, 2);
-        assert_eq!(ids.len(), 2 * 4 + 2 * 6 + 2);
+        let per_deck = 4 + 2 * usize::from(HOTCUES_PER_DECK) + SIZES.len() + 1;
+        assert_eq!(ids.len(), 2 * per_deck + 2 * 6 + 2);
         assert_eq!(id_for("deck1.tempo"), "deck.1.rate");
+        assert_eq!(id_for("deck0.hotcue3"), "deck.0.hotcue3");
+        assert_eq!(id_for("deck0.hotcue3.clear"), "deck.0.hotcue3.clear");
+        assert_eq!(id_for("deck1.loop.0.25"), "deck.1.loop.quantized.0.25");
+        assert_eq!(id_for("deck1.loop.4"), "deck.1.loop.quantized.4");
+        assert_eq!(id_for("deck0.loop.exit"), "deck.0.loop.exit");
         assert_eq!(id_for("ch0.eq.low"), "mixer.ch0.eq.low");
         assert_eq!(id_for("mixer.crossfader"), "mixer.crossfader");
     }

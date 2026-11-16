@@ -1,0 +1,16 @@
+# Meter level to bar fraction and colour zone, asserted by both om-ui-bridge (tests/meter_table.rs,
+# against om_ui::meter::MeterScale) and the web front end (src/lib/meter.test.ts).
+# scale <floor_db> <mid_db> <high_db>: the built-in dark theme.
+scale -48 -12 -3
+# <linear peak> <fraction of the bar> <zone>
+0 0.000000 low
+0.001 0.000000 low
+0.0316228 0.375000 low
+0.1 0.583333 low
+0.25 0.749142 low
+0.3 0.782134 mid
+0.5 0.874571 mid
+0.7 0.935458 mid
+0.75 0.947942 high
+1.0 1.000000 high
+2.0 1.000000 high

@@ -6239,6 +6239,7 @@ version = "0.1.0"
 dependencies = [
  "om-analysis",
  "om-core",
+ "om-engine",
  "om-ui",
  "thiserror 2.0.21",
 ]
