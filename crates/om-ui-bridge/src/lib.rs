@@ -3,8 +3,10 @@
 //! Toolkit-free bridge between the engine and a web front end: binary snapshot packets out,
 //! packed waveform peaks for the GPU. No window dependency, so it tests headless.
 
+mod peaks;
 mod snapshot_packet;
 
+pub use peaks::{pack_peaks, PeakBlob, PeakLevel};
 pub use snapshot_packet::{pack_snapshot, packet_len, PACKET_MAGIC, PACKET_VERSION};
 
 /// Why the bridge refused a request from the front end.
