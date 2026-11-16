@@ -31,8 +31,14 @@ pub struct DeckInfo {
     pub spectral: bool,
     pub levels: Vec<PeakLevelDto>,
     pub hotcues: Vec<Option<i64>>,
+    /// Counts every change to the deck: track, waveform, hot cues.
     pub generation: u64,
+    /// Counts waveform changes only; the peaks need fetching again only when it moves.
+    pub peaks_generation: u64,
 }
+
+/// Bytes before the peaks in a `deck_peaks` answer: the peaks generation, u64 little-endian.
+pub const PEAKS_HEADER_LEN: usize = 8;
 
 /// One level's place in the `deck_peaks` bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -89,13 +95,19 @@ impl ParameterTarget for NoWrites {
     }
 }
 
-/// Deck `deck`'s packed peaks; empty while it has no waveform.
+/// Deck `deck`'s packed peaks after their generation (read with them, so a late answer is
+/// recognised); no peak bytes while it has no waveform.
 pub(crate) fn deck_peaks(decks: &Decks, engine: &DjEngine, deck: usize) -> Result<Vec<u8>, String> {
     let view = read(decks, engine, deck)?;
-    Ok(view
-        .waveform
-        .map(|w| pack_peaks(&w).bytes)
-        .unwrap_or_default())
+    let bytes = view.waveform.map(|w| pack_peaks(&w).bytes);
+    Ok(tagged(view.peaks_generation, &bytes.unwrap_or_default()))
+}
+
+fn tagged(peaks_generation: u64, bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(PEAKS_HEADER_LEN + bytes.len());
+    out.extend_from_slice(&peaks_generation.to_le_bytes());
+    out.extend_from_slice(bytes);
+    out
 }
 
 fn read(decks: &Decks, engine: &DjEngine, deck: usize) -> Result<DeckView, String> {
@@ -131,6 +143,7 @@ fn info_of(view: DeckView, grid: Option<&dyn BeatGrid>, hotcues: Vec<Option<i64>
             .collect(),
         hotcues,
         generation: view.generation,
+        peaks_generation: view.peaks_generation,
     }
 }
 
@@ -153,6 +166,7 @@ mod tests {
     fn view() -> DeckView {
         DeckView {
             generation: 3,
+            peaks_generation: 2,
             track: TrackInfo {
                 title: "Loop".into(),
                 artist: "Gen".into(),
@@ -184,6 +198,7 @@ mod tests {
             }]
         );
         assert_eq!((info.hotcues, info.generation), (vec![Some(5), None], 3));
+        assert_eq!(info.peaks_generation, 2);
     }
 
     #[test]
@@ -204,6 +219,7 @@ mod tests {
             "numSamples",
             "samplesPerPoint",
             "hotcues",
+            "peaksGeneration",
         ] {
             assert!(json.contains(name), "{name} missing from {json}");
         }
@@ -215,12 +231,23 @@ mod tests {
         let decks = Decks::new(&engine);
         assert_eq!(deck_info(&decks, &engine, 2), Err("no deck 2".to_owned()));
         assert!(deck_peaks(&decks, &engine, usize::MAX).is_err());
-        assert_eq!(deck_peaks(&decks, &engine, 0), Ok(Vec::new()));
+        assert_eq!(
+            deck_peaks(&decks, &engine, 0),
+            Ok(vec![0; PEAKS_HEADER_LEN])
+        );
         let cues = om_core::param_id::HOTCUES_PER_DECK as usize;
         assert_eq!(
             deck_info(&decks, &engine, 0).map(|i| i.hotcues.len()),
             Ok(cues)
         );
+    }
+
+    #[test]
+    fn peaks_carry_their_generation_first() {
+        let out = tagged(0x0102, &[7, 8, 9, 10]);
+        assert_eq!(out.len(), PEAKS_HEADER_LEN + 4);
+        assert_eq!(u64::from_le_bytes(out[..8].try_into().unwrap()), 0x0102);
+        assert_eq!(&out[8..], &[7, 8, 9, 10]);
     }
 
     #[test]

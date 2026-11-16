@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { controlName, Paced, positionText } from '../a11y';
   import { interpolate } from '../clock';
+  import { PeakSync } from '../peaks';
   import { Held } from '../controls/drag';
   import { sliderKey } from '../controls/keys';
   import { setStyle } from '../dom';
@@ -52,18 +53,31 @@
     );
   }
 
-  // A hot cue change reloads the info but not the track, so only a new track or waveform refetches.
-  const trackKey = $derived(info ? `${info.titleText}|${info.numSamples}|${info.levels.length}` : '');
+  // Hot cue and title changes reload the info but keep its peaks generation, so only a new
+  // waveform refetches and redraws; the cue ticks follow the info on their own.
+  const peaksGeneration = $derived(info ? info.peaksGeneration : null);
+  const sync = new PeakSync();
 
   $effect(() => {
-    const key = trackKey;
-    if (key === '') return;
-    deckPeaks(deck)
-      .then((bytes) => {
-        if (key === trackKey) peaks = bytes;
-      })
-      .catch((error: unknown) => console.error(`openmixer: deck ${deck} overview`, error));
+    const generation = peaksGeneration;
+    if (generation === null) return;
+    untrack(() => follow(generation, (info?.levels.length ?? 0) > 0));
   });
+
+  function follow(generation: number, hasPeaks: boolean): void {
+    const fetch = sync.onInfo(generation, hasPeaks);
+    // The old track's peaks are not drawn under a new waveform, nor for a deck without one.
+    if (sync.showsOlder() || !hasPeaks) peaks = null;
+    if (!fetch) return;
+    deckPeaks(deck)
+      .then((answer) => {
+        if (sync.onPeaks(generation, answer.generation)) peaks = answer.bytes;
+      })
+      .catch((error: unknown) => {
+        sync.onFailed(generation);
+        console.error(`openmixer: deck ${deck} overview`, error);
+      });
+  }
 
   // Drawn once per track and size; the info is read as it is when the peaks arrive.
   $effect(() => {
