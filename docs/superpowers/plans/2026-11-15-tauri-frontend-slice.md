@@ -10,6 +10,33 @@
 
 **Spec:** There is no separate spec document. This plan implements the conclusions of the Tauri spike (source in `openmixer-tauri-spike/` beside this repo; results in `C:\Users\micro\openmixer-tauri-spike\results\`). Task 1 writes those conclusions into `docs/adr/0009-web-front-end-tauri-trial.md`, which is the spec from then on.
 
+## Outcome (2026-11-16)
+
+Tasks 1 to 10 and the tooling part of Task 11 (steps 1 to 3) are done. **Task 11's measurement and decision (steps 4 to 7) are not done**: the only bench runs so far checked the tooling under WSL software rendering, and ADR 0009 is still `Proposed (trial)`. The trial as built is described in `docs/features/tauri-trial.md`.
+
+Where the work is (local branches, stacked; no PR has been opened, so every "open the PR" step is unchecked):
+
+| Branch | Tip | Holds |
+|---|---|---|
+| `docs/adr-0009-tauri-trial` | `8cdaf58` | Task 1: ADR 0009, index and summary, the design-pattern entry (`82f5b94`, `8cdaf58`) |
+| `feat/ui-bridge` | `9f1f9bd` | Tasks 2 to 5: packet `23f9348`, peaks `185a97a`, dispatch `a9f5f0b`, theme CSS `9f1f9bd` |
+| `feat/ui-tauri-shell` | `48ec968` | Task 6: font variables `edf8691`, the themed window `48ec968` |
+| `feat/ui-tauri-slice` | `4691b6a` | Tasks 7 to 10 and Task 11 steps 1 to 3: `7bd88f1` to `11d51a6`, the known gaps in the ADR `4691b6a` |
+| `feat/ui-tauri-polish` | `912bf69` | The added polish and accessibility pass: `a9f320c`, `2bf74a1`, `ccabf75`, `912bf69` |
+
+Deviations that matter:
+
+- **Packet version 2 with loop bounds.** The first packet had a 40-byte deck block; `84de74e` added `loop_start` and `loop_end` (56-byte deck block) so the front end wraps its interpolated playhead inside a loop. Version 1 is refused.
+- **Four bytes per peak point** (body, low, mid, high), not three: each byte is the height the GPUI Low-Band strip draws, so the lanes match GPUI (`7bd88f1`, `3932ed2`, `8fc4c03`).
+- **Control specs with ranges from Rust.** `om_ui_bridge::slice_controls` and the `controls` command give each front-end key its id, range, default, detent, kind and label from the GPUI widget models (`a3be3b7`); the front end types no id or range. A shared meter table (`fixtures/ui-bridge/meter-table.txt`) pins the meter scale on both sides.
+- **Hot cues and loops are wired** (set, jump, clear; eight loop sizes and exit), beyond the transport and mixer this plan named.
+- **No CUE button:** the engine has no control id for it (ADR 0009, Known gaps).
+- **Lane ink from Rust:** `strip_ink` resolves each deck's lane colours through the GPUI strip's `StripInk` (`3f75720`).
+- **Bench CPU is measured by the script, not in the app.** `tools/ui-bench.sh` samples `/proc` over the app's process tree and merges in the app's frame report; the app does not use `sysinfo` and writes no CPU or memory figure. The script passes `--mock-device` plus whatever arguments it is given; it does not add `--demo-scene=track`.
+- **Added: a polish and accessibility pass** (`feat/ui-tauri-polish`): the app icon, control icons (Lucide), keyboard operation and accessible names and values for every control, and review fixes.
+- **CI (Task 6, step 8) is not added;** the proposed job change is in ADR 0009, Known gaps. Screenshot steps (Task 6 step 7, Task 9 step 6, Task 10 step 6) are left unchecked because no record of them was kept with the commits.
+- Steps that only run a command (run to verify failure, run the tests) are checked with their task; they were not re-run for this outcome.
+
 ## Scope
 
 This plan is the first of four. It ends at a decision gate (Task 11). The later plans are written only if the gate passes:
@@ -92,7 +119,7 @@ tools/ui-bench.sh                    runs either window and samples CPU (Task 11
 **Interfaces:**
 - Produces: the spec the remaining tasks cite. Status `Proposed (trial)` until Task 11 changes it.
 
-- [ ] **Step 1: Write ADR 0009.** Sections: Context, Decision, Evidence, Consequences, Exit criteria. Content that must appear:
+- [x] **Step 1: Write ADR 0009.** Sections: Context, Decision, Evidence, Consequences, Exit criteria. Content that must appear:
   - Context: GPUI needs hand-rolled controls and layout (`om-ui-gpui` paint modules, `om-ui` geometry modules); ADR 0004's 2026-11-07 update puts the app chrome on `gpui-component` while knobs, faders, meters and waveforms stay custom-painted.
   - Decision: trial a Tauri v2 window beside GPUI behind `gui-tauri`. ADR 0004's UI choice stands until the trial ends. ADR 0008 (the look) is unchanged and is carried by CSS variables generated from the theme files.
   - Evidence, Windows, 1600×780, two decks playing, CPU as percent of one core summed over the app and its WebView2 processes: 43% at 120 fps; 26% capped to 60 fps; 17% capped to 30 fps; 13% paused; 35% with a 30 Hz stream against 49% at 120 Hz; 4 KB packets add 6 to 11 points; no frame over 20 ms except one 31 ms frame in the 120 Hz stream run; zero packets lost.
@@ -100,8 +127,8 @@ tools/ui-bench.sh                    runs either window and samples CPU (Task 11
   - Rendering rules adopted: analyse once and upload peaks once as a texture; one shader draws all lanes; meters, playheads, bar numbers and cue flags move by CSS transform; skip the frame when nothing changed; write text only when it changes; 30 Hz stream with interpolation; small per-frame packets, bulk data once.
   - Rejected: pre-rendered tile scrolling (must rebuild on zoom), batched canvas paths (1.4 GB of memory and dropped frames).
   - Exit criteria: copy the thresholds from Task 11 Step 5.
-- [ ] **Step 2: Add the ADR to `docs/adr/INDEX.md` and a five-line summary to `docs/adr/SUMMARY.md`.**
-- [ ] **Step 3: Add a "Front-end bridge" entry to `docs/DESIGN_PATTERNS.md`** naming the two crates, the rule that `om-ui-bridge` has no window dependency, and the one-way data flow (snapshot out, `ParamId` dispatch in).
+- [x] **Step 2: Add the ADR to `docs/adr/INDEX.md` and a five-line summary to `docs/adr/SUMMARY.md`.**
+- [x] **Step 3: Add a "Front-end bridge" entry to `docs/DESIGN_PATTERNS.md`** naming the two crates, the rule that `om-ui-bridge` has no window dependency, and the one-way data flow (snapshot out, `ParamId` dispatch in).
 - [ ] **Step 4: Commit and open the PR.**
 
 ```bash
@@ -144,7 +171,7 @@ Packet layout, little-endian:
 
 Deck flags: bit 0 `loaded`, bit 1 `playing`, bit 2 `looping`, bit 3 `sync`, bit 4 `keylock`.
 
-- [ ] **Step 1: Write the failing tests** in `snapshot_packet.rs`:
+- [x] **Step 1: Write the failing tests** in `snapshot_packet.rs`:
 
 ```rust
 #[test]
@@ -199,11 +226,11 @@ fn matches_golden_file() {
 
 `fixture()` builds an `EngineSnapshot` (use `Default` where the type has it) with two decks and two channels: deck 0 `loaded`, `playing`, `position_frames = 441_000`, `length_frames = 11_025_000`, `rate = 1.02`, `file_sample_rate = 44_100.0`, `looping`, `loop_start = 440_000`, `loop_end = 450_000`; deck 1 all defaults; channel 0 peaks `0.5, 0.25` and `fader = 0.85`; master peaks `0.75, 0.6`; `crossfader = 0.5`; `ticks = 7`.
 
-- [ ] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` — expected: does not compile, `pack_snapshot` not found.
-- [ ] **Step 3: Implement `packet_len` and `pack_snapshot`.** Crate dependencies: `om-core`, `om-analysis`, `om-ui`, `thiserror`. `#![forbid(unsafe_code)]`.
-- [ ] **Step 4: Write the golden file.** Add an `#[ignore]` test `write_golden` that writes `fixtures/ui-bridge/snapshot-v2.bin`; run it once with `cargo test -p om-ui-bridge write_golden -- --ignored`.
-- [ ] **Step 5: Run the tests.** Expected: 6 passed, 1 ignored.
-- [ ] **Step 6: Commit.** `git commit -m "feat(ui-bridge): binary snapshot packet"`
+- [x] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` — expected: does not compile, `pack_snapshot` not found.
+- [x] **Step 3: Implement `packet_len` and `pack_snapshot`.** Crate dependencies: `om-core`, `om-analysis`, `om-ui`, `thiserror`. `#![forbid(unsafe_code)]`.
+- [x] **Step 4: Write the golden file.** Add an `#[ignore]` test `write_golden` that writes `fixtures/ui-bridge/snapshot-v2.bin`; run it once with `cargo test -p om-ui-bridge write_golden -- --ignored`.
+- [x] **Step 5: Run the tests.** Expected: 6 passed, 1 ignored.
+- [x] **Step 6: Commit.** `git commit -m "feat(ui-bridge): binary snapshot packet"`
 
 ---
 
@@ -219,7 +246,7 @@ fn matches_golden_file() {
   - `pub struct PeakBlob { pub sample_rate: f64, pub num_samples: i64, pub levels: Vec<PeakLevel>, pub bytes: Vec<u8> }`
   - `pub fn pack_peaks(data: &WaveformData) -> PeakBlob` — `bytes` is every level in order, four bytes per point (`BYTES_PER_POINT`): body, low, mid, high. `body` is the GPUI Low-Band body (`column_shape(..).body`, loudness over the track's `Reference`); the bands are `band_heights` over the reference peak; each `(v.clamp(0.0, 1.0) * 255.0).round() as u8`.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```rust
 #[test]
@@ -253,10 +280,10 @@ fn pack_peaks_empty_levels() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure.** Expected: `pack_peaks` not found.
-- [ ] **Step 3: Implement `pack_peaks`.**
-- [ ] **Step 4: Run the tests.** Expected: 4 passed.
-- [ ] **Step 5: Commit.** `git commit -m "feat(ui-bridge): pack waveform levels for the GPU"`
+- [x] **Step 2: Run to verify failure.** Expected: `pack_peaks` not found.
+- [x] **Step 3: Implement `pack_peaks`.**
+- [x] **Step 4: Run the tests.** Expected: 4 passed.
+- [x] **Step 5: Commit.** `git commit -m "feat(ui-bridge): pack waveform levels for the GPU"`
 
 ---
 
@@ -276,7 +303,7 @@ Read `docs/guidelines/control-ids.md` and `crates/om-ui/src/binding.rs` before w
 
 Also produce `pub fn slice_control_ids(decks: u8, channels: u8) -> Vec<(String, String)>`: pairs of a stable front-end key and the canonical id, for every control the decks slice uses. Keys: `deck{N}.play`, `deck{N}.cue`, `deck{N}.sync`, `deck{N}.tempo`, `deck{N}.seek`, `ch{N}.fader`, `ch{N}.trim`, `ch{N}.filter`, `ch{N}.eq.low`, `ch{N}.eq.mid`, `ch{N}.eq.high`, `mixer.crossfader`, `mixer.master`, with `N` from 0. Where the engine has no matching `ParamId` variant, leave the key out and list it in the task report. Add the test `slice_ids_round_trip`: every id parses back with `ParamId::from_str` to a value whose `Display` equals the id, and keys are unique.
 
-- [ ] **Step 1: Write the failing tests** using a `ParameterRouter` with one registered recording target (follow the pattern of the router's own tests in `crates/om-core/src/router.rs`):
+- [x] **Step 1: Write the failing tests** using a `ParameterRouter` with one registered recording target (follow the pattern of the router's own tests in `crates/om-core/src/router.rs`):
 
 ```rust
 #[test]
@@ -310,10 +337,10 @@ fn unregistered_namespace_is_rejected() {
 
 `DECK0_PLAY` is the id for key `deck0.play` from `slice_control_ids(2, 2)`.
 
-- [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement `dispatch_control`.**
-- [ ] **Step 4: Run the tests.** Expected: 4 passed.
-- [ ] **Step 5: Commit.** `git commit -m "feat(ui-bridge): validated control dispatch"`
+- [x] **Step 2: Run to verify failure.**
+- [x] **Step 3: Implement `dispatch_control`.**
+- [x] **Step 4: Run the tests.** Expected: 4 passed.
+- [x] **Step 5: Commit.** `git commit -m "feat(ui-bridge): validated control dispatch"`
 
 ---
 
@@ -332,7 +359,7 @@ fn unregistered_namespace_is_rejected() {
   - Fields that are neither a colour nor a number (for example waveform colour stops) are skipped in this task.
   - Output is sorted by variable name so it is stable.
 
-- [ ] **Step 1: Write the failing tests** against the built-in `openmixer.dark` theme:
+- [x] **Step 1: Write the failing tests** against the built-in `openmixer.dark` theme:
 
 ```rust
 #[test]
@@ -369,9 +396,9 @@ fn output_is_sorted_and_stable() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement `theme_css`.** Use the active density's metric set (`ThemeTokens::metrics(Density)`); take the density as a second parameter if `tokens.rs` requires it and update the tests' helper.
-- [ ] **Step 4: Run the tests.** Expected: 4 passed.
+- [x] **Step 2: Run to verify failure.**
+- [x] **Step 3: Implement `theme_css`.** Use the active density's metric set (`ThemeTokens::metrics(Density)`); take the density as a second parameter if `tokens.rs` requires it and update the tests' helper.
+- [x] **Step 4: Run the tests.** Expected: 4 passed.
 - [ ] **Step 5: Run the per-PR checks and open the PR for Tasks 2 to 5.**
 
 ```bash
@@ -409,7 +436,7 @@ Decisions:
 - Front end: `App.svelte` calls `theme_css`, injects it in a `<style>` element, renders the four layout regions (top bar, deck headers, waveforms, controls) as empty blocks using only `--om-*` variables, then calls `ready`. Fonts are loaded with `@font-face` from `resources/fonts/`, copied into `web/public/fonts/` by a `prebuild` npm script.
 - `package.json` scripts: `dev`, `build`, `test` (Vitest), `check` (`svelte-check`). Pin exact versions and commit `package-lock.json`. Use Node 22 LTS.
 
-- [ ] **Step 1: Write the failing Rust test** in `crates/openmixer/tests/` (follow an existing test there for the invocation pattern):
+- [x] **Step 1: Write the failing Rust test** in `crates/openmixer/tests/` (follow an existing test there for the invocation pattern):
 
 ```rust
 #[test]
@@ -420,14 +447,14 @@ fn tauri_window_smoke() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri tauri_window_smoke` — expected: fails, unknown feature.
-- [ ] **Step 3: Scaffold the web project and build it.** `cd crates/om-ui-tauri/web && npm ci && npm run build` — expected: `dist/index.html` exists.
-- [ ] **Step 4: Implement the shell crate, the feature, `gui_tauri.rs` and the `main.rs` dispatch.**
-- [ ] **Step 5: Run the test.** Expected: PASS.
-- [ ] **Step 6: Confirm GPUI is untouched.** `cargo run -p openmixer -- --smoke` — expected: `smoke ok`.
+- [x] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri tauri_window_smoke` — expected: fails, unknown feature.
+- [x] **Step 3: Scaffold the web project and build it.** `cd crates/om-ui-tauri/web && npm ci && npm run build` — expected: `dist/index.html` exists.
+- [x] **Step 4: Implement the shell crate, the feature, `gui_tauri.rs` and the `main.rs` dispatch.**
+- [x] **Step 5: Run the test.** Expected: PASS.
+- [x] **Step 6: Confirm GPUI is untouched.** `cargo run -p openmixer -- --smoke` — expected: `smoke ok`.
 - [ ] **Step 7: Take one screenshot** of `WAYLAND_DISPLAY= cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device` with `import -silent -window <id>` and look at it: four regions, dark faceplate colours, bundled fonts.
 - [ ] **Step 8: Add CI.** In `.github/workflows/rust.yml` add a job that installs `libwebkit2gtk-4.1-dev`, sets up Node 22, runs `npm ci && npm run build && npm test` in `crates/om-ui-tauri/web`, then `cargo test -p openmixer --features gui-tauri` under `xvfb-run`. Run it locally with `act`.
-- [ ] **Step 9: Update `docs/guidelines/build.md` and `README.md`** with the new Linux package, the Node requirement and the two commands.
+- [x] **Step 9: Update `docs/guidelines/build.md` and `README.md`** with the new Linux package, the Node requirement and the two commands.
 - [ ] **Step 10: Per-PR checks, commit, PR.** `git commit -m "feat(ui-tauri): themed empty window behind gui-tauri"`
 
 ---
@@ -452,7 +479,7 @@ fn tauri_window_smoke() {
   - Tauri event `deck-changed` with payload `{ deck: usize, generation: u64 }`, emitted when a deck's waveform `Arc` pointer or hot cues change. `generation` increases by one per change.
   - The control loop that calls `TrackLoader::pump` runs on its own thread at 30 Hz and owns the loader behind a `Mutex` shared with `deck_peaks` and `deck_info`.
 
-- [ ] **Step 1: Write the failing tests** in `stream.rs` using an engine from `om-testing` and a recording sink:
+- [x] **Step 1: Write the failing tests** in `stream.rs` using an engine from `om-testing` and a recording sink:
 
 ```rust
 #[test]
@@ -487,11 +514,11 @@ fn stream_rate_is_respected() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri`
-- [ ] **Step 3: Implement `run_stream`**, pacing with a deadline that is advanced by one period per packet and reset when it falls behind.
-- [ ] **Step 4: Implement the commands, the `deck-changed` event and the loader thread.**
-- [ ] **Step 5: Run the tests.** Expected: 3 passed.
-- [ ] **Step 6: Commit.** `git commit -m "feat(ui-tauri): snapshot stream, control and deck data commands"`
+- [x] **Step 2: Run to verify failure.** `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri`
+- [x] **Step 3: Implement `run_stream`**, pacing with a deadline that is advanced by one period per packet and reset when it falls behind.
+- [x] **Step 4: Implement the commands, the `deck-changed` event and the loader thread.**
+- [x] **Step 5: Run the tests.** Expected: 3 passed.
+- [x] **Step 6: Commit.** `git commit -m "feat(ui-tauri): snapshot stream, control and deck data commands"`
 
 ---
 
@@ -510,7 +537,7 @@ fn stream_rate_is_respected() {
   - `interpolate(deck: DeckFrame, snap: Snapshot, now: number): number` — frames; `position + (ageMs + now - receivedAt) / 1000 * fileRate * rate` when playing, else `position`; clamped to `[0, max(0, length - 1)]`.
   - `startStream(onSnapshot: (s: Snapshot) => void): Promise<void>`, `control(id: string, value: number): Promise<void>`, `deckInfo(deck: number)`, `deckPeaks(deck: number): Promise<Uint8Array>`, `onDeckChanged(cb)`.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -553,10 +580,10 @@ test('a paused deck does not advance', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure.** `npm test` in `crates/om-ui-tauri/web` — expected: FAIL, modules not found.
-- [ ] **Step 3: Implement `ipc.ts` and `clock.ts`.**
-- [ ] **Step 4: Run the tests.** Expected: 5 passed.
-- [ ] **Step 5: Commit.** `git commit -m "feat(ui-tauri): packet decode and playhead interpolation"`
+- [x] **Step 2: Run to verify failure.** `npm test` in `crates/om-ui-tauri/web` — expected: FAIL, modules not found.
+- [x] **Step 3: Implement `ipc.ts` and `clock.ts`.**
+- [x] **Step 4: Run the tests.** Expected: 5 passed.
+- [x] **Step 5: Commit.** `git commit -m "feat(ui-tauri): packet decode and playhead interpolation"`
 
 ---
 
@@ -583,7 +610,7 @@ Rendering rules, from ADR 0009:
 - Bar numbers and cue flags are pooled DOM elements moved with `translate3d`; text is written only when it changes.
 - Wheel over the lanes zooms `visibleSeconds` between 1 and 64. Dragging a lane scrubs: send the deck's seek control id through `control`, and hold the local position until two snapshots arrive after the last seek.
 
-- [ ] **Step 1: Write the failing tests** in `view.test.ts`:
+- [x] **Step 1: Write the failing tests** in `view.test.ts`:
 
 ```ts
 const levels = [{ samplesPerPoint: 256, len: 44000 }, { samplesPerPoint: 1024, len: 11000 }, { samplesPerPoint: 4096, len: 2750 }];
@@ -607,12 +634,12 @@ test('barStep', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement `view.ts`.**
-- [ ] **Step 4: Run the tests.** Expected: 5 passed.
-- [ ] **Step 5: Implement `shader.ts` and `Waveforms.svelte`.** A deck whose `pickLevel` is `-1` draws only the well and the playhead.
+- [x] **Step 2: Run to verify failure.**
+- [x] **Step 3: Implement `view.ts`.**
+- [x] **Step 4: Run the tests.** Expected: 5 passed.
+- [x] **Step 5: Implement `shader.ts` and `Waveforms.svelte`.** A deck whose `pickLevel` is `-1` draws only the well and the playhead.
 - [ ] **Step 6: Screenshot.** Run `WAYLAND_DISPLAY= cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-scene=cues`, capture the window with `import -silent`, and check as a DJ would: beats readable at 8 s, bar lines stronger than beat lines, playhead red and centred, played side not shaded, cue flags on their beats, deck hues correct.
-- [ ] **Step 7: Commit.** `git commit -m "feat(ui-tauri): GPU waveform lanes"`
+- [x] **Step 7: Commit.** `git commit -m "feat(ui-tauri): GPU waveform lanes"`
 
 ---
 
@@ -638,7 +665,7 @@ Decisions:
 - Component CSS uses only `--om-*` variables. Deck hue appears only on elements that name a deck (letter chip, play button when on, set cue pads).
 - Double-click resets a knob or fader to its default.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```ts
 test('knobDelta', () => {
@@ -666,10 +693,10 @@ test('formatBpm and formatPitch', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement `drag.ts` and `format.ts`; run the tests.** Expected: 4 passed.
-- [ ] **Step 4: Implement the components and compose them in `App.svelte`** in the spike's layout: top bar 44 px, deck headers 104 px, waveforms flexible, controls 372 px.
-- [ ] **Step 5: Add a round-trip test.** In smoke mode the front end calls `control(<deck 0 play id>, 1)` and awaits it before calling `ready`. In `crates/openmixer/tests/`, add `tauri_control_round_trip`: run `--ui=tauri --mock-device --smoke` and assert exit code 0; `gui_tauri` returns a failure exit code under `smoke` when `engine.snapshot().decks[0].playing` is `false` after `ready`. Expected: PASS.
+- [x] **Step 2: Run to verify failure.**
+- [x] **Step 3: Implement `drag.ts` and `format.ts`; run the tests.** Expected: 4 passed.
+- [x] **Step 4: Implement the components and compose them in `App.svelte`** in the spike's layout: top bar 44 px, deck headers 104 px, waveforms flexible, controls 372 px.
+- [x] **Step 5: Add a round-trip test.** In smoke mode the front end calls `control(<deck 0 play id>, 1)` and awaits it before calling `ready`. In `crates/openmixer/tests/`, add `tauri_control_round_trip`: run `--ui=tauri --mock-device --smoke` and assert exit code 0; `gui_tauri` returns a failure exit code under `smoke` when `engine.snapshot().decks[0].playing` is `false` after `ready`. Expected: PASS.
 - [ ] **Step 6: Screenshot** the full window with `--demo-scene=meters` and check: meters move and clip lamp reads, labels are not clipped at 1600 × 780, numerals are in the mono face, no literal colours stand out from the theme.
 - [ ] **Step 7: Per-PR checks, commit, PR for Tasks 7 to 10.** `git commit -m "feat(ui-tauri): deck headers, transport and mixer"`
 
@@ -688,7 +715,7 @@ test('formatBpm and formatPitch', () => {
   - Flag `--ui-bench=SECONDS` (only with `--ui=tauri`): after a 3 s warm-up the front end records frame intervals and per-frame work for `SECONDS`, calls the command `bench_done(stats)`, and the shell writes JSON to the path in `OPENMIXER_BENCH_OUT` and exits. The shell adds `cpuPercentOneCore` and `rssMb`, summed over the process and its descendants with the `sysinfo` crate.
   - `tools/ui-bench.sh <gpui|tauri> <seconds>` — starts the chosen window with `--mock-device --demo-scene=track`, samples CPU of the process tree for the period, prints one line of JSON.
 
-- [ ] **Step 1: Write the failing test:**
+- [x] **Step 1: Write the failing test:**
 
 ```ts
 test('summarise', () => {
@@ -698,8 +725,8 @@ test('summarise', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure, implement `bench.ts`, run again.** Expected: PASS.
-- [ ] **Step 3: Implement the flag, `bench_done` and `tools/ui-bench.sh`.**
+- [x] **Step 2: Run to verify failure, implement `bench.ts`, run again.** Expected: PASS.
+- [x] **Step 3: Implement the flag, `bench_done` and `tools/ui-bench.sh`.**
 - [ ] **Step 4: Run the measurements** on one machine with a working GPU path, 20 s each, with `OPENMIXER_DEMO_TRACK` set to a real track of at least four minutes:
   - `tools/ui-bench.sh gpui 20` — the baseline.
   - `tools/ui-bench.sh tauri 20` with frame caps 60 and off, playing and paused.

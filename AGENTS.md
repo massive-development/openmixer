@@ -4,15 +4,16 @@ Clean-room, original DJ software in Rust with GPUI (ADR 0001, 0004). Detail live
 
 ## Crates
 
-Dependencies point toward `om-core`: `openmixer` -> `om-ui` -> `om-engine`/`om-library`/`om-analysis`/`om-midi` -> `om-dsp`/`om-audio` -> `om-core`. Library crates never depend on the binary or `om-ui`.
+Dependencies point toward `om-core`: `openmixer` -> `om-ui` -> `om-engine`/`om-library`/`om-analysis`/`om-midi` -> `om-dsp`/`om-audio` -> `om-core`. The trial web window adds `openmixer` -> `om-ui-tauri` -> `om-ui-bridge` -> `om-ui`. Crates below `om-ui` never depend on it or on the binary.
 
 - `om-core`: no I/O; `ParamId`, `Command`/`CommandSink`, `ParameterRouter`, `EngineSnapshot`, `WorkerPool`.
 - `om-engine`: audio thread (decks, mixer, FX, sync, sampler, recorder, loudness).
 - `om-audio`, `om-dsp`, `om-stretch`: device layer, DSP, key-lock (FFI `unsafe` only in `om-stretch/src/ffi.rs`).
 - `om-analysis`, `om-library`, `om-midi`, `om-plugins`, `om-stems`, `om-automix`: control-side services.
 - `om-ui` (no window), `om-ui-gpui` (GPUI), `openmixer` (binary, composition root).
+- `om-ui-bridge` (headless wire formats for a web front end), `om-ui-tauri` (Tauri v2 window and Svelte front end in `web/`): ADR 0009 trial, `gui-tauri` feature, off by default.
 
-Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/features/sampler.md), [stems](docs/features/stems.md), [recording](docs/features/recording.md), [automix](docs/features/automix.md), [mapping editor](docs/features/mapping-editor.md). Control paths, adding a control id, demo flags: [docs/guidelines/control-ids.md](docs/guidelines/control-ids.md).
+Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/features/sampler.md), [stems](docs/features/stems.md), [recording](docs/features/recording.md), [automix](docs/features/automix.md), [mapping editor](docs/features/mapping-editor.md), [Tauri trial](docs/features/tauri-trial.md). Control paths, adding a control id, demo flags: [docs/guidelines/control-ids.md](docs/guidelines/control-ids.md).
 
 ## Hard rules
 
@@ -23,6 +24,7 @@ Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/fea
 - **Style of code:** one-line comments that say why; small functions (about 10 lines); one responsibility per module; engine, analysis, library and MIDI crates testable headless.
 - **Large new subsystem:** read and update `docs/DESIGN_PATTERNS.md` first.
 - **UI:** colours, sizes and fonts come from theme tokens, never literals; numbers use `font::numeral`. A UI change needs a screenshot you have looked at, judged as a DJ would. [Styling](docs/styling.md), [experience bar](docs/guidelines/experience-bar.md).
+- **Tauri trial (web front end):** styles only from `--om-*` variables; control ids, ranges and defaults come from Rust (`controls`), never typed in TypeScript; rebuild `web/dist` before a cargo build that should show front-end changes; mock device only. [Details](docs/features/tauri-trial.md).
 - **Extensibility:** do not hardcode what a plugin could replace; no signing or allow-lists on plugins. [Details](docs/guidelines/extensibility.md).
 - **Demo flags:** a new `--demo-*` flag goes in `openmixer::flags::DEMO_FLAGS` and never writes the user's files.
 - **Never play audio;** use the mock device. Screenshots only with `import -silent` into temp dirs, at most 6 per task.
@@ -30,7 +32,7 @@ Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/fea
 
 ## Build and test
 
-Linux needs `libasound2-dev pkg-config libclang-dev libdbus-1-dev`. Everything else (soak, benches, optional features, sccache, test helpers in `om-testing`): [docs/guidelines/build.md](docs/guidelines/build.md).
+Linux needs `libasound2-dev pkg-config libclang-dev libdbus-1-dev`, and `libwebkit2gtk-4.1-dev` because `om-ui-tauri` is a workspace member. Everything else (soak, benches, optional features, sccache, test helpers in `om-testing`): [docs/guidelines/build.md](docs/guidelines/build.md).
 
 ```bash
 cargo check -p <crate>                      # while working
