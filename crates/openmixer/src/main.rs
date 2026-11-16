@@ -2,10 +2,13 @@
 
 //! `openmixer` binary. Headless flags run the engine and composition without a window; the GPUI window
 //! is on by default behind the `gui` feature (see `gui.rs`). `--headless --smoke` is the start-up check that
-//! opens no window; without the feature (`--no-default-features`) `--headless` is implied.
+//! opens no window; without the feature (`--no-default-features`) `--headless` is implied. The Tauri trial
+//! window (ADR 0009) opens with `--ui=tauri` when built with the `gui-tauri` feature (see `gui_tauri.rs`).
 
 #[cfg(feature = "gui")]
 mod gui;
+#[cfg(feature = "gui-tauri")]
+mod gui_tauri;
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};
 use om_midi::MockBackend;
@@ -22,9 +25,20 @@ fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let headless = args.iter().any(|a| a == "--headless");
     args.retain(|a| a != "--headless");
+    let tauri = args.iter().any(|a| a == "--ui=tauri");
+    args.retain(|a| a != "--ui=tauri");
     if args.iter().any(|a| a == "--version") {
         println!("openmixer {}", om_core::VERSION);
         return ExitCode::SUCCESS;
+    }
+    #[cfg(feature = "gui-tauri")]
+    if tauri && !headless {
+        return gui_tauri::main(&args);
+    }
+    #[cfg(not(feature = "gui-tauri"))]
+    if tauri && !headless {
+        eprintln!("openmixer: --ui=tauri needs the gui-tauri feature (cargo run -p openmixer --features gui-tauri)");
+        return ExitCode::FAILURE;
     }
     #[cfg(feature = "gui")]
     if !headless && (args.is_empty() || args.iter().any(|a| a.starts_with("--"))) {

@@ -4,7 +4,9 @@
 openmixer/
 ├── .github/workflows/        # rust.yml (the Rust CI, every PR; weekly soak) and issue-heatmap.yml
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
-│   └── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
+│   ├── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
+│   ├── om-ui-bridge/         # Toolkit-free wire formats for a web front end (ADR 0009)
+│   └── om-ui-tauri/          # Trial Tauri v2 window; Svelte front end in web/ (the `gui-tauri` feature, off by default)
 ├── docs/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── controllers/          # Controller map notes

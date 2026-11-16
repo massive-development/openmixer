@@ -26,6 +26,9 @@ base64 = "0.22"
 gain-plugin = { path = "../../examples/plugins/gain-plugin" }
 # The GPUI window. On by default; `--no-default-features` builds the headless binary.
 om-ui-gpui = { workspace = true, optional = true }
+# The Tauri trial window (ADR 0009), off by default: `--features gui-tauri`, then `--ui=tauri --mock-device`.
+om-ui-tauri = { workspace = true, optional = true }
+om-ui-bridge = { workspace = true, optional = true }
 
 [features]
 default = ["gui", "realtime-dbus"]
@@ -40,6 +43,9 @@ clap = ["om-plugins/clap"]
 realtime-dbus = ["om-audio/realtime-dbus"]
 # The window. Off (`--no-default-features`) leaves only the headless flags: --smoke and --version.
 gui = ["dep:om-ui-gpui"]
+# Trial (ADR 0009): the Tauri v2 window beside GPUI, opened with `--ui=tauri`. Linux needs
+# `libwebkit2gtk-4.1-dev`; the front end is built with Node (`crates/om-ui-tauri/web`).
+gui-tauri = ["dep:om-ui-tauri", "dep:om-ui-bridge"]
 
 [lints]
 workspace = true
