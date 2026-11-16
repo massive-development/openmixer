@@ -1,12 +1,15 @@
 //! Constant-tempo BPM and beat-grid estimation: full-band onset envelope, autocorrelation tempo,
-//! joint tempo/phase refinement, then a downbeat from the low (kick) band. Stateless and
-//! thread-safe. The job service wiring (id "bpm") is
+//! joint tempo/phase refinement, a half-beat check against linear kick-band flux, then a downbeat
+//! from the low (kick) band. Stateless and thread-safe. The job service wiring (id "bpm") is
 //! exposed through [`BpmAnalyzer`].
 
 use crate::beat_grid::BeatGridModel;
-use crate::onset::{compute_band_onsets, FrequencyBand, OnsetEnvelope, OnsetOptions};
+use crate::onset::{
+    compute_band_onsets, compute_linear_band_flux, FrequencyBand, OnsetEnvelope, OnsetOptions,
+};
 use crate::tempo::{
-    estimate_coarse_bpm, find_downbeat_offset, period_frames, refine_beat_phase, BeatPhase,
+    estimate_coarse_bpm, find_downbeat_offset, period_frames, refine_beat_phase, resolve_half_beat,
+    BeatPhase,
 };
 use crate::{jlimit, AnalysisContext, Analyzer, AudioClip, SubProgressContext};
 use serde_json::{Map, Value};
@@ -105,6 +108,21 @@ fn confidence_of(env: &OnsetEnvelope, beats: &BeatPhase) -> f64 {
     }
 }
 
+/// `beats`, or the phase half a beat later when the kick band says the kicks are there. Without
+/// the kick-band flux (cancelled) the phase stays. Progress 0.8 to 0.9.
+fn phase_on_the_kicks(
+    clip: &AudioClip,
+    full: &OnsetEnvelope,
+    beats: BeatPhase,
+    context: &dyn AnalysisContext,
+) -> BeatPhase {
+    let step = SubProgressContext::new(context, 0.8, 0.1);
+    match compute_linear_band_flux(clip, &OnsetOptions::default(), KICK_BAND, &step) {
+        Some(attack) => resolve_half_beat(full, &attack, beats),
+        None => beats,
+    }
+}
+
 /// First downbeat at or after the start of the clip, in source frames.
 fn first_downbeat_frame(
     env: &OnsetEnvelope,
@@ -151,8 +169,12 @@ impl BpmEstimator {
         );
         let coarse = estimate_coarse_bpm(full, min, max);
         let beats = refine_beat_phase(full, fold_into_range(coarse, min, max));
-        context.set_progress(0.95);
         if beats.bpm <= 0.0 || context.is_cancelled() {
+            return None;
+        }
+        let beats = phase_on_the_kicks(clip, full, beats, context);
+        context.set_progress(0.95);
+        if context.is_cancelled() {
             return None;
         }
 
@@ -192,7 +214,8 @@ impl Analyzer for BpmAnalyzer {
     }
 
     fn version(&self) -> i32 {
-        1
+        // Version 1 grids could sit half a beat late, so they are re-analysed.
+        2
     }
 
     fn analyze(&self, clip: &AudioClip, context: &dyn AnalysisContext) -> Option<String> {

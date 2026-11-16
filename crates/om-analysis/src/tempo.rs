@@ -223,6 +223,62 @@ pub fn fit_to_onsets(env: &OnsetEnvelope, beats: BeatPhase) -> BeatPhase {
     }
 }
 
+/// How much stronger the kick band must be half a beat later before the phase moves: a margin so
+/// near-ties keep the full-band phase.
+const HALF_BEAT_MARGIN: f64 = 1.5;
+
+/// Largest envelope value within one index of `index`, so a peak a frame early or late counts.
+fn peak_near(env: &OnsetEnvelope, index: f64) -> f32 {
+    env.at(index - 1.0)
+        .max(env.at(index))
+        .max(env.at(index + 1.0))
+}
+
+/// Mean of [`peak_near`] over the beats from `phase` to the end of the envelope.
+fn mean_peak_on_beats(env: &OnsetEnvelope, period: f64, phase: f64) -> f64 {
+    let end = env.values.len() as f64;
+    let (mut sum, mut count) = (0.0f64, 0usize);
+    let mut idx = phase;
+    while idx < end {
+        sum += f64::from(peak_near(env, idx));
+        count += 1;
+        idx += period;
+    }
+    if count > 0 {
+        sum / count as f64
+    } else {
+        0.0
+    }
+}
+
+/// Moves `beats` half a beat when the attack envelope (kick-band energy, on `full`'s frame grid) is
+/// clearly stronger there, then refits on `full`. Full-band flux alone can lock to strong off-beat
+/// bass and hats.
+pub fn resolve_half_beat(
+    full: &OnsetEnvelope,
+    attack: &OnsetEnvelope,
+    beats: BeatPhase,
+) -> BeatPhase {
+    if beats.bpm <= 0.0 {
+        return beats;
+    }
+    let period = period_frames(full, beats.bpm);
+    let shifted = wrap_phase(beats.phase + 0.5 * period, period);
+    let on = mean_peak_on_beats(attack, period, beats.phase);
+    let off = mean_peak_on_beats(attack, period, shifted);
+    if off > HALF_BEAT_MARGIN * on {
+        fit_to_onsets(
+            full,
+            BeatPhase {
+                phase: shifted,
+                ..beats
+            },
+        )
+    } else {
+        beats
+    }
+}
+
 /// Which beat of the bar (0..beats_per_bar, counted from `phase`) carries the most low-band energy.
 /// Ties go to the earliest beat.
 pub fn find_downbeat_offset(
@@ -240,11 +296,7 @@ pub fn find_downbeat_offset(
     let mut idx = beats.phase;
     let mut beat = 0usize;
     while idx < end {
-        let peak = low_band
-            .at(idx - 1.0)
-            .max(low_band.at(idx))
-            .max(low_band.at(idx + 1.0));
-        sums[beat % bar] += f64::from(peak);
+        sums[beat % bar] += f64::from(peak_near(low_band, idx));
         idx += period;
         beat += 1;
     }
@@ -257,3 +309,6 @@ pub fn find_downbeat_offset(
     }
     best as i32
 }
+
+#[cfg(test)]
+mod tests;

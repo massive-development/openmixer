@@ -176,3 +176,35 @@ pub fn compute_band_onsets(
     }
     Some(envelopes)
 }
+
+/// Positive flux of linear magnitudes in `band`, with no log and no mean removal, so a few loud
+/// low attacks (kicks) outweigh many quiet changing bins. Same frame grid as
+/// [`compute_band_onsets`]; `None` when cancelled. Reports progress.
+pub fn compute_linear_band_flux(
+    clip: &AudioClip,
+    options: &OnsetOptions,
+    band: FrequencyBand,
+    context: &dyn AnalysisContext,
+) -> Option<OnsetEnvelope> {
+    let mut stft = MagnitudeStft::new(options.fft_order, options.hop);
+    let frames = stft.num_frames(clip.samples.len());
+    let range = bins_of(&stft, band, clip.sample_rate);
+    let mut env = empty_envelope(&stft, clip.sample_rate);
+    env.values.reserve(frames);
+    let mut magnitudes = Vec::new();
+    let mut previous = vec![0.0f32; stft.num_bins()];
+    for i in 0..frames {
+        if i % 256 == 0 && context.is_cancelled() {
+            return None;
+        }
+        stft.compute_frame(&clip.samples, i, &mut magnitudes);
+        env.values
+            .push(positive_flux(&magnitudes, &previous, range));
+        std::mem::swap(&mut previous, &mut magnitudes);
+        context.set_progress((i + 1) as f32 / frames as f32);
+    }
+    Some(env)
+}
+
+#[cfg(test)]
+mod tests;
