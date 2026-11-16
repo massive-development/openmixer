@@ -1,5 +1,5 @@
 //! The Tauri trial window (ADR 0009): `--ui=tauri --mock-device --smoke` opens the window, waits for
-//! the front end's `ready` and exits 0. Needs a display (WSLg, or `xvfb-run` in CI) and the built
+//! the front end's first snapshot packet and its `ready`, and exits 0. Needs a display (WSLg, or `xvfb-run` in CI) and the built
 //! front end (`npm run build` in `crates/om-ui-tauri/web`).
 #![cfg(feature = "gui-tauri")]
 
@@ -20,6 +20,20 @@ fn run_openmixer(args: &[&str]) -> Output {
 #[test]
 fn tauri_window_smoke() {
     let out = run_openmixer(&["--ui=tauri", "--mock-device", "--smoke"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("tauri smoke ok"), "stdout was: {stdout}");
+}
+
+/// The front end calls `ready` only after a snapshot packet with the right magic arrived, and the
+/// demo library loads its decks on the control thread meanwhile.
+#[test]
+fn tauri_stream_smoke() {
+    let out = run_openmixer(&["--ui=tauri", "--mock-device", "--demo-library", "--smoke"]);
     assert!(
         out.status.success(),
         "{}",
