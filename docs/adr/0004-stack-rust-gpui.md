@@ -21,6 +21,10 @@ Update (2026-11-07), after the platform refresh (details in `openmixer-workbench
 - **Unsafe:** the `om-stretch` crate is no longer the only `unsafe` site; the policy is per-module exceptions with a leak check (`CONTRIBUTING.md`).
 - **Also adopted:** `rubato`, `ebur128`, `souvlaki`, `walkdir`, `bytemuck`, `divan` (benches).
 
+Update (2026-11-16), after ADR 0009 was accepted:
+
+- **UI:** the GPUI choice is superseded in direction by ADR 0009 (a web front end, Tauri v2 with Svelte). GPUI (`om-ui-gpui`) stays the default and shipping window until the cut-over plan lands; the rest of the stack is unchanged.
+
 ## Context
 
 ADR 0002 chose JUCE 8.x (C++) as the application framework. The product is a

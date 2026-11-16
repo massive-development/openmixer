@@ -388,7 +388,7 @@ pub trait AudioCallback: Send {
 - **Reuse when:** adopting a third-party widget library: map roles to tokens in one adapter and add no colours there (`tests/style_lint.rs` keeps raw colour calls out of views).
 - **Notes:** runs at start-up and on every theme change, on the window thread. Custom-painted controls (knobs, faders, meters, waveform) do not go through it.
 
-### Front-end bridge (trial, ADR 0009)
+### Front-end bridge (ADR 0009)
 - **Where:** `om-ui-bridge` (toolkit-free) and `om-ui-tauri` (the Tauri v2 window and its Svelte front end in `web/`), behind the `gui-tauri` feature of `openmixer`. The binary's `gui_tauri.rs` composes the window from the start-up steps the GPUI window also uses (`openmixer::startup`). Full description: `docs/features/tauri-trial.md`.
 - **Why:** a web front end must not reach into the engine or restate what Rust already knows. `om-ui-bridge` turns engine state into wire formats (`pack_snapshot`, `pack_peaks`, `theme_css`), lists the front end's controls with ids and ranges read off the `om-ui` widget models (`slice_controls`), and turns (id, value) into one `ParamId` dispatch (`dispatch_control`). `om-ui-tauri` is a thin shell: the window, the Tauri commands, the stream thread and the control thread.
 - **Reuse when:** any window that is not GPUI needs engine state or sends controls; put the conversion in `om-ui-bridge` and keep the shell thin. When the front end needs a value the GPUI window computes (a range, a band height, a meter scale, a lane colour), take it from the `om-ui` model the GPUI window uses, never a copy typed in TypeScript.

@@ -12,7 +12,9 @@
 
 ## Outcome (2026-11-16)
 
-Tasks 1 to 10 and the tooling part of Task 11 (steps 1 to 3) are done. **Task 11's measurement and decision (steps 4 to 7) are not done**: the only bench runs so far checked the tooling under WSL software rendering, and ADR 0009 is still `Proposed (trial)`. The trial as built is described in `docs/features/tauri-trial.md`.
+Tasks 1 to 10 and the tooling part of Task 11 (steps 1 to 3) are done. The trial as built is described in `docs/features/tauri-trial.md`.
+
+**Decision (2026-11-16): ADR 0009 accepted by the project owner's decision**, after using the trial window and reviewing its results. Task 11 steps 4 and 5 (the measurements and applying the exit criteria) were not run: there is no GPUI baseline on real hardware, no run on a machine with a working GPU path under Linux, no maximised-window run, and the pointer interactions have not been exercised by hand. The only bench runs checked the tooling under WSL software rendering. Step 6's ADR update is done as an owner-decision acceptance: ADR 0009 is `Accepted`, its exit criteria are kept as targets for the migration, the tooling figures are recorded as such, and `docs/adr/SUMMARY.md` lists plans 2 to 4 as next. Step 7 (PR) is not done.
 
 Where the work is (local branches, stacked; no PR has been opened, so every "open the PR" step is unchecked):
 
@@ -739,5 +741,5 @@ test('summarise', () => {
   - Playing CPU at a 60 fps cap no more than 15 points above the GPUI baseline on the same machine.
   - Waveform visible within 500 ms of the analysis result being available.
   - Scrubbing, zooming and every control in the slice work by hand on Windows.
-- [ ] **Step 6: Write the numbers into ADR 0009 under Evidence**, set its status to `Accepted` or `Rejected`, and update `docs/adr/SUMMARY.md`. If accepted, list plans 2 to 4 under Follow-ups. If rejected, open a PR that removes `crates/om-ui-tauri` and the `gui-tauri` feature and keeps `om-ui-bridge` only if something else uses it.
+- [x] **Step 6: Write the numbers into ADR 0009 under Evidence**, set its status to `Accepted` or `Rejected`, and update `docs/adr/SUMMARY.md`. If accepted, list plans 2 to 4 under Follow-ups. If rejected, open a PR that removes `crates/om-ui-tauri` and the `gui-tauri` feature and keeps `om-ui-bridge` only if something else uses it. *Done as an owner-decision acceptance (2026-11-16): no measured numbers to write; see Outcome.*
 - [ ] **Step 7: Per-PR checks, commit, PR.** `git commit -m "docs: ADR 0009 trial results"`

@@ -17,11 +17,11 @@ Themes and type (Machined Faceplate, ADR 0008): the built-in themes are `resourc
 gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
 
 
-## The web front end (Tauri trial)
+## The web front end (Tauri window)
 
-The trial window's front end ([docs/features/tauri-trial.md](features/tauri-trial.md)) styles from the same tokens, through CSS custom properties that `om_ui_bridge::theme_css(tokens, density)` generates. The shell sends them once at start (`theme_css` command) and the front end puts them in `<style id="om-theme">` before its first paint.
+The Tauri window's front end ([docs/features/tauri-trial.md](features/tauri-trial.md)) styles from the same tokens, through CSS custom properties that `om_ui_bridge::theme_css(tokens, density)` generates. The shell sends them once at start (`theme_css` command) and the front end puts them in `<style id="om-theme">` before its first paint.
 
-- **Naming:** every colour and numeric token field is `--om-<field>` with `_` turned into `-` (`text_primary` is `--om-text-primary`); the deck accents are `--om-accent-<i>` from 0. The metric set of the active density is `--om-density-<field>` (`control-height`, `knob-size`, `pad-size`, `row-height`, `mixer-width`, `panel-radius`, `control-radius`) and `--om-density-space-1` to `--om-density-space-6`. The trial resolves the density once, for the 1600 × 780 opening size.
+- **Naming:** every colour and numeric token field is `--om-<field>` with `_` turned into `-` (`text_primary` is `--om-text-primary`); the deck accents are `--om-accent-<i>` from 0. The metric set of the active density is `--om-density-<field>` (`control-height`, `knob-size`, `pad-size`, `row-height`, `mixer-width`, `panel-radius`, `control-radius`) and `--om-density-space-1` to `--om-density-space-6`. The window resolves the density once, for the 1600 × 780 opening size.
 - **Units:** colours are `#rrggbb`, or `rgb(r g b / a)` when translucent. Fields ending `_ms` are `ms`; fields ending `_alpha`, `_db`, `_seconds`, `_level` or `_opacity`, and every `wave_*` field, are plain numbers; everything else is `px`. Non-finite values are left out.
 - **Fonts:** `--om-font-display`, `--om-font-body` and `--om-font-mono` are the theme's family names as quoted CSS strings. `web/src/app.css` registers the bundled files under those names with `@font-face`; `npm run fonts` (run by `npm run build`) copies them from `resources/fonts/`. Numbers use the `.num` class (mono family, tabular figures), the web form of `font::numeral`.
 - **A new token** must be added to `colour_fields` or `number_fields` in `crates/om-ui-bridge/src/theme_css.rs`; a test there fails when a `ThemeTokens` field is not emitted.

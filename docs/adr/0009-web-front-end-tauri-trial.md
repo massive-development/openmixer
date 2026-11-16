@@ -1,10 +1,12 @@
-# ADR 0009: Trial a web front end (Tauri v2) beside GPUI
+# ADR 0009: Move the interface to a web front end (Tauri v2)
 
 ## Status
 
-Proposed (trial)
+Accepted (2026-11-16)
 
-Proposed on 2026-11-15. The trial is carried out by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md) (the first of four plans); its last task applies the exit criteria below and sets this ADR to `Accepted` or `Rejected`. Until then ADR 0004's UI choice (GPUI) stands, and GPUI stays the default window.
+Accepted by the project owner's decision after the decks slice was built and reviewed. The exit criteria were not measured; they remain below as targets for the migration, not as a gate.
+
+Proposed on 2026-11-15 as a trial, carried out by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md) (the first of four plans). That plan's measurement task (Task 11, steps 4 and 5) was not run: there is no GPUI baseline on real hardware, no run on a machine with a working GPU path under Linux, no maximised-window run, and the pointer interactions have not been exercised by hand.
 
 ## Context
 
@@ -14,9 +16,10 @@ A web front end gets layout, text and controls from the browser engine. A spike 
 
 ## Decision
 
-Trial a Tauri v2 window beside the GPUI window, behind the `gui-tauri` feature and the `--ui=tauri` flag. The trial covers the decks screen only (waveforms, transport, mixer, meters) on the real engine, and ends at a measured decision gate.
+The web front end (Tauri v2 with Svelte) is the direction for the interface. It was first built as a trial window beside the GPUI window, behind the `gui-tauri` feature and the `--ui=tauri` flag, for the decks screen only (waveforms, transport, mixer, meters) on the real engine. The trial was to end at a measured gate; it ended instead with the owner's acceptance (see Status).
 
-- **ADR 0004's UI choice stands until the trial ends.** GPUI stays the default; nothing in `om-ui-gpui` is removed during the trial.
+- **What acceptance means.** The interface moves to the web front end. ADR 0004's UI choice (GPUI) is superseded in direction by this ADR; the changeover is completed by the later plans: plan 2, the library and the remaining panels (sampler, FX, stems, automix bar, loudness); plan 3, settings, the mapping editor, plugin windows, media keys, OS file drop and shortcuts; plan 4, test tooling parity, the cut-over, removal of `om-ui-gpui`, and installers.
+- **GPUI stays the default and shipping window until the cut-over plan lands.** The web window stays behind the `gui-tauri` feature and `--ui=tauri`, on the mock device only; `om-ui-gpui` is not removed yet.
 - **ADR 0008 (the look) is unchanged.** The web front end carries it through CSS variables generated from the theme files, so the theme tokens stay the single source of colour, size and font.
 - **Structure.** A toolkit-free crate, `om-ui-bridge`, turns engine state into wire formats (binary snapshot packet, packed waveform peaks, theme CSS) and turns control messages into `ParamId` dispatches. A thin shell crate, `om-ui-tauri`, owns the window, the Tauri commands and a 30 Hz control-side stream thread. A Svelte front end draws the waveform with one WebGL2 shader and everything else with DOM and CSS transforms.
 - **Real-time rules are unchanged.** Nothing in the trial runs on the audio thread. The stream thread reads `DjEngine::snapshot()` only; control ids are parsed with `ParamId::from_str` in the Tauri `control` command, which runs on the window's main thread (so writes keep their order), never the audio thread.
@@ -61,20 +64,29 @@ From the spike. Windows, window 1600×780, two decks playing. CPU is the percent
 - Nothing larger than 1600×780 was run.
 - Linux was measured only under WSL software rendering, where `WEBKIT_DISABLE_DMABUF_RENDERER=1` cut CPU from 213% to 56%.
 
-The trial's measurement task fills these gaps where it can (a GPUI baseline on the same machine, a maximised window) and writes the numbers here.
+The trial's measurement task was to fill these gaps (a GPUI baseline on the same machine, a maximised window); it was not run before acceptance.
+
+### Evidence from the slice
+
+Only tooling checks of `tools/ui-bench.sh`, run under WSL with software rendering while the slice was built:
+
+- Tauri window: about 65 to 120% of one core with one deck playing, about 8% paused.
+- GPUI window: about 599% of one core on the same machine and run.
+- Per-frame work in the Tauri window: about 0.22 to 0.25 ms.
+
+These come from a machine with no working GPU path. They are not a hardware comparison and do not test the targets below.
 
 ## Consequences
 
-- Two new crates during the trial: `om-ui-bridge` (no window dependency, tested headless) and `om-ui-tauri` (the window). The binary gains the `gui-tauri` feature and the `--ui=tauri` flag; the default build and window do not change.
+- Two new crates: `om-ui-bridge` (no window dependency, tested headless) and `om-ui-tauri` (the window). The binary gains the `gui-tauri` feature and the `--ui=tauri` flag; the default build and window do not change until the cut-over.
 - The front end adds a JavaScript toolchain (Svelte 5, TypeScript 5, Vite, Vitest) to the build of the `gui-tauri` feature.
 - Theme tokens gain a second consumer (generated CSS variables), so a token change reaches both windows.
-- If the trial passes, three more plans follow: library, sampler, FX, stems, automix bar and loudness; settings, mapping editor, plugin windows, media keys, OS file drop and shortcuts; then test tooling parity, cut-over, deletion of `om-ui-gpui` and installers. ADR 0004's UI choice would then be superseded.
-- If the trial fails, `crates/om-ui-tauri` and the `gui-tauri` feature are removed; `om-ui-bridge` stays only if something else uses it.
-- Risk: the spike's figures are from one Windows machine with the limits listed above; the decision rests on the trial's own measurements, not on the spike.
+- Three more plans follow: library, sampler, FX, stems, automix bar and loudness; settings, mapping editor, plugin windows, media keys, OS file drop and shortcuts; then test tooling parity, cut-over, deletion of `om-ui-gpui` and installers. ADR 0004's UI choice is superseded in direction now and in fact at the cut-over.
+- Risk: the decision was taken without the trial's measurements. The spike's figures are from one Windows machine with the limits listed above, and the slice's figures are tooling checks under software rendering; how the web window performs on real hardware against GPUI is not known yet.
 
-## Exit criteria
+## Targets carried into the migration
 
-Measured on one machine with a working GPU path, 20 s runs, with a real track of at least four minutes. The trial passes when all of these hold:
+These were the trial's exit criteria. They were not measured before acceptance and are kept as targets for the migration, measured on one machine with a working GPU path, 20 s runs, with a real track of at least four minutes:
 
 1. No frame interval above twice the display's refresh period in a 20 s playing run.
 2. Mean per-frame work at or below 0.5 ms.
@@ -101,4 +113,4 @@ What the trial window does not yet match or prove, so the measurements are read 
 
 - Plan: [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md)
 - Spike source: `openmixer-tauri-spike/` beside this repo
-- ADR 0004 (Rust with GPUI), ADR 0008 (the Machined Faceplate), ADR 0005 (experience-first product bar)
+- ADR 0004 (Rust with GPUI; UI choice superseded in direction by this ADR), ADR 0008 (the Machined Faceplate), ADR 0005 (experience-first product bar)

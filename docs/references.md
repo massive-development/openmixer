@@ -10,7 +10,7 @@
 - rusqlite: https://docs.rs/rusqlite
 - Rubber Band: https://breakfastquay.com/rubberband/
 - Clean-Room Doctrine: docs/adr/0001-clean-room-doctrine.md
-- ADR 0009 (Tauri trial): `docs/adr/0009-web-front-end-tauri-trial.md`
+- ADR 0009 (web front end, Tauri v2): `docs/adr/0009-web-front-end-tauri-trial.md`
 - Tauri 2: https://v2.tauri.app
 - Svelte 5: https://svelte.dev/docs/svelte
 - Vite: https://vite.dev
