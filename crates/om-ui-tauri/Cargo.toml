@@ -18,13 +18,13 @@ om-engine.workspace = true
 om-ui.workspace = true
 om-ui-bridge.workspace = true
 serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
 tauri = "2"
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 om-testing.workspace = true
-serde_json.workspace = true
 
 [build-dependencies]
 tauri-build = "2"

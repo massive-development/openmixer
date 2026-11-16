@@ -1,5 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { BenchStats } from './bench';
 import { tryDecode, type Snapshot } from './packet';
 
 /** A front-end control key such as `deck0.play` or `mixer.crossfader`; `controls` lists them. */
@@ -110,8 +111,21 @@ export const themeCss = (): Promise<string> => invoke<string>('theme_css');
 /** Tells the shell the window has painted; a smoke run exits on it. */
 export const ready = (): Promise<void> => invoke<void>('ready');
 
-/** Whether this is a smoke run, which must see a snapshot before it calls `ready`. */
-export const isSmoke = (): Promise<boolean> => invoke<boolean>('smoke');
+/** How the shell runs the window: smoke, frame bench, frame cap. */
+export interface RunConfig {
+  /** A smoke run must see a snapshot before it calls `ready`. */
+  smoke: boolean;
+  /** Seconds to record frames for (`--ui-bench`); null when not benching. */
+  benchSeconds: number | null;
+  /** The lanes' frame cap (`--ui-fps-cap`); 0 is uncapped. */
+  fpsCap: number;
+}
+
+/** The shell's run options. */
+export const runConfig = (): Promise<RunConfig> => invoke<RunConfig>('run_config');
+
+/** Hands the bench result to the shell, which writes it and exits. */
+export const benchDone = (stats: BenchStats): Promise<void> => invoke<void>('bench_done', { stats });
 
 /** The waveform constants of the GPUI strip. */
 export const waveformStyle = (): Promise<WaveformStyle> => invoke<WaveformStyle>('waveform_style');

@@ -4,7 +4,18 @@
   import DeckPanel from './lib/deck/DeckPanel.svelte';
   import { DeckData } from './lib/decks.svelte';
   import { setText } from './lib/dom';
-  import { control, isSmoke, isSmokePlay, loadControls, ready, startStream, themeCss, type Controls } from './lib/ipc';
+  import { benchStats, FrameRecorder } from './lib/bench';
+  import {
+    benchDone,
+    control,
+    isSmokePlay,
+    loadControls,
+    ready,
+    runConfig,
+    startStream,
+    themeCss,
+    type Controls,
+  } from './lib/ipc';
   import Mixer from './lib/mixer/Mixer.svelte';
   import { firstSnapshot, type Snapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
@@ -14,12 +25,16 @@
 
   // The slice shows two decks and their two channels.
   const DECKS = [0, 1];
+  // A bench run lets the window settle after its first snapshot before it records.
+  const BENCH_WARM_UP_MS = 3000;
 
   // The layout waits for the theme, so the first paint is already in the theme's colours.
   let themed = $state(false);
   // Raw: a snapshot is replaced whole 30 times a second, never mutated.
   let snapshot: Snapshot | null = $state.raw(null);
   let controls: Controls = $state.raw({});
+  // The lanes' frame cap; the shell's `--ui-fps-cap` replaces the default.
+  let fpsCap = $state(60);
   const decks = new DeckData();
   let hud: HTMLElement | undefined = $state();
   // Resolves once deck A reports a loaded track (the smoke run's round trip waits for it).
@@ -45,8 +60,24 @@
     await control('deck0.play', 1);
   }
 
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Records the drawn frames for `seconds` after a warm-up, then hands the result to the shell.
+  async function bench(seconds: number): Promise<void> {
+    const recorder = new FrameRecorder(seconds);
+    await sleep(BENCH_WARM_UP_MS);
+    ticker.record(recorder);
+    await sleep(seconds * 1000);
+    ticker.record(null);
+    const playing = snapshot?.decks.filter((d) => d.playing).length ?? 0;
+    const viewport: [number, number, number] = [window.innerWidth, window.innerHeight, window.devicePixelRatio || 1];
+    await benchDone(benchStats(recorder, { benchSeconds: seconds, fpsCap, viewport, decksPlaying: playing }));
+  }
+
   async function start(): Promise<void> {
     try {
+      const config = await runConfig();
+      fpsCap = config.fpsCap;
       applyThemeCss(document, await themeCss());
       controls = await loadControls().catch((error: unknown) => {
         console.error('openmixer: no control list', error);
@@ -56,11 +87,15 @@
       await afterFirstPaint();
       const first = firstSnapshot(stream);
       // A smoke run proves the stream: it reports ready only after a valid packet arrives.
-      if (await isSmoke()) {
+      if (config.smoke) {
         await first;
         if (await isSmokePlay()) await smokePlay();
       } else first.catch((error: unknown) => console.error('openmixer: the stream did not start', error));
       await ready();
+      if (config.benchSeconds !== null) {
+        await first;
+        await bench(config.benchSeconds);
+      }
     } catch (error) {
       console.error('openmixer: the shell did not start', error);
     }
@@ -86,7 +121,7 @@
       {/each}
     </section>
     <section class="waveforms" aria-label="Waveforms">
-      <Waveforms {snapshot} />
+      <Waveforms {snapshot} {fpsCap} />
     </section>
     <section class="controls" aria-label="Controls">
       <DeckPanel deck={0} {controls} info={decks.infos[0] ?? null} ink={decks.inks[0] ?? null} {snapshot} />

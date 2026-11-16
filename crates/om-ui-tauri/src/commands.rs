@@ -1,6 +1,7 @@
 //! The Tauri commands the front end calls. Tauri runs them on the main thread or, for the ones
 //! marked `async`, on its async runtime; never on the audio thread. None waits on a plugin.
 
+use crate::bench::BenchRun;
 use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
@@ -23,7 +24,9 @@ use tauri::{AppHandle, State};
 pub(crate) struct ShellState {
     pub(crate) theme_css: String,
     pub(crate) strip_inks: Vec<StripInkDto>,
-    pub(crate) smoke: bool,
+    pub(crate) config: RunConfig,
+    /// Set for a `--ui-bench` run.
+    pub(crate) bench: Option<Arc<BenchRun>>,
     pub(crate) smoke_play: bool,
     pub(crate) ready: Arc<AtomicBool>,
     pub(crate) ready_signal: Sender<()>,
@@ -49,10 +52,43 @@ pub fn theme_css(state: State<'_, ShellState>) -> String {
     state.theme_css.clone()
 }
 
-/// Whether this is a smoke run, so the front end proves the stream before it calls `ready`.
+/// How the shell runs the window, as the front end reads it once at start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunConfig {
+    /// The front end proves the stream before it calls `ready`.
+    pub smoke: bool,
+    /// Seconds of frames to record (`--ui-bench`).
+    pub bench_seconds: Option<u32>,
+    /// The waveform lanes' frame cap; 0 is uncapped.
+    pub fps_cap: u32,
+}
+
+/// The run's smoke, bench and frame-cap settings.
 #[tauri::command]
-pub fn smoke(state: State<'_, ShellState>) -> bool {
-    state.smoke
+pub fn run_config(state: State<'_, ShellState>) -> RunConfig {
+    state.config
+}
+
+/// The bench run's frame statistics: checked, written, and the window exits (1 when refused).
+#[tauri::command]
+pub fn bench_done(
+    app: AppHandle,
+    state: State<'_, ShellState>,
+    stats: serde_json::Value,
+) -> Result<(), String> {
+    let Some(bench) = &state.bench else {
+        return Err("bench_done outside a --ui-bench run".to_owned());
+    };
+    let result = bench.finish(stats);
+    match &result {
+        Ok(()) => {
+            tracing::info!(seconds = bench.seconds, out = %bench.out.display(), "bench written")
+        }
+        Err(error) => tracing::error!(%error, "bench refused"),
+    }
+    app.exit(if result.is_ok() { 0 } else { 1 });
+    result
 }
 
 /// Whether the smoke run must start deck A through `control` before `ready`: a library loads it.
@@ -67,8 +103,8 @@ pub fn ready(app: AppHandle, state: State<'_, ShellState>) {
     state.ready.store(true, Ordering::Release);
     // The smoke watchdog may already have given up; nothing else listens.
     let _ = state.ready_signal.send(());
-    tracing::info!(smoke = state.smoke, "front end ready");
-    if state.smoke {
+    tracing::info!(smoke = state.config.smoke, "front end ready");
+    if state.config.smoke {
         app.exit(0);
     }
 }

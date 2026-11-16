@@ -5,6 +5,7 @@
 //! composition (engine, router, theme, demo library) comes from the `openmixer` binary.
 //! [`run`] runs on the main thread; see each module for the thread its code runs on.
 
+mod bench;
 mod commands;
 mod control_loop;
 mod controls;
@@ -16,19 +17,23 @@ mod stream;
 mod stream_slot;
 mod strip_ink;
 
+pub use bench::{parse_report, write_report, BenchError, BenchReport, Summary};
+pub use commands::RunConfig;
 pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup};
-pub use smoke::SMOKE_TIMEOUT;
+pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
 pub use strip_ink::{strip_ink_dto, StripInkDto};
 
+use bench::BenchRun;
 use commands::ShellState;
 use control_loop::ControlLoop;
 use decks::Decks;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -39,16 +44,36 @@ use tauri::{App, Emitter};
 /// The event the front end hears when a deck's track, waveform or hot cues change.
 pub const DECK_CHANGED_EVENT: &str = "deck-changed";
 
+/// The lanes' frame cap when none is given (the plan's default).
+pub const DEFAULT_FPS_CAP: u32 = 60;
+
 /// How the window runs.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RunOptions {
     /// Exit with code 0 once the front end has received a packet, painted and called `ready`. With
     /// a library, the front end first starts deck A (loaded by then) through `control`.
     pub smoke: bool,
     /// The notice the window shows (the mock device); the empty shell does not show it yet.
     pub banner: Option<String>,
-    /// Frame benchmark length (the trial's measurement task); unused until then.
+    /// Frame benchmark length in seconds (`--ui-bench`): the front end records its frames, the
+    /// report goes to `bench_out` and the window exits 0.
     pub bench_seconds: Option<u32>,
+    /// Where a bench run writes its report.
+    pub bench_out: PathBuf,
+    /// The waveform lanes' frame cap; 0 is uncapped.
+    pub fps_cap: u32,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            smoke: false,
+            banner: None,
+            bench_seconds: None,
+            bench_out: std::env::temp_dir().join("openmixer-ui-bench.json"),
+            fps_cap: DEFAULT_FPS_CAP,
+        }
+    }
 }
 
 /// The active theme as the front end takes it: the `--om-*` variables and each deck's lane ink.
@@ -72,6 +97,10 @@ pub enum ShellError {
     NotReady,
     #[error("the window exited with code {0}")]
     Exit(i32),
+    #[error("bench: {0}")]
+    Bench(String),
+    #[error("bench: the front end never sent its frame statistics")]
+    NoBenchResult,
 }
 
 /// Sets the process environment the webview reads. Call it first in `main`, before any thread
@@ -92,15 +121,45 @@ pub fn run(
     let shared = Shared::new(&engine);
     // A smoke run with a library proves a control round trip on the deck it loads.
     let smoke_play = options.smoke && library.is_some();
-    let (state, ready_wait) = shared.shell_state(theme, options.smoke, smoke_play);
+    let (bench, bench_wait) = bench_run(&options);
+    let (state, ready_wait) = shared.shell_state(theme, &options, smoke_play, bench.clone());
     let app = build_app(Arc::clone(&engine), router, state)?;
     if options.smoke {
-        smoke::spawn_watchdog(app.handle().clone(), ready_wait)?;
+        smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
+    }
+    if let (Some(seconds), Some(wait)) = (options.bench_seconds, bench_wait) {
+        smoke::spawn_watchdog(app.handle().clone(), wait, smoke::bench_timeout(seconds))?;
     }
     let control = shared.spawn_control(&app, engine, library)?;
     let code = app.run_return(|_, _| {});
     shared.shut_down(control);
+    bench_outcome(bench.as_deref())?;
     smoke::outcome(options.smoke && !shared.ready.load(Ordering::Acquire), code)
+}
+
+/// The bench run's shared state and the watchdog's end of its signal, for a `--ui-bench` run.
+fn bench_run(options: &RunOptions) -> (Option<Arc<BenchRun>>, Option<Receiver<()>>) {
+    let Some(seconds) = options.bench_seconds else {
+        return (None, None);
+    };
+    let (done, wait) = mpsc::channel();
+    let run = BenchRun {
+        seconds,
+        out: options.bench_out.clone(),
+        outcome: Mutex::new(None),
+        done,
+    };
+    (Some(Arc::new(run)), Some(wait))
+}
+
+/// A bench run fails when its report was refused or never came; its error says why.
+fn bench_outcome(bench: Option<&BenchRun>) -> Result<(), ShellError> {
+    let Some(bench) = bench else { return Ok(()) };
+    match lock(&bench.outcome).take() {
+        Some(Ok(())) => Ok(()),
+        Some(Err(message)) => Err(ShellError::Bench(message)),
+        None => Err(ShellError::NoBenchResult),
+    }
 }
 
 /// State the window's threads share with `run`, which stops them after the window closes.
@@ -124,14 +183,20 @@ impl Shared {
     fn shell_state(
         &self,
         theme: ShellTheme,
-        smoke: bool,
+        options: &RunOptions,
         smoke_play: bool,
+        bench: Option<Arc<BenchRun>>,
     ) -> (ShellState, Receiver<()>) {
         let (ready_signal, ready_wait) = mpsc::channel();
         let state = ShellState {
             theme_css: theme.css,
             strip_inks: theme.strip_inks,
-            smoke,
+            config: RunConfig {
+                smoke: options.smoke,
+                bench_seconds: options.bench_seconds,
+                fps_cap: options.fps_cap,
+            },
+            bench,
             smoke_play,
             ready: Arc::clone(&self.ready),
             ready_signal,
@@ -182,7 +247,8 @@ fn build_app(
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::theme_css,
-            commands::smoke,
+            commands::run_config,
+            commands::bench_done,
             commands::smoke_play,
             commands::ready,
             commands::waveform_style,

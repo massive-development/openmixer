@@ -1,5 +1,5 @@
-//! The smoke run's watchdog and verdict. The watchdog thread ends a run whose front end never
-//! reports ready, so CI fails instead of hanging.
+//! The smoke and bench runs' watchdog and verdict. The watchdog thread ends a run whose front end
+//! never reports (ready, or the bench result), so CI fails instead of hanging.
 
 use crate::ShellError;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -9,10 +9,20 @@ use tauri::AppHandle;
 /// How long a smoke run waits for the front end's `ready` before it fails.
 pub const SMOKE_TIMEOUT: Duration = Duration::from_secs(60);
 
-pub(crate) fn spawn_watchdog(app: AppHandle, ready: Receiver<()>) -> Result<(), ShellError> {
+/// How long a bench run of `seconds` waits for the front end's result: the smoke wait on top.
+pub fn bench_timeout(seconds: u32) -> Duration {
+    SMOKE_TIMEOUT + Duration::from_secs(u64::from(seconds))
+}
+
+/// Exits the app with code 1 unless `signal` arrives within `timeout`.
+pub(crate) fn spawn_watchdog(
+    app: AppHandle,
+    signal: Receiver<()>,
+    timeout: Duration,
+) -> Result<(), ShellError> {
     let wait = move || {
-        if let Err(RecvTimeoutError::Timeout) = ready.recv_timeout(SMOKE_TIMEOUT) {
-            tracing::error!(seconds = SMOKE_TIMEOUT.as_secs(), "smoke: no ready call");
+        if let Err(RecvTimeoutError::Timeout) = signal.recv_timeout(timeout) {
+            tracing::error!(seconds = timeout.as_secs(), "the front end never reported");
             app.exit(1);
         }
     };
@@ -41,6 +51,11 @@ mod tests {
     fn a_smoke_run_without_ready_fails_even_on_code_zero() {
         assert!(matches!(outcome(true, 0), Err(ShellError::NotReady)));
         assert!(matches!(outcome(true, 1), Err(ShellError::NotReady)));
+    }
+
+    #[test]
+    fn a_bench_waits_its_length_on_top_of_the_smoke_wait() {
+        assert_eq!(bench_timeout(20), Duration::from_secs(80));
     }
 
     #[test]

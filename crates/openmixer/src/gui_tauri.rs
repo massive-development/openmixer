@@ -4,14 +4,17 @@
 //! scratch folder (`--demo-scene=NAME` also stages the scene); without a demo flag the decks are
 //! empty and no library is opened. `--smoke` exits 0 once the front end has received a snapshot
 //! packet, painted and called `ready`; with a demo library the front end first starts deck A through
-//! `control`, and the run fails unless the engine then reports deck A playing.
+//! `control`, and the run fails unless the engine then reports deck A playing. `--ui-bench=SECONDS`
+//! (1..=600) records the front end's frames for that long after a 3 s warm-up, writes the report to
+//! `OPENMIXER_BENCH_OUT` (or `ui-bench.json` in the scratch folder) and exits 0; `--ui-fps-cap=N`
+//! (0..=1000, 0 uncapped, default 60) caps the waveform lanes' frame rate.
 
 use om_engine::DjEngine;
 use om_ui::labels::{notice_text, Notice};
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
-use om_ui_tauri::{DeckLibrary, LibrarySetup, RunOptions, ShellError, ShellTheme};
+use om_ui_tauri::{DeckLibrary, LibrarySetup, RunOptions, ShellError, ShellTheme, DEFAULT_FPS_CAP};
 use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::{library_options, AppComposition};
 use openmixer::flags::DemoScene;
@@ -19,12 +22,23 @@ use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, mock_output, start_output,
 };
 use openmixer::{demo_scene, library_smoke, AppError};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
 /// The window's opening size (`tauri.conf.json`); it picks the density an `Automatic` choice gets.
 const WINDOW_SIZE: (i32, i32) = (1600, 780);
+
+/// The environment variable naming the bench report's file.
+const BENCH_OUT_ENV: &str = "OPENMIXER_BENCH_OUT";
+
+/// `--ui-bench=SECONDS` and `--ui-fps-cap=N` as the run takes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Frames {
+    bench_seconds: Option<u32>,
+    fps_cap: u32,
+}
 
 /// What a demo run stages: the scene, and the user's file for `--demo-scene=track`.
 struct Demo {
@@ -41,21 +55,64 @@ pub fn main(args: &[String]) -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
-    let demo = match demo_of(args) {
-        Ok(demo) => demo,
+    let smoke = args.iter().any(|a| a == "--smoke");
+    let parsed = demo_of(args).and_then(|demo| Ok((demo, frames_of(args, smoke)?)));
+    let (demo, frames) = match parsed {
+        Ok(parsed) => parsed,
         Err(message) => {
             eprintln!("openmixer: {message}");
             return ExitCode::FAILURE;
         }
     };
-    let smoke = args.iter().any(|a| a == "--smoke");
+    let out = bench_out(
+        std::env::var_os(BENCH_OUT_ENV),
+        &library_smoke::scratch_dir(),
+    );
     let scratch = demo.as_ref().map(|_| library_smoke::scratch_dir());
-    let result = run_window(smoke, demo, scratch.as_deref());
-    if let Some(root) = scratch {
-        // The library closed with the control thread; the scratch folder goes with the run.
+    let result = run_window(smoke, frames, &out, demo, scratch.as_deref());
+    // The library closed with the control thread; the scratch folder goes with the run, unless
+    // it holds the bench report.
+    let keep =
+        frames.bench_seconds.is_some() && scratch.as_deref().is_some_and(|r| out.starts_with(r));
+    if let Some(root) = scratch.filter(|_| !keep) {
         let _ = std::fs::remove_dir_all(root);
     }
     result
+}
+
+/// The bench and frame-cap flags; a bench cannot share a run with `--smoke`.
+fn frames_of(args: &[String], smoke: bool) -> Result<Frames, String> {
+    let bench_seconds = int_flag(args, "--ui-bench=", 1, 600)?;
+    if smoke && bench_seconds.is_some() {
+        return Err("--ui-bench and --smoke cannot run together".to_owned());
+    }
+    let fps_cap = int_flag(args, "--ui-fps-cap=", 0, 1000)?.unwrap_or(DEFAULT_FPS_CAP);
+    Ok(Frames {
+        bench_seconds,
+        fps_cap,
+    })
+}
+
+/// The integer after `prefix`, in `min..=max`; `Ok(None)` when the flag is absent.
+fn int_flag(args: &[String], prefix: &str, min: u32, max: u32) -> Result<Option<u32>, String> {
+    let Some(text) = args.iter().find_map(|a| a.strip_prefix(prefix)) else {
+        return Ok(None);
+    };
+    let flag = prefix.trim_end_matches('=');
+    match text.parse::<u32>() {
+        Ok(n) if (min..=max).contains(&n) => Ok(Some(n)),
+        _ => Err(format!(
+            "{flag} needs a whole number from {min} to {max}, not {text:?}"
+        )),
+    }
+}
+
+/// The bench report's file: `OPENMIXER_BENCH_OUT` when set and not empty, else in `scratch`
+/// (never the user's folders).
+fn bench_out(env: Option<OsString>, scratch: &Path) -> PathBuf {
+    env.filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| scratch.join("ui-bench.json"))
 }
 
 /// `Some` for `--demo-library` or `--demo-scene=NAME`; `Err` names a bad scene or a missing file.
@@ -68,7 +125,13 @@ fn demo_of(args: &[String]) -> Result<Option<Demo>, String> {
     Ok(Some(Demo { scene, user_track }))
 }
 
-fn run_window(smoke: bool, demo: Option<Demo>, scratch: Option<&Path>) -> ExitCode {
+fn run_window(
+    smoke: bool,
+    frames: Frames,
+    out: &Path,
+    demo: Option<Demo>,
+    scratch: Option<&Path>,
+) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
     let Some(output) = start_mock_audio(&mut composition) else {
         return ExitCode::FAILURE;
@@ -81,13 +144,18 @@ fn run_window(smoke: bool, demo: Option<Demo>, scratch: Option<&Path>) -> ExitCo
     let options = RunOptions {
         smoke,
         banner: Some(notice_text(Notice::Demo).to_owned()),
-        bench_seconds: None,
+        bench_seconds: frames.bench_seconds,
+        bench_out: out.to_path_buf(),
+        fps_cap: frames.fps_cap,
     };
     let router = Arc::clone(&composition.router);
     let theme = shell_theme(&composition, engine.num_decks());
     let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
     let played = round_trip.then(|| deck_a_playing(&engine));
     output.lock().stop();
+    if result.is_ok() && frames.bench_seconds.is_some() {
+        println!("openmixer tauri bench written to {}", out.display());
+    }
     report(result, smoke, played)
 }
 
@@ -184,5 +252,75 @@ fn report(result: Result<(), ShellError>, smoke: bool, played: Option<bool>) -> 
             eprintln!("openmixer: tauri window: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn frame_flags_default_to_no_bench_and_a_60_fps_cap() {
+        let frames = frames_of(&args(&["--mock-device"]), false).unwrap();
+        assert_eq!(
+            frames,
+            Frames {
+                bench_seconds: None,
+                fps_cap: 60
+            }
+        );
+    }
+
+    #[test]
+    fn bench_seconds_parse_within_their_range() {
+        let parse = |a: &str| frames_of(&args(&[a]), false).map(|f| f.bench_seconds);
+        assert_eq!(parse("--ui-bench=1"), Ok(Some(1)));
+        assert_eq!(parse("--ui-bench=600"), Ok(Some(600)));
+        for bad in [
+            "--ui-bench=0",
+            "--ui-bench=601",
+            "--ui-bench=",
+            "--ui-bench=2.5",
+            "--ui-bench=-3",
+            "--ui-bench=ten",
+        ] {
+            let error = parse(bad).unwrap_err();
+            assert!(
+                error.contains("--ui-bench needs a whole number from 1 to 600"),
+                "{bad}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn fps_cap_parses_zero_as_uncapped_and_refuses_out_of_range() {
+        let parse = |a: &str| frames_of(&args(&[a]), false).map(|f| f.fps_cap);
+        assert_eq!(parse("--ui-fps-cap=0"), Ok(0));
+        assert_eq!(parse("--ui-fps-cap=1000"), Ok(1000));
+        assert_eq!(parse("--ui-fps-cap=144"), Ok(144));
+        assert!(parse("--ui-fps-cap=1001").is_err());
+        assert!(parse("--ui-fps-cap=fast").is_err());
+    }
+
+    #[test]
+    fn a_bench_refuses_the_smoke_run() {
+        assert!(frames_of(&args(&["--ui-bench=5"]), true).is_err());
+        assert!(frames_of(&args(&["--ui-fps-cap=30"]), true).is_ok());
+    }
+
+    #[test]
+    fn bench_out_takes_the_environment_or_the_scratch_folder() {
+        let scratch = Path::new("/tmp/openmixer-smoke-1");
+        let env = Some(OsString::from("/x/bench.json"));
+        assert_eq!(bench_out(env, scratch), PathBuf::from("/x/bench.json"));
+        assert_eq!(
+            bench_out(Some(OsString::new()), scratch),
+            scratch.join("ui-bench.json")
+        );
+        assert_eq!(bench_out(None, scratch), scratch.join("ui-bench.json"));
     }
 }

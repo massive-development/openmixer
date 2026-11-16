@@ -1,3 +1,4 @@
+import type { FrameRecorder } from './bench';
 import { hudText } from './hud';
 
 /** One frame's work; a woken task returns true to run again next frame. */
@@ -20,6 +21,8 @@ class Ticker {
   private workMs = 0;
   private windowStart = -1;
   private hud: ((text: string) => void) | null = null;
+  private lastDrawnAt = -1;
+  private recorder: FrameRecorder | null = null;
 
   /** Runs `task` every frame until the returned function is called. */
   add(task: FrameTask): () => void {
@@ -44,6 +47,11 @@ class Ticker {
     this.hud = write;
   }
 
+  /** Records every drawn frame into `recorder` (a `--ui-bench` run) until called with null. */
+  record(recorder: FrameRecorder | null): void {
+    this.recorder = recorder;
+  }
+
   private start(): void {
     if (this.raf === 0) this.raf = requestAnimationFrame(this.frame);
   }
@@ -62,6 +70,9 @@ class Ticker {
     if (this.drawn) {
       this.frames++;
       this.workMs += workMs;
+      // The first drawn frame has no interval yet.
+      if (this.recorder && this.lastDrawnAt >= 0) this.recorder.push(now - this.lastDrawnAt, workMs);
+      this.lastDrawnAt = now;
     }
     if (this.windowStart < 0) this.windowStart = now;
     if (now - this.windowStart < HUD_PERIOD_MS) return;
