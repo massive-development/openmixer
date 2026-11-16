@@ -1,6 +1,7 @@
 <script lang="ts">
   import { controlName } from '../a11y';
   import Button from '../controls/Button.svelte';
+  import Icon from '../icons/Icon.svelte';
   import { control, type Controls } from '../ipc';
   import type { DeckFrame } from '../packet';
 
@@ -30,7 +31,7 @@
 
 <div class="transport">
   {#if play}
-    <!-- Its word changes with the state, so it carries no pressed state of its own. -->
+    <!-- Its word and glyph change with the state, so it carries no pressed state of its own. -->
     <Button
       tall
       solid
@@ -40,7 +41,7 @@
       label={controlName(`deck${deck}.play`, playWord)}
       onpress={() => toggle('play', playing)}
     >
-      <span class="face">{playWord}</span>
+      <span class="face"><Icon name={playing ? 'pause' : 'play'} />{playWord}</span>
     </Button>
   {/if}
   {#if sync}
@@ -54,7 +55,7 @@
       onpress={() => toggle('sync', synced)}
     >
       <span class="face">
-        {sync.label}
+        <Icon name="sync" />{sync.label}
         <!-- The state in a word, as GPUI's LOCK beside Sync. -->
         {#if synced}<b class="word num">Lock</b>{/if}
       </span>
