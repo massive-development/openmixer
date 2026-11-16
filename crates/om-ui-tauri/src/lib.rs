@@ -7,6 +7,7 @@
 
 mod commands;
 mod control_loop;
+mod controls;
 mod deck_info;
 mod decks;
 mod pacer;
@@ -16,6 +17,7 @@ mod stream_slot;
 mod strip_ink;
 
 pub use control_loop::CONTROL_THREAD;
+pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup};
 pub use smoke::SMOKE_TIMEOUT;
@@ -40,7 +42,8 @@ pub const DECK_CHANGED_EVENT: &str = "deck-changed";
 /// How the window runs.
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
-    /// Exit with code 0 once the front end has received a packet, painted and called `ready`.
+    /// Exit with code 0 once the front end has received a packet, painted and called `ready`. With
+    /// a library, the front end first starts deck A (loaded by then) through `control`.
     pub smoke: bool,
     /// The notice the window shows (the mock device); the empty shell does not show it yet.
     pub banner: Option<String>,
@@ -87,7 +90,9 @@ pub fn run(
     options: RunOptions,
 ) -> Result<(), ShellError> {
     let shared = Shared::new(&engine);
-    let (state, ready_wait) = shared.shell_state(theme, options.smoke);
+    // A smoke run with a library proves a control round trip on the deck it loads.
+    let smoke_play = options.smoke && library.is_some();
+    let (state, ready_wait) = shared.shell_state(theme, options.smoke, smoke_play);
     let app = build_app(Arc::clone(&engine), router, state)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait)?;
@@ -116,12 +121,18 @@ impl Shared {
         }
     }
 
-    fn shell_state(&self, theme: ShellTheme, smoke: bool) -> (ShellState, Receiver<()>) {
+    fn shell_state(
+        &self,
+        theme: ShellTheme,
+        smoke: bool,
+        smoke_play: bool,
+    ) -> (ShellState, Receiver<()>) {
         let (ready_signal, ready_wait) = mpsc::channel();
         let state = ShellState {
             theme_css: theme.css,
             strip_inks: theme.strip_inks,
             smoke,
+            smoke_play,
             ready: Arc::clone(&self.ready),
             ready_signal,
             streams: Arc::clone(&self.streams),
@@ -172,11 +183,12 @@ fn build_app(
         .invoke_handler(tauri::generate_handler![
             commands::theme_css,
             commands::smoke,
+            commands::smoke_play,
             commands::ready,
             commands::waveform_style,
             commands::strip_ink,
             commands::control,
-            commands::control_ids,
+            commands::controls,
             commands::start_stream,
             commands::deck_peaks,
             commands::deck_info,

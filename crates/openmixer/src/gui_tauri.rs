@@ -3,7 +3,8 @@
 //! card. `--demo-library` loads two generated tracks into decks A and B from a library in the
 //! scratch folder (`--demo-scene=NAME` also stages the scene); without a demo flag the decks are
 //! empty and no library is opened. `--smoke` exits 0 once the front end has received a snapshot
-//! packet, painted and called `ready`.
+//! packet, painted and called `ready`; with a demo library the front end first starts deck A through
+//! `control`, and the run fails unless the engine then reports deck A playing.
 
 use om_engine::DjEngine;
 use om_ui::labels::{notice_text, Notice};
@@ -76,6 +77,7 @@ fn run_window(smoke: bool, demo: Option<Demo>, scratch: Option<&Path>) -> ExitCo
     let library = demo.zip(scratch).map(|(demo, root)| {
         demo_library(root, &composition.prefs.library, Arc::clone(&engine), demo)
     });
+    let round_trip = smoke && library.is_some();
     let options = RunOptions {
         smoke,
         banner: Some(notice_text(Notice::Demo).to_owned()),
@@ -83,9 +85,15 @@ fn run_window(smoke: bool, demo: Option<Demo>, scratch: Option<&Path>) -> ExitCo
     };
     let router = Arc::clone(&composition.router);
     let theme = shell_theme(&composition, engine.num_decks());
-    let result = om_ui_tauri::run(engine, router, theme, library, options);
+    let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
+    let played = round_trip.then(|| deck_a_playing(&engine));
     output.lock().stop();
-    report(result, smoke)
+    report(result, smoke, played)
+}
+
+/// The control round trip's verdict: the front end's `deck0.play` reached the engine.
+fn deck_a_playing(engine: &DjEngine) -> bool {
+    engine.snapshot().decks.first().is_some_and(|d| d.playing)
 }
 
 /// The engine on the silent mock device with the preferences applied; `None` once it said why.
@@ -157,9 +165,17 @@ fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
     }
 }
 
-fn report(result: Result<(), ShellError>, smoke: bool) -> ExitCode {
+/// `played` is the round trip's verdict, when the smoke run made one.
+fn report(result: Result<(), ShellError>, smoke: bool, played: Option<bool>) -> ExitCode {
     match result {
+        Ok(()) if played == Some(false) => {
+            eprintln!("openmixer: tauri smoke: deck A is not playing after the front end's play");
+            ExitCode::FAILURE
+        }
         Ok(()) if smoke => {
+            if played == Some(true) {
+                println!("openmixer tauri control round trip ok");
+            }
             println!("openmixer tauri smoke ok");
             ExitCode::SUCCESS
         }

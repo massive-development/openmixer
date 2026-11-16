@@ -43,6 +43,24 @@ fn tauri_stream_smoke() {
     assert!(stdout.contains("tauri smoke ok"), "stdout was: {stdout}");
 }
 
+/// In a smoke run with a library the front end waits for deck A's track, sends `deck0.play`
+/// through `control` and awaits it before `ready`; the binary then fails unless the engine reports
+/// deck A playing.
+#[test]
+fn tauri_control_round_trip() {
+    let out = run_openmixer(&["--ui=tauri", "--mock-device", "--demo-library", "--smoke"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("tauri control round trip ok"),
+        "stdout was: {stdout}"
+    );
+}
+
 #[test]
 fn tauri_window_refuses_a_real_device() {
     let out = run_openmixer(&["--ui=tauri", "--smoke"]);

@@ -1,6 +1,7 @@
 //! The Tauri commands the front end calls. Tauri runs them on the main thread or, for the ones
 //! marked `async`, on its async runtime; never on the audio thread. None waits on a plugin.
 
+use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
 use crate::stream::{PacketSink, StreamConfig};
@@ -8,7 +9,8 @@ use crate::stream_slot::StreamSlot;
 use crate::strip_ink::StripInkDto;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
-use om_ui_bridge::{dispatch_control, slice_control_ids, FILL, MIN_HALF_PX, PLAYED_BRIGHTNESS};
+use om_ui::binding::MixerBinding;
+use om_ui_bridge::{dispatch_control, slice_controls, FILL, MIN_HALF_PX, PLAYED_BRIGHTNESS};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +24,7 @@ pub(crate) struct ShellState {
     pub(crate) theme_css: String,
     pub(crate) strip_inks: Vec<StripInkDto>,
     pub(crate) smoke: bool,
+    pub(crate) smoke_play: bool,
     pub(crate) ready: Arc<AtomicBool>,
     pub(crate) ready_signal: Sender<()>,
     pub(crate) streams: Arc<StreamSlot>,
@@ -50,6 +53,12 @@ pub fn theme_css(state: State<'_, ShellState>) -> String {
 #[tauri::command]
 pub fn smoke(state: State<'_, ShellState>) -> bool {
     state.smoke
+}
+
+/// Whether the smoke run must start deck A through `control` before `ready`: a library loads it.
+#[tauri::command]
+pub fn smoke_play(state: State<'_, ShellState>) -> bool {
+    state.smoke_play
 }
 
 /// Called by the front end after its first paint; a smoke run ends here with code 0.
@@ -94,12 +103,15 @@ pub fn control(
     dispatch_control(&router, &id, value).map_err(|e| e.to_string())
 }
 
-/// Front-end keys to canonical control ids for the engine's decks and channels.
+/// Front-end keys to each control's id, range, default and kind, from the GPUI widget models.
 #[tauri::command]
-pub fn control_ids(engine: State<'_, Arc<DjEngine>>) -> HashMap<String, String> {
+pub fn controls(
+    engine: State<'_, Arc<DjEngine>>,
+    router: State<'_, Arc<ParameterRouter>>,
+) -> HashMap<String, ControlDto> {
     let decks = u8::try_from(engine.num_decks()).unwrap_or(u8::MAX);
-    let channels = u8::try_from(engine.mixer().num_channels()).unwrap_or(u8::MAX);
-    slice_control_ids(decks, channels).into_iter().collect()
+    let mixer = MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router));
+    control_dtos(slice_controls(&mixer, decks))
 }
 
 /// Streams snapshot packets into `channel` at 30 Hz, replacing any earlier stream.

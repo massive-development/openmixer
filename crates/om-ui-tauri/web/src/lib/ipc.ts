@@ -2,8 +2,28 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tryDecode, type Snapshot } from './packet';
 
-/** A front-end control key such as `deck0.play` or `mixer.crossfader`; `control_ids` lists them. */
+/** A front-end control key such as `deck0.play` or `mixer.crossfader`; `controls` lists them. */
 export type ControlKey = string;
+
+/** How a control is pressed or moved. */
+export type ControlKind = 'toggle' | 'trigger' | 'continuous';
+
+/** One control as the shell lists it, from the GPUI widget models; values are engine units. */
+export interface ControlSpec {
+  id: string;
+  min: number;
+  max: number;
+  /** What a double-click restores. */
+  default: number;
+  /** The value a knob's pointer points straight up for; null when the model has none. */
+  detent: number | null;
+  kind: ControlKind;
+  /** The word GPUI prints on the control; empty where it prints none. */
+  label: string;
+}
+
+/** Every control the shell lists, by key. */
+export type Controls = Record<ControlKey, ControlSpec>;
 
 /** One level's place in the `deckPeaks` bytes. */
 export interface PeakLevel {
@@ -26,6 +46,10 @@ export interface DeckInfo {
   levels: PeakLevel[];
   hotcues: (number | null)[];
   generation: number;
+  /** The title as GPUI's deck header prints it: the track's, or its words for an empty deck. */
+  titleText: string;
+  /** The key as GPUI's deck header prints it, or `--`. */
+  keyText: string;
 }
 
 /** Payload of the `deck-changed` event. */
@@ -102,26 +126,29 @@ export function startStream(onSnapshot: (s: Snapshot) => void): Promise<void> {
   return invoke<void>('start_stream', { channel });
 }
 
-/** The canonical id for `key`; throws for a key the shell did not list. */
-export function resolveControl(ids: Record<string, string>, key: string): string {
-  if (!Object.hasOwn(ids, key)) throw new Error(`unknown control key: ${key}`);
-  return ids[key];
+/** Whether the smoke run must start deck A through `control` before `ready` (a library loads it). */
+export const isSmokePlay = (): Promise<boolean> => invoke<boolean>('smoke_play');
+
+/** The spec for `key`; throws for a key the shell did not list. */
+export function resolveControl(controls: Controls, key: string): ControlSpec {
+  if (!Object.hasOwn(controls, key)) throw new Error(`unknown control key: ${key}`);
+  return controls[key];
 }
 
-let controlIds: Promise<Record<string, string>> | null = null;
+let controlSpecs: Promise<Controls> | null = null;
 
-/** Loads the key to id map once; later calls share it, and a failed load is retried. */
-export function loadControlIds(): Promise<Record<string, string>> {
-  controlIds ??= invoke<Record<string, string>>('control_ids').catch((error: unknown) => {
-    controlIds = null;
+/** Loads the control list once; later calls share it, and a failed load is retried. */
+export function loadControls(): Promise<Controls> {
+  controlSpecs ??= invoke<Controls>('controls').catch((error: unknown) => {
+    controlSpecs = null;
     throw error;
   });
-  return controlIds;
+  return controlSpecs;
 }
 
-/** Writes one control by key; rejects for an unknown key without calling the shell. */
+/** Writes one control by key, in engine units; rejects for an unknown key without calling the shell. */
 export async function control(key: ControlKey, value: number): Promise<void> {
-  const id = resolveControl(await loadControlIds(), key);
+  const { id } = resolveControl(await loadControls(), key);
   await invoke<void>('control', { id, value });
 }
 
