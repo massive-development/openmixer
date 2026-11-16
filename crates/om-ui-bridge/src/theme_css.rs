@@ -3,11 +3,12 @@
 
 use om_ui::theme::{Colour, Density, DensityMetrics, ThemeTokens};
 
-/// One `:root { ... }` block: every colour and numeric token as `--om-<field>`, and the metric set
-/// for `density` as `--om-density-<field>`, sorted by name.
+/// One `:root { ... }` block: every colour, numeric and font-family token as `--om-<field>`, and
+/// the metric set for `density` as `--om-density-<field>`, sorted by name.
 pub fn theme_css(tokens: &ThemeTokens, density: Density) -> String {
     let mut vars = colour_vars(tokens);
     vars.extend(number_vars(tokens));
+    vars.extend(font_vars(tokens));
     vars.extend(density_vars(tokens.metrics(density)));
     vars.sort_unstable();
     let body: String = vars
@@ -42,6 +43,32 @@ fn density_vars(m: &DensityMetrics) -> Vec<Var> {
     let all = named.chain(space).filter(|(_, v)| v.is_finite());
     all.map(|(name, v)| (format!("density-{name}"), format!("{v}px")))
         .collect()
+}
+
+fn font_vars(t: &ThemeTokens) -> Vec<Var> {
+    let families = [
+        ("font_display", &t.font_display),
+        ("font_body", &t.font_body),
+        ("font_mono", &t.font_mono),
+    ];
+    let vars = families
+        .into_iter()
+        .map(|(f, name)| (kebab(f), css_string(name)));
+    vars.collect()
+}
+
+/// A quoted CSS string; a user theme names its fonts, so a name cannot close the string.
+fn css_string(text: &str) -> String {
+    let mut quoted = String::with_capacity(text.len() + 2);
+    quoted.push('"');
+    for c in text.chars().filter(|c| !c.is_control()) {
+        if matches!(c, '"' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(c);
+    }
+    quoted.push('"');
+    quoted
 }
 
 fn kebab(field: &str) -> String {
@@ -292,15 +319,24 @@ mod tests {
         assert_eq!(css, theme_css(&dark(), Density::Roomy));
     }
 
-    /// Tokens that are neither a colour nor a number, so they have no CSS variable yet.
-    const SKIPPED: [&str; 6] = [
-        "wave_stops",
-        "font_display",
-        "font_body",
-        "font_mono",
-        "tabular_numerals",
-        "reduced_motion",
-    ];
+    /// Tokens that are neither a colour, a number nor a font family, so they have no CSS variable yet.
+    const SKIPPED: [&str; 3] = ["wave_stops", "tabular_numerals", "reduced_motion"];
+
+    #[test]
+    fn font_families_are_quoted_strings() {
+        let css = css();
+        assert!(css.contains("--om-font-display: \"Sansation\";"));
+        assert!(css.contains("--om-font-body: \"Source Sans 3\";"));
+        assert!(css.contains("--om-font-mono: \"Ubuntu Mono\";"));
+    }
+
+    #[test]
+    fn a_font_name_cannot_close_its_string() {
+        let mut tokens = dark();
+        tokens.font_body = "Evil\"; } body { x: \\\n".to_owned();
+        let css = theme_css(&tokens, Density::Roomy);
+        assert!(css.contains("--om-font-body: \"Evil\\\"; } body { x: \\\\\";"));
+    }
 
     #[test]
     fn every_numeric_and_colour_field_is_emitted() {
