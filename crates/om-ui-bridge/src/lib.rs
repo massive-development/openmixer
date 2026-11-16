@@ -3,9 +3,11 @@
 //! Toolkit-free bridge between the engine and a web front end: binary snapshot packets out,
 //! packed waveform peaks for the GPU. No window dependency, so it tests headless.
 
+mod control;
 mod peaks;
 mod snapshot_packet;
 
+pub use control::{dispatch_control, slice_control_ids};
 pub use peaks::{pack_peaks, PeakBlob, PeakLevel};
 pub use snapshot_packet::{pack_snapshot, packet_len, PACKET_MAGIC, PACKET_VERSION};
 
