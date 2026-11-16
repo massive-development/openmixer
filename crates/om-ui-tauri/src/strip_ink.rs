@@ -17,8 +17,10 @@ pub struct StripInkDto {
     pub well: String,
     pub body: String,
     pub highs: String,
+    /// Opacity of the high band over the body, as GPUI's `low_band_layers` draws it.
     pub highs_alpha: f32,
-    /// Covers the played part; `None` when the style dims it by `playedBrightness` instead.
+    /// Covers the overview's played part (the zoomed lanes are not shaded); `None` when the style
+    /// dims it by `playedBrightness` instead.
     pub played_shade: Option<String>,
     pub played_shade_alpha: Option<f32>,
     pub grid_bar: String,

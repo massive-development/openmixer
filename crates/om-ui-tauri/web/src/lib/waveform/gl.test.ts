@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { StripInk } from '../ipc';
-import { hexRgb, laneInk, levelRows, packRows } from './gl';
+import { BYTES_PER_POINT, hexRgb, laneInk, levelRows, packRows } from './gl';
 import { TEXTURE_WIDTH } from './shader';
 
 const ink: StripInk = {
@@ -36,13 +36,13 @@ test('hexRgb reads #rrggbb into 0..1 channels', () => {
   expect(Array.from(hexRgb('red', new Float32Array(3)))).toEqual([0, 0, 0]);
 });
 
-test('laneInk keeps the alphas and turns a missing shade or halo into zero width', () => {
+test('laneInk keeps the alphas and turns a missing halo into zero width', () => {
   const lane = laneInk(ink);
   expect(lane.gridBar[3]).toBeCloseTo(0.14);
   expect(lane.gridBeat[3]).toBeCloseTo(0.05);
-  expect(lane.shadeAlpha).toBeCloseTo(0.6);
+  expect(lane.highsAlpha).toBe(ink.highsAlpha);
   expect(lane.haloWidth).toBe(0);
-  expect(laneInk({ ...ink, playedShade: null }).shadeAlpha).toBe(0);
+  expect(laneInk({ ...ink, playheadHalo: '#000000' }).haloWidth).toBe(1);
 });
 
 test('levels start on their own rows', () => {
@@ -61,12 +61,13 @@ test('packRows places each level at its row and refuses bytes of another layout'
     { samplesPerPoint: 1024, len: 1 },
   ];
   const { rows, total } = levelRows(levels);
-  const bytes = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  const bytes = Uint8Array.from({ length: 3 * BYTES_PER_POINT }, (_, i) => i + 1);
   const out = packRows(levels, bytes, rows, total);
-  expect(out?.length).toBe(TEXTURE_WIDTH * 2 * 3);
-  expect(Array.from(out?.subarray(0, 6) ?? [])).toEqual([1, 2, 3, 4, 5, 6]);
-  const second = TEXTURE_WIDTH * 3;
-  expect(Array.from(out?.subarray(second, second + 3) ?? [])).toEqual([7, 8, 9]);
-  expect(packRows(levels, bytes.subarray(0, 8), rows, total)).toBeNull();
-  expect(packRows(levels, new Uint8Array(12), rows, total)).toBeNull();
+  expect(BYTES_PER_POINT).toBe(4);
+  expect(out?.length).toBe(TEXTURE_WIDTH * 2 * BYTES_PER_POINT);
+  expect(Array.from(out?.subarray(0, 8) ?? [])).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  const second = TEXTURE_WIDTH * BYTES_PER_POINT;
+  expect(Array.from(out?.subarray(second, second + 4) ?? [])).toEqual([9, 10, 11, 12]);
+  expect(packRows(levels, bytes.subarray(0, 11), rows, total)).toBeNull();
+  expect(packRows(levels, new Uint8Array(16), rows, total)).toBeNull();
 });

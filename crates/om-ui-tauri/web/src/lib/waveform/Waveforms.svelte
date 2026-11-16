@@ -75,7 +75,7 @@
   let latest: Snapshot | null = null;
   let seconds = 8;
   let fill = 1;
-  let playedBrightness = 1;
+  let minHalfPx = 0;
   let cssWidth = 0;
   let cssHeight = 0;
   let devWidth = 0;
@@ -253,7 +253,7 @@
     p.length = deck.loaded ? deck.length : 0;
     p.scale = Math.max(1, Math.round(scale));
     p.fill = fill;
-    p.playedBrightness = playedBrightness;
+    p.minHalfPx = minHalfPx;
     fillLevel(p, lane);
     fillGrid(p, lane, deck);
     return p;
@@ -283,7 +283,7 @@
     return {
       originY: 0, width: 0, height: 0, centre: 0, spp: 0, length: 0, peaks: null, level: -1,
       count: 0, spPoint: 0, beatLen: 0, firstBeat: 0, beatLines: false, scale: 1, ink, fill: 1,
-      playedBrightness: 1,
+      minHalfPx: 0,
     };
   }
 
@@ -387,7 +387,7 @@
     waveformStyle()
       .then((style) => {
         fill = style.fill;
-        playedBrightness = style.playedBrightness;
+        minHalfPx = style.minHalfPx;
         dirty = true;
       })
       .catch((error: unknown) => console.error('openmixer: waveform style', error));
