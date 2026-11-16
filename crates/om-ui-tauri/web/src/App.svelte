@@ -1,20 +1,32 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { isSmoke, ready, startStream, themeCss } from './lib/ipc';
-  import { firstSnapshot } from './lib/packet';
+  import { firstSnapshot, type Snapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
   import { applyThemeCss } from './lib/theme';
+  import Waveforms from './lib/waveform/Waveforms.svelte';
 
   // The layout waits for the theme, so the first paint is already in the theme's colours.
   let themed = $state(false);
+  // Raw: a snapshot is replaced whole 30 times a second, never mutated.
+  let snapshot: Snapshot | null = $state.raw(null);
+
+  function stream(onFirst: (s: Snapshot) => void): Promise<void> {
+    return startStream((s) => {
+      snapshot = s;
+      onFirst(s);
+    });
+  }
 
   async function start(): Promise<void> {
     try {
       applyThemeCss(document, await themeCss());
       themed = true;
       await afterFirstPaint();
+      const first = firstSnapshot(stream);
       // A smoke run proves the stream: it reports ready only after a valid packet arrives.
-      if (await isSmoke()) await firstSnapshot(startStream);
+      if (await isSmoke()) await first;
+      else first.catch((error: unknown) => console.error('openmixer: the stream did not start', error));
       await ready();
     } catch (error) {
       console.error('openmixer: the shell did not start', error);
@@ -33,7 +45,9 @@
       <div class="region"></div>
       <div class="region"></div>
     </section>
-    <section class="waveforms" aria-label="Waveforms"></section>
+    <section class="waveforms" aria-label="Waveforms">
+      <Waveforms {snapshot} />
+    </section>
     <section class="controls" aria-label="Controls">
       <div class="region"></div>
       <div class="region"></div>
@@ -86,6 +100,7 @@
   }
 
   .waveforms {
+    min-height: 0;
     background: var(--om-well);
   }
 </style>
