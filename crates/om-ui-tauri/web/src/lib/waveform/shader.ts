@@ -17,7 +17,8 @@ void main() {
  * One lane of the Low-Band waveform (om-ui-gpui `paint_zoom`): the well, the body in the deck
  * colour and the high band over it, the beat grid and the playhead fixed at the centre. The played
  * part is not shaded: the centred playhead already splits the strip (comp 4a). Peaks are (body,
- * low, mid, high) heights as GPUI draws them. Positions are source frames, lengths device px.
+ * low, mid, high) bytes; the high band is drawn body x high, as GPUI's `low_band` does, so it is
+ * never taller than the body. Positions are source frames, lengths device px.
  */
 export const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
@@ -98,7 +99,8 @@ vec3 wave(vec3 c, vec2 p, float frame) {
   vec4 b = peaksAt(frame);
   float d = abs(p.y - 0.5 * u_size.y);
   c = mix(c, u_body, cover(halfPx(b.r), d));
-  return mix(c, u_highs, u_highsAlpha * cover(halfPx(b.a), d));
+  // GPUI draws the high band as a share of the body (body x high), never taller than it.
+  return mix(c, u_highs, u_highsAlpha * cover(halfPx(b.r * b.a), d));
 }
 
 vec3 playhead(vec3 c, float x) {
