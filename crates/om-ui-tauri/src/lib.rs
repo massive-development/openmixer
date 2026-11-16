@@ -13,12 +13,14 @@ mod pacer;
 mod smoke;
 mod stream;
 mod stream_slot;
+mod strip_ink;
 
 pub use control_loop::CONTROL_THREAD;
 pub use deck_info::{DeckInfo, PeakLevelDto};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup};
 pub use smoke::SMOKE_TIMEOUT;
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
+pub use strip_ink::{strip_ink_dto, StripInkDto};
 
 use commands::ShellState;
 use control_loop::ControlLoop;
@@ -46,6 +48,14 @@ pub struct RunOptions {
     pub bench_seconds: Option<u32>,
 }
 
+/// The active theme as the front end takes it: the `--om-*` variables and each deck's lane ink.
+#[derive(Debug, Clone, Default)]
+pub struct ShellTheme {
+    pub css: String,
+    /// One per engine deck, in deck order.
+    pub strip_inks: Vec<StripInkDto>,
+}
+
 /// Why the window could not run, or a smoke run failed.
 #[derive(Debug, thiserror::Error)]
 pub enum ShellError {
@@ -67,17 +77,17 @@ pub fn prepare_environment() {
     disable_dmabuf_renderer();
 }
 
-/// Opens the window over `engine` and `router`, styled by `theme_css`, and returns when it closes.
+/// Opens the window over `engine` and `router`, styled by `theme`, and returns when it closes.
 /// `library`, when given, is built on the control thread and loads the decks the front end shows.
 pub fn run(
     engine: Arc<DjEngine>,
     router: Arc<ParameterRouter>,
-    theme_css: String,
+    theme: ShellTheme,
     library: Option<LibrarySetup>,
     options: RunOptions,
 ) -> Result<(), ShellError> {
     let shared = Shared::new(&engine);
-    let (state, ready_wait) = shared.shell_state(theme_css, options.smoke);
+    let (state, ready_wait) = shared.shell_state(theme, options.smoke);
     let app = build_app(Arc::clone(&engine), router, state)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait)?;
@@ -106,10 +116,11 @@ impl Shared {
         }
     }
 
-    fn shell_state(&self, theme_css: String, smoke: bool) -> (ShellState, Receiver<()>) {
+    fn shell_state(&self, theme: ShellTheme, smoke: bool) -> (ShellState, Receiver<()>) {
         let (ready_signal, ready_wait) = mpsc::channel();
         let state = ShellState {
-            theme_css,
+            theme_css: theme.css,
+            strip_inks: theme.strip_inks,
             smoke,
             ready: Arc::clone(&self.ready),
             ready_signal,
@@ -163,6 +174,7 @@ fn build_app(
             commands::smoke,
             commands::ready,
             commands::waveform_style,
+            commands::strip_ink,
             commands::control,
             commands::control_ids,
             commands::start_stream,

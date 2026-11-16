@@ -40,6 +40,40 @@ export interface WaveformStyle {
   playedBrightness: number;
 }
 
+/**
+ * One deck's waveform lane ink (`om_ui::waveform::StripInk`, Low-Band style): colours as `#rrggbb`
+ * with their alphas apart, marker sizes in CSS px.
+ */
+export interface StripInk {
+  well: string;
+  body: string;
+  highs: string;
+  highsAlpha: number;
+  /** Covers the played part; null when the style dims it by `playedBrightness` instead. */
+  playedShade: string | null;
+  playedShadeAlpha: number | null;
+  gridBar: string;
+  gridBarAlpha: number;
+  gridBeat: string;
+  gridBeatAlpha: number;
+  playhead: string;
+  playheadHalo: string | null;
+  playheadHaloWidth: number;
+  playheadWidth: number;
+  cueGuide: string;
+  cueGuideAlpha: number;
+  mainCue: string;
+  /** Hot cue 1..8 colours. */
+  cues: string[];
+  barNumberSize: number;
+  barNumberMinSpacingPx: number;
+  cueFlagWidth: number;
+  cueFlagHeight: number;
+}
+
+/** Deck `deck`'s waveform lane ink. */
+export const stripInk = (deck: number): Promise<StripInk> => invoke<StripInk>('strip_ink', { deck });
+
 /** The active theme as one `:root` block of `--om-*` variables. */
 export const themeCss = (): Promise<string> => invoke<string>('theme_css');
 
