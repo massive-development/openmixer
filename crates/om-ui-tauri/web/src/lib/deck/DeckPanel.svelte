@@ -55,9 +55,8 @@
   {#if controls[tempoKey]}
     <div class="tempo">
       <!-- As in GPUI: an accidental double-click mid-mix must not jump the tempo. -->
+      <!-- The pitch shows once, in the read-out row beside the BPM, as GPUI shows it. -->
       <Fader key={tempoKey} spec={controls[tempoKey]} value={rate} stamp={snapshot?.receivedAt ?? 0} resettable={false} />
-      <!-- The fader's own value text and the Pitch read-out already say it. -->
-      <span class="num pitch" aria-hidden="true">{pitch}</span>
     </div>
   {/if}
   <div class="main">
@@ -103,8 +102,7 @@
   .tempo {
     grid-area: tempo;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: var(--om-inner-gap);
+    grid-template-rows: minmax(0, 1fr);
     justify-items: center;
     min-height: 0;
   }
@@ -160,10 +158,5 @@
     color: var(--om-readout-dim);
     font-size: var(--om-type-numeral);
     font-weight: 400;
-  }
-
-  .pitch {
-    color: var(--om-readout-dim);
-    font-size: var(--om-type-numeral);
   }
 </style>
