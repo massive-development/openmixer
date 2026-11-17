@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { FINE_DIVISOR, Held, faderValue, knobDelta } from './drag';
+import { CLICK_SLOP_PX, FINE_DIVISOR, Held, PressTravel, faderValue, knobDelta } from './drag';
 
 test('knobDelta', () => {
   expect(knobDelta(0.5, -16)).toBeCloseTo(0.6);
@@ -40,4 +40,19 @@ test('a held value shows while dragged and until the engine has caught up', () =
   expect(held.shown(0.5)).toBe(0.7);
   held.onSnapshot();
   expect(held.shown(0.69)).toBe(0.69);
+});
+
+test('a press that stays within the slop is a click; one that left it is a drag', () => {
+  const travel = new PressTravel();
+  travel.begin(100, 200);
+  travel.move(102, 201);
+  expect(travel.dragged).toBe(false);
+  travel.move(100, 200 - CLICK_SLOP_PX - 1);
+  expect(travel.dragged).toBe(true);
+  // Coming back does not make it a click again.
+  travel.move(100, 200);
+  expect(travel.dragged).toBe(true);
+  // The next press starts clean.
+  travel.begin(10, 10);
+  expect(travel.dragged).toBe(false);
 });

@@ -66,6 +66,34 @@ export class Held {
   }
 }
 
+/** CSS px a press may wander and still be a click; further, it is a drag. */
+export const CLICK_SLOP_PX = 3;
+
+/**
+ * How far the pointer went during the last press: a double-click whose second press dragged is a
+ * drag, so it must not reset the control when the browser reports the double-click at its release.
+ */
+export class PressTravel {
+  private x = 0;
+  private y = 0;
+  private far = false;
+
+  begin(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.far = false;
+  }
+
+  move(x: number, y: number): void {
+    if (Math.hypot(x - this.x, y - this.y) > CLICK_SLOP_PX) this.far = true;
+  }
+
+  /** The pointer left the click slop at some point of the last press. */
+  get dragged(): boolean {
+    return this.far;
+  }
+}
+
 function clamp01(v: number): number {
   return Math.min(Math.max(v, 0), 1);
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { controlName, knobSpokenText, knobValueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
-  import { Held, knobDelta } from './drag';
+  import { Held, PressTravel, knobDelta } from './drag';
   import { keyValue } from './keys';
   import { toPosition, toValue } from './range';
   import { dragSnap } from './snap';
@@ -23,6 +23,8 @@
   let { key, spec, value, stamp, label = '', mirrored = false, printed = $bindable('') }: Props = $props();
 
   const held = new Held();
+  // A double-click whose second press dragged ends a drag; it does not reset.
+  const travel = new PressTravel();
   let shown = $state(0);
   let position = 0;
   let lastY = 0;
@@ -67,11 +69,13 @@
     lastY = event.clientY;
     anchor = shown;
     fine = event.shiftKey;
+    travel.begin(event.clientX, event.clientY);
     held.begin(shown);
   }
 
   function onPointerMove(event: PointerEvent): void {
     if (!spec || !held.active) return;
+    travel.move(event.clientX, event.clientY);
     position = knobDelta(position, event.clientY - lastY, fine);
     lastY = event.clientY;
     send(dragSnap(toValue(position, spec), anchor, spec.snap, fine));
@@ -89,7 +93,7 @@
   }
 
   function onDoubleClick(): void {
-    if (spec) setTo(spec.default);
+    if (spec && !travel.dragged) setTo(spec.default);
   }
 
   function onKeyDown(event: KeyboardEvent): void {

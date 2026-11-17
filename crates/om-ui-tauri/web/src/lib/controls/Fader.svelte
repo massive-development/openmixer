@@ -1,7 +1,7 @@
 <script lang="ts">
   import { controlName, valueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
-  import { Held, faderValue } from './drag';
+  import { Held, PressTravel, faderValue } from './drag';
   import { keyValue } from './keys';
   import { toPosition, toValue } from './range';
 
@@ -23,6 +23,8 @@
   let { key, spec, value, stamp, horizontal = false, resettable = true, mirrored = false }: Props = $props();
 
   const held = new Held();
+  // A double-click whose second press dragged ends a drag; it does not reset.
+  const travel = new PressTravel();
   let shown = $state(0);
   let thumb: HTMLDivElement;
 
@@ -58,12 +60,14 @@
     if (!spec || event.button !== 0) return;
     const track = event.currentTarget as HTMLElement;
     track.setPointerCapture(event.pointerId);
+    travel.begin(event.clientX, event.clientY);
     held.begin(shown);
     send(toValue(positionAt(event, track), spec));
   }
 
   function onPointerMove(event: PointerEvent): void {
     if (!spec || !held.active) return;
+    travel.move(event.clientX, event.clientY);
     send(toValue(positionAt(event, event.currentTarget as HTMLElement), spec));
   }
 
@@ -79,7 +83,7 @@
   }
 
   function onDoubleClick(): void {
-    if (spec && resettable) setTo(spec.default);
+    if (spec && resettable && !travel.dragged) setTo(spec.default);
   }
 
   function onKeyDown(event: KeyboardEvent): void {
