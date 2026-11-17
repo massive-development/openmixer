@@ -104,6 +104,7 @@ What the trial window does not yet match or prove, so the measurements are read 
 - **Keyboard and assistive technology are checked by key injection and by reading the markup only.** Tab order, Space on a toggle, the slider keys (arrows, Shift, Home, End, Delete) and keyboard seek were driven with XTest key events under WSLg; no screen reader has been run against the window. The zoomed lanes' keys (step, zoom, Home and End) are covered by unit tests only, not driven by key injection.
 - **Text at 125% was simulated,** by scaling the type tokens; WebKitGTK's own text zoom and WebView2's text scaling have not been tried.
 - **Mock device only.** The window runs only on the mock device, with no MIDI, no plugin state and no settings.
+- **The mock-device notice points at Settings,** which the web window does not have yet: it shows GPUI's text for `Notice::Demo` ("Choose an output in Settings."), and `om_ui::labels` has no notice that says the same without it (`Notice::NoDevice` is the failed-device notice).
 
 ## References
 
