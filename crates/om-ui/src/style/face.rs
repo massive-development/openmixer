@@ -106,6 +106,9 @@ pub struct RingStyle {
 /// Share of the deck hue a set pad is tinted with, and its edge (canvas 4a, "Pad": 12% and 40%).
 pub const PAD_TINT: f32 = 0.12;
 pub const PAD_EDGE: f32 = 0.40;
+/// The same for an empty pad: a hint of the deck hue, well under a set pad's.
+pub const EMPTY_PAD_TINT: f32 = 0.08;
+pub const EMPTY_PAD_EDGE: f32 = 0.28;
 /// Share of the deck hue in a deck tag's edge where it sits on the face (canvas 5, "Deck identity").
 pub const IDENTITY_EDGE: f32 = 0.55;
 
@@ -212,13 +215,19 @@ impl FaceTokens {
         }
     }
 
-    /// An empty pad: no fill of its own over the panel, the etched edge, muted text.
-    pub fn empty_pad(&self) -> FaceStyle {
+    /// An empty pad: barely the face over the panel, a faint deck tint so the bank reads as the
+    /// deck's even before a cue is set, muted text.
+    pub fn empty_pad(&self, hue: Colour) -> FaceStyle {
         FaceStyle {
-            fill: Colour::mix(&[(self.face, 0.4), (self.panel, 0.6)]),
+            fill: tint(
+                Colour::mix(&[(self.face, 0.4), (self.panel, 0.6)]),
+                hue,
+                EMPTY_PAD_TINT,
+            ),
             text: self.text_muted,
+            edge: tint(self.line, hue, EMPTY_PAD_EDGE),
             highlight: self.highlight.with_alpha(0.0),
-            ..self.face(Face::Rest, self.text)
+            ..self.face(Face::Rest, hue)
         }
     }
 
@@ -460,8 +469,8 @@ mod tests {
         let t = ThemeTokens::builtin_dark();
         let f = FaceTokens::from_tokens(&t);
         let hue = t.accent_for(0);
-        assert_ne!(f.pad(hue).fill, f.empty_pad().fill);
-        assert_ne!(f.pad(hue).edge, f.empty_pad().edge);
+        assert_ne!(f.pad(hue).fill, f.empty_pad(hue).fill);
+        assert_ne!(f.pad(hue).edge, f.empty_pad(hue).edge);
         assert_ne!(f.segment(true, hue).fill, f.segment(false, hue).fill);
         assert!(f.segment(false, hue).fill.is_transparent());
     }

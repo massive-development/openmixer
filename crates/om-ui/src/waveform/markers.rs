@@ -13,6 +13,9 @@ use om_engine::grid::BeatGrid;
 /// The earlier styles keep a 1 px halo in the well colour each side of the playhead, so the red
 /// line reads over their red band.
 pub const PLAYHEAD_HALO: f32 = 1.0;
+/// Styles without a halo still get a 1 px well-colour keyline each side, so the red playhead
+/// separates from a red-orange deck colour or waveform under it.
+pub const PLAYHEAD_KEYLINE: f32 = 1.0;
 
 // Beat grid: 1 px lines (comp 4a); strengths are the theme's `gridBarAlpha` and `gridBeatAlpha`.
 pub const BEAT_LINE_WIDTH: f32 = 1.0;
@@ -59,6 +62,10 @@ pub const CUE_STACK_STEP: f32 = 16.0;
 pub const CUE_STACK_RANGE: f32 = 18.0;
 /// Rows of stacked flags: a 32 px strip (the smallest) fits two.
 pub const CUE_ROWS: u8 = 2;
+/// Gap between a bar number and the strip bottom, in px.
+pub const BAR_NUMBER_INSET: f32 = 6.0;
+/// Clear space kept between the loop caption and the cue flags or bar numbers, in px.
+pub const LOOP_CAPTION_GAP: f32 = 2.0;
 
 // Overview.
 /// Height of an overview bar tick, in px.
@@ -348,6 +355,30 @@ pub fn playhead_rect(x: f64, width: f32) -> (f32, f32) {
     ((x.round() as f32) - (width / 2.0).round(), width)
 }
 
+/// The playhead's two side bands as (left, width) each: `band` px touching the bar on either side.
+pub fn playhead_sides(x: f64, width: f32, band: f32) -> [(f32, f32); 2] {
+    let (left, width) = playhead_rect(x, width);
+    [(left - band, band), (left + width, band)]
+}
+
+/// The top of a bar number in a strip `strip_height` px tall.
+pub fn bar_number_top(strip_height: f32) -> f32 {
+    strip_height - BAR_NUMBER_SIZE - BAR_NUMBER_INSET
+}
+
+/// The top of the loop caption: just under the cue flag rows in use, but lifted when needed so a
+/// `caption_height` px caption always ends above the bar numbers (they share the loop's start x).
+pub fn loop_caption_top(strip_height: f32, flag_rows: u8, caption_height: f32) -> f32 {
+    let under_flags = f32::from(flag_rows) * CUE_STACK_STEP + LOOP_CAPTION_GAP;
+    let above_numbers = bar_number_top(strip_height) - caption_height - LOOP_CAPTION_GAP;
+    under_flags.min(above_numbers).max(0.0)
+}
+
+/// How many cue flag rows `flags` occupy (0 with no flags).
+pub fn flag_rows(flags: &[CueFlag]) -> u8 {
+    flags.iter().map(|f| f.row + 1).max().unwrap_or(0)
+}
+
 /// Where the already-played part of a zoomed strip ends: the playhead x, clamped into the view.
 pub fn played_edge(view: &View, playhead_x: f64) -> f64 {
     playhead_x.clamp(0.0, view.width)
@@ -590,6 +621,31 @@ mod tests {
         );
         let legacy = StripInk::new(&t, WaveStyle::Colour, 0);
         assert_eq!(legacy.halo, Some(legacy.well), "a halo over the red band");
+    }
+
+    #[test]
+    fn playhead_keylines_touch_the_bar_on_both_sides() {
+        let [l, r] = playhead_sides(200.0, 2.0, PLAYHEAD_KEYLINE);
+        assert_eq!(l, (198.0, 1.0), "left keyline ends where the bar starts");
+        assert_eq!(r, (201.0, 1.0), "right keyline starts where the bar ends");
+    }
+
+    #[test]
+    fn loop_caption_sits_under_the_flags_and_clear_of_bar_numbers() {
+        let caption = 16.0;
+        let clear = |h: f32, rows: u8| {
+            let top = loop_caption_top(h, rows, caption);
+            assert!(top >= 0.0);
+            assert!(top + caption <= bar_number_top(h), "h {h} rows {rows}");
+            top
+        };
+        assert_eq!(clear(120.0, 0), LOOP_CAPTION_GAP, "top of an empty strip");
+        assert_eq!(clear(120.0, 2), 2.0 * CUE_STACK_STEP + LOOP_CAPTION_GAP);
+        // The smallest themed strip (60 px) with both flag rows: bar numbers win.
+        clear(60.0, 2);
+        let flags = cue_flags(&[Some(10.0), Some(12.0)], 400.0);
+        assert_eq!(flag_rows(&flags), 2);
+        assert_eq!(flag_rows(&[]), 0);
     }
 
     #[test]

@@ -369,7 +369,7 @@ fn density_sets_hold_the_design_metrics_in_every_built_in_theme() {
             ]
         };
         assert_eq!(sizes(roomy), [26.0, 34.0, 55.0, 34.0, 320.0], "{name}");
-        assert_eq!(sizes(compact), [21.0, 26.0, 34.0, 26.0, 260.0], "{name}");
+        assert_eq!(sizes(compact), [21.0, 26.0, 40.0, 26.0, 260.0], "{name}");
         // The radius tokens views read today are the Roomy set's.
         assert_eq!(
             (t.card_radius, t.control_radius),

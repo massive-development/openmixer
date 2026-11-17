@@ -436,11 +436,13 @@ impl TableDelegate for LibraryTable {
             .and_then(|row| row.cells.get(index))
             .cloned()
             .unwrap_or_default();
-        let text = if spec.title == "Rating" {
-            cell.replace('*', "\u{2605}").replace('-', "\u{2606}")
-        } else {
-            cell
-        };
+        if spec.title == "Rating" {
+            return self
+                .shell
+                .read_with(cx, |shell, _| rating_cell(&shell.theme, &cell))
+                .unwrap_or_else(|_| div());
+        }
+        let text = cell;
         if col_ix == 0 {
             let marks = self.rows.get(&row_ix).map(|row| (row.on_deck, row.error));
             if let Some((deck, error)) = marks.filter(|(d, e)| d.is_some() || e.is_some()) {
@@ -541,6 +543,22 @@ impl RowLook {
         });
         (fill, loaded)
     }
+}
+
+/// Unrated slots sit just above the row fill: they hold the column's rhythm without reading as stars.
+const UNRATED_STAR_ALPHA: f32 = 0.35;
+
+/// A rating from `rating_stars`' "***--": filled stars for the rating, near-invisible ones for the
+/// rest, both the same glyph so every row's stars line up.
+fn rating_cell(t: &ThemeTokens, stars: &str) -> Div {
+    let unrated = t.text_muted.with_multiplied_alpha(UNRATED_STAR_ALPHA);
+    stars
+        .chars()
+        .fold(div().flex().whitespace_nowrap(), |el, c| {
+            let colour = if c == '*' { t.text_secondary } else { unrated };
+            el.child(div().text_color(paint(colour)).child("\u{2605}"))
+        })
+        .overflow_hidden()
 }
 
 /// The title cell of a marked row: the letter of the deck it is loaded on, in that deck's hue, and
@@ -813,9 +831,14 @@ pub fn library_card(
         .items_center()
         .gap(px(4.))
         .child(
+            // Its minimum is a basis, not a floor: on a row too narrow for every button the search
+            // box gives way first, so the buttons never spill past the band.
             div()
-                .flex_1()
-                .min_w(px(t.library_search_min_width))
+                .flex_grow(4.)
+                .flex_shrink(1.)
+                .flex_basis(px(t.library_search_min_width))
+                .min_w(px(0.))
+                .overflow_hidden()
                 .h(px(button_h))
                 .child(Input::new(&input).with_size(search_size(button_h))),
         );
@@ -858,6 +881,7 @@ pub fn library_card(
     // The playlist actions follow the track actions on the toolbar, so the sidebar's tree keeps the
     // band's whole height (the faceplate's band is short in Compact).
     toolbar = toolbar
+        .child(group_divider(&t, button_h))
         .child(action_button(&t, button_h, "New", false, cx, |p| {
             p.begin_new_playlist()
         }))
@@ -872,6 +896,9 @@ pub fn library_card(
             cx,
             |p| p.begin_new_folder(),
         ))
+        // The destructive pair sits at the far right, apart from anything pressed in passing.
+        .child(div().flex_1())
+        .child(group_divider(&t, button_h))
         .child(action_button(
             &t,
             button_h,
@@ -940,6 +967,17 @@ fn search_size(button_h: f32) -> Size {
     } else {
         Size::XSmall
     }
+}
+
+/// A thin vertical rule that splits the toolbar into track, playlist and removal groups.
+fn group_divider(t: &ThemeTokens, button_h: f32) -> Div {
+    let rule = LookAndFeel::from_tokens(t).separator;
+    div()
+        .flex_none()
+        .w(px(rule.thickness))
+        .h(px(button_h * 0.6))
+        .mx(px(4.))
+        .bg(paint(rule.colour))
 }
 
 /// A toolbar button that runs `on_press` on the panel. `half` makes two of them share a row.

@@ -524,8 +524,17 @@ pub fn pad_grid_height(m: &DensityMetrics) -> i32 {
 /// apart.
 pub fn controls_height(m: &DensityMetrics) -> i32 {
     let h = m.control_height.round() as i32;
-    3 * h + pad_grid_height(m) + 3 * space(m, 2)
+    2 * h + transport_height(m) + pad_grid_height(m) + 3 * space(m, 2)
 }
+
+/// Height of the transport row: Play is the deck's biggest control, so the row is taller than the
+/// other control rows.
+pub fn transport_height(m: &DensityMetrics) -> i32 {
+    (m.control_height * TRANSPORT_SCALE).round() as i32
+}
+
+/// The transport row's height as a multiple of `control_height`.
+const TRANSPORT_SCALE: f32 = 1.4;
 
 /// Lays out deck controls in `bounds` (the deck cell); `mirrored` for deck B.
 pub fn deck_controls_layout(bounds: Rect, m: &DensityMetrics, mirrored: bool) -> DeckLayout {
@@ -542,7 +551,7 @@ pub fn deck_controls_layout(bounds: Rect, m: &DensityMetrics, mirrored: bool) ->
     } else {
         area.remove_left(gap);
     }
-    let transport = area.remove_top(h);
+    let transport = area.remove_top(transport_height(m));
     area.remove_top(row_gap);
     let tabs = area.remove_top(h);
     area.remove_top(row_gap);
@@ -673,7 +682,7 @@ mod tests {
                     }
                 }
                 assert!(card.contains(&l.drawer) && !l.drawer.intersects(&l.tabs));
-                assert_eq!(l.transport.h, m.control_height as i32);
+                assert_eq!(l.transport.h, transport_height(&m));
                 assert_eq!(l.pads.h, pad_grid_height(&m));
             }
         }
