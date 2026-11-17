@@ -67,7 +67,15 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
 ### Controls (in)
 
-1. At start the front end calls `controls` once. It returns a map from front-end key to spec: `id` (canonical `ParamId` string), `min`, `max`, `default`, `detent` (or null), `kind` (`toggle`, `trigger` or `continuous`) and `label` (the word GPUI prints, or empty). `om_ui_bridge::slice_controls` reads every range, default, detent and label off the `om-ui` widget models the GPUI window builds (`ChannelStrip`, `MasterSection`, `CrossfaderSection`, `TransportButton`, the loop sizes); tempo is the pitch fader's narrowest range (0.92 to 1.08, default 1.0) and seek is 0 to 1 of the track.
+1. At start the front end calls `controls` once. It returns a map from front-end key to spec: `id` (canonical `ParamId` string), `min`, `max`, `default`, `detent` (or null), `kind` (`toggle`, `trigger` or `continuous`), `label` (the word GPUI prints, or empty), `law`, `ticks` and `snap`. `om_ui_bridge::slice_controls` reads every range, default, detent and label off the `om-ui` widget models the GPUI window builds (`ChannelStrip`, `MasterSection`, `CrossfaderSection`, `TransportButton`, the loop sizes); tempo is the pitch fader's narrowest range (0.92 to 1.08, default 1.0) and seek is 0 to 1 of the track. The other three come from the definitions GPUI applies (`om_ui::fader_law`, `om_ui::control::snap_with_bypass`):
+
+   | Field | Shape | Carried by |
+   |---|---|---|
+   | `law` | `{ "kind": "linear" }`, or `{ "kind": "knots", "knots": [[position, value], ...] }` with positions rising from 0 to 1 | Knots: the channel faders (`FaderLaw::Channel`) and the master (`FaderLaw::Master`), sampled at every 1% of travel; GPUI's laws are linear in dB between their own knots, so interpolating the samples stays within 0.01 dB of them. Linear: every other control, where a detent strictly inside the range still takes the middle of the travel. |
+   | `ticks` | `[{ "pos", "label", "major", "unity" }]`, loudest first | The channel faders and the master: every dB mark of `om_ui::fader_law::marks`, the label only where GPUI prints one (the major marks). Empty for every other control. GPUI also drops marks closer than 12 px on a short fader; the front end does not. |
+   | `snap` | `{ "at", "width" }` or null | Trim, filter and EQ: the knob's detent and 3% of its range (`Knob::detent_width`). Null elsewhere, the master included (GPUI drags it as a fader, which never pulls). |
+
+   The front end maps travel through `law` both ways (`lib/controls/range.ts`), so a drag, an arrow key (1% of travel, 10% with Shift or a page key) and the thumb's place for a snapshot value all follow the same taper; the master knob turns through the master taper too, and its detent mark sits at unity's angle on it. `fixtures/ui-bridge/fader-law.txt` holds the knots and 18 travel positions with their gains; `om-ui-bridge`'s `tests/fader_law_table.rs` checks it against the specs and `FaderLaw`, and `range.test.ts` against its interpolation (`cargo test -p om-ui-bridge --test fader_law_table write_table -- --ignored` rewrites it).
 2. Keys: per deck `deck<d>.play`, `.sync`, `.tempo`, `.seek`, `.hotcue<0..7>`, `.hotcue<k>.clear`, `.loop.<beats>` (0.25, 0.5, 1, 2, 4, 8, 16, 32) and `.loop.exit`; per channel `ch<c>.fader`, `.trim`, `.filter`, `.eq.low`, `.eq.mid`, `.eq.high`; and `mixer.crossfader`, `mixer.master`. For example `deck1.tempo` is `deck.1.rate` and `deck1.loop.0.25` is `deck.1.loop.quantized.0.25`.
 3. A control writes with `control(key, value)` in `ipc.ts`: an unknown key is refused in the front end without calling the shell; otherwise the `control` command receives the spec's id and the value. Toggles send the opposite of the state the snapshot reports, triggers send 1, continuous controls send engine units.
 4. `dispatch_control` rejects a non-finite value, parses the id with `ParamId::from_str`, validates it, and dispatches it once through the `ParameterRouter`; any failure returns an error string and dispatches nothing. It runs in the `control` command, which Tauri runs on the main thread, never on the audio thread. The command accepts any valid id, not only the slice's.
@@ -149,7 +157,7 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/meter.ts` | Meter scale, zones, fall and write threshold (`om_ui::meter::MeterScale`) |
 | `lib/a11y.ts` | Accessible names and value texts |
 | `lib/format.ts` | Read-out formatting |
-| `lib/controls/` | `Knob`, `Fader`, `Button`, `Meter`; `drag.ts` (drag travel, hold while the engine catches up), `keys.ts` (slider keys), `range.ts` (value and travel) |
+| `lib/controls/` | `Knob`, `Fader`, `Button`, `Meter`; `drag.ts` (drag travel, hold while the engine catches up), `keys.ts` (slider keys, through the law), `range.ts` (value and travel through the spec's `law`), `snap.ts` (a dragged knob's detent pull) |
 | `lib/deck/` | `DeckHeader`, `Overview`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`; `overview.ts`, `pads.ts` |
 | `lib/mixer/` | `Mixer`, `ChannelStrip` |
 | `lib/waveform/` | `Waveforms.svelte` (lanes and overlays), `gl.ts`, `shader.ts`, `view.ts` (zoom, level choice, grid, frame cap), `scrub.ts` |
@@ -161,8 +169,8 @@ Layout: a top bar, the two deck headers (with their overviews), the waveform lan
 
 | Control | Role and name | Value text | Keys |
 |---|---|---|---|
-| Knob (trim, EQ, filter, master) | `slider`, "Channel A high EQ", "Master gain" | dB with sign, `kill` at the floor, `low-pass 40 %`, `off` | Arrows 1% of travel (Shift 10%), Page Up and Down 10%, Home and End the ends, Delete or Backspace the default; double-click the default |
-| Fader (channel, crossfader, tempo) | `slider` with `aria-orientation`, "Channel A fader", "Crossfader", "Deck A tempo" | `85 %`; crossfader `centre` or `A 30 %`; tempo `+2.00 %` | As the knob; the tempo fader ignores Delete, Backspace and double-click, as in GPUI |
+| Knob (trim, EQ, filter, master) | `slider`, "Channel A high EQ", "Master gain" | dB with sign, `kill` at the floor, `low-pass 40 %`, `off` | Arrows 1% of travel (Shift 10%), Page Up and Down 10%, Home and End the ends, Delete or Backspace the default; double-click the default. A drag of trim, EQ or filter sticks to the detent within its `snap` width once the value has moved, as in GPUI; Shift held at the press bypasses it. Keys never stick, so one arrow step leaves the detent |
+| Fader (channel, crossfader, tempo) | `slider` with `aria-orientation`, "Channel A fader", "Crossfader", "Deck A tempo" | `85 %` of linear gain; crossfader `centre` or `A 30 %`; tempo `+2.00 %` | As the knob, through the fader's law; the tempo fader ignores Delete, Backspace and double-click, as in GPUI. A channel fader draws its `ticks` (dB labels on the knob side, mirrored on deck B's strip); the tempo fader keeps evenly spaced marks |
 | Overview | `slider`, "Deck A position"; disabled without a track | `1:02 of 2:04` | Arrows 1% of the track (Shift 10%), Page keys 10%, Home and End; no reset |
 | Play, Sync | `button`, "Deck A play" or "Deck A pause", "Deck A sync"; Sync has `aria-pressed` | | Space or Enter |
 | Hot cue pads | `button` in the group "Hot cues", "Deck A hot cue 3, set at 0:01.0" or "..., empty" | | Space or Enter sets or jumps; Delete or Backspace clears; Shift, Alt or Ctrl click clears |
@@ -218,10 +226,10 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 
 | Command | Runs |
 |---|---|
-| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` | Packet layout and golden file, peaks, control keys, specs and dispatch, theme CSS; `tests/meter_table.rs` checks `fixtures/ui-bridge/meter-table.txt` against `om_ui::meter::MeterScale` |
+| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` | Packet layout and golden file, peaks, control keys, specs (law, ticks, snap) and dispatch, theme CSS; `tests/meter_table.rs` checks `fixtures/ui-bridge/meter-table.txt` against `om_ui::meter::MeterScale`, `tests/fader_law_table.rs` checks `fixtures/ui-bridge/fader-law.txt` against the specs and `om_ui::fader_law::FaderLaw` |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri` | Stream, pacer, stream slot, control loop, deck changes, deck info, controls, strip ink, bench report, smoke verdict; headless |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri` | The flag parsing in `gui_tauri.rs`, and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
-| `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, IPC, bench, controls, keys, names, overview, pads, theme, lanes |
+| `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, IPC, bench, controls (law, snap), keys, names, overview, pads, theme, lanes |
 | `npm run check` | `svelte-check` with warnings as errors |
 | `tools/ui-bench.sh --self-test` | The bench script's arithmetic on a fake `/proc` |
 

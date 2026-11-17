@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { sliderKey } from './keys';
+import { keyValue, sliderKey } from './keys';
 
 const plain = { shiftKey: false, ctrlKey: false, altKey: false, metaKey: false };
 const press = (key: string, position: number, mods: Partial<typeof plain> = {}) =>
@@ -55,4 +55,42 @@ test('other keys and chords with Ctrl, Alt or Meta are left to the window', () =
   expect(press('ArrowUp', 0.5, { ctrlKey: true })).toBeNull();
   expect(press('ArrowUp', 0.5, { altKey: true })).toBeNull();
   expect(press('Home', 0.5, { metaKey: true })).toBeNull();
+});
+
+const LINEAR = { kind: 'linear' as const };
+const channelFader = {
+  min: 0,
+  max: 1,
+  detent: null,
+  default: 1,
+  law: {
+    kind: 'knots' as const,
+    knots: [
+      [0, 0],
+      [0.2, 0.004],
+      [1, 1],
+    ] as [number, number][],
+  },
+};
+const eqLow = { min: -48, max: 6, detent: 0, default: 0, law: LINEAR };
+const key = (k: string, mods: Partial<typeof plain> = {}) => ({ ...plain, ...mods, key: k });
+
+test('a key steps the travel, so a tapered fader moves through its law', () => {
+  // One percent of travel down from the top is 1/80 of the way along the top run.
+  expect(keyValue(key('ArrowDown'), 1, channelFader)).toBeCloseTo(1 - 0.996 / 80, 12);
+  expect(keyValue(key('ArrowUp', { shiftKey: true }), 0, channelFader)).toBeCloseTo(0.002, 12);
+  expect(keyValue(key('End'), 0.3, channelFader)).toBe(1);
+  expect(keyValue(key('Delete'), 0.3, channelFader)).toBe(1);
+  expect(keyValue(key('Delete'), 0.3, channelFader, false)).toBeNull();
+  expect(keyValue(key('a'), 0.3, channelFader)).toBeNull();
+});
+
+test('one arrow step leaves a knob detent, though the drag pull would hold it there', () => {
+  const up = keyValue(key('ArrowUp'), 0, eqLow);
+  const down = keyValue(key('ArrowDown'), 0, eqLow);
+  expect(up).toBeCloseTo(0.12, 12);
+  expect(down).toBeCloseTo(-0.96, 12);
+  // Both are inside the 1.62 dB pull; keys do not snap, so they stay off the detent.
+  expect(up !== null && Math.abs(up) < 1.62 && up !== 0).toBe(true);
+  expect(down !== null && Math.abs(down) < 1.62 && down !== 0).toBe(true);
 });

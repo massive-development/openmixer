@@ -99,8 +99,6 @@ These were the trial's exit criteria. They were not measured before acceptance a
 
 What the trial window does not yet match or prove, so the measurements are read against it:
 
-- **Channel faders map linearly.** The front end maps fader travel to gain linearly (`web/src/lib/controls/range.ts`); GPUI's channel and master faders use a dB taper (`FaderLaw` in `om-ui-gpui/src/fader_paint.rs`).
-- **Knobs do not snap to their detent while dragged.** GPUI snaps a dragged knob to its detent (`knob_paint::snap_with_bypass`); the front end only maps the travel around it.
 - **No CUE button.** The engine has no control id for it (`TransportButton::Cue` has no `DeckParam`); GPUI sends play 0 and seek 0 for it, the slice shows Play and Sync only.
 - **The beat grid on the generated demo tracks sits about half a beat off the kicks.** It is the analysed grid, the same data GPUI draws; it has not been checked against the GPUI window.
 - **Pointer interactions have not been exercised by hand:** knob and fader drags, pad and loop clicks, overview seek, lane scrub and wheel zoom.

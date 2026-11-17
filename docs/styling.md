@@ -32,6 +32,6 @@ The no-literals rule applies to the web front end too: colours, sizes and fonts 
 - `App.svelte`: the page grid (rows 44, 104, at least 180 and 372 px; mixer columns 246 and 245 px) and the wordmark's `letter-spacing: 0.14em`.
 - Font weights 400, 500 and 700 in `App.svelte`, `DeckHeader`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`, `Button`, `Knob`, `Mixer`, `ChannelStrip` (there is no weight token).
 - Sizes derived with a literal factor: the deck tag and header letter (`calc(<type token> * 1.618)` in `DeckTag`, `DeckHeader`, `DeckPanel`) and the icon size, `1.25em` of the label (`Icon.svelte`).
-- Hairlines: 1 px and 2 px pointer, centre and tick lines in `Fader.svelte` and `Knob.svelte`, the 1 px lane separator in `Waveforms.svelte`; the fader scale's tick spacing (12.5%) and the knob pointer's length (30%).
+- Hairlines: 1 px and 2 px pointer, centre and tick lines in `Fader.svelte` and `Knob.svelte`, the 1 px lane separator in `Waveforms.svelte`; the tempo fader's even tick spacing (12.5%) and the knob pointer's length (30%). The channel faders' dB marks come from the control spec's `ticks` and use tokens only.
 - `LoopRow.svelte`: the container query that folds the loop row below 360 px.
 - `controls/drag.ts`: 160 px of drag travel for a knob's full range.

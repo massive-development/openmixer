@@ -2,7 +2,7 @@
   import { controlName, valueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
   import { Held, faderValue } from './drag';
-  import { sliderKey } from './keys';
+  import { keyValue } from './keys';
   import { toPosition, toValue } from './range';
 
   interface Props {
@@ -16,9 +16,11 @@
     horizontal?: boolean;
     /** Whether a double-click, or Delete, restores the default. */
     resettable?: boolean;
+    /** dB labels on the right (deck B's strip mirrors deck A's). */
+    mirrored?: boolean;
   }
 
-  let { key, spec, value, stamp, horizontal = false, resettable = true }: Props = $props();
+  let { key, spec, value, stamp, horizontal = false, resettable = true, mirrored = false }: Props = $props();
 
   const held = new Held();
   let shown = $state(0);
@@ -33,6 +35,7 @@
   const position = $derived(spec ? toPosition(shown, spec) : 0);
   const name = $derived(controlName(key, ''));
   const text = $derived(valueText(key, shown, spec));
+  const ticks = $derived(horizontal ? [] : (spec?.ticks ?? []));
 
   function send(v: number): void {
     held.set(v);
@@ -81,10 +84,10 @@
 
   function onKeyDown(event: KeyboardEvent): void {
     if (!spec) return;
-    const next = sliderKey(event, position);
-    if (next === null || (next === 'reset' && !resettable)) return;
+    const next = keyValue(event, shown, spec, resettable);
+    if (next === null) return;
     event.preventDefault();
-    setTo(next === 'reset' ? spec.default : toValue(next, spec));
+    setTo(next);
   }
 </script>
 
@@ -109,7 +112,15 @@
   onkeydown={onKeyDown}
 >
   <div class="slot"></div>
-  {#if !horizontal}<div class="ticks"></div>{/if}
+  {#if ticks.length > 0}
+    <!-- The dB scale GPUI prints beside the fader, at the law's positions. -->
+    <div class="scale" class:mirrored aria-hidden="true">
+      {#each ticks as tick (tick.pos)}
+        <i class:major={tick.major} class:unity={tick.unity} style:--at={tick.pos}></i>
+        {#if tick.label}<span class="num" class:unity={tick.unity} style:--at={tick.pos}>{tick.label}</span>{/if}
+      {/each}
+    </div>
+  {:else if !horizontal}<div class="ticks"></div>{/if}
   <div class="thumb" bind:this={thumb}></div>
 </div>
 
@@ -165,6 +176,67 @@
         calc(100% - 1px) no-repeat,
       repeating-linear-gradient(to bottom, var(--om-border) 0 1px, transparent 1px 12.5%) right / var(--om-inner-gap)
         calc(100% - 1px) no-repeat;
+  }
+
+  /* The marks sit either side of the thumb, long and short as GPUI's; labels stand outside the
+     fader, on the knob side, centred on their mark. */
+  .scale {
+    position: absolute;
+    top: calc(var(--thumb) / 2);
+    bottom: calc(var(--thumb) / 2);
+    left: 0;
+    right: 0;
+    pointer-events: none;
+  }
+
+  /* A mark in each gutter beside the thumb, ending a small inset short of it as GPUI's do; drawn
+     as one line with its middle left clear. */
+  .scale i {
+    --len: var(--om-inset-small);
+    --ink: var(--om-text-muted);
+    --end: calc(var(--om-inner-gap) - var(--om-inset-small));
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--at) * 100%);
+    height: var(--om-border-width);
+    transform: translateY(50%);
+    background: linear-gradient(
+      to right,
+      transparent calc(var(--end) - var(--len)),
+      var(--ink) calc(var(--end) - var(--len)) var(--end),
+      transparent var(--end) calc(100% - var(--end)),
+      var(--ink) calc(100% - var(--end)) calc(100% - var(--end) + var(--len)),
+      transparent calc(100% - var(--end) + var(--len))
+    );
+  }
+
+  .scale i.major {
+    --len: var(--om-inset-large);
+  }
+
+  .scale i.unity {
+    --ink: var(--om-text-primary);
+  }
+
+  .scale span {
+    position: absolute;
+    bottom: calc(var(--at) * 100%);
+    right: calc(100% + var(--om-inset-large));
+    transform: translateY(50%);
+    color: var(--om-text-secondary);
+    font-size: var(--om-type-label);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .scale.mirrored span {
+    right: auto;
+    left: calc(100% + var(--om-inset-large));
+  }
+
+  .scale span.unity {
+    color: var(--om-text-primary);
   }
 
   .thumb {

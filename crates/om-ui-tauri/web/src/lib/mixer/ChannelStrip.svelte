@@ -50,7 +50,7 @@
   </div>
   <div class="fader">
     {#if controls[faderKey]}
-      <Fader key={faderKey} spec={controls[faderKey]} value={frame?.fader ?? 0} {stamp} />
+      <Fader key={faderKey} spec={controls[faderKey]} value={frame?.fader ?? 0} {stamp} {mirrored} />
     {/if}
   </div>
   <div class="meter">

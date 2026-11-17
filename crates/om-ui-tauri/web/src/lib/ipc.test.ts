@@ -1,7 +1,18 @@
 import { expect, test } from 'vitest';
 import { resolveControl, type ControlSpec } from './ipc';
 
-const spec = (id: string): ControlSpec => ({ id, min: 0, max: 1, default: 0, detent: null, kind: 'toggle', label: '' });
+const spec = (id: string): ControlSpec => ({
+  id,
+  min: 0,
+  max: 1,
+  default: 0,
+  detent: null,
+  kind: 'toggle',
+  label: '',
+  law: { kind: 'linear' },
+  ticks: [],
+  snap: null,
+});
 const controls = { 'deck0.play': spec('deck.0.play'), 'mixer.crossfader': spec('mixer.crossfader') };
 
 test('a known key resolves to its spec', () => {

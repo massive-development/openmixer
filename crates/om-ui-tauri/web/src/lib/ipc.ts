@@ -22,6 +22,32 @@ export interface ControlSpec {
   kind: ControlKind;
   /** The word GPUI prints on the control; empty where it prints none. */
   label: string;
+  /** How travel maps to the value: the taper GPUI's fader uses, else linear. */
+  law: ControlLaw;
+  /** The dB marks GPUI draws beside the control, loudest first; empty where it draws none. */
+  ticks: ControlTick[];
+  /** The detent pull GPUI applies while the control is dragged; null where it has none. */
+  snap: ControlSnap | null;
+}
+
+/**
+ * Travel `0..1` to value: linear (a detent strictly inside the range still takes the middle), or
+ * piecewise linear through `[position, value]` knots, positions rising from 0 to 1.
+ */
+export type ControlLaw = { kind: 'linear' } | { kind: 'knots'; knots: [number, number][] };
+
+/** One scale mark: travel position, the text GPUI prints there (empty for none), long mark, 0 dB mark. */
+export interface ControlTick {
+  pos: number;
+  label: string;
+  major: boolean;
+  unity: boolean;
+}
+
+/** A dragged knob's pull: a value within `width` of `at`, inclusive, becomes `at`. */
+export interface ControlSnap {
+  at: number;
+  width: number;
 }
 
 /** Every control the shell lists, by key. */

@@ -1,3 +1,6 @@
+import type { ControlSpec } from '../ipc';
+import { toPosition, toValue, type Travel } from './range';
+
 /** One arrow press moves a slider this share of its travel. */
 export const STEP = 0.01;
 /** Shift with an arrow, or a page key, moves it this share. */
@@ -45,4 +48,20 @@ function nextMark(position: number, size: number, dir: 1 | -1): number {
   const at = position / size;
   const mark = dir > 0 ? Math.floor(at + SLACK) + 1 : Math.ceil(at - SLACK) - 1;
   return Math.min(Math.max(mark * size, 0), 1);
+}
+
+/**
+ * The value a key gives a slider holding `value`: a step of travel taken through the control's law,
+ * so a tapered fader steps as it drags; the default for the reset key unless `resettable` is false;
+ * null for a key the slider leaves alone. Keys never snap to a detent, so one step leaves it.
+ */
+export function keyValue(
+  event: SliderKeyEvent,
+  value: number,
+  spec: Travel & Pick<ControlSpec, 'default'>,
+  resettable = true,
+): number | null {
+  const next = sliderKey(event, toPosition(value, spec));
+  if (next === 'reset') return resettable ? spec.default : null;
+  return next === null ? null : toValue(next, spec);
 }

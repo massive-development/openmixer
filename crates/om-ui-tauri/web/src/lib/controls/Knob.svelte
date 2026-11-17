@@ -2,8 +2,9 @@
   import { controlName, valueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
   import { Held, knobDelta } from './drag';
-  import { sliderKey } from './keys';
+  import { keyValue } from './keys';
   import { toPosition, toValue } from './range';
+  import { dragSnap } from './snap';
 
   interface Props {
     key: string;
@@ -23,6 +24,10 @@
   let shown = $state(0);
   let position = 0;
   let lastY = 0;
+  // The value and Shift at the press: GPUI pulls to the detent only once the value moves, and
+  // Shift held at the press bypasses the pull for the whole drag.
+  let anchor = 0;
+  let bypass = false;
 
   $effect(() => {
     void stamp;
@@ -30,9 +35,15 @@
     shown = held.shown(value);
   });
 
-  const angle = $derived(spec ? -135 + 270 * toPosition(shown, spec) : -135);
+  const angle = $derived(spec ? sweepAngle(toPosition(shown, spec)) : -135);
+  // The detent mark sits where the detent value does: 12 o'clock unless a taper moves it.
+  const markAngle = $derived(spec && spec.detent !== null ? sweepAngle(toPosition(spec.detent, spec)) : null);
   const name = $derived(controlName(key, label));
   const text = $derived(valueText(key, shown, spec));
+
+  function sweepAngle(position: number): number {
+    return -135 + 270 * position;
+  }
 
   function send(v: number): void {
     held.set(v);
@@ -45,6 +56,8 @@
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     position = toPosition(shown, spec);
     lastY = event.clientY;
+    anchor = shown;
+    bypass = event.shiftKey;
     held.begin(shown);
   }
 
@@ -52,7 +65,7 @@
     if (!spec || !held.active) return;
     position = knobDelta(position, event.clientY - lastY);
     lastY = event.clientY;
-    send(toValue(position, spec));
+    send(dragSnap(toValue(position, spec), anchor, spec.snap, bypass));
   }
 
   function onPointerUp(): void {
@@ -72,17 +85,16 @@
 
   function onKeyDown(event: KeyboardEvent): void {
     if (!spec) return;
-    const next = sliderKey(event, toPosition(shown, spec));
+    const next = keyValue(event, shown, spec);
     if (next === null) return;
     event.preventDefault();
-    setTo(next === 'reset' ? spec.default : toValue(next, spec));
+    setTo(next);
   }
 </script>
 
 <div class="cell" class:mirrored>
   <div
     class="knob"
-    class:detent={spec !== undefined && spec.detent !== null}
     role="slider"
     tabindex="0"
     aria-label={name}
@@ -99,6 +111,7 @@
     ondblclick={onDoubleClick}
     onkeydown={onKeyDown}
   >
+    {#if markAngle !== null}<b class="mark" style:--mark="{markAngle}deg"></b>{/if}
     <i></i>
   </div>
   <!-- The slider's name already says it. -->
@@ -139,8 +152,15 @@
     border-radius: 50%;
   }
 
-  /* The centre mark over a knob with a detent: where the pointer rests. */
-  .detent::before {
+  /* The mark beside a knob with a detent: where the pointer rests on it. */
+  .mark {
+    position: absolute;
+    inset: 0;
+    transform: rotate(var(--mark));
+    pointer-events: none;
+  }
+
+  .mark::before {
     content: '';
     position: absolute;
     left: 50%;

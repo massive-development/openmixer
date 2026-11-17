@@ -1,7 +1,18 @@
 import { expect, test } from 'vitest';
 import { hotcueKeys, loopButtons, loopBeats } from './pads';
 
-const spec = { id: '', min: 0, max: 1, default: 0, detent: null, kind: 'trigger' as const, label: '' };
+const spec = {
+  id: '',
+  min: 0,
+  max: 1,
+  default: 0,
+  detent: null,
+  kind: 'trigger' as const,
+  label: '',
+  law: { kind: 'linear' as const },
+  ticks: [],
+  snap: null,
+};
 const controls = {
   'deck0.loop.4': { ...spec, label: '4' },
   'deck0.loop.0.25': { ...spec, label: '1/4' },
