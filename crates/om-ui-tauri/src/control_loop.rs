@@ -51,7 +51,7 @@ impl ControlLoop {
             }
             let changes = self.decks.tick(&self.engine, services.as_ref());
             changes.into_iter().for_each(&emit);
-            if ticks % STATE_EVERY == 0 {
+            if ticks.is_multiple_of(STATE_EVERY) {
                 self.write_drive_state();
             }
             ticks = ticks.wrapping_add(1);
