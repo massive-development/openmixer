@@ -120,7 +120,7 @@ Before starting any large implementation (a new subsystem, a cross-cutting featu
 - **Use real music** for anything involving waveforms, the library, analysis or colour. The demo tracks are sine waves and hide most defects.
 - **Judge it as a DJ would.** At the default window size and the minimum (`MIN_WINDOW`), can a DJ read the playing deck's BPM, key, time and phrase position at a glance, and reach EQ, transport and pads without looking? If not, say so in the PR.
 - **Layout and look may change.** Replace a layout or control when a better one is found. Keep the tests that guard function (no overlap, no clipping, the minimum window); update the ones that only recorded the old arrangement.
-- **Tokens, not literals** still applies (see "Styling a control"); if the look you need has no token, add one.
+- **Tokens, not literals** still applies (see `docs/styling.md`); if the look you need has no token, add one.
 - **Clean-room still applies.** Borrow the reason a layout works, not another product's names, icons, artwork or pixel layout.
 
 ## Token Efficiency & Knowledge Reuse (required)
@@ -140,7 +140,7 @@ Users must always be able to modify OpenMixer with external plugins. Nothing may
 
 - **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, design tokens, skins).
 - **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (JSON/files) over fixed code paths.
-- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source. The plugin API exists in `om-plugins`: in-process plugins, a versioned C ABI, and CLAP hosting behind the `clap` feature (ADR 0007; first-run, state and latency work in progress).
+- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source. The plugin API exists in `om-plugins`: in-process plugins, a versioned C ABI, and CLAP hosting behind the `clap` feature (ADR 0007; plugin delay compensation deferred).
 - **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
 - **PR check:** every PR must state whether it adds, changes or could block an extension point.
 
@@ -185,6 +185,8 @@ crates/
 ├── om-plugins/       # Plugin API, registry, C-ABI loader, CLAP host (feature `clap`)
 ├── om-ui/            # UI logic and view models (no window)
 ├── om-ui-gpui/       # GPUI window (gpui-kit, gpui-component)
+├── om-ui-bridge/     # Wire formats for the web front end (ADR 0009; no window)
+├── om-ui-tauri/      # Tauri v2 window and Svelte front end (feature `gui-tauri` of openmixer)
 ├── om-testing/       # Test helpers (dev-dependency only)
 └── openmixer/        # Binary: composition root, preferences
 ```
@@ -223,12 +225,12 @@ mod tests {
 
 - Use a unique temporary directory per test so `cargo test` can run tests in parallel.
 - Do not sleep to synchronise: use channels, condition variables or bounded waits.
-- Tests that use real threads or timing are planned to be split out (e.g. `#[ignore]` with a dedicated CI job) so the fast run stays fast.
+- Long tests that use real threads or timing are `#[ignore]`d and run by a dedicated CI job (the weekly `soak` job runs the 10-minute soaks) so the fast run stays fast.
 - Name tests for the behaviour they check; use `cargo test -- --list` to see what exists.
 
 ### Test Support
 
-`crates/om-testing` holds the shared helpers: WAV fixtures (`wav`), deterministic signals (`signals`), level measures (`level`), condition waits (`wait`: `wait_until`, `assert_eventually!`) and a temporary directory (`fs::TempDir`). Use them rather than copying a generator or poll loop into a crate. It is a dev-dependency only; never add it as a normal dependency.
+`crates/om-testing` holds the shared helpers: WAV fixtures (`wav`), deterministic signals (`signals`), a synthetic music-like track (`mix`), level measures (`level`), condition waits (`wait`: `wait_until`, `assert_eventually!`) and a temporary directory (`fs::TempDir`). Use them rather than copying a generator or poll loop into a crate. It is a dev-dependency only; never add it as a normal dependency.
 
 ### Verification Commands
 
@@ -245,7 +247,7 @@ cargo deny check
 cargo run -p openmixer -- --smoke           # startup check
 
 # Leaks (Linux, requires valgrind)
-valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
+valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --headless --smoke
 ```
 
 ## Build Requirements
@@ -253,7 +255,7 @@ valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 ### Minimum System
 
 - **Rust** toolchain pinned in `rust-toolchain.toml` (1.95, the workspace MSRV; installed with rustup; `rustfmt` and `clippy` included)
-- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `openmixer-workbench/docs/spikes/gpui.md`; `libdbus-1-dev` for the real-time priority feature `realtime-dbus` (on by default; `--no-default-features` builds without it)
+- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `openmixer-workbench/docs/spikes/gpui.md`; `libdbus-1-dev` for the real-time priority feature `realtime-dbus` (on by default; `--no-default-features` builds without it); `libwebkit2gtk-4.1-dev` because the Tauri window crate `om-ui-tauri` is a workspace member
 - **cargo-deny** for `cargo deny check`
 - **sccache (optional, Linux):** `~/.cargo/config.toml` with `[build]`, `rustc-wrapper = "sccache"` and `incremental = false` shares compiled dependencies between worktrees.
 - **Cost rule for agents:** while working, `cargo check -p <crate>` and tests of the touched crates with `-j 4`; full clippy, workspace tests and `cargo deny check` once per PR, at the end; at most two parallel agents on the 12-core shared host.
@@ -265,8 +267,8 @@ valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --smoke
 cargo build
 cargo run -p openmixer -- --smoke
 
-# Memory leak detection (Linux)
-valgrind --leak-check=full ./target/debug/openmixer --smoke
+# Memory leak detection (Linux; headless, no window)
+valgrind --leak-check=full ./target/debug/openmixer --headless --smoke
 ```
 
 ## Documentation

@@ -6,7 +6,7 @@ Accepted
 
 Design note only (issue #225, P7). No code and no Cargo change is part of this ADR. The maintainer signed off on 2026-11-07 (see "Decisions"); implementation follows the migration plan.
 
-Update (2026-11-07): the loader, parameters, the plugin window and a test fixture landed behind the `clap` feature of `om-plugins` (see "Implementation notes"). Still open: the first-run prompt and warning screens, state persistence and latency compensation.
+Update (2026-11-07): the loader, parameters, the plugin window and a test fixture landed behind the `clap` feature of `om-plugins` (see "Implementation notes"). Since then the first-run prompt and warning, state restore and the latency readout have landed; delay compensation is still deferred (decision 8).
 
 ## Context
 

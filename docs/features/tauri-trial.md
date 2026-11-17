@@ -10,7 +10,7 @@ A second window for the decks screen (waveforms, deck headers, transport, hot cu
 
 ## Build and run
 
-Linux packages: `libwebkit2gtk-4.1-dev` on top of the usual ones (see [build.md](../guidelines/build.md#tauri-window-web-front-end)). Node: 22.12 or newer, or 24 (Vite 8 and Vitest 5 refuse older; Vitest also refuses 23 and 25).
+Linux packages: `libwebkit2gtk-4.1-dev` on top of the usual ones (see [build.md](../guidelines/build.md#tauri-window-web-front-end)). Node: 22 (22.12 or newer), 24, or 26 and later (Vite 8 and Vitest 5 refuse older; Vitest also refuses 23 and 25). CI uses Node 22.
 
 ```bash
 cd crates/om-ui-tauri/web && npm ci && npm run build && cd -    # writes web/dist
@@ -31,7 +31,7 @@ cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
 | Crate | Owns | Depends on |
 |---|---|---|
 | `om-ui-bridge` | Toolkit-free conversions, tested headless, no `unsafe`: the snapshot packet (`pack_snapshot`, `packet_len`), packed waveform peaks (`pack_peaks`, `peak_levels`), the slice's control keys and ids (`slice_control_ids`) and their specs from the GPUI widget models (`slice_controls`), a knob's printed value (`caption_text`), validated dispatch (`dispatch_control`), and theme tokens as CSS (`theme_css`). Errors: `BridgeError`. | `om-core`, `om-analysis`, `om-ui` |
-| `om-ui-tauri` | The Tauri v2 window: the commands, the `deck-changed` event, the stream thread, the control thread that pumps the demo library and track loader, strip ink, the bench report and the smoke watchdog. The Svelte front end is in `web/`, the icons in `icons/`. No `unsafe`. Errors: `ShellError`, `BenchError`. | `om-ui-bridge`, `om-engine`, `om-ui`, `om-analysis`, `om-core`, `tauri` 2 |
+| `om-ui-tauri` | The Tauri v2 window: the commands, the `deck-changed` event, the stream thread, the control thread that pumps the demo library and track loader, strip ink, the bench report, the `--ui-drive-out` layout map and state file, and the smoke watchdog. The Svelte front end is in `web/`, the icons in `icons/`. No `unsafe`. Errors: `ShellError`, `BenchError`, `DriveError`. | `om-ui-bridge`, `om-engine`, `om-ui`, `om-analysis`, `om-core`, `tauri` 2 |
 
 The composition (engine, router, theme, demo library) comes from the binary: `crates/openmixer/src/gui_tauri.rs`, using the start-up steps the GPUI window also uses (`openmixer::startup`: mock output, starting the output, demo tracks and decks). `main.rs` dispatches `--ui=tauri` to it.
 
@@ -128,7 +128,7 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `ui_layout` | `uiLayout(map)` | nothing; `--ui-drive-out` runs only (else an error): checks the layout map (see Driving the window) and writes it with every control's spec |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
 
-The window's capability (`capabilities/default.json`) grants `core:default` to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images and the IPC endpoint.
+The window's capability (`capabilities/default.json`) grants `core:default` to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images, inline styles (`style-src 'unsafe-inline'`) and the IPC endpoint.
 
 ## Rendering, as implemented
 
@@ -276,7 +276,7 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 | Command | Runs |
 |---|---|
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` | Packet layout and golden file, peaks, control keys, specs (law, ticks, snap, readout), knob captions and dispatch, theme CSS; `tests/meter_table.rs` checks `fixtures/ui-bridge/meter-table.txt` against `om_ui::meter::MeterScale`, `tests/fader_law_table.rs` checks `fixtures/ui-bridge/fader-law.txt` against the specs and `om_ui::fader_law::FaderLaw`, `tests/knob_text_table.rs` checks `fixtures/ui-bridge/knob-text.txt` against `caption_text` and the specs' readouts |
-| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri` | Stream, pacer, stream slot, control loop, deck changes, deck info, controls, strip ink, bench report, smoke verdict; headless |
+| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri` | Stream, pacer, stream slot, control loop, deck changes, deck info, controls, strip ink, bench report, smoke verdict, the drive layout map and state file; headless |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri` | The flag parsing in `gui_tauri.rs` (with the banner rule and the frame counter flag), and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
 | `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, the knob text table, IPC, bench, the frame counter, controls (law, snap, fine drag, a drag that is no click), keys, names and spoken knob values, overview, pads, Cue's writes, theme, lanes (scrub, lane keys), the drive layout map |
 | `python3 tools/ui-drive.py` | Real pointer and key input into a built window, checked against the engine (see Driving the window); needs a display, not run in CI |
