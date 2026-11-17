@@ -4,6 +4,7 @@ import {
   controlName,
   deckName,
   hotcueName,
+  knobValueText,
   loopName,
   meterText,
   Paced,
@@ -43,24 +44,18 @@ test('tempo reads as a signed percentage with a real minus sign', () => {
   expect(valueText('deck0.tempo', 0.99999)).toBe('0.00 %');
 });
 
-test('gains read in decibels', () => {
-  expect(valueText('ch0.trim', 1)).toBe('0.0 dB');
-  expect(valueText('ch0.trim', 2)).toBe('+6.0 dB');
-  expect(valueText('mixer.master', 0.5)).toBe('−6.0 dB');
-  expect(valueText('ch0.trim', 0)).toBe('silent');
+test('a knob speaks what GPUI prints under its label', () => {
+  expect(knobValueText('ch0.trim', 1, 'gain')).toBe('0');
+  expect(knobValueText('mixer.master', 2, 'gain')).toBe('+6');
+  expect(knobValueText('ch0.trim', 0, 'gain')).toBe('-inf');
+  expect(knobValueText('ch0.eq.mid', -48, 'decibels')).toBe('KILL');
+  expect(knobValueText('ch1.eq.low', -3.5, 'decibels')).toBe('-4');
+  expect(knobValueText('ch0.filter', 0, 'filter')).toBe('Off');
+  expect(knobValueText('ch0.filter', -0.4, 'filter')).toBe('LPF 40%');
 });
 
-test('EQ bands read in decibels, the floor as a kill', () => {
-  expect(valueText('ch0.eq.low', 0)).toBe('0.0 dB');
-  expect(valueText('ch0.eq.low', -3.5)).toBe('−3.5 dB');
-  expect(valueText('ch0.eq.high', 6)).toBe('+6.0 dB');
-  expect(valueText('ch0.eq.mid', -48, { min: -48, max: 12 })).toBe('kill');
-});
-
-test('the filter names its side', () => {
-  expect(valueText('ch0.filter', 0)).toBe('off');
-  expect(valueText('ch0.filter', -0.4)).toBe('low-pass 40 %');
-  expect(valueText('ch0.filter', 1)).toBe('high-pass 100 %');
+test('a knob without a readout falls back to its spoken form', () => {
+  expect(knobValueText('fx0.depth', 0.25, null)).toBe('0.25');
 });
 
 test('a channel fader reads as a percentage of its travel', () => {

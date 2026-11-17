@@ -12,6 +12,7 @@ const spec = {
   law: { kind: 'linear' as const },
   ticks: [],
   snap: null,
+  readout: null,
   writes: [],
 };
 const controls = {

@@ -1,6 +1,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { BenchStats } from './bench';
+import type { KnobReadout } from './controls/readout';
 import { tryDecode, type Snapshot } from './packet';
 import { decodePeaks, type Peaks } from './peaks';
 
@@ -28,6 +29,8 @@ export interface ControlSpec {
   ticks: ControlTick[];
   /** The detent pull GPUI applies while the control is dragged; null where it has none. */
   snap: ControlSnap | null;
+  /** How the knob's value prints under its label, by GPUI's readout; null for a control that is no knob. */
+  readout: KnobReadout | null;
   /** A composite key's writes, in order (its `id` is then empty); empty for a single control. */
   writes: ControlWrite[];
 }

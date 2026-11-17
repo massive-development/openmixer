@@ -1,0 +1,42 @@
+# A knob's value as GPUI's mixer prints it under the label, asserted by both om-ui-bridge
+# (tests/knob_text_table.rs, against om_ui::control::Readout through caption_text and the readout
+# each control spec carries) and the web front end (src/lib/controls/readout.test.ts).
+# Rewrite: cargo test -p om-ui-bridge --test knob_text_table write_table -- --ignored
+# <key> <readout> <value> <text, the rest of the line>
+ch0.trim gain 0 -inf
+ch0.trim gain 0.25 -12
+ch0.trim gain 0.5 -6
+ch0.trim gain 1 0
+ch0.trim gain 1.4125 +3
+ch0.trim gain 2 +6
+ch0.trim gain 4 +12
+ch1.eq.high decibels -48 KILL
+ch1.eq.high decibels -47.5 KILL
+ch1.eq.high decibels -47.4 -47
+ch1.eq.high decibels -12.5 -13
+ch1.eq.high decibels -0.4 0
+ch1.eq.high decibels 0 0
+ch1.eq.high decibels 2.5 +3
+ch1.eq.high decibels 6 +6
+ch0.eq.mid decibels -48 KILL
+ch0.eq.mid decibels 0 0
+ch0.eq.mid decibels 6 +6
+ch1.eq.low decibels -48 KILL
+ch1.eq.low decibels -3.5 -4
+ch1.eq.low decibels 0 0
+ch1.eq.low decibels 6 +6
+ch0.filter filter -1 LPF 100%
+ch0.filter filter -0.5 LPF 50%
+ch0.filter filter -0.125 LPF 13%
+ch0.filter filter -0.004 Off
+ch0.filter filter 0 Off
+ch0.filter filter 0.004 Off
+ch0.filter filter 0.005 HPF 1%
+ch0.filter filter 0.125 HPF 13%
+ch0.filter filter 0.995 HPF 100%
+ch0.filter filter 1 HPF 100%
+mixer.master gain 0 -inf
+mixer.master gain 0.5 -6
+mixer.master gain 0.7 -3
+mixer.master gain 1 0
+mixer.master gain 2 +6

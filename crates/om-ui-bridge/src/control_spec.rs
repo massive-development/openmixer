@@ -7,7 +7,7 @@ use crate::control_law::{sampled_law, snap_spec, tick_specs, SnapSpec, TickSpec,
 use om_core::param_id::{ChannelParam, DeckParam, EqBand, MixerParam, MAX_CHANNELS};
 use om_core::ParamId;
 use om_ui::binding::MixerBinding;
-use om_ui::control::{Knob, Ranged};
+use om_ui::control::{Knob, Ranged, Readout};
 use om_ui::fader_law::FaderLaw;
 use om_ui::meter::MeterParams;
 use om_ui::widgets::channel::ChannelStrip;
@@ -48,6 +48,8 @@ pub struct ControlSpec {
     pub ticks: Vec<TickSpec>,
     /// The detent pull GPUI applies while the control is dragged, if any.
     pub snap: Option<SnapSpec>,
+    /// How GPUI prints the knob's value under its label; `None` for a control that is no knob.
+    pub readout: Option<Readout>,
     /// A composite key's writes, in order, as (front-end key, value); its `id` is then empty.
     /// Empty for every single control.
     pub writes: Vec<(String, f64)>,
@@ -65,6 +67,7 @@ struct Shape {
     law: TravelLaw,
     ticks: Vec<TickSpec>,
     snap: Option<SnapSpec>,
+    readout: Option<Readout>,
 }
 
 /// Every slice control for `decks` decks and the mixer's channels, with ranges from the models,
@@ -102,6 +105,7 @@ fn spec(key: String, id: String, s: Shape) -> ControlSpec {
         law: s.law,
         ticks: s.ticks,
         snap: s.snap,
+        readout: s.readout,
         writes: Vec::new(),
     }
 }
@@ -224,6 +228,7 @@ fn seek() -> Shape {
 fn knob(k: &Knob) -> Shape {
     Shape {
         detent: k.detent,
+        readout: Some(k.readout),
         ..ranged(&k.range, &k.label)
     }
 }
@@ -273,6 +278,7 @@ fn plain() -> Shape {
         law: TravelLaw::Linear,
         ticks: Vec::new(),
         snap: None,
+        readout: None,
     }
 }
 
@@ -387,6 +393,20 @@ mod tests {
         // 3% of the EQ's -48..+6 dB, either side of 0 dB.
         let low = find("ch0.eq.low").snap.unwrap();
         assert!(low.at == 0.0 && (low.width - 1.62).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_knobs_carry_the_gpui_readout_and_nothing_else_does() {
+        let strip = ChannelStrip::new(mixer(), 1, MeterParams::default());
+        assert_eq!(find("ch1.trim").readout, Some(strip.trim.readout));
+        assert_eq!(find("ch1.filter").readout, Some(strip.filter.readout));
+        assert_eq!(find("ch1.eq.high").readout, Some(strip.eq[2].readout));
+        assert_eq!(find("mixer.master").readout, Some(Readout::Gain));
+        let knobs = ["trim", "filter", ".eq.", "mixer.master"];
+        for spec in controls() {
+            let is_knob = knobs.iter().any(|k| spec.key.contains(k));
+            assert_eq!(spec.readout.is_some(), is_knob, "{}", spec.key);
+        }
     }
 
     #[test]

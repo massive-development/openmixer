@@ -1,7 +1,7 @@
 //! The `controls` command's wire form: each slice control's id and value shape, keyed by its
 //! front-end key, camelCase on the wire.
 
-use om_ui_bridge::{ControlKind, ControlSpec, SnapSpec, TickSpec, TravelLaw};
+use om_ui_bridge::{readout_name, ControlKind, ControlSpec, SnapSpec, TickSpec, TravelLaw};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -21,6 +21,9 @@ pub struct ControlDto {
     pub law: LawDto,
     pub ticks: Vec<TickDto>,
     pub snap: Option<SnapDto>,
+    /// How the knob's value prints under its label (`gain`, `decibels`, `filter`); null for a
+    /// control that is no knob.
+    pub readout: Option<&'static str>,
     /// A composite key's writes, in order; empty for a single control.
     pub writes: Vec<WriteDto>,
 }
@@ -73,6 +76,7 @@ fn dto(s: ControlSpec) -> ControlDto {
         law: law_dto(s.law),
         ticks: s.ticks.into_iter().map(tick_dto).collect(),
         snap: s.snap.map(snap_dto),
+        readout: s.readout.and_then(readout_name),
         writes: s
             .writes
             .into_iter()
@@ -117,6 +121,7 @@ fn kind_name(kind: ControlKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use om_ui::control::Readout;
 
     fn spec(kind: ControlKind) -> ControlSpec {
         ControlSpec {
@@ -134,6 +139,7 @@ mod tests {
                 at: 1.0,
                 width: 0.12,
             }),
+            readout: Some(Readout::Gain),
             writes: Vec::new(),
         }
     }
@@ -155,6 +161,7 @@ mod tests {
             "\"law\":{\"kind\":\"linear\"}",
             "\"ticks\":[]",
             "\"snap\":{\"at\":1.0,\"width\":0.12}",
+            "\"readout\":\"gain\"",
             "\"writes\":[]",
         ] {
             assert!(json.contains(part), "{part} missing from {json}");
@@ -172,10 +179,12 @@ mod tests {
                 unity: true,
             }],
             snap: None,
+            readout: None,
             ..spec(ControlKind::Continuous)
         };
         let json = json(fader);
         for part in [
+            "\"readout\":null",
             "\"law\":{\"kind\":\"knots\",\"knots\":[[0.0,0.0],[1.0,1.0]]}",
             "\"ticks\":[{\"pos\":1.0,\"label\":\"0\",\"major\":true,\"unity\":true}]",
             "\"snap\":null",

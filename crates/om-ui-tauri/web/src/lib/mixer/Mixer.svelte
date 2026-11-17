@@ -18,6 +18,8 @@
 
   // The bars' dB scale is the theme's, read once the theme's variables are in place.
   let scale: MeterScale = $state({ floorDb: Number.NaN, midDb: Number.NaN, highDb: Number.NaN });
+  // The master knob's value as printed under the master's label, the local value while dragged.
+  let masterText = $state('');
 
   const stamp = $derived(snapshot?.receivedAt ?? 0);
   const master = $derived(controls['mixer.master']);
@@ -36,12 +38,16 @@
   <div class="strips">
     <ChannelStrip channel={0} {controls} frame={snapshot?.channels[0]} {stamp} {scale} />
     <div class="master" role="group" aria-labelledby="mixer-master">
-      <h2 id="mixer-master">{master?.label ?? ''}</h2>
+      <div class="title">
+        <h2 id="mixer-master">{master?.label ?? ''}</h2>
+        <!-- The knob's value text already says it. -->
+        {#if master}<span class="value num" aria-hidden="true">{masterText}</span>{/if}
+      </div>
       <div class="meter">
         <Meter left={snapshot?.master.left ?? 0} right={snapshot?.master.right ?? 0} {scale} label="Master level" />
       </div>
       {#if master}
-        <Knob key="mixer.master" spec={master} value={snapshot?.master.gain ?? 0} {stamp} />
+        <Knob key="mixer.master" spec={master} value={snapshot?.master.gain ?? 0} {stamp} bind:printed={masterText} />
       {/if}
     </div>
     <ChannelStrip channel={1} {controls} frame={snapshot?.channels[1]} {stamp} {scale} mirrored />
@@ -76,10 +82,16 @@
 
   .master {
     display: grid;
-    grid-template-rows: var(--om-mixer-title-height) minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     justify-items: center;
     gap: var(--om-inner-gap);
     min-height: 0;
+  }
+
+  /* The label over its value, as each channel knob's caption. */
+  .title {
+    display: grid;
+    justify-items: center;
   }
 
   h2 {
@@ -89,6 +101,12 @@
     font-weight: 500;
     line-height: var(--om-mixer-title-height);
     text-transform: uppercase;
+  }
+
+  .value {
+    color: var(--om-text-secondary);
+    font-size: var(--om-type-label);
+    white-space: nowrap;
   }
 
   .meter {

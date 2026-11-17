@@ -34,7 +34,7 @@
 
   const position = $derived(spec ? toPosition(shown, spec) : 0);
   const name = $derived(controlName(key, ''));
-  const text = $derived(valueText(key, shown, spec));
+  const text = $derived(valueText(key, shown));
   const ticks = $derived(horizontal ? [] : (spec?.ticks ?? []));
 
   function send(v: number): void {

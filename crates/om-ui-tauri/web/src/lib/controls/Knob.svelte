@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { controlName, valueText } from '../a11y';
+  import { controlName, knobValueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
   import { Held, knobDelta } from './drag';
   import { keyValue } from './keys';
@@ -16,9 +16,11 @@
     label?: string;
     /** Label on the knob's left (deck B's strip mirrors deck A's). */
     mirrored?: boolean;
+    /** The value as printed under the label, for a knob whose label is drawn elsewhere (the master). */
+    printed?: string;
   }
 
-  let { key, spec, value, stamp, label = '', mirrored = false }: Props = $props();
+  let { key, spec, value, stamp, label = '', mirrored = false, printed = $bindable('') }: Props = $props();
 
   const held = new Held();
   let shown = $state(0);
@@ -39,7 +41,13 @@
   // The detent mark sits where the detent value does: 12 o'clock unless a taper moves it.
   const markAngle = $derived(spec && spec.detent !== null ? sweepAngle(toPosition(spec.detent, spec)) : null);
   const name = $derived(controlName(key, label));
-  const text = $derived(valueText(key, shown, spec));
+  // GPUI's caption under the label; also what the slider speaks, so the two never disagree.
+  const text = $derived(knobValueText(key, shown, spec?.readout ?? null));
+  const captioned = $derived(Boolean(spec?.readout));
+
+  $effect(() => {
+    printed = text;
+  });
 
   function sweepAngle(position: number): number {
     return -135 + 270 * position;
@@ -114,8 +122,13 @@
     {#if markAngle !== null}<b class="mark" style:--mark="{markAngle}deg"></b>{/if}
     <i></i>
   </div>
-  <!-- The slider's name already says it. -->
-  {#if label}<span class="label" aria-hidden="true">{label}</span>{/if}
+  <!-- The slider's name and value text already say both. -->
+  {#if label}
+    <span class="caption" aria-hidden="true">
+      <span class="label">{label}</span>
+      {#if captioned}<span class="value num">{text}</span>{/if}
+    </span>
+  {/if}
 </div>
 
 <style>
@@ -189,11 +202,35 @@
     background: var(--om-text-primary);
   }
 
+  .caption {
+    display: grid;
+    min-width: 0;
+  }
+
+  .mirrored .caption {
+    justify-items: end;
+  }
+
   .label {
     color: var(--om-text-muted);
     font-size: var(--om-type-label);
     font-weight: 500;
     text-transform: uppercase;
     white-space: nowrap;
+  }
+
+  /* The label alone sets the column's width: a longer value (LPF 100%) runs out into the gap
+     towards the fader instead of widening the column, on the side away from the knob. */
+  .value {
+    display: flex;
+    contain: inline-size;
+    justify-self: stretch;
+    color: var(--om-text-secondary);
+    font-size: var(--om-type-label);
+    white-space: nowrap;
+  }
+
+  .mirrored .value {
+    justify-content: flex-end;
   }
 </style>

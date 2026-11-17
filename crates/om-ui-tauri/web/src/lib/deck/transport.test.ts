@@ -13,6 +13,7 @@ const trigger: ControlSpec = {
   law: { kind: 'linear' },
   ticks: [],
   snap: null,
+  readout: null,
   writes: [],
 };
 

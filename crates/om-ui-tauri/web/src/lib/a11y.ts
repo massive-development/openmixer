@@ -1,10 +1,7 @@
+import { captionText, type KnobReadout } from './controls/readout';
+
 /** U+2212, which a screen reader speaks as "minus"; a hyphen is often skipped. */
 const MINUS = '−';
-
-// GPUI's `format::filter`: closer to the centre than this reads as off.
-const FILTER_OFF = 0.005;
-// GPUI's `format::eq_band`: within half a decibel of the floor the band is killed.
-const KILL_MARGIN_DB = 0.5;
 
 /** `Deck A` for deck 0. */
 export function deckName(deck: number): string {
@@ -40,24 +37,20 @@ function channelPart(part: string, word: string): string {
   return word || part;
 }
 
-/** A value's spoken form by the control it belongs to: `+2.00 %`, `−3.5 dB`, `low-pass 40 %`, `centre`. */
-export function valueText(key: string, value: number, range?: { min: number; max: number }): string {
+/**
+ * A fader's spoken form by the control it belongs to: `+2.00 %`, `75 %`, `centre`. A knob speaks
+ * what it prints under its label instead (`controls/readout.ts`, `captionText`).
+ */
+export function valueText(key: string, value: number): string {
   if (key.endsWith('.tempo')) return `${signed((value - 1) * 100, 2)} %`;
-  if (key.endsWith('.trim') || key === 'mixer.master') return gainText(value);
-  if (key.includes('.eq.')) return range && value <= range.min + KILL_MARGIN_DB ? 'kill' : `${signed(value, 1)} dB`;
-  if (key.endsWith('.filter')) return filterText(value);
   if (key.endsWith('.fader')) return `${Math.round(value * 100)} %`;
   if (key === 'mixer.crossfader') return crossfaderText(value);
   return String(value);
 }
 
-function gainText(linear: number): string {
-  return linear > 0 ? `${signed(20 * Math.log10(linear), 1)} dB` : 'silent';
-}
-
-function filterText(value: number): string {
-  if (Math.abs(value) < FILTER_OFF) return 'off';
-  return `${value < 0 ? 'low-pass' : 'high-pass'} ${Math.round(Math.abs(value) * 100)} %`;
+/** What a knob speaks and prints under its label: GPUI's caption when its spec names a readout. */
+export function knobValueText(key: string, value: number, readout: KnobReadout | null): string {
+  return readout ? captionText(readout, value) : valueText(key, value);
 }
 
 function crossfaderText(value: number): string {
