@@ -10,9 +10,11 @@
     deck: number;
     controls: Controls;
     frame: DeckFrame | undefined;
+    /** Deck B's row mirrors deck A's: Sync, Play, Cue. */
+    mirrored?: boolean;
   }
 
-  let { deck, controls, frame }: Props = $props();
+  let { deck, controls, frame, mirrored = false }: Props = $props();
 
   const cue = $derived(controls[`deck${deck}.cue`]);
   const play = $derived(controls[`deck${deck}.play`]);
@@ -38,52 +40,81 @@
   }
 </script>
 
-<div class="transport">
+<!-- Cue, Play, Sync in the source on both decks; deck B's row is mirrored by grid areas. -->
+<div class="transport" class:mirrored>
   {#if cue}
     <!-- A press, not a toggle: it never stays lit. -->
-    <Button tall tint={hue} disabled={!loaded} label={controlName(`deck${deck}.cue`, cue.label)} onpress={pressCue}>
-      <span class="face">{cue.label}</span>
-    </Button>
+    <div class="slot cue">
+      <Button tall tint={hue} disabled={!loaded} label={controlName(`deck${deck}.cue`, cue.label)} onpress={pressCue}>
+        <span class="face">{cue.label}</span>
+      </Button>
+    </div>
   {/if}
   {#if play}
     <!-- Its word and glyph change with the state, so it carries no pressed state of its own. -->
-    <Button
-      tall
-      solid
-      on={playing}
-      tint={hue}
-      disabled={!loaded}
-      label={controlName(`deck${deck}.play`, playWord)}
-      onpress={() => toggle('play', playing)}
-    >
-      <span class="face"><Icon name={playing ? 'pause' : 'play'} />{playWord}</span>
-    </Button>
+    <div class="slot play">
+      <Button
+        tall
+        solid
+        on={playing}
+        tint={hue}
+        disabled={!loaded}
+        label={controlName(`deck${deck}.play`, playWord)}
+        onpress={() => toggle('play', playing)}
+      >
+        <span class="face"><Icon name={playing ? 'pause' : 'play'} />{playWord}</span>
+      </Button>
+    </div>
   {/if}
   {#if sync}
-    <Button
-      tall
-      on={synced}
-      pressed={synced}
-      tint={hue}
-      disabled={!loaded}
-      label={controlName(`deck${deck}.sync`, sync.label)}
-      onpress={() => toggle('sync', synced)}
-    >
-      <span class="face">
-        <Icon name="sync" />{sync.label}
-        <!-- The state in a word, as GPUI's LOCK beside Sync. -->
-        {#if synced}<b class="word num">Lock</b>{/if}
-      </span>
-    </Button>
+    <div class="slot sync">
+      <Button
+        tall
+        on={synced}
+        pressed={synced}
+        tint={hue}
+        disabled={!loaded}
+        label={controlName(`deck${deck}.sync`, sync.label)}
+        onpress={() => toggle('sync', synced)}
+      >
+        <span class="face">
+          <Icon name="sync" />{sync.label}
+          <!-- The state in a word, as GPUI's LOCK beside Sync. -->
+          {#if synced}<b class="word num">Lock</b>{/if}
+        </span>
+      </Button>
+    </div>
   {/if}
 </div>
 
 <style>
   .transport {
     display: grid;
-    /* Cue, Play (the wider track), Sync. */
+    /* Cue, Play (the wider track), Sync: Play and Cue on the outer side, as in GPUI. */
     grid-template-columns: 1fr 1.6fr 1fr;
+    grid-template-areas: 'cue play sync';
     gap: var(--om-inner-gap);
+  }
+
+  .mirrored {
+    grid-template-areas: 'sync play cue';
+  }
+
+  /* A grid of one, so the button stretches over its slot as it did over the row's track. */
+  .slot {
+    display: grid;
+  }
+
+  .cue {
+    grid-area: cue;
+  }
+
+  .play {
+    grid-area: play;
+  }
+
+  .sync {
+    grid-area: sync;
   }
 
   .face {

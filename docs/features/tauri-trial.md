@@ -166,7 +166,14 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/waveform/` | `Waveforms.svelte` (lanes and overlays), `LaneSlider.svelte` and `sliders.svelte.ts` (each lane's keyboard slider and what it shares with the lanes), `gl.ts`, `shader.ts`, `view.ts` (zoom, level choice, grid, frame cap), `scrub.ts`, `lanekeys.ts` (`laneKey`: what a key does to a lane) |
 | `lib/icons/` | `icons.ts`, `Icon.svelte`, `LICENSE-LUCIDE` |
 
-Layout: a top bar, the two deck headers (with their overviews), the waveform lanes, then deck A's panel, the mixer and deck B's panel. Source order is deck A, mixer, deck B, which is the reading and Tab order; each lane's keyboard slider sits in the source right after its deck's header (so after its overview) and is laid over its lane in the waveforms row. A deck's transport row is Cue, Play/Pause (the wider track) and Sync.
+Layout: a top bar, the two deck headers (with their overviews), the waveform lanes, then deck A's panel, the mixer and deck B's panel. Source order is deck A, mixer, deck B, which is the reading and Tab order; each lane's keyboard slider sits in the source right after its deck's header (so after its overview) and is laid over its lane in the waveforms row.
+
+Deck B is deck A's mirror image, as in GPUI, by layout only (a `mirrored` prop that switches grid areas or the flex direction): both decks have one source order, so Tab and a screen reader meet header, overview, lane, tempo fader, read-outs, hot cues, loops and transport in the same sequence on each. There is no automated tab-order test (Vitest runs without a DOM); the check is that `DeckHeader`, `DeckPanel` and `Transport` branch on `mirrored` only in classes, never in markup.
+
+- Header: deck A has its letter at the outer (left) edge, then title and artist, then Key, BPM and Remain reading towards the centre; deck B has Remain, BPM and Key from the centre, then title and artist right-aligned, and its letter at the outer (right) edge. The text inside each read-out reads left to right on both; deck B's are left-aligned where deck A's are right-aligned.
+- Panel: the tempo fader on the outer edge; the read-out row (deck tag, BPM, Pitch, Elapsed) runs from the outer edge on both decks, right-aligned on deck B.
+- Transport row: deck A Cue, Play/Pause (the wider track), Sync; deck B Sync, Play/Pause, Cue, so Play and Cue are on each deck's outer side.
+- Hot cue pads (1 to 8) and loop sizes (1/4 to 32) read in the same order on both decks, as in GPUI.
 
 ## Accessibility, as implemented
 

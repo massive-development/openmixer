@@ -136,7 +136,13 @@
     </header>
     {#snippet deckRegions(deck: number)}
       <section class="region" style:grid-area="head-{SIDES[deck]}" aria-label="{deckName(deck)} track">
-        <DeckHeader {deck} info={decks.infos[deck] ?? null} ink={decks.inks[deck] ?? null} {snapshot} />
+        <DeckHeader
+          {deck}
+          info={decks.infos[deck] ?? null}
+          ink={decks.inks[deck] ?? null}
+          {snapshot}
+          mirrored={deck === 1}
+        />
       </section>
       <LaneSlider {deck} {sliders} />
       <section class="region" style:grid-area="deck-{SIDES[deck]}" aria-label="{deckName(deck)} controls">

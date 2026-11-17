@@ -13,9 +13,11 @@
     info: DeckInfo | null;
     ink: StripInk | null;
     snapshot: Snapshot | null;
+    /** Deck B's header mirrors deck A's: read-outs from the centre, the letter at the outer edge. */
+    mirrored?: boolean;
   }
 
-  let { deck, info, ink, snapshot }: Props = $props();
+  let { deck, info, ink, snapshot, mirrored = false }: Props = $props();
 
   let remainEl: HTMLElement;
 
@@ -42,19 +44,20 @@
   }
 </script>
 
+<!-- Mirrored by grid areas only, so both decks keep one source, reading and Tab order. -->
 <div class="head" style:--hue="var(--om-accent-{deck})">
-  <div class="row">
+  <div class="row" class:mirrored>
     <!-- The region's name already says which deck this is. -->
     <div class="letter" aria-hidden="true">{letter(deck)}</div>
     <div class="track">
       <div class="title" class:empty={!loaded}>{info?.titleText ?? ''}</div>
       <div class="artist">{loaded ? (info?.artist ?? '') : ''}</div>
     </div>
-    <div class="stat">
+    <div class="stat key">
       <span class="label">Key</span>
       <b class="num">{key}</b>
     </div>
-    <div class="stat">
+    <div class="stat bpm">
       <span class="label">BPM</span>
       <b class="num">{bpm}</b>
     </div>
@@ -79,12 +82,20 @@
   .row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: 'letter track key bpm time';
     gap: var(--om-gap);
     align-items: center;
     min-width: 0;
   }
 
+  /* The read-outs start from the centre line and the track's words end at the letter. */
+  .row.mirrored {
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: 'time bpm key track letter';
+  }
+
   .letter {
+    grid-area: letter;
     display: grid;
     place-items: center;
     /* The deck tag's rule at the headline size: the letter's size times the golden ratio. */
@@ -99,7 +110,24 @@
   }
 
   .track {
+    grid-area: track;
     min-width: 0;
+  }
+
+  .mirrored .track {
+    text-align: right;
+  }
+
+  .key {
+    grid-area: key;
+  }
+
+  .bpm {
+    grid-area: bpm;
+  }
+
+  .time {
+    grid-area: time;
   }
 
   .title,
@@ -128,6 +156,10 @@
 
   .stat {
     text-align: right;
+  }
+
+  .mirrored .stat {
+    text-align: left;
   }
 
   /* The label and numeral tiers' own line heights, so the pair keeps inside the row at 125% text. */

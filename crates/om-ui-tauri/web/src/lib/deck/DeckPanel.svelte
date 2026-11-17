@@ -49,8 +49,9 @@
   }
 </script>
 
-<!-- The tempo fader is first in deck A and last in deck B, so Tab follows the panel left to right. -->
-{#snippet tempo()}
+<!-- Both decks share one source order (tempo, read-outs, pads, loops, transport), so Tab and a
+     screen reader take them alike; deck B is mirrored by grid areas and flex direction only. -->
+<div class="panel" class:mirrored>
   {#if controls[tempoKey]}
     <div class="tempo">
       <!-- As in GPUI: an accidental double-click mid-mix must not jump the tempo. -->
@@ -59,10 +60,6 @@
       <span class="num pitch" aria-hidden="true">{pitch}</span>
     </div>
   {/if}
-{/snippet}
-
-<div class="panel" class:mirrored>
-  {#if !mirrored}{@render tempo()}{/if}
   <div class="main">
     <div class="readouts">
       <span class="tag"><DeckTag {deck} /></span>
@@ -81,15 +78,15 @@
     </div>
     <HotcuePads {deck} {controls} {info} {ink} {loaded} />
     <LoopRow {deck} {controls} {info} {frame} />
-    <Transport {deck} {controls} {frame} />
+    <Transport {deck} {controls} {frame} {mirrored} />
   </div>
-  {#if mirrored}{@render tempo()}{/if}
 </div>
 
 <style>
   .panel {
     display: grid;
     grid-template-columns: var(--om-deck-pitch-width) minmax(0, 1fr);
+    grid-template-areas: 'tempo main';
     gap: var(--om-gap);
     min-width: 0;
     min-height: 0;
@@ -99,10 +96,12 @@
 
   .mirrored {
     grid-template-columns: minmax(0, 1fr) var(--om-deck-pitch-width);
+    grid-template-areas: 'main tempo';
   }
 
   /* Deck A's fader sits on the left (outer) edge, deck B's on the right. */
   .tempo {
+    grid-area: tempo;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--om-inner-gap);
@@ -112,6 +111,7 @@
 
   /* A size container: the loop row folds to two rows where eight targets do not fit. */
   .main {
+    grid-area: main;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto auto;
     gap: var(--om-gap);
@@ -134,9 +134,10 @@
     margin-bottom: calc((var(--om-type-display) - var(--om-type-numeral) * 1.618) / 2);
   }
 
-  .mirrored .tag {
-    order: 1;
-    margin-left: auto;
+  /* Deck B reads from its outer edge: tag, BPM, pitch, elapsed, right-aligned. */
+  .mirrored .readouts {
+    flex-direction: row-reverse;
+    text-align: right;
   }
 
   .label {
