@@ -4,9 +4,15 @@ export const KNOB_TRAVEL_PX = 160;
 // The engine has applied a value once this many snapshots arrived after the drag ended.
 const SNAPSHOTS_TO_SETTLE = 2;
 
-/** A knob position after the pointer moved `dyPx` down (negative is up): up turns it clockwise. */
-export function knobDelta(value: number, dyPx: number, rangePx = KNOB_TRAVEL_PX): number {
-  return clamp01(value - dyPx / rangePx);
+/** Fine mode divides a knob drag's travel by this (GPUI's `knob_paint::FINE_DIVISOR`). */
+export const FINE_DIVISOR = 10;
+
+/**
+ * A knob position after the pointer moved `dyPx` down (negative is up): up turns it clockwise.
+ * `fine` (Shift held at the press, as GPUI reads it) moves it a tenth as far.
+ */
+export function knobDelta(value: number, dyPx: number, fine = false, rangePx = KNOB_TRAVEL_PX): number {
+  return clamp01(value - dyPx / rangePx / (fine ? FINE_DIVISOR : 1));
 }
 
 /**

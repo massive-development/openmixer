@@ -25,9 +25,9 @@
   let position = 0;
   let lastY = 0;
   // The value and Shift at the press: GPUI pulls to the detent only once the value moves, and
-  // Shift held at the press bypasses the pull for the whole drag.
+  // Shift held at the press makes the whole drag fine: a tenth as far, and no pull.
   let anchor = 0;
-  let bypass = false;
+  let fine = false;
 
   $effect(() => {
     void stamp;
@@ -57,15 +57,15 @@
     position = toPosition(shown, spec);
     lastY = event.clientY;
     anchor = shown;
-    bypass = event.shiftKey;
+    fine = event.shiftKey;
     held.begin(shown);
   }
 
   function onPointerMove(event: PointerEvent): void {
     if (!spec || !held.active) return;
-    position = knobDelta(position, event.clientY - lastY);
+    position = knobDelta(position, event.clientY - lastY, fine);
     lastY = event.clientY;
-    send(dragSnap(toValue(position, spec), anchor, spec.snap, bypass));
+    send(dragSnap(toValue(position, spec), anchor, spec.snap, fine));
   }
 
   function onPointerUp(): void {

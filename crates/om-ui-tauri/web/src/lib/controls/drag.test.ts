@@ -1,10 +1,21 @@
 import { expect, test } from 'vitest';
-import { Held, faderValue, knobDelta } from './drag';
+import { FINE_DIVISOR, Held, faderValue, knobDelta } from './drag';
 
 test('knobDelta', () => {
   expect(knobDelta(0.5, -16)).toBeCloseTo(0.6);
   expect(knobDelta(0.95, -160)).toBe(1);
   expect(knobDelta(0.05, 160)).toBe(0);
+});
+
+test('Shift held at the press makes a knob drag ten times finer, as in GPUI', () => {
+  expect(FINE_DIVISOR).toBe(10);
+  // The same 16 px up: a tenth of the travel.
+  expect(knobDelta(0.5, -16, true)).toBeCloseTo(0.51);
+  expect(knobDelta(0.5, -16, false) - 0.5).toBeCloseTo(10 * (knobDelta(0.5, -16, true) - 0.5));
+  expect(knobDelta(0.5, 16, true)).toBeCloseTo(0.49);
+  expect(knobDelta(0.995, -160, true)).toBe(1);
+  // Without Shift nothing changes.
+  expect(knobDelta(0.5, -16, false)).toBe(knobDelta(0.5, -16));
 });
 
 test('faderValue', () => {
