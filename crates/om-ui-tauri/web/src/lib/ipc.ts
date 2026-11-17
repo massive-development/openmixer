@@ -28,6 +28,14 @@ export interface ControlSpec {
   ticks: ControlTick[];
   /** The detent pull GPUI applies while the control is dragged; null where it has none. */
   snap: ControlSnap | null;
+  /** A composite key's writes, in order (its `id` is then empty); empty for a single control. */
+  writes: ControlWrite[];
+}
+
+/** One write of a composite key: a control key and the value it sends. */
+export interface ControlWrite {
+  key: ControlKey;
+  value: number;
 }
 
 /**

@@ -21,6 +21,15 @@ pub struct ControlDto {
     pub law: LawDto,
     pub ticks: Vec<TickDto>,
     pub snap: Option<SnapDto>,
+    /// A composite key's writes, in order; empty for a single control.
+    pub writes: Vec<WriteDto>,
+}
+
+/// One write of a composite key: a front-end key and the value it sends.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WriteDto {
+    pub key: String,
+    pub value: f64,
 }
 
 /// `{ "kind": "linear" }` or `{ "kind": "knots", "knots": [[position, value], ...] }`.
@@ -64,6 +73,11 @@ fn dto(s: ControlSpec) -> ControlDto {
         law: law_dto(s.law),
         ticks: s.ticks.into_iter().map(tick_dto).collect(),
         snap: s.snap.map(snap_dto),
+        writes: s
+            .writes
+            .into_iter()
+            .map(|(key, value)| WriteDto { key, value })
+            .collect(),
     }
 }
 
@@ -120,6 +134,7 @@ mod tests {
                 at: 1.0,
                 width: 0.12,
             }),
+            writes: Vec::new(),
         }
     }
 
@@ -140,6 +155,7 @@ mod tests {
             "\"law\":{\"kind\":\"linear\"}",
             "\"ticks\":[]",
             "\"snap\":{\"at\":1.0,\"width\":0.12}",
+            "\"writes\":[]",
         ] {
             assert!(json.contains(part), "{part} missing from {json}");
         }
@@ -166,6 +182,20 @@ mod tests {
         ] {
             assert!(json.contains(part), "{part} missing from {json}");
         }
+    }
+
+    #[test]
+    fn a_composite_sends_its_writes_in_order() {
+        let cue = ControlSpec {
+            key: "deck0.cue".into(),
+            id: String::new(),
+            writes: vec![("deck0.play".into(), 0.0), ("deck0.seek".into(), 0.0)],
+            ..spec(ControlKind::Trigger)
+        };
+        let json = json(cue);
+        let writes = "\"writes\":[{\"key\":\"deck0.play\",\"value\":0.0},{\"key\":\"deck0.seek\",\"value\":0.0}]";
+        assert!(json.contains(writes), "{json}");
+        assert!(json.contains("\"id\":\"\""), "{json}");
     }
 
     #[test]

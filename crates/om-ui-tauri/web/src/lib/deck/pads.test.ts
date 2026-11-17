@@ -12,6 +12,7 @@ const spec = {
   law: { kind: 'linear' as const },
   ticks: [],
   snap: null,
+  writes: [],
 };
 const controls = {
   'deck0.loop.4': { ...spec, label: '4' },

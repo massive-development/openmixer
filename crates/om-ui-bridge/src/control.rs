@@ -7,6 +7,7 @@ use om_core::param_id::{
 };
 use om_core::{ParamId, ParameterRouter};
 use om_ui::widgets::loops::{loop_param, SIZES};
+use om_ui::widgets::transport::TransportButton;
 
 /// Parses `id`, checks `value`, and dispatches once. Nothing is dispatched on an error.
 pub fn dispatch_control(router: &ParameterRouter, id: &str, value: f64) -> Result<(), BridgeError> {
@@ -59,6 +60,36 @@ const DECK_CONTROLS: [(&str, DeckParam); 4] = [
     ("tempo", DeckParam::Rate),
     ("seek", DeckParam::Seek),
 ];
+
+/// GPUI's Cue (`om_ui::widgets::transport::TransportPanel::press`): with no main-cue point in the
+/// engine yet it stops the deck, then returns it to the start, in this order.
+const CUE_WRITES: [(DeckParam, f64); 2] = [(DeckParam::Play, 0.0), (DeckParam::Seek, 0.0)];
+
+/// A key that is one press over several controls: the label GPUI prints and the ordered writes,
+/// as (front-end key, value).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Composite {
+    pub(crate) key: String,
+    pub(crate) label: &'static str,
+    pub(crate) writes: Vec<(String, f64)>,
+}
+
+/// The composite keys of the slice: `deck<d>.cue` for every deck.
+pub(crate) fn composite_controls(decks: u8) -> Vec<Composite> {
+    let cue = |deck| Composite {
+        key: format!("deck{deck}.cue"),
+        label: TransportButton::Cue.label(),
+        writes: deck_writes(deck, &CUE_WRITES),
+    };
+    (0..decks.min(MAX_DECKS)).map(cue).collect()
+}
+
+// Each write by the front-end key of its parameter, so no key is spelled twice.
+fn deck_writes(deck: u8, writes: &[(DeckParam, f64)]) -> Vec<(String, f64)> {
+    let key = |p: &DeckParam| DECK_CONTROLS.iter().find(|(_, q)| q == p).map(|(k, _)| *k);
+    let keyed = writes.iter().filter_map(|(p, v)| Some((key(p)?, *v)));
+    keyed.map(|(k, v)| (format!("deck{deck}.{k}"), v)).collect()
+}
 
 const CHANNEL_CONTROLS: [(&str, ChannelParam); 6] = [
     ("fader", ChannelParam::Fader),

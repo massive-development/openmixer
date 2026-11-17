@@ -12,6 +12,7 @@ const spec = (id: string): ControlSpec => ({
   law: { kind: 'linear' },
   ticks: [],
   snap: null,
+  writes: [],
 });
 const controls = { 'deck0.play': spec('deck.0.play'), 'mixer.crossfader': spec('mixer.crossfader') };
 

@@ -2,7 +2,7 @@
 //! the GPUI window builds, so the web front end never types a range by hand. Built on a control
 //! thread; the models only read the engine while they are made, and send nothing.
 
-use crate::control::slice_params;
+use crate::control::{composite_controls, slice_params, Composite};
 use crate::control_law::{sampled_law, snap_spec, tick_specs, SnapSpec, TickSpec, TravelLaw};
 use om_core::param_id::{ChannelParam, DeckParam, EqBand, MixerParam, MAX_CHANNELS};
 use om_core::ParamId;
@@ -48,6 +48,9 @@ pub struct ControlSpec {
     pub ticks: Vec<TickSpec>,
     /// The detent pull GPUI applies while the control is dragged, if any.
     pub snap: Option<SnapSpec>,
+    /// A composite key's writes, in order, as (front-end key, value); its `id` is then empty.
+    /// Empty for every single control.
+    pub writes: Vec<(String, f64)>,
 }
 
 /// The value shape of one control, before its key and id are attached.
@@ -64,23 +67,32 @@ struct Shape {
     snap: Option<SnapSpec>,
 }
 
-/// Every slice control for `decks` decks and the mixer's channels, with ranges from the models.
+/// Every slice control for `decks` decks and the mixer's channels, with ranges from the models,
+/// then the composite keys (`deck<d>.cue`).
 pub fn slice_controls(mixer: &MixerBinding, decks: u8) -> Vec<ControlSpec> {
     let channels = u8::try_from(mixer.num_channels()).unwrap_or(MAX_CHANNELS);
     let models = Models::new(mixer, channels);
     let params = slice_params(decks, channels).into_iter();
-    params
-        .filter_map(|(key, id)| {
-            let shape = models.shape(&id)?;
-            Some(spec(key, &id, shape))
-        })
-        .collect()
+    let single = params.filter_map(|(key, id)| {
+        let shape = models.shape(&id)?;
+        Some(spec(key, id.to_string(), shape))
+    });
+    let composite = composite_controls(decks).into_iter().map(composite_spec);
+    single.chain(composite).collect()
 }
 
-fn spec(key: String, id: &ParamId, s: Shape) -> ControlSpec {
+/// A press with no id of its own: the front end sends its writes in order.
+fn composite_spec(c: Composite) -> ControlSpec {
+    ControlSpec {
+        writes: c.writes,
+        ..spec(c.key, String::new(), trigger(c.label.to_owned()))
+    }
+}
+
+fn spec(key: String, id: String, s: Shape) -> ControlSpec {
     ControlSpec {
         key,
-        id: id.to_string(),
+        id,
         min: s.min,
         max: s.max,
         default: s.default,
@@ -90,6 +102,7 @@ fn spec(key: String, id: &ParamId, s: Shape) -> ControlSpec {
         law: s.law,
         ticks: s.ticks,
         snap: s.snap,
+        writes: Vec::new(),
     }
 }
 
@@ -267,9 +280,11 @@ fn plain() -> Shape {
 mod tests {
     use super::*;
     use crate::slice_control_ids;
-    use om_core::ParameterRouter;
+    use om_core::{ParameterRouter, ParameterTarget};
     use om_engine::DjEngine;
-    use std::sync::Arc;
+    use om_ui::binding::DeckBinding;
+    use om_ui::widgets::transport::TransportPanel;
+    use std::sync::{Arc, Mutex};
 
     fn mixer() -> MixerBinding {
         let engine = Arc::new(DjEngine::new(2).0);
@@ -289,7 +304,8 @@ mod tests {
     fn every_slice_key_has_a_shape_and_the_same_id() {
         let specs = controls();
         let ids = slice_control_ids(2, 2);
-        assert_eq!(specs.len(), ids.len());
+        // The composite keys (one per deck) follow the single ones.
+        assert_eq!(specs.len(), ids.len() + 2);
         for (spec, (key, id)) in specs.iter().zip(&ids) {
             assert_eq!((&spec.key, &spec.id), (key, id));
             assert!(
@@ -395,5 +411,48 @@ mod tests {
         assert_eq!(find("deck1.loop.0.25").label, "1/4");
         assert_eq!(find("deck1.loop.32").label, "32");
         assert_eq!(find("deck0.seek").kind, ControlKind::Continuous);
+    }
+
+    /// Records the string writes of a GPUI widget model.
+    struct Strings(Arc<Mutex<Vec<(String, f64)>>>);
+
+    impl ParameterTarget for Strings {
+        fn set_parameter(&self, id: &str, value: f64) -> bool {
+            self.0.lock().unwrap().push((id.to_owned(), value));
+            true
+        }
+    }
+
+    /// What GPUI's Cue button sends for `deck`, as ids and values, in order.
+    fn gpui_cue(deck: usize) -> Vec<(String, f64)> {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let engine = Arc::new(DjEngine::new(2).0);
+        let binding = DeckBinding::new(engine, Arc::new(Strings(Arc::clone(&seen))), deck);
+        TransportPanel::new(binding).press(TransportButton::Cue);
+        let writes = seen.lock().unwrap().clone();
+        writes
+    }
+
+    #[test]
+    fn cue_writes_what_the_gpui_cue_button_sends_in_its_order() {
+        for deck in 0..2 {
+            let cue = find(&format!("deck{deck}.cue"));
+            assert_eq!(cue.kind, ControlKind::Trigger);
+            assert_eq!((cue.label.as_str(), cue.id.as_str()), ("Cue", ""));
+            let sent: Vec<(String, f64)> =
+                cue.writes.iter().map(|(k, v)| (find(k).id, *v)).collect();
+            assert_eq!(sent, gpui_cue(deck), "deck {deck}");
+        }
+    }
+
+    #[test]
+    fn only_composite_controls_carry_writes() {
+        let all = controls();
+        let composite: Vec<&str> = all
+            .iter()
+            .filter(|c| !c.writes.is_empty())
+            .map(|c| c.key.as_str())
+            .collect();
+        assert_eq!(composite, ["deck0.cue", "deck1.cue"]);
     }
 }

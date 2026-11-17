@@ -4,6 +4,7 @@
   import Icon from '../icons/Icon.svelte';
   import { control, type Controls } from '../ipc';
   import type { DeckFrame } from '../packet';
+  import { cueWrites, sendInOrder } from './transport';
 
   interface Props {
     deck: number;
@@ -13,6 +14,7 @@
 
   let { deck, controls, frame }: Props = $props();
 
+  const cue = $derived(controls[`deck${deck}.cue`]);
   const play = $derived(controls[`deck${deck}.play`]);
   const sync = $derived(controls[`deck${deck}.sync`]);
   const loaded = $derived(frame?.loaded ?? false);
@@ -27,9 +29,22 @@
     const key = `deck${deck}.${name}`;
     control(key, on ? 0 : 1).catch((error: unknown) => console.error(`openmixer: ${key}`, error));
   }
+
+  // GPUI's Cue: each write waits for the one before, so the engine stops before it seeks.
+  function pressCue(): void {
+    sendInOrder(cueWrites(controls, deck), control).catch((error: unknown) =>
+      console.error(`openmixer: deck${deck}.cue`, error),
+    );
+  }
 </script>
 
 <div class="transport">
+  {#if cue}
+    <!-- A press, not a toggle: it never stays lit. -->
+    <Button tall tint={hue} disabled={!loaded} label={controlName(`deck${deck}.cue`, cue.label)} onpress={pressCue}>
+      <span class="face">{cue.label}</span>
+    </Button>
+  {/if}
   {#if play}
     <!-- Its word and glyph change with the state, so it carries no pressed state of its own. -->
     <Button
@@ -66,7 +81,8 @@
 <style>
   .transport {
     display: grid;
-    grid-template-columns: 1.6fr 1fr;
+    /* Cue, Play (the wider track), Sync. */
+    grid-template-columns: 1fr 1.6fr 1fr;
     gap: var(--om-inner-gap);
   }
 
