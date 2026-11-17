@@ -99,10 +99,9 @@ These were the trial's exit criteria. They were not measured before acceptance a
 
 What the trial window does not yet match or prove, so the measurements are read against it:
 
-- **No CUE button.** The engine has no control id for it (`TransportButton::Cue` has no `DeckParam`); GPUI sends play 0 and seek 0 for it, the slice shows Play and Sync only.
 - **The beat grid on the generated demo tracks sits about half a beat off the kicks.** It is the analysed grid, the same data GPUI draws; it has not been checked against the GPUI window.
 - **Pointer interactions have not been exercised by hand:** knob and fader drags, pad and loop clicks, overview seek, lane scrub and wheel zoom.
-- **Keyboard and assistive technology are checked by key injection and by reading the markup only.** Tab order, Space on a toggle, the slider keys (arrows, Shift, Home, End, Delete) and keyboard seek were driven with XTest key events under WSLg; no screen reader has been run against the window, and the zoomed lanes' scrub and wheel zoom have no keyboard path (the overview's position slider seeks).
+- **Keyboard and assistive technology are checked by key injection and by reading the markup only.** Tab order, Space on a toggle, the slider keys (arrows, Shift, Home, End, Delete) and keyboard seek were driven with XTest key events under WSLg; no screen reader has been run against the window. The zoomed lanes' keys (step, zoom, Home and End) are covered by unit tests only, not driven by key injection.
 - **Text at 125% was simulated,** by scaling the type tokens; WebKitGTK's own text zoom and WebView2's text scaling have not been tried.
 - **Mock device only.** The window runs only on the mock device, with no MIDI, no plugin state and no settings.
 

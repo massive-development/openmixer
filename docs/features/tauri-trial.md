@@ -67,7 +67,7 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
 ### Controls (in)
 
-1. At start the front end calls `controls` once. It returns a map from front-end key to spec: `id` (canonical `ParamId` string), `min`, `max`, `default`, `detent` (or null), `kind` (`toggle`, `trigger` or `continuous`), `label` (the word GPUI prints, or empty), `law`, `ticks` and `snap`. `om_ui_bridge::slice_controls` reads every range, default, detent and label off the `om-ui` widget models the GPUI window builds (`ChannelStrip`, `MasterSection`, `CrossfaderSection`, `TransportButton`, the loop sizes); tempo is the pitch fader's narrowest range (0.92 to 1.08, default 1.0) and seek is 0 to 1 of the track. The other three come from the definitions GPUI applies (`om_ui::fader_law`, `om_ui::control::snap_with_bypass`):
+1. At start the front end calls `controls` once. It returns a map from front-end key to spec: `id` (canonical `ParamId` string), `min`, `max`, `default`, `detent` (or null), `kind` (`toggle`, `trigger` or `continuous`), `label` (the word GPUI prints, or empty), `law`, `ticks`, `snap` and `writes` (`[{ key, value }]`, empty except for a composite key). `om_ui_bridge::slice_controls` reads every range, default, detent and label off the `om-ui` widget models the GPUI window builds (`ChannelStrip`, `MasterSection`, `CrossfaderSection`, `TransportButton`, the loop sizes); tempo is the pitch fader's narrowest range (0.92 to 1.08, default 1.0) and seek is 0 to 1 of the track. The other three come from the definitions GPUI applies (`om_ui::fader_law`, `om_ui::control::snap_with_bypass`):
 
    | Field | Shape | Carried by |
    |---|---|---|
@@ -77,6 +77,7 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
    The front end maps travel through `law` both ways (`lib/controls/range.ts`), so a drag, an arrow key (1% of travel, 10% with Shift or a page key) and the thumb's place for a snapshot value all follow the same taper; the master knob turns through the master taper too, and its detent mark sits at unity's angle on it. `fixtures/ui-bridge/fader-law.txt` holds the knots and 18 travel positions with their gains; `om-ui-bridge`'s `tests/fader_law_table.rs` checks it against the specs and `FaderLaw`, and `range.test.ts` against its interpolation (`cargo test -p om-ui-bridge --test fader_law_table write_table -- --ignored` rewrites it).
 2. Keys: per deck `deck<d>.play`, `.sync`, `.tempo`, `.seek`, `.hotcue<0..7>`, `.hotcue<k>.clear`, `.loop.<beats>` (0.25, 0.5, 1, 2, 4, 8, 16, 32) and `.loop.exit`; per channel `ch<c>.fader`, `.trim`, `.filter`, `.eq.low`, `.eq.mid`, `.eq.high`; and `mixer.crossfader`, `mixer.master`. For example `deck1.tempo` is `deck.1.rate` and `deck1.loop.0.25` is `deck.1.loop.quantized.0.25`.
+   - Composite keys: `deck<d>.cue`, one per deck, after the single keys. The engine has no control id for Cue, so the spec's `id` is empty and its `writes` are GPUI's Cue (`TransportPanel::press(TransportButton::Cue)`: with no main-cue point in the engine yet it stops the deck and returns it to the start), in order: `deck<d>.play` 0, then `deck<d>.seek` 0. The label is `TransportButton::Cue`'s. The front end sends each write with `control`, awaiting one before the next (`lib/deck/transport.ts`); a failed write stops the rest. `om-ui-bridge` checks the writes against what GPUI's Cue sends through a recording target.
 3. A control writes with `control(key, value)` in `ipc.ts`: an unknown key is refused in the front end without calling the shell; otherwise the `control` command receives the spec's id and the value. Toggles send the opposite of the state the snapshot reports, triggers send 1, continuous controls send engine units.
 4. `dispatch_control` rejects a non-finite value, parses the id with `ParamId::from_str`, validates it, and dispatches it once through the `ParameterRouter`; any failure returns an error string and dispatches nothing. It runs in the `control` command, which Tauri runs on the main thread, never on the audio thread. The command accepts any valid id, not only the slice's.
 
@@ -84,7 +85,7 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
 - `deck_info(deck)` returns the track (`title`, `artist`, `bpm`, `key`), the header words GPUI's `TrackHeader` prints (`titleText`, `keyText`), `firstBeatFrame` (the beat grid's beat 0), `sampleRate`, `numSamples`, `spectral`, the peak level table `levels` (`samplesPerPoint`, `len` per level), `hotcues` (eight frames or null), `generation` (counts every change: track, waveform, hot cues) and `peaksGeneration` (counts waveform changes only: a new `WaveformData`, or going to or from none). A beat grid's BPM takes precedence over the track's, as in GPUI.
 - `deck_peaks(deck)` returns raw bytes (an `ArrayBuffer`): first the deck's `peaksGeneration` as a little-endian u64 (8 bytes, read together with the peaks so a late answer is recognised), then every level of the track's `WaveformData`, finest first, back to back, four bytes per point: body, low, mid, high. Each byte is the height (0 to 1 of the half-height, before `FILL`) the GPUI Low-Band strip draws for that point, normalised by the track's reference, times 255. With `spectral` false the whole height is in the low byte and the lane is a colourless silhouette. No peak bytes (only the 8-byte generation) while the deck has no waveform.
-- `deck-changed` (payload `{ deck, generation }`) is emitted from the control thread when a deck's track, waveform or hot cues change; the generation counts the changes. The deck headers, panels, lanes and overview reload `deck_info` on every event, so cue flags, cue ticks and titles follow at once. The lanes and the overview call `deck_peaks` (and the lanes upload a texture, the overview redraws its canvas) only when `peaksGeneration` differs from the one they last showed; a hot cue or title change fetches no peaks. An answer whose generation is not the newest the deck info named is dropped, so a late answer never replaces newer peaks (`lib/peaks.ts`, `PeakSync`).
+- `deck-changed` (payload `{ deck, generation }`) is emitted from the control thread when a deck's track, waveform or hot cues change; the generation counts the changes. Installing the demo library's track loader measures every deck under the same lock and emits the changes at once, so `deck_peaks` read before the first tick already carries the generation of the waveform it returns. The deck headers, panels, lanes and overview reload `deck_info` on every event, so cue flags, cue ticks and titles follow at once. The lanes and the overview call `deck_peaks` (and the lanes upload a texture, the overview redraws its canvas) only when `peaksGeneration` differs from the one they last showed; a hot cue or title change fetches no peaks. An answer whose generation is not the newest the deck info named is dropped, so a late answer never replaces newer peaks (`lib/peaks.ts`, `PeakSync`).
 
 ### Strip ink and waveform style
 
@@ -111,7 +112,7 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | Name | Signature (front end) | Returns |
 |---|---|---|
 | `theme_css` | `themeCss()` | the `:root` block of `--om-*` variables |
-| `run_config` | `runConfig()` | `{ smoke, benchSeconds, fpsCap }` |
+| `run_config` | `runConfig()` | `{ smoke, benchSeconds, fpsCap, banner, hud }`: `banner` the mock-device notice or null, `hud` whether the frame counter shows |
 | `ready` | `ready()` | nothing; marks the front end ready, and a smoke run exits 0 |
 | `smoke_play` | `isSmokePlay()` | whether a smoke run must start deck A through `control` first (true with a library) |
 | `bench_done` | `benchDone(stats)` | nothing; checks and writes the bench report, then exits 0, or 1 when refused |
@@ -136,8 +137,8 @@ The window's capability (`capabilities/default.json`) grants `core:default` to t
 - **Skip unchanged frames.** The lanes draw only when a lane's position or zoom changed, or after new data or a resize.
 - **Frame cap.** The lanes draw at most `--ui-fps-cap` times a second (default 60, 0 uncapped), with 2 ms slack (`view.ts`, `shouldDraw`). The cap applies to the lanes only.
 - **Text only on change.** Read-outs go through `dom.ts` (`setText`, `setStyle`), which write only a changed value. Values that only assistive technology reads are paced: meters at most every 250 ms, the overview position once a second.
-- **Interaction.** Dragging a lane scrubs (sent as `deck<d>.seek`); the wheel zooms between 1 and 64 visible seconds (default 8). Clicking or dragging the overview seeks.
-- A frame counter (`NN fps · N.NN ms`, drawn frames and mean work) sits in the top bar; it is hidden from assistive technology.
+- **Interaction.** Dragging a lane scrubs (sent as `deck<d>.seek`); the wheel zooms between 1 and 64 visible seconds (default 8). Clicking or dragging the overview seeks. Each lane also takes keys (see Accessibility): a key's seek goes through the same scrub hold and send as a drag's, and its zoom changes the same shared view.
+- **Top bar.** The mock-device notice (`run_config().banner`, the text of `om_ui::labels::Notice::Demo`), centred, one line, `role="status"`, cut with an ellipsis; nothing when null. GPUI's rule (`gui.rs`): every run here is on the mock device, and a demo run (`flags::demo_run`: `--demo-library`, `--demo-scene`, `--demo-map`, `--demo-automix`, `--demo-record`) shows none. A frame counter (`NN fps · N.NN ms`, drawn frames and mean work) shows only when `run_config().hud` is true (`--ui-bench` or `--debug-panel`); otherwise the ticker makes no counter window, so nothing is counted, formatted or written. It is hidden from assistive technology.
 
 ## Front-end map
 
@@ -149,7 +150,7 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/packet.ts` | Packet decode |
 | `lib/clock.ts` | Playhead interpolation |
 | `lib/ipc.ts` | Every command and event, typed |
-| `lib/ticker.ts`, `lib/hud.ts`, `lib/paint.ts`, `lib/dom.ts` | The frame loop, the frame counter text, waiting for the first paint, write-on-change helpers |
+| `lib/ticker.ts`, `lib/hud.ts`, `lib/paint.ts`, `lib/dom.ts` | The frame loop, the frame counter (`HudWindow`, made only when the run shows it), waiting for the first paint, write-on-change helpers |
 | `lib/bench.ts` | Frame recorder and the bench summary |
 | `lib/theme.ts` | Puts the theme CSS in its style element |
 | `lib/decks.svelte.ts` | Per-deck track info and ink, reloaded on `deck-changed` |
@@ -157,28 +158,29 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/meter.ts` | Meter scale, zones, fall and write threshold (`om_ui::meter::MeterScale`) |
 | `lib/a11y.ts` | Accessible names and value texts |
 | `lib/format.ts` | Read-out formatting |
-| `lib/controls/` | `Knob`, `Fader`, `Button`, `Meter`; `drag.ts` (drag travel, hold while the engine catches up), `keys.ts` (slider keys, through the law), `range.ts` (value and travel through the spec's `law`), `snap.ts` (a dragged knob's detent pull) |
-| `lib/deck/` | `DeckHeader`, `Overview`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`; `overview.ts`, `pads.ts` |
+| `lib/controls/` | `Knob`, `Fader`, `Button`, `Meter`; `drag.ts` (drag travel and Shift's fine mode, hold while the engine catches up), `keys.ts` (slider keys, through the law), `range.ts` (value and travel through the spec's `law`), `snap.ts` (a dragged knob's detent pull) |
+| `lib/deck/` | `DeckHeader`, `Overview`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`; `overview.ts`, `pads.ts`, `transport.ts` (Cue's writes, sent in order) |
 | `lib/mixer/` | `Mixer`, `ChannelStrip` |
-| `lib/waveform/` | `Waveforms.svelte` (lanes and overlays), `gl.ts`, `shader.ts`, `view.ts` (zoom, level choice, grid, frame cap), `scrub.ts` |
+| `lib/waveform/` | `Waveforms.svelte` (lanes and overlays), `LaneSlider.svelte` and `sliders.svelte.ts` (each lane's keyboard slider and what it shares with the lanes), `gl.ts`, `shader.ts`, `view.ts` (zoom, level choice, grid, frame cap), `scrub.ts`, `lanekeys.ts` (`laneKey`: what a key does to a lane) |
 | `lib/icons/` | `icons.ts`, `Icon.svelte`, `LICENSE-LUCIDE` |
 
-Layout: a top bar, the two deck headers (with their overviews), the waveform lanes, then deck A's panel, the mixer and deck B's panel. Source order is deck A, mixer, deck B, which is the reading and Tab order.
+Layout: a top bar, the two deck headers (with their overviews), the waveform lanes, then deck A's panel, the mixer and deck B's panel. Source order is deck A, mixer, deck B, which is the reading and Tab order; each lane's keyboard slider sits in the source right after its deck's header (so after its overview) and is laid over its lane in the waveforms row. A deck's transport row is Cue, Play/Pause (the wider track) and Sync.
 
 ## Accessibility, as implemented
 
 | Control | Role and name | Value text | Keys |
 |---|---|---|---|
-| Knob (trim, EQ, filter, master) | `slider`, "Channel A high EQ", "Master gain" | dB with sign, `kill` at the floor, `low-pass 40 %`, `off` | Arrows 1% of travel (Shift 10%), Page Up and Down 10%, Home and End the ends, Delete or Backspace the default; double-click the default. A drag of trim, EQ or filter sticks to the detent within its `snap` width once the value has moved, as in GPUI; Shift held at the press bypasses it. Keys never stick, so one arrow step leaves the detent |
+| Knob (trim, EQ, filter, master) | `slider`, "Channel A high EQ", "Master gain" | dB with sign, `kill` at the floor, `low-pass 40 %`, `off` | Arrows 1% of travel (Shift 10%), Page Up and Down 10%, Home and End the ends, Delete or Backspace the default; double-click the default. A drag of trim, EQ or filter sticks to the detent within its `snap` width once the value has moved, as in GPUI. Shift held at the press makes the whole drag fine, as GPUI's `begin_drag_fine`: a tenth of the travel per pixel (`FINE_DIVISOR` 10) and no detent pull; Shift pressed or released mid-drag changes nothing. The master knob drags fine too, although GPUI drags the master as a fader. Keys never stick, so one arrow step leaves the detent |
 | Fader (channel, crossfader, tempo) | `slider` with `aria-orientation`, "Channel A fader", "Crossfader", "Deck A tempo" | `85 %` of linear gain; crossfader `centre` or `A 30 %`; tempo `+2.00 %` | As the knob, through the fader's law; the tempo fader ignores Delete, Backspace and double-click, as in GPUI. A channel fader draws its `ticks` (dB labels on the knob side, mirrored on deck B's strip); the tempo fader keeps evenly spaced marks |
 | Overview | `slider`, "Deck A position"; disabled without a track | `1:02 of 2:04` | Arrows 1% of the track (Shift 10%), Page keys 10%, Home and End; no reset |
-| Play, Sync | `button`, "Deck A play" or "Deck A pause", "Deck A sync"; Sync has `aria-pressed` | | Space or Enter |
+| Waveform lane | `slider`, "Deck A waveform"; after the deck's overview in the Tab order | `1:02 of 2:04`, at most once a second (at once after a key) | Left and Right one beat on a grid (`bpm` and `firstBeatFrame`), else 0.5 s; with Shift four beats, else 2 s; Home and End the track's ends; seeks clamp to the track as the scrub does. `+` or `=` zoom in and `-` out by one wheel notch (×1.15, 1 to 64 s), `0` back to 8 s (the zoom is shared by both lanes, as the wheel's). Other keys, and any key with Ctrl, Alt or Meta, pass on. The focused lane draws the theme ring inside its edges |
+| Cue, Play, Sync | `button`, "Deck A cue", "Deck A play" or "Deck A pause", "Deck A sync"; Sync has `aria-pressed`; Cue never stays lit | | Space or Enter |
 | Hot cue pads | `button` in the group "Hot cues", "Deck A hot cue 3, set at 0:01.0" or "..., empty" | | Space or Enter sets or jumps; Delete or Backspace clears; Shift, Alt or Ctrl click clears |
 | Loop sizes | `button` with `aria-pressed` in the group "Loop", "Deck A loop 1/4 beat" | | Space or Enter; a lit size ends its loop |
 | Meters | `meter`, "Channel A level", "Master level" | whole dB or `silent`, paced to 250 ms | |
 | Regions | `section`s "Deck A track", "Deck A controls", "Mixer", "Waveforms"; channel strips and master are labelled groups | | Tab follows source order |
 
-The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A and Deck B, top to bottom"); bar numbers, cue flags, deck letters and the frame counter are hidden from assistive technology. Focus uses the theme's ring (`--om-focus-ring`, `--om-focus-border-width`). With `prefers-reduced-motion` the hover and press transitions are off; meters and waveforms keep moving. The lanes' scrub and zoom have no keyboard path.
+The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A and Deck B, top to bottom"); bar numbers, cue flags, deck letters and the frame counter are hidden from assistive technology. Focus uses the theme's ring (`--om-focus-ring`, `--om-focus-border-width`). With `prefers-reduced-motion` the hover and press transitions are off; meters and waveforms keep moving. The mock-device notice is a `status`.
 
 ## Icons
 
@@ -192,6 +194,7 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 | `--ui=tauri` | | Needs a build with `--features gui-tauri` (else: "--ui=tauri needs the gui-tauri feature") and `--mock-device` (else: "--ui=tauri needs --mock-device"). Ignored with `--headless`. |
 | `--ui-bench=SECONDS` | 1 to 600 | Records the lanes' drawn frames for that long after a 3 s warm-up from the first snapshot, writes the report and exits 0. The file is `OPENMIXER_BENCH_OUT` when set and not empty, else `ui-bench.json` in the scratch folder. Refused with `--smoke`, without `--ui=tauri`, or out of range ("--ui-bench needs a whole number from 1 to 600"). |
 | `--ui-fps-cap=N` | 0 to 1000, default 60 | 0 is uncapped. Needs `--ui=tauri`. |
+| `--debug-panel` | | Shows the frame counter in the top bar (`run_config().hud`); a bench run shows it too. GPUI's flag of the same name shows its device and latency panel. |
 | `--smoke` | | Exits 0 ("openmixer tauri smoke ok") once the front end has received a valid packet, painted and called `ready`. With a demo library the front end first waits for deck A's track and sends `deck0.play`; the run fails unless the engine then reports deck A playing ("openmixer tauri control round trip ok"). Fails after 60 s without `ready`. |
 
 ## Measuring
@@ -228,8 +231,8 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 |---|---|
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` | Packet layout and golden file, peaks, control keys, specs (law, ticks, snap) and dispatch, theme CSS; `tests/meter_table.rs` checks `fixtures/ui-bridge/meter-table.txt` against `om_ui::meter::MeterScale`, `tests/fader_law_table.rs` checks `fixtures/ui-bridge/fader-law.txt` against the specs and `om_ui::fader_law::FaderLaw` |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri` | Stream, pacer, stream slot, control loop, deck changes, deck info, controls, strip ink, bench report, smoke verdict; headless |
-| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri` | The flag parsing in `gui_tauri.rs`, and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
-| `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, IPC, bench, controls (law, snap), keys, names, overview, pads, theme, lanes |
+| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri` | The flag parsing in `gui_tauri.rs` (with the banner rule and the frame counter flag), and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
+| `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, IPC, bench, the frame counter, controls (law, snap, fine drag), keys, names, overview, pads, Cue's writes, theme, lanes (scrub, lane keys) |
 | `npm run check` | `svelte-check` with warnings as errors |
 | `tools/ui-bench.sh --self-test` | The bench script's arithmetic on a fake `/proc` |
 
@@ -237,7 +240,7 @@ CI runs the front-end steps and the `gui-tauri` tests in the `web` job of `.gith
 
 ## Known gaps
 
-See [ADR 0009, Known gaps of the slice](../adr/0009-web-front-end-tauri-trial.md#known-gaps-of-the-slice). Besides those: the mock-device notice is passed to the window (`RunOptions::banner`) but not shown.
+See [ADR 0009, Known gaps of the slice](../adr/0009-web-front-end-tauri-trial.md#known-gaps-of-the-slice).
 
 ## What the later plans add
 
