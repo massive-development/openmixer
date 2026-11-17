@@ -48,3 +48,23 @@ test('moves outside a drag are ignored', () => {
   expect(s.held).toBeNull();
   expect(s.takeSend()).toBeNull();
 });
+
+test('a key jump holds its frame, sends it once and lets go like a released drag', () => {
+  const s = new Scrub();
+  s.jump(7000);
+  expect(s.held).toBe(7000);
+  expect(s.takeSend()).toBe(7000);
+  expect(s.takeSend()).toBeNull();
+  s.onSnapshot();
+  expect(s.held).toBe(7000);
+  s.onSnapshot();
+  expect(s.held).toBeNull();
+});
+
+test('a jump during a drag ends the drag', () => {
+  const s = new Scrub();
+  s.begin(5000, 0);
+  s.jump(100);
+  s.move(10, 100, 10_000);
+  expect(s.held).toBe(100);
+});

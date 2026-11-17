@@ -33,6 +33,14 @@ export class Scrub {
     this.pending = true;
   }
 
+  /** A key moved the playhead to `frame`: held and sent as a drag's last move is. */
+  jump(frame: number): void {
+    this.held = frame;
+    this.dragging = false;
+    this.pending = true;
+    this.sinceSend = 0;
+  }
+
   /** The press ended; the hold stays until the engine reports the last seek. */
   end(): void {
     this.dragging = false;

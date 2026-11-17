@@ -18,6 +18,8 @@ export interface LaneRect {
 /** Shortest and longest view, in seconds of track. */
 export const MIN_VISIBLE_SECONDS = 1;
 export const MAX_VISIBLE_SECONDS = 64;
+/** The view's length at start and after a reset, in seconds. */
+export const DEFAULT_VISIBLE_SECONDS = 8;
 /** One wheel notch zooms by this factor. */
 export const ZOOM_STEP = 1.15;
 /** Bars repeat every four beats from beat 0 (`om_ui::waveform::bar_number`). */

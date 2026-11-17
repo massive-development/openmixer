@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { deckName } from '../a11y';
+  import { deckName, Paced } from '../a11y';
   import { interpolate } from '../clock';
   import DeckTag from '../deck/DeckTag.svelte';
   import {
@@ -18,9 +18,12 @@
   import type { DeckFrame, Snapshot } from '../packet';
   import { WaveGl, laneInk, type LaneInk, type LanePaint, type PeakTexture } from './gl';
   import { ticker } from '../ticker';
+  import { laneKey } from './lanekeys';
   import { Scrub } from './scrub';
+  import { LaneSliders } from './sliders.svelte';
   import {
     BEATS_PER_BAR,
+    DEFAULT_VISIBLE_SECONDS,
     MIN_BEAT_SPACING_PX,
     barStep,
     firstLabelledBar,
@@ -38,6 +41,8 @@
     snapshot: Snapshot | null;
     visibleSeconds?: number;
     fpsCap?: number;
+    /** The lanes' keyboard sliders, which live elsewhere in the tab order. */
+    sliders?: LaneSliders;
   }
 
   /** One deck's lane: its track, peaks and ink, the drag, and the pooled overlay elements. */
@@ -51,6 +56,8 @@
     dto: StripInk | null;
     request: number;
     scrub: Scrub;
+    /** The position reaches assistive technology once a second, never per frame. */
+    spoken: Paced;
     paint: LanePaint | null;
     seekKey: string;
     shown: number;
@@ -70,7 +77,8 @@
   // Hot cues 1..8, as `deck_info` lists them.
   const CUE_SLOTS = Array.from({ length: 8 }, (_, j) => j);
 
-  let { snapshot, visibleSeconds = 8, fpsCap = 60 }: Props = $props();
+  let { snapshot, visibleSeconds = DEFAULT_VISIBLE_SECONDS, fpsCap = 60, sliders = new LaneSliders() }: Props =
+    $props();
 
   let root: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -87,7 +95,7 @@
 
   let wgl: WaveGl | null = null;
   let latest: Snapshot | null = null;
-  let seconds = 8;
+  let seconds = DEFAULT_VISIBLE_SECONDS;
   let fill = 1;
   let minHalfPx = 0;
   let cssWidth = 0;
@@ -121,6 +129,7 @@
       dto: null,
       request: 0,
       scrub: new Scrub(),
+      spoken: new Paced(1000),
       paint: null,
       seekKey: `deck${deck}.seek`,
       shown: NaN,
@@ -143,6 +152,7 @@
     for (let i = first; i < count; i++) lanes[i] = newLane(i);
     positions = new Float64Array(count);
     inks = lanes.map((lane) => lane.dto);
+    sliders.values = lanes.map((_, i) => sliders.values[i] ?? { seconds: 0, total: 0 });
     for (let i = first; i < count; i++) {
       void loadInfo(i);
       void loadInk(i);
@@ -228,6 +238,7 @@
       const r = laneRect(i, lanes.length, devHeight, sep);
       return { top: r.top / scale, height: r.height / scale };
     });
+    sliders.boxes = boxes;
     dirty = true;
   }
 
@@ -266,6 +277,7 @@
     const lane = lanes[i];
     lane.shown = positions[i];
     sendSeek(lane, deck);
+    speak(i, lane.shown, deck, false);
     if (!wgl || !lane.ink) return;
     const paint = fillPaint(lane, lane.ink, i, deck);
     wgl.draw(paint);
@@ -276,6 +288,42 @@
   function sendSeek(lane: Lane, deck: DeckFrame): void {
     const frame = lane.scrub.takeSend();
     if (frame !== null) control(lane.seekKey, seekValue(frame, deck.length)).catch(seekFailed);
+  }
+
+  // Whole seconds, as the overview reports them; written when they change, at most once a second.
+  function speak(i: number, frame: number, deck: DeckFrame, now: boolean): void {
+    const value = sliders.values[i];
+    if (!value) return;
+    const rate = deck.fileRate;
+    const seconds = rate > 0 ? Math.floor(Math.max(frame, 0) / rate) : 0;
+    const total = deck.loaded && rate > 0 ? deck.length / rate : 0;
+    if (seconds === value.seconds && total === value.total) return;
+    if (!now && !lanes[i].spoken.due(performance.now())) return;
+    value.seconds = seconds;
+    value.total = total;
+  }
+
+  // A key on lane `i`'s slider: a seek goes out as the scrub's does, a zoom changes the shared view.
+  function onLaneKey(i: number, key: string, shift: boolean): boolean {
+    const lane = lanes[i];
+    const deck = latest?.decks[i];
+    if (!lane || !deck) return false;
+    const frame = lane.scrub.held ?? (Number.isNaN(lane.shown) ? 0 : lane.shown);
+    const action = laneKey(key, shift, {
+      frame,
+      length: deck.loaded ? deck.length : 0,
+      sampleRate: sampleRateOf(lane, deck),
+      bpm: lane.info?.bpm ?? null,
+      firstBeatFrame: lane.info?.firstBeatFrame ?? null,
+      seconds,
+    });
+    if (action === null) return false;
+    if (action.kind === 'zoom') seconds = action.seconds;
+    else {
+      lane.scrub.jump(action.frame);
+      speak(i, action.frame, deck, true);
+    }
+    return true;
   }
 
   function seekFailed(error: unknown): void {
@@ -432,7 +480,9 @@
       .catch((error: unknown) => console.error('openmixer: waveform style', error));
     root.addEventListener('wheel', onWheel, { passive: false });
     const stopFrames = ticker.add(frame);
+    sliders.onKey = onLaneKey;
     return () => {
+      sliders.onKey = null;
       stopFrames();
       observer.disconnect();
       root.removeEventListener('wheel', onWheel);
@@ -457,7 +507,13 @@
       <div class="separator" style:top="{box.top}px" style:transform="translateY(-100%)"></div>
     {/if}
     <!-- Bar numbers, cue flags and the deck letter repeat what the pads and headers already say. -->
-    <div class="lane" style:top="{box.top}px" style:height="{box.height}px" aria-hidden="true">
+    <div
+      class="lane"
+      class:focused={sliders.focused === i}
+      style:top="{box.top}px"
+      style:height="{box.height}px"
+      aria-hidden="true"
+    >
       {#each BAR_SLOTS as j (j)}
         <span
           class="bar num"
@@ -515,6 +571,12 @@
     width: 100%;
     overflow: hidden;
     pointer-events: none;
+  }
+
+  /* The focused lane slider's ring, inside the lane so its edges never clip it. */
+  .focused {
+    outline: var(--om-focus-border-width) solid var(--om-focus-ring);
+    outline-offset: calc(-1 * var(--om-focus-border-width));
   }
 
   .letter {

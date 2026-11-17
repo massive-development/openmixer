@@ -22,6 +22,8 @@
   import { afterFirstPaint } from './lib/paint';
   import { applyThemeCss } from './lib/theme';
   import { ticker } from './lib/ticker';
+  import LaneSlider from './lib/waveform/LaneSlider.svelte';
+  import { LaneSliders } from './lib/waveform/sliders.svelte';
   import Waveforms from './lib/waveform/Waveforms.svelte';
 
   // The slice shows two decks and their two channels.
@@ -39,6 +41,8 @@
   // The lanes' frame cap; the shell's `--ui-fps-cap` replaces the default.
   let fpsCap = $state(60);
   const decks = new DeckData();
+  // Each lane's keyboard slider follows its deck's overview in the tab order.
+  const sliders = new LaneSliders();
   let hud: HTMLElement | undefined = $state();
   // Resolves once deck A reports a loaded track (the smoke run's round trip waits for it).
   let deckALoaded: (() => void) | null = null;
@@ -125,6 +129,7 @@
       <section class="region" style:grid-area="head-{SIDES[deck]}" aria-label="{deckName(deck)} track">
         <DeckHeader {deck} info={decks.infos[deck] ?? null} ink={decks.inks[deck] ?? null} {snapshot} />
       </section>
+      <LaneSlider {deck} {sliders} />
       <section class="region" style:grid-area="deck-{SIDES[deck]}" aria-label="{deckName(deck)} controls">
         <DeckPanel
           {deck}
@@ -142,7 +147,7 @@
     </section>
     {@render deckRegions(DECKS[1])}
     <section class="waveforms" aria-label="Waveforms">
-      <Waveforms {snapshot} {fpsCap} />
+      <Waveforms {snapshot} {fpsCap} {sliders} />
     </section>
   </main>
 {/if}
