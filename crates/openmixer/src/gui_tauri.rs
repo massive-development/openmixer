@@ -40,6 +40,12 @@ struct Frames {
     fps_cap: u32,
 }
 
+/// What the top bar shows beside the wordmark.
+struct Shown {
+    banner: Option<String>,
+    hud: bool,
+}
+
 /// What a demo run stages: the scene, and the user's file for `--demo-scene=track`.
 struct Demo {
     scene: Option<DemoScene>,
@@ -69,8 +75,11 @@ pub fn main(args: &[String]) -> ExitCode {
         &library_smoke::scratch_dir(),
     );
     let scratch = demo.as_ref().map(|_| library_smoke::scratch_dir());
-    let banner = banner_of(args);
-    let result = run_window(smoke, frames, &out, demo, scratch.as_deref(), banner);
+    let shown = Shown {
+        banner: banner_of(args),
+        hud: hud_of(args, frames),
+    };
+    let result = run_window(smoke, frames, &out, demo, scratch.as_deref(), shown);
     // The library closed with the control thread; the scratch folder goes with the run, unless
     // it holds the bench report.
     let keep =
@@ -86,6 +95,12 @@ pub fn main(args: &[String]) -> ExitCode {
 fn banner_of(args: &[String]) -> Option<String> {
     let demo = openmixer::flags::demo_run(args);
     (!demo).then(|| notice_text(Notice::Demo).to_owned())
+}
+
+/// The frame counter shows for whoever tunes the window: a bench run, or `--debug-panel` (the flag
+/// that shows GPUI's device and latency panel).
+fn hud_of(args: &[String], frames: Frames) -> bool {
+    frames.bench_seconds.is_some() || args.iter().any(|a| a == "--debug-panel")
 }
 
 /// The bench and frame-cap flags; a bench cannot share a run with `--smoke`.
@@ -139,7 +154,7 @@ fn run_window(
     out: &Path,
     demo: Option<Demo>,
     scratch: Option<&Path>,
-    banner: Option<String>,
+    shown: Shown,
 ) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
     let Some(output) = start_mock_audio(&mut composition) else {
@@ -152,7 +167,8 @@ fn run_window(
     let round_trip = smoke && library.is_some();
     let options = RunOptions {
         smoke,
-        banner,
+        banner: shown.banner,
+        hud: shown.hud,
         bench_seconds: frames.bench_seconds,
         bench_out: out.to_path_buf(),
         fps_cap: frames.fps_cap,
@@ -286,6 +302,19 @@ mod tests {
         ] {
             assert_eq!(banner_of(&args(&["--mock-device", demo])), None, "{demo}");
         }
+    }
+
+    #[test]
+    fn the_frame_counter_shows_for_a_bench_or_the_debug_panel_flag() {
+        let hud = |list: &[&str]| {
+            let a = args(list);
+            frames_of(&a, false).map(|f| hud_of(&a, f))
+        };
+        assert_eq!(hud(&["--mock-device"]), Ok(false));
+        assert_eq!(hud(&["--mock-device", "--ui-fps-cap=30"]), Ok(false));
+        assert_eq!(hud(&["--mock-device", "--debug-panel"]), Ok(true));
+        assert_eq!(hud(&["--mock-device", "--ui-bench=5"]), Ok(true));
+        assert_eq!(hud(&["--debug-panel", "--demo-scene=cues"]), Ok(true));
     }
 
     #[test]

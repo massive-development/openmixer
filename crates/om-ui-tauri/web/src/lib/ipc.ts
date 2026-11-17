@@ -149,7 +149,7 @@ export const themeCss = (): Promise<string> => invoke<string>('theme_css');
 /** Tells the shell the window has painted; a smoke run exits on it. */
 export const ready = (): Promise<void> => invoke<void>('ready');
 
-/** How the shell runs the window: smoke, frame bench, frame cap, the notice. */
+/** How the shell runs the window: smoke, frame bench, frame cap, the notice, the frame counter. */
 export interface RunConfig {
   /** A smoke run must see a snapshot before it calls `ready`. */
   smoke: boolean;
@@ -159,6 +159,8 @@ export interface RunConfig {
   fpsCap: number;
   /** The notice the top bar shows (the mock device); null for none. */
   banner: string | null;
+  /** Whether the top bar shows the frame counter (`--ui-bench`, `--debug-panel`); hidden, it is not computed. */
+  hud: boolean;
 }
 
 /** The shell's run options. */

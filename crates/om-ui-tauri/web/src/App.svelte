@@ -46,6 +46,8 @@
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
   let hud: HTMLElement | undefined = $state();
+  // The frame counter, only for a bench run or `--debug-panel`.
+  let hudShown = $state(false);
   // Resolves once deck A reports a loaded track (the smoke run's round trip waits for it).
   let deckALoaded: (() => void) | null = null;
 
@@ -88,6 +90,8 @@
       const config = await runConfig();
       fpsCap = config.fpsCap;
       banner = config.banner;
+      hudShown = config.hud;
+      if (config.hud) ticker.onHud((text) => setText(hud, text));
       applyThemeCss(document, await themeCss());
       controls = await loadControls().catch((error: unknown) => {
         console.error('openmixer: no control list', error);
@@ -112,7 +116,6 @@
   }
 
   onMount(() => {
-    ticker.onHud((text) => setText(hud, text));
     const stop = decks.start(DECKS.length);
     void start();
     return () => void stop.then((unlisten) => unlisten());
@@ -129,7 +132,7 @@
         <p class="notice" role="status" title={banner}>{banner}</p>
       {/if}
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
-      <span class="hud num" bind:this={hud} aria-hidden="true"></span>
+      {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
     </header>
     {#snippet deckRegions(deck: number)}
       <section class="region" style:grid-area="head-{SIDES[deck]}" aria-label="{deckName(deck)} track">

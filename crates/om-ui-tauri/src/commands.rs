@@ -64,6 +64,8 @@ pub struct RunConfig {
     pub fps_cap: u32,
     /// The notice the top bar shows (the mock device); null for none.
     pub banner: Option<String>,
+    /// Whether the top bar shows the frame counter; when not, the front end does not compute it.
+    pub hud: bool,
 }
 
 /// The run's smoke, bench and frame-cap settings.
@@ -206,6 +208,7 @@ mod tests {
             bench_seconds: None,
             fps_cap: 60,
             banner: banner.map(str::to_owned),
+            hud: true,
         };
         serde_json::to_string(&config).unwrap()
     }
@@ -214,5 +217,6 @@ mod tests {
     fn the_run_config_names_the_banner_or_null() {
         assert!(config(Some("Demo mode")).contains("\"banner\":\"Demo mode\""));
         assert!(config(None).contains("\"banner\":null"));
+        assert!(config(None).contains("\"hud\":true"));
     }
 }

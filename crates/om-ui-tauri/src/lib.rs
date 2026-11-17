@@ -55,6 +55,8 @@ pub struct RunOptions {
     pub smoke: bool,
     /// The notice the top bar shows (the mock device); `None` for none.
     pub banner: Option<String>,
+    /// Show the frame counter in the top bar (a bench run or `--debug-panel`).
+    pub hud: bool,
     /// Frame benchmark length in seconds (`--ui-bench`): the front end records its frames, the
     /// report goes to `bench_out` and the window exits 0.
     pub bench_seconds: Option<u32>,
@@ -69,6 +71,7 @@ impl Default for RunOptions {
         Self {
             smoke: false,
             banner: None,
+            hud: false,
             bench_seconds: None,
             bench_out: std::env::temp_dir().join("openmixer-ui-bench.json"),
             fps_cap: DEFAULT_FPS_CAP,
@@ -196,6 +199,7 @@ impl Shared {
                 bench_seconds: options.bench_seconds,
                 fps_cap: options.fps_cap,
                 banner: options.banner.clone(),
+                hud: options.hud,
             },
             bench,
             smoke_play,

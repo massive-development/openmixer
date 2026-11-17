@@ -1,5 +1,5 @@
 import type { FrameRecorder } from './bench';
-import { hudText } from './hud';
+import { HudWindow } from './hud';
 
 /** One frame's work; a woken task returns true to run again next frame. */
 export type FrameTask = (now: number) => boolean;
@@ -10,16 +10,16 @@ const HUD_PERIOD_MS = 500;
 /**
  * The one `requestAnimationFrame` loop of the window. Persistent tasks (the waveform lanes) run
  * every frame; woken tasks run until they return false, so idle controls cost nothing. Tasks call
- * `drew()` when they changed the page; the HUD counts those frames and the work they took.
+ * `drew()` when they changed the page; the HUD, when the run shows it, counts those frames and the
+ * work they took.
  */
 class Ticker {
   private readonly always = new Set<FrameTask>();
   private readonly woken = new Set<FrameTask>();
   private raf = 0;
   private drawn = false;
-  private frames = 0;
-  private workMs = 0;
-  private windowStart = -1;
+  // Both null unless the run shows the counter: then nothing is counted or written.
+  private hudWindow: HudWindow | null = null;
   private hud: ((text: string) => void) | null = null;
   private lastDrawnAt = -1;
   private recorder: FrameRecorder | null = null;
@@ -42,9 +42,10 @@ class Ticker {
     this.drawn = true;
   }
 
-  /** Where the HUD text goes. */
+  /** Shows the HUD: its text goes to `write` from now on. */
   onHud(write: (text: string) => void): void {
     this.hud = write;
+    this.hudWindow = new HudWindow(HUD_PERIOD_MS);
   }
 
   /** Records every drawn frame into `recorder` (a `--ui-bench` run) until called with null. */
@@ -68,18 +69,12 @@ class Ticker {
 
   private count(now: number, workMs: number): void {
     if (this.drawn) {
-      this.frames++;
-      this.workMs += workMs;
       // The first drawn frame has no interval yet.
       if (this.recorder && this.lastDrawnAt >= 0) this.recorder.push(now - this.lastDrawnAt, workMs);
       this.lastDrawnAt = now;
     }
-    if (this.windowStart < 0) this.windowStart = now;
-    if (now - this.windowStart < HUD_PERIOD_MS) return;
-    this.hud?.(hudText(this.frames, this.workMs, now - this.windowStart));
-    this.windowStart = now;
-    this.frames = 0;
-    this.workMs = 0;
+    const text = this.hudWindow?.frame(now, this.drawn, workMs) ?? null;
+    if (text !== null) this.hud?.(text);
   }
 }
 
