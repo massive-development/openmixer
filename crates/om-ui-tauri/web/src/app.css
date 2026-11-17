@@ -43,6 +43,10 @@ body {
   color: var(--om-text-primary);
   font-family: var(--om-font-body);
   font-size: var(--om-type-body);
+  /* An instrument, not a page: a double-click selects no text, so a drag right after one (reset,
+     then turn) moves the control instead of dragging the selection away. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Keyboard focus: the theme's ring, held clear of the control so it reads on any face. */
