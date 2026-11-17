@@ -16,7 +16,7 @@ openmixer/
 ├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports; ui-bridge/ golden packet and meter table
 ├── resources/                # Built-in theme JSON, generic controller maps, bundled fonts
-├── tools/                    # issue_heatmap.py, screenshots.sh, ui-bench.sh, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh
+├── tools/                    # issue_heatmap.py, screenshots.sh, ui-bench.sh, ui-drive.py, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain

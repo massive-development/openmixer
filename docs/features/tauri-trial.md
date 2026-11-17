@@ -101,10 +101,10 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 
 | Thread | Name | Runs | Stops |
 |---|---|---|---|
-| Main | (Tauri event loop) | the window and the synchronous commands (`theme_css`, `run_config`, `bench_done`, `smoke_play`, `ready`, `waveform_style`, `strip_ink`, `control`, `controls`) | when the window closes or the app exits |
+| Main | (Tauri event loop) | the window and the synchronous commands (`theme_css`, `run_config`, `bench_done`, `smoke_play`, `ready`, `waveform_style`, `strip_ink`, `control`, `controls`, `ui_layout`) | when the window closes or the app exits |
 | Tauri async runtime | (Tauri's) | `start_stream`, `deck_peaks`, `deck_info` | with the app |
 | Stream | `om-ui-stream` | packs and sends snapshot packets at 30 Hz | when `start_stream` replaces it, when the sink fails (the webview is gone), or when `run` closes the stream slot after the window closes; it is joined |
-| Control | `om-ui-control` | builds the demo library (the library services cannot move between threads), then at 30 Hz pumps the services and the track loader and emits `deck-changed` | when `run` sets its stop flag after the window closes; it is joined |
+| Control | `om-ui-control` | builds the demo library (the library services cannot move between threads), then at 30 Hz pumps the services and the track loader and emits `deck-changed`; with `--ui-drive-out`, every third tick (10 Hz) it rewrites the state file from `DjEngine::snapshot()` | when `run` sets its stop flag after the window closes; it is joined |
 | Watchdog | `om-ui-smoke` | smoke and bench runs only: waits for `ready` (60 s) or the bench report (60 s plus the bench length) | when the signal arrives; on timeout it exits the app with code 1 |
 
 Nothing in the web window runs on the audio thread or waits on a plugin.
@@ -114,7 +114,7 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | Name | Signature (front end) | Returns |
 |---|---|---|
 | `theme_css` | `themeCss()` | the `:root` block of `--om-*` variables |
-| `run_config` | `runConfig()` | `{ smoke, benchSeconds, fpsCap, banner, hud }`: `banner` the mock-device notice or null, `hud` whether the frame counter shows |
+| `run_config` | `runConfig()` | `{ smoke, benchSeconds, fpsCap, banner, hud, drive }`: `banner` the mock-device notice or null, `hud` whether the frame counter shows, `drive` a `--ui-drive-out` run |
 | `ready` | `ready()` | nothing; marks the front end ready, and a smoke run exits 0 |
 | `smoke_play` | `isSmokePlay()` | whether a smoke run must start deck A through `control` first (true with a library) |
 | `bench_done` | `benchDone(stats)` | nothing; checks and writes the bench report, then exits 0, or 1 when refused |
@@ -125,6 +125,7 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `start_stream` | `startStream(onSnapshot)` (sends a `Channel`) | nothing; packets arrive on the channel |
 | `deck_info` | `deckInfo(deck)` | `DeckInfo`; an error for an unknown deck |
 | `deck_peaks` | `deckPeaks(deck)` | `{ generation, bytes }`: the peaks generation and the packed peaks |
+| `ui_layout` | `uiLayout(map)` | nothing; `--ui-drive-out` runs only (else an error): checks the layout map (see Driving the window) and writes it with every control's spec |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
 
 The window's capability (`capabilities/default.json`) grants `core:default` to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images and the IPC endpoint.
@@ -154,6 +155,7 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/ipc.ts` | Every command and event, typed |
 | `lib/ticker.ts`, `lib/hud.ts`, `lib/paint.ts`, `lib/dom.ts` | The frame loop, the frame counter (`HudWindow`, made only when the run shows it), waiting for the first paint, write-on-change helpers |
 | `lib/bench.ts` | Frame recorder and the bench summary |
+| `lib/drive.ts` | The `--ui-drive-out` layout map: every `data-control` element's rectangle |
 | `lib/theme.ts` | Puts the theme CSS in its style element |
 | `lib/decks.svelte.ts` | Per-deck track info and ink, reloaded on `deck-changed` |
 | `lib/peaks.ts` | The `deck_peaks` answer and `PeakSync`: when peaks are fetched (a new `peaksGeneration` only) and which answer is shown |
@@ -204,7 +206,42 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 | `--ui-bench=SECONDS` | 1 to 600 | Records the lanes' drawn frames for that long after a 3 s warm-up from the first snapshot, writes the report and exits 0. The file is `OPENMIXER_BENCH_OUT` when set and not empty, else `ui-bench.json` in the scratch folder. Refused with `--smoke`, without `--ui=tauri`, or out of range ("--ui-bench needs a whole number from 1 to 600"). |
 | `--ui-fps-cap=N` | 0 to 1000, default 60 | 0 is uncapped. Needs `--ui=tauri`. |
 | `--debug-panel` | | Shows the frame counter in the top bar (`run_config().hud`); a bench run shows it too. GPUI's flag of the same name shows its device and latency panel. |
+| `--ui-drive-out=PATH` | a file in a folder that exists | For `tools/ui-drive.py`: the front end sends its layout map once the layout settles (and after a resize) and the shell writes it to `PATH`; the control thread rewrites the engine's state to `PATH.state` at 10 Hz. Needs `--ui=tauri`. Refused without a path, for a folder, or when the folder is missing. Nothing is written without it. |
 | `--smoke` | | Exits 0 ("openmixer tauri smoke ok") once the front end has received a valid packet, painted and called `ready`. With a demo library the front end first waits for deck A's track and sends `deck0.play`; the run fails unless the engine then reports deck A playing ("openmixer tauri control round trip ok"). Fails after 60 s without `ready`. |
+
+## Driving the window
+
+`tools/ui-drive.py` presses, drags, scrolls and types into the running window with real X input and checks every interaction against the engine's state. Linux only (X11, or WSLg's X server), Python 3 standard library only (`libX11` and `libXtst` through `ctypes`, plus `xwininfo` and `xprop`); it never builds.
+
+```bash
+npm run build --prefix crates/om-ui-tauri/web && cargo build -p openmixer --features gui-tauri
+python3 tools/ui-drive.py                 # the whole suite, about 2.5 minutes
+python3 tools/ui-drive.py --only knobs    # one group: buttons, knobs, faders, tempo, hotcues, loops,
+                                          # overview, lanes, wheel, keys, disabled
+python3 tools/ui-drive.py --verbose       # also the values read during slow drags
+```
+
+- It starts `OPENMIXER_BIN` (default `target/debug/openmixer`) with `--ui=tauri --mock-device --ui-drive-out=<temp>/drive.json`, `WAYLAND_DISPLAY=` and its own preferences file, first with `--demo-library` (it waits until both decks report a length and a beat grid), then with no demo flag for the disabled checks. It refuses to start while another `openmixer` runs, and stops the app it started by pid, always.
+- **Where things are.** Every control carries its key in `data-control` (`deck0.play`, `deck1.hotcue3`, `deck1.loop.4`, `ch1.eq.low`, `mixer.crossfader`, a fader's `<key>.thumb`, `deck0.overview`, `deck0.lane`). `lib/drive.ts` measures them once the first snapshot has arrived, the fonts have loaded and two frames have painted, and again 250 ms after a resize; nothing runs per frame. The shell's `ui_layout` refuses a map with a missing or extra field, a number that is not finite, a negative size or an empty key, and writes `{ devicePixelRatio, viewport: { width, height }, controls: { key: { x, y, width, height } }, specs }`, rectangles in CSS px from the content area's top left and `specs` the `controls` command's specs, so the script takes ranges, defaults, detents, snap widths and laws from the shell. The window's screen origin comes from `xwininfo -root -tree` (the window whose `_NET_WM_PID` is the app's).
+- **What happened.** `PATH.state` is `{ built, decks: [{ loaded, playing, sync, looping, position_frames, length_frames, file_sample_rate, rate, loop_start, loop_end, hotcues, bpm }], channels: [{ fader, trim, filter, eq }], crossfader, master_gain }`, `bpm` the deck's beat grid tempo (null without a grid), written through a temporary file and a rename.
+- **What it checks**, one line each (`PASS|FAIL  name  expected  actual`), then `SUMMARY  passed/total`; exit code 1 when a check failed or the run aborted, 2 when it did not start:
+
+  | Group | Checks |
+  |---|---|
+  | buttons | Play starts and stops each deck; Sync on and off; Cue on a playing deck stops it at frame 0 |
+  | knobs | All eleven knobs: double-click restores the default; 80 px up turns half the travel and 80 px down turns it back (within 5% of travel); with Shift held at the press the same 80 px turns a twentieth (a tenth as far); a slow drag across the detent reads only the detent inside the snap width, with Shift it reads values off it (trim, EQ and filter; the master has no pull) |
+  | faders | Both channel faders and the crossfader: a click at 25%, 50% and 100% of the track gives the law's value there (the channel faders' taper from `specs`), within 1.5 px; a drag follows mid-drag and at the release; the value holds for 500 ms after the release; double-click restores the default |
+  | tempo | Dragging up raises the rate inside 0.92 to 1.08; double-click does not reset it |
+  | hotcues | On an empty pad 3 a click sets the cue at the playhead; a second click jumps to it; Shift-click clears it |
+  | loops | Loop 4 while playing loops four beats of the grid (within 1%); a click on the lit size ends it |
+  | overview | A click at 50% seeks to half the track (within 1%); a drag follows |
+  | lanes | 200 px left moves 200 px of time forward (8 s across the lane, within 5%) and holds for 1 s |
+  | wheel | Three notches up zoom in by 1.15³ (the next 200 px scrub moves that much less); three down restore it |
+  | keys | A knob and a fader: Arrow, Shift+Arrow, Home, End, Delete; a lane (tabbed to from its overview): Arrow (one beat), Shift+Arrow (four), Home, End, `+`, `-`, `0`; Space on Play and on a lit loop; Delete on a set pad |
+  | disabled | With empty decks, clicks on Play, Cue, a pad and a loop change nothing and the app keeps running |
+
+- **Safety.** Before every press it checks that the pointer is where it was sent and that the app's window is under it (an override-redirect window such as a drag-and-drop icon counts as foreign), and aborts otherwise. Every button and key it pressed is released in a `finally` block. If another input moves the pointer during a group (a hand on the mouse), that group fails as interrupted and the run goes on.
+- **Limits.** It moves the real pointer and types on `DISPLAY`. Under WSLg the window manager gives an X window the keyboard focus only while its Windows twin is the active Windows window and takes back a focus a client sets, so the script sets the focus in the same request batch as each key's events; a key that changed nothing is sent once more (a button's Space acts on its release, which can come after the page lost the focus again), and the summary counts those resends. Tooltips and visual state (thumb place, lit buttons, rings) are not read: it checks the engine, and a thumb that jumps back would show as a value that moves after the release. It drives one window size (1600 × 780) at the scale the display gives; it is not run in CI (no display there).
 
 ## Measuring
 
@@ -241,7 +278,8 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` | Packet layout and golden file, peaks, control keys, specs (law, ticks, snap, readout), knob captions and dispatch, theme CSS; `tests/meter_table.rs` checks `fixtures/ui-bridge/meter-table.txt` against `om_ui::meter::MeterScale`, `tests/fader_law_table.rs` checks `fixtures/ui-bridge/fader-law.txt` against the specs and `om_ui::fader_law::FaderLaw`, `tests/knob_text_table.rs` checks `fixtures/ui-bridge/knob-text.txt` against `caption_text` and the specs' readouts |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri` | Stream, pacer, stream slot, control loop, deck changes, deck info, controls, strip ink, bench report, smoke verdict; headless |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri` | The flag parsing in `gui_tauri.rs` (with the banner rule and the frame counter flag), and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
-| `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, the knob text table, IPC, bench, the frame counter, controls (law, snap, fine drag), keys, names, overview, pads, Cue's writes, theme, lanes (scrub, lane keys) |
+| `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, the knob text table, IPC, bench, the frame counter, controls (law, snap, fine drag, a drag that is no click), keys, names and spoken knob values, overview, pads, Cue's writes, theme, lanes (scrub, lane keys), the drive layout map |
+| `python3 tools/ui-drive.py` | Real pointer and key input into a built window, checked against the engine (see Driving the window); needs a display, not run in CI |
 | `npm run check` | `svelte-check` with warnings as errors |
 | `tools/ui-bench.sh --self-test` | The bench script's arithmetic on a fake `/proc` |
 
