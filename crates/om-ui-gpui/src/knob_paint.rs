@@ -90,14 +90,8 @@ pub fn dragged_value(
     value_of_fraction(fraction, min, detent, max)
 }
 
-/// `value` with the knob's detent pull applied, unless `shift` is held (fine mode bypasses it).
-pub fn snap_with_bypass(knob: &om_ui::control::Knob, value: f64, shift: bool) -> f64 {
-    if shift {
-        value
-    } else {
-        knob.snap_to_detent(value)
-    }
-}
+/// The detent pull with its Shift bypass; it lives in `om-ui` so the web window shares the rule.
+pub use om_ui::control::snap_with_bypass;
 
 /// Which control a knob is, for where its label goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -574,16 +568,6 @@ mod tests {
         let (min, d, max) = EQ;
         assert!(near(dragged_value(0.0, 1000.0, false, min, d, max), 6.0));
         assert!(near(dragged_value(0.0, -1000.0, false, min, d, max), -48.0));
-    }
-
-    #[test]
-    fn shift_bypasses_detent_pull() {
-        let eq =
-            om_ui::control::Knob::new("EQ", om_ui::control::Readout::Decibels, -48.0, 6.0, 0.0)
-                .with_detent();
-        assert_eq!(snap_with_bypass(&eq, 1.0, false), 0.0);
-        assert_eq!(snap_with_bypass(&eq, 1.0, true), 1.0);
-        assert_eq!(snap_with_bypass(&eq, 5.0, false), 5.0);
     }
 
     fn near32(a: f32, b: f32) -> bool {

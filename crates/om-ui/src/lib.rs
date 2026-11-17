@@ -10,6 +10,7 @@ pub mod artwork_binding;
 pub mod automix_bar;
 pub mod binding;
 pub mod control;
+pub mod fader_law;
 pub mod format;
 pub mod geometry;
 pub mod header_layout;
