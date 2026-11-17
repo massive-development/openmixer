@@ -52,7 +52,7 @@
 <g><title>#136 A9 Native display pass: windows, library and playlists: Built, unverified</title><rect x="590" y="128" width="54" height="30" rx="4" fill="#0969da"/><text x="617.0" y="147.0" font-size="10" text-anchor="middle" fill="#ffffff">A9</text></g>
 <g><title>#137 A10 Native display pass: E1 and E10 by eye, E9 frame times: Built, unverified</title><rect x="648" y="128" width="54" height="30" rx="4" fill="#0969da"/><text x="675.0" y="147.0" font-size="10" text-anchor="middle" fill="#ffffff">A10</text></g>
 <g><title>#138 A11 Set up native Linux (dual boot): Not started</title><rect x="706" y="128" width="54" height="30" rx="4" fill="#d0d7de"/><text x="733.0" y="147.0" font-size="10" text-anchor="middle" fill="#57606a">A11</text></g>
-<g><title>#139 A12 Real-music fixture set for screenshots and reviews: Not started</title><rect x="764" y="128" width="54" height="30" rx="4" fill="#d0d7de"/><text x="791.0" y="147.0" font-size="10" text-anchor="middle" fill="#57606a">A12</text></g>
+<g><title>#139 A12 Real-music fixture set for screenshots and reviews: Partial</title><rect x="764" y="128" width="54" height="30" rx="4" fill="#bf8700"/><text x="791.0" y="147.0" font-size="10" text-anchor="middle" fill="#ffffff">A12</text></g>
 <g><title>#140 A13 ADR: controller clean-room rule: Verified (closed)</title><rect x="822" y="128" width="54" height="30" rx="4" fill="#2da44e"/><text x="849.0" y="147.0" font-size="10" text-anchor="middle" fill="#ffffff">A13</text></g>
 <g><title>#141 A14 Tracker migration: issues replace TODO.md: Partial</title><rect x="880" y="128" width="54" height="30" rx="4" fill="#bf8700"/><text x="907.0" y="147.0" font-size="10" text-anchor="middle" fill="#ffffff">A14</text></g>
 <g><title>#142 A15 Heatmap generated from issues: Verified (closed)</title><rect x="938" y="128" width="54" height="30" rx="4" fill="#2da44e"/><text x="965.0" y="147.0" font-size="10" text-anchor="middle" fill="#ffffff">A15</text></g>
@@ -64,7 +64,7 @@
 <g><title>#146 B4 Numark MIDI maps and a real MIDI device test: Partial</title><rect x="300" y="176" width="54" height="30" rx="4" fill="#bf8700"/><text x="327.0" y="195.0" font-size="10" text-anchor="middle" fill="#ffffff">B4</text></g>
 <g><title>#147 B5 Sampler: listening and by-eye check: Built, unverified</title><rect x="358" y="176" width="54" height="30" rx="4" fill="#0969da"/><text x="385.0" y="195.0" font-size="10" text-anchor="middle" fill="#ffffff">B5</text></g>
 <g><title>#148 B6 Mix recording: real device and listening check: Built, unverified</title><rect x="416" y="176" width="54" height="30" rx="4" fill="#0969da"/><text x="443.0" y="195.0" font-size="10" text-anchor="middle" fill="#ffffff">B6</text></g>
-<g><title>#149 B7 Reliability: four-deck set with stems: Not started</title><rect x="474" y="176" width="54" height="30" rx="4" fill="#d0d7de"/><text x="501.0" y="195.0" font-size="10" text-anchor="middle" fill="#57606a">B7</text></g>
+<g><title>#149 B7 Reliability: four-deck set with stems: Partial</title><rect x="474" y="176" width="54" height="30" rx="4" fill="#bf8700"/><text x="501.0" y="195.0" font-size="10" text-anchor="middle" fill="#ffffff">B7</text></g>
 <g><title>#150 B8 E1 remaining: glow on knobs/faders/pads/tabs, card lift, ember playhead, brand mark, motion tokens: Partial</title><rect x="532" y="176" width="54" height="30" rx="4" fill="#bf8700"/><text x="559.0" y="195.0" font-size="10" text-anchor="middle" fill="#ffffff">B8</text></g>
 <g><title>#151 B9 E2 Waveform shows phrases: bar numbers, cue and loop regions, structure hints, phrase zooms: Partial</title><rect x="590" y="176" width="54" height="30" rx="4" fill="#bf8700"/><text x="617.0" y="195.0" font-size="10" text-anchor="middle" fill="#ffffff">B9</text></g>
 <g><title>#152 B10 E2a Progressive waveform: Not started</title><rect x="648" y="176" width="54" height="30" rx="4" fill="#d0d7de"/><text x="675.0" y="195.0" font-size="10" text-anchor="middle" fill="#57606a">B10</text></g>
@@ -90,6 +90,6 @@
 <g><title>#170 C7 v1.0.0 release: Not started</title><rect x="474" y="224" width="54" height="30" rx="4" fill="#d0d7de"/><text x="501.0" y="243.0" font-size="10" text-anchor="middle" fill="#57606a">C7</text></g>
 <rect x="126" y="272" width="14" height="14" rx="3" fill="#2da44e"/><text x="146" y="284" font-size="12" fill="#1f2328">Verified (closed) (45)</text>
 <rect x="316" y="272" width="14" height="14" rx="3" fill="#0969da"/><text x="336" y="284" font-size="12" fill="#1f2328">Built, unverified (8)</text>
-<rect x="506" y="272" width="14" height="14" rx="3" fill="#bf8700"/><text x="526" y="284" font-size="12" fill="#1f2328">Partial (12)</text>
-<rect x="696" y="272" width="14" height="14" rx="3" fill="#d0d7de"/><text x="716" y="284" font-size="12" fill="#1f2328">Not started (14)</text>
+<rect x="506" y="272" width="14" height="14" rx="3" fill="#bf8700"/><text x="526" y="284" font-size="12" fill="#1f2328">Partial (14)</text>
+<rect x="696" y="272" width="14" height="14" rx="3" fill="#d0d7de"/><text x="716" y="284" font-size="12" fill="#1f2328">Not started (12)</text>
 </svg>
