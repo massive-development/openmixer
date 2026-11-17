@@ -53,7 +53,7 @@ pub struct RunOptions {
     /// Exit with code 0 once the front end has received a packet, painted and called `ready`. With
     /// a library, the front end first starts deck A (loaded by then) through `control`.
     pub smoke: bool,
-    /// The notice the window shows (the mock device); the empty shell does not show it yet.
+    /// The notice the top bar shows (the mock device); `None` for none.
     pub banner: Option<String>,
     /// Frame benchmark length in seconds (`--ui-bench`): the front end records its frames, the
     /// report goes to `bench_out` and the window exits 0.
@@ -195,6 +195,7 @@ impl Shared {
                 smoke: options.smoke,
                 bench_seconds: options.bench_seconds,
                 fps_cap: options.fps_cap,
+                banner: options.banner.clone(),
             },
             bench,
             smoke_play,

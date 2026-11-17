@@ -149,7 +149,7 @@ export const themeCss = (): Promise<string> => invoke<string>('theme_css');
 /** Tells the shell the window has painted; a smoke run exits on it. */
 export const ready = (): Promise<void> => invoke<void>('ready');
 
-/** How the shell runs the window: smoke, frame bench, frame cap. */
+/** How the shell runs the window: smoke, frame bench, frame cap, the notice. */
 export interface RunConfig {
   /** A smoke run must see a snapshot before it calls `ready`. */
   smoke: boolean;
@@ -157,6 +157,8 @@ export interface RunConfig {
   benchSeconds: number | null;
   /** The lanes' frame cap (`--ui-fps-cap`); 0 is uncapped. */
   fpsCap: number;
+  /** The notice the top bar shows (the mock device); null for none. */
+  banner: string | null;
 }
 
 /** The shell's run options. */

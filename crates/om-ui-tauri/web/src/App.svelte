@@ -40,6 +40,8 @@
   let controls: Controls = $state.raw({});
   // The lanes' frame cap; the shell's `--ui-fps-cap` replaces the default.
   let fpsCap = $state(60);
+  // The mock-device notice, when the run has one (`om_ui::labels`, by GPUI's rule).
+  let banner: string | null = $state(null);
   const decks = new DeckData();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
@@ -85,6 +87,7 @@
     try {
       const config = await runConfig();
       fpsCap = config.fpsCap;
+      banner = config.banner;
       applyThemeCss(document, await themeCss());
       controls = await loadControls().catch((error: unknown) => {
         console.error('openmixer: no control list', error);
@@ -122,6 +125,9 @@
   <main class="shell">
     <header class="top-bar">
       <h1 class="wordmark">OPENMIXER</h1>
+      {#if banner}
+        <p class="notice" role="status" title={banner}>{banner}</p>
+      {/if}
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
       <span class="hud num" bind:this={hud} aria-hidden="true"></span>
     </header>
@@ -175,6 +181,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    position: relative;
     padding: 0 var(--om-gap);
     background: var(--om-surface);
   }
@@ -186,6 +193,24 @@
     font-size: var(--om-type-headline);
     letter-spacing: 0.14em;
     color: var(--om-text-primary);
+  }
+
+  /* Centred on the bar whatever sits either side of it; one line, cut with an ellipsis. */
+  .notice {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 50%;
+    margin: 0;
+    padding: var(--om-density-space-1) var(--om-inner-gap);
+    overflow: hidden;
+    border: 1px solid var(--om-border);
+    border-radius: var(--om-control-radius);
+    background: var(--om-surface-raised);
+    color: var(--om-text-secondary);
+    font-size: var(--om-type-label);
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .hud {

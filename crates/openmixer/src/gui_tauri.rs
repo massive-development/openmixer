@@ -69,7 +69,8 @@ pub fn main(args: &[String]) -> ExitCode {
         &library_smoke::scratch_dir(),
     );
     let scratch = demo.as_ref().map(|_| library_smoke::scratch_dir());
-    let result = run_window(smoke, frames, &out, demo, scratch.as_deref());
+    let banner = banner_of(args);
+    let result = run_window(smoke, frames, &out, demo, scratch.as_deref(), banner);
     // The library closed with the control thread; the scratch folder goes with the run, unless
     // it holds the bench report.
     let keep =
@@ -78,6 +79,13 @@ pub fn main(args: &[String]) -> ExitCode {
         let _ = std::fs::remove_dir_all(root);
     }
     result
+}
+
+/// The mock-device notice, by GPUI's rule (`gui.rs`): every run here is on the mock device, and a
+/// demo run (`flags::demo_run`) shows none, since it is staged for screenshots.
+fn banner_of(args: &[String]) -> Option<String> {
+    let demo = openmixer::flags::demo_run(args);
+    (!demo).then(|| notice_text(Notice::Demo).to_owned())
 }
 
 /// The bench and frame-cap flags; a bench cannot share a run with `--smoke`.
@@ -131,6 +139,7 @@ fn run_window(
     out: &Path,
     demo: Option<Demo>,
     scratch: Option<&Path>,
+    banner: Option<String>,
 ) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
     let Some(output) = start_mock_audio(&mut composition) else {
@@ -143,7 +152,7 @@ fn run_window(
     let round_trip = smoke && library.is_some();
     let options = RunOptions {
         smoke,
-        banner: Some(notice_text(Notice::Demo).to_owned()),
+        banner,
         bench_seconds: frames.bench_seconds,
         bench_out: out.to_path_buf(),
         fps_cap: frames.fps_cap,
@@ -261,6 +270,22 @@ mod tests {
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn the_mock_device_notice_shows_unless_a_demo_is_staged() {
+        let notice = Some(notice_text(Notice::Demo).to_owned());
+        assert_eq!(banner_of(&args(&["--mock-device"])), notice);
+        assert_eq!(banner_of(&args(&["--mock-device", "--smoke"])), notice);
+        for demo in [
+            "--demo-library",
+            "--demo-scene=cues",
+            "--demo-map",
+            "--demo-automix",
+            "--demo-record",
+        ] {
+            assert_eq!(banner_of(&args(&["--mock-device", demo])), None, "{demo}");
+        }
     }
 
     #[test]

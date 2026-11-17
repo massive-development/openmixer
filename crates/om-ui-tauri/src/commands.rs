@@ -53,7 +53,7 @@ pub fn theme_css(state: State<'_, ShellState>) -> String {
 }
 
 /// How the shell runs the window, as the front end reads it once at start.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunConfig {
     /// The front end proves the stream before it calls `ready`.
@@ -62,12 +62,14 @@ pub struct RunConfig {
     pub bench_seconds: Option<u32>,
     /// The waveform lanes' frame cap; 0 is uncapped.
     pub fps_cap: u32,
+    /// The notice the top bar shows (the mock device); null for none.
+    pub banner: Option<String>,
 }
 
 /// The run's smoke, bench and frame-cap settings.
 #[tauri::command]
 pub fn run_config(state: State<'_, ShellState>) -> RunConfig {
-    state.config
+    state.config.clone()
 }
 
 /// The bench run's frame statistics: checked, written, and the window exits (1 when refused).
@@ -191,5 +193,26 @@ struct ChannelSink(Channel<InvokeResponseBody>);
 impl PacketSink for ChannelSink {
     fn send(&mut self, bytes: &[u8]) -> bool {
         self.0.send(InvokeResponseBody::Raw(bytes.to_vec())).is_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(banner: Option<&str>) -> String {
+        let config = RunConfig {
+            smoke: false,
+            bench_seconds: None,
+            fps_cap: 60,
+            banner: banner.map(str::to_owned),
+        };
+        serde_json::to_string(&config).unwrap()
+    }
+
+    #[test]
+    fn the_run_config_names_the_banner_or_null() {
+        assert!(config(Some("Demo mode")).contains("\"banner\":\"Demo mode\""));
+        assert!(config(None).contains("\"banner\":null"));
     }
 }
