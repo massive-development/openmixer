@@ -3,10 +3,12 @@
 //! thread; the models only read the engine while they are made, and send nothing.
 
 use crate::control::slice_params;
+use crate::control_law::{sampled_law, snap_spec, tick_specs, SnapSpec, TickSpec, TravelLaw};
 use om_core::param_id::{ChannelParam, DeckParam, EqBand, MixerParam, MAX_CHANNELS};
 use om_core::ParamId;
 use om_ui::binding::MixerBinding;
 use om_ui::control::{Knob, Ranged};
+use om_ui::fader_law::FaderLaw;
 use om_ui::meter::MeterParams;
 use om_ui::widgets::channel::ChannelStrip;
 use om_ui::widgets::crossfader::CrossfaderSection;
@@ -40,6 +42,12 @@ pub struct ControlSpec {
     pub kind: ControlKind,
     /// The word GPUI prints on the control; empty where it prints none.
     pub label: String,
+    /// How travel maps to the value: the taper GPUI's fader uses, else linear.
+    pub law: TravelLaw,
+    /// The dB marks GPUI draws beside the control; empty where it draws none.
+    pub ticks: Vec<TickSpec>,
+    /// The detent pull GPUI applies while the control is dragged, if any.
+    pub snap: Option<SnapSpec>,
 }
 
 /// The value shape of one control, before its key and id are attached.
@@ -51,6 +59,9 @@ struct Shape {
     detent: Option<f64>,
     kind: ControlKind,
     label: String,
+    law: TravelLaw,
+    ticks: Vec<TickSpec>,
+    snap: Option<SnapSpec>,
 }
 
 /// Every slice control for `decks` decks and the mixer's channels, with ranges from the models.
@@ -76,6 +87,9 @@ fn spec(key: String, id: &ParamId, s: Shape) -> ControlSpec {
         detent: s.detent,
         kind: s.kind,
         label: s.label,
+        law: s.law,
+        ticks: s.ticks,
+        snap: s.snap,
     }
 }
 
@@ -104,19 +118,39 @@ impl Models {
                 .strips
                 .get(usize::from(*ch))
                 .map(|s| channel_shape(s, p)),
-            ParamId::Mixer(MixerParam::Master) => Some(knob(&self.master.fader)),
+            ParamId::Mixer(MixerParam::Master) => {
+                Some(tapered(knob(&self.master.fader), FaderLaw::Master))
+            }
             ParamId::Mixer(MixerParam::Crossfader) => Some(ranged(&self.crossfader.slider, "")),
             _ => None,
         }
     }
 }
 
+// GPUI's knob drag pulls trim, filter and EQ to their detents (`drag.rs`, `knob_of`), and tapers
+// the channel and master faders (`drag.rs`, `fader_law`); every other control is plain.
 fn channel_shape(strip: &ChannelStrip, p: &ChannelParam) -> Shape {
     match p {
-        ChannelParam::Trim => knob(&strip.trim),
-        ChannelParam::Filter => knob(&strip.filter),
-        ChannelParam::Eq(band) => knob(&strip.eq[band_index(*band)]),
-        _ => ranged(&strip.fader, ""),
+        ChannelParam::Trim => snapping(&strip.trim),
+        ChannelParam::Filter => snapping(&strip.filter),
+        ChannelParam::Eq(band) => snapping(&strip.eq[band_index(*band)]),
+        _ => tapered(ranged(&strip.fader, ""), FaderLaw::Channel),
+    }
+}
+
+/// `shape` with `law`'s taper and the dB marks GPUI draws for it.
+fn tapered(shape: Shape, law: FaderLaw) -> Shape {
+    Shape {
+        law: sampled_law(law),
+        ticks: tick_specs(law),
+        ..shape
+    }
+}
+
+fn snapping(k: &Knob) -> Shape {
+    Shape {
+        snap: snap_spec(k),
+        ..knob(k)
     }
 }
 
@@ -157,6 +191,7 @@ fn tempo() -> Shape {
         detent: None,
         kind: ControlKind::Continuous,
         label: String::new(),
+        ..plain()
     }
 }
 
@@ -169,6 +204,7 @@ fn seek() -> Shape {
         detent: None,
         kind: ControlKind::Continuous,
         label: String::new(),
+        ..plain()
     }
 }
 
@@ -187,6 +223,7 @@ fn ranged(r: &Ranged, label: &str) -> Shape {
         detent: None,
         kind: ControlKind::Continuous,
         label: label.to_owned(),
+        ..plain()
     }
 }
 
@@ -207,6 +244,22 @@ fn trigger(label: String) -> Shape {
         detent: None,
         kind: ControlKind::Trigger,
         label,
+        ..plain()
+    }
+}
+
+// The law, marks and pull of a control GPUI draws without any.
+fn plain() -> Shape {
+    Shape {
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+        detent: None,
+        kind: ControlKind::Continuous,
+        label: String::new(),
+        law: TravelLaw::Linear,
+        ticks: Vec::new(),
+        snap: None,
     }
 }
 
@@ -218,10 +271,13 @@ mod tests {
     use om_engine::DjEngine;
     use std::sync::Arc;
 
-    fn controls() -> Vec<ControlSpec> {
+    fn mixer() -> MixerBinding {
         let engine = Arc::new(DjEngine::new(2).0);
-        let mixer = MixerBinding::typed(engine, Arc::new(ParameterRouter::new()));
-        slice_controls(&mixer, 2)
+        MixerBinding::typed(engine, Arc::new(ParameterRouter::new()))
+    }
+
+    fn controls() -> Vec<ControlSpec> {
+        slice_controls(&mixer(), 2)
     }
 
     fn find(key: &str) -> ControlSpec {
@@ -262,6 +318,68 @@ mod tests {
             (2.0, 1.0, Some(1.0))
         );
         assert_eq!(find("mixer.crossfader").default, 0.5);
+    }
+
+    #[test]
+    fn the_tapered_faders_carry_the_gpui_law_and_marks() {
+        let fader = find("ch0.fader");
+        assert_eq!(fader.law, sampled_law(FaderLaw::Channel));
+        assert_eq!(fader.ticks, tick_specs(FaderLaw::Channel));
+        assert_eq!(fader.snap, None);
+        assert_eq!(fader.ticks[0].label, "0");
+        let master = find("mixer.master");
+        assert_eq!(master.law, sampled_law(FaderLaw::Master));
+        assert_eq!(master.ticks, tick_specs(FaderLaw::Master));
+        // GPUI drags the master as a fader: its unity detent marks the scale but never pulls.
+        assert_eq!(master.snap, None);
+        let TravelLaw::Knots(knots) = &master.law else {
+            panic!("the master is tapered")
+        };
+        assert_eq!(knots[75], (0.75, 1.0), "unity at three quarters");
+    }
+
+    #[test]
+    fn the_knobs_carry_the_gpui_detent_pull() {
+        let strip = ChannelStrip::new(mixer(), 0, MeterParams::default());
+        for (key, k) in [
+            ("ch0.eq.low", &strip.eq[0]),
+            ("ch0.filter", &strip.filter),
+            ("ch0.trim", &strip.trim),
+        ] {
+            let spec = find(key);
+            assert_eq!(spec.snap, snap_spec(k), "{key}");
+            assert_eq!(
+                (spec.law.clone(), spec.ticks.len()),
+                (TravelLaw::Linear, 0),
+                "{key}"
+            );
+        }
+        assert_eq!(
+            find("ch0.trim").snap,
+            Some(SnapSpec {
+                at: 1.0,
+                width: 0.12
+            })
+        );
+        assert_eq!(
+            find("ch0.filter").snap,
+            Some(SnapSpec {
+                at: 0.0,
+                width: 0.06
+            })
+        );
+        // 3% of the EQ's -48..+6 dB, either side of 0 dB.
+        let low = find("ch0.eq.low").snap.unwrap();
+        assert!(low.at == 0.0 && (low.width - 1.62).abs() < 1e-12);
+    }
+
+    #[test]
+    fn tempo_and_crossfader_are_plain() {
+        for key in ["deck0.tempo", "mixer.crossfader"] {
+            let spec = find(key);
+            assert_eq!(spec.law, TravelLaw::Linear, "{key}");
+            assert!(spec.ticks.is_empty() && spec.snap.is_none(), "{key}");
+        }
     }
 
     #[test]
