@@ -45,7 +45,9 @@ pub use job::{AnalysisJob, JobStatus};
 pub use job_runner::run_analysis_job;
 pub use key::{KeyAnalyzer, KeyEstimator, KeyResult};
 pub use musical_key::{is_harmonically_compatible, MusicalKey};
-pub use onset::{compute_band_onsets, FrequencyBand, OnsetEnvelope, OnsetOptions};
+pub use onset::{
+    compute_band_onsets, compute_linear_band_flux, FrequencyBand, OnsetEnvelope, OnsetOptions,
+};
 pub use picker::{pick_onsets, OnsetPickOptions};
 pub use registry::{AnalyzerRegistry, RegistryError};
 pub use result_cache::ResultCache;
@@ -57,7 +59,7 @@ pub use stft::MagnitudeStft;
 pub use structure::{StructureAnalyzer, StructureEstimator, StructureResult};
 pub use tempo::{
     estimate_coarse_bpm, find_downbeat_offset, fit_to_onsets, period_frames, refine_beat_phase,
-    BeatPhase,
+    resolve_half_beat, BeatPhase,
 };
 pub use waveform::{WaveformAnalyzer, WaveformBuilder, WaveformOptions};
 pub use waveform_data::{

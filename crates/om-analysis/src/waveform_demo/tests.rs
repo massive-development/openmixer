@@ -137,3 +137,28 @@ fn the_beat_grid_analyser_finds_the_tempo() {
         .expect("the loop has a pulse");
     assert!((result.bpm - BPM).abs() < 0.5, "found {}", result.bpm);
 }
+
+/// The grid the app stores for a loop, through the analyser's JSON as the cache holds it.
+fn analysed_grid(bpm: f64) -> crate::BeatGridModel {
+    use crate::Analyzer;
+    let clip = AudioClip::new(demo_loop(30.0, bpm, RATE), RATE);
+    let json = crate::BpmAnalyzer::default()
+        .analyze(&clip, &NullAnalysisContext)
+        .expect("not cancelled");
+    crate::BpmResult::from_json(&json)
+        .expect("payload parses")
+        .grid
+}
+
+// Off-beat bass and open hats must not pull the grid half a beat late.
+#[test]
+fn the_beat_grid_lands_on_the_kicks() {
+    for bpm in [118.0, 124.0, 126.0, 132.0, 140.0] {
+        let beat = RATE * 60.0 / bpm;
+        let r = analysed_grid(bpm).frame_at_beat(0.0).rem_euclid(beat) / beat;
+        assert!(
+            r.min(1.0 - r) < 0.02,
+            "{bpm} bpm: beat 0 sits {r:.3} beats after a kick"
+        );
+    }
+}
