@@ -16,10 +16,10 @@ Build the full app once (Linux build needs the GPUI dependencies):
 cargo build -p openmixer --features clap
 ```
 
-## 0. Automated gates nobody has run yet
+## 0. Automated gates not yet run on real hardware
 
 - [ ] `cargo run -p openmixer -- --smoke` exits 0.
-- [ ] The 10-minute gate: `cargo test -p openmixer --test ui_gate -- --ignored` passes.
+- [ ] The 10-minute gate: `cargo test -p openmixer --test ui_gate -- --ignored` passes. (The weekly `soak` CI job runs it on the mock device and has passed since 2026-11-01; run it here on a quiet machine too.)
 - [ ] `cargo test --workspace` passes on a quiet machine (no other builds running). Note any test that still fails; several timing tests flaked under load during the refresh.
 - [ ] Optional leak check of the CLAP path: `tools/clap_leak_check.sh` reports 0 definitely lost, 0 indirectly lost.
 
@@ -27,7 +27,7 @@ cargo build -p openmixer --features clap
 
 The UI moved from hand-built widgets to gpui-component. Visual parity has not been compared.
 
-- [ ] The window opens at 1280x720 and at 1024x640 (`OPENMIXER_WINDOW=1024x640`) without clipping.
+- [ ] The window opens at the default size (1920x1080, shrunk to fit the display) and at the minimum, 1280x720 (`OPENMIXER_WINDOW=1280x720`), without clipping.
 - [ ] Capture the scenes and compare them with `docs/screenshots/`: `OUT_DIR=/tmp/om-scenes tools/screenshots.sh` (needs `DISPLAY`, ImageMagick and `xwininfo`). Look for: spacing, fonts, colours, dark and daylight themes, the settings tabs, the library table, dialogs.
 - [ ] Dark and daylight themes both apply to the buttons, inputs, table, tabs, dialogs and toasts (the component theme follows the om-ui tokens).
 - [ ] Library: the track table scrolls smoothly with a large library, sort arrows show, row selection works, the sidebar tree selects folders and playlists.
@@ -40,7 +40,7 @@ The UI moved from hand-built widgets to gpui-component. Visual parity has not be
 ## 2. Audio
 
 - [ ] The audio device list shows your real devices and playback works (no clicks, no xruns in the debug panel at the default buffer).
-- [ ] Real-time priority (Linux, off by default): build with `cargo build -p openmixer --features om-audio/realtime-dbus` (needs `libdbus-1-dev`), run under a desktop with rtkit, and check that xruns drop under CPU load compared with the default build. Promotion has never been tried on a real desktop. See issue #244 for the open decision.
+- [ ] Real-time priority (Linux, on by default through the `realtime-dbus` feature; needs `libdbus-1-dev`): run the default build under a desktop with rtkit, and check that xruns drop under CPU load compared with a build without it (`cargo build -p openmixer --no-default-features --features gui`). Promotion has never been tried on a real desktop. See issue #244.
 - [ ] Varispeed (#241, sinc 128): play a tonal track at rates 0.9, 1.0 and 1.08 and compare by ear with the old build (`git checkout` the commit before #246). Listen for pre-ringing at the start and end of a track, aliasing above rate 1 on bright material, and clicks when changing rate, seeking, looping or loading. The last ~130 source frames of a track are known not to play.
 - [ ] Loop wrap at several rates is seamless; two decks at different rates stay in sync with sync on.
 - [ ] Sampler pads and stems: samples play at the right pitch and length (the resamplers were replaced with rubato). Check a 48 kHz sample on a 44.1 kHz device and the other way round.
@@ -69,6 +69,9 @@ The UI moved from hand-built widgets to gpui-component. Visual parity has not be
 Needs a build with `--features clap` and at least one real CLAP plugin (also try the fixture, `examples/plugins/clap-gain-fixture`).
 
 - [ ] A plugin placed in your plugin folder is listed on the Plugins page and loads.
+- [ ] First run: the app asks before scanning the standard CLAP folders, and shows the in-process warning before the first CLAP plugin loads; both answers are remembered after a restart (the dialogs are tested headless only).
+- [ ] Plugin state: change a plugin's settings, unload and reload it (and restart the app); the settings come back.
+- [ ] The Plugins page row and the parameter panel header show the plugin's latency in frames and milliseconds (display only; the engine does not compensate it).
 - [ ] Audio passes through the plugin; bypass works; changing a parameter in the generic parameter panel changes the sound.
 - [ ] Plugin GUI on X11: the plugin window opens embedded and is not painted over by the app. This is the main unverified risk in ADR 0007.
 - [ ] Plugin GUI on Wayland: a floating plugin window opens; close it and confirm the app does not crash (the plugin must be closed before its parent window is destroyed).

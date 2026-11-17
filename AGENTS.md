@@ -4,7 +4,7 @@ Clean-room, original DJ software in Rust with GPUI (ADR 0001, 0004). Detail live
 
 ## Crates
 
-Dependencies point toward `om-core`: `openmixer` -> `om-ui` -> `om-engine`/`om-library`/`om-analysis`/`om-midi` -> `om-dsp`/`om-audio` -> `om-core`. The web window adds `openmixer` -> `om-ui-tauri` -> `om-ui-bridge` -> `om-ui`. Crates below `om-ui` never depend on it or on the binary.
+Dependencies point toward `om-core`: `openmixer` -> `om-ui`/`om-audio` -> `om-library`/`om-analysis`/`om-midi` -> `om-engine` -> `om-dsp` -> `om-core`. The web window adds `openmixer` -> `om-ui-tauri` -> `om-ui-bridge` -> `om-ui`. Crates below `om-ui` never depend on it or on the binary.
 
 - `om-core`: no I/O; `ParamId`, `Command`/`CommandSink`, `ParameterRouter`, `EngineSnapshot`, `WorkerPool`.
 - `om-engine`: audio thread (decks, mixer, FX, sync, sampler, recorder, loudness).
@@ -38,7 +38,7 @@ Linux needs `libasound2-dev pkg-config libclang-dev libdbus-1-dev`, and `libwebk
 cargo check -p <crate>                      # while working
 nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p <crate>
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo deny check   # once per PR
-cargo run -p openmixer -- --smoke
+cargo run -p openmixer -- --headless --smoke
 ```
 
 - **WSL:** one cargo process at a time, never in the background, never clippy and test in one command, `flock /tmp/openmixer-cargo.lock` when sharing a checkout. Check `free -m`; skip the gui crate under 6 GB free. GUI runs need `WAYLAND_DISPLAY=`. More in `build.md`.

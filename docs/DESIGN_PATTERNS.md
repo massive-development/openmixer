@@ -28,7 +28,7 @@ pub trait AudioDevice: Send {
 ```
 
 ### Lock-free SPSC ring buffer (`rtrb`)
-- **Where:** `om-core` (`spsc`, a wrapper over `rtrb::RingBuffer`) and `om-engine` (`stage.rs`, the insert command and retired-stage rings)
+- **Where:** `om-engine` (`stage.rs`, the insert command and retired-stage rings; also the deck decoder, sampler, recorder and loudness rings). `rtrb` is used directly; `om-core` has no wrapper.
 - **Why:** pass audio between a worker thread and the audio callback without locks or allocation.
 - **Reuse when:** any realtime thread needs data from a non-realtime producer (decode, analysis results, MIDI events).
 - **Notes:** `rtrb::RingBuffer::new(capacity)` returns a `(Producer, Consumer)` pair. Exactly one producer and one consumer thread, and the pair must be created before the audio thread starts.
@@ -73,9 +73,9 @@ pub trait AudioCallback: Send {
 ### Typed control surface (ParamId, Command, typed targets, string façade)
 - **Where:** `om-core` (`param_id/` `ParamId` and `ParamError`; `command.rs` `Command`, `CommandSink`, `CommandError`; `parameter.rs` `ParamTarget`, and the string `ParameterTarget` façade; `router.rs` `ParameterRouter`). Typed targets: `om-engine` (`deck.rs`, `deck_control.rs`, `sync.rs`, `mixer/control.rs`, `fx_routing.rs`).
 - **Why:** an id string is parsed once, on the control thread, into a `ParamId`. Engine targets match on the enum, so a malformed id fails at parse time and no engine object carries its own string parser.
-- **Reuse when:** adding any user-controllable parameter (a MIDI map target, a UI control, a test driver). Add the grammar and variant in `ParamId`, then match it in the owning target. The steps are in `AGENTS.md`, "How to add a control id".
+- **Reuse when:** adding any user-controllable parameter (a MIDI map target, a UI control, a test driver). Add the grammar and variant in `ParamId`, then match it in the owning target. The steps are in `docs/guidelines/control-ids.md`, "How to add a control id".
 - **Notes:**
-  - `ParamId` is the canonical form: `FromStr` parses and `Display` prints the canonical id (`hotcue01` prints `hotcue1`). The namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler` and `automix` are reserved: a malformed id in them is an error. Any other prefix parses to `ParamId::Ext`, which plugins own.
+  - `ParamId` is the canonical form: `FromStr` parses and `Display` prints the canonical id (`hotcue01` prints `hotcue1`). The namespaces `deck`, `mixer`, `fx`, `sync`, `stem`, `sampler`, `automix` and `record` are reserved: a malformed id in them is an error. Any other prefix parses to `ParamId::Ext`, which plugins own.
   - `ParameterRouter::dispatch(&ParamId, f64)` routes each typed id to the `ParamTarget` registered for its `Namespace` (`register_typed`). A target's `set_param` returns `false` for variants it does not own.
   - `Command::Param { id, value }` is the one variant the router wires today. The production UI sends it through `CommandSink::send` (`DeckBinding::typed`, `MixerBinding::typed`). MIDI mappings and plugins do not: they use the string façade below. Tests use either path. `CommandSink::send` returns `CommandError::Rejected` when no target takes the id. `LoadStems` is carried by the engine sink (`DjEngine::command_sink`), which the window and the loader use (Todo 30). `SamplerAssign` is carried by the engine sink; `Automix` is routed by the router's sink to the `automix` typed target (Todo 38).
   - The string façade is `ParameterTarget::set_parameter(&str, f64) -> bool` on the router. It parses the id once and dispatches typed ids the same way. Ids the grammar rejects, and `Ext` ids, go to the prefix registry (`register_target`, longest prefix wins). Engine namespaces cannot be registered as string prefixes.
@@ -93,18 +93,20 @@ pub trait AudioCallback: Send {
 - **Stem ids (Wave 7):** a map may target `stem.<deck>.<stem>.volume` (gain 0..1.5), `stem.<deck>.<stem>.mute` (on from 0.5) and `stem.<deck>.<stem>.filter` (-1..1), with deck 0..3 and stem 0..3 (drums, bass, vocals, other). Example map: `fixtures/controllers/stem_map.json`. **Sampler ids (Wave 7):** `sampler.pad<0..7>.trigger` (velocity 0..1, 0 releases gate voices only; a second trigger stops a loop pad), `.gate` (on from 0.5, off releases), `.volume` (0..1.5), `.pitch` (-12..12); example `fixtures/controllers/sampler_map.json`. The learnable list offers the mute of every stem; solo and all-on are UI-only and are not MIDI targets.
 
 ### Grid trait with mock implementations (BeatGrid)
-- **Where:** `om-engine` (`grid.rs`: the read-only `BeatGrid` trait and the `FixedTempoGrid` constant-tempo grid; `om-analysis` implements it for `AnalysedBeatGrid` in `beat_grid.rs`). - **Why:** sync/quantize can be built and tested before analysis exists; analysis plugs in by implementing `BeatGrid`. Keeping the trait in `om-core` lets `om-analysis` implement it without depending on `om-engine`.
+- **Where:** `om-engine` (`grid.rs`: the read-only `BeatGrid` trait and the `FixedTempoGrid` constant-tempo grid; `om-analysis` implements it for `AnalysedBeatGrid` in `beat_grid.rs`).
+- **Why:** sync/quantize can be built and tested before analysis exists; analysis plugs in by implementing `BeatGrid`.
 - **Reuse when:** a feature depends on data another phase produces: define the minimal read-only trait first, test with a mock.
 - **Notes:** `Sync::step` is a pure function of deck states (control thread, ~20-50 Hz); only `apply` sends a rate command. Grids are shared immutably as `Arc<dyn BeatGrid>` (the trait requires `Send + Sync`). `om-analysis` depends on `om-engine` for this trait, so the trait has to stay in the engine crate.
 
 ### Checking decorator for headless runs (OutputChecker)
 - **Where:** `crates/om-audio/tests/soak/checker.rs` (`OutputChecker<C: AudioCallback>`)
-- **Why:** wrap any `AudioProcessor` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
+- **Why:** wrap any `AudioCallback` to count NaN/Inf/overflow samples on the audio thread without changing the engine.
 - **Reuse when:** long-running or fuzz-style runs (soak, golden-audio, plugin stress) need output assertions.
 - **Notes:** a generic wrapper struct `OutputChecker<C: AudioCallback>` with atomic counters; no allocation in `process`.
 
 ### Plugin registry / extension points (in-process, or shared libraries over a C ABI)
-- **Where:** `om-plugins` (`api.rs` plugin and host traits, `registry.rs`, `catalog.rs`, `abi.rs` and `loader.rs` for C-ABI shared libraries). - **Why:** users add audio stages, MIDI maps and parameter targets without touching core and without any signing or allow-list.
+- **Where:** `om-plugins` (`api.rs` plugin and host traits, `registry.rs`, `catalog.rs`, `abi.rs` and `loader.rs` for C-ABI shared libraries).
+- **Why:** users add audio stages, MIDI maps and parameter targets without touching core and without any signing or allow-list.
 - **Reuse when:** a new feature should be replaceable: add a registration method to the owning registry, never a hardcoded path.
 - **Notes:** dynamic loading uses a versioned C ABI, chosen over WASM and source-only plugins (see `openmixer-workbench/docs/spikes/DECISIONS.md`, "Plugins: C ABI dynamic loading"). Loading a dynamic library needs `unsafe`; it is confined to `abi.rs` and `loader.rs` in `om-plugins` (the rest of the crate denies it). A loaded library is adapted to `Plugin`, so the registry has one path for both kinds. Extension points stay as traits and registries inside their crates.
 
@@ -143,13 +145,14 @@ pub trait AudioCallback: Send {
   - Stems and sampler are filled by the engine. `AutomixSnapshot` is not engine state: the engine leaves it at its default and the app overlays the controller's (`AutomixShared::overlay`).
 
 ### Immutable snapshot publication with `arc-swap` (deferred)
-- **Where:** not adopted. The engine snapshot is pulled (see "Pull-based engine snapshot"), so nothing publishes it. `om-engine/src/deck/loop_state.rs` still uses a seqlock, and `arc-swap` is not in `Cargo.lock`.
+- **Where:** not adopted. The engine snapshot is pulled (see "Pull-based engine snapshot"), so nothing publishes it. `om-engine/src/deck/loop_state.rs` still uses a seqlock, and no workspace crate depends on `arc-swap` (it is in `Cargo.lock` only through third-party crates).
 - **Why:** if a few fields change rarely on a control thread and must be read together in realtime, an immutable snapshot swap replaces the seqlock's retry loop.
 - **Reuse when:** a value must be published to realtime readers rather than pulled. Check first whether a pulled snapshot is enough.
 - **Notes:** the writer builds a new immutable snapshot and calls `ArcSwap::store`; readers call `load()` and keep the guard for the block. No retry loop is needed. Confirm the reader path does not allocate with `assert_no_alloc` in tests.
 
 ### Effect template method + generic wrapper (FX rack)
-- **Where:** `om-engine` `fx/` (the `Effect` trait in `effect.rs`, the `FxUnit` wrapper in `unit.rs`, `FxRack` in `rack.rs`). - **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in the wrapper, so new effects stay small.
+- **Where:** `om-engine` `fx/` (the `Effect` trait in `effect.rs`, the `FxUnit` wrapper in `unit.rs`, `FxRack` in `rack.rs`).
+- **Why:** each algorithm only renders a fully wet signal; enable ramps, smoothed wet/dry, tempo smoothing, tail ring-out and idle bypass live once in the wrapper, so new effects stay small.
 - **Reuse when:** adding an effect or any per-block processor that needs the same enable/mix/tail behaviour: implement `Effect` and declare its parameters as data.
 - **Notes:** the trait's provided methods (`prepare`, `process`) call the required `render`. The wrapper is generic, so dispatch is static on the hot path. Buffers are sized in `prepare` (off the audio thread) and processed in fixed chunks with no allocation.
 
@@ -186,7 +189,7 @@ pub trait AudioCallback: Send {
 
 ### Estimator + analyser wrapper + engine adapter
 - **Where:** `om-analysis` (pure estimator modules such as `bpm`, `key` and `structure`, the `Analyzer` implementations, and `AnalysedBeatGrid` in `beat_grid.rs`, which implements `om-engine`'s `BeatGrid`)
-- **Why:** algorithms stay testable without the service; the cached payload is plain data; the engine sees an immutable snapshot through its trait, so analysis never links the engine.
+- **Why:** algorithms stay testable without the service; the cached payload is plain data; the engine sees an immutable snapshot through its trait, so the engine never depends on analysis (`om-analysis` depends on `om-engine`).
 - **Reuse when:** every analysis feature (key, waveform, structure, stems): pure estimator, then the wrapper, then an adapter for the consumer's trait.
 
 ### Pyramid of levels (multi-resolution data)
@@ -265,7 +268,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-library` search (`search_fields.rs` `SearchFieldRegistry`, `search_compiler.rs`, `search_parser.rs`; `proptest` covers the parser)
 - **Why:** a query string parses to generic filter terms; each registered field turns its term into SQL text made of code-constant names and `?` placeholders, with user values only in the bound parameters.
 - **Reuse when:** adding a filterable or sortable attribute: register a field with the search engine.
-- **Notes:** functions return `Result<SqlFragment, SearchError>` (thiserror), so a bad field or value fails rather than returning "no results". Custom compile functions must never splice user text into the SQL string. Text match is LIKE-contains with escaped wildcards.
+- **Notes:** functions return `Result<SqlFragment, LibraryError>` (thiserror, through the crate's `Result` alias), so a bad field or value fails rather than returning "no results". Custom compile functions must never splice user text into the SQL string. Text match is LIKE-contains with escaped wildcards.
 
 ### Importer registry + parse/merge split (extension point)
 - **Where:** `om-library` import (`library_importer.rs` `LibraryImporterRegistry`, `itunes_importer.rs`, `rekordbox_importer.rs`, `import_merge.rs`, `import_writer.rs`)
@@ -346,7 +349,7 @@ pub trait AudioCallback: Send {
 - **Notes:** a `Mute` fade and any zero-length fade are steps. `restore_values` is the first `from` per id, and a cancel restores only the fades that started. A fade whose deck has no stems is reported once and then ignored. A backwards beat jump (seek) re-sends the overlapped fades at the new position.
 
 ### Beat-driven plan with an idempotent control-tick controller (automix)
-- **Where:** `om-automix/src/plan.rs`, `planner.rs`, `moves.rs`, `controller.rs`. The app side is `openmixer/src/automix_service.rs`.
+- **Where:** `om-automix/src/plan.rs`, `planner.rs`, `moves.rs`, `controller/`. The app side is `openmixer/src/automix_service.rs`.
 - **Why:** a transition is a value (`TransitionPlan`: steps with `at_beat`, `length_beats`, `from`, `to`, `curve`) and the controller only asks it for `values_at(beat)`, sending what changed. A stalled control clock therefore jumps to the right value instead of replaying ticks, and the last tick lands every control exactly on `to`. The planner is deterministic and pure; the controller sees the engine only through `EngineSnapshot`, `CommandSink` and a small `AutomixHost` trait, so a fake host, a fake sink and simulated snapshots test every state and cancel path without audio.
 - **Reuse when:** something on the control side must move several controls over musical time (macros, scripted fades). Keep the schedule in the plan, take the position from the snapshot, and detect the user by comparing the snapshot with the value last sent (plus an explicit notice from the binding layer), never by owning the control.
 - **Notes:** the user always wins: a moved control cancels the plan and is never set back. The watch keeps the last two sent values, but forgives the older one for one tick only, so a user returning a control to its previous value is still seen. The host (library, track loader) is not `Send`, so the control thread builds it from a factory.
@@ -392,7 +395,7 @@ pub trait AudioCallback: Send {
 - **Where:** `om-ui-bridge` (toolkit-free) and `om-ui-tauri` (the Tauri v2 window and its Svelte front end in `web/`), behind the `gui-tauri` feature of `openmixer`. The binary's `gui_tauri.rs` composes the window from the start-up steps the GPUI window also uses (`openmixer::startup`). Full description: `docs/features/tauri-trial.md`.
 - **Why:** a web front end must not reach into the engine or restate what Rust already knows. `om-ui-bridge` turns engine state into wire formats (`pack_snapshot`, `pack_peaks`, `theme_css`), lists the front end's controls with ids and ranges read off the `om-ui` widget models (`slice_controls`), and turns (id, value) into one `ParamId` dispatch (`dispatch_control`). `om-ui-tauri` is a thin shell: the window, the Tauri commands, the stream thread and the control thread.
 - **Reuse when:** any window that is not GPUI needs engine state or sends controls; put the conversion in `om-ui-bridge` and keep the shell thin. When the front end needs a value the GPUI window computes (a range, a band height, a meter scale, a lane colour), take it from the `om-ui` model the GPUI window uses, never a copy typed in TypeScript.
-- **Rule:** `om-ui-bridge` has no window dependency (no Tauri, no GPUI, no webview) and is tested headless. Shared formats are pinned by fixtures both sides test: `fixtures/ui-bridge/snapshot-v2.bin` (packet) and `fixtures/ui-bridge/meter-table.txt` (meter scale).
+- **Rule:** `om-ui-bridge` has no window dependency (no Tauri, no GPUI, no webview) and is tested headless. Shared formats are pinned by fixtures both sides test: `fixtures/ui-bridge/snapshot-v2.bin` (packet), `fixtures/ui-bridge/meter-table.txt` (meter scale), `fixtures/ui-bridge/fader-law.txt` (fader taper) and `fixtures/ui-bridge/knob-text.txt` (knob captions).
 - **Notes:** data flows one way in each direction. Out: the `om-ui-stream` thread reads `DjEngine::snapshot()` at 30 Hz and sends a little-endian binary packet (version 2) through a Tauri channel; the front end interpolates between packets. Bulk data is sent on request: peaks (four bytes per point) and track info when `deck-changed` fires, the theme CSS and lane ink once at start. In: the front end sends (id, value); the `control` command parses the id with `ParamId` and dispatches it, on Tauri's main thread, never the audio thread. Unknown ids and non-finite values are refused with an error and nothing is dispatched.
 
 ## Idioms and their Rust equivalents

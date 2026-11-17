@@ -55,7 +55,7 @@ Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain vers
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt-get install pkg-config libasound2-dev libdbus-1-dev libwebkit2gtk-4.1-dev
+sudo apt-get install pkg-config libasound2-dev libclang-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 ```
 
 GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen). `libwebkit2gtk-4.1-dev` is for the Tauri window (`om-ui-tauri`, the web front end of ADR 0009): the crate is a workspace member, so workspace builds need it even though the `gui-tauri` feature is off by default. Its front end needs Node 22.12 or newer, or 24, with npm; see `docs/guidelines/build.md`.
@@ -155,8 +155,8 @@ Optional cargo features of the `openmixer` binary, all off by default: `clap` (C
 cargo build
 cargo run -p openmixer -- --smoke
 
-# Check for memory leaks (Linux, requires valgrind)
-valgrind --leak-check=full ./target/debug/openmixer --smoke
+# Check for memory leaks (Linux, requires valgrind; headless, no window)
+valgrind --leak-check=full ./target/debug/openmixer --headless --smoke
 ```
 
 ## Architecture
@@ -190,7 +190,7 @@ fixtures/                               # Small test inputs: controller maps and
 resources/controllers/                  # Generic controller maps
 resources/fonts/                        # Bundled Sansation, Source Sans 3 (SIL OFL 1.1), Ubuntu Mono (UFL 1.0)
 resources/themes/                       # Built-in theme JSON
-tools/                                  # Helpers: issue heatmap, screenshots, htdemucs export and reference, CLAP leak check, UI bench (Tauri window)
+tools/                                  # Helpers: issue heatmap, screenshots, htdemucs export and reference, CLAP leak check, UI bench and UI drive (Tauri window)
 ```
 
 Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `docs/crates.md` lists what each crate owns and `docs/guidelines/control-ids.md` how to add a control id.
@@ -202,7 +202,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 | Wave | Focus | Status |
 |------|-------|--------|
 | 1 | Foundation, build system, CI, test harness | ✅ Done |
-| 2 | Audio engine (device, decks, mixer, FX, sync, MIDI input, soak gate) | 🟡 Partial: the debug panel (26a) is partial (no faders, EQ or meters on it); FFmpeg (8b) is an optional decode fallback; the 10-minute soak is on the weekly CI job, not yet run |
+| 2 | Audio engine (device, decks, mixer, FX, sync, MIDI input, soak gate) | 🟡 Partial: the debug panel (26a) is partial (no faders, EQ or meters on it); FFmpeg (8b) is an optional decode fallback; the 10-minute soak runs on the weekly CI job (passing since 2026-11-01) |
 | 3 | Analysis pipeline | 🟡 Partial: stem separation runs on the mock separator; the htdemucs export and a real-model run (19) are open |
 | 4 | Library and data | 🟡 Done except crates and tags, the Traktor and Serato importers, smart filters and ranking |
 | 5 | User interface | 🟡 Partial: LookAndFeel (25) is partly restyled; decks, mixer and settings partial; stem pads (30) done at logic and view level |
@@ -213,7 +213,7 @@ Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, 
 
 The engine, analysis, library and MIDI work is verified headlessly on Linux; the Wave 5 UI is partial. Task-level planning lives in the [workbench](https://github.com/massive-development/openmixer-workbench).
 
-**Platform refresh (issues #218 to #229, #241, #250):** done and tested headlessly, not yet confirmed on real hardware. It moved the UI to `gpui-pre` 0.3.10 with `gpui-kit` and `gpui-component`, the toolchain to Rust 1.95, MIDI to `midir`, resampling and deck varispeed to `rubato`, added EBU R128 loudness metering (`ebur128`, with a panel in the mixer), OS media keys (`souvlaki`), GPUI file pickers, clipboard and notifications, SQLite `synchronous=NORMAL` in WAL mode for the library and analysis cache, hot-loop bounds-check work with `divan` benches, and CLAP plugin hosting behind the `clap` feature (ADR 0007; first-run, state and latency work still in progress). Real-time priority for the audio callback (issue #244) is on hold. The list of things a person has to check is `docs/testing/hardware-checklist.md`.
+**Platform refresh (issues #218 to #229, #241, #250):** done and tested headlessly, not yet confirmed on real hardware. It moved the UI to `gpui-pre` 0.3.10 with `gpui-kit` and `gpui-component`, the toolchain to Rust 1.95, MIDI to `midir`, resampling and deck varispeed to `rubato`, added EBU R128 loudness metering (`ebur128`, with a panel in the mixer), OS media keys (`souvlaki`), GPUI file pickers, clipboard and notifications, SQLite `synchronous=NORMAL` in WAL mode for the library and analysis cache, hot-loop bounds-check work with `divan` benches, and CLAP plugin hosting behind the `clap` feature (ADR 0007; plugin delay compensation deferred). Real-time priority for the audio callback (issue #244) is on by default through the `realtime-dbus` feature and not yet confirmed on a device. The list of things a person has to check is `docs/testing/hardware-checklist.md`.
 
 See the [workbench](https://github.com/massive-development/openmixer-workbench) for the task list and per-task progress.
 
@@ -240,7 +240,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - Beat grid phase (BPM analyser version 2): the phase found on the full-band onsets is checked against linear kick-band flux half a beat later, so off-beat bass and open hats no longer pull the grid half a beat late. It is tested on the generated demo loops and click tracks only, not on real recordings; material with no kick, half-time or swung grooves, or kicks placed on the off-beat on purpose can still get a grid half a beat out. Grids from version 1 are not used any more: a track analysed before gets a new grid when it is loaded on a deck or picked by automix (only the BPM analysis re-runs; there is no bulk re-analysis), and hot cues and loops saved in frames do not move with it
 - Automix is not verified by ear (mock device only). It asks the prep queue to analyse tracks it had to skip as not analysed (up to 3 times per track, then it gives up and reports via `last_error`); that retry loop is not heard by ear. Stem transitions (Todo 39) are tested on the engine but not heard; the stem separation backend (Todo 19) is still open
 - The real htdemucs model (Todo 19): the export script and I/O contract match Demucs on a reference segment (`crates/om-stems/tests/htdemucs_reference.rs`), but nothing has been listened to. The ONNX backend is behind the off-by-default `onnx` feature, and its CI job blocks merges. The separator interface and the licence-gated downloads are done
-- CLAP hosting (issue #225, ADR 0007, `clap` feature of `om-plugins`, off by default): the host, the generic parameter panel and the plugin's own window are built and tested with an in-tree fixture plugin; first-run warning, plugin state save and restore, and latency compensation are in progress. No third-party CLAP plugin has been run by a person, and the Linux GUI paths (X11 embed, Wayland floating) are unverified on a real display
+- CLAP hosting (issue #225, ADR 0007, `clap` feature of `om-plugins`, off by default): the host, the generic parameter panel, the plugin's own window, the first-run scan prompt and first-load warning, plugin state save and restore, and the latency readout are built and tested with an in-tree fixture plugin; plugin delay compensation is deferred (ADR 0007). No third-party CLAP plugin has been run by a person, and the Linux GUI paths (X11 embed, Wayland floating) are unverified on a real display
 - Loudness metering (issue #222): the meter is checked against signals synthesised from EBU Tech 3341 and 3342, not the official EBU reference files (the EBU site refuses automated downloads); cases 6 to 8 and the programme cases are not covered. The mixer panel is checked in the headless gpui tests only
 - Real-time priority for the audio callback (issues #228, #244): on Linux the `realtime-dbus` feature (on by default; needs `libdbus-1-dev`) asks rtkit for it. It has not been confirmed on a real device, and a `--no-default-features` build runs the callback at normal priority
 - The platform refresh (UI on `gpui-component`, `midir`, `rubato`, media keys, desktop integration) was built on a host with no display, GPU, MIDI device or audio session. Visual parity with the older screenshots, real MIDI ports and the media keys are unverified; `docs/testing/hardware-checklist.md` lists what to confirm
@@ -253,7 +253,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must
 - FFmpeg decode backend (Todo 8b, optional `ffmpeg` cargo feature, off by default): a fallback for the sampler, decks, stems and analysis when symphonia rejects a format (the file is decoded once to memory, capped at about 11 minutes for decks). The real-ffmpeg tests passed locally on ffmpeg 6.1.1 and skip where no ffmpeg or encoder is installed; CI runs the fake-ffmpeg tests (`cargo test` with the `ffmpeg` features) and is not known to have a real one
 - Cover art shows in the deck card header only (PNG and JPEG; no track detail view; the cache is not invalidated on rescan); not seen on a display
 - Playlist editing (Todo 28): reorder by dragging a track onto a row, a top-level New folder and nesting by drag are built; the gpui drag and drop is compile-checked only, not seen on a display
-- The weekly `soak` CI job (the two 10-minute soaks, `.github/workflows/rust.yml`, Sunday 03:00 UTC) has not run yet: `gh run list --event schedule` is empty (checked 2026-10-27), so the result is unknown
+- The weekly `soak` CI job (the two 10-minute soaks, `.github/workflows/rust.yml`, Sunday 03:00 UTC) runs on the mock device only; it passed on 2026-11-01, 2026-11-08 and 2026-11-15 (`gh run list --event schedule`, checked 2026-11-17)
 - CI is Linux only; macOS and Windows legs are not in the check matrix
 - The headphone-cue second stream is unproven (it failed on WSLg)
 - The GPUI window-opening `--smoke` (without `--headless`) is not run in CI; the Tauri window is (the `web` job builds and tests the front end and runs `--ui=tauri --smoke` under Xvfb, Linux only)

@@ -7,7 +7,7 @@ Control paths, and what is live today:
 - **Typed entry point:** `Command` and `CommandSink` are used by tests, by automix and by the Wave 7 features. The router's sink accepts `Command::Param` and `Command::Automix` (routed to the `automix` target). `LoadStems` and `SamplerAssign` are handled by `DjEngine::command_sink(fallback)` (`EngineCommands`): `DjEngine::register_stem_set(dir)` turns a stem directory into the `StemSetRef` handle the command carries, `DjEngine::register_sample(Arc<Sample>)` / `load_sample(path)` the `SampleId` for `SamplerAssign`; the router's sink still rejects both.
 Rules: writers never write engine state directly; readers pull an `EngineSnapshot`; the audio thread takes no locks and never parses an id.
 
-- Demo flags (`--demo-map`, `--demo-library`, `--demo-automix`, `--demo-record`) are listed in `openmixer::flags::DEMO_FLAGS`. A demo run never writes the user's files: `composition::prefs_save_target` sends settings saves to `<scratch>/preferences.json` when `flags::demo_run` is true, and the recording and map paths also live in the scratch folder. Any new `--demo-*` flag must be added to `DEMO_FLAGS`, and its state must stay in memory or in the scratch folder. Covered by `openmixer/tests/demo_prefs.rs`.
+- Demo flags (`--demo-map`, `--demo-library`, `--demo-automix`, `--demo-record`) are listed in `openmixer::flags::DEMO_FLAGS`; `--demo-scene=NAME` takes a value, so `flags::demo_run` matches it by prefix instead. A demo run never writes the user's files: `composition::prefs_save_target` sends settings saves to `<scratch>/preferences.json` when `flags::demo_run` is true, and the recording and map paths also live in the scratch folder. Any new `--demo-*` flag must be added to `DEMO_FLAGS`, and its state must stay in memory or in the scratch folder. Covered by `openmixer/tests/demo_prefs.rs`.
 
 ## Plugin control targets
 
@@ -16,7 +16,7 @@ Rules: writers never write engine state directly; readers pull an `EngineSnapsho
 ## How to add a control id
 
 1. `om-core/src/param_id/mod.rs`: add the variant to the owning enum (`DeckParam`, `MixerParam`, ...) and its line in the grammar doc comment.
-2. `om-core/src/param_id/parse.rs`: parse it in the sub-namespace `FromStr`. `Display` in `mod.rs` must print it back exactly.
+2. `om-core/src/param_id/parse.rs`: parse it in the sub-namespace `FromStr`. `Display` in `mod.rs` must print it back exactly. If it carries an index or a bounded value, check it in `ParamId::validate` (`om-core/src/param_id/validate.rs`), which hand-built ids and `dispatch_control` rely on.
 3. `om-core/src/param_id/tests.rs`: add the id to `GOLDEN`. Every id must round-trip canonically.
 4. The owning target's `set_param` match arm (for example `om-engine/src/mixer/control.rs` or `deck_control.rs`): handle the variant and return `true`. Return `false` for variants it does not own.
 5. If the value is readable: add a `StateId` variant (`om-core/src/state_id.rs`), a field on `DeckSnapshot` or `MixerSnapshot` with its read arm (`om-core/src/snapshot.rs`), and fill the field in `DjEngine::snapshot()` (`om-engine/src/dj_engine.rs`).

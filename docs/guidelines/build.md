@@ -38,7 +38,7 @@ cargo clippy --all-targets -- -D warnings
 cargo deny check
 
 # Startup smoke check
-cargo run -p openmixer -- --smoke
+cargo run -p openmixer -- --headless --smoke
 
 # Benchmarks (divan)
 cargo bench -p om-engine
@@ -110,7 +110,7 @@ nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri  
 
 ## Test support
 
-`crates/om-testing` holds the helpers the crates share in their tests: `wav` (fixture writers and a reader), `signals` (deterministic sines, noise and impulse trains), `level` (dB, peak and RMS), `wait` (`wait_until` and `assert_eventually!`) and `fs::TempDir`. Reuse these instead of writing a new WAV writer, sine or poll loop. Waits poll for the condition they expect, with a timeout; never sleep a fixed time to wait for something to happen. It is a dev-dependency only: no shipped crate may depend on it.
+`crates/om-testing` holds the helpers the crates share in their tests: `wav` (fixture writers and a reader), `signals` (deterministic sines, noise and impulse trains), `mix` (a synthetic 120 BPM music-like track), `level` (dB, peak and RMS), `wait` (`wait_until` and `assert_eventually!`) and `fs::TempDir`. Reuse these instead of writing a new WAV writer, sine or poll loop. Waits poll for the condition they expect, with a timeout; never sleep a fixed time to wait for something to happen. It is a dev-dependency only: no shipped crate may depend on it.
 
 
 ## Testing
