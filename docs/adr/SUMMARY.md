@@ -15,7 +15,7 @@
 - DCO sign-off required
 
 ## ADR-0004: Technology Stack - Rust with GPUI
-- **Language / UI:** Rust (toolchain and MSRV 1.95), with GPUI for the UI: `gpui-pre` 0.3.10 imported as `gpui`, `gpui-kit` 0.8.1 and `gpui-component` (gate closed on Linux)
+- **Language / UI:** Rust (toolchain and MSRV 1.95), with GPUI for the UI: `gpui-pre` 0.3.10 imported as `gpui`, `gpui-kit` 0.8.1 and `gpui-component` (gate closed on Linux). Update 2026-11-16: the UI choice is superseded in direction by ADR 0009; GPUI stays the shipping window until the cut-over
 - **Audio I/O:** `cpal` for the engine output callback; `rodio` is acceptable only for non-critical audio such as library preview (not used so far)
 - **Decode / tags:** `symphonia`; `lofty`
 - **DSP:** `realfft` / `rustfft`; own biquad, EQ and FX in `om-dsp`
@@ -29,4 +29,11 @@
 - **0006 Controller map provenance:** maps are written clean-room from the MIDI spec and the maintainer's own hardware traces
 - **0007 CLAP hosting with clack:** accepted; `om-plugins` hosts CLAP plugins behind the `clap` feature, beside the C ABI (`clack-*` pinned `=0.2.0`)
 - **0008 The Machined Faceplate supersedes E1 on look:** accepted; `openmixer-workbench/docs/design-system/DESIGN.md` is the look (warm matte neutrals, etched 1px lines, no glow, four muted deck hues each with its letter, signal red for playhead and record only, every number in mono). Phase 0 answers and the open owner decisions: `openmixer-workbench/docs/design/faceplate-decisions.md`
+
+## ADR-0009: Move the interface to a web front end (Tauri v2)
+- **Status:** accepted on 2026-11-16 by the project owner's decision after the decks slice was built and reviewed; the exit criteria were not measured. The web front end (Tauri v2 with Svelte) is the direction for the interface and supersedes ADR 0004's UI choice in direction; GPUI stays the default and shipping window until the cut-over plan lands. ADR 0008's look is unchanged and reaches the web front end as CSS variables generated from the theme files
+- **Shape:** `om-ui-bridge` (toolkit-free, headless-tested: snapshot packet, waveform peaks, theme CSS, `ParamId` dispatch) and `om-ui-tauri` (the window), behind the `gui-tauri` feature and `--ui=tauri`, mock device only; decks screen only so far
+- **Spike evidence (Windows, 1600×780, two decks):** 26% of one core at a 60 fps cap, 13% paused; limits: animation callbacks not presented frames, no GPU load, no GPUI baseline, Linux only under WSL software rendering. The slice's own figures are tooling checks under WSL software rendering, not a hardware comparison
+- **Targets carried into the migration** (the trial's exit criteria, not measured before acceptance): frame intervals, 0.5 ms per-frame work, paused CPU at or below 15%, at most 15 points over GPUI at 60 fps, waveform within 500 ms, every control works by hand on Windows
+- **Next:** plan 2 (library and remaining panels), plan 3 (settings, mapping editor, plugin windows, media keys, file drop, shortcuts), plan 4 (test tooling, cut-over, removal of `om-ui-gpui`, installers)
 

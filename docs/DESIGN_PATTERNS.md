@@ -388,6 +388,13 @@ pub trait AudioCallback: Send {
 - **Reuse when:** adopting a third-party widget library: map roles to tokens in one adapter and add no colours there (`tests/style_lint.rs` keeps raw colour calls out of views).
 - **Notes:** runs at start-up and on every theme change, on the window thread. Custom-painted controls (knobs, faders, meters, waveform) do not go through it.
 
+### Front-end bridge (ADR 0009)
+- **Where:** `om-ui-bridge` (toolkit-free) and `om-ui-tauri` (the Tauri v2 window and its Svelte front end in `web/`), behind the `gui-tauri` feature of `openmixer`. The binary's `gui_tauri.rs` composes the window from the start-up steps the GPUI window also uses (`openmixer::startup`). Full description: `docs/features/tauri-trial.md`.
+- **Why:** a web front end must not reach into the engine or restate what Rust already knows. `om-ui-bridge` turns engine state into wire formats (`pack_snapshot`, `pack_peaks`, `theme_css`), lists the front end's controls with ids and ranges read off the `om-ui` widget models (`slice_controls`), and turns (id, value) into one `ParamId` dispatch (`dispatch_control`). `om-ui-tauri` is a thin shell: the window, the Tauri commands, the stream thread and the control thread.
+- **Reuse when:** any window that is not GPUI needs engine state or sends controls; put the conversion in `om-ui-bridge` and keep the shell thin. When the front end needs a value the GPUI window computes (a range, a band height, a meter scale, a lane colour), take it from the `om-ui` model the GPUI window uses, never a copy typed in TypeScript.
+- **Rule:** `om-ui-bridge` has no window dependency (no Tauri, no GPUI, no webview) and is tested headless. Shared formats are pinned by fixtures both sides test: `fixtures/ui-bridge/snapshot-v2.bin` (packet) and `fixtures/ui-bridge/meter-table.txt` (meter scale).
+- **Notes:** data flows one way in each direction. Out: the `om-ui-stream` thread reads `DjEngine::snapshot()` at 30 Hz and sends a little-endian binary packet (version 2) through a Tauri channel; the front end interpolates between packets. Bulk data is sent on request: peaks (four bytes per point) and track info when `deck-changed` fires, the theme CSS and lane ink once at start. In: the front end sends (id, value); the `control` command parses the id with `ParamId` and dispatches it, on Tauri's main thread, never the audio thread. Unknown ids and non-finite values are refused with an error and nothing is dispatched.
+
 ## Idioms and their Rust equivalents
 
 What the code uses in place of common object-oriented patterns.

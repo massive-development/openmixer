@@ -11,9 +11,10 @@ sudo apt-get install libasound2-dev pkg-config libclang-dev libdbus-1-dev
 
 `libclang-dev` is for bindgen (Rubber Band). The GPUI window needs the packages listed in the `check` job of `.github/workflows/rust.yml`. `libdbus-1-dev` is for the default `realtime-dbus` feature; `--no-default-features` builds without it.
 
+- **WebKitGTK:** `om-ui-tauri` (the Tauri window, the web front end of ADR 0009) is a workspace member, so every workspace build on Linux needs `libwebkit2gtk-4.1-dev`; see "Tauri window (web front end)" below.
 - **Cargo tools (for the lint and licence gates):** `cargo-deny` (CI installs it with `taiki-e/install-action`).
 - GPUI platform dependencies (Linux) are documented in `openmixer-workbench/docs/spikes/gpui.md`.
-- Crates added in the platform refresh: see [docs/dependencies.md](docs/dependencies.md).
+- Crates added in the platform refresh: see [docs/dependencies.md](../dependencies.md).
 
 ## Build Commands
 
@@ -73,6 +74,39 @@ incremental = false
 - Git corruption recovery: delete zero-byte files under `.git/objects`, run `git fetch --refetch origin`, then reset the branch to `origin/<branch>`.
 - Never play audio; use the mock device. Screenshots only with `import -silent` (see `tools/screenshots.sh`), into temp dirs, at most 6 per task.
 - Agents default to haiku; use sonnet for audio-thread or design-heavy work. Review once per phase. Push after every step.
+
+## Tauri window (web front end)
+
+The web front end of ADR 0009 (`om-ui-tauri`, the `gui-tauri` feature of `openmixer`, off by default). What it is and how it works: [docs/features/tauri-trial.md](../features/tauri-trial.md).
+
+- **Linux packages:** `sudo apt-get install libwebkit2gtk-4.1-dev` (it brings GTK 3 and libsoup 3). `om-ui-tauri` is a workspace member, so `cargo check`, `clippy` and `test --workspace` need it even without the feature.
+- **Node:** 22.12 or newer, or 24, with npm (Vite 8 needs 20.19 or 22.12 and up; Vitest 5 needs 22.12, 24 or 26 and up). Ubuntu's packaged Node is older. Dependencies are pinned in `web/package-lock.json`; install with `npm ci`.
+- **Front end:** build it before the cargo build that should show it; the files in `web/dist` are embedded at compile time.
+
+```bash
+cd crates/om-ui-tauri/web
+npm ci
+npm run build      # copies resources/fonts into public/fonts, then vite build into dist/
+npm test           # Vitest
+npm run check      # svelte-check, warnings fail
+cd -
+```
+
+- **Placeholder:** without `web/dist/index.html`, `crates/om-ui-tauri/build.rs` writes a one-line placeholder page there, so the crate and the workspace compile without Node. The window is then blank and `--smoke` fails with "the front end never called ready (is web/dist built?)". `npm run build` replaces it.
+- **Cargo:**
+
+```bash
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device [--demo-library | --demo-scene=NAME]
+cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
+nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge
+nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri
+nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri   # needs a display and web/dist
+```
+
+- **CI:** the `web` job of `.github/workflows/rust.yml` (Linux) installs Node 22, runs `npm ci`, `npm run build`, `npm test` and `npm run check` in `web/`, then `xvfb-run -a cargo test -p openmixer --features gui-tauri`. The `check` job's apt line carries `libwebkit2gtk-4.1-dev` because its workspace-wide clippy and test build `om-ui-tauri` (against the placeholder page, without Node). The other jobs do not build the crate.
+- **Bench:** `tools/ui-bench.sh <gpui|tauri> <seconds> [args...]` measures CPU and memory of a built binary (`OPENMIXER_BIN`, default `target/debug/openmixer`; the script never builds) and, for `tauri`, merges in the window's frame report. `tools/ui-bench.sh --self-test` checks its arithmetic. Fields and flags: the feature page.
+- **Drive:** `python3 tools/ui-drive.py` presses, drags, scrolls and types into a built `--features gui-tauri` binary with XTest and checks each interaction against the engine (Linux X11 or WSLg; it moves the real pointer, so keep off the mouse for its two and a half minutes). Usage and limits: the feature page, "Driving the window".
+- **WSL:** run the window with `WAYLAND_DISPLAY=` (the tests and the bench script set it). On Linux the app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` unless it is already set, in `om_ui_tauri::prepare_environment`, which `gui_tauri::main` calls before any thread starts (ADR 0009: under WSL software rendering it cut CPU from 213% to 56%). If `npm` resolves to a Windows install, put a Linux Node first on `PATH` ([troubleshooting](../troubleshooting.md)). The window runs only with `--mock-device`.
 
 ## Test support
 

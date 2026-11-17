@@ -16,3 +16,22 @@ Themes and type (Machined Faceplate, ADR 0008): the built-in themes are `resourc
 
 gpui only has fixed border widths (0 to 12 px); a token width is rounded to a whole pixel.
 
+
+## The web front end (Tauri window)
+
+The Tauri window's front end ([docs/features/tauri-trial.md](features/tauri-trial.md)) styles from the same tokens, through CSS custom properties that `om_ui_bridge::theme_css(tokens, density)` generates. The shell sends them once at start (`theme_css` command) and the front end puts them in `<style id="om-theme">` before its first paint.
+
+- **Naming:** every colour and numeric token field is `--om-<field>` with `_` turned into `-` (`text_primary` is `--om-text-primary`); the deck accents are `--om-accent-<i>` from 0. The metric set of the active density is `--om-density-<field>` (`control-height`, `knob-size`, `pad-size`, `row-height`, `mixer-width`, `panel-radius`, `control-radius`) and `--om-density-space-1` to `--om-density-space-6`. The window resolves the density once, for the 1600 × 780 opening size.
+- **Units:** colours are `#rrggbb`, or `rgb(r g b / a)` when translucent. Fields ending `_ms` are `ms`; fields ending `_alpha`, `_db`, `_seconds`, `_level` or `_opacity`, and every `wave_*` field, are plain numbers; everything else is `px`. Non-finite values are left out.
+- **Fonts:** `--om-font-display`, `--om-font-body` and `--om-font-mono` are the theme's family names as quoted CSS strings. `web/src/app.css` registers the bundled files under those names with `@font-face`; `npm run fonts` (run by `npm run build`) copies them from `resources/fonts/`. Numbers use the `.num` class (mono family, tabular figures), the web form of `font::numeral`.
+- **A new token** must be added to `colour_fields` or `number_fields` in `crates/om-ui-bridge/src/theme_css.rs`; a test there fails when a `ThemeTokens` field is not emitted.
+- **Waveform lanes** take their colours from `strip_ink`, which resolves the theme through the GPUI strip's `StripInk`; the shader has no colour of its own.
+
+The no-literals rule applies to the web front end too: colours, sizes and fonts come from `--om-*` variables, never literals in component CSS or TypeScript. Debt, literals the front end uses today with no token (in `crates/om-ui-tauri/web/src/`):
+
+- `App.svelte`: the page grid (rows 44, 104, at least 180 and 372 px; mixer columns 246 and 245 px) and the wordmark's `letter-spacing: 0.14em`.
+- Font weights 400, 500 and 700 in `App.svelte`, `DeckHeader`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`, `Button`, `Knob`, `Mixer`, `ChannelStrip` (there is no weight token).
+- Sizes derived with a literal factor: the deck tag and header letter (`calc(<type token> * 1.618)` in `DeckTag`, `DeckHeader`, `DeckPanel`) and the icon size, `1.25em` of the label (`Icon.svelte`).
+- Hairlines: 1 px and 2 px pointer, centre and tick lines in `Fader.svelte` and `Knob.svelte`, the 1 px lane separator in `Waveforms.svelte`; the tempo fader's even tick spacing (12.5%) and the knob pointer's length (30%). The channel faders' dB marks come from the control spec's `ticks` and use tokens only.
+- `LoopRow.svelte`: the container query that folds the loop row below 360 px.
+- `controls/drag.ts`: 160 px of drag travel for a knob's full range.

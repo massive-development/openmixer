@@ -1,0 +1,71 @@
+/* The bundled fonts (resources/fonts, copied by `npm run fonts`), registered under the family
+   names the theme tokens carry in --om-font-display, --om-font-body and --om-font-mono. */
+@font-face {
+  font-family: 'Sansation';
+  src: url('/fonts/Sansation-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/SourceSans3-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/SourceSans3-Medium.ttf') format('truetype');
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'Ubuntu Mono';
+  src: url('/fonts/UbuntuMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'Ubuntu Mono';
+  src: url('/fonts/UbuntuMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--om-ground);
+  color: var(--om-text-primary);
+  font-family: var(--om-font-body);
+  font-size: var(--om-type-body);
+  /* An instrument, not a page: a double-click selects no text, so a drag right after one (reset,
+     then turn) moves the control instead of dragging the selection away. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Keyboard focus: the theme's ring, held clear of the control so it reads on any face. */
+:focus-visible {
+  outline: var(--om-focus-border-width) solid var(--om-focus-ring);
+  outline-offset: var(--om-inset-small);
+}
+
+/* Hover and press fades are decoration; waveforms and meters are content and keep moving. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+  }
+}
+
+/* Numbers: every digit the same width, so read-outs do not shift as they change. */
+.num {
+  font-family: var(--om-font-mono);
+  font-variant-numeric: tabular-nums;
+}

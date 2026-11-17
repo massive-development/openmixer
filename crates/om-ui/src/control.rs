@@ -143,11 +143,14 @@ impl Knob {
     /// the detent it becomes the detent itself. Knobs without a detent return `value` unchanged.
     pub fn snap_to_detent(&self, value: f64) -> f64 {
         match self.detent {
-            Some(d) if (value - d).abs() <= DETENT_FRACTION * (self.range.max - self.range.min) => {
-                d
-            }
+            Some(d) if (value - d).abs() <= self.detent_width() => d,
             _ => value,
         }
+    }
+
+    /// How far either side of the detent a drag sticks to it, in the knob's units.
+    pub fn detent_width(&self) -> f64 {
+        DETENT_FRACTION * (self.range.max - self.range.min)
     }
 
     /// True when the knob sits on its detent (or, with none, its default).
@@ -167,6 +170,15 @@ impl Knob {
 
     pub fn text(&self) -> String {
         self.readout.text(self.value())
+    }
+}
+
+/// `value` with the knob's detent pull applied, unless `shift` is held (fine mode bypasses it).
+pub fn snap_with_bypass(knob: &Knob, value: f64, shift: bool) -> f64 {
+    if shift {
+        value
+    } else {
+        knob.snap_to_detent(value)
     }
 }
 
@@ -196,6 +208,15 @@ mod tests {
         assert_eq!(eq.snap_to_detent(-30.0), -30.0);
         let free = Knob::new("X", Readout::Whole, 0.0, 10.0, 5.0);
         assert_eq!(free.snap_to_detent(5.1), 5.1, "no detent, no pull");
+    }
+
+    #[test]
+    fn shift_bypasses_detent_pull() {
+        let eq = Knob::new("HI", Readout::Decibels, -48.0, 6.0, 0.0).with_detent();
+        assert_eq!(snap_with_bypass(&eq, 1.0, false), 0.0);
+        assert_eq!(snap_with_bypass(&eq, 1.0, true), 1.0);
+        assert_eq!(snap_with_bypass(&eq, 5.0, false), 5.0);
+        assert_eq!(eq.detent_width(), 0.03 * 54.0);
     }
 
     #[test]

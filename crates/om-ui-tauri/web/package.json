@@ -1,0 +1,28 @@
+{
+  "name": "openmixer-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenMixer web front end for the Tauri trial window (ADR 0009)",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "fonts": "node scripts/copy-fonts.mjs",
+    "predev": "npm run fonts",
+    "dev": "vite",
+    "prebuild": "npm run fonts",
+    "build": "vite build",
+    "test": "vitest run",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "svelte": "5.57.3",
+    "svelte-check": "4.7.7",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
