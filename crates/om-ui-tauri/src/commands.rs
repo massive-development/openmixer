@@ -5,6 +5,7 @@ use crate::bench::BenchRun;
 use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
+use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
 use crate::stream::{PacketSink, StreamConfig};
 use crate::stream_slot::StreamSlot;
 use crate::strip_ink::StripInkDto;
@@ -14,6 +15,7 @@ use om_ui::binding::MixerBinding;
 use om_ui_bridge::{dispatch_control, slice_controls, FILL, MIN_HALF_PX, PLAYED_BRIGHTNESS};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -32,6 +34,8 @@ pub(crate) struct ShellState {
     pub(crate) ready_signal: Sender<()>,
     pub(crate) streams: Arc<StreamSlot>,
     pub(crate) decks: Arc<Decks>,
+    /// `--ui-drive-out`: where `ui_layout` writes the layout map; `None` refuses it.
+    pub(crate) drive_layout: Option<PathBuf>,
 }
 
 /// The waveform constants the shader shares with the GPUI strip.
@@ -66,6 +70,8 @@ pub struct RunConfig {
     pub banner: Option<String>,
     /// Whether the top bar shows the frame counter; when not, the front end does not compute it.
     pub hud: bool,
+    /// A `--ui-drive-out` run: the front end sends its layout map through `ui_layout`.
+    pub drive: bool,
 }
 
 /// The run's smoke, bench and frame-cap settings.
@@ -149,9 +155,43 @@ pub fn controls(
     engine: State<'_, Arc<DjEngine>>,
     router: State<'_, Arc<ParameterRouter>>,
 ) -> HashMap<String, ControlDto> {
+    slice_specs(&engine, &router)
+}
+
+fn slice_specs(
+    engine: &Arc<DjEngine>,
+    router: &Arc<ParameterRouter>,
+) -> HashMap<String, ControlDto> {
     let decks = u8::try_from(engine.num_decks()).unwrap_or(u8::MAX);
-    let mixer = MixerBinding::typed(Arc::clone(&engine), Arc::clone(&router));
+    let mixer = MixerBinding::typed(Arc::clone(engine), Arc::clone(router));
     control_dtos(slice_controls(&mixer, decks))
+}
+
+/// The controls' rectangles for an outside driver: checked, then written to the drive path.
+#[tauri::command]
+pub fn ui_layout(
+    engine: State<'_, Arc<DjEngine>>,
+    router: State<'_, Arc<ParameterRouter>>,
+    state: State<'_, ShellState>,
+    map: serde_json::Value,
+) -> Result<(), String> {
+    let Some(path) = &state.drive_layout else {
+        return Err("ui_layout outside a --ui-drive-out run".to_owned());
+    };
+    let specs = slice_specs(&engine, &router);
+    let result = parse_layout(map)
+        .and_then(|layout| {
+            let file = DriveLayout {
+                layout: &layout,
+                specs: &specs,
+            };
+            write_json_atomic(path, &file)
+        })
+        .map_err(|e| e.to_string());
+    if let Err(error) = &result {
+        tracing::warn!(%error, "layout map refused");
+    }
+    result
 }
 
 /// Streams snapshot packets into `channel` at 30 Hz, replacing any earlier stream.
@@ -209,6 +249,7 @@ mod tests {
             fps_cap: 60,
             banner: banner.map(str::to_owned),
             hud: true,
+            drive: false,
         };
         serde_json::to_string(&config).unwrap()
     }
@@ -218,5 +259,6 @@ mod tests {
         assert!(config(Some("Demo mode")).contains("\"banner\":\"Demo mode\""));
         assert!(config(None).contains("\"banner\":null"));
         assert!(config(None).contains("\"hud\":true"));
+        assert!(config(None).contains("\"drive\":false"));
     }
 }

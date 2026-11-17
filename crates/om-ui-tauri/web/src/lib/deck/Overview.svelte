@@ -211,6 +211,7 @@
   class:idle={!(length > 0)}
   bind:this={box}
   style:background={ink?.well}
+  data-control="deck{deck}.overview"
   role="slider"
   tabindex={length > 0 ? 0 : -1}
   aria-label={name}

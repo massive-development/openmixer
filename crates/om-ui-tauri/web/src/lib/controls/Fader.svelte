@@ -94,6 +94,7 @@
 <div
   class="fader"
   class:horizontal
+  data-control={key}
   role="slider"
   tabindex="0"
   aria-label={name}
@@ -121,7 +122,7 @@
       {/each}
     </div>
   {:else if !horizontal}<div class="ticks"></div>{/if}
-  <div class="thumb" bind:this={thumb}></div>
+  <div class="thumb" data-control="{key}.thumb" bind:this={thumb}></div>
 </div>
 
 <style>

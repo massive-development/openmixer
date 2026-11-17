@@ -7,14 +7,18 @@
 //! `control`, and the run fails unless the engine then reports deck A playing. `--ui-bench=SECONDS`
 //! (1..=600) records the front end's frames for that long after a 3 s warm-up, writes the report to
 //! `OPENMIXER_BENCH_OUT` (or `ui-bench.json` in the scratch folder) and exits 0; `--ui-fps-cap=N`
-//! (0..=1000, 0 uncapped, default 60) caps the waveform lanes' frame rate.
+//! (0..=1000, 0 uncapped, default 60) caps the waveform lanes' frame rate. `--ui-drive-out=<path>`
+//! (for `tools/ui-drive.py`) has the front end write its controls' rectangles to `<path>` and the
+//! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
 use om_engine::DjEngine;
 use om_ui::labels::{notice_text, Notice};
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
-use om_ui_tauri::{DeckLibrary, LibrarySetup, RunOptions, ShellError, ShellTheme, DEFAULT_FPS_CAP};
+use om_ui_tauri::{
+    DeckLibrary, DriveOut, LibrarySetup, RunOptions, ShellError, ShellTheme, DEFAULT_FPS_CAP,
+};
 use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::{library_options, AppComposition};
 use openmixer::flags::DemoScene;
@@ -40,6 +44,9 @@ struct Frames {
     fps_cap: u32,
 }
 
+/// The flag naming the drive run's layout map; its state file sits beside it.
+const DRIVE_FLAG: &str = "--ui-drive-out";
+
 /// What the top bar shows beside the wordmark.
 struct Shown {
     banner: Option<String>,
@@ -62,8 +69,10 @@ pub fn main(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
     let smoke = args.iter().any(|a| a == "--smoke");
-    let parsed = demo_of(args).and_then(|demo| Ok((demo, frames_of(args, smoke)?)));
-    let (demo, frames) = match parsed {
+    let parsed = demo_of(args)
+        .and_then(|demo| Ok((demo, frames_of(args, smoke)?)))
+        .and_then(|(demo, frames)| Ok((demo, frames, drive_of(args)?)));
+    let (demo, frames, drive) = match parsed {
         Ok(parsed) => parsed,
         Err(message) => {
             eprintln!("openmixer: {message}");
@@ -79,7 +88,7 @@ pub fn main(args: &[String]) -> ExitCode {
         banner: banner_of(args),
         hud: hud_of(args, frames),
     };
-    let result = run_window(smoke, frames, &out, demo, scratch.as_deref(), shown);
+    let result = run_window(smoke, frames, &out, demo, scratch.as_deref(), shown, drive);
     // The library closed with the control thread; the scratch folder goes with the run, unless
     // it holds the bench report.
     let keep =
@@ -130,6 +139,40 @@ fn int_flag(args: &[String], prefix: &str, min: u32, max: u32) -> Result<Option<
     }
 }
 
+/// `--ui-drive-out=<path>`: the caller names the file (nothing is written without the flag); it
+/// must be a file in a folder that exists, so a typo fails at start rather than silently.
+fn drive_of(args: &[String]) -> Result<Option<DriveOut>, String> {
+    let Some(arg) = args.iter().find(|a| a.starts_with(DRIVE_FLAG)) else {
+        return Ok(None);
+    };
+    let text = arg
+        .strip_prefix(DRIVE_FLAG)
+        .and_then(|rest| rest.strip_prefix('='))
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| format!("{DRIVE_FLAG} needs a file path: {DRIVE_FLAG}=<path>"))?;
+    drive_path(Path::new(text)).map(|path| Some(DriveOut::new(path)))
+}
+
+fn drive_path(path: &Path) -> Result<PathBuf, String> {
+    if path.is_dir() || text_ends_with_separator(path) {
+        return Err(format!(
+            "{DRIVE_FLAG} names a folder, not a file: {}",
+            path.display()
+        ));
+    }
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    if parent.is_some_and(|p| !p.is_dir()) {
+        return Err(format!("{DRIVE_FLAG}: no folder for {}", path.display()));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn text_ends_with_separator(path: &Path) -> bool {
+    path.as_os_str()
+        .to_string_lossy()
+        .ends_with(std::path::MAIN_SEPARATOR)
+}
+
 /// The bench report's file: `OPENMIXER_BENCH_OUT` when set and not empty, else in `scratch`
 /// (never the user's folders).
 fn bench_out(env: Option<OsString>, scratch: &Path) -> PathBuf {
@@ -155,6 +198,7 @@ fn run_window(
     demo: Option<Demo>,
     scratch: Option<&Path>,
     shown: Shown,
+    drive_out: Option<DriveOut>,
 ) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
     let Some(output) = start_mock_audio(&mut composition) else {
@@ -172,6 +216,7 @@ fn run_window(
         bench_seconds: frames.bench_seconds,
         bench_out: out.to_path_buf(),
         fps_cap: frames.fps_cap,
+        drive_out,
     };
     let router = Arc::clone(&composition.router);
     let theme = shell_theme(&composition, engine.num_decks());
@@ -364,6 +409,50 @@ mod tests {
     fn a_bench_refuses_the_smoke_run() {
         assert!(frames_of(&args(&["--ui-bench=5"]), true).is_err());
         assert!(frames_of(&args(&["--ui-fps-cap=30"]), true).is_ok());
+    }
+
+    #[test]
+    fn no_drive_flag_writes_nothing() {
+        assert_eq!(
+            drive_of(&args(&["--mock-device", "--demo-library"])),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn the_drive_flag_names_the_layout_file_and_its_state_beside_it() {
+        let dir = std::env::temp_dir();
+        let file = dir.join("om-drive-test.json");
+        let flag = format!("--ui-drive-out={}", file.display());
+        let out = drive_of(&args(&["--mock-device", &flag])).unwrap().unwrap();
+        assert_eq!(out.layout, file);
+        assert_eq!(out.state, dir.join("om-drive-test.json.state"));
+        let relative = drive_of(&args(&["--ui-drive-out=drive.json"]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(relative.layout, PathBuf::from("drive.json"));
+    }
+
+    #[test]
+    fn the_drive_flag_refuses_no_path_a_folder_or_a_missing_folder() {
+        let dir = std::env::temp_dir();
+        let folder = format!("--ui-drive-out={}", dir.display());
+        let trailing = format!("--ui-drive-out={}/", dir.join("x").display());
+        let missing = format!(
+            "--ui-drive-out={}",
+            dir.join("om-no-such-dir-q").join("d.json").display()
+        );
+        for bad in [
+            "--ui-drive-out",
+            "--ui-drive-out=",
+            "--ui-drive-outx",
+            &folder,
+            &trailing,
+            &missing,
+        ] {
+            let error = drive_of(&args(&[bad])).unwrap_err();
+            assert!(error.contains("--ui-drive-out"), "{bad}: {error}");
+        }
     }
 
     #[test]

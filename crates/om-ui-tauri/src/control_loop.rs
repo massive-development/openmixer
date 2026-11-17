@@ -1,11 +1,14 @@
 //! The control thread (`om-ui-control`): builds the demo library when there is one, then at 30 Hz
-//! pumps the library and the track loader and reports the decks that changed. It owns the library
+//! pumps the library and the track loader and reports the decks that changed; in a `--ui-drive-out`
+//! run it also rewrites the engine's state file every third tick (10 Hz). It owns the library
 //! services; nothing here runs on the audio thread or waits on a plugin.
 
 use crate::decks::{DeckChanged, Decks, LibrarySetup};
+use crate::drive::{drive_state, write_json_atomic};
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
 use om_ui::library::LibraryServices;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -14,6 +17,8 @@ use std::thread::JoinHandle;
 pub const CONTROL_THREAD: &str = "om-ui-control";
 /// How often the loader is pumped.
 const CONTROL_HZ: f64 = 30.0;
+/// The drive state file is rewritten every this many ticks (10 Hz).
+const STATE_EVERY: u64 = 3;
 
 /// What the control thread works on.
 pub(crate) struct ControlLoop {
@@ -21,6 +26,8 @@ pub(crate) struct ControlLoop {
     pub(crate) decks: Arc<Decks>,
     pub(crate) setup: Option<LibrarySetup>,
     pub(crate) stop: Arc<AtomicBool>,
+    /// The drive run's state file (`<path>.state`); `None` writes nothing.
+    pub(crate) drive_state: Option<PathBuf>,
 }
 
 impl ControlLoop {
@@ -37,13 +44,32 @@ impl ControlLoop {
     fn run(mut self, emit: impl Fn(DeckChanged)) {
         let mut services = self.attach_library(&emit);
         let mut pacer = Pacer::new(CONTROL_HZ);
+        let mut ticks: u64 = 0;
         while !self.stop.load(Ordering::Acquire) {
             if let Some(services) = services.as_mut() {
                 services.pump();
             }
             let changes = self.decks.tick(&self.engine, services.as_ref());
             changes.into_iter().for_each(&emit);
+            if ticks % STATE_EVERY == 0 {
+                self.write_drive_state();
+            }
+            ticks = ticks.wrapping_add(1);
             pacer.wait();
+        }
+    }
+
+    // A drive run's state file; a failed write is retried on the next round, so it only logs.
+    fn write_drive_state(&self) {
+        let Some(path) = &self.drive_state else {
+            return;
+        };
+        let bpms: Vec<Option<f64>> = (0..self.engine.num_decks())
+            .map(|d| self.engine.deck_control(d).grid().map(|g| g.bpm()))
+            .collect();
+        let state = drive_state(&self.engine.snapshot(), &bpms);
+        if let Err(error) = write_json_atomic(path, &state) {
+            tracing::debug!(%error, "drive state not written");
         }
     }
 
@@ -70,6 +96,7 @@ mod tests {
             decks: Arc::new(Decks::new(engine)),
             setup,
             stop: Arc::new(AtomicBool::new(false)),
+            drive_state: None,
         }
     }
 
@@ -103,6 +130,33 @@ mod tests {
             }
         );
         assert_eq!(thread.as_deref(), Some(CONTROL_THREAD));
+    }
+
+    #[test]
+    fn a_drive_run_rewrites_the_state_file_and_no_other_run_writes_one() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let dir = std::env::temp_dir().join(format!("om-ui-control-drive-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("drive.json.state");
+        let mut control = control(&engine, None);
+        control.drive_state = Some(path.clone());
+        let stop = Arc::clone(&control.stop);
+        let handle = control.spawn(|_| {}).unwrap();
+        let written = || {
+            std::fs::read(&path)
+                .is_ok_and(|b| serde_json::from_slice::<serde_json::Value>(&b).is_ok())
+        };
+        assert!(wait_until(
+            Duration::from_secs(5),
+            Duration::from_millis(2),
+            written
+        ));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        let state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(state["decks"].as_array().map(Vec::len), Some(2));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -57,6 +57,7 @@
       disabled={!loaded}
       label={hotcueName(deck, pad.label, cue)}
       title={hint(pad.label, cue)}
+      control={pad.set}
       onpress={(e) => press(n, e)}
       onkeydown={(e) => onKeyDown(n, e)}
     >

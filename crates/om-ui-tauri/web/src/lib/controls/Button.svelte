@@ -14,6 +14,8 @@
     pressed?: boolean;
     disabled?: boolean;
     title?: string;
+    /** The control key an outside driver finds this button by (`data-control`). */
+    control?: string;
     onpress: (event: MouseEvent) => void;
     onkeydown?: (event: KeyboardEvent) => void;
     children: Snippet;
@@ -28,6 +30,7 @@
     pressed,
     disabled = false,
     title,
+    control,
     onpress,
     onkeydown,
     children,
@@ -47,6 +50,7 @@
   aria-pressed={pressed}
   {disabled}
   {title}
+  data-control={control}
   onclick={onpress}
   {onkeydown}
 >

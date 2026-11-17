@@ -28,7 +28,7 @@ fn main() -> ExitCode {
     let tauri = args.iter().any(|a| a == "--ui=tauri");
     args.retain(|a| a != "--ui=tauri");
     if !tauri && args.iter().any(|a| is_tauri_only(a)) {
-        eprintln!("openmixer: --ui-bench and --ui-fps-cap need --ui=tauri");
+        eprintln!("openmixer: --ui-bench, --ui-fps-cap and --ui-drive-out need --ui=tauri");
         return ExitCode::FAILURE;
     }
     if args.iter().any(|a| a == "--version") {
@@ -76,9 +76,11 @@ fn main() -> ExitCode {
     }
 }
 
-/// The Tauri trial's frame flags, which no other window reads.
+/// The Tauri trial's frame and drive flags, which no other window reads.
 fn is_tauri_only(arg: &str) -> bool {
-    arg.starts_with("--ui-bench") || arg.starts_with("--ui-fps-cap")
+    ["--ui-bench", "--ui-fps-cap", "--ui-drive-out"]
+        .iter()
+        .any(|flag| arg.starts_with(flag))
 }
 
 /// Builds the composition, starts the engine on the paced-free mock device, applies the saved
@@ -125,4 +127,24 @@ fn headless_smoke() -> Result<(), AppError> {
         return Err(AppError::Smoke("non-finite output sample"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tauri_only_flags_are_recognised_with_or_without_a_value() {
+        for arg in [
+            "--ui-bench=5",
+            "--ui-fps-cap=30",
+            "--ui-drive-out=/tmp/d.json",
+            "--ui-drive-out",
+        ] {
+            assert!(is_tauri_only(arg), "{arg}");
+        }
+        for arg in ["--ui=tauri", "--mock-device", "--demo-library", "--smoke"] {
+            assert!(!is_tauri_only(arg), "{arg}");
+        }
+    }
 }

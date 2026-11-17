@@ -6,6 +6,7 @@
   import { DeckData } from './lib/decks.svelte';
   import { setText } from './lib/dom';
   import { benchStats, FrameRecorder } from './lib/bench';
+  import { CONTROL_ATTRIBUTE, layoutMap } from './lib/drive';
   import {
     benchDone,
     control,
@@ -15,6 +16,7 @@
     runConfig,
     startStream,
     themeCss,
+    uiLayout,
     type Controls,
   } from './lib/ipc';
   import Mixer from './lib/mixer/Mixer.svelte';
@@ -32,6 +34,8 @@
   const SIDES = ['a', 'b'];
   // A bench run lets the window settle after its first snapshot before it records.
   const BENCH_WARM_UP_MS = 3000;
+  // A drive run measures its controls again this long after the last resize.
+  const RESIZE_SETTLE_MS = 250;
 
   // The layout waits for the theme, so the first paint is already in the theme's colours.
   let themed = $state(false);
@@ -85,6 +89,26 @@
     await benchDone(benchStats(recorder, { benchSeconds: seconds, fpsCap, viewport, decksPlaying: playing }));
   }
 
+  // `--ui-drive-out`: the controls' rectangles for an outside driver, once the layout settled.
+  function sendLayout(): void {
+    const map = layoutMap(document.querySelectorAll(`[${CONTROL_ATTRIBUTE}]`), window);
+    uiLayout(map).catch((error: unknown) => console.error('openmixer: layout map', error));
+  }
+
+  // After the first snapshot (the lanes size themselves from it) and the fonts, then on resize.
+  async function drive(first: Promise<Snapshot>): Promise<void> {
+    await first;
+    await document.fonts.ready;
+    await afterFirstPaint();
+    await afterFirstPaint();
+    sendLayout();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    window.addEventListener('resize', () => {
+      clearTimeout(timer);
+      timer = setTimeout(sendLayout, RESIZE_SETTLE_MS);
+    });
+  }
+
   async function start(): Promise<void> {
     try {
       const config = await runConfig();
@@ -105,6 +129,7 @@
         await first;
         if (await isSmokePlay()) await smokePlay();
       } else first.catch((error: unknown) => console.error('openmixer: the stream did not start', error));
+      if (config.drive) drive(first).catch((error: unknown) => console.error('openmixer: drive', error));
       await ready();
       if (config.benchSeconds !== null) {
         await first;

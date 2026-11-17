@@ -104,6 +104,7 @@
 <div class="cell" class:mirrored>
   <div
     class="knob"
+    data-control={key}
     role="slider"
     tabindex="0"
     aria-label={name}

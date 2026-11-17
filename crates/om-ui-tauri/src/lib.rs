@@ -11,6 +11,7 @@ mod control_loop;
 mod controls;
 mod deck_info;
 mod decks;
+mod drive;
 mod pacer;
 mod smoke;
 mod stream;
@@ -23,6 +24,10 @@ pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto, PEAKS_HEADER_LEN};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup};
+pub use drive::{
+    drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
+    DriveState, LayoutMap, Viewport,
+};
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
 pub use strip_ink::{strip_ink_dto, StripInkDto};
@@ -64,6 +69,9 @@ pub struct RunOptions {
     pub bench_out: PathBuf,
     /// The waveform lanes' frame cap; 0 is uncapped.
     pub fps_cap: u32,
+    /// `--ui-drive-out`: where the front end's layout map and the engine's state go; `None` writes
+    /// neither.
+    pub drive_out: Option<DriveOut>,
 }
 
 impl Default for RunOptions {
@@ -75,6 +83,7 @@ impl Default for RunOptions {
             bench_seconds: None,
             bench_out: std::env::temp_dir().join("openmixer-ui-bench.json"),
             fps_cap: DEFAULT_FPS_CAP,
+            drive_out: None,
         }
     }
 }
@@ -133,7 +142,8 @@ pub fn run(
     if let (Some(seconds), Some(wait)) = (options.bench_seconds, bench_wait) {
         smoke::spawn_watchdog(app.handle().clone(), wait, smoke::bench_timeout(seconds))?;
     }
-    let control = shared.spawn_control(&app, engine, library)?;
+    let drive_state = options.drive_out.as_ref().map(|d| d.state.clone());
+    let control = shared.spawn_control(&app, engine, library, drive_state)?;
     let code = app.run_return(|_, _| {});
     shared.shut_down(control);
     bench_outcome(bench.as_deref())?;
@@ -200,7 +210,9 @@ impl Shared {
                 fps_cap: options.fps_cap,
                 banner: options.banner.clone(),
                 hud: options.hud,
+                drive: options.drive_out.is_some(),
             },
+            drive_layout: options.drive_out.as_ref().map(|d| d.layout.clone()),
             bench,
             smoke_play,
             ready: Arc::clone(&self.ready),
@@ -216,12 +228,14 @@ impl Shared {
         app: &App,
         engine: Arc<DjEngine>,
         setup: Option<LibrarySetup>,
+        drive_state: Option<PathBuf>,
     ) -> Result<JoinHandle<()>, ShellError> {
         let control = ControlLoop {
             engine,
             decks: Arc::clone(&self.decks),
             setup,
             stop: Arc::clone(&self.stop),
+            drive_state,
         };
         let handle = app.handle().clone();
         let emit = move |change: DeckChanged| {
@@ -263,6 +277,7 @@ fn build_app(
             commands::start_stream,
             commands::deck_peaks,
             commands::deck_info,
+            commands::ui_layout,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)

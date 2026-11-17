@@ -46,6 +46,7 @@
         tint="var(--om-accent-{deck})"
         disabled={!loaded}
         label={loopName(deck, size.beats, size.label)}
+        control={size.key}
         onpress={() => press(size.key, size.beats)}
       >
         <span class="num">{size.label}</span>

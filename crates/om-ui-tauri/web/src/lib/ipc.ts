@@ -2,6 +2,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { BenchStats } from './bench';
 import type { KnobReadout } from './controls/readout';
+import type { LayoutMap } from './drive';
 import { tryDecode, type Snapshot } from './packet';
 import { decodePeaks, type Peaks } from './peaks';
 
@@ -164,10 +165,15 @@ export interface RunConfig {
   banner: string | null;
   /** Whether the top bar shows the frame counter (`--ui-bench`, `--debug-panel`); hidden, it is not computed. */
   hud: boolean;
+  /** A `--ui-drive-out` run: the front end sends its layout map through `uiLayout`. */
+  drive: boolean;
 }
 
 /** The shell's run options. */
 export const runConfig = (): Promise<RunConfig> => invoke<RunConfig>('run_config');
+
+/** Hands the controls' rectangles to the shell, which writes them for a driver (`--ui-drive-out` only). */
+export const uiLayout = (map: LayoutMap): Promise<void> => invoke<void>('ui_layout', { map });
 
 /** Hands the bench result to the shell, which writes it and exits. */
 export const benchDone = (stats: BenchStats): Promise<void> => invoke<void>('bench_done', { stats });

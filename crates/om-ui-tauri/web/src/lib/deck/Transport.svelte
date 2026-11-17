@@ -45,7 +45,7 @@
   {#if cue}
     <!-- A press, not a toggle: it never stays lit. -->
     <div class="slot cue">
-      <Button tall tint={hue} disabled={!loaded} label={controlName(`deck${deck}.cue`, cue.label)} onpress={pressCue}>
+      <Button tall tint={hue} disabled={!loaded} label={controlName(`deck${deck}.cue`, cue.label)} control="deck{deck}.cue" onpress={pressCue}>
         <span class="face">{cue.label}</span>
       </Button>
     </div>
@@ -60,6 +60,7 @@
         tint={hue}
         disabled={!loaded}
         label={controlName(`deck${deck}.play`, playWord)}
+        control="deck{deck}.play"
         onpress={() => toggle('play', playing)}
       >
         <span class="face"><Icon name={playing ? 'pause' : 'play'} />{playWord}</span>
@@ -75,6 +76,7 @@
         tint={hue}
         disabled={!loaded}
         label={controlName(`deck${deck}.sync`, sync.label)}
+        control="deck{deck}.sync"
         onpress={() => toggle('sync', synced)}
       >
         <span class="face">
