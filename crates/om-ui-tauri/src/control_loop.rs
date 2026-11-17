@@ -35,7 +35,7 @@ impl ControlLoop {
     }
 
     fn run(mut self, emit: impl Fn(DeckChanged)) {
-        let mut services = self.attach_library();
+        let mut services = self.attach_library(&emit);
         let mut pacer = Pacer::new(CONTROL_HZ);
         while !self.stop.load(Ordering::Acquire) {
             if let Some(services) = services.as_mut() {
@@ -47,10 +47,12 @@ impl ControlLoop {
         }
     }
 
-    // The services are built here because they cannot move between threads.
-    fn attach_library(&mut self) -> Option<LibraryServices> {
+    // The services are built here because they cannot move between threads; the decks the loader
+    // already holds are reported at once.
+    fn attach_library(&mut self, emit: &impl Fn(DeckChanged)) -> Option<LibraryServices> {
         let library = self.setup.take().and_then(|setup| setup())?;
-        self.decks.install(library.loader);
+        let changes = self.decks.install(&self.engine, Box::new(library.loader));
+        changes.into_iter().for_each(emit);
         Some(library.services)
     }
 }

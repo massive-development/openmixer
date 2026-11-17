@@ -21,6 +21,33 @@ pub struct DeckLibrary {
 /// Builds the [`DeckLibrary`] on the control thread, where it then lives.
 pub type LibrarySetup = Box<dyn FnOnce() -> Option<DeckLibrary> + Send>;
 
+/// What the deck commands read off the track loader; a trait so a test can stand in for one.
+pub(crate) trait DeckSource: Send {
+    /// Applies finished analysis (the control thread's tick).
+    fn pump(&mut self, engine: &DjEngine, services: &LibraryServices);
+    fn track_id(&self, deck: usize) -> Option<i64>;
+    fn waveform(&self, deck: usize) -> Option<&Arc<WaveformData>>;
+    fn track_info(&self, deck: usize) -> TrackInfo;
+}
+
+impl DeckSource for TrackLoader {
+    fn pump(&mut self, engine: &DjEngine, services: &LibraryServices) {
+        TrackLoader::pump(self, engine, services);
+    }
+
+    fn track_id(&self, deck: usize) -> Option<i64> {
+        self.loaded_track(deck).map(|t| t.id)
+    }
+
+    fn waveform(&self, deck: usize) -> Option<&Arc<WaveformData>> {
+        TrackLoader::waveform(self, deck)
+    }
+
+    fn track_info(&self, deck: usize) -> TrackInfo {
+        TrackLoader::track_info(self, deck)
+    }
+}
+
 /// Payload of the `deck-changed` event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct DeckChanged {
@@ -70,7 +97,7 @@ impl Watch {
 }
 
 struct DeckState {
-    loader: Option<TrackLoader>,
+    loader: Option<Box<dyn DeckSource>>,
     watches: Vec<Watch>,
 }
 
@@ -97,9 +124,16 @@ impl Decks {
         }
     }
 
-    /// Hands the loader over; the next tick reports the decks it loaded.
-    pub(crate) fn install(&self, loader: TrackLoader) {
-        lock(&self.state).loader = Some(loader);
+    /// Hands the loader over and measures the decks it loaded under the same lock, so a read never
+    /// pairs its waveform with the generation from before it; returns the decks that changed.
+    pub(crate) fn install(
+        &self,
+        engine: &DjEngine,
+        loader: Box<dyn DeckSource>,
+    ) -> Vec<DeckChanged> {
+        let mut state = lock(&self.state);
+        state.loader = Some(loader);
+        observe_all(&mut state, engine)
     }
 
     /// Applies finished analysis, then returns the decks that changed since the last tick.
@@ -112,9 +146,7 @@ impl Decks {
         if let (Some(loader), Some(services)) = (state.loader.as_mut(), services) {
             loader.pump(engine, services);
         }
-        (0..state.watches.len())
-            .filter_map(|deck| observe(&mut state, engine, deck))
-            .collect()
+        observe_all(&mut state, engine)
     }
 
     /// Deck `deck` as the commands report it; `None` when there is no such deck.
@@ -129,6 +161,12 @@ impl Decks {
             waveform: loader.and_then(|l| l.waveform(deck)).cloned(),
         })
     }
+}
+
+fn observe_all(state: &mut DeckState, engine: &DjEngine) -> Vec<DeckChanged> {
+    (0..state.watches.len())
+        .filter_map(|deck| observe(state, engine, deck))
+        .collect()
 }
 
 fn observe(state: &mut DeckState, engine: &DjEngine, deck: usize) -> Option<DeckChanged> {
@@ -146,7 +184,7 @@ fn observe(state: &mut DeckState, engine: &DjEngine, deck: usize) -> Option<Deck
 fn seen(state: &DeckState, engine: &DjEngine, deck: usize) -> Seen {
     let loader = state.loader.as_ref();
     Seen {
-        track: loader.and_then(|l| l.loaded_track(deck)).map(|t| t.id),
+        track: loader.and_then(|l| l.track_id(deck)),
         // The address tells one waveform from the next; it is never dereferenced.
         waveform: loader
             .and_then(|l| l.waveform(deck))
