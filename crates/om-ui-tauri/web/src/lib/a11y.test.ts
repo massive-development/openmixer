@@ -4,6 +4,7 @@ import {
   controlName,
   deckName,
   hotcueName,
+  knobSpokenText,
   knobValueText,
   loopName,
   meterText,
@@ -52,6 +53,14 @@ test('a knob speaks what GPUI prints under its label', () => {
   expect(knobValueText('ch1.eq.low', -3.5, 'decibels')).toBe('-4');
   expect(knobValueText('ch0.filter', 0, 'filter')).toBe('Off');
   expect(knobValueText('ch0.filter', -0.4, 'filter')).toBe('LPF 40%');
+});
+
+test('a knob speaks its reading with the unit and the sign in words', () => {
+  expect(knobSpokenText('ch0.trim', 1, 'gain')).toBe('0 dB');
+  expect(knobSpokenText('ch0.trim', 0, 'gain')).toBe('minus infinity');
+  expect(knobSpokenText('ch1.eq.low', -3.5, 'decibels')).toBe('minus 3.5 dB');
+  expect(knobSpokenText('ch0.filter', 1, 'filter')).toBe('high-pass 100 percent');
+  expect(knobSpokenText('fx0.depth', 0.25, null)).toBe('0.25');
 });
 
 test('a knob without a readout falls back to its spoken form', () => {

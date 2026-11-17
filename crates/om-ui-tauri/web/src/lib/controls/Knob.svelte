@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { controlName, knobValueText } from '../a11y';
+  import { controlName, knobSpokenText, knobValueText } from '../a11y';
   import { control, type ControlSpec } from '../ipc';
   import { Held, knobDelta } from './drag';
   import { keyValue } from './keys';
@@ -41,8 +41,9 @@
   // The detent mark sits where the detent value does: 12 o'clock unless a taper moves it.
   const markAngle = $derived(spec && spec.detent !== null ? sweepAngle(toPosition(spec.detent, spec)) : null);
   const name = $derived(controlName(key, label));
-  // GPUI's caption under the label; also what the slider speaks, so the two never disagree.
+  // GPUI's caption under the label; the slider speaks the same reading with its unit in words.
   const text = $derived(knobValueText(key, shown, spec?.readout ?? null));
+  const spoken = $derived(knobSpokenText(key, shown, spec?.readout ?? null));
   const captioned = $derived(Boolean(spec?.readout));
 
   $effect(() => {
@@ -109,7 +110,7 @@
     aria-valuenow={shown}
     aria-valuemin={spec?.min}
     aria-valuemax={spec?.max}
-    aria-valuetext={text}
+    aria-valuetext={spoken}
     title="{name}: {text}"
     style:--angle="{angle}deg"
     onpointerdown={onPointerDown}

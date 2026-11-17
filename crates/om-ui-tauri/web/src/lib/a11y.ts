@@ -1,4 +1,4 @@
-import { captionText, type KnobReadout } from './controls/readout';
+import { captionText, spokenText, type KnobReadout } from './controls/readout';
 
 /** U+2212, which a screen reader speaks as "minus"; a hyphen is often skipped. */
 const MINUS = '−';
@@ -38,8 +38,8 @@ function channelPart(part: string, word: string): string {
 }
 
 /**
- * A fader's spoken form by the control it belongs to: `+2.00 %`, `75 %`, `centre`. A knob speaks
- * what it prints under its label instead (`controls/readout.ts`, `captionText`).
+ * A fader's spoken form by the control it belongs to: `+2.00 %`, `75 %`, `centre`. A knob with a
+ * readout speaks `knobSpokenText` instead.
  */
 export function valueText(key: string, value: number): string {
   if (key.endsWith('.tempo')) return `${signed((value - 1) * 100, 2)} %`;
@@ -48,9 +48,14 @@ export function valueText(key: string, value: number): string {
   return String(value);
 }
 
-/** What a knob speaks and prints under its label: GPUI's caption when its spec names a readout. */
+/** What a knob prints under its label: GPUI's caption when its spec names a readout. */
 export function knobValueText(key: string, value: number, readout: KnobReadout | null): string {
   return readout ? captionText(readout, value) : valueText(key, value);
+}
+
+/** What a knob speaks (`aria-valuetext`): the caption's reading with its unit and sign in words. */
+export function knobSpokenText(key: string, value: number, readout: KnobReadout | null): string {
+  return readout ? spokenText(readout, value) : valueText(key, value);
 }
 
 function crossfaderText(value: number): string {

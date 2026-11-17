@@ -29,6 +29,29 @@ function filterText(value: number): string {
   return `${value < 0 ? 'LPF' : 'HPF'} ${roundHalfAway(Math.abs(value) * 100)}%`;
 }
 
+/**
+ * What a screen reader speaks for a knob at `value`: the caption's reading with its unit and its
+ * sign in words (`0 dB`, `plus 12 dB`, `minus 3.5 dB`, `kill`, `off`, `low-pass 40 percent`,
+ * `minus infinity`), to a tenth of a decibel where the caption rounds to whole ones.
+ */
+export function spokenText(readout: KnobReadout, value: number): string {
+  if (readout === 'gain') return value > 0 ? spokenDb(20 * Math.log10(value)) : 'minus infinity';
+  if (readout === 'decibels') return value <= KILL_AT_DB ? 'kill' : spokenDb(value);
+  return spokenFilter(value);
+}
+
+// Tenths of a decibel, the sign as a word; a value that rounds to zero carries none.
+function spokenDb(db: number): string {
+  const tenths = roundHalfAway(db * 10) / 10;
+  if (tenths === 0) return '0 dB';
+  return `${tenths > 0 ? 'plus' : 'minus'} ${Math.abs(tenths)} dB`;
+}
+
+function spokenFilter(value: number): string {
+  if (Math.abs(value) < FILTER_OFF) return 'off';
+  return `${value < 0 ? 'low-pass' : 'high-pass'} ${roundHalfAway(Math.abs(value) * 100)} percent`;
+}
+
 // Rust's `f64::round`: halves go away from zero, where `Math.round` takes them up.
 function roundHalfAway(value: number): number {
   return Math.sign(value) * Math.round(Math.abs(value));
