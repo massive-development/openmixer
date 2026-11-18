@@ -1,9 +1,10 @@
-//! The control thread (`om-ui-control`): builds the demo library when there is one, then at 30 Hz
-//! pumps the library and the track loader and reports the decks that changed; in a `--ui-drive-out`
+//! The control thread (`om-ui-control`): builds the library when there is one, then at 30 Hz runs
+//! the loads the front end queued, pumps the library and the track loader and reports the decks
+//! that changed and the loads that failed; in a `--ui-drive-out`
 //! run it also rewrites the engine's state file every third tick (10 Hz). It owns the library
 //! services; nothing here runs on the audio thread or waits on a plugin.
 
-use crate::decks::{DeckChanged, Decks, LibrarySetup};
+use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed};
 use crate::drive::{drive_state, write_json_atomic};
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
@@ -31,21 +32,25 @@ pub(crate) struct ControlLoop {
 }
 
 impl ControlLoop {
-    /// Runs the loop on a thread named [`CONTROL_THREAD`]; `emit` is called with no lock held.
+    /// Runs the loop on a thread named [`CONTROL_THREAD`]; `emit` and `failed` are called with no
+    /// lock held.
     pub(crate) fn spawn(
         self,
         emit: impl Fn(DeckChanged) + Send + 'static,
+        failed: impl Fn(LoadFailed) + Send + 'static,
     ) -> std::io::Result<JoinHandle<()>> {
         std::thread::Builder::new()
             .name(CONTROL_THREAD.into())
-            .spawn(move || self.run(emit))
+            .spawn(move || self.run(emit, failed))
     }
 
-    fn run(mut self, emit: impl Fn(DeckChanged)) {
+    fn run(mut self, emit: impl Fn(DeckChanged), failed: impl Fn(LoadFailed)) {
         let mut services = self.attach_library(&emit);
         let mut pacer = Pacer::new(CONTROL_HZ);
         let mut ticks: u64 = 0;
         while !self.stop.load(Ordering::Acquire) {
+            let failures = self.decks.run_loads(&self.engine, services.as_mut());
+            failures.into_iter().for_each(&failed);
             if let Some(services) = services.as_mut() {
                 services.pump();
             }
@@ -111,7 +116,7 @@ mod tests {
             let name = std::thread::current().name().map(str::to_owned);
             sink.lock().unwrap().push((c, name));
         };
-        let handle = control.spawn(emit).unwrap();
+        let handle = control.spawn(emit, |_| {}).unwrap();
         engine.deck(0).set_hotcue(0, 1_000);
         let emitted = || !seen.lock().unwrap().is_empty();
         assert!(wait_until(
@@ -141,7 +146,7 @@ mod tests {
         let mut control = control(&engine, None);
         control.drive_state = Some(path.clone());
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}).unwrap();
         let written = || {
             std::fs::read(&path)
                 .is_ok_and(|b| serde_json::from_slice::<serde_json::Value>(&b).is_ok())
@@ -170,7 +175,7 @@ mod tests {
         });
         let control = control(&engine, Some(setup));
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}).unwrap();
         assert!(wait_until(
             Duration::from_secs(5),
             Duration::from_millis(2),

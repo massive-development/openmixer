@@ -227,6 +227,21 @@ export async function deckPeaks(deck: number): Promise<Peaks> {
   return peaks;
 }
 
+/** Payload of the `load-failed` event: a load the shell could not do, and why. */
+export interface LoadFailed {
+  deck: number;
+  file: string;
+  reason: string;
+}
+
+/** Queues a load of the audio file at `path` into `deck`; the deck changes, or `load-failed` says why not. */
+export const loadFile = (deck: number, path: string): Promise<void> => invoke<void>('load_file', { deck, path });
+
+/** Calls `cb` whenever a load the front end asked for did not happen. */
+export function onLoadFailed(cb: (failure: LoadFailed) => void): Promise<UnlistenFn> {
+  return listen<LoadFailed>('load-failed', (event) => cb(event.payload));
+}
+
 /** Calls `cb` whenever a deck's track, waveform or cues change. */
 export function onDeckChanged(cb: (change: DeckChanged) => void): Promise<UnlistenFn> {
   return listen<DeckChanged>('deck-changed', (event) => cb(event.payload));

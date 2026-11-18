@@ -23,7 +23,7 @@ pub use commands::RunConfig;
 pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto, PEAKS_HEADER_LEN};
-pub use decks::{DeckChanged, DeckLibrary, LibrarySetup};
+pub use decks::{DeckChanged, DeckLibrary, LibrarySetup, LoadFailed};
 pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
@@ -48,6 +48,8 @@ use tauri::{App, Emitter};
 
 /// The event the front end hears when a deck's track, waveform or hot cues change.
 pub const DECK_CHANGED_EVENT: &str = "deck-changed";
+/// Event the control thread emits when a load the front end asked for did not happen.
+pub const LOAD_FAILED_EVENT: &str = "load-failed";
 
 /// The lanes' frame cap when none is given (the plan's default).
 pub const DEFAULT_FPS_CAP: u32 = 60;
@@ -243,7 +245,14 @@ impl Shared {
                 tracing::debug!(%error, "deck-changed not delivered");
             }
         };
-        control.spawn(emit).map_err(ShellError::Control)
+        let handle = app.handle().clone();
+        let failed = move |failure: LoadFailed| {
+            tracing::warn!(deck = failure.deck, file = %failure.file, reason = %failure.reason, "load failed");
+            if let Err(error) = handle.emit(LOAD_FAILED_EVENT, failure) {
+                tracing::debug!(%error, "load-failed not delivered");
+            }
+        };
+        control.spawn(emit, failed).map_err(ShellError::Control)
     }
 
     fn shut_down(&self, control: JoinHandle<()>) {
@@ -261,6 +270,7 @@ fn build_app(
     state: ShellState,
 ) -> Result<App, ShellError> {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(engine)
         .manage(router)
         .manage(state)
@@ -277,6 +287,7 @@ fn build_app(
             commands::start_stream,
             commands::deck_peaks,
             commands::deck_info,
+            commands::load_file,
             commands::ui_layout,
         ])
         .build(tauri::generate_context!())?;

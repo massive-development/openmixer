@@ -6,6 +6,7 @@ A second window for the decks screen (waveforms, deck headers, transport, hot cu
 
 - Behind the `gui-tauri` cargo feature of `openmixer` (off by default) and the `--ui=tauri` flag.
 - Opens the stored output device (else the default output), as GPUI does; a device that does not open falls back to the silent mock with GPUI's no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. No MIDI, plugin state or settings page reach it yet, so the device cannot be changed from this window.
+- Loads tracks: each deck header's **Load** button opens the system file dialog, and a file dropped from the desktop lands on the deck under the pointer (header, panel or waveform lane; elsewhere, the half of the window it is in). See [Loading tracks](#loading-tracks).
 - The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app, with no GPUI.
 - The trial's measurement (plan Task 11, steps 4 and 5) was not run before acceptance; its exit criteria are kept in the ADR as targets for the migration. The only numbers so far are tooling checks under WSL software rendering.
 
@@ -23,7 +24,7 @@ cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
 
 - `npm run build` first runs `npm run fonts`, which copies `resources/fonts/` into `web/public/fonts/` (ignored by git), then `vite build` into `web/dist/` (ignored by git).
 - The front end is embedded at compile time (`tauri::generate_context!`), so rebuild `web/dist` before the cargo build that should show a front-end change. Without `web/dist`, `build.rs` writes a placeholder `index.html` so the crate compiles; the window is then blank and `--smoke` fails.
-- Demo flags it honours: `--demo-library` (two generated tracks into decks A and B, from a library in the scratch folder `openmixer-smoke-<pid>` under the temp dir) and `--demo-scene=NAME` (the same scenes as GPUI, staged on deck A; implies the demo library). Without either the decks are empty and no library is opened. `--demo-map`, `--demo-automix` and `--demo-record` are not read by this window. The scratch folder is removed when the window closes, unless it holds a bench report.
+- Demo flags it honours: `--demo-library` (two generated tracks into decks A and B, from a library in the scratch folder `openmixer-smoke-<pid>` under the temp dir) and `--demo-scene=NAME` (the same scenes as GPUI, staged on deck A; implies the demo library). Without either, a plain run opens the user's library (as GPUI does) with empty decks; `--smoke`, `--ui-bench` and `--ui-drive-out` runs open no library. `--demo-map`, `--demo-automix` and `--demo-record` are not read by this window. The scratch folder is removed when the window closes, unless it holds a bench report.
 - Theme: the saved theme, or `OPENMIXER_THEME=<theme id>` for the session (`openmixer.dark`, `openmixer.daylight`, `openmixer.harbour`). The density is resolved once for the opening size, 1600 × 780 (`tauri.conf.json`), with `main_layout::resolve_density`. The theme is sent once at start; there is no live theme switch.
 - On Linux the app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` unless it is already set (`om_ui_tauri::prepare_environment`, called first in `gui_tauri::main`). Under WSL run it with `WAYLAND_DISPLAY=` as other windows.
 
@@ -105,7 +106,7 @@ A wrong magic, a wrong version or a buffer shorter than the counts say is refuse
 | Main | (Tauri event loop) | the window and the synchronous commands (`theme_css`, `run_config`, `bench_done`, `smoke_play`, `ready`, `waveform_style`, `strip_ink`, `control`, `controls`, `ui_layout`) | when the window closes or the app exits |
 | Tauri async runtime | (Tauri's) | `start_stream`, `deck_peaks`, `deck_info` | with the app |
 | Stream | `om-ui-stream` | packs and sends snapshot packets at 30 Hz | when `start_stream` replaces it, when the sink fails (the webview is gone), or when `run` closes the stream slot after the window closes; it is joined |
-| Control | `om-ui-control` | builds the demo library (the library services cannot move between threads), then at 30 Hz pumps the services and the track loader and emits `deck-changed`; with `--ui-drive-out`, every third tick (10 Hz) it rewrites the state file from `DjEngine::snapshot()` | when `run` sets its stop flag after the window closes; it is joined |
+| Control | `om-ui-control` | builds the library (the library services cannot move between threads), then at 30 Hz runs the queued loads (emitting `load-failed` for the ones that fail), pumps the services and the track loader and emits `deck-changed`; with `--ui-drive-out`, every third tick (10 Hz) it rewrites the state file from `DjEngine::snapshot()` | when `run` sets its stop flag after the window closes; it is joined |
 | Watchdog | `om-ui-smoke` | smoke and bench runs only: waits for `ready` (60 s) or the bench report (60 s plus the bench length) | when the signal arrives; on timeout it exits the app with code 1 |
 
 Nothing in the web window runs on the audio thread or waits on a plugin.
@@ -127,9 +128,11 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `deck_info` | `deckInfo(deck)` | `DeckInfo`; an error for an unknown deck |
 | `deck_peaks` | `deckPeaks(deck)` | `{ generation, bytes }`: the peaks generation and the packed peaks |
 | `ui_layout` | `uiLayout(map)` | nothing; `--ui-drive-out` runs only (else an error): checks the layout map (see Driving the window) and writes it with every control's spec |
+| `load_file` | `loadFile(deck, path)` | nothing (queued for the control thread); an error for an unknown deck |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
+| event `load-failed` | `onLoadFailed(cb)` | `{ deck, file, reason }` |
 
-The window's capability (`capabilities/default.json`) grants `core:default` to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images, inline styles (`style-src 'unsafe-inline'`) and the IPC endpoint.
+The window's capability (`capabilities/default.json`) grants `core:default` and `dialog:allow-open` (the Load button's file dialog, `tauri-plugin-dialog`) to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images, inline styles (`style-src 'unsafe-inline'`) and the IPC endpoint.
 
 ## Rendering, as implemented
 
@@ -198,6 +201,12 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 
 - Control glyphs: five Lucide icons (ISC; `web/src/lib/icons/LICENSE-LUCIDE`), the same set the GPUI window draws from: `play`, `pause`, `refresh-cw` (Sync), `repeat` (Loop) and `flag` (a set hot cue). `icons.ts` holds each SVG's inner markup unchanged (24 px grid, 2 px stroke), taken from `gpui-kit-assets` 0.8.1 and recorded in `docs/legal/asset-provenance.csv`; `Icon.svelte` draws them in `currentColor`, hidden from assistive technology.
 - App icon: `icons/openmixer-icon.svg` (48 px and up) and `icons/openmixer-icon-small.svg` (32 px and below), the OpenMixer mark from the App Icon design comp (tile 15a) in the colours of the project website's favicon. `icons/render.sh` renders the `.png`, `.ico` and `.icns` files (librsvg, ImageMagick for the `.ico`, Python with Pillow for the `.icns`); do not edit the rasters by hand. The first `.png` in `tauri.conf.json`'s `bundle.icon` is the Linux window icon. The `.icns` has not been checked on macOS.
+
+## Loading tracks
+
+- **Front end** (`lib/loading.svelte.ts`): the Load button calls the dialog plugin's `open` with an Audio filter (`AUDIO_EXTENSIONS`); a drop comes from the webview's native drag-and-drop event (paths and position), and `deckAt` picks the deck from the `data-deck` regions (deck headers, panels and waveform lanes). While a file is dragged over the window, that deck's header is outlined in its hue. Either way `loadFile(deck, path)` is called; a failure shows in the deck header in place of the artist (`--om-warning`) for six seconds.
+- **Shell**: `load_file` only queues the request (`Decks::request_load`); the control thread, which owns the library services, runs it on its next tick (`Decks::run_loads`). Without a library every load fails with "no library is open".
+- **Loader** (`om_ui::library::TrackLoader::load_file`): a file the library does not hold yet is added first (`Ingestor::ingest_one`), so it is analysed like any other (grid, waveform, key) and keeps its cues; then it loads as that track. A playing deck refuses ("deck is playing"); an unreadable or unsupported file fails without touching the deck.
 
 ## Installers
 

@@ -124,6 +124,25 @@ impl<'a> Ingestor<'a> {
         Ok(())
     }
 
+    /// Ingests the one file at `file` (added, refreshed or left as it is) and returns the path the
+    /// library stores it under. Fails when the format is not supported or the file cannot be read.
+    pub fn ingest_one(&self, file: &Path) -> Result<PathBuf> {
+        let path = full_path(file);
+        if !path.is_file() || !self.readers.supports(&path) {
+            return Err(LibraryError::Ingest(format!(
+                "not a supported audio file: {}",
+                path.display()
+            )));
+        }
+        match self.ingest_file(&path).0 {
+            Outcome::Failed => Err(LibraryError::Ingest(format!(
+                "could not read {}",
+                path.display()
+            ))),
+            _ => Ok(path),
+        }
+    }
+
     /// The outcome, and whether the track was put on the prep queue.
     fn ingest_file(&self, file: &Path) -> (Outcome, bool) {
         let done = |outcome| (outcome, false);

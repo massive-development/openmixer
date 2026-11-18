@@ -2,7 +2,8 @@
 //! one counting every change (track, waveform, hot cues) and one counting waveform changes only, so
 //! the front end fetches and uploads peaks once per waveform. The control thread ticks it; the deck commands read
 //! it from Tauri's IPC threads. The library services stay on the control thread (they are not
-//! `Send`), so only the loader sits behind the lock.
+//! `Send`), so only the loader sits behind the lock. A load the front end asks for waits in a queue
+//! until the control thread, which holds the services, runs it.
 
 use crate::lock;
 use om_analysis::WaveformData;
@@ -10,6 +11,7 @@ use om_engine::DjEngine;
 use om_ui::library::{Cues, LibraryServices, TrackLoader};
 use om_ui::widgets::deck::TrackInfo;
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// The demo library the control thread runs: its services and the loader over them.
@@ -28,6 +30,15 @@ pub(crate) trait DeckSource: Send {
     fn track_id(&self, deck: usize) -> Option<i64>;
     fn waveform(&self, deck: usize) -> Option<&Arc<WaveformData>>;
     fn track_info(&self, deck: usize) -> TrackInfo;
+    /// Loads the audio file at `path` into `deck` (adding it to the library first); a playing
+    /// deck refuses. `Err` is the reason, as the front end shows it.
+    fn load_file(
+        &mut self,
+        engine: &DjEngine,
+        services: &mut LibraryServices,
+        deck: usize,
+        path: &Path,
+    ) -> Result<(), String>;
 }
 
 impl DeckSource for TrackLoader {
@@ -46,6 +57,31 @@ impl DeckSource for TrackLoader {
     fn track_info(&self, deck: usize) -> TrackInfo {
         TrackLoader::track_info(self, deck)
     }
+
+    fn load_file(
+        &mut self,
+        engine: &DjEngine,
+        services: &mut LibraryServices,
+        deck: usize,
+        path: &Path,
+    ) -> Result<(), String> {
+        TrackLoader::load_file(self, engine, services, deck, path, false).map_err(|e| e.to_string())
+    }
+}
+
+/// Payload of the `load-failed` event: the deck and why its load did not happen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LoadFailed {
+    pub deck: usize,
+    pub file: String,
+    pub reason: String,
+}
+
+/// A load the front end asked for, waiting for the control thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LoadRequest {
+    deck: usize,
+    path: PathBuf,
 }
 
 /// Payload of the `deck-changed` event.
@@ -104,6 +140,7 @@ struct DeckState {
 /// The shared deck state; see the module doc.
 pub(crate) struct Decks {
     state: Mutex<DeckState>,
+    loads: Mutex<Vec<LoadRequest>>,
 }
 
 impl Decks {
@@ -121,6 +158,7 @@ impl Decks {
             .collect();
         Self {
             state: Mutex::new(state),
+            loads: Mutex::new(Vec::new()),
         }
     }
 
@@ -149,6 +187,39 @@ impl Decks {
         observe_all(&mut state, engine)
     }
 
+    /// Queues a load of `path` into `deck` for the control thread; `Err` for a deck that does not
+    /// exist.
+    pub(crate) fn request_load(&self, deck: usize, path: PathBuf) -> Result<(), String> {
+        if deck >= lock(&self.state).watches.len() {
+            return Err(format!("no deck {deck}"));
+        }
+        lock(&self.loads).push(LoadRequest { deck, path });
+        Ok(())
+    }
+
+    /// Runs the queued loads on the control thread, which owns `services`; returns the ones that
+    /// failed. Without a library every load fails, saying so.
+    pub(crate) fn run_loads(
+        &self,
+        engine: &DjEngine,
+        mut services: Option<&mut LibraryServices>,
+    ) -> Vec<LoadFailed> {
+        let requests = std::mem::take(&mut *lock(&self.loads));
+        let mut state = lock(&self.state);
+        requests
+            .into_iter()
+            .filter_map(|request| {
+                let result = match (state.loader.as_mut(), services.as_deref_mut()) {
+                    (Some(loader), Some(services)) => {
+                        loader.load_file(engine, services, request.deck, &request.path)
+                    }
+                    _ => Err("no library is open".to_owned()),
+                };
+                result.err().map(|reason| failed(&request, reason))
+            })
+            .collect()
+    }
+
     /// Deck `deck` as the commands report it; `None` when there is no such deck.
     pub(crate) fn read(&self, deck: usize) -> Option<DeckView> {
         let state = lock(&self.state);
@@ -160,6 +231,19 @@ impl Decks {
             track: loader.map(|l| l.track_info(deck)).unwrap_or_default(),
             waveform: loader.and_then(|l| l.waveform(deck)).cloned(),
         })
+    }
+}
+
+fn failed(request: &LoadRequest, reason: String) -> LoadFailed {
+    let file = request
+        .path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| request.path.display().to_string());
+    LoadFailed {
+        deck: request.deck,
+        file,
+        reason,
     }
 }
 
@@ -307,5 +391,35 @@ mod tests {
         let view = Decks::new(&engine).read(0).unwrap();
         assert_eq!(view.track, TrackInfo::default());
         assert!(view.waveform.is_none());
+    }
+
+    #[test]
+    fn a_load_for_a_deck_that_does_not_exist_is_refused() {
+        let engine = engine();
+        let decks = Decks::new(&engine);
+        assert!(decks.request_load(2, PathBuf::from("/m/a.wav")).is_err());
+        assert!(decks.request_load(1, PathBuf::from("/m/a.wav")).is_ok());
+    }
+
+    #[test]
+    fn without_a_library_a_queued_load_fails_once_naming_the_file() {
+        let engine = engine();
+        let decks = Decks::new(&engine);
+        decks
+            .request_load(1, PathBuf::from("/music/set/intro.flac"))
+            .unwrap();
+        let failures = decks.run_loads(&engine, None);
+        assert_eq!(
+            failures,
+            vec![LoadFailed {
+                deck: 1,
+                file: "intro.flac".to_owned(),
+                reason: "no library is open".to_owned(),
+            }]
+        );
+        assert!(
+            decks.run_loads(&engine, None).is_empty(),
+            "the queue drained"
+        );
     }
 }

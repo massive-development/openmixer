@@ -229,6 +229,13 @@ pub fn deck_info(
     deck_info::deck_info(&state.decks, &engine, deck)
 }
 
+/// Queues a load of the audio file at `path` into `deck`. The control thread runs it within a
+/// tick: the deck then changes (`deck-changed`), or `load-failed` says why it did not.
+#[tauri::command]
+pub fn load_file(deck: usize, path: String, state: State<'_, ShellState>) -> Result<(), String> {
+    state.decks.request_load(deck, PathBuf::from(path))
+}
+
 /// Raw packets into the front end's channel; a failed send means the webview is gone.
 struct ChannelSink(Channel<InvokeResponseBody>);
 
