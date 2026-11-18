@@ -210,7 +210,7 @@ tools/package.sh --docker           # Linux packages in a Debian 12 container (t
 ```
 
 - `--docker` keeps its own target folder (`target/docker`), cargo registry, rustup and `node_modules` (Docker volumes named `openmixer-package-*`), so the host's stay untouched, and hands the files it wrote back to the calling user. `CARGO_BUILD_JOBS` passes through.
-- macOS packages cannot be built on Linux or Windows. `.github/workflows/package.yml` runs the script on Ubuntu 22.04, Windows and macOS (Apple silicon) on demand, on a `v*` tag and on a pull request that changes the packaging, and uploads the packages as workflow artifacts.
+- macOS packages cannot be built on Linux or Windows. `.github/workflows/package.yml` runs the script on Ubuntu 22.04, Windows 2022 and the latest macOS (Apple silicon) on demand, on a `v*` tag and on a pull request that changes the packaging, and uploads the packages as workflow artifacts.
 - The bundler rewrites `om-ui-tauri/Cargo.toml`'s `tauri` and `tauri-build` lines to `{ version = "2", features = [] }`; the file is kept in that form so a run leaves the tree clean.
 - Not signed or notarised: macOS Gatekeeper and Windows SmartScreen warn on first start.
 

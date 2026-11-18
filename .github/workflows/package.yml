@@ -35,8 +35,8 @@ jobs:
       fail-fast: false
       matrix:
         # ubuntu-22.04: the oldest glibc GitHub offers, so the Linux packages run on more systems.
-        # macos-14 builds for Apple silicon.
-        os: [ubuntu-22.04, windows-2022, macos-14]
+        # macos-latest builds for Apple silicon.
+        os: [ubuntu-22.04, windows-2022, macos-latest]
     steps:
       - uses: actions/checkout@v5
 
