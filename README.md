@@ -1,6 +1,8 @@
-# OpenMixer
+# OpenMixer DJ
 
-A free, open-source DJ application: Linux first, with Windows and macOS support to follow. Website: [openmixer.dev](https://openmixer.dev).
+OpenMixer DJ is a free, open-source DJ application: Linux first, with Windows and macOS support to follow. Website: [openmixer.dev](https://openmixer.dev).
+
+OpenMixer DJ is not affiliated with [openmixer.org](https://openmixer.org), a live-sound mixing console, or with the OpenMixer routing mixer from Stanford's CCRMA.
 
 ## Screenshots
 

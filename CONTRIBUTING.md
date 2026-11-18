@@ -1,4 +1,4 @@
-# Contributing to OpenMixer
+# Contributing to OpenMixer DJ
 
 Thank you for your interest in contributing to OpenMixer! This document outlines the conventions for both AI and human contributors.
 
