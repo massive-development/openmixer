@@ -52,7 +52,7 @@ impl MediaSession {
     pub fn start(hwnd: Option<*mut c_void>) -> Option<Self> {
         let (sender, events) = channel();
         let config = PlatformConfig {
-            display_name: "OpenMixer",
+            display_name: "OpenMixer DJ",
             dbus_name: "openmixer",
             hwnd,
         };
