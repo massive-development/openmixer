@@ -41,7 +41,8 @@ OpenMixer is written in Rust (toolchain and MSRV 1.95, pinned in `rust-toolchain
 | [ROADMAP.md](ROADMAP.md) | Tracks, waves and key decisions |
 | [AGENTS.md](AGENTS.md) | **Agent and developer setup and implementation guide** |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
-| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately (security@openmixer.dev) |
+| Contact | contact@openmixer.dev for anything that is not a bug report or a vulnerability |
 | [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md) | Design patterns in use and when to reuse them |
 | [docs/adr/INDEX.md](docs/adr/INDEX.md) | Architecture decisions |
 | [Workbench](https://github.com/massive-development/openmixer-workbench) | Planning, spikes, design research and progress tracking (separate repository) |
