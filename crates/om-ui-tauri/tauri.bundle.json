@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "mainBinaryName": "openmixer",
+  "bundle": {
+    "active": true,
+    "publisher": "OpenMixer contributors",
+    "copyright": "OpenMixer contributors, AGPL-3.0-only",
+    "license": "AGPL-3.0-only",
+    "licenseFile": "../../LICENSE",
+    "homepage": "https://github.com/massive-development/openmixer",
+    "category": "Music",
+    "shortDescription": "Open DJ software",
+    "longDescription": "OpenMixer is open, original DJ software: decks, mixer, effects, sync, sampler, stems and a music library.",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libasound2",
+          "libdbus-1-3"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "alsa-lib",
+          "dbus-libs"
+        ]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

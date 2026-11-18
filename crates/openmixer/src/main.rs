@@ -3,7 +3,8 @@
 //! `openmixer` binary. Headless flags run the engine and composition without a window; the GPUI window
 //! is on by default behind the `gui` feature (see `gui.rs`). `--headless --smoke` is the start-up check that
 //! opens no window; without the feature (`--no-default-features`) `--headless` is implied. The Tauri trial
-//! window (ADR 0009) opens with `--ui=tauri` when built with the `gui-tauri` feature (see `gui_tauri.rs`).
+//! window (ADR 0009) opens with `--ui=tauri` when built with the `gui-tauri` feature (see `gui_tauri.rs`),
+//! and without the flag in the installers' build (`tauri-default`, see `tools/package.sh`).
 
 #[cfg(feature = "gui")]
 mod gui;
@@ -25,7 +26,8 @@ fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let headless = args.iter().any(|a| a == "--headless");
     args.retain(|a| a != "--headless");
-    let tauri = args.iter().any(|a| a == "--ui=tauri");
+    // The packaged build (`tauri-default`) opens the Tauri window with no flag.
+    let tauri = cfg!(feature = "tauri-default") || args.iter().any(|a| a == "--ui=tauri");
     args.retain(|a| a != "--ui=tauri");
     if !tauri && args.iter().any(|a| is_tauri_only(a)) {
         eprintln!("openmixer: --ui-bench, --ui-fps-cap and --ui-drive-out need --ui=tauri");

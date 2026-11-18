@@ -136,13 +136,14 @@ cargo run -p openmixer -- --mock-device              # the window (dev builds op
 cargo run -p openmixer -- --headless --smoke         # startup check, no window
 cargo run -p openmixer -- --version
 
-# Tauri window (web front end, ADR 0009; mock device only): build the front end first, then the binary
+# Tauri window (web front end, ADR 0009): build the front end first, then the binary
 (cd crates/om-ui-tauri/web && npm ci && npm run build)
 cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-library
 cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke   # exits 0 once the page has a packet and has painted
+tools/package.sh                      # installers of the Tauri window for this OS into target/packages/ (--docker for Linux in a container)
 ```
 
-The Tauri window is the web front end that ADR 0009 accepted as the direction for the interface; it sits behind the `gui-tauri` feature and is not yet the product's interface. It shows the decks screen only: two deck headers with overviews, GPU-drawn waveform lanes, transport, hot cues, loops, the two-channel mixer and meters, on the real engine and only on the mock device. GPUI stays the default and only shipping window until the cut-over plan lands. ADR 0009 was accepted by the owner's decision; its exit criteria were not measured and are kept as targets for the migration. Details: [docs/features/tauri-trial.md](docs/features/tauri-trial.md).
+The Tauri window is the web front end that ADR 0009 accepted as the direction for the interface; it sits behind the `gui-tauri` feature and is not yet the product's interface. It shows the decks screen only: two deck headers with overviews, GPU-drawn waveform lanes, transport, hot cues, loops, the two-channel mixer and meters, on the real engine; it opens the output device as GPUI does, and `tools/package.sh` builds installers of it (signed where the keys are set; see the feature page) (Linux locally; Windows and macOS through `.github/workflows/package.yml`). GPUI stays the default window of a cargo build until the cut-over plan lands. ADR 0009 was accepted by the owner's decision; its exit criteria were not measured and are kept as targets for the migration. Details: [docs/features/tauri-trial.md](docs/features/tauri-trial.md).
 
 The GPUI window is the default build and needs the `-dev` packages listed in the `check` job of `.github/workflows/rust.yml` (on Linux: `libxkbcommon-x11-dev`, Wayland, fontconfig, freetype, Vulkan). `--no-default-features` builds the headless binary without it. The staged screenshots were checked by eye (see `docs/screenshots/REVIEW.md`); a live window on a real display, at the minimum size, has not been checked.
 
@@ -234,7 +235,7 @@ For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and feature reque
 
 ## Status
 
-**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. A Tauri v2 window for the decks screen (`gui-tauri` feature, mock device only) is built, and ADR 0009 accepted the web front end as the direction for the interface on 2026-11-16 (owner decision; exit criteria not measured); GPUI stays the default until the cut-over. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7. See `openmixer-workbench/docs/spikes/DECISIONS.md`.
+**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. A Tauri v2 window for the decks screen (`gui-tauri` feature; installers via `tools/package.sh`) is built, and ADR 0009 accepted the web front end as the direction for the interface on 2026-11-16 (owner decision; exit criteria not measured); GPUI stays the default until the cut-over. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7. See `openmixer-workbench/docs/spikes/DECISIONS.md`.
 
 **Known gaps** (what is built but not yet verified on real hardware, by ear or on a live display, and what is deferred) are tracked in one issue: [Known gaps: unverified and deferred work](https://github.com/massive-development/openmixer/issues/283). [`docs/testing/hardware-checklist.md`](docs/testing/hardware-checklist.md) lists what to confirm on hardware.
 
