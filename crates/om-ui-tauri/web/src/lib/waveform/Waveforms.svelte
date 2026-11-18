@@ -511,6 +511,7 @@
       class="lane"
       class:focused={sliders.focused === i}
       data-control="deck{i}.lane"
+      data-deck={i}
       style:top="{box.top}px"
       style:height="{box.height}px"
       aria-hidden="true"

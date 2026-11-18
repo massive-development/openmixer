@@ -2,8 +2,9 @@
 //! GPUI window uses (`gui.rs`). It opens the stored output device (else the default one) as GPUI
 //! does; `--mock-device`, `--smoke` and the demo flags run on the silent mock instead, and a device
 //! that does not open falls back to the mock with a notice. `--demo-library` loads two generated tracks into decks A and B from a library in the
-//! scratch folder (`--demo-scene=NAME` also stages the scene); without a demo flag the decks are
-//! empty and no library is opened. `--smoke` exits 0 once the front end has received a snapshot
+//! scratch folder (`--demo-scene=NAME` also stages the scene); without a demo flag a plain run opens
+//! the user's library with empty decks (the front end loads files into them), and the smoke,
+//! bench and drive runs open none. `--smoke` exits 0 once the front end has received a snapshot
 //! packet, painted and called `ready`; with a demo library the front end first starts deck A through
 //! `control`, and the run fails unless the engine then reports deck A playing. `--ui-bench=SECONDS`
 //! (1..=600) records the front end's frames for that long after a 3 s warm-up, writes the report to
@@ -55,6 +56,8 @@ struct Window<'a> {
     out: &'a Path,
     drive: Option<DriveOut>,
     hud: bool,
+    /// Open the user's library (a plain run); the checks and the demos never touch it.
+    user_library: bool,
 }
 
 /// The output choice: the silent mock or the sound card, and whether a demo is staged (no notice).
@@ -94,6 +97,7 @@ pub fn main(args: &[String]) -> ExitCode {
         out: &out,
         drive,
         hud: hud_of(args, frames),
+        user_library: !mock_of_checks(args, smoke, demo.is_some()),
     };
     let device = Device {
         mock: mock_of(args, smoke, demo.is_some()),
@@ -113,10 +117,16 @@ pub fn main(args: &[String]) -> ExitCode {
 /// The silent mock for `--mock-device`, and for the runs that must never reach a sound card: the
 /// smoke check, a bench, a drive run and any demo.
 fn mock_of(args: &[String], smoke: bool, demo: bool) -> bool {
+    mock_of_checks(args, smoke, demo) || args.iter().any(|a| a == "--mock-device")
+}
+
+/// The smoke check, a bench, a drive run or a demo: runs that stay off the sound card and keep out
+/// of the user's library.
+fn mock_of_checks(args: &[String], smoke: bool, demo: bool) -> bool {
     let bench_or_drive = args
         .iter()
         .any(|a| a.starts_with("--ui-bench") || a.starts_with(DRIVE_FLAG));
-    smoke || demo || bench_or_drive || args.iter().any(|a| a == "--mock-device")
+    smoke || demo || bench_or_drive
 }
 
 /// The frame counter shows for whoever tunes the window: a bench run, or `--debug-panel` (the flag
@@ -215,10 +225,13 @@ fn run_window(
         return ExitCode::FAILURE;
     };
     let engine = Arc::clone(&composition.engine);
-    let library = demo.zip(scratch).map(|(demo, root)| {
-        demo_library(root, &composition.prefs.library, Arc::clone(&engine), demo)
-    });
-    let round_trip = window.smoke && library.is_some();
+    let round_trip = window.smoke && demo.is_some();
+    let prefs = &composition.prefs.library;
+    let library = match demo.zip(scratch) {
+        Some((demo, root)) => Some(demo_library(root, prefs, Arc::clone(&engine), demo)),
+        None if window.user_library => Some(user_library(prefs, Arc::clone(&engine))),
+        None => None,
+    };
     let options = RunOptions {
         smoke: window.smoke,
         banner,
@@ -285,6 +298,19 @@ fn demo_library(
         if let Err(error) = load_demo_decks(&mut services, &mut loader, &engine, &root, &demo) {
             eprintln!("openmixer: demo decks: {error}");
         }
+        Some(DeckLibrary { services, loader })
+    })
+}
+
+/// Opens the user's library (as the GPUI window does) on the control thread, with empty decks: the
+/// front end loads files into them.
+fn user_library(prefs: &LibraryPrefs, engine: Arc<DjEngine>) -> LibrarySetup {
+    let prefs = prefs.clone();
+    Box::new(move || {
+        let mut services = LibraryServices::create(library_options(&prefs, None))
+            .map_err(|error| eprintln!("openmixer: library unavailable: {error}"))
+            .ok()?;
+        let loader = TrackLoader::new(&mut services, engine.num_decks());
         Some(DeckLibrary { services, loader })
     })
 }
@@ -359,6 +385,21 @@ mod tests {
         assert!(mock(&["--demo-library"], false, true));
         assert!(mock(&["--ui-bench=5"], false, false));
         assert!(mock(&["--ui-drive-out=/tmp/d.json"], false, false));
+    }
+
+    #[test]
+    fn only_a_plain_run_opens_the_users_library() {
+        let checks =
+            |list: &[&str], smoke: bool, demo: bool| mock_of_checks(&args(list), smoke, demo);
+        assert!(!checks(&[], false, false));
+        assert!(
+            !checks(&["--mock-device"], false, false),
+            "a mock-device run is still the user's"
+        );
+        assert!(checks(&["--smoke"], true, false));
+        assert!(checks(&["--demo-library"], false, true));
+        assert!(checks(&["--ui-bench=5"], false, false));
+        assert!(checks(&["--ui-drive-out=/tmp/d.json"], false, false));
     }
 
     #[test]

@@ -4,6 +4,7 @@
   import DeckHeader from './lib/deck/DeckHeader.svelte';
   import DeckPanel from './lib/deck/DeckPanel.svelte';
   import { DeckData } from './lib/decks.svelte';
+  import { DECK_ATTRIBUTE, Loading } from './lib/loading.svelte';
   import { setText } from './lib/dom';
   import { benchStats, FrameRecorder } from './lib/bench';
   import { CONTROL_ATTRIBUTE, layoutMap } from './lib/drive';
@@ -47,6 +48,8 @@
   // The mock-device notice, when the run has one (`om_ui::labels`, by GPUI's rule).
   let banner: string | null = $state(null);
   const decks = new DeckData();
+  // The open dialog, files dropped on a deck, and why a load failed.
+  const loading = new Loading();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
   let hud: HTMLElement | undefined = $state();
@@ -142,8 +145,15 @@
 
   onMount(() => {
     const stop = decks.start(DECKS.length);
+    const stopLoading = loading.start(DECKS.length).catch((error: unknown) => {
+      console.error('openmixer: file loading', error);
+      return () => {};
+    });
     void start();
-    return () => void stop.then((unlisten) => unlisten());
+    return () => {
+      void stop.then((unlisten) => unlisten());
+      void stopLoading.then((unlisten) => unlisten());
+    };
   });
 </script>
 
@@ -160,17 +170,30 @@
       {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
     </header>
     {#snippet deckRegions(deck: number)}
-      <section class="region" style:grid-area="head-{SIDES[deck]}" aria-label="{deckName(deck)} track">
+      <section
+        class="region"
+        style:grid-area="head-{SIDES[deck]}"
+        aria-label="{deckName(deck)} track"
+        {...{ [DECK_ATTRIBUTE]: deck }}
+      >
         <DeckHeader
           {deck}
           info={decks.infos[deck] ?? null}
           ink={decks.inks[deck] ?? null}
           {snapshot}
           mirrored={deck === 1}
+          dropping={loading.target === deck}
+          note={loading.notes[deck] ?? null}
+          onload={() => void loading.choose(deck).catch((error: unknown) => console.error('openmixer: open', error))}
         />
       </section>
       <LaneSlider {deck} {sliders} />
-      <section class="region" style:grid-area="deck-{SIDES[deck]}" aria-label="{deckName(deck)} controls">
+      <section
+        class="region"
+        style:grid-area="deck-{SIDES[deck]}"
+        aria-label="{deckName(deck)} controls"
+        {...{ [DECK_ATTRIBUTE]: deck }}
+      >
         <DeckPanel
           {deck}
           {controls}

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { letter } from '../a11y';
+  import { deckName, letter } from '../a11y';
+  import Button from '../controls/Button.svelte';
+  import Icon from '../icons/Icon.svelte';
   import { interpolate } from '../clock';
   import { setText } from '../dom';
   import { formatBpm, formatTime } from '../format';
@@ -15,9 +17,15 @@
     snapshot: Snapshot | null;
     /** Deck B's header mirrors deck A's: read-outs from the centre, the letter at the outer edge. */
     mirrored?: boolean;
+    /** A file dragged over the window would drop here. */
+    dropping?: boolean;
+    /** Why the last load into this deck failed, while it shows. */
+    note?: string | null;
+    /** Opens the file dialog for this deck. */
+    onload: () => void;
   }
 
-  let { deck, info, ink, snapshot, mirrored = false }: Props = $props();
+  let { deck, info, ink, snapshot, mirrored = false, dropping = false, note = null, onload }: Props = $props();
 
   let remainEl: HTMLElement;
 
@@ -45,13 +53,22 @@
 </script>
 
 <!-- Mirrored by grid areas only, so both decks keep one source, reading and Tab order. -->
-<div class="head" style:--hue="var(--om-accent-{deck})">
+<div class="head" class:dropping style:--hue="var(--om-accent-{deck})">
   <div class="row" class:mirrored>
     <!-- The region's name already says which deck this is. -->
     <div class="letter" aria-hidden="true">{letter(deck)}</div>
+    <div class="load">
+      <Button label="Load a track into {deckName(deck)}" title="Load a track (or drop a file on the deck)" onpress={onload}>
+        <span class="face"><Icon name="load" />Load</span>
+      </Button>
+    </div>
     <div class="track">
       <div class="title" class:empty={!loaded}>{info?.titleText ?? ''}</div>
-      <div class="artist">{loaded ? (info?.artist ?? '') : ''}</div>
+      {#if note}
+        <div class="artist note" role="status" title={note}>{note}</div>
+      {:else}
+        <div class="artist">{loaded ? (info?.artist ?? '') : ''}</div>
+      {/if}
     </div>
     <div class="stat key">
       <span class="label">Key</span>
@@ -81,8 +98,8 @@
 
   .row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
-    grid-template-areas: 'letter track key bpm time';
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: 'letter load track key bpm time';
     gap: var(--om-gap);
     align-items: center;
     min-width: 0;
@@ -90,8 +107,8 @@
 
   /* The read-outs start from the centre line and the track's words end at the letter. */
   .row.mirrored {
-    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
-    grid-template-areas: 'time bpm key track letter';
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'time bpm key track load letter';
   }
 
   .letter {
@@ -112,6 +129,21 @@
   .track {
     grid-area: track;
     min-width: 0;
+  }
+
+  .load {
+    grid-area: load;
+  }
+
+  .face {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--om-inset-large);
+  }
+
+  /* A drag over the window marks the deck it would land on with the deck's hue, inside the edge. */
+  .dropping {
+    box-shadow: inset 0 0 0 var(--om-focus-border-width) var(--hue);
   }
 
   .mirrored .track {
@@ -152,6 +184,11 @@
   .artist {
     color: var(--om-text-muted);
     font-size: var(--om-type-body);
+  }
+
+  /* Why a load failed, in place of the artist until it times out. */
+  .note {
+    color: var(--om-warning);
   }
 
   .stat {
