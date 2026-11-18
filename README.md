@@ -1,6 +1,6 @@
 # OpenMixer
 
-A free, open-source DJ application: Linux first, with Windows and macOS support to follow.
+A free, open-source DJ application: Linux first, with Windows and macOS support to follow. Website: [openmixer.dev](https://openmixer.dev).
 
 ## Screenshots
 
@@ -41,6 +41,7 @@ OpenMixer is written in Rust (toolchain and MSRV 1.95, pinned in `rust-toolchain
 | [ROADMAP.md](ROADMAP.md) | Tracks, waves and key decisions |
 | [AGENTS.md](AGENTS.md) | **Agent and developer setup and implementation guide** |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately |
 | [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md) | Design patterns in use and when to reuse them |
 | [docs/adr/INDEX.md](docs/adr/INDEX.md) | Architecture decisions |
 | [Workbench](https://github.com/massive-development/openmixer-workbench) | Planning, spikes, design research and progress tracking (separate repository) |
@@ -229,7 +230,7 @@ OpenMixer is released under the GNU Affero General Public License v3.0 (AGPLv3).
 
 ## Contributing
 
-For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). All contributions must follow the clean-room doctrine outlined in [docs/adr/0001-clean-room-doctrine.md](docs/adr/0001-clean-room-doctrine.md).
+For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and feature requests go in [issues](https://github.com/massive-development/openmixer/issues/new/choose); security problems go through [SECURITY.md](SECURITY.md). All contributions must follow the clean-room doctrine outlined in [docs/adr/0001-clean-room-doctrine.md](docs/adr/0001-clean-room-doctrine.md).
 
 ## Status
 

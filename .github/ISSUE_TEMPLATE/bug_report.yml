@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in OpenMixer does not work as it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Load a track on deck A
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `openmixer --version`, or the commit you built.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Linux, Windows, macOS]
+    validations:
+      required: true
+  - type: dropdown
+    id: window
+    attributes:
+      label: Window
+      description: The installers open the web window; a default cargo build opens the GPUI window.
+      options: ["Web window (installer, or --ui=tauri)", "GPUI window (cargo build)", "Headless", "Not sure"]
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Audio device and controller
+      description: Sound card or interface, and any MIDI controller, if the bug involves them.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Terminal output, or a screenshot of the problem.
+      render: text

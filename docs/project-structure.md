@@ -3,6 +3,7 @@
 ```
 openmixer/
 ├── .github/workflows/        # rust.yml (the Rust CI and the web front end job, every PR; weekly soak) and issue-heatmap.yml
+├── .github/ISSUE_TEMPLATE/    # bug and feature forms; pull_request_template.md beside it
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   ├── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
 │   ├── om-ui-bridge/         # ADR 0009: snapshot packet, peaks, theme CSS, control specs and dispatch for a web front end
