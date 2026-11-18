@@ -14,7 +14,7 @@ You will get an answer within a week. Once a fix is released, the advisory is pu
 - The installers built by `.github/workflows/package.yml`, and their signatures and checksums.
 - Files the application opens: audio files, library databases, controller maps, themes and plugins.
 
-Plugins run inside the application with its permissions (see `docs/guidelines/extensibility.md`). A plugin doing what it was written to do is not a vulnerability in OpenMixer; a way for a file or a controller map to run code is.
+Plugins run inside the application with its permissions (see `docs/guidelines/extensibility.md`). A plugin doing what it was written to do is not a vulnerability in OpenMixer DJ; a way for a file or a controller map to run code is.
 
 ## Supported versions
 

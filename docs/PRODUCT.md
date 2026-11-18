@@ -1,6 +1,6 @@
 # Product
 
-What OpenMixer has to be for a working DJ to switch to it. This is the bar every area is measured against: engine, analysis, library, interface and hardware alike. It is not a section of the roadmap.
+What OpenMixer DJ has to be for a working DJ to switch to it. This is the bar every area is measured against: engine, analysis, library, interface and hardware alike. It is not a section of the roadmap.
 
 Items marked **(guess)** are the author's assumptions, open to correction. Everything else was decided by the project owner.
 

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-const PLACEHOLDER: &str = "<!doctype html><title>OpenMixer</title>\n";
+const PLACEHOLDER: &str = "<!doctype html><title>OpenMixer DJ</title>\n";
 const INDEX: &str = "web/dist/index.html";
 
 fn main() {

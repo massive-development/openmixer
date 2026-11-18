@@ -1,6 +1,6 @@
-# OpenMixer Roadmap
+# OpenMixer DJ Roadmap
 
-This document outlines the plan for OpenMixer. What the product has to be is in `docs/PRODUCT.md`; task-level status is in `openmixer-workbench/TODO.md` and `openmixer-workbench/docs/PROGRESS.md`.
+This document outlines the plan for OpenMixer DJ. What the product has to be is in `docs/PRODUCT.md`; task-level status is in `openmixer-workbench/TODO.md` and `openmixer-workbench/docs/PROGRESS.md`.
 
 ## Tracks
 
