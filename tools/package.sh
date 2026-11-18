@@ -8,7 +8,13 @@
 #   tools/package.sh --target aarch64-apple-darwin
 #   tools/package.sh --docker          # Linux packages in a container (tools/package/Dockerfile)
 #
-# The packages are unsigned. CI runs this on each OS (.github/workflows/package.yml).
+# Signing, each step only when its keys are set (docs/features/tauri-trial.md, "Signing"):
+#   OPENMIXER_GPG_KEY (+ OPENMIXER_GPG_PASSPHRASE)  GPG-signs SHA256SUMS-<os>.txt, and on Linux
+#                                                   embeds a signature in the AppImage
+#   APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY, ...  Developer ID signing and notarisation (Tauri);
+#                                                   without them the .app is signed ad hoc
+# Windows installers are signed in CI by SignPath, after this script. CI runs this on each OS
+# (.github/workflows/package.yml).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,7 +24,7 @@ TARGET=""
 DOCKER=0
 
 usage() {
-    sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^set -e/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -59,7 +65,21 @@ build_binary() {
     (cd "$ROOT" && cargo "${args[@]}")
 }
 
+# The AppImage tool embeds a GPG signature when SIGN is set (Tauri's Linux signing).
+appimage_signing() {
+    [ "$1" = linux ] && [ -n "${OPENMIXER_GPG_KEY:-}" ] || return 0
+    export SIGN=1 SIGN_KEY="$OPENMIXER_GPG_KEY"
+    export APPIMAGETOOL_SIGN_PASSPHRASE="${OPENMIXER_GPG_PASSPHRASE:-}"
+}
+
+# Where the bundler writes, under the cargo target folder.
+bundle_dir() {
+    echo "${CARGO_TARGET_DIR:-$ROOT/target}/${TARGET:+$TARGET/}release/bundle"
+}
+
+# Emptied first, so a bundle type left from an earlier run is not collected.
 bundle() {
+    rm -rf "$(bundle_dir)"
     local args=(bundle --ci --config tauri.bundle.json)
     [ -n "$BUNDLES" ] && args+=(--bundles "$BUNDLES")
     [ -n "$TARGET" ] && args+=(--target "$TARGET")
@@ -68,8 +88,8 @@ bundle() {
 
 # Copies the installers (not the intermediate folders) out of target/<triple>/release/bundle.
 collect() {
-    local target_dir="${CARGO_TARGET_DIR:-$ROOT/target}"
-    local from="$target_dir/${TARGET:+$TARGET/}release/bundle"
+    local from
+    from="$(bundle_dir)"
     local to="$ROOT/target/packages/$1"
     rm -rf "$to" && mkdir -p "$to"
     find "$from" -maxdepth 2 -type f \
@@ -79,11 +99,14 @@ collect() {
     if [ -d "$from/macos" ]; then
         (cd "$from/macos" && for app in *.app; do ditto -c -k --keepParent "$app" "$to/$app.zip"; done)
     fi
+    "$ROOT/tools/package/checksums.sh" "$to"
     echo "packages in $to:" && ls -1 "$to"
 }
 
 # The Linux packages in a Debian 12 container (glibc 2.36), so they run on that and newer, with the
-# container's own target folder and node_modules so the host's stay untouched.
+# container's own target folder and node_modules so the host's stay untouched. The host's GPG
+# keyring is not in the container, so the checksums are signed here afterwards; the AppImage carries
+# no embedded signature from a Docker run.
 run_docker() {
     local image=openmixer-package
     docker build -t "$image" -f "$ROOT/tools/package/Dockerfile" "$ROOT/tools/package"
@@ -95,7 +118,7 @@ run_docker() {
         -e CARGO_TARGET_DIR=/src/target/docker \
         ${CARGO_BUILD_JOBS:+-e CARGO_BUILD_JOBS="$CARGO_BUILD_JOBS"} \
         -e HOST_IDS="$(id -u):$(id -g)" \
-        "$image" bash -c 'tools/package.sh ${0:+--bundles "$0"}; status=$?;
+        "$image" bash -c 'unset OPENMIXER_GPG_KEY; tools/package.sh ${0:+--bundles "$0"}; status=$?;
             chown -R "$HOST_IDS" target/docker target/packages crates/om-ui-tauri/web/dist; exit $status' \
         "$BUNDLES"
 }
@@ -104,12 +127,14 @@ main() {
     parse_args "$@"
     if [ "$DOCKER" = 1 ]; then
         run_docker
+        "$ROOT/tools/package/checksums.sh" "$ROOT/target/packages/linux"
         return
     fi
     local os
     os="$(host_os)"
     build_web
     build_binary "$os"
+    appimage_signing "$os"
     bundle
     collect "$os"
 }

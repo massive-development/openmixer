@@ -201,7 +201,7 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 
 ## Installers
 
-`tools/package.sh` builds the installers for the OS it runs on, unsigned, into `target/packages/<os>/`: Linux `.deb`, `.rpm` and `.AppImage`; Windows `.msi` and setup `.exe` (from Git Bash); macOS `.app` (zipped) and `.dmg`. It runs `npm ci` and `npm run build` in `web/`, builds `openmixer` with `--release --no-default-features --features tauri-default` (plus `realtime-dbus` on Linux), so the app opens this window with no flag and carries no GPUI, then runs the Tauri CLI's `tauri bundle` (pinned in `web/package.json`) with `tauri.bundle.json` merged over `tauri.conf.json`. `mainBinaryName` there points the bundler at the workspace's `openmixer` binary; the base file keeps `bundle.active` off, so plain cargo builds bundle nothing.
+`tools/package.sh` builds the installers for the OS it runs on into `target/packages/<os>/`: Linux `.deb`, `.rpm` and `.AppImage`; Windows `.msi` and setup `.exe` (from Git Bash); macOS `.app` (zipped) and `.dmg`. It runs `npm ci` and `npm run build` in `web/`, builds `openmixer` with `--release --no-default-features --features tauri-default` (plus `realtime-dbus` on Linux), so the app opens this window with no flag and carries no GPUI, then runs the Tauri CLI's `tauri bundle` (pinned in `web/package.json`) with `tauri.bundle.json` merged over `tauri.conf.json`. `mainBinaryName` there points the bundler at the workspace's `openmixer` binary; the base file keeps `bundle.active` off, so plain cargo builds bundle nothing.
 
 ```bash
 tools/package.sh                    # this OS, every bundle type
@@ -212,7 +212,30 @@ tools/package.sh --docker           # Linux packages in a Debian 12 container (t
 - `--docker` keeps its own target folder (`target/docker`), cargo registry, rustup and `node_modules` (Docker volumes named `openmixer-package-*`), so the host's stay untouched, and hands the files it wrote back to the calling user. `CARGO_BUILD_JOBS` passes through.
 - macOS packages cannot be built on Linux or Windows. `.github/workflows/package.yml` runs the script on Ubuntu 22.04, Windows 2022 and the latest macOS (Apple silicon) on demand, on a `v*` tag and on a pull request that changes the packaging, and uploads the packages as workflow artifacts.
 - The bundler rewrites `om-ui-tauri/Cargo.toml`'s `tauri` and `tauri-build` lines to `{ version = "2", features = [] }`; the file is kept in that form so a run leaves the tree clean.
-- Not signed or notarised: macOS Gatekeeper and Windows SmartScreen warn on first start.
+- Every run writes `SHA256SUMS-<os>.txt` beside the packages (`tools/package/checksums.sh`).
+
+### Signing
+
+Each step runs only when its keys are present, so a fork, a pull request or a machine without them builds the same packages unsigned.
+
+| What | How | Keys (`package.yml` secrets; locally, environment variables) |
+|---|---|---|
+| Checksums, every OS | `SHA256SUMS-<os>.txt.asc`, a detached GPG signature | `GPG_PRIVATE_KEY` (armoured), `GPG_PASSPHRASE`; locally `OPENMIXER_GPG_KEY` (a key in your keyring) and `OPENMIXER_GPG_PASSPHRASE` |
+| AppImage | A GPG signature embedded by the AppImage tool (Tauri's `SIGN`, `SIGN_KEY`) | The same key. Not with `--docker`, whose container has no keyring; its checksums are signed on the host |
+| macOS `.app` and `.dmg` | Ad hoc (`signingIdentity: "-"`) without keys. With them, Developer ID signing and notarisation through an App Store Connect API key | `APPLE_CERTIFICATE` (base64 `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_ISSUER`, `APPLE_API_KEY` (key id), `APPLE_API_KEY_P8` (the key file's text; locally `APPLE_API_KEY_PATH`) |
+| Windows `.msi` and setup `.exe` | SignPath signs them in CI after the build, outside pull requests; the checksums are redone afterwards. The artifact configuration is `tools/package/signpath-windows-installers.xml` (slug `windows-installers`). The app inside the installer is not signed | Secret `SIGNPATH_API_TOKEN`; variables `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG` |
+| Provenance, every package | A GitHub build provenance attestation (Sigstore), outside pull requests | None (the workflow's own token) |
+
+Checking a download:
+
+```bash
+sha256sum -c SHA256SUMS-linux.txt                       # macOS: shasum -a 256 -c
+gpg --verify SHA256SUMS-linux.txt.asc SHA256SUMS-linux.txt
+gh attestation verify OpenMixer_0.1.0_amd64.deb --repo massive-development/openmixer
+```
+
+- An ad hoc signed app is still blocked by Gatekeeper on first start: open it once, then choose **Open Anyway** in System Settings, Privacy & Security.
+- Until the installers carry a signature with reputation, Windows SmartScreen shows "Windows protected your PC": **More info**, then **Run anyway**.
 
 ## Flags
 

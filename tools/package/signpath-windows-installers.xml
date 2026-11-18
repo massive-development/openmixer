@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "windows-installers" for .github/workflows/package.yml: the
+     uploaded artifact is a zip of the Windows installers; sign the .msi and the setup .exe. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <msi-file path="*.msi" max-matches="unbounded" />
+    <pe-file path="*.exe" max-matches="unbounded" />
+  </zip-file>
+</artifact-configuration>

@@ -12,12 +12,27 @@
     "shortDescription": "Open DJ software",
     "longDescription": "OpenMixer is open, original DJ software: decks, mixer, effects, sync, sampler, stems and a music library.",
     "linux": {
-      "deb": { "depends": ["libasound2", "libdbus-1-3"] },
-      "rpm": { "depends": ["alsa-lib", "dbus-libs"] }
+      "deb": {
+        "depends": [
+          "libasound2",
+          "libdbus-1-3"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "alsa-lib",
+          "dbus-libs"
+        ]
+      }
     },
-    "macOS": { "minimumSystemVersion": "11.0" },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" }
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
     }
   }
 }
