@@ -3,3 +3,6 @@ contact_links:
   - name: Security problem
     url: https://github.com/massive-development/openmixer/security/advisories/new
     about: Report vulnerabilities privately, not as an issue.
+  - name: Something else
+    url: mailto:contact@openmixer.dev
+    about: Questions that are not bugs or feature requests.

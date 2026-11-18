@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report security problems privately through GitHub: on the repository's **Security** tab, choose **Report a vulnerability**. Do not open a public issue for them.
+Please report security problems privately through GitHub: on the repository's **Security** tab, choose **Report a vulnerability**. If you cannot use GitHub, email [security@openmixer.dev](mailto:security@openmixer.dev). Do not open a public issue for them.
 
 Useful things to include: the version (`openmixer --version`) or commit, the operating system, what an attacker can do, and the steps or file that trigger it.
 
