@@ -252,15 +252,16 @@ class App:
                               check=True).stdout
         found = []
         for line in tree.splitlines():
-            m = re.match(r'\s*(0x[0-9a-f]+) "OpenMixer":.*?(\d+)x(\d+)[+-]\d+[+-]\d+\s+\+(-?\d+)\+(-?\d+)',
-                         line)
+            # "OpenMixer DJ" since the rename; plain "OpenMixer" still matches an older build.
+            m = re.match(r'\s*(0x[0-9a-f]+) "OpenMixer(?: DJ)?":.*?(\d+)x(\d+)[+-]\d+[+-]\d+'
+                         r'\s+\+(-?\d+)\+(-?\d+)', line)
             if m:
                 found.append((int(m.group(1), 16), int(m.group(4)), int(m.group(5))))
         view = self.layout["viewport"]
         dpr = self.layout["devicePixelRatio"]
         mine = [w for w in found if self._is_mine(w[0])]
         if len(mine) != 1:
-            raise DriveAbort(f"expected one OpenMixer window of pid {self.proc.pid}, found {len(mine)}")
+            raise DriveAbort(f"expected one OpenMixer DJ window of pid {self.proc.pid}, found {len(mine)}")
         self.window, x, y = mine[0]
         self.origin = (x, y)
         self.scale = dpr
@@ -410,7 +411,7 @@ class Driver:
             time.sleep(0.01)
             chain, at = self.x.pointer_chain()
             if self.app.window not in chain:
-                raise DriveAbort(f"the pointer at {at} is not over the OpenMixer window "
+                raise DriveAbort(f"the pointer at {at} is not over the OpenMixer DJ window "
                                  f"({[hex(w) for w in chain]})")
             if at == (sx, sy):
                 return
