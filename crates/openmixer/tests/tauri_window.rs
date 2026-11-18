@@ -61,10 +61,15 @@ fn tauri_control_round_trip() {
     );
 }
 
+/// A smoke run without `--mock-device` still never opens a sound card: it runs on the mock.
 #[test]
-fn tauri_window_refuses_a_real_device() {
+fn tauri_smoke_runs_silent_without_the_mock_flag() {
     let out = run_openmixer(&["--ui=tauri", "--smoke"]);
-    assert!(!out.status.success());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("--mock-device"), "stderr was: {stderr}");
+    assert!(!stderr.contains("no audio device"), "stderr was: {stderr}");
 }

@@ -3,7 +3,7 @@
 All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
 
 1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
-2. Open a PR into `main` with `gh pr create --base main`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, the `web` job (front-end build, `npm test`, `npm run check` and the `gui-tauri` window tests under Xvfb), `cargo deny`, the `onnx` job, the ASIO SDK guard) runs on every pull request; its 10-minute `soak` job runs only on the weekly schedule and by hand. The description must include:
+2. Open a PR into `main` with `gh pr create --base main`. `rust.yml` (the Rust CI: fmt, clippy, test on Linux, the `web` job (front-end build, `npm test`, `npm run check` and the `gui-tauri` window tests under Xvfb), `cargo deny`, the `onnx` job, the ASIO SDK guard) runs on every pull request; its 10-minute `soak` job runs only on the weekly schedule and by hand. `package.yml` (installers on Linux, Windows and macOS through `tools/package.sh`) runs on a pull request only when the packaging changes, and on a `v*` tag or by hand. The description must include:
    - **Summary:** what changed and why (link the issue).
    - **Changes:** key crates/modules added or modified.
    - **Testing:** commands run and results (`cargo test --workspace`, manual checks).

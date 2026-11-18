@@ -192,8 +192,20 @@ pub fn link_user_track(root: &Path, source: &Path) -> Result<PathBuf, AppError> 
         None => USER_TRACK_STEM.to_owned(),
     };
     let link = music.join(name);
-    std::os::unix::fs::symlink(&source, &link)?;
+    link_file(&source, &link)?;
     Ok(link)
+}
+
+#[cfg(unix)]
+fn link_file(source: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, link)
+}
+
+/// A Windows symbolic link needs Developer Mode or admin rights; a hard link (same volume) does
+/// not, and is still not a copy.
+#[cfg(windows)]
+fn link_file(source: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(source, link).or_else(|_| fs::hard_link(source, link))
 }
 
 /// [`ingest_generated`] when `extra` more tracks (linked in beforehand) are expected too.

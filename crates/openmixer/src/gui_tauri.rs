@@ -1,6 +1,7 @@
 //! `--features gui-tauri`, `--ui=tauri` (trial, ADR 0009): the Tauri window over the composition the
-//! GPUI window uses (`gui.rs`). It runs only on the silent mock device: the trial never opens a sound
-//! card. `--demo-library` loads two generated tracks into decks A and B from a library in the
+//! GPUI window uses (`gui.rs`). It opens the stored output device (else the default one) as GPUI
+//! does; `--mock-device`, `--smoke` and the demo flags run on the silent mock instead, and a device
+//! that does not open falls back to the mock with a notice. `--demo-library` loads two generated tracks into decks A and B from a library in the
 //! scratch folder (`--demo-scene=NAME` also stages the scene); without a demo flag the decks are
 //! empty and no library is opened. `--smoke` exits 0 once the front end has received a snapshot
 //! packet, painted and called `ready`; with a demo library the front end first starts deck A through
@@ -12,7 +13,6 @@
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
 use om_engine::DjEngine;
-use om_ui::labels::{notice_text, Notice};
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
@@ -23,7 +23,7 @@ use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::{library_options, AppComposition};
 use openmixer::flags::DemoScene;
 use openmixer::startup::{
-    demo_user_track, ingest_demo_tracks, load_demo_deck_b, mock_output, start_output,
+    demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
 };
 use openmixer::{demo_scene, library_smoke, AppError};
 use std::ffi::OsString;
@@ -47,10 +47,20 @@ struct Frames {
 /// The flag naming the drive run's layout map; its state file sits beside it.
 const DRIVE_FLAG: &str = "--ui-drive-out";
 
-/// What the top bar shows beside the wordmark.
-struct Shown {
-    banner: Option<String>,
+/// How the window runs: the smoke check, the frame flags, the bench report's file, the drive
+/// files, and whether the frame counter shows.
+struct Window<'a> {
+    smoke: bool,
+    frames: Frames,
+    out: &'a Path,
+    drive: Option<DriveOut>,
     hud: bool,
+}
+
+/// The output choice: the silent mock or the sound card, and whether a demo is staged (no notice).
+struct Device {
+    mock: bool,
+    demo_run: bool,
 }
 
 /// What a demo run stages: the scene, and the user's file for `--demo-scene=track`.
@@ -62,12 +72,6 @@ struct Demo {
 pub fn main(args: &[String]) -> ExitCode {
     // Before any thread exists: the environment is not safe to change once threads read it.
     om_ui_tauri::prepare_environment();
-    if !args.iter().any(|a| a == "--mock-device") {
-        eprintln!(
-            "openmixer: --ui=tauri needs --mock-device (the Tauri trial never opens a sound card)"
-        );
-        return ExitCode::FAILURE;
-    }
     let smoke = args.iter().any(|a| a == "--smoke");
     let parsed = demo_of(args)
         .and_then(|demo| Ok((demo, frames_of(args, smoke)?)))
@@ -84,11 +88,18 @@ pub fn main(args: &[String]) -> ExitCode {
         &library_smoke::scratch_dir(),
     );
     let scratch = demo.as_ref().map(|_| library_smoke::scratch_dir());
-    let shown = Shown {
-        banner: banner_of(args),
+    let window = Window {
+        smoke,
+        frames,
+        out: &out,
+        drive,
         hud: hud_of(args, frames),
     };
-    let result = run_window(smoke, frames, &out, demo, scratch.as_deref(), shown, drive);
+    let device = Device {
+        mock: mock_of(args, smoke, demo.is_some()),
+        demo_run: openmixer::flags::demo_run(args),
+    };
+    let result = run_window(window, device, demo, scratch.as_deref());
     // The library closed with the control thread; the scratch folder goes with the run, unless
     // it holds the bench report.
     let keep =
@@ -99,11 +110,13 @@ pub fn main(args: &[String]) -> ExitCode {
     result
 }
 
-/// The mock-device notice, by GPUI's rule (`gui.rs`): every run here is on the mock device, and a
-/// demo run (`flags::demo_run`) shows none, since it is staged for screenshots.
-fn banner_of(args: &[String]) -> Option<String> {
-    let demo = openmixer::flags::demo_run(args);
-    (!demo).then(|| notice_text(Notice::Demo).to_owned())
+/// The silent mock for `--mock-device`, and for the runs that must never reach a sound card: the
+/// smoke check, a bench, a drive run and any demo.
+fn mock_of(args: &[String], smoke: bool, demo: bool) -> bool {
+    let bench_or_drive = args
+        .iter()
+        .any(|a| a.starts_with("--ui-bench") || a.starts_with(DRIVE_FLAG));
+    smoke || demo || bench_or_drive || args.iter().any(|a| a == "--mock-device")
 }
 
 /// The frame counter shows for whoever tunes the window: a bench run, or `--debug-panel` (the flag
@@ -192,41 +205,38 @@ fn demo_of(args: &[String]) -> Result<Option<Demo>, String> {
 }
 
 fn run_window(
-    smoke: bool,
-    frames: Frames,
-    out: &Path,
+    window: Window,
+    device: Device,
     demo: Option<Demo>,
     scratch: Option<&Path>,
-    shown: Shown,
-    drive_out: Option<DriveOut>,
 ) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
-    let Some(output) = start_mock_audio(&mut composition) else {
+    let Some((output, banner)) = start_audio(&mut composition, &device) else {
         return ExitCode::FAILURE;
     };
     let engine = Arc::clone(&composition.engine);
     let library = demo.zip(scratch).map(|(demo, root)| {
         demo_library(root, &composition.prefs.library, Arc::clone(&engine), demo)
     });
-    let round_trip = smoke && library.is_some();
+    let round_trip = window.smoke && library.is_some();
     let options = RunOptions {
-        smoke,
-        banner: shown.banner,
-        hud: shown.hud,
-        bench_seconds: frames.bench_seconds,
-        bench_out: out.to_path_buf(),
-        fps_cap: frames.fps_cap,
-        drive_out,
+        smoke: window.smoke,
+        banner,
+        hud: window.hud,
+        bench_seconds: window.frames.bench_seconds,
+        bench_out: window.out.to_path_buf(),
+        fps_cap: window.frames.fps_cap,
+        drive_out: window.drive,
     };
     let router = Arc::clone(&composition.router);
     let theme = shell_theme(&composition, engine.num_decks());
     let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
     let played = round_trip.then(|| deck_a_playing(&engine));
     output.lock().stop();
-    if result.is_ok() && frames.bench_seconds.is_some() {
-        println!("openmixer tauri bench written to {}", out.display());
+    if result.is_ok() && window.frames.bench_seconds.is_some() {
+        println!("openmixer tauri bench written to {}", window.out.display());
     }
-    report(result, smoke, played)
+    report(result, window.smoke, played)
 }
 
 /// The control round trip's verdict: the front end's `deck0.play` reached the engine.
@@ -234,15 +244,21 @@ fn deck_a_playing(engine: &DjEngine) -> bool {
     engine.snapshot().decks.first().is_some_and(|d| d.playing)
 }
 
-/// The engine on the silent mock device with the preferences applied; `None` once it said why.
-fn start_mock_audio(composition: &mut AppComposition) -> Option<SharedOutput> {
+/// The engine on the chosen output with the preferences applied, and the notice the top bar shows;
+/// `None` once it said why it could not start.
+fn start_audio(
+    composition: &mut AppComposition,
+    device: &Device,
+) -> Option<(SharedOutput, Option<String>)> {
     let Some(audio) = composition.take_audio() else {
         eprintln!("openmixer: the audio side was already taken");
         return None;
     };
-    let output = mock_output();
-    match start_output(composition, &output, audio, None) {
-        Ok(()) => Some(output),
+    let stored = composition.prefs.audio.device_state.clone();
+    let opened = open_output(device.mock, device.demo_run, &stored);
+    let started_with = opened.started_with.as_deref();
+    match start_output(composition, &opened.output, audio, started_with) {
+        Ok(()) => Some((opened.output, opened.banner)),
         Err(error) => {
             eprintln!("openmixer: could not start the audio device: {error}");
             None
@@ -334,19 +350,15 @@ mod tests {
     }
 
     #[test]
-    fn the_mock_device_notice_shows_unless_a_demo_is_staged() {
-        let notice = Some(notice_text(Notice::Demo).to_owned());
-        assert_eq!(banner_of(&args(&["--mock-device"])), notice);
-        assert_eq!(banner_of(&args(&["--mock-device", "--smoke"])), notice);
-        for demo in [
-            "--demo-library",
-            "--demo-scene=cues",
-            "--demo-map",
-            "--demo-automix",
-            "--demo-record",
-        ] {
-            assert_eq!(banner_of(&args(&["--mock-device", demo])), None, "{demo}");
-        }
+    fn the_smoke_bench_drive_and_demo_runs_never_reach_a_sound_card() {
+        let mock = |list: &[&str], smoke: bool, demo: bool| mock_of(&args(list), smoke, demo);
+        assert!(!mock(&[], false, false));
+        assert!(!mock(&["--debug-panel", "--ui-fps-cap=30"], false, false));
+        assert!(mock(&["--mock-device"], false, false));
+        assert!(mock(&["--smoke"], true, false));
+        assert!(mock(&["--demo-library"], false, true));
+        assert!(mock(&["--ui-bench=5"], false, false));
+        assert!(mock(&["--ui-drive-out=/tmp/d.json"], false, false));
     }
 
     #[test]

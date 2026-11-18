@@ -24,7 +24,7 @@ Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/fea
 - **Style of code:** one-line comments that say why; small functions (about 10 lines); one responsibility per module; engine, analysis, library and MIDI crates testable headless.
 - **Large new subsystem:** read and update `docs/DESIGN_PATTERNS.md` first.
 - **UI:** colours, sizes and fonts come from theme tokens, never literals; numbers use `font::numeral`. A UI change needs a screenshot you have looked at, judged as a DJ would. [Styling](docs/styling.md), [experience bar](docs/guidelines/experience-bar.md).
-- **Web front end (Tauri):** styles only from `--om-*` variables; control ids, ranges and defaults come from Rust (`controls`), never typed in TypeScript; rebuild `web/dist` before a cargo build that should show front-end changes; mock device only. [Details](docs/features/tauri-trial.md).
+- **Web front end (Tauri):** styles only from `--om-*` variables; control ids, ranges and defaults come from Rust (`controls`), never typed in TypeScript; rebuild `web/dist` before a cargo build that should show front-end changes; run it only with `--mock-device` (without it, it opens the sound card). [Details](docs/features/tauri-trial.md).
 - **Extensibility:** do not hardcode what a plugin could replace; no signing or allow-lists on plugins. [Details](docs/guidelines/extensibility.md).
 - **Demo flags:** a new `--demo-*` flag goes in `openmixer::flags::DEMO_FLAGS` and never writes the user's files.
 - **Never play audio;** use the mock device. Screenshots only with `import -silent` into temp dirs, at most 6 per task.

@@ -1,13 +1,16 @@
 //! Start-up steps both windows share (GPUI in the binary's `gui.rs`, Tauri in `gui_tauri.rs`): the
-//! silent mock output, starting an output on the engine once the preferences reached it, and the
+//! output (cpal, or the silent mock), starting an output on the engine once the preferences reached it, and the
 //! demo library's tracks and decks (always in the scratch folder).
 
-use crate::audio_settings::{MockBackend, OutputBackend, OutputSettings, SharedOutput};
+use crate::audio_settings::{
+    CpalBackend, MockBackend, OutputBackend, OutputSettings, SharedOutput,
+};
 use crate::composition::AppComposition;
 use crate::flags::{self, DemoScene};
 use crate::{demo_scene, library_smoke, AppError};
 use om_audio::DjEngineAudio;
 use om_engine::DjEngine;
+use om_ui::labels::{notice_text, Notice};
 use om_ui::library::{LibraryServices, TrackLoader};
 use std::path::{Path, PathBuf};
 
@@ -20,6 +23,45 @@ pub fn mock_output() -> SharedOutput {
         eprintln!("openmixer: mock device: {error}");
     }
     output
+}
+
+/// The output a window runs on, and the notice it shows (if any).
+pub struct OpenedOutput {
+    pub output: SharedOutput,
+    pub banner: Option<String>,
+    /// The stored device state the output was opened with, so `start_output` does not reopen it.
+    pub started_with: Option<String>,
+}
+
+/// The cpal output at the `stored` setup (else the default output), or the silent mock when `mock`
+/// is set or no device opens. The mock shows the demo notice unless `demo_run` (staged for
+/// screenshots); a failed device shows the no-device notice.
+pub fn open_output(mock: bool, demo_run: bool, stored: &str) -> OpenedOutput {
+    if mock {
+        let banner = (!demo_run).then(|| notice_text(Notice::Demo).to_owned());
+        return OpenedOutput {
+            output: mock_output(),
+            banner,
+            started_with: None,
+        };
+    }
+    let cpal = SharedOutput::new(OutputSettings::new(Box::new(CpalBackend)));
+    let opened = cpal.lock().start_up(stored);
+    match opened {
+        Ok(()) => OpenedOutput {
+            output: cpal,
+            banner: None,
+            started_with: (!stored.is_empty()).then(|| stored.to_owned()),
+        },
+        Err(error) => {
+            eprintln!("openmixer: no audio device ({error}); running silent on the mock device");
+            OpenedOutput {
+                output: mock_output(),
+                banner: Some(notice_text(Notice::NoDevice).to_owned()),
+                started_with: None,
+            }
+        }
+    }
 }
 
 /// Pushes the preferences into `output`'s routing and device, then starts it on `audio`.
