@@ -21,7 +21,7 @@ use om_ui_gpui::debug_panel::DeviceStatus;
 use om_ui_gpui::library::{HubLibrary, HubStems, LibraryHub};
 use om_ui_gpui::settings_view::SettingsOptions;
 use openmixer::app_targets::AudioDeviceControl;
-use openmixer::audio_settings::{CpalBackend, OutputSettings, SharedOutput};
+use openmixer::audio_settings::{OutputSettings, SharedOutput};
 use openmixer::automix_host::AppAutomixHost;
 use openmixer::automix_queue::LibraryQueue;
 use openmixer::automix_service::AutomixRunner;
@@ -31,7 +31,9 @@ use openmixer::flags::DemoScene;
 use openmixer::library_smoke::{self, TRACKS};
 use openmixer::plugins::{sync_plugin_themes, PluginsPage};
 use openmixer::record_service::AppRecordHost;
-use openmixer::startup::{ingest_demo_tracks, load_demo_deck_b, mock_output, start_output};
+use openmixer::startup::{
+    ingest_demo_tracks, load_demo_deck_b, open_output, start_output, OpenedOutput,
+};
 use openmixer::AppError;
 use std::cell::RefCell;
 use std::process::ExitCode;
@@ -145,32 +147,15 @@ pub fn main(args: &[String]) -> ExitCode {
     // The device: cpal output at the stored setup, else the default output. A failure, or
     // `--mock-device`, falls back to the silent mock with a banner.
     let stored = composition.prefs.audio.device_state.clone();
-    let (output, banner) = if mock {
-        (
-            mock_output(),
-            // A staged demo run is for screenshots: the notice would cover deck B's header.
-            (!demo_run).then(|| om_ui::labels::notice_text(om_ui::labels::Notice::Demo).to_owned()),
-        )
-    } else {
-        let cpal = SharedOutput::new(OutputSettings::new(Box::new(CpalBackend)));
-        let opened = cpal.lock().start_up(&stored);
-        match opened {
-            Ok(()) => (cpal, None),
-            Err(error) => {
-                eprintln!(
-                    "openmixer: no audio device ({error}); running silent on the mock device"
-                );
-                (
-                    mock_output(),
-                    Some(om_ui::labels::notice_text(om_ui::labels::Notice::NoDevice).to_owned()),
-                )
-            }
-        }
-    };
-    let started_with = (!mock && banner.is_none() && !stored.is_empty()).then_some(stored.as_str());
+    // A staged demo run is for screenshots: the notice would cover deck B's header.
+    let OpenedOutput {
+        output,
+        banner,
+        started_with,
+    } = open_output(mock, demo_run, &stored);
 
     // Preferences reach the output routing and the device of the output that was actually opened.
-    if let Err(error) = start_output(&mut composition, &output, audio, started_with) {
+    if let Err(error) = start_output(&mut composition, &output, audio, started_with.as_deref()) {
         eprintln!("openmixer: could not start the audio device: {error}");
         return ExitCode::FAILURE;
     }

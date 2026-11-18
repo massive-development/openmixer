@@ -5,7 +5,8 @@
 A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. It was built as a trial by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md), and [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) was accepted on 2026-11-16 by the project owner's decision: the web front end is the direction for the interface. GPUI stays the default and the only shipping window until the cut-over plan lands.
 
 - Behind the `gui-tauri` cargo feature of `openmixer` (off by default) and the `--ui=tauri` flag.
-- Runs only on the silent mock device: `--ui=tauri` without `--mock-device` exits with an error. No MIDI, plugin state or settings reach it.
+- Opens the stored output device (else the default output), as GPUI does; a device that does not open falls back to the silent mock with GPUI's no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. No MIDI, plugin state or settings page reach it yet, so the device cannot be changed from this window.
+- The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app, with no GPUI.
 - The trial's measurement (plan Task 11, steps 4 and 5) was not run before acceptance; its exit criteria are kept in the ADR as targets for the migration. The only numbers so far are tooling checks under WSL software rendering.
 
 ## Build and run
@@ -198,11 +199,26 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 - Control glyphs: five Lucide icons (ISC; `web/src/lib/icons/LICENSE-LUCIDE`), the same set the GPUI window draws from: `play`, `pause`, `refresh-cw` (Sync), `repeat` (Loop) and `flag` (a set hot cue). `icons.ts` holds each SVG's inner markup unchanged (24 px grid, 2 px stroke), taken from `gpui-kit-assets` 0.8.1 and recorded in `docs/legal/asset-provenance.csv`; `Icon.svelte` draws them in `currentColor`, hidden from assistive technology.
 - App icon: `icons/openmixer-icon.svg` (48 px and up) and `icons/openmixer-icon-small.svg` (32 px and below), the OpenMixer mark from the App Icon design comp (tile 15a) in the colours of the project website's favicon. `icons/render.sh` renders the `.png`, `.ico` and `.icns` files (librsvg, ImageMagick for the `.ico`, Python with Pillow for the `.icns`); do not edit the rasters by hand. The first `.png` in `tauri.conf.json`'s `bundle.icon` is the Linux window icon. The `.icns` has not been checked on macOS.
 
+## Installers
+
+`tools/package.sh` builds the installers for the OS it runs on, unsigned, into `target/packages/<os>/`: Linux `.deb`, `.rpm` and `.AppImage`; Windows `.msi` and setup `.exe` (from Git Bash); macOS `.app` (zipped) and `.dmg`. It runs `npm ci` and `npm run build` in `web/`, builds `openmixer` with `--release --no-default-features --features tauri-default` (plus `realtime-dbus` on Linux), so the app opens this window with no flag and carries no GPUI, then runs the Tauri CLI's `tauri bundle` (pinned in `web/package.json`) with `tauri.bundle.json` merged over `tauri.conf.json`. `mainBinaryName` there points the bundler at the workspace's `openmixer` binary; the base file keeps `bundle.active` off, so plain cargo builds bundle nothing.
+
+```bash
+tools/package.sh                    # this OS, every bundle type
+tools/package.sh --bundles deb,rpm  # some types
+tools/package.sh --docker           # Linux packages in a Debian 12 container (tools/package/Dockerfile)
+```
+
+- `--docker` keeps its own target folder (`target/docker`), cargo registry, rustup and `node_modules` (Docker volumes named `openmixer-package-*`), so the host's stay untouched, and hands the files it wrote back to the calling user. `CARGO_BUILD_JOBS` passes through.
+- macOS packages cannot be built on Linux or Windows. `.github/workflows/package.yml` runs the script on Ubuntu 22.04, Windows and macOS (Apple silicon) on demand, on a `v*` tag and on a pull request that changes the packaging, and uploads the packages as workflow artifacts.
+- The bundler rewrites `om-ui-tauri/Cargo.toml`'s `tauri` and `tauri-build` lines to `{ version = "2", features = [] }`; the file is kept in that form so a run leaves the tree clean.
+- Not signed or notarised: macOS Gatekeeper and Windows SmartScreen warn on first start.
+
 ## Flags
 
 | Flag | Values | Notes and errors |
 |---|---|---|
-| `--ui=tauri` | | Needs a build with `--features gui-tauri` (else: "--ui=tauri needs the gui-tauri feature") and `--mock-device` (else: "--ui=tauri needs --mock-device"). Ignored with `--headless`. |
+| `--ui=tauri` | | Needs a build with `--features gui-tauri` (else: "--ui=tauri needs the gui-tauri feature"). Implied by the installers' `tauri-default` feature. Ignored with `--headless`. |
 | `--ui-bench=SECONDS` | 1 to 600 | Records the lanes' drawn frames for that long after a 3 s warm-up from the first snapshot, writes the report and exits 0. The file is `OPENMIXER_BENCH_OUT` when set and not empty, else `ui-bench.json` in the scratch folder. Refused with `--smoke`, without `--ui=tauri`, or out of range ("--ui-bench needs a whole number from 1 to 600"). |
 | `--ui-fps-cap=N` | 0 to 1000, default 60 | 0 is uncapped. Needs `--ui=tauri`. |
 | `--debug-panel` | | Shows the frame counter in the top bar (`run_config().hud`); a bench run shows it too. GPUI's flag of the same name shows its device and latency panel. |

@@ -1,0 +1,86 @@
+# OpenMixer installers: `tools/package.sh` on Linux, Windows and macOS, the packages uploaded as
+# workflow artifacts. Runs on demand, on a version tag, and on a pull request that changes the
+# packaging. The packages are unsigned.
+name: Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - tools/package.sh
+      - tools/package/**
+      - crates/om-ui-tauri/tauri.conf.json
+      - crates/om-ui-tauri/tauri.bundle.json
+      - crates/om-ui-tauri/icons/**
+      - .github/workflows/package.yml
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-22.04: the oldest glibc GitHub offers, so the Linux packages run on more systems.
+        # macos-14 builds for Apple silicon.
+        os: [ubuntu-22.04, windows-2022, macos-14]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # The binary (ALSA, D-Bus, bindgen for rubberband), the Tauri window (WebKitGTK), and the
+          # bundler (rpm for the .rpm, file and xdg-utils for the AppImage).
+          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libdbus-1-dev libssl-dev \
+            libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev file xdg-utils rpm
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/om-ui-tauri/web/package-lock.json
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: package
+
+      - name: Build the packages
+        shell: bash
+        run: tools/package.sh
+
+      # Skipped under `act` (it sets ACT): its artifact server is unreachable from Docker Desktop on WSL.
+      - name: Upload the packages
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmixer-${{ runner.os }}
+          path: target/packages/
+          if-no-files-found: error

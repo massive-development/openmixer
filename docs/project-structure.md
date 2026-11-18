@@ -2,7 +2,7 @@
 
 ```
 openmixer/
-├── .github/workflows/        # rust.yml (the Rust CI and the web front end job, every PR; weekly soak) and issue-heatmap.yml
+├── .github/workflows/        # rust.yml (the Rust CI and the web front end job, every PR; weekly soak), package.yml (installers per OS) and issue-heatmap.yml
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   ├── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
 │   ├── om-ui-bridge/         # ADR 0009: snapshot packet, peaks, theme CSS, control specs and dispatch for a web front end
@@ -19,7 +19,7 @@ openmixer/
 ├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports; ui-bridge/ golden packet, meter, fader law and knob text tables
 ├── resources/                # Built-in theme JSON, generic controller maps, bundled fonts
-├── tools/                    # issue_heatmap.py, screenshots.sh, ui-bench.sh, ui-drive.py, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh
+├── tools/                    # package.sh (+ package/Dockerfile), issue_heatmap.py, screenshots.sh, ui-bench.sh, ui-drive.py, export_htdemucs.py, htdemucs_reference.py, clap_leak_check.sh
 ├── Cargo.toml                # Workspace manifest
 ├── Cargo.lock
 ├── rust-toolchain.toml       # Pinned toolchain

@@ -69,7 +69,7 @@ The nine implementation waves below are stable identifiers for the tasks in `ope
 
 ## Current Status
 
-**Status:** Works, verified headlessly on Linux: the audio engine, analysis, the library, MIDI (`midir`, mapping and feedback), loudness metering, in-process and C-ABI plugins (CLAP behind the `clap` feature, in progress), and the GPUI app on Linux. Partial: the UI (Wave 5) and stems (mock separator only). Staged screenshots of the GPUI window have been checked by eye; a live window on a real display has not. A Tauri v2 window for the decks screen (`gui-tauri` feature, mock device only) is built, and ADR 0009 accepted the web front end as the direction for the interface; GPUI stays the default until the cut-over. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7.
+**Status:** Works, verified headlessly on Linux: the audio engine, analysis, the library, MIDI (`midir`, mapping and feedback), loudness metering, in-process and C-ABI plugins (CLAP behind the `clap` feature, in progress), and the GPUI app on Linux. Partial: the UI (Wave 5) and stems (mock separator only). Staged screenshots of the GPUI window have been checked by eye; a live window on a real display has not. A Tauri v2 window for the decks screen (`gui-tauri` feature; unsigned installers via `tools/package.sh`) is built, and ADR 0009 accepted the web front end as the direction for the interface; GPUI stays the default until the cut-over. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7.
 
 **Known gaps** are tracked in one issue: [Known gaps: unverified and deferred work](https://github.com/massive-development/openmixer/issues/283).
 
