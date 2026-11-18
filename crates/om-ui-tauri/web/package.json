@@ -1,7 +1,7 @@
 {
   "name": "openmixer-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.2",
   "description": "OpenMixer web front end for the Tauri trial window (ADR 0009)",
   "license": "AGPL-3.0-only",
   "type": "module",

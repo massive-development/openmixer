@@ -72,16 +72,75 @@ appimage_signing() {
     export APPIMAGETOOL_SIGN_PASSPHRASE="${OPENMIXER_GPG_PASSPHRASE:-}"
 }
 
+# The workspace version (Cargo.toml), e.g. 0.1.0-alpha.2.
+app_version() {
+    sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1
+}
+
+# An MSI version is numeric (major.minor.patch.build), so the pre-release becomes the build number
+# in an order that keeps upgrades going forward: alpha.N is N, beta.N is 100+N, rc.N is 200+N, and
+# the final release is 999.
+msi_version() {
+    local version="$1" core pre kind n
+    core="${version%%-*}"
+    [ "$core" = "$version" ] && { echo "$core.999"; return; }
+    pre="${version#*-}"
+    kind="${pre%%.*}"
+    n="${pre##*.}"
+    case "$kind" in
+        alpha) echo "$core.$n" ;;
+        beta) echo "$core.$((100 + n))" ;;
+        rc) echo "$core.$((200 + n))" ;;
+        *) echo "package.sh: no MSI version for pre-release $pre" >&2; exit 1 ;;
+    esac
+}
+
 # Where the bundler writes, under the cargo target folder.
 bundle_dir() {
     echo "${CARGO_TARGET_DIR:-$ROOT/target}/${TARGET:+$TARGET/}release/bundle"
 }
 
-# Emptied first, so a bundle type left from an earlier run is not collected.
+# Emptied first, so a bundle type left from an earlier run is not collected. A pre-release .rpm is
+# bundled on its own: rpm refuses '-' in a version, so it carries the pre-release in its release.
 bundle() {
     rm -rf "$(bundle_dir)"
-    local args=(bundle --ci --config tauri.bundle.json)
-    [ -n "$BUNDLES" ] && args+=(--bundles "$BUNDLES")
+    local types="${BUNDLES:-$(default_bundles "$1")}"
+    local rpm_config
+    rpm_config="$(rpm_prerelease_config)"
+    if [ -n "$rpm_config" ] && [[ ",$types," == *,rpm,* ]]; then
+        types="$(echo ",$types," | sed 's/,rpm,/,/; s/^,//; s/,$//')"
+        run_bundler "$1" rpm --config "$rpm_config"
+    fi
+    [ -n "$types" ] && run_bundler "$1" "$types"
+    return 0
+}
+
+# The types `tauri bundle` makes on each OS when none are named.
+default_bundles() {
+    case "$1" in
+        linux) echo "deb,rpm,appimage" ;;
+        windows) echo "msi,nsis" ;;
+        macos) echo "app,dmg" ;;
+    esac
+}
+
+# For 0.1.0-alpha.2: version 0.1.0, release 0.alpha.2 (it sorts before the final release's 1).
+rpm_prerelease_config() {
+    local version core
+    version="$(app_version)"
+    core="${version%%-*}"
+    [ "$core" = "$version" ] && return 0
+    printf '{"version":"%s","bundle":{"linux":{"rpm":{"release":"0.%s"}}}}' "$core" "${version#*-}"
+}
+
+# `tauri bundle` for the `types` (comma separated), with any extra arguments.
+run_bundler() {
+    local os="$1" types="$2"
+    shift 2
+    local args=(bundle --ci --config tauri.bundle.json --bundles "$types" "$@")
+    if [ "$os" = windows ]; then
+        args+=(--config "{\"bundle\":{\"windows\":{\"wix\":{\"version\":\"$(msi_version "$(app_version)")\"}}}}")
+    fi
     [ -n "$TARGET" ] && args+=(--target "$TARGET")
     (cd "$ROOT/crates/om-ui-tauri" && "$WEB/node_modules/.bin/tauri" "${args[@]}")
 }
@@ -135,7 +194,7 @@ main() {
     build_web
     build_binary "$os"
     appimage_signing "$os"
-    bundle
+    bundle "$os"
     collect "$os"
 }
 
