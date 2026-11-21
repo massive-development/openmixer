@@ -222,6 +222,12 @@ tools/package.sh --docker           # Linux packages in a Debian 12 container (t
 - The bundler rewrites `om-ui-tauri/Cargo.toml`'s `tauri` and `tauri-build` lines to `{ version = "2", features = [] }`; the file is kept in that form so a run leaves the tree clean.
 - Every run writes `SHA256SUMS-<os>.txt` beside the packages (`tools/package/checksums.sh`).
 
+### Versions and releases
+
+The packages take the workspace version (`Cargo.toml`, also in `web/package.json`). A pre-release such as `0.1.0-alpha.2` is rewritten where a format refuses it: the `.msi` gets a numeric `major.minor.patch.build` (`alpha.N` is build N, `beta.N` 100+N, `rc.N` 200+N, the final release 999, so upgrades move forward), and the `.rpm` gets version `0.1.0` with release `0.alpha.2`, bundled in its own `tauri bundle` run. The `.deb` keeps `0.1.0-alpha.2`.
+
+To release: bump the version in a pull request that also adds `docs/releases/v<version>.md` (the notes), merge it, and push the tag `v<version>` on `main`. The tag runs `package.yml`, whose `release` job collects every OS's packages, checksums and signatures into a **draft** GitHub release (a pre-release when the tag has a `-`), with the notes file followed by GitHub's list of merged pull requests. Try the installers on real machines, then publish the draft by hand.
+
 ### Signing
 
 Each step runs only when its keys are present, so a fork, a pull request or a machine without them builds the same packages unsigned.

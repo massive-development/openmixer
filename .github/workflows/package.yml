@@ -7,7 +7,9 @@
 #   APPLE_API_KEY, APPLE_API_KEY_P8                  Developer ID signing and notarisation
 #   SIGNPATH_API_TOKEN; vars SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
 #   SIGNPATH_SIGNING_POLICY_SLUG                     Windows installers signed by SignPath
-# Outside pull requests every package also gets a GitHub build provenance attestation.
+# Outside pull requests every package also gets a GitHub build provenance attestation. On a `v*`
+# tag, the `release` job puts every OS's packages into a draft GitHub release, for a person to
+# check and publish.
 name: Package
 
 on:
@@ -173,3 +175,42 @@ jobs:
           name: openmixer-${{ runner.os }}
           path: target/packages/
           if-no-files-found: error
+
+  # A draft, never published here: the installers are tried on real machines first. The notes are
+  # docs/releases/<tag>.md, followed by GitHub's generated list of merged pull requests.
+  release:
+    name: draft release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download the packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: openmixer-*
+          path: dist
+
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The signed installers only: the unsigned Windows upload is SignPath's input.
+          mapfile -t files < <(find dist/openmixer-Linux dist/openmixer-Windows dist/openmixer-macOS \
+            -type f 2>/dev/null | sort)
+          [ ${#files[@]} -gt 0 ] || { echo "no packages downloaded"; exit 1; }
+          notes="docs/releases/$TAG.md"
+          [ -f "$notes" ] || { echo "missing $notes"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+            exit 0
+          fi
+          pre=(); [[ "$TAG" == *-* ]] && pre=(--prerelease)
+          gh release create "$TAG" "${files[@]}" --draft "${pre[@]}" --verify-tag \
+            --title "OpenMixer ${TAG#v}" --notes-file "$notes" --generate-notes

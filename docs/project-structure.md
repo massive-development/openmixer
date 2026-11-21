@@ -12,6 +12,7 @@ openmixer/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── controllers/          # Controller map notes
 │   ├── features/             # Feature notes: automix, mapping editor, recording, sampler, stems, web front end
+│   ├── releases/             # Release notes, one file per tag (v<version>.md), read by package.yml
 │   ├── guidelines/           # Build, control ids, experience bar, extensibility, pull requests, Rust
 │   ├── legal/                # Legal documentation and the asset provenance record
 │   ├── screenshots/          # Staged window screenshots and REVIEW.md
