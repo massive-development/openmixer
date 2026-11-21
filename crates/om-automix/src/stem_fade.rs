@@ -1,4 +1,4 @@
-//! Stem ramps for transitions (Todo 39, Wave 7 S8).
+//! Stem ramps for transitions.
 //!
 //! A [`StemFade`] moves one stem parameter of one deck from `from` to `to` between `start_beat` and
 //! `start_beat + length_beats`. A [`StemFadePlan`] is a set of fades. Values come from beats, so a

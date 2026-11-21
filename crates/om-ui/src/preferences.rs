@@ -67,7 +67,7 @@ impl PluginPrefs {
     }
 }
 
-/// Mix recording settings (Wave 8). The `format` is one of [`RECORD_FORMATS`].
+/// Mix recording settings. The `format` is one of [`RECORD_FORMATS`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordPrefs {
     /// Empty = `<music dir or home>/OpenMixer Recordings`.
@@ -96,7 +96,7 @@ pub fn valid_record_format(s: &str) -> Option<&'static str> {
     RECORD_FORMATS.iter().copied().find(|f| *f == s)
 }
 
-/// Automix settings (Wave 7). Read when the window starts and when the Automix page changes them.
+/// Automix settings. Read when the window starts and when the Automix page changes them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutomixPrefs {
     /// Automix runs. Off by default: nothing is ever mixed without the user turning it on.
@@ -212,7 +212,7 @@ impl Default for LibraryPrefs {
     }
 }
 
-/// Stem separation (Wave 7). Read when the stem service starts.
+/// Stem separation. Read when the stem service starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StemsPrefs {
     /// Cap for the stem cache, in GB (1..=1000). Least recently used stems are removed above it.
