@@ -164,6 +164,45 @@ jobs:
       - name: cargo test (Tauri window under Xvfb)
         run: xvfb-run -a cargo test -p openmixer --features gui-tauri
 
+  # The GPUI window opens and renders frames on a software Vulkan driver (lavapipe) under Xvfb:
+  # `--smoke` exits 0 after a fixed number of frames and a library ingest, on the silent mock device.
+  # `cargo test` never opens this window, so without this job a window that fails to start would pass CI.
+  gpui-smoke:
+    name: gpui window smoke (linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
+            libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev xvfb mesa-vulkan-drivers vulkan-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gpui-smoke
+
+      - name: Vulkan driver
+        run: vulkaninfo --summary
+
+      - name: openmixer --mock-device --smoke (GPUI window under Xvfb)
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" cargo run -p openmixer -- --mock-device --smoke
+
   deny:
     name: cargo deny (licences and bans)
     runs-on: ubuntu-24.04
