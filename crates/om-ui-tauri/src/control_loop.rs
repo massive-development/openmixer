@@ -71,10 +71,7 @@ impl ControlLoop {
     fn step(&self, panel: Option<&mut LibraryPanel>) -> (Vec<LoadFailed>, Vec<DeckChanged>) {
         let Some(panel) = panel else {
             self.library.discard();
-            return (
-                self.decks.run_loads(None),
-                self.decks.tick(&self.engine),
-            );
+            return (self.decks.run_loads(None), self.decks.tick(&self.engine));
         };
         self.library.run(panel);
         let failures = self.run_loads(panel);

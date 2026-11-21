@@ -12,6 +12,7 @@ mod controls;
 mod deck_info;
 mod decks;
 mod drive;
+mod header;
 mod library;
 mod library_commands;
 mod pacer;
@@ -26,13 +27,17 @@ pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto, PEAKS_HEADER_LEN};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup, LoadFailed};
-pub use library::{
-    AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
-    MAX_VIEW_ROWS,
-};
 pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
+};
+pub use header::{
+    automix_dto, install_header, next_length, record_dto, AutomixAction, AutomixBarDto, HeaderHost,
+    HeaderParts, HeaderState, RecordBarDto,
+};
+pub use library::{
+    AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
+    MAX_VIEW_ROWS,
 };
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
@@ -285,6 +290,7 @@ fn build_app(
         .manage(engine)
         .manage(router)
         .manage(state)
+        .manage(header::HeaderSlot(header::take_installed().map(|p| p.host)))
         .invoke_handler(tauri::generate_handler![
             commands::theme_css,
             commands::run_config,
@@ -318,6 +324,11 @@ fn build_app(
             library_commands::library_drop_playlist,
             library_commands::library_drop_on_row,
             library_commands::library_copy,
+            header::header_state,
+            header::automix_enable,
+            header::automix_length,
+            header::automix_press,
+            header::record_toggle,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)

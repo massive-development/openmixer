@@ -381,9 +381,6 @@ mod tests {
                 reason: "no library is open".to_owned(),
             }]
         );
-        assert!(
-            decks.run_loads(None).is_empty(),
-            "the queue drained"
-        );
+        assert!(decks.run_loads(None).is_empty(), "the queue drained");
     }
 }

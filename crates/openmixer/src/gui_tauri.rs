@@ -12,14 +12,18 @@
 //! (for `tools/ui-drive.py`) has the front end write its controls' rectangles to `<path>` and the
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
+use crate::gui_tauri_header::TauriHeader;
+use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
 use om_ui_tauri::{
-    DeckLibrary, DriveOut, LibrarySetup, RunOptions, ShellError, ShellTheme, DEFAULT_FPS_CAP,
+    install_header, DeckLibrary, DriveOut, HeaderParts, LibrarySetup, RunOptions, ShellError,
+    ShellTheme, DEFAULT_FPS_CAP,
 };
 use openmixer::audio_settings::SharedOutput;
+use openmixer::automix_settings::apply_automix_prefs;
 use openmixer::composition::{library_options, AppComposition};
 use openmixer::flags::DemoScene;
 use openmixer::startup::{
@@ -241,6 +245,9 @@ fn run_window(
         drive_out: window.drive,
     };
     let router = Arc::clone(&composition.router);
+    install_header(HeaderParts {
+        host: Arc::new(header_host(&composition, &device, &router)),
+    });
     let theme = shell_theme(&composition, engine.num_decks());
     let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
     let played = round_trip.then(|| deck_a_playing(&engine));
@@ -249,6 +256,24 @@ fn run_window(
         println!("openmixer tauri bench written to {}", window.out.display());
     }
     report(result, window.smoke, played)
+}
+
+/// The header's host over the composition's automix and recorder. The stored Automix settings are
+/// pushed into the service first, as every start does; a demo run saves nothing.
+fn header_host(
+    composition: &AppComposition,
+    device: &Device,
+    router: &Arc<ParameterRouter>,
+) -> TauriHeader {
+    apply_automix_prefs(&composition.automix, &composition.prefs.automix, None);
+    TauriHeader::new(
+        Arc::clone(&composition.engine),
+        Arc::clone(router),
+        Arc::clone(&composition.automix),
+        Arc::clone(&composition.record),
+        composition.prefs.automix.clone(),
+        (!device.demo_run).then(om_ui::preferences::default_file),
+    )
 }
 
 /// The control round trip's verdict: the front end's `deck0.play` reached the engine.

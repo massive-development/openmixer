@@ -43,10 +43,12 @@ impl LibraryQueue {
             // The caller may have given up; nothing else wants the answer.
             let _ = reply.send(work(panel));
         }));
-        answer.recv_timeout(CALL_TIMEOUT).map_err(|error| match error {
-            RecvTimeoutError::Timeout => "the library is busy".to_owned(),
-            RecvTimeoutError::Disconnected => "no library is open".to_owned(),
-        })
+        answer
+            .recv_timeout(CALL_TIMEOUT)
+            .map_err(|error| match error {
+                RecvTimeoutError::Timeout => "the library is busy".to_owned(),
+                RecvTimeoutError::Disconnected => "no library is open".to_owned(),
+            })
     }
 
     /// Runs what the commands queued (the control thread, before its tick).
@@ -178,7 +180,9 @@ pub(crate) fn view(panel: &mut LibraryPanel, first: usize, count: usize) -> Libr
     let shown = shown_columns(stems_available);
     let row_count = panel.row_count();
     let first = first.min(row_count);
-    let last = first.saturating_add(count.min(MAX_VIEW_ROWS)).min(row_count);
+    let last = first
+        .saturating_add(count.min(MAX_VIEW_ROWS))
+        .min(row_count);
     let prep = prep_entries(panel);
     let rows = (first..last)
         .filter_map(|row| panel.row(row))
