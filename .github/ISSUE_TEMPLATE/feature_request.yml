@@ -1,0 +1,20 @@
+name: Feature request
+description: Something a DJ needs that OpenMixer does not do yet.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to do
+      description: The moment in a set or in preparation where this matters. Describe the need, not another program's screen.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: How you handle it now, in OpenMixer or elsewhere.

@@ -1,65 +1,36 @@
 # Architecture Decision Records
 
-This index contains all Architecture Decision Records (ADRs) for the OpenMixer project.
+| ADR | Decision | Status |
+|---|---|---|
+| [0001](0001-clean-room-doctrine.md) | Clean-room doctrine: features are free to implement, expression (names, logos, artwork) is not copied, no Mixxx code | Accepted |
+| [0002](0002-stack-juce-agpl.md) | Technology stack: JUCE with AGPLv3 | Superseded by 0004 |
+| [0003](0003-pure-agpl-no-cla.md) | Pure AGPLv3, no contributor licence agreement, DCO sign-off | Accepted |
+| [0004](0004-stack-rust-gpui.md) | Technology stack: Rust with GPUI, cpal, symphonia, Rubber Band, midir, rusqlite | Accepted; UI choice superseded in direction by 0009 |
+| [0005](0005-experience-first-product-bar.md) | Experience-first product bar: `docs/PRODUCT.md` is the bar, and interface work is judged by looking at it | Accepted |
+| [0006](0006-controller-map-provenance.md) | Controller maps are written clean-room from the MIDI spec and the maintainer's own hardware traces | Accepted |
+| [0007](0007-clap-hosting-with-clack.md) | CLAP plugin hosting with clack, behind the `clap` feature | Accepted |
+| [0008](0008-machined-faceplate-supersedes-e1.md) | The Machined Faceplate look supersedes E1 | Accepted |
+| [0009](0009-web-front-end-tauri-trial.md) | Move the interface to a web front end (Tauri v2 and Svelte); GPUI stays the default until the cut-over | Accepted |
 
-## ADR Index
+## Writing an ADR
 
-| ID | Title | Status |
-|----|-------|--------|
-| 0001 | Clean-Room Doctrine | Accepted |
-| 0002 | Technology Stack - JUCE with AGPLv3 | Superseded by ADR 0004 |
-| 0003 | Pure AGPLv3 with No Contributor CLA | Accepted |
-| 0004 | Technology Stack - Rust with GPUI | Accepted (superseded in part, see the notes in the ADR; UI choice superseded in direction by ADR 0009) |
-| 0005 | Experience-first product bar | Accepted |
-| 0006 | Controller map provenance | Accepted |
-| 0007 | CLAP plugin hosting with clack | Accepted |
-| 0008 | The Machined Faceplate supersedes E1 on look | Accepted |
-| 0009 | Move the interface to a web front end (Tauri v2) | Accepted (owner decision; exit criteria not measured) |
-
-## ADR Templates
-
-When creating new ADRs, use this template:
+Add `docs/adr/NNNN-title.md`, add a row above, and use these sections:
 
 ```markdown
-# ADR NNNNN: Title
+# ADR NNNN: Title
 
 ## Status
-
-Proposed | Accepted | Rejected | Superseded
+Proposed | Accepted | Rejected | Superseded by NNNN
 
 ## Context
-
-Describe the context and problem that prompted this decision.
+The problem that prompted the decision.
 
 ## Decision
-
-Describe the decision that was made.
+What was decided.
 
 ## Consequences
-
-Describe the consequences of this decision, both positive and negative.
+What follows from it, good and bad.
 
 ## References
-
-Links to relevant documents, discussions, or resources.
+Related documents, issues and discussions.
 ```
-
-## Decision Categories
-
-- **Legal** - Licensing, clean-room doctrine, compliance
-- **Technology** - Frameworks, libraries, tooling
-- **Architecture** - System design, patterns
-- **Process** - Development workflows, testing
-
-## History
-
-- 2026-10-13 - ADRs 0001-0003 created
-- 2026-10-18 - ADR 0004 created; ADR 0002 superseded
-- 2026-10-21 - ADR 0005 created
-- 2026-10-27 - ADR 0004 marked superseded in part (plugins, stems, MIDI backend, CI scope)
-- 2026-10-28 - ADR 0006 created
-- 2026-11-06 - ADR 0007 proposed
-- 2026-11-07 - ADR 0007 accepted
-- 2026-11-08 - ADR 0008 accepted (Machined Faceplate supersedes E1)
-- 2026-11-15 - ADR 0009 proposed (trial a Tauri v2 front end beside GPUI)
-- 2026-11-16 - ADR 0009 accepted by owner decision (exit criteria not measured); ADR 0004's UI choice superseded in direction

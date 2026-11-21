@@ -1,6 +1,6 @@
 # Design Patterns in Use
 
-Registry for agents and contributors. Check here before starting a large implementation; add an entry when you introduce or adopt a pattern.
+The design patterns this codebase uses. Check here before starting a large implementation; add an entry when you introduce or adopt a pattern.
 
 Entries describe the Rust design. Entries marked **(planned)** were written as design before the Rust code existed, and the marker may lag the code (check the crate); **(deferred)** patterns wait for later work. Idioms that replace common object-oriented patterns are listed under "Idioms and their Rust equivalents".
 

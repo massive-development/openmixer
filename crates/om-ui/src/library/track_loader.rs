@@ -21,7 +21,9 @@ use om_core::{Command, CommandSink, StemSetRef};
 use om_engine::deck::STEM_FILES;
 use om_engine::grid::BeatGrid;
 use om_engine::DjEngine;
-use om_library::{Library, LibraryError, PrepEntry, PrepStatus, TrackRecord};
+use om_library::{
+    Ingestor, Library, LibraryError, MetadataReaderRegistry, PrepEntry, PrepStatus, TrackRecord,
+};
 
 use super::cue_saver::{CueSaver, Cues};
 use super::play_tracker::PlayTracker;
@@ -339,6 +341,32 @@ impl TrackLoader {
             Some(track) => self.load_track(engine, services, deck, &track, force),
             None => self.load_plain(engine, services, deck, path),
         }
+    }
+
+    /// Loads the audio file at `path` into `deck` as a library track: a file the library does not
+    /// hold yet is added first, so it is analysed (grid, waveform, key) like any other and keeps
+    /// its cues. `force` and the failure cases are as in [`Self::load_track`]; a file the library
+    /// cannot read fails with [`LoadError::Library`] and leaves the deck alone.
+    pub fn load_file(
+        &mut self,
+        engine: &DjEngine,
+        services: &mut LibraryServices,
+        deck: usize,
+        path: &Path,
+        force: bool,
+    ) -> Result<(), LoadError> {
+        if deck >= self.slots.len() {
+            return Err(LoadError::NoSuchDeck);
+        }
+        if !force && engine.deck(deck).is_playing() {
+            return Err(LoadError::DeckPlaying);
+        }
+        if !path.is_file() {
+            return Err(LoadError::FileMissing);
+        }
+        let readers = MetadataReaderRegistry::with_defaults();
+        let stored = Ingestor::new(services.library(), &readers).ingest_one(path)?;
+        self.load_path(engine, services, deck, &stored, force)
     }
 
     /// Loads a file that is not in the library: the deck gets the audio and nothing else.

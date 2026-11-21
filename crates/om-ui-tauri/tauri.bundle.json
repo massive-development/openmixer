@@ -10,7 +10,7 @@
     "homepage": "https://github.com/massive-development/openmixer",
     "category": "Music",
     "shortDescription": "Open DJ software",
-    "longDescription": "OpenMixer is open, original DJ software: decks, mixer, effects, sync, sampler, stems and a music library.",
+    "longDescription": "OpenMixer DJ is open, original DJ software: decks, mixer, effects, sync, sampler, stems and a music library.",
     "linux": {
       "deb": {
         "depends": [

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { StripInk } from '../ipc';
-import { BYTES_PER_POINT, hexRgb, laneInk, levelRows, packRows } from './gl';
+import { BYTES_PER_POINT, CONTEXT_OPTIONS, WaveGl, hexRgb, laneInk, levelRows, packRows } from './gl';
 import { TEXTURE_WIDTH } from './shader';
 
 const ink: StripInk = {
@@ -70,4 +70,23 @@ test('packRows places each level at its row and refuses bytes of another layout'
   expect(Array.from(out?.subarray(second, second + 4) ?? [])).toEqual([9, 10, 11, 12]);
   expect(packRows(levels, bytes.subarray(0, 11), rows, total)).toBeNull();
   expect(packRows(levels, new Uint8Array(16), rows, total)).toBeNull();
+});
+
+test('the lanes keep their last frame while no lane moves', () => {
+  let asked: unknown = null;
+  const canvas = {
+    getContext: (kind: string, options: unknown) => {
+      asked = { kind, options };
+      return null;
+    },
+  } as unknown as HTMLCanvasElement;
+  const error = console.error;
+  console.error = () => {};
+  try {
+    expect(WaveGl.create(canvas)).toBeNull();
+  } finally {
+    console.error = error;
+  }
+  expect(asked).toEqual({ kind: 'webgl2', options: CONTEXT_OPTIONS });
+  expect(CONTEXT_OPTIONS.preserveDrawingBuffer).toBe(true);
 });

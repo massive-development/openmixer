@@ -181,6 +181,16 @@ mod tests {
         fn track_info(&self, _: usize) -> TrackInfo {
             TrackInfo::default()
         }
+
+        fn load_file(
+            &mut self,
+            _: &DjEngine,
+            _: &mut om_ui::library::LibraryServices,
+            _: usize,
+            _: &std::path::Path,
+        ) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     #[test]

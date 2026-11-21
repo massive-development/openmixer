@@ -3,6 +3,7 @@
 ```
 openmixer/
 ├── .github/workflows/        # rust.yml (the Rust CI and the web front end job, every PR; weekly soak), package.yml (installers per OS) and issue-heatmap.yml
+├── .github/ISSUE_TEMPLATE/    # bug and feature forms; pull_request_template.md beside it
 ├── crates/                   # Cargo workspace members (om-core ... om-stems, om-plugins, om-ui, openmixer)
 │   ├── om-ui-gpui/           # GPUI window (the openmixer `gui` feature, on by default)
 │   ├── om-ui-bridge/         # ADR 0009: snapshot packet, peaks, theme CSS, control specs and dispatch for a web front end
@@ -12,10 +13,9 @@ openmixer/
 │   ├── controllers/          # Controller map notes
 │   ├── features/             # Feature notes: automix, mapping editor, recording, sampler, stems, web front end
 │   ├── releases/             # Release notes, one file per tag (v<version>.md), read by package.yml
-│   ├── guidelines/           # Build, control ids, experience bar, extensibility, knowledge reuse, pull requests, Rust
+│   ├── guidelines/           # Build, control ids, experience bar, extensibility, pull requests, Rust
 │   ├── legal/                # Legal documentation and the asset provenance record
 │   ├── screenshots/          # Staged window screenshots and REVIEW.md
-│   ├── superpowers/plans/    # Implementation plans (the Tauri front-end slice)
 │   └── testing/              # Hardware checklist (after the platform refresh)
 ├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports; ui-bridge/ golden packet, meter, fader law and knob text tables

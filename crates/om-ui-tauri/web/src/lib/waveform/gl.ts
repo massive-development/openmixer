@@ -119,6 +119,18 @@ export function packRows(levels: readonly LevelSize[], bytes: Uint8Array, rows: 
   return out;
 }
 
+/**
+ * The lanes' context. The canvas is drawn only when a lane moves, so a stopped deck's lane must
+ * keep its last frame: WebKitGTK re-composites the canvas on any page change and, with a cleared
+ * drawing buffer, showed a stopped deck's lane blank once another lane had been drawn.
+ */
+export const CONTEXT_OPTIONS: WebGLContextAttributes = {
+  antialias: false,
+  alpha: false,
+  depth: false,
+  preserveDrawingBuffer: true,
+};
+
 /** The WebGL2 side of the lanes: one program, one quad, one peak texture per deck. */
 export class WaveGl {
   private readonly gl: WebGL2RenderingContext;
@@ -135,7 +147,7 @@ export class WaveGl {
 
   /** The lanes' GL over `canvas`; null (and logged) when WebGL2 or the shader is unavailable. */
   static create(canvas: HTMLCanvasElement): WaveGl | null {
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false });
+    const gl = canvas.getContext('webgl2', CONTEXT_OPTIONS);
     if (!gl) {
       console.error('openmixer: no WebGL2 for the waveform');
       return null;

@@ -28,7 +28,7 @@ Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/fea
 - **Extensibility:** do not hardcode what a plugin could replace; no signing or allow-lists on plugins. [Details](docs/guidelines/extensibility.md).
 - **Demo flags:** a new `--demo-*` flag goes in `openmixer::flags::DEMO_FLAGS` and never writes the user's files.
 - **Never play audio;** use the mock device. Screenshots only with `import -silent` into temp dirs, at most 6 per task.
-- **Knowledge first, read narrowly:** check `graphify-out/`, `openmixer-workbench/docs/PROGRESS.md` and `docs/DESIGN_PATTERNS.md` before searching; read line ranges, not whole files. [Details](docs/guidelines/knowledge-reuse.md).
+- **Knowledge first, read narrowly:** check `graphify-out/`, `openmixer-workbench/docs/PROGRESS.md` and `docs/DESIGN_PATTERNS.md` before searching; read line ranges, not whole files.
 
 ## Build and test
 
@@ -46,4 +46,4 @@ cargo run -p openmixer -- --headless --smoke
 
 ## Decisions and references
 
-ADR summaries: [docs/adr/SUMMARY.md](docs/adr/SUMMARY.md). Product bar: `docs/PRODUCT.md`. Crate and doc links: [docs/references.md](docs/references.md). Crates adopted in the platform refresh: [docs/dependencies.md](docs/dependencies.md).
+ADR index: [docs/adr/INDEX.md](docs/adr/INDEX.md). Product bar: `docs/PRODUCT.md`. Crate and doc links: [docs/references.md](docs/references.md). Crates adopted in the platform refresh: [docs/dependencies.md](docs/dependencies.md).

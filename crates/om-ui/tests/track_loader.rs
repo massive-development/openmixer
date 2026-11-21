@@ -478,6 +478,67 @@ fn load_by_path_refuses_a_playing_deck_unless_forced() {
 }
 
 #[test]
+fn a_new_file_loaded_as_a_file_joins_the_library_and_gets_a_waveform() {
+    let mut rig = LoaderRig::new();
+    let loose = rig.dir.path().join("dropped.wav");
+    write_wav(&loose, 1.0, 330.0);
+    rig.loader
+        .load_file(&rig.engine, &mut rig.services, 0, &loose, false)
+        .expect("a new file loads");
+    assert!(rig.engine.deck(0).is_loaded());
+    let track = rig
+        .loader
+        .loaded_track(0)
+        .expect("the file is a library track now");
+    let stored = rig
+        .services
+        .library()
+        .tracks()
+        .find_by_path(&track.path)
+        .unwrap();
+    assert_eq!(stored.map(|t| t.id), Some(track.id));
+    assert!(rig.wait_for_waveform(0), "the new track is analysed");
+}
+
+#[test]
+fn a_known_file_loaded_as_a_file_keeps_its_track() {
+    let mut rig = LoaderRig::new();
+    let id = rig.add_file("known.wav", "8A", true);
+    let path = rig.dir.path().join("known.wav");
+    rig.loader
+        .load_file(&rig.engine, &mut rig.services, 0, &path, false)
+        .expect("loads");
+    assert_eq!(rig.loader.loaded_track(0).map(|t| t.id), Some(id));
+}
+
+#[test]
+fn load_file_refuses_a_playing_deck_and_files_it_cannot_read() {
+    let mut rig = LoaderRig::new();
+    let first = rig.add_file("first.wav", "8A", true);
+    rig.load(0, first).expect("loads");
+    rig.engine.deck(0).play();
+    let loose = rig.dir.path().join("loose.wav");
+    write_wav(&loose, 1.0, 330.0);
+    let err = rig
+        .loader
+        .load_file(&rig.engine, &mut rig.services, 0, &loose, false)
+        .expect_err("a playing deck refuses");
+    assert_eq!(err.to_string(), "deck is playing");
+
+    let text = rig.dir.path().join("notes.txt");
+    std::fs::write(&text, "not audio").unwrap();
+    let err = rig
+        .loader
+        .load_file(&rig.engine, &mut rig.services, 1, &text, false)
+        .expect_err("not audio");
+    assert!(
+        err.to_string().contains("not a supported audio file"),
+        "{err}"
+    );
+    assert!(!rig.engine.deck(1).is_loaded());
+}
+
+#[test]
 fn load_by_path_reports_missing_files_and_bad_decks() {
     let mut rig = LoaderRig::new();
     let missing = rig.dir.path().join("nope.wav");
