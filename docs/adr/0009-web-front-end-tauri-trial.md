@@ -4,7 +4,7 @@
 
 Accepted (2026-11-16)
 
-Amended 2026-11-21: **GPUI removed (2026-11-21).** The window is Tauri only: `om-ui-gpui` and the binary's `gui.rs` were deleted ahead of the porting plans above, by the owner's decision to cut the bloat. The last commit that still has them is `117ea60`; read old code with `git show 117ea60:crates/om-ui-gpui/<path>`. The GPUI-free glue moved to `om-ui` (`library::hub`) and `openmixer::wiring`. Features the Tauri window does not have yet (library, stems, Automix, sampler, recording, MIDI and mapping pages, plugins, media keys) are ported from that code.
+Amended 2026-11-21: **GPUI removed (2026-11-21).** The window is Tauri only: `om-ui-gpui` and the binary's `gui.rs` were deleted ahead of the porting plans above, by the owner's decision to cut the bloat. The last commit that still has them is `117ea60`; read old code with `git show 117ea60:crates/om-ui-gpui/<path>`. The GPUI-free glue moved to `om-ui` (`library::hub`) and `openmixer::wiring`. Features the Tauri window does not have yet (library, stems, Automix, sampler, recording, media keys) are ported from that code.
 
 Accepted by the project owner's decision after the decks slice was built and reviewed. The exit criteria were not measured; they remain below as targets for the migration, not as a gate.
 
@@ -104,8 +104,8 @@ What the trial window does not yet match or prove, so the measurements are read 
 - **The beat grid on the generated demo tracks sits about half a beat off the kicks.** It is the analysed grid, the same data GPUI draws; it has not been checked against the GPUI window.
 - **Pointer and keyboard input are driven by injected X events, not by hand on Windows.** `tools/ui-drive.py` (feature page, "Driving the window") drives every slice interaction with XTest under WSLg and checks it against the engine: knob and fader drags (Shift fine drags, detent pull, double-click reset), pad, loop, Play, Cue and Sync clicks, overview seek, lane scrub, wheel zoom, the slider and lane keys and Space. Under WSLg each key is given the X focus in the same batch as its events, because the window manager withholds the focus from a window whose Windows twin is not active. What it does not read: tooltips and visual state (thumb place, lit buttons, focus rings), only the engine's values. No screen reader has been run against the window.
 - **Text at 125% was simulated,** by scaling the type tokens; WebKitGTK's own text zoom and WebView2's text scaling have not been tried.
-- **No device choice.** The window opens the stored or default output device (amendment of 2026-11-17), but has no MIDI, no plugin state and no settings page, so the device cannot be changed from it.
-- **The mock-device notice points at Settings,** which the web window does not have yet: it shows GPUI's text for `Notice::Demo` ("Choose an output in Settings."), and `om_ui::labels` has no notice that says the same without it (`Notice::NoDevice` is the failed-device notice).
+- **Device choice (partly closed).** The window opens the stored or default output device (amendment of 2026-11-17) and now has a Settings overlay whose Audio page changes the device, rate, buffer, master and cue output. Its MIDI, Mapping and Plugins pages follow; it has no other settings page yet.
+- **The mock-device notice points at Settings,** which the web window now has (its Audio page only): it shows GPUI's text for `Notice::Demo` ("Choose an output in Settings."), and `om_ui::labels` has no notice that says the same without it (`Notice::NoDevice` is the failed-device notice).
 
 ## References
 

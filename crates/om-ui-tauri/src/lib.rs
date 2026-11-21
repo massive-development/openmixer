@@ -11,8 +11,11 @@ mod control_loop;
 mod controls;
 mod deck_info;
 mod decks;
+mod devices;
 mod drive;
 mod pacer;
+mod plugin_window;
+mod settings;
 mod smoke;
 mod stream;
 mod stream_slot;
@@ -24,10 +27,16 @@ pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto, PEAKS_HEADER_LEN};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup, LoadFailed};
+pub use devices::{
+    Choice, ClapSection, DevicesHost, MappingChange, MappingConflict, MappingFilter, MappingForm,
+    MappingPage, MappingRow, MidiChange, MidiPage, Notice, PluginParam, PluginRow, PluginsChange,
+    PluginsPage, View,
+};
 pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
 };
+pub use settings::{AudioChange, AudioPage, SettingsHost};
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
 pub use strip_ink::{strip_ink_dto, StripInkDto};
@@ -130,6 +139,7 @@ pub fn run(
     router: Arc<ParameterRouter>,
     theme: ShellTheme,
     library: Option<LibrarySetup>,
+    settings: Option<Box<dyn SettingsHost>>,
     options: RunOptions,
 ) -> Result<(), ShellError> {
     let shared = Shared::new(&engine);
@@ -137,6 +147,7 @@ pub fn run(
     let smoke_play = options.smoke && library.is_some();
     let (bench, bench_wait) = bench_run(&options);
     let (state, ready_wait) = shared.shell_state(theme, &options, smoke_play, bench.clone());
+    settings::install(settings);
     let app = build_app(Arc::clone(&engine), router, state)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
@@ -147,6 +158,7 @@ pub fn run(
     let drive_state = options.drive_out.as_ref().map(|d| d.state.clone());
     let control = shared.spawn_control(&app, engine, library, drive_state)?;
     let code = app.run_return(|_, _| {});
+    settings::uninstall();
     shared.shut_down(control);
     bench_outcome(bench.as_deref())?;
     smoke::outcome(options.smoke && !shared.ready.load(Ordering::Acquire), code)
@@ -289,6 +301,15 @@ fn build_app(
             commands::deck_info,
             commands::load_file,
             commands::ui_layout,
+            commands::audio_settings,
+            commands::audio_change,
+            commands::midi_page,
+            commands::midi_change,
+            commands::mapping_page,
+            commands::mapping_change,
+            commands::plugins_page,
+            commands::plugins_change,
+            commands::open_plugin_window,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)
