@@ -18,6 +18,8 @@ use std::sync::{Arc, Mutex};
 pub struct DeckLibrary {
     pub services: LibraryServices,
     pub loader: TrackLoader,
+    /// Separates tracks into stems (the model, the cache); `None` when the app has none.
+    pub stems: Option<Box<dyn om_ui::stems::StemHost>>,
 }
 
 /// Builds the [`DeckLibrary`] on the control thread, where it then lives.
@@ -39,6 +41,23 @@ pub(crate) trait DeckSource: Send {
         deck: usize,
         path: &Path,
     ) -> Result<(), String>;
+    /// The 'Load stems' / 'Stems off' action; true when the deck now plays from stems.
+    fn toggle_stems(
+        &mut self,
+        _engine: &DjEngine,
+        _services: &LibraryServices,
+        _deck: usize,
+    ) -> Result<bool, String> {
+        Err("stems are not available".to_owned())
+    }
+    /// Why the stems of `deck` did not load with its last track.
+    fn stem_note(&self, _deck: usize) -> Option<String> {
+        None
+    }
+    /// Whether the deck's track has a complete cached stem set.
+    fn stems_cached(&self, _services: &LibraryServices, _deck: usize) -> bool {
+        false
+    }
 }
 
 impl DeckSource for TrackLoader {
@@ -66,6 +85,26 @@ impl DeckSource for TrackLoader {
         path: &Path,
     ) -> Result<(), String> {
         TrackLoader::load_file(self, engine, services, deck, path, false).map_err(|e| e.to_string())
+    }
+
+    fn toggle_stems(
+        &mut self,
+        engine: &DjEngine,
+        services: &LibraryServices,
+        deck: usize,
+    ) -> Result<bool, String> {
+        TrackLoader::toggle_stems(self, engine, services, deck).map_err(|e| e.to_string())
+    }
+
+    fn stem_note(&self, deck: usize) -> Option<String> {
+        TrackLoader::stem_note(self, deck).map(str::to_owned)
+    }
+
+    fn stems_cached(&self, services: &LibraryServices, deck: usize) -> bool {
+        let Some(track) = self.loaded_track(deck) else {
+            return false;
+        };
+        self.cached_stems(services.library(), track.id).is_some()
     }
 }
 
@@ -218,6 +257,35 @@ impl Decks {
                 result.err().map(|reason| failed(&request, reason))
             })
             .collect()
+    }
+
+    /// The library id of the track in `deck`, when it holds one.
+    pub(crate) fn track_id(&self, deck: usize) -> Option<i64> {
+        lock(&self.state).loader.as_ref()?.track_id(deck)
+    }
+
+    /// The stems action of the control thread, which owns `services`.
+    pub(crate) fn toggle_stems(
+        &self,
+        engine: &DjEngine,
+        services: &LibraryServices,
+        deck: usize,
+    ) -> Result<bool, String> {
+        let mut state = lock(&self.state);
+        let loader = state.loader.as_mut().ok_or("no library is open")?;
+        loader.toggle_stems(engine, services, deck)
+    }
+
+    pub(crate) fn stem_note(&self, deck: usize) -> Option<String> {
+        lock(&self.state).loader.as_ref()?.stem_note(deck)
+    }
+
+    pub(crate) fn stems_cached(&self, deck: usize, services: &LibraryServices) -> bool {
+        let state = lock(&self.state);
+        state
+            .loader
+            .as_ref()
+            .is_some_and(|l| l.stems_cached(services, deck))
     }
 
     /// Deck `deck` as the commands report it; `None` when there is no such deck.

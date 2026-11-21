@@ -6,9 +6,11 @@
 
 use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed};
 use crate::drive::{drive_state, write_json_atomic};
+use crate::instruments::{InstrumentEvent, Instruments, Reported, StemWork};
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
 use om_ui::library::LibraryServices;
+use om_ui::stems::StemQueue;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -29,6 +31,8 @@ pub(crate) struct ControlLoop {
     pub(crate) stop: Arc<AtomicBool>,
     /// The drive run's state file (`<path>.state`); `None` writes nothing.
     pub(crate) drive_state: Option<PathBuf>,
+    /// The sampler and stems the front end drives; reported through `instrument`.
+    pub(crate) instruments: Arc<Instruments>,
 }
 
 impl ControlLoop {
@@ -38,14 +42,25 @@ impl ControlLoop {
         self,
         emit: impl Fn(DeckChanged) + Send + 'static,
         failed: impl Fn(LoadFailed) + Send + 'static,
+        instrument: impl Fn(InstrumentEvent) + Send + 'static,
     ) -> std::io::Result<JoinHandle<()>> {
         std::thread::Builder::new()
             .name(CONTROL_THREAD.into())
-            .spawn(move || self.run(emit, failed))
+            .spawn(move || self.run(emit, failed, instrument))
     }
 
-    fn run(mut self, emit: impl Fn(DeckChanged), failed: impl Fn(LoadFailed)) {
-        let mut services = self.attach_library(&emit);
+    fn run(
+        mut self,
+        emit: impl Fn(DeckChanged),
+        failed: impl Fn(LoadFailed),
+        instrument: impl Fn(InstrumentEvent),
+    ) {
+        let mut stems = StemWork {
+            host: None,
+            queue: StemQueue::default(),
+        };
+        let mut reported = Reported::default();
+        let mut services = self.attach_library(&emit, &mut stems);
         let mut pacer = Pacer::new(CONTROL_HZ);
         let mut ticks: u64 = 0;
         while !self.stop.load(Ordering::Acquire) {
@@ -56,6 +71,14 @@ impl ControlLoop {
             }
             let changes = self.decks.tick(&self.engine, services.as_ref());
             changes.into_iter().for_each(&emit);
+            let events = self.instruments.tick(
+                &self.engine,
+                &self.decks,
+                services.as_ref(),
+                &mut stems,
+                &mut reported,
+            );
+            events.into_iter().for_each(&instrument);
             if ticks.is_multiple_of(STATE_EVERY) {
                 self.write_drive_state();
             }
@@ -80,8 +103,13 @@ impl ControlLoop {
 
     // The services are built here because they cannot move between threads; the decks the loader
     // already holds are reported at once.
-    fn attach_library(&mut self, emit: &impl Fn(DeckChanged)) -> Option<LibraryServices> {
+    fn attach_library(
+        &mut self,
+        emit: &impl Fn(DeckChanged),
+        stems: &mut StemWork,
+    ) -> Option<LibraryServices> {
         let library = self.setup.take().and_then(|setup| setup())?;
+        stems.host = library.stems;
         let changes = self.decks.install(&self.engine, Box::new(library.loader));
         changes.into_iter().for_each(emit);
         Some(library.services)
@@ -102,6 +130,7 @@ mod tests {
             setup,
             stop: Arc::new(AtomicBool::new(false)),
             drive_state: None,
+            instruments: Arc::new(Instruments::new(None, Vec::new())),
         }
     }
 
@@ -116,7 +145,7 @@ mod tests {
             let name = std::thread::current().name().map(str::to_owned);
             sink.lock().unwrap().push((c, name));
         };
-        let handle = control.spawn(emit, |_| {}).unwrap();
+        let handle = control.spawn(emit, |_| {}, |_| {}).unwrap();
         engine.deck(0).set_hotcue(0, 1_000);
         let emitted = || !seen.lock().unwrap().is_empty();
         assert!(wait_until(
@@ -146,7 +175,7 @@ mod tests {
         let mut control = control(&engine, None);
         control.drive_state = Some(path.clone());
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         let written = || {
             std::fs::read(&path)
                 .is_ok_and(|b| serde_json::from_slice::<serde_json::Value>(&b).is_ok())
@@ -175,7 +204,7 @@ mod tests {
         });
         let control = control(&engine, Some(setup));
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         assert!(wait_until(
             Duration::from_secs(5),
             Duration::from_millis(2),
