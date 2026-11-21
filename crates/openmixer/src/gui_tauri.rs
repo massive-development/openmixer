@@ -35,7 +35,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
-/// The window's opening size (`tauri.conf.json`); it picks the density an `Automatic` choice gets.
+/// The size the faceplate was designed for; it picks the density an `Automatic` choice gets. The
+/// window opens taller (`tauri.conf.json`, 960) so the library band fits under the decks, and the
+/// density stays what the faceplate above it was tuned at.
 const WINDOW_SIZE: (i32, i32) = (1600, 780);
 
 /// The environment variable naming the bench report's file.

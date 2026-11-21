@@ -292,4 +292,135 @@ mod tests {
         stop.store(true, Ordering::Release);
         handle.join().unwrap();
     }
+
+    /// A library in memory with two tracks, built on the control thread like the real one.
+    fn two_tracks() -> LibrarySetup {
+        Box::new(|| {
+            let mut options = om_ui::library::Options::for_path(om_ui::library::MEMORY_PATH);
+            options.analysis_workers = 1;
+            let mut services = om_ui::library::LibraryServices::create(options).ok()?;
+            for (title, bpm) in [("Low", 100.0), ("High", 128.0)] {
+                let track = om_library::TrackRecord {
+                    path: format!("/music/{title}.wav"),
+                    title: title.to_owned(),
+                    artist: "Gen".to_owned(),
+                    bpm: Some(bpm),
+                    camelot: "8A".to_owned(),
+                    duration_sec: 200.0,
+                    ..Default::default()
+                };
+                services.library().tracks().insert(&track).ok()?;
+            }
+            let loader = om_ui::library::TrackLoader::new(&mut services, 2);
+            Some(crate::decks::DeckLibrary { services, loader })
+        })
+    }
+
+    #[test]
+    fn library_calls_run_on_the_control_thread_and_answer_with_the_browser_view() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let control = control(&engine, Some(two_tracks()));
+        let (stop, queue) = (Arc::clone(&control.stop), Arc::clone(&control.library));
+        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let first = queue
+            .call(|panel| {
+                let name = std::thread::current().name().map(str::to_owned);
+                (name, crate::library::view(panel, 0, 10))
+            })
+            .unwrap();
+        assert_eq!(first.0.as_deref(), Some(CONTROL_THREAD));
+        let view = first.1;
+        assert_eq!(view.row_count, 2);
+        assert_eq!(view.rows.len(), 2);
+        assert!(view.sidebar.iter().any(|l| l.kind == "all" && l.selected));
+        assert!(
+            view.columns.iter().all(|c| c.title != "Stems"),
+            "no stems host"
+        );
+        assert_eq!(view.rows[0].cells.len(), view.columns.len());
+        // A search narrows the list, and the answer already shows it.
+        let found = queue
+            .call(|panel| {
+                panel.set_query("High");
+                panel.commit_query();
+                crate::library::view(panel, 0, 10)
+            })
+            .unwrap();
+        assert_eq!(found.row_count, 1);
+        assert_eq!(found.rows[0].cells[0], "High");
+        // Selecting a row shows its analysis, and a window past the end is empty, not an error.
+        let picked = queue
+            .call(|panel| {
+                panel.select_row(0);
+                crate::library::view(panel, 50, 10)
+            })
+            .unwrap();
+        assert!(picked.rows.is_empty());
+        assert_eq!(picked.analysis.track.map(|t| t.analysed), Some(true));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        // With the control thread gone, a call fails at once instead of waiting.
+        assert!(queue.call(|_| ()).is_err());
+    }
+
+    #[test]
+    fn without_a_library_a_call_says_so() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let control = control(&engine, None);
+        let (stop, queue) = (Arc::clone(&control.stop), Arc::clone(&control.library));
+        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        assert_eq!(queue.call(|_| ()), Err("no library is open".to_owned()));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_track_loaded_from_the_browser_reaches_the_decks_and_the_row_shows_its_deck() {
+        let dir = std::env::temp_dir().join(format!("om-ui-library-load-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("tone.wav");
+        let samples = om_testing::signals::stereo_sine(220.0, 0.3, 44_100.0, 44_100);
+        om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
+        let path = wav.to_string_lossy().into_owned();
+        let setup: LibrarySetup = Box::new(move || {
+            let mut options = om_ui::library::Options::for_path(om_ui::library::MEMORY_PATH);
+            options.analysis_workers = 1;
+            let mut services = om_ui::library::LibraryServices::create(options).ok()?;
+            let track = om_library::TrackRecord {
+                path,
+                title: "Tone".to_owned(),
+                ..Default::default()
+            };
+            services.library().tracks().insert(&track).ok()?;
+            let loader = om_ui::library::TrackLoader::new(&mut services, 2);
+            Some(crate::decks::DeckLibrary { services, loader })
+        });
+        let engine = Arc::new(DjEngine::new(2).0);
+        let control = control(&engine, Some(setup));
+        let (stop, queue, decks) = (
+            Arc::clone(&control.stop),
+            Arc::clone(&control.library),
+            Arc::clone(&control.decks),
+        );
+        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let id = queue
+            .call(|panel| panel.row(0).map(|row| row.track_id))
+            .unwrap()
+            .unwrap();
+        let loaded = queue.call(move |panel| panel.load_track_id(1, id).is_ok());
+        assert_eq!(loaded, Ok(true));
+        let shown = || decks.read(1).is_some_and(|d| d.track.title == "Tone");
+        assert!(wait_until(
+            Duration::from_secs(5),
+            Duration::from_millis(2),
+            shown
+        ));
+        let view = queue
+            .call(|panel| crate::library::view(panel, 0, 5))
+            .unwrap();
+        assert_eq!(view.rows[0].on_deck, Some(1));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
