@@ -1,4 +1,4 @@
-# OpenMixer Rust CI: fmt, clippy, test on all platforms; the web front end and its window on Linux;
+# OpenMixer Rust CI: fmt, clippy and test on Linux; the web front end and its window on Linux;
 # licence/ban policy on Linux.
 name: Rust
 
@@ -19,15 +19,14 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: check (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    # Linux only for now; macOS and Windows return in the porting phase (see openmixer-workbench/docs/spikes/DECISIONS.md "CI status by platform").
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04]
+  # Split in two so the lint and the tests build in parallel. Together they took 29 minutes of a 30
+  # minute limit, so slow runs were cancelled by the timeout, not by a failure. Linux only for now;
+  # macOS and Windows return in the porting phase (see openmixer-workbench/docs/spikes/DECISIONS.md
+  # "CI status by platform").
+  lint:
+    name: lint (ubuntu-24.04)
+    timeout-minutes: 45
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -45,14 +44,13 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install Linux audio dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
           # libwebkit2gtk-4.1-dev (it brings GTK 3, libsoup 3 and JavaScriptCore): the Tauri window,
           # om-ui-tauri, is a workspace member, so the workspace-wide clippy and test build it.
           # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
-          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 
@@ -63,6 +61,39 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test (ubuntu-24.04)
+    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read toolchain from rust-toolchain.toml
+        id: tc
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+          components: rustfmt, clippy
+
+      - name: Install Linux audio dependencies
+        run: |
+          sudo apt-get update
+          # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
+          # libwebkit2gtk-4.1-dev (it brings GTK 3, libsoup 3 and JavaScriptCore): the Tauri window,
+          # om-ui-tauri, is a workspace member, so the workspace-wide clippy and test build it.
+          # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
+          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
+            libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev
+
+      - uses: Swatinem/rust-cache@v2
 
       - name: cargo test
         run: cargo test --workspace
@@ -100,7 +131,7 @@ jobs:
           sudo apt-get update
           # The `check` job's packages (the binary builds GPUI by default and the Tauri window with
           # `gui-tauri`), plus xvfb: the window tests need a display.
-          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev xvfb
 
@@ -174,7 +205,7 @@ jobs:
       - name: Install Linux audio dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config libclang-dev
+          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev
 
       - uses: Swatinem/rust-cache@v2
 
@@ -256,7 +287,7 @@ jobs:
           sudo apt-get update
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
           # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
-          sudo apt-get install -y libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
+          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev
 
