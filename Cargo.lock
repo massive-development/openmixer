@@ -1249,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "clap-gain-fixture"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "clack-extensions",
  "clack-plugin",
@@ -2708,7 +2708,7 @@ dependencies = [
 
 [[package]]
 name = "gain-plugin"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-core",
  "om-engine",
@@ -2718,7 +2718,7 @@ dependencies = [
 
 [[package]]
 name = "gain-plugin-cdylib"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 
 [[package]]
 name = "gdk"
@@ -6053,7 +6053,7 @@ dependencies = [
 
 [[package]]
 name = "om-analysis"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "divan",
@@ -6071,7 +6071,7 @@ dependencies = [
 
 [[package]]
 name = "om-audio"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "cpal",
  "om-core",
@@ -6084,7 +6084,7 @@ dependencies = [
 
 [[package]]
 name = "om-automix"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-core",
  "proptest",
@@ -6093,7 +6093,7 @@ dependencies = [
 
 [[package]]
 name = "om-core"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-testing",
  "proptest",
@@ -6102,7 +6102,7 @@ dependencies = [
 
 [[package]]
 name = "om-dsp"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-core",
  "om-testing",
@@ -6110,7 +6110,7 @@ dependencies = [
 
 [[package]]
 name = "om-engine"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "assert_no_alloc",
  "audioadapter-buffers",
@@ -6131,7 +6131,7 @@ dependencies = [
 
 [[package]]
 name = "om-library"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "lofty",
  "om-analysis",
@@ -6148,7 +6148,7 @@ dependencies = [
 
 [[package]]
 name = "om-midi"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "midir",
  "om-core",
@@ -6161,7 +6161,7 @@ dependencies = [
 
 [[package]]
 name = "om-plugins"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "assert_no_alloc",
  "clack-extensions",
@@ -6182,7 +6182,7 @@ dependencies = [
 
 [[package]]
 name = "om-stems"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "assert_no_alloc",
  "audioadapter-buffers",
@@ -6202,7 +6202,7 @@ dependencies = [
 
 [[package]]
 name = "om-stretch"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-testing",
  "rubberband-sys",
@@ -6211,14 +6211,14 @@ dependencies = [
 
 [[package]]
 name = "om-testing"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "om-ui"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "dirs 5.0.1",
  "om-analysis",
@@ -6235,7 +6235,7 @@ dependencies = [
 
 [[package]]
 name = "om-ui-bridge"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-analysis",
  "om-core",
@@ -6246,7 +6246,7 @@ dependencies = [
 
 [[package]]
 name = "om-ui-gpui"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "gpui-kit",
  "gpui-pre",
@@ -6264,7 +6264,7 @@ dependencies = [
 
 [[package]]
 name = "om-ui-tauri"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "om-analysis",
  "om-core",
@@ -6334,7 +6334,7 @@ dependencies = [
 
 [[package]]
 name = "openmixer"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
@@ -6440,7 +6440,7 @@ dependencies = [
 
 [[package]]
 name = "param-plugin-cdylib"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 
 [[package]]
 name = "parking"
