@@ -2,7 +2,6 @@
 //! `om-ui` settings pages over the shared output), saved and pushed into the subsystems as GPUI's
 //! `apply_changes` does.
 
-use om_ui::preferences::Preferences;
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, SettingsResult,
 };
@@ -46,35 +45,39 @@ impl TauriSettings {
         self.composition.borrow_mut()
     }
 
-    /// Runs `edit` on a copy of the preferences; a changed copy is kept, saved and applied.
+    /// Runs `edit` on the composition's own preferences, the one copy every settings page edits, so
+    /// a page never saves a section another page changed since it last looked. A change is saved
+    /// and applied.
     fn edit(
         &self,
         edit: impl FnOnce(&mut AudioSettingsPage<'_>) -> SettingsResult,
     ) -> Result<(), String> {
         let mut composition = self.composition();
-        let mut prefs = composition.prefs.clone();
         let mut model = self.output.clone();
-        let changed =
-            edit(&mut AudioSettingsPage::new(&mut prefs, &mut model)).map_err(|e| e.to_string())?;
+        let changed = edit(&mut AudioSettingsPage::new(
+            &mut composition.prefs,
+            &mut model,
+        ))
+        .map_err(|e| e.to_string())?;
         if changed {
-            self.keep(&mut composition, prefs);
+            self.save_and_apply(&mut composition);
         }
         Ok(())
     }
 
-    /// The appearance page over a copy of the preferences; a changed copy is kept and applied.
+    /// The appearance page over the composition's own preferences (see [`Self::edit`]).
     fn edit_appearance(
         &self,
         edit: impl FnOnce(&mut AppearanceSettingsPage<'_>) -> SettingsResult,
     ) -> Result<(), String> {
         let mut composition = self.composition();
-        let mut prefs = composition.prefs.clone();
         let changed = {
-            let mut page = AppearanceSettingsPage::new(&mut prefs, &composition.themes);
+            let c = &mut *composition;
+            let mut page = AppearanceSettingsPage::new(&mut c.prefs, &c.themes);
             edit(&mut page).map_err(|e| e.to_string())?
         };
         if changed {
-            self.keep(&mut composition, prefs);
+            self.save_and_apply(&mut composition);
         }
         Ok(())
     }
@@ -95,8 +98,8 @@ impl TauriSettings {
         }
     }
 
-    fn keep(&self, composition: &mut AppComposition, prefs: Preferences) {
-        composition.prefs = prefs;
+    /// Saves the composition's preferences and pushes the changed sections into the subsystems.
+    fn save_and_apply(&self, composition: &mut AppComposition) {
         if !composition.prefs_replaceable {
             eprintln!(
                 "openmixer: not saving preferences: {} could not be read, so it is left as it is",
