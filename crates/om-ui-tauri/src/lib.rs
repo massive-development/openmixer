@@ -12,6 +12,8 @@ mod controls;
 mod deck_info;
 mod decks;
 mod drive;
+mod library;
+mod library_commands;
 mod pacer;
 mod smoke;
 mod stream;
@@ -28,6 +30,10 @@ pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
 };
+pub use library::{
+    AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
+    MAX_VIEW_ROWS,
+};
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
 pub use strip_ink::{strip_ink_dto, StripInkDto};
@@ -36,6 +42,7 @@ use bench::BenchRun;
 use commands::ShellState;
 use control_loop::ControlLoop;
 use decks::Decks;
+use library::LibraryQueue;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use std::path::PathBuf;
@@ -182,6 +189,7 @@ struct Shared {
     ready: Arc<AtomicBool>,
     streams: Arc<StreamSlot>,
     decks: Arc<Decks>,
+    library: Arc<LibraryQueue>,
     stop: Arc<AtomicBool>,
 }
 
@@ -191,6 +199,7 @@ impl Shared {
             ready: Arc::new(AtomicBool::new(false)),
             streams: Arc::new(StreamSlot::default()),
             decks: Arc::new(Decks::new(engine)),
+            library: Arc::default(),
             stop: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -221,6 +230,7 @@ impl Shared {
             ready_signal,
             streams: Arc::clone(&self.streams),
             decks: Arc::clone(&self.decks),
+            library: Arc::clone(&self.library),
         };
         (state, ready_wait)
     }
@@ -235,6 +245,7 @@ impl Shared {
         let control = ControlLoop {
             engine,
             decks: Arc::clone(&self.decks),
+            library: Arc::clone(&self.library),
             setup,
             stop: Arc::clone(&self.stop),
             drive_state,
@@ -289,6 +300,24 @@ fn build_app(
             commands::deck_info,
             commands::load_file,
             commands::ui_layout,
+            library_commands::library_view,
+            library_commands::library_search,
+            library_commands::library_clear_search,
+            library_commands::library_select_sidebar,
+            library_commands::library_sort,
+            library_commands::library_select_row,
+            library_commands::library_key,
+            library_commands::library_activate,
+            library_commands::library_load,
+            library_commands::library_analyse,
+            library_commands::library_stems,
+            library_commands::library_name,
+            library_commands::library_delete_playlist,
+            library_commands::library_remove_from_playlist,
+            library_commands::library_drop_on_playlist,
+            library_commands::library_drop_playlist,
+            library_commands::library_drop_on_row,
+            library_commands::library_copy,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)
