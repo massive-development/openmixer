@@ -24,7 +24,7 @@ cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
 - `npm run build` first runs `npm run fonts`, which copies `resources/fonts/` into `web/public/fonts/` (ignored by git), then `vite build` into `web/dist/` (ignored by git).
 - The front end is embedded at compile time (`tauri::generate_context!`), so rebuild `web/dist` before the cargo build that should show a front-end change. Without `web/dist`, `build.rs` writes a placeholder `index.html` so the crate compiles; the window is then blank and `--smoke` fails.
 - Demo flags it honours: `--demo-library` (two generated tracks into decks A and B, from a library in the scratch folder `openmixer-smoke-<pid>` under the temp dir) and `--demo-scene=NAME` (the same scenes as GPUI, staged on deck A; implies the demo library). Without either, a plain run opens the user's library (as GPUI does) with empty decks; `--smoke`, `--ui-bench` and `--ui-drive-out` runs open no library. `--demo-map`, `--demo-automix` and `--demo-record` are not read by this window. The scratch folder is removed when the window closes, unless it holds a bench report.
-- Theme: the saved theme, or `OPENMIXER_THEME=<theme id>` for the session (`openmixer.dark`, `openmixer.daylight`, `openmixer.harbour`). The density is resolved once for the opening size, 1600 × 780 (`tauri.conf.json`), with `main_layout::resolve_density`. The theme is sent once at start; there is no live theme switch.
+- Theme: the saved theme, or `OPENMIXER_THEME=<theme id>` for the session (`openmixer.dark`, `openmixer.daylight`, `openmixer.harbour`). The density is resolved for the opening size, 1600 × 780 (`tauri.conf.json`), with `main_layout::resolve_density`. The theme is sent at start and again by each Appearance edit (live switch).
 - On Linux the app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` unless it is already set (`om_ui_tauri::prepare_environment`, called first in `gui_tauri::main`). Under WSL run it with `WAYLAND_DISPLAY=` as other windows.
 
 ## The two crates
@@ -129,6 +129,8 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `ui_layout` | `uiLayout(map)` | nothing; `--ui-drive-out` runs only (else an error): checks the layout map (see Driving the window) and writes it with every control's spec |
 | `audio_settings` | `audioSettings()` | the Audio page: choices and current pick (`AudioPage`); an error where the run has no settings host |
 | `audio_change` | `audioChange({ field, value })` | applies one edit (saved to the preferences file and pushed into the engine as GPUI's overlay does), returns the page afterwards, or the refusal text |
+| `appearance_settings` | `appearanceSettings()` | the Appearance page: themes, current theme, density (`automatic`, `roomy`, `compact`) |
+| `appearance_change` | `appearanceChange({ field, value })` | applies one edit (saved; theme switched in the composition), returns `{ page, css, stripInks }`; the shell keeps the new theme for `theme_css` and `strip_ink` |
 | `load_file` | `loadFile(deck, path)` | nothing (queued for the control thread); an error for an unknown deck |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
 | event `load-failed` | `onLoadFailed(cb)` | `{ deck, file, reason }` |
@@ -208,8 +210,9 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 The overlay (`lib/settings/`) opens from the top bar and closes with Escape, its Close button or a click on the scrim. Pages are listed in `SettingsOverlay.svelte`; the Audio page is the first.
 
 - **Host seam:** `om_ui_tauri::SettingsHost` (`settings.rs`) is what the binary offers; `openmixer::gui_tauri_settings::TauriSettings` implements it over the same `om-ui` `AudioSettingsPage` and `SharedOutput` that GPUI's overlay uses, then saves the preferences file and calls `apply_preferences`, as GPUI's `apply_changes` does. The composition holds library services that cannot leave their thread, so the host is not `Send`: `run` keeps it in a main-thread slot and the synchronous commands reach it there.
+- **Appearance page:** theme and density switch live: the front end replaces the `om-theme` style block with the returned CSS and bumps `themeEpoch`, so the decks and the waveform lanes read their ink again. The density is resolved for the opening size (1600 × 780), not the live window.
 - **Saving:** demo runs write to the scratch folder's `preferences.json`, never the user's file (`prefs_save_target`); a preferences file that could not be read is left as it is.
-- **Not here yet:** the appearance, library, MIDI, plugins, stems, Automix and recording pages; each is a later page of this overlay.
+- **Not here yet:** the library, MIDI, plugins, stems, Automix and recording pages; each is a later page of this overlay.
 
 ## Loading tracks
 

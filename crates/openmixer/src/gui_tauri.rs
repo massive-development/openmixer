@@ -255,6 +255,7 @@ fn run_window(
         output.clone(),
         prefs_file,
         device.mock,
+        engine.num_decks(),
     ));
     let result = om_ui_tauri::run(
         Arc::clone(&engine),
@@ -354,7 +355,7 @@ fn load_demo_decks(
 
 /// The active theme (the saved one, or `OPENMIXER_THEME`) as CSS at the opening density, and the
 /// waveform lane ink of each of the engine's `decks`.
-fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
+pub(crate) fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
     let tokens = composition.themes.current();
     let density = resolve_density(composition.prefs.density, tokens, WINDOW_SIZE);
     ShellTheme {

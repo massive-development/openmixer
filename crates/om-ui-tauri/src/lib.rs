@@ -29,7 +29,10 @@ pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
 };
-pub use settings::{AudioChange, AudioPage, SettingsHost};
+pub use settings::{
+    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, SettingsHost,
+    ThemeChoice,
+};
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
 pub use strip_ink::{strip_ink_dto, StripInkDto};
@@ -209,8 +212,7 @@ impl Shared {
     ) -> (ShellState, Receiver<()>) {
         let (ready_signal, ready_wait) = mpsc::channel();
         let state = ShellState {
-            theme_css: theme.css,
-            strip_inks: theme.strip_inks,
+            theme: Mutex::new(theme),
             config: RunConfig {
                 smoke: options.smoke,
                 bench_seconds: options.bench_seconds,
@@ -296,6 +298,8 @@ fn build_app(
             commands::ui_layout,
             commands::audio_settings,
             commands::audio_change,
+            commands::appearance_settings,
+            commands::appearance_change,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)
