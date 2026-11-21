@@ -269,6 +269,13 @@ impl AppComposition {
         Ok(())
     }
 
+    /// [`AppComposition::attach_stems`] for a library the caller opens itself (the Tauri window
+    /// opens it on its control thread): the stem cache sits beside `library_db`.
+    pub fn attach_stems_for(&mut self, library_db: String, mock: bool) -> Result<(), AppError> {
+        self.library_db = Some(library_db);
+        self.attach_stems(mock)
+    }
+
     /// The sink that carries `Command::LoadStems` to the engine and every other command to the
     /// router. The window's loader sends stem loads through it.
     pub fn stem_command_sink(&self) -> Arc<dyn om_core::CommandSink> {
