@@ -13,6 +13,7 @@ mod deck_info;
 mod decks;
 mod drive;
 mod pacer;
+mod settings;
 mod smoke;
 mod stream;
 mod stream_slot;
@@ -27,6 +28,10 @@ pub use decks::{DeckChanged, DeckLibrary, LibrarySetup, LoadFailed};
 pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
+};
+pub use settings::{
+    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, SettingsHost,
+    ThemeChoice,
 };
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
@@ -130,6 +135,7 @@ pub fn run(
     router: Arc<ParameterRouter>,
     theme: ShellTheme,
     library: Option<LibrarySetup>,
+    settings: Option<Box<dyn SettingsHost>>,
     options: RunOptions,
 ) -> Result<(), ShellError> {
     let shared = Shared::new(&engine);
@@ -137,6 +143,7 @@ pub fn run(
     let smoke_play = options.smoke && library.is_some();
     let (bench, bench_wait) = bench_run(&options);
     let (state, ready_wait) = shared.shell_state(theme, &options, smoke_play, bench.clone());
+    settings::install(settings);
     let app = build_app(Arc::clone(&engine), router, state)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
@@ -147,6 +154,7 @@ pub fn run(
     let drive_state = options.drive_out.as_ref().map(|d| d.state.clone());
     let control = shared.spawn_control(&app, engine, library, drive_state)?;
     let code = app.run_return(|_, _| {});
+    settings::uninstall();
     shared.shut_down(control);
     bench_outcome(bench.as_deref())?;
     smoke::outcome(options.smoke && !shared.ready.load(Ordering::Acquire), code)
@@ -204,8 +212,7 @@ impl Shared {
     ) -> (ShellState, Receiver<()>) {
         let (ready_signal, ready_wait) = mpsc::channel();
         let state = ShellState {
-            theme_css: theme.css,
-            strip_inks: theme.strip_inks,
+            theme: Mutex::new(theme),
             config: RunConfig {
                 smoke: options.smoke,
                 bench_seconds: options.bench_seconds,
@@ -289,6 +296,10 @@ fn build_app(
             commands::deck_info,
             commands::load_file,
             commands::ui_layout,
+            commands::audio_settings,
+            commands::audio_change,
+            commands::appearance_settings,
+            commands::appearance_change,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)

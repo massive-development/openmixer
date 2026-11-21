@@ -12,15 +12,17 @@
 //! (for `tools/ui-drive.py`) has the front end write its controls' rectangles to `<path>` and the
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
+use crate::gui_tauri_settings::TauriSettings;
 use om_engine::DjEngine;
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
 use om_ui_tauri::{
-    DeckLibrary, DriveOut, LibrarySetup, RunOptions, ShellError, ShellTheme, DEFAULT_FPS_CAP,
+    DeckLibrary, DriveOut, LibrarySetup, RunOptions, SettingsHost, ShellError, ShellTheme,
+    DEFAULT_FPS_CAP,
 };
 use openmixer::audio_settings::SharedOutput;
-use openmixer::composition::{library_options, AppComposition};
+use openmixer::composition::{library_options, prefs_save_target, AppComposition};
 use openmixer::flags::DemoScene;
 use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
@@ -242,7 +244,26 @@ fn run_window(
     };
     let router = Arc::clone(&composition.router);
     let theme = shell_theme(&composition, engine.num_decks());
-    let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
+    let prefs_file = prefs_save_target(
+        device.demo_run,
+        om_ui::preferences::default_file(),
+        &library_smoke::scratch_dir(),
+    );
+    let settings: Box<dyn SettingsHost> = Box::new(TauriSettings::new(
+        composition,
+        output.clone(),
+        prefs_file,
+        device.mock,
+        engine.num_decks(),
+    ));
+    let result = om_ui_tauri::run(
+        Arc::clone(&engine),
+        router,
+        theme,
+        library,
+        Some(settings),
+        options,
+    );
     let played = round_trip.then(|| deck_a_playing(&engine));
     output.lock().stop();
     if result.is_ok() && window.frames.bench_seconds.is_some() {
@@ -333,7 +354,7 @@ fn load_demo_decks(
 
 /// The active theme (the saved one, or `OPENMIXER_THEME`) as CSS at the opening density, and the
 /// waveform lane ink of each of the engine's `decks`.
-fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
+pub(crate) fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
     let tokens = composition.themes.current();
     let density = resolve_density(composition.prefs.density, tokens, WINDOW_SIZE);
     ShellTheme {
