@@ -12,7 +12,7 @@
 //! (for `tools/ui-drive.py`) has the front end write its controls' rectangles to `<path>` and the
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
-use crate::gui_tauri_settings::TauriSettings;
+use crate::gui_tauri_settings::{PrefsStore, TauriSettings};
 use om_engine::DjEngine;
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
@@ -28,9 +28,11 @@ use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
 };
 use openmixer::{demo_scene, library_smoke, AppError};
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// The window's opening size (`tauri.conf.json`); it picks the density an `Automatic` choice gets.
@@ -65,6 +67,8 @@ struct Window<'a> {
 struct Device {
     mock: bool,
     demo_run: bool,
+    /// `--demo-map`: the mock controller and the demo map, so the mapping editor has bindings.
+    demo_map: bool,
 }
 
 /// What a demo run stages: the scene, and the user's file for `--demo-scene=track`.
@@ -103,6 +107,7 @@ pub fn main(args: &[String]) -> ExitCode {
     let device = Device {
         mock: mock_of(args, smoke, demo.is_some()),
         demo_run: openmixer::flags::demo_run(args),
+        demo_map: openmixer::flags::demo_map(args),
     };
     let result = run_window(window, device, demo, scratch.as_deref());
     // The library closed with the control thread; the scratch folder goes with the run, unless
@@ -222,6 +227,8 @@ fn run_window(
     scratch: Option<&Path>,
 ) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
+    // Before the audio start, so the first preferences push opens the stored inputs.
+    attach_midi(&mut composition, &device);
     let Some((output, banner)) = start_audio(&mut composition, &device) else {
         return ExitCode::FAILURE;
     };
@@ -249,12 +256,13 @@ fn run_window(
         om_ui::preferences::default_file(),
         &library_smoke::scratch_dir(),
     );
-    let settings: Box<dyn SettingsHost> = Box::new(TauriSettings::new(
-        composition,
+    let store = Rc::new(PrefsStore::new(
+        Rc::new(RefCell::new(composition)),
         output.clone(),
         prefs_file,
-        device.mock,
     ));
+    let settings: Box<dyn SettingsHost> =
+        Box::new(TauriSettings::new(store, output.clone(), device.mock));
     let result = om_ui_tauri::run(
         Arc::clone(&engine),
         router,
@@ -274,6 +282,40 @@ fn run_window(
 /// The control round trip's verdict: the front end's `deck0.play` reached the engine.
 fn deck_a_playing(engine: &DjEngine) -> bool {
     engine.snapshot().decks.first().is_some_and(|d| d.playing)
+}
+
+/// MIDI: the system backend on a real run; a mock controller on the runs that stay off hardware,
+/// so none of them opens a device. `--demo-map` also loads the demo map into a scratch file.
+fn attach_midi(composition: &mut AppComposition, device: &Device) {
+    if device.mock || device.demo_map {
+        let midi = om_midi::MockBackend::new();
+        midi.add_input("Mock controller");
+        composition.attach_midi(Box::new(midi));
+    } else {
+        match om_midi::system_backend() {
+            Ok(backend) => composition.attach_midi(backend),
+            Err(error) => eprintln!("openmixer: MIDI unavailable: {error}"),
+        }
+    }
+    if device.demo_map {
+        load_demo_map(composition);
+    }
+}
+
+/// Saves from the editor go to a temporary file, never the user's map.
+fn load_demo_map(composition: &mut AppComposition) {
+    let dir = library_smoke::scratch_dir().join("map");
+    match openmixer::demo_map::write_demo_map(&dir) {
+        Ok(path) => {
+            if let Some(service) = &composition.services.midi {
+                if let Err(error) = service.load_map_file(&path) {
+                    eprintln!("openmixer: demo map: {error}");
+                }
+            }
+            composition.prefs.midi.map_file = path.to_string_lossy().into_owned();
+        }
+        Err(error) => eprintln!("openmixer: demo map: {error}"),
+    }
 }
 
 /// The engine on the chosen output with the preferences applied, and the notice the top bar shows;

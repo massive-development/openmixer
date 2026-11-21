@@ -5,6 +5,9 @@ use crate::bench::BenchRun;
 use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
+use crate::devices::{
+    DevicesHost, MappingChange, MappingPage, MidiChange, MidiPage, PluginsChange, PluginsPage, View,
+};
 use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
 use crate::settings::{with_host, AudioChange, AudioPage};
 use crate::stream::{PacketSink, StreamConfig};
@@ -247,6 +250,61 @@ pub fn audio_settings() -> Result<AudioPage, String> {
 #[tauri::command]
 pub fn audio_change(change: AudioChange) -> Result<AudioPage, String> {
     with_host(|host| host.change_audio(change))?
+}
+
+/// Runs `f` on the app's MIDI, mapping and plugins host.
+fn with_devices<R>(f: impl FnOnce(&dyn DevicesHost) -> R) -> Result<R, String> {
+    with_host(|host| host.devices().map(f))?
+        .ok_or_else(|| "MIDI and plugins are not available".to_owned())
+}
+
+/// The MIDI page as it stands; also where a finished MIDI learn reports.
+#[tauri::command]
+pub fn midi_page() -> Result<View<MidiPage>, String> {
+    with_devices(|d| d.midi())
+}
+
+/// One edit of the MIDI page, then the page.
+#[tauri::command]
+pub fn midi_change(change: MidiChange) -> Result<View<MidiPage>, String> {
+    with_devices(|d| d.change_midi(change))
+}
+
+/// The mapping editor as it stands.
+#[tauri::command]
+pub fn mapping_page() -> Result<View<MappingPage>, String> {
+    with_devices(|d| d.mapping())
+}
+
+/// One edit of the mapping editor, then the page.
+#[tauri::command]
+pub fn mapping_change(change: MappingChange) -> Result<View<MappingPage>, String> {
+    with_devices(|d| d.change_mapping(change))
+}
+
+/// The plugins page as it stands.
+#[tauri::command]
+pub fn plugins_page() -> Result<View<PluginsPage>, String> {
+    with_devices(|d| d.plugins())
+}
+
+/// One edit of the plugins page, then the page.
+#[tauri::command]
+pub fn plugins_change(change: PluginsChange) -> Result<View<PluginsPage>, String> {
+    with_devices(|d| d.change_plugins(change))
+}
+
+/// Opens loaded plugin `id`'s own window; says what happened, or why the page's Parameters panel
+/// is the way in. Runs on the main thread (a synchronous command), where windows are made.
+#[tauri::command]
+pub fn open_plugin_window(
+    id: String,
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let source = with_devices(|d| d.plugin_window(&id))?
+        .ok_or_else(|| "This plugin has no window of its own; use Parameters.".to_owned())?;
+    crate::plugin_window::open(&app, &window, &id, source)
 }
 
 /// Raw packets into the front end's channel; a failed send means the webview is gone.

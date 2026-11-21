@@ -2,55 +2,46 @@
 //! `om-ui` settings pages over the shared output), saved and pushed into the subsystems as GPUI's
 //! `apply_changes` does.
 
+use crate::gui_tauri_devices::Devices;
 use om_ui::preferences::Preferences;
 use om_ui::settings::{stats_text, AudioSettingsModel, AudioSettingsPage, SettingsResult};
-use om_ui_tauri::{AudioChange, AudioPage, SettingsHost};
+use om_ui_tauri::{AudioChange, AudioPage, DevicesHost, SettingsHost};
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::AppComposition;
 use std::cell::{RefCell, RefMut};
 use std::path::PathBuf;
+use std::rc::Rc;
 
-pub struct TauriSettings {
-    composition: RefCell<AppComposition>,
+/// The shared composition and where a changed preferences copy goes: kept, saved and pushed into
+/// the subsystems. The settings pages share one store.
+pub struct PrefsStore {
+    composition: Rc<RefCell<AppComposition>>,
     output: SharedOutput,
     prefs_file: PathBuf,
-    mock: bool,
 }
 
-impl TauriSettings {
+impl PrefsStore {
     pub fn new(
-        composition: AppComposition,
+        composition: Rc<RefCell<AppComposition>>,
         output: SharedOutput,
         prefs_file: PathBuf,
-        mock: bool,
     ) -> Self {
         Self {
-            composition: RefCell::new(composition),
+            composition,
             output,
             prefs_file,
-            mock,
         }
     }
 
-    fn composition(&self) -> RefMut<'_, AppComposition> {
-        self.composition.borrow_mut()
+    pub fn composition(&self) -> &Rc<RefCell<AppComposition>> {
+        &self.composition
     }
 
-    /// Runs `edit` on a copy of the preferences; a changed copy is kept, saved and applied.
-    fn edit(
-        &self,
-        edit: impl FnOnce(&mut AudioSettingsPage<'_>) -> SettingsResult,
-    ) -> Result<(), String> {
-        let mut composition = self.composition();
-        let mut prefs = composition.prefs.clone();
-        let mut model = self.output.clone();
-        let changed =
-            edit(&mut AudioSettingsPage::new(&mut prefs, &mut model)).map_err(|e| e.to_string())?;
-        if changed {
-            self.keep(&mut composition, prefs);
-        }
-        Ok(())
+    /// Keeps `prefs` as the preferences, saves the file and pushes the changed sections.
+    pub fn commit(&self, prefs: Preferences) {
+        let mut composition = self.composition.borrow_mut();
+        self.keep(&mut composition, prefs);
     }
 
     fn keep(&self, composition: &mut AppComposition, prefs: Preferences) {
@@ -68,9 +59,48 @@ impl TauriSettings {
         let device: &mut dyn AudioDeviceControl = &mut *settings;
         composition.apply_preferences(&pairs, Some(device), None);
     }
+}
+
+pub struct TauriSettings {
+    store: Rc<PrefsStore>,
+    output: SharedOutput,
+    devices: Devices,
+    mock: bool,
+}
+
+impl TauriSettings {
+    pub fn new(store: Rc<PrefsStore>, output: SharedOutput, mock: bool) -> Self {
+        let devices = Devices::new(Rc::clone(&store));
+        Self {
+            store,
+            output,
+            devices,
+            mock,
+        }
+    }
+
+    fn composition(&self) -> RefMut<'_, AppComposition> {
+        self.store.composition().borrow_mut()
+    }
+
+    /// Runs `edit` on a copy of the preferences; a changed copy is kept, saved and applied.
+    fn edit(
+        &self,
+        edit: impl FnOnce(&mut AudioSettingsPage<'_>) -> SettingsResult,
+    ) -> Result<(), String> {
+        let mut composition = self.composition();
+        let mut prefs = composition.prefs.clone();
+        let mut model = self.output.clone();
+        let changed =
+            edit(&mut AudioSettingsPage::new(&mut prefs, &mut model)).map_err(|e| e.to_string())?;
+        if changed {
+            self.store.keep(&mut composition, prefs);
+        }
+        Ok(())
+    }
 
     fn page(&self) -> AudioPage {
-        let mut prefs = self.composition.borrow().prefs.clone();
+        let mut prefs = self.store.composition().borrow().prefs.clone();
         let mut writer = self.output.clone();
         let page = AudioSettingsPage::new(&mut prefs, &mut writer);
         let model = self.output.clone();
@@ -96,6 +126,10 @@ impl TauriSettings {
 impl SettingsHost for TauriSettings {
     fn audio(&self) -> AudioPage {
         self.page()
+    }
+
+    fn devices(&self) -> Option<&dyn DevicesHost> {
+        Some(&self.devices)
     }
 
     fn change_audio(&self, change: AudioChange) -> Result<AudioPage, String> {

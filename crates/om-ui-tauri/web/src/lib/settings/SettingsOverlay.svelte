@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import AudioPage from './AudioPage.svelte';
+  import MappingPage from './MappingPage.svelte';
+  import MidiPage from './MidiPage.svelte';
+  import PluginsPage from './PluginsPage.svelte';
 
   interface Props {
     onclose: () => void;
@@ -10,7 +13,12 @@
   let dialog: HTMLElement | undefined = $state();
 
   // Pages added by later settings work join this list; the Audio page is the first.
-  const PAGES = [{ id: 'audio', label: 'Audio' }];
+  const PAGES = [
+    { id: 'audio', label: 'Audio' },
+    { id: 'midi', label: 'MIDI' },
+    { id: 'mapping', label: 'Mapping' },
+    { id: 'plugins', label: 'Plugins' },
+  ];
   let page = $state('audio');
 
   function key(event: KeyboardEvent): void {
@@ -41,7 +49,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{/if}
       </section>
     </div>
   </div>
@@ -58,8 +66,9 @@
   }
 
   .dialog {
-    width: min(720px, 92vw);
-    max-height: 86vh;
+    width: min(920px, 94vw);
+    /* One height for every page, so the page list does not move under the pointer. */
+    height: min(680px, 86vh);
     display: flex;
     flex-direction: column;
     border: 1px solid var(--om-border);
@@ -89,6 +98,7 @@
   }
 
   .body {
+    flex: 1;
     display: grid;
     grid-template-columns: 160px minmax(0, 1fr);
     min-height: 0;
