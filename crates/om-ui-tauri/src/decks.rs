@@ -24,6 +24,9 @@ pub struct DeckLibrary {
 /// Builds the [`DeckLibrary`] on the control thread, where it then lives.
 pub type LibrarySetup = Box<dyn FnOnce() -> Option<DeckLibrary> + Send>;
 
+/// Loads the file at the path into the deck; `Err` is the reason, as the front end shows it.
+pub(crate) type LoadFile<'a> = dyn FnMut(usize, &Path) -> Result<(), String> + 'a;
+
 /// What one deck shows of its loaded track, copied off the loader by the control thread.
 #[derive(Debug, Clone, Default)]
 pub struct PublishedDeck {
@@ -167,10 +170,7 @@ impl Decks {
 
     /// Runs the queued loads through `load` on the control thread, which owns the loader; returns
     /// the ones that failed. Without a library (`None`) every load fails, saying so.
-    pub(crate) fn run_loads(
-        &self,
-        mut load: Option<&mut dyn FnMut(usize, &Path) -> Result<(), String>>,
-    ) -> Vec<LoadFailed> {
+    pub(crate) fn run_loads(&self, mut load: Option<&mut LoadFile<'_>>) -> Vec<LoadFailed> {
         let requests = std::mem::take(&mut *lock(&self.loads));
         requests
             .into_iter()
@@ -381,9 +381,6 @@ mod tests {
                 reason: "no library is open".to_owned(),
             }]
         );
-        assert!(
-            decks.run_loads(None).is_empty(),
-            "the queue drained"
-        );
+        assert!(decks.run_loads(None).is_empty(), "the queue drained");
     }
 }

@@ -5,7 +5,7 @@
   "build": { "frontendDist": "./web/dist" },
   "app": {
     "withGlobalTauri": false,
-    "windows": [{ "label": "main", "title": "OpenMixer DJ", "width": 1600, "height": 780 }],
+    "windows": [{ "label": "main", "title": "OpenMixer DJ", "width": 1600, "height": 960 }],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost"
     }
