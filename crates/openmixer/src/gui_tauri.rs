@@ -20,7 +20,7 @@ use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
 use om_ui_tauri::{
     install_header, DeckLibrary, DriveOut, HeaderParts, LibrarySetup, RunOptions, ShellError,
-    ShellTheme, DEFAULT_FPS_CAP,
+    ShellTheme, TickSetup, DEFAULT_FPS_CAP,
 };
 use openmixer::audio_settings::SharedOutput;
 use openmixer::automix_settings::apply_automix_prefs;
@@ -29,7 +29,7 @@ use openmixer::flags::DemoScene;
 use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
 };
-use openmixer::{demo_scene, library_smoke, AppError};
+use openmixer::{demo_scene, library_smoke, wiring, AppError};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -247,6 +247,7 @@ fn run_window(
     let router = Arc::clone(&composition.router);
     install_header(HeaderParts {
         host: Arc::new(header_host(&composition, &device, &router)),
+        tick: Some(automix_tick(&composition)),
     });
     let theme = shell_theme(&composition, engine.num_decks());
     let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
@@ -274,6 +275,29 @@ fn header_host(
         composition.prefs.automix.clone(),
         (!device.demo_run).then(om_ui::preferences::default_file),
     )
+}
+
+/// The automix runner, built on the control thread once the library hub exists (its host reads the
+/// library and the track loader, which cannot leave that thread) and stepped at 30 Hz there. It
+/// steps only while automix is on or mixing, and it sends its moves through the sink that does not
+/// count as the DJ's own input.
+fn automix_tick(composition: &AppComposition) -> TickSetup {
+    let automix = Arc::clone(&composition.automix);
+    let sink = Arc::clone(&composition.automix_sink);
+    let engine = Arc::clone(&composition.engine);
+    let prefs = composition.prefs.automix.clone();
+    Box::new(move |hub| {
+        let mut runner =
+            wiring::automix_runner_over(automix, sink, &engine, Some(hub), &prefs, automix_seed());
+        Box::new(move |engine: &DjEngine, now| runner.step(engine, now))
+    })
+}
+
+/// A seed for the queue's shuffle: the clock, so two runs pick differently.
+fn automix_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.as_nanos() as u64)
 }
 
 /// The control round trip's verdict: the front end's `deck0.play` reached the engine.

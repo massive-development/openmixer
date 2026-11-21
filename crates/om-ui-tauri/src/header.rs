@@ -6,7 +6,9 @@
 //! command threads and must not block on the audio thread or the library.
 
 use om_core::{AutomixSnapshot, RecordSnapshot};
+use om_engine::DjEngine;
 use om_ui::automix_bar::AutomixBar;
+use om_ui::library::hub::SharedHub;
 use om_ui::preferences::AutomixPrefs;
 use om_ui::record_bar::RecordBar;
 use om_ui::settings::{length_label, LENGTH_CHOICES};
@@ -160,9 +162,20 @@ pub fn state(host: &dyn HeaderHost) -> HeaderState {
     }
 }
 
-/// What the binary installs before the window runs: the host the commands call.
+/// What the control thread runs each tick (30 Hz) with the engine and the seconds since it
+/// started: the automix runner's step. Built on that thread, so it may hold the library hub.
+pub type Ticker = Box<dyn FnMut(&DjEngine, f64)>;
+
+/// Builds the [`Ticker`] on the control thread, once the library hub exists. Not called for a run
+/// with no library.
+pub type TickSetup = Box<dyn FnOnce(&SharedHub) -> Ticker + Send>;
+
+/// What the binary installs before the window runs: the host the commands call, and the step the
+/// control thread runs beside the library (automix reads the library and the track loader, which
+/// stay on that thread).
 pub struct HeaderParts {
     pub host: Arc<dyn HeaderHost>,
+    pub tick: Option<TickSetup>,
 }
 
 static INSTALLED: Mutex<Option<HeaderParts>> = Mutex::new(None);

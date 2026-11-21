@@ -33,7 +33,7 @@ pub use drive::{
 };
 pub use header::{
     automix_dto, install_header, next_length, record_dto, AutomixAction, AutomixBarDto, HeaderHost,
-    HeaderParts, HeaderState, RecordBarDto,
+    HeaderParts, HeaderState, RecordBarDto, TickSetup, Ticker,
 };
 pub use library::{
     AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
@@ -149,7 +149,12 @@ pub fn run(
     let smoke_play = options.smoke && library.is_some();
     let (bench, bench_wait) = bench_run(&options);
     let (state, ready_wait) = shared.shell_state(theme, &options, smoke_play, bench.clone());
-    let app = build_app(Arc::clone(&engine), router, state)?;
+    let header = header::take_installed();
+    let (host, tick) = match header {
+        Some(parts) => (Some(parts.host), parts.tick),
+        None => (None, None),
+    };
+    let app = build_app(Arc::clone(&engine), router, state, host)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
     }
@@ -157,7 +162,7 @@ pub fn run(
         smoke::spawn_watchdog(app.handle().clone(), wait, smoke::bench_timeout(seconds))?;
     }
     let drive_state = options.drive_out.as_ref().map(|d| d.state.clone());
-    let control = shared.spawn_control(&app, engine, library, drive_state)?;
+    let control = shared.spawn_control(&app, engine, library, tick, drive_state)?;
     let code = app.run_return(|_, _| {});
     shared.shut_down(control);
     bench_outcome(bench.as_deref())?;
@@ -245,6 +250,7 @@ impl Shared {
         app: &App,
         engine: Arc<DjEngine>,
         setup: Option<LibrarySetup>,
+        tick: Option<TickSetup>,
         drive_state: Option<PathBuf>,
     ) -> Result<JoinHandle<()>, ShellError> {
         let control = ControlLoop {
@@ -252,6 +258,7 @@ impl Shared {
             decks: Arc::clone(&self.decks),
             library: Arc::clone(&self.library),
             setup,
+            tick,
             stop: Arc::clone(&self.stop),
             drive_state,
         };
@@ -284,13 +291,14 @@ fn build_app(
     engine: Arc<DjEngine>,
     router: Arc<ParameterRouter>,
     state: ShellState,
+    header: Option<Arc<dyn HeaderHost>>,
 ) -> Result<App, ShellError> {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(engine)
         .manage(router)
         .manage(state)
-        .manage(header::HeaderSlot(header::take_installed().map(|p| p.host)))
+        .manage(header::HeaderSlot(header))
         .invoke_handler(tauri::generate_handler![
             commands::theme_css,
             commands::run_config,
