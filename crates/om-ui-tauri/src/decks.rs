@@ -1,9 +1,10 @@
 //! What the front end knows of each deck's track: the track loader and two generations per deck,
 //! one counting every change (track, waveform, hot cues) and one counting waveform changes only, so
 //! the front end fetches and uploads peaks once per waveform. The control thread ticks it; the deck commands read
-//! it from Tauri's IPC threads. The library services stay on the control thread (they are not
-//! `Send`), so only the loader sits behind the lock. A load the front end asks for waits in a queue
-//! until the control thread, which holds the services, runs it.
+//! it from Tauri's IPC threads. The library hub (services, loader, browser) stays on the control
+//! thread (it is not `Send`), which publishes what each deck shows ([`PublishedDeck`]) after every
+//! tick; only those copies sit behind the lock. A load the front end asks for waits in a queue until
+//! the control thread, which holds the loader, runs it.
 
 use crate::lock;
 use om_analysis::WaveformData;
@@ -23,49 +24,25 @@ pub struct DeckLibrary {
 /// Builds the [`DeckLibrary`] on the control thread, where it then lives.
 pub type LibrarySetup = Box<dyn FnOnce() -> Option<DeckLibrary> + Send>;
 
-/// What the deck commands read off the track loader; a trait so a test can stand in for one.
-pub(crate) trait DeckSource: Send {
-    /// Applies finished analysis (the control thread's tick).
-    fn pump(&mut self, engine: &DjEngine, services: &LibraryServices);
-    fn track_id(&self, deck: usize) -> Option<i64>;
-    fn waveform(&self, deck: usize) -> Option<&Arc<WaveformData>>;
-    fn track_info(&self, deck: usize) -> TrackInfo;
-    /// Loads the audio file at `path` into `deck` (adding it to the library first); a playing
-    /// deck refuses. `Err` is the reason, as the front end shows it.
-    fn load_file(
-        &mut self,
-        engine: &DjEngine,
-        services: &mut LibraryServices,
-        deck: usize,
-        path: &Path,
-    ) -> Result<(), String>;
+/// Loads the file at the path into the deck; `Err` is the reason, as the front end shows it.
+pub(crate) type LoadFile<'a> = dyn FnMut(usize, &Path) -> Result<(), String> + 'a;
+
+/// What one deck shows of its loaded track, copied off the loader by the control thread.
+#[derive(Debug, Clone, Default)]
+pub struct PublishedDeck {
+    pub track_id: Option<i64>,
+    pub waveform: Option<Arc<WaveformData>>,
+    pub track: TrackInfo,
 }
 
-impl DeckSource for TrackLoader {
-    fn pump(&mut self, engine: &DjEngine, services: &LibraryServices) {
-        TrackLoader::pump(self, engine, services);
-    }
-
-    fn track_id(&self, deck: usize) -> Option<i64> {
-        self.loaded_track(deck).map(|t| t.id)
-    }
-
-    fn waveform(&self, deck: usize) -> Option<&Arc<WaveformData>> {
-        TrackLoader::waveform(self, deck)
-    }
-
-    fn track_info(&self, deck: usize) -> TrackInfo {
-        TrackLoader::track_info(self, deck)
-    }
-
-    fn load_file(
-        &mut self,
-        engine: &DjEngine,
-        services: &mut LibraryServices,
-        deck: usize,
-        path: &Path,
-    ) -> Result<(), String> {
-        TrackLoader::load_file(self, engine, services, deck, path, false).map_err(|e| e.to_string())
+impl PublishedDeck {
+    /// What `loader` holds for `deck` right now.
+    pub fn of(loader: &TrackLoader, deck: usize) -> Self {
+        Self {
+            track_id: loader.loaded_track(deck).map(|t| t.id),
+            waveform: loader.waveform(deck).cloned(),
+            track: loader.track_info(deck),
+        }
     }
 }
 
@@ -133,7 +110,8 @@ impl Watch {
 }
 
 struct DeckState {
-    loader: Option<Box<dyn DeckSource>>,
+    /// One per deck once a library publishes; empty before (and without one).
+    published: Vec<PublishedDeck>,
     watches: Vec<Watch>,
 }
 
@@ -147,7 +125,7 @@ impl Decks {
     /// Generation 0 for every deck, measured from the engine as it is now.
     pub(crate) fn new(engine: &DjEngine) -> Self {
         let mut state = DeckState {
-            loader: None,
+            published: Vec::new(),
             watches: Vec::new(),
         };
         state.watches = (0..engine.num_decks())
@@ -162,29 +140,22 @@ impl Decks {
         }
     }
 
-    /// Hands the loader over and measures the decks it loaded under the same lock, so a read never
-    /// pairs its waveform with the generation from before it; returns the decks that changed.
-    pub(crate) fn install(
+    /// Takes in what the decks show now and returns the decks that changed since the last call.
+    /// The measuring happens under the same lock, so a read never pairs a waveform with the
+    /// generation from before it.
+    pub(crate) fn publish(
         &self,
         engine: &DjEngine,
-        loader: Box<dyn DeckSource>,
+        published: Vec<PublishedDeck>,
     ) -> Vec<DeckChanged> {
         let mut state = lock(&self.state);
-        state.loader = Some(loader);
+        state.published = published;
         observe_all(&mut state, engine)
     }
 
-    /// Applies finished analysis, then returns the decks that changed since the last tick.
-    pub(crate) fn tick(
-        &self,
-        engine: &DjEngine,
-        services: Option<&LibraryServices>,
-    ) -> Vec<DeckChanged> {
-        let mut state = lock(&self.state);
-        if let (Some(loader), Some(services)) = (state.loader.as_mut(), services) {
-            loader.pump(engine, services);
-        }
-        observe_all(&mut state, engine)
+    /// The decks that changed since the last tick, with nothing new published (no library).
+    pub(crate) fn tick(&self, engine: &DjEngine) -> Vec<DeckChanged> {
+        observe_all(&mut lock(&self.state), engine)
     }
 
     /// Queues a load of `path` into `deck` for the control thread; `Err` for a deck that does not
@@ -197,23 +168,16 @@ impl Decks {
         Ok(())
     }
 
-    /// Runs the queued loads on the control thread, which owns `services`; returns the ones that
-    /// failed. Without a library every load fails, saying so.
-    pub(crate) fn run_loads(
-        &self,
-        engine: &DjEngine,
-        mut services: Option<&mut LibraryServices>,
-    ) -> Vec<LoadFailed> {
+    /// Runs the queued loads through `load` on the control thread, which owns the loader; returns
+    /// the ones that failed. Without a library (`None`) every load fails, saying so.
+    pub(crate) fn run_loads(&self, mut load: Option<&mut LoadFile<'_>>) -> Vec<LoadFailed> {
         let requests = std::mem::take(&mut *lock(&self.loads));
-        let mut state = lock(&self.state);
         requests
             .into_iter()
             .filter_map(|request| {
-                let result = match (state.loader.as_mut(), services.as_deref_mut()) {
-                    (Some(loader), Some(services)) => {
-                        loader.load_file(engine, services, request.deck, &request.path)
-                    }
-                    _ => Err("no library is open".to_owned()),
+                let result = match load.as_deref_mut() {
+                    Some(load) => load(request.deck, &request.path),
+                    None => Err("no library is open".to_owned()),
                 };
                 result.err().map(|reason| failed(&request, reason))
             })
@@ -224,12 +188,12 @@ impl Decks {
     pub(crate) fn read(&self, deck: usize) -> Option<DeckView> {
         let state = lock(&self.state);
         let watch = state.watches.get(deck)?;
-        let loader = state.loader.as_ref();
+        let shown = state.published.get(deck);
         Some(DeckView {
             generation: watch.generation,
             peaks_generation: watch.peaks_generation,
-            track: loader.map(|l| l.track_info(deck)).unwrap_or_default(),
-            waveform: loader.and_then(|l| l.waveform(deck)).cloned(),
+            track: shown.map(|d| d.track.clone()).unwrap_or_default(),
+            waveform: shown.and_then(|d| d.waveform.clone()),
         })
     }
 }
@@ -266,12 +230,12 @@ fn observe(state: &mut DeckState, engine: &DjEngine, deck: usize) -> Option<Deck
 }
 
 fn seen(state: &DeckState, engine: &DjEngine, deck: usize) -> Seen {
-    let loader = state.loader.as_ref();
+    let shown = state.published.get(deck);
     Seen {
-        track: loader.and_then(|l| l.track_id(deck)),
+        track: shown.and_then(|d| d.track_id),
         // The address tells one waveform from the next; it is never dereferenced.
-        waveform: loader
-            .and_then(|l| l.waveform(deck))
+        waveform: shown
+            .and_then(|d| d.waveform.as_ref())
             .map_or(0, |w| Arc::as_ptr(w) as usize),
         hotcues: engine
             .deck_snapshot(deck)
@@ -292,7 +256,7 @@ mod tests {
     fn a_quiet_engine_reports_nothing() {
         let engine = engine();
         let decks = Decks::new(&engine);
-        assert!(decks.tick(&engine, None).is_empty());
+        assert!(decks.tick(&engine).is_empty());
         assert_eq!(decks.read(0).map(|v| v.generation), Some(0));
     }
 
@@ -301,7 +265,7 @@ mod tests {
         let engine = engine();
         let decks = Decks::new(&engine);
         engine.deck(1).set_hotcue(2, 44_100);
-        let changes = decks.tick(&engine, None);
+        let changes = decks.tick(&engine);
         assert_eq!(
             changes,
             vec![DeckChanged {
@@ -309,9 +273,9 @@ mod tests {
                 generation: 1
             }]
         );
-        assert!(decks.tick(&engine, None).is_empty(), "reported once");
+        assert!(decks.tick(&engine).is_empty(), "reported once");
         engine.deck(1).set_hotcue(2, 88_200);
-        assert_eq!(decks.tick(&engine, None)[0].generation, 2);
+        assert_eq!(decks.tick(&engine)[0].generation, 2);
         assert_eq!(decks.read(1).map(|v| v.generation), Some(2));
         assert_eq!(decks.read(0).map(|v| v.generation), Some(0));
     }
@@ -374,7 +338,7 @@ mod tests {
         let engine = engine();
         let decks = Decks::new(&engine);
         engine.deck(0).set_hotcue(1, 1_000);
-        decks.tick(&engine, None);
+        decks.tick(&engine);
         let view = decks.read(0).unwrap();
         assert_eq!((view.generation, view.peaks_generation), (1, 0));
     }
@@ -408,7 +372,7 @@ mod tests {
         decks
             .request_load(1, PathBuf::from("/music/set/intro.flac"))
             .unwrap();
-        let failures = decks.run_loads(&engine, None);
+        let failures = decks.run_loads(None);
         assert_eq!(
             failures,
             vec![LoadFailed {
@@ -417,9 +381,6 @@ mod tests {
                 reason: "no library is open".to_owned(),
             }]
         );
-        assert!(
-            decks.run_loads(&engine, None).is_empty(),
-            "the queue drained"
-        );
+        assert!(decks.run_loads(None).is_empty(), "the queue drained");
     }
 }

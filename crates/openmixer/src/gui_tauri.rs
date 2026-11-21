@@ -12,28 +12,33 @@
 //! (for `tools/ui-drive.py`) has the front end write its controls' rectangles to `<path>` and the
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
+use crate::gui_tauri_header::TauriHeader;
 use crate::gui_tauri_settings::TauriSettings;
+use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
 use om_ui_tauri::{
-    DeckLibrary, DriveOut, LibrarySetup, RunOptions, SettingsHost, ShellError, ShellTheme,
-    DEFAULT_FPS_CAP,
+    install_header, DeckLibrary, DriveOut, HeaderParts, LibrarySetup, RunOptions, SettingsHost,
+    ShellError, ShellTheme, TickSetup, DEFAULT_FPS_CAP,
 };
 use openmixer::audio_settings::SharedOutput;
+use openmixer::automix_settings::apply_automix_prefs;
 use openmixer::composition::{library_options, prefs_save_target, AppComposition};
 use openmixer::flags::DemoScene;
 use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
 };
-use openmixer::{demo_scene, library_smoke, AppError};
+use openmixer::{demo_scene, library_smoke, wiring, AppError};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
-/// The window's opening size (`tauri.conf.json`); it picks the density an `Automatic` choice gets.
+/// The size the faceplate was designed for; it picks the density an `Automatic` choice gets. The
+/// window opens taller (`tauri.conf.json`, 960) so the library band fits under the decks, and the
+/// density stays what the faceplate above it was tuned at.
 const WINDOW_SIZE: (i32, i32) = (1600, 780);
 
 /// The environment variable naming the bench report's file.
@@ -243,6 +248,10 @@ fn run_window(
         drive_out: window.drive,
     };
     let router = Arc::clone(&composition.router);
+    install_header(HeaderParts {
+        host: Arc::new(header_host(&composition, &device, &router)),
+        tick: Some(automix_tick(&composition)),
+    });
     let theme = shell_theme(&composition, engine.num_decks());
     let prefs_file = prefs_save_target(
         device.demo_run,
@@ -270,6 +279,47 @@ fn run_window(
         println!("openmixer tauri bench written to {}", window.out.display());
     }
     report(result, window.smoke, played)
+}
+
+/// The header's host over the composition's automix and recorder. The stored Automix settings are
+/// pushed into the service first, as every start does; a demo run saves nothing.
+fn header_host(
+    composition: &AppComposition,
+    device: &Device,
+    router: &Arc<ParameterRouter>,
+) -> TauriHeader {
+    apply_automix_prefs(&composition.automix, &composition.prefs.automix, None);
+    TauriHeader::new(
+        Arc::clone(&composition.engine),
+        Arc::clone(router),
+        Arc::clone(&composition.automix),
+        Arc::clone(&composition.record),
+        composition.prefs.automix.clone(),
+        (!device.demo_run).then(om_ui::preferences::default_file),
+    )
+}
+
+/// The automix runner, built on the control thread once the library hub exists (its host reads the
+/// library and the track loader, which cannot leave that thread) and stepped at 30 Hz there. It
+/// steps only while automix is on or mixing, and it sends its moves through the sink that does not
+/// count as the DJ's own input.
+fn automix_tick(composition: &AppComposition) -> TickSetup {
+    let automix = Arc::clone(&composition.automix);
+    let sink = Arc::clone(&composition.automix_sink);
+    let engine = Arc::clone(&composition.engine);
+    let prefs = composition.prefs.automix.clone();
+    Box::new(move |hub| {
+        let mut runner =
+            wiring::automix_runner_over(automix, sink, &engine, Some(hub), &prefs, automix_seed());
+        Box::new(move |engine: &DjEngine, now| runner.step(engine, now))
+    })
+}
+
+/// A seed for the queue's shuffle: the clock, so two runs pick differently.
+fn automix_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.as_nanos() as u64)
 }
 
 /// The control round trip's verdict: the front end's `deck0.play` reached the engine.

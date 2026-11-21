@@ -312,3 +312,65 @@ export const appearanceSettings = (): Promise<AppearancePage> => invoke<Appearan
 /** Applies one edit; the page and the theme CSS to show, or the reason it was refused. */
 export const appearanceChange = (change: AppearanceChange): Promise<AppearanceResult> =>
   invoke<AppearanceResult>('appearance_change', { change });
+
+/** The top bar's Automix strip, as `om_ui::automix_bar` decides it. */
+export interface AutomixBarState {
+  enabled: boolean;
+  /** A pick is loading, armed or mixing: the state word, progress, Skip and Cancel show. */
+  running: boolean;
+  state: string;
+  /** `Next: <title> · <bpm> BPM · <key>`, or `Next: Nothing queued`. */
+  next: string;
+  /** 0 to 1 through the running transition. */
+  progress: number;
+  /** `12 beats left`; empty when no deck leads. */
+  remaining: string;
+  /** The last error or the reason a plan was dropped; empty when none. */
+  error: string;
+  lengthBeats: number;
+  /** `16 beats`, or `Auto`. */
+  lengthLabel: string;
+  /** The length a press of the chip steps to. */
+  nextLengthBeats: number;
+  canStart: boolean;
+  canSkip: boolean;
+  canCancel: boolean;
+}
+
+/** The Record button. */
+export interface RecordBarState {
+  recording: boolean;
+  failed: boolean;
+  /** `Record`, the elapsed time while recording, or `Stopped` after a failure. */
+  label: string;
+  /** `12.3 MB` written so far. */
+  size: string;
+  /** `12 frames dropped`; empty when none were. */
+  warning: string;
+  droppedFrames: number;
+  peakLeft: number;
+  peakRight: number;
+  error: string;
+}
+
+export interface HeaderState {
+  automix: AutomixBarState;
+  record: RecordBarState;
+}
+
+export type AutomixAction = 'start' | 'skip' | 'cancel';
+
+/** Both header parts as the app has them now; rejects when the run has no automix or recorder. */
+export const headerState = (): Promise<HeaderState> => invoke<HeaderState>('header_state');
+
+/** The Off | On switch. */
+export const automixEnable = (on: boolean): Promise<void> => invoke<void>('automix_enable', { on });
+
+/** The length chip: a transition length in beats (0 is Auto). */
+export const automixLength = (beats: number): Promise<void> => invoke<void>('automix_length', { beats });
+
+/** Start, Skip or Cancel. */
+export const automixPress = (action: AutomixAction): Promise<void> => invoke<void>('automix_press', { action });
+
+/** Starts or stops the mix recording. */
+export const recordToggle = (): Promise<void> => invoke<void>('record_toggle');

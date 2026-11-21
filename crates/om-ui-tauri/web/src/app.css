@@ -69,3 +69,9 @@ body {
   font-family: var(--om-font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* The target a track or playlist drag would drop on (a deck, a playlist, a folder or a row). */
+[data-drop-hot] {
+  outline: var(--om-focus-border-width) solid var(--om-drop-target);
+  outline-offset: -2px;
+}
