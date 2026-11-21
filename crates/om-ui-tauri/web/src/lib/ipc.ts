@@ -246,3 +246,39 @@ export function onLoadFailed(cb: (failure: LoadFailed) => void): Promise<Unliste
 export function onDeckChanged(cb: (change: DeckChanged) => void): Promise<UnlistenFn> {
   return listen<DeckChanged>('deck-changed', (event) => cb(event.payload));
 }
+
+/** The audio settings page: what the device offers and the current pick (`SettingsHost`). */
+export interface AudioPage {
+  deviceTypes: string[];
+  deviceType: string;
+  devices: string[];
+  device: string;
+  sampleRates: number[];
+  sampleRate: number;
+  bufferSizes: number[];
+  bufferSize: number;
+  /** Output pair labels of the open device ("Outputs 1-2"). */
+  pairs: string[];
+  masterPair: number;
+  /** The headphone cue pair; null for none. */
+  cuePair: number | null;
+  /** The latency and load readout, or why no device runs. */
+  stats: string;
+  /** The silent mock runs: no change reaches a sound card. */
+  mock: boolean;
+}
+
+/** One edit of the audio page, as the shell reads it. */
+export type AudioChange =
+  | { field: 'deviceType'; value: string }
+  | { field: 'device'; value: string }
+  | { field: 'sampleRate'; value: number }
+  | { field: 'bufferSize'; value: number }
+  | { field: 'masterPair'; value: number }
+  | { field: 'cuePair'; value: number | null };
+
+/** The audio settings page as it stands. */
+export const audioSettings = (): Promise<AudioPage> => invoke<AudioPage>('audio_settings');
+
+/** Applies one edit (saved and pushed into the engine); the page afterwards, or the reason it was refused. */
+export const audioChange = (change: AudioChange): Promise<AudioPage> => invoke<AudioPage>('audio_change', { change });

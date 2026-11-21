@@ -5,7 +5,7 @@
 A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) makes the web front end the direction for the interface. GPUI stays the default window until the cut-over.
 
 - Behind the `gui-tauri` cargo feature of `openmixer` (off by default) and the `--ui=tauri` flag.
-- Opens the stored output device (else the default output), as GPUI does; a device that does not open falls back to the silent mock with GPUI's no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. No MIDI, plugin state or settings page reach it yet, so the device cannot be changed from this window.
+- Opens the stored output device (else the default output), as GPUI does; a device that does not open falls back to the silent mock with GPUI's no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. The **Settings** button in the top bar opens the settings overlay; its Audio page changes the audio system, output device, sample rate, buffer size, master output and headphone cue pair (see [Settings](#settings)). No MIDI or plugin state reaches this window yet.
 - Loads tracks: each deck header's **Load** button opens the system file dialog, and a file dropped from the desktop lands on the deck under the pointer (header, panel or waveform lane; elsewhere, the half of the window it is in). See [Loading tracks](#loading-tracks).
 - The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app, with no GPUI.
 
@@ -127,6 +127,8 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `deck_info` | `deckInfo(deck)` | `DeckInfo`; an error for an unknown deck |
 | `deck_peaks` | `deckPeaks(deck)` | `{ generation, bytes }`: the peaks generation and the packed peaks |
 | `ui_layout` | `uiLayout(map)` | nothing; `--ui-drive-out` runs only (else an error): checks the layout map (see Driving the window) and writes it with every control's spec |
+| `audio_settings` | `audioSettings()` | the Audio page: choices and current pick (`AudioPage`); an error where the run has no settings host |
+| `audio_change` | `audioChange({ field, value })` | applies one edit (saved to the preferences file and pushed into the engine as GPUI's overlay does), returns the page afterwards, or the refusal text |
 | `load_file` | `loadFile(deck, path)` | nothing (queued for the control thread); an error for an unknown deck |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
 | event `load-failed` | `onLoadFailed(cb)` | `{ deck, file, reason }` |
@@ -144,7 +146,7 @@ The window's capability (`capabilities/default.json`) grants `core:default` and 
 - **Frame cap.** The lanes draw at most `--ui-fps-cap` times a second (default 60, 0 uncapped), with 2 ms slack (`view.ts`, `shouldDraw`). The cap applies to the lanes only.
 - **Text only on change.** Read-outs go through `dom.ts` (`setText`, `setStyle`), which write only a changed value. Values that only assistive technology reads are paced: meters at most every 250 ms, the overview position once a second.
 - **Interaction.** Dragging a lane scrubs (sent as `deck<d>.seek`); the wheel zooms between 1 and 64 visible seconds (default 8). Clicking or dragging the overview seeks. Each lane also takes keys (see Accessibility): a key's seek goes through the same scrub hold and send as a drag's, and its zoom changes the same shared view.
-- **Top bar.** The mock-device notice (`run_config().banner`, the text of `om_ui::labels::Notice::Demo`, which points at a Settings screen this window does not have yet; see the ADR's known gaps), centred, one line, `role="status"`, cut with an ellipsis; nothing when null. GPUI's rule (`gui.rs`): every run here is on the mock device, and a demo run (`flags::demo_run`: `--demo-library`, `--demo-scene`, `--demo-map`, `--demo-automix`, `--demo-record`) shows none. A frame counter (`NN fps · N.NN ms`, drawn frames and mean work) shows only when `run_config().hud` is true (`--ui-bench` or `--debug-panel`); otherwise the ticker makes no counter window, so nothing is counted, formatted or written. It is hidden from assistive technology.
+- **Top bar.** The mock-device notice (`run_config().banner`, the text of `om_ui::labels::Notice::Demo`, which points at the Settings button), centred, one line, `role="status"`, cut with an ellipsis; nothing when null. GPUI's rule (`gui.rs`): every run here is on the mock device, and a demo run (`flags::demo_run`: `--demo-library`, `--demo-scene`, `--demo-map`, `--demo-automix`, `--demo-record`) shows none. A frame counter (`NN fps · N.NN ms`, drawn frames and mean work) shows only when `run_config().hud` is true (`--ui-bench` or `--debug-panel`); otherwise the ticker makes no counter window, so nothing is counted, formatted or written. It is hidden from assistive technology.
 
 ## Front-end map
 
@@ -200,6 +202,14 @@ The zoomed lanes' canvas carries a text summary ("Scrolling waveforms of Deck A 
 
 - Control glyphs: five Lucide icons (ISC; `web/src/lib/icons/LICENSE-LUCIDE`), the same set the GPUI window draws from: `play`, `pause`, `refresh-cw` (Sync), `repeat` (Loop) and `flag` (a set hot cue). `icons.ts` holds each SVG's inner markup unchanged (24 px grid, 2 px stroke), taken from `gpui-kit-assets` 0.8.1 and recorded in `docs/legal/asset-provenance.csv`; `Icon.svelte` draws them in `currentColor`, hidden from assistive technology.
 - App icon: `icons/openmixer-icon.svg` (48 px and up) and `icons/openmixer-icon-small.svg` (32 px and below), the OpenMixer DJ mark from the App Icon design comp (tile 15a) in the colours of the project website's favicon. `icons/render.sh` renders the `.png`, `.ico` and `.icns` files (librsvg, ImageMagick for the `.ico`, Python with Pillow for the `.icns`); do not edit the rasters by hand. The first `.png` in `tauri.conf.json`'s `bundle.icon` is the Linux window icon. The `.icns` has not been checked on macOS.
+
+## Settings
+
+The overlay (`lib/settings/`) opens from the top bar and closes with Escape, its Close button or a click on the scrim. Pages are listed in `SettingsOverlay.svelte`; the Audio page is the first.
+
+- **Host seam:** `om_ui_tauri::SettingsHost` (`settings.rs`) is what the binary offers; `openmixer::gui_tauri_settings::TauriSettings` implements it over the same `om-ui` `AudioSettingsPage` and `SharedOutput` that GPUI's overlay uses, then saves the preferences file and calls `apply_preferences`, as GPUI's `apply_changes` does. The composition holds library services that cannot leave their thread, so the host is not `Send`: `run` keeps it in a main-thread slot and the synchronous commands reach it there.
+- **Saving:** demo runs write to the scratch folder's `preferences.json`, never the user's file (`prefs_save_target`); a preferences file that could not be read is left as it is.
+- **Not here yet:** the appearance, library, MIDI, plugins, stems, Automix and recording pages; each is a later page of this overlay.
 
 ## Loading tracks
 
