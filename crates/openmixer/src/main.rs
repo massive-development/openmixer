@@ -8,6 +8,8 @@
 #[cfg(feature = "gui-tauri")]
 mod gui_tauri;
 #[cfg(feature = "gui-tauri")]
+mod gui_tauri_header;
+#[cfg(feature = "gui-tauri")]
 mod gui_tauri_settings;
 
 use om_audio::{AudioDevice, MockAudioDevice, OutputRouter};

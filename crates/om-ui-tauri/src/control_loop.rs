@@ -1,20 +1,24 @@
-//! The control thread (`om-ui-control`): builds the library when there is one, then at 30 Hz runs
-//! the loads the front end queued, pumps the library and the track loader and reports the decks
-//! that changed and the loads that failed; in a `--ui-drive-out`
-//! run it also rewrites the engine's state file every third tick (10 Hz). It owns the library
-//! services; nothing here runs on the audio thread or waits on a plugin.
+//! The control thread (`om-ui-control`): builds the library hub when there is one (the services,
+//! the track loader and the browser's [`LibraryPanel`]), then at 30 Hz runs the library calls and
+//! the loads the front end queued, ticks the panel (which pumps the library and the track loader),
+//! publishes what the decks show and reports the decks that changed and the loads that failed; in
+//! a `--ui-drive-out` run it also rewrites the engine's state file every third tick (10 Hz). The
+//! hub is not `Send`, so it lives on this thread alone; nothing here runs on the audio thread or
+//! waits on a plugin.
 
-use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed};
+use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed, PublishedDeck};
 use crate::drive::{drive_state, write_json_atomic};
-use crate::instruments::{InstrumentEvent, Instruments, Reported, StemWork};
+use crate::header::{TickSetup, Ticker};
+use crate::instruments::{InstrumentEvent, Instruments, Reported};
+use crate::library::LibraryQueue;
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
-use om_ui::library::LibraryServices;
-use om_ui::stems::StemQueue;
-use std::path::PathBuf;
+use om_ui::library::hub::{LibraryHub, LibraryPanel};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 /// Name of the control thread.
 pub const CONTROL_THREAD: &str = "om-ui-control";
@@ -27,7 +31,11 @@ const STATE_EVERY: u64 = 3;
 pub(crate) struct ControlLoop {
     pub(crate) engine: Arc<DjEngine>,
     pub(crate) decks: Arc<Decks>,
+    /// Calls the commands made on the library browser, run here.
+    pub(crate) library: Arc<LibraryQueue>,
     pub(crate) setup: Option<LibrarySetup>,
+    /// Builds the step run beside the library (automix); `None` runs none.
+    pub(crate) tick: Option<TickSetup>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The drive run's state file (`<path>.state`); `None` writes nothing.
     pub(crate) drive_state: Option<PathBuf>,
@@ -55,29 +63,21 @@ impl ControlLoop {
         failed: impl Fn(LoadFailed),
         instrument: impl Fn(InstrumentEvent),
     ) {
-        let mut stems = StemWork {
-            host: None,
-            queue: StemQueue::default(),
-        };
         let mut reported = Reported::default();
-        let mut services = self.attach_library(&emit, &mut stems);
+        let mut panel = self.attach_library(&emit);
+        let mut ticker = panel
+            .as_ref()
+            .zip(self.tick.take())
+            .map(|(panel, setup)| setup(panel.hub()));
+        let started = Instant::now();
         let mut pacer = Pacer::new(CONTROL_HZ);
         let mut ticks: u64 = 0;
         while !self.stop.load(Ordering::Acquire) {
-            let failures = self.decks.run_loads(&self.engine, services.as_mut());
+            let now = started.elapsed().as_secs_f64();
+            let (failures, changes) = self.step(panel.as_mut(), ticker.as_mut(), now);
             failures.into_iter().for_each(&failed);
-            if let Some(services) = services.as_mut() {
-                services.pump();
-            }
-            let changes = self.decks.tick(&self.engine, services.as_ref());
             changes.into_iter().for_each(&emit);
-            let events = self.instruments.tick(
-                &self.engine,
-                &self.decks,
-                services.as_ref(),
-                &mut stems,
-                &mut reported,
-            );
+            let events = self.instruments.tick(panel.as_mut(), &mut reported);
             events.into_iter().for_each(&instrument);
             if ticks.is_multiple_of(STATE_EVERY) {
                 self.write_drive_state();
@@ -85,6 +85,50 @@ impl ControlLoop {
             ticks = ticks.wrapping_add(1);
             pacer.wait();
         }
+        // Whoever still waits on the library finds it closed.
+        self.library.discard();
+    }
+
+    // One tick: the library calls, the queued loads, the panel's own tick, the header's step
+    // (automix), then what the decks show.
+    fn step(
+        &self,
+        panel: Option<&mut LibraryPanel>,
+        ticker: Option<&mut Ticker>,
+        now: f64,
+    ) -> (Vec<LoadFailed>, Vec<DeckChanged>) {
+        let Some(panel) = panel else {
+            self.library.discard();
+            return (self.decks.run_loads(None), self.decks.tick(&self.engine));
+        };
+        self.library.run(panel);
+        let failures = self.run_loads(panel);
+        panel.tick();
+        // Automix steps after the panel has pumped the loader, before the decks are published, so a
+        // track it just loaded shows at once.
+        if let Some(ticker) = ticker {
+            ticker(&self.engine, now);
+        }
+        let shown = published(panel, self.engine.num_decks());
+        (failures, self.decks.publish(&self.engine, shown))
+    }
+
+    // A file the front end chose goes into the library first (so it is analysed like any track),
+    // then onto its deck; the browser hears of the new track.
+    fn run_loads(&self, panel: &LibraryPanel) -> Vec<LoadFailed> {
+        let hub = panel.hub();
+        let mut load = |deck: usize, path: &Path| {
+            let mut hub = hub.borrow_mut();
+            let LibraryHub {
+                services, loader, ..
+            } = &mut *hub;
+            loader
+                .load_file(&self.engine, services, deck, path, false)
+                .map_err(|e| e.to_string())?;
+            services.notify_library_changed();
+            Ok(())
+        };
+        self.decks.run_loads(Some(&mut load))
     }
 
     // A drive run's state file; a failed write is retried on the next round, so it only logs.
@@ -101,19 +145,27 @@ impl ControlLoop {
         }
     }
 
-    // The services are built here because they cannot move between threads; the decks the loader
-    // already holds are reported at once.
-    fn attach_library(
-        &mut self,
-        emit: &impl Fn(DeckChanged),
-        stems: &mut StemWork,
-    ) -> Option<LibraryServices> {
+    // The hub is built here because it cannot move between threads; the decks the loader already
+    // holds are reported at once.
+    fn attach_library(&mut self, emit: &impl Fn(DeckChanged)) -> Option<LibraryPanel> {
         let library = self.setup.take().and_then(|setup| setup())?;
-        stems.host = library.stems;
-        let changes = self.decks.install(&self.engine, Box::new(library.loader));
+        let hub = LibraryHub::from_parts(library.services, library.loader);
+        hub.borrow_mut().stem_host = library.stems;
+        let panel = LibraryPanel::new(hub, Arc::clone(&self.engine));
+        let changes = self
+            .decks
+            .publish(&self.engine, published(&panel, self.engine.num_decks()));
         changes.into_iter().for_each(emit);
-        Some(library.services)
+        Some(panel)
     }
+}
+
+/// Each deck's track, waveform and header text, copied off the loader.
+fn published(panel: &LibraryPanel, num_decks: usize) -> Vec<PublishedDeck> {
+    let hub = panel.hub().borrow();
+    (0..num_decks)
+        .map(|deck| PublishedDeck::of(&hub.loader, deck))
+        .collect()
 }
 
 #[cfg(test)]
@@ -127,7 +179,9 @@ mod tests {
         ControlLoop {
             engine: Arc::clone(engine),
             decks: Arc::new(Decks::new(engine)),
+            library: Arc::default(),
             setup,
+            tick: None,
             stop: Arc::new(AtomicBool::new(false)),
             drive_state: None,
             instruments: Arc::new(Instruments::new(None, Vec::new())),
@@ -194,6 +248,49 @@ mod tests {
     }
 
     #[test]
+    fn the_header_step_is_built_and_run_on_the_control_thread_beside_the_library() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let engine_for_setup = Arc::clone(&engine);
+        let setup: LibrarySetup = Box::new(move || {
+            let mut services = om_ui::library::LibraryServices::create(
+                om_ui::library::Options::for_path(":memory:"),
+            )
+            .ok()?;
+            let loader =
+                om_ui::library::TrackLoader::new(&mut services, engine_for_setup.num_decks());
+            Some(crate::decks::DeckLibrary {
+                services,
+                loader,
+                stems: None,
+            })
+        });
+        let mut control = control(&engine, Some(setup));
+        let steps = Arc::new(Mutex::new(Vec::<(Option<String>, f64)>::new()));
+        let sink = Arc::clone(&steps);
+        control.tick = Some(Box::new(move |hub| {
+            // The hub is the control thread's: the step can borrow it.
+            assert!(hub.borrow().loader.loaded_track(0).is_none());
+            Box::new(move |_, now| {
+                let name = std::thread::current().name().map(str::to_owned);
+                sink.lock().unwrap().push((name, now));
+            })
+        }));
+        let stop = Arc::clone(&control.stop);
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
+        let stepped = || steps.lock().unwrap().len() >= 3;
+        assert!(wait_until(
+            Duration::from_secs(5),
+            Duration::from_millis(5),
+            stepped
+        ));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        let steps = steps.lock().unwrap();
+        assert_eq!(steps[0].0.as_deref(), Some(CONTROL_THREAD));
+        assert!(steps.windows(2).all(|w| w[1].1 >= w[0].1), "time moves on");
+    }
+
+    #[test]
     fn a_setup_that_finds_no_library_still_runs_the_loop() {
         let engine = Arc::new(DjEngine::new(2).0);
         let ran = Arc::new(AtomicBool::new(false));
@@ -212,5 +309,144 @@ mod tests {
         ));
         stop.store(true, Ordering::Release);
         handle.join().unwrap();
+    }
+
+    /// A library in memory with two tracks, built on the control thread like the real one.
+    fn two_tracks() -> LibrarySetup {
+        Box::new(|| {
+            let mut options = om_ui::library::Options::for_path(om_ui::library::MEMORY_PATH);
+            options.analysis_workers = 1;
+            let mut services = om_ui::library::LibraryServices::create(options).ok()?;
+            for (title, bpm) in [("Low", 100.0), ("High", 128.0)] {
+                let track = om_library::TrackRecord {
+                    path: format!("/music/{title}.wav"),
+                    title: title.to_owned(),
+                    artist: "Gen".to_owned(),
+                    bpm: Some(bpm),
+                    camelot: "8A".to_owned(),
+                    duration_sec: 200.0,
+                    ..Default::default()
+                };
+                services.library().tracks().insert(&track).ok()?;
+            }
+            let loader = om_ui::library::TrackLoader::new(&mut services, 2);
+            Some(crate::decks::DeckLibrary {
+                services,
+                loader,
+                stems: None,
+            })
+        })
+    }
+
+    #[test]
+    fn library_calls_run_on_the_control_thread_and_answer_with_the_browser_view() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let control = control(&engine, Some(two_tracks()));
+        let (stop, queue) = (Arc::clone(&control.stop), Arc::clone(&control.library));
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
+        let first = queue
+            .call(|panel| {
+                let name = std::thread::current().name().map(str::to_owned);
+                (name, crate::library::view(panel, 0, 10))
+            })
+            .unwrap();
+        assert_eq!(first.0.as_deref(), Some(CONTROL_THREAD));
+        let view = first.1;
+        assert_eq!(view.row_count, 2);
+        assert_eq!(view.rows.len(), 2);
+        assert!(view.sidebar.iter().any(|l| l.kind == "all" && l.selected));
+        assert!(
+            view.columns.iter().all(|c| c.title != "Stems"),
+            "no stems host"
+        );
+        assert_eq!(view.rows[0].cells.len(), view.columns.len());
+        // A search narrows the list, and the answer already shows it.
+        let found = queue
+            .call(|panel| {
+                panel.set_query("High");
+                panel.commit_query();
+                crate::library::view(panel, 0, 10)
+            })
+            .unwrap();
+        assert_eq!(found.row_count, 1);
+        assert_eq!(found.rows[0].cells[0], "High");
+        // Selecting a row shows its analysis, and a window past the end is empty, not an error.
+        let picked = queue
+            .call(|panel| {
+                panel.select_row(0);
+                crate::library::view(panel, 50, 10)
+            })
+            .unwrap();
+        assert!(picked.rows.is_empty());
+        assert_eq!(picked.analysis.track.map(|t| t.analysed), Some(true));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        // With the control thread gone, a call fails at once instead of waiting.
+        assert!(queue.call(|_| ()).is_err());
+    }
+
+    #[test]
+    fn without_a_library_a_call_says_so() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let control = control(&engine, None);
+        let (stop, queue) = (Arc::clone(&control.stop), Arc::clone(&control.library));
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
+        assert_eq!(queue.call(|_| ()), Err("no library is open".to_owned()));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_track_loaded_from_the_browser_reaches_the_decks_and_the_row_shows_its_deck() {
+        let dir = std::env::temp_dir().join(format!("om-ui-library-load-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("tone.wav");
+        let samples = om_testing::signals::stereo_sine(220.0, 0.3, 44_100.0, 44_100);
+        om_testing::wav::write_float_wav(&wav, 2, 44_100, &samples);
+        let path = wav.to_string_lossy().into_owned();
+        let setup: LibrarySetup = Box::new(move || {
+            let mut options = om_ui::library::Options::for_path(om_ui::library::MEMORY_PATH);
+            options.analysis_workers = 1;
+            let mut services = om_ui::library::LibraryServices::create(options).ok()?;
+            let track = om_library::TrackRecord {
+                path,
+                title: "Tone".to_owned(),
+                ..Default::default()
+            };
+            services.library().tracks().insert(&track).ok()?;
+            let loader = om_ui::library::TrackLoader::new(&mut services, 2);
+            Some(crate::decks::DeckLibrary {
+                services,
+                loader,
+                stems: None,
+            })
+        });
+        let engine = Arc::new(DjEngine::new(2).0);
+        let control = control(&engine, Some(setup));
+        let (stop, queue, decks) = (
+            Arc::clone(&control.stop),
+            Arc::clone(&control.library),
+            Arc::clone(&control.decks),
+        );
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
+        let id = queue
+            .call(|panel| panel.row(0).map(|row| row.track_id))
+            .unwrap()
+            .unwrap();
+        let loaded = queue.call(move |panel| panel.load_track_id(1, id).is_ok());
+        assert_eq!(loaded, Ok(true));
+        let shown = || decks.read(1).is_some_and(|d| d.track.title == "Tone");
+        assert!(wait_until(
+            Duration::from_secs(5),
+            Duration::from_millis(2),
+            shown
+        ));
+        let view = queue
+            .call(|panel| crate::library::view(panel, 0, 5))
+            .unwrap();
+        assert_eq!(view.rows[0].on_deck, Some(1));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

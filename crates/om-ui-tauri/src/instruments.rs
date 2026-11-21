@@ -3,14 +3,12 @@
 //! what changed. The models are `om_ui::sampler_binding` and `om_ui::stem_binding`; nothing here
 //! runs on the audio thread.
 
-use crate::decks::Decks;
 use crate::lock;
 use om_engine::sampler::{PadMode, MAX_PAD_GAIN, MAX_PITCH_SEMITONES};
-use om_engine::DjEngine;
-use om_ui::library::LibraryServices;
+use om_ui::library::hub::{LibraryHub, LibraryPanel};
 use om_ui::sampler_binding::{mode_hint, mode_label, PadView, SamplerBinding};
 use om_ui::stem_binding::{StemBinding, FILTER_DETENT, MAX_VOLUME, STEM_NAMES};
-use om_ui::stems::{StemHost, StemJob, StemQueue};
+use om_ui::stems::{StemJob, StemLabel};
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Mutex;
@@ -264,13 +262,6 @@ pub(crate) struct StemFacts {
     pub(crate) loader_note: Option<String>,
 }
 
-/// The stems side that must stay on the control thread: the host that separates and the queue of
-/// its jobs.
-pub(crate) struct StemWork {
-    pub(crate) host: Option<Box<dyn StemHost>>,
-    pub(crate) queue: StemQueue,
-}
-
 /// What the instruments report after a tick: the sampler and each deck's stems, when changed.
 #[derive(Default)]
 pub(crate) struct Reported {
@@ -311,30 +302,35 @@ impl Instruments {
     /// The control thread's step: runs the queued stem actions, then reports what changed.
     pub(crate) fn tick(
         &self,
-        engine: &DjEngine,
-        decks: &Decks,
-        services: Option<&LibraryServices>,
-        work: &mut StemWork,
+        mut panel: Option<&mut LibraryPanel>,
         reported: &mut Reported,
     ) -> Vec<InstrumentEvent> {
         let actions = std::mem::take(&mut *lock(&self.actions));
         for action in actions {
-            self.run(action, engine, decks, services, work);
+            let result = match (action, panel.as_deref_mut()) {
+                (_, None) => Err("no library is open".to_owned()),
+                (StemAction::Toggle(deck), Some(panel)) => toggle(panel, deck),
+                (StemAction::Prepare(deck), Some(panel)) => prepare(panel, deck),
+            };
+            let (StemAction::Toggle(deck) | StemAction::Prepare(deck)) = action;
+            self.set_note(deck, result.err());
         }
         for (deck, binding) in self.stems.iter().enumerate() {
-            let track = decks.track_id(deck);
+            let track = panel.as_deref().and_then(|p| loaded_track(p, deck));
             binding.observe_track(track);
         }
         if let Some(sampler) = &self.sampler {
             sampler.prune_pending();
         }
         let stems: Vec<StemsDto> = (0..self.stems.len())
-            .filter_map(|deck| self.stems_dto(deck, &facts(deck, decks, services, work)))
+            .filter_map(|deck| self.stems_dto(deck, &facts(deck, panel.as_deref())))
             .collect();
         *lock(&self.latest) = stems.clone();
         reported.changes(self.sampler_dto(), stems)
     }
+}
 
+impl Instruments {
     /// Deck `deck`'s stems at the last tick.
     pub(crate) fn stems_latest(&self, deck: usize) -> Option<StemsDto> {
         lock(&self.latest).get(deck).cloned()
@@ -356,91 +352,78 @@ impl Instruments {
             Err("the engine did not take the stem change".to_owned())
         }
     }
-
-    fn run(
-        &self,
-        action: StemAction,
-        engine: &DjEngine,
-        decks: &Decks,
-        services: Option<&LibraryServices>,
-        work: &mut StemWork,
-    ) {
-        let (deck, result) = match action {
-            StemAction::Toggle(deck) => (deck, toggle(engine, decks, services, deck)),
-            StemAction::Prepare(deck) => (deck, prepare(decks, services, work, deck)),
-        };
-        self.set_note(deck, result.err());
-    }
 }
 
-fn toggle(
-    engine: &DjEngine,
-    decks: &Decks,
-    services: Option<&LibraryServices>,
-    deck: usize,
-) -> Result<(), String> {
-    let services = services.ok_or("no library is open")?;
-    decks.toggle_stems(engine, services, deck).map(|_| ())
+fn loaded_track(panel: &LibraryPanel, deck: usize) -> Option<i64> {
+    panel.hub().borrow().loader.loaded_track(deck).map(|t| t.id)
 }
 
-fn prepare(
-    decks: &Decks,
-    services: Option<&LibraryServices>,
-    work: &mut StemWork,
-    deck: usize,
-) -> Result<(), String> {
-    let services = services.ok_or("no library is open")?;
-    let track_id = decks.track_id(deck).ok_or("no track is loaded")?;
-    let track = services
-        .library()
-        .tracks()
-        .find_by_id(track_id)
-        .map_err(|e| e.to_string())?
-        .ok_or("the track is not in the library")?;
-    let host = work.host.as_deref_mut().ok_or(EMPTY_STEMS)?;
+fn toggle(panel: &mut LibraryPanel, deck: usize) -> Result<(), String> {
+    panel
+        .toggle_stems(deck)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+// Separates the deck's track through the hub's host and queue, as the library's Prepare does.
+fn prepare(panel: &LibraryPanel, deck: usize) -> Result<(), String> {
+    let mut hub = panel.hub().borrow_mut();
+    let LibraryHub {
+        services,
+        loader,
+        stems,
+        stem_host,
+        ..
+    } = &mut *hub;
+    let track = loader.loaded_track(deck).ok_or("no track is loaded")?;
     let job = StemJob {
-        track_id,
+        track_id: track.id,
         path: track.path.clone().into(),
         content_hash: track.content_hash.clone(),
     };
-    work.queue
+    let host = stem_host.as_deref_mut().ok_or(NO_SEPARATION)?;
+    stems
         .prepare(host, services.library(), &[job])
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
 
-const EMPTY_STEMS: &str = "stem separation is not available";
+const NO_SEPARATION: &str = "stem separation is not available";
 
-fn facts(
-    deck: usize,
-    decks: &Decks,
-    services: Option<&LibraryServices>,
-    work: &StemWork,
-) -> StemFacts {
-    let track = decks.track_id(deck);
-    let loader_note = decks.stem_note(deck);
-    let (Some(services), Some(track_id)) = (services, track) else {
+fn facts(deck: usize, panel: Option<&LibraryPanel>) -> StemFacts {
+    let Some(panel) = panel else {
+        return StemFacts {
+            label: "None".to_owned(),
+            ..StemFacts::default()
+        };
+    };
+    let hub = panel.hub().borrow();
+    let loader_note = hub.loader.stem_note(deck).map(str::to_owned);
+    let Some(track) = hub.loader.loaded_track(deck) else {
         return StemFacts {
             label: "None".to_owned(),
             loader_note,
             ..StemFacts::default()
         };
     };
-    let label = match work.host.as_deref() {
-        None => om_ui::stems::StemLabel::None,
+    let label = match hub.stem_host.as_deref() {
+        None => StemLabel::None,
         Some(host) => {
             let (sep, version) = host.separator();
-            work.queue
-                .label(services.library(), track_id, (&sep, version))
+            hub.stems
+                .label(hub.services.library(), track.id, (&sep, version))
         }
     };
     let preparing = match label {
-        om_ui::stems::StemLabel::Preparing(percent) => Some(percent),
+        StemLabel::Preparing(percent) => Some(percent),
         _ => None,
     };
     StemFacts {
-        cached: decks.stems_cached(deck, services),
-        can_prepare: work.host.is_some(),
+        cached: hub
+            .loader
+            .cached_stems(hub.services.library(), track.id)
+            .is_some(),
+        can_prepare: hub.stem_host.is_some(),
         label: label.text(),
         preparing,
         loader_note,

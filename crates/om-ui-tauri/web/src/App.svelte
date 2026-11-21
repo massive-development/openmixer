@@ -3,6 +3,10 @@
   import { deckName } from './lib/a11y';
   import DeckHeader from './lib/deck/DeckHeader.svelte';
   import DeckPanel from './lib/deck/DeckPanel.svelte';
+  import AutomixBar from './lib/header/AutomixBar.svelte';
+  import { Header } from './lib/header/header.svelte';
+  import { isRecordKey, takesTyping } from './lib/header/keys';
+  import RecordButton from './lib/header/RecordButton.svelte';
   import { DeckData } from './lib/decks.svelte';
   import { Instruments } from './lib/instruments.svelte';
   import SamplerStrip from './lib/sampler/SamplerStrip.svelte';
@@ -16,6 +20,7 @@
     control,
     isSmokePlay,
     loadControls,
+    recordToggle,
     ready,
     runConfig,
     startStream,
@@ -25,6 +30,8 @@
   } from './lib/ipc';
   import { themeEpoch } from './lib/themeEpoch.svelte';
   import SettingsOverlay from './lib/settings/SettingsOverlay.svelte';
+  import Button from './lib/controls/Button.svelte';
+  import Library from './lib/library/Library.svelte';
   import Mixer from './lib/mixer/Mixer.svelte';
   import { firstSnapshot, type Snapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
@@ -78,10 +85,14 @@
     if (pad !== undefined) samplerLoad(pad, path);
     return true;
   };
+  // The top bar's Automix strip and Record button.
+  const header = new Header();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
   // The settings overlay.
   let settingsOpen = $state(false);
+  // The library band under the decks; the top bar's Library button hides it and the stage grows.
+  let libraryShown = $state(true);
   let hud: HTMLElement | undefined = $state();
   // The frame counter, only for a bench run or `--debug-panel`.
   let hudShown = $state(false);
@@ -175,6 +186,13 @@
     }
   }
 
+  // `r` toggles recording, unless a text field takes the key (the Settings card, a search box).
+  function recordKey(event: KeyboardEvent): void {
+    if (!header.state || !isRecordKey(event) || takesTyping(event.target as HTMLElement | null)) return;
+    event.preventDefault();
+    void header.press(recordToggle);
+  }
+
   onMount(() => {
     const stop = decks.start(DECKS.length);
     const stopLoading = loading.start(DECKS.length).catch((error: unknown) => {
@@ -186,18 +204,22 @@
       return () => {};
     });
     void start();
+    const stopHeader = header.start();
     return () => {
       void stopInstruments.then((unlisten) => unlisten());
+      stopHeader();
       void stop.then((unlisten) => unlisten());
       void stopLoading.then((unlisten) => unlisten());
     };
   });
 </script>
 
+<svelte:window onkeydown={recordKey} />
+
 {#if themed}
   <!-- Source order is the reading and Tab order (deck A, mixer, deck B; a deck's header before its
        panel); the grid areas put each region in its row. -->
-  <main class="shell">
+  <main class="shell" class:library-hidden={!libraryShown}>
     <header class="top-bar">
       <h1 class="wordmark">OPENMIXER</h1>
       <button
@@ -210,12 +232,15 @@
       >
         Sampler
       </button>
+      {#if header.state}<AutomixBar bar={header.state.automix} {header} />{/if}
+      <Button on={libraryShown} pressed={libraryShown} onpress={() => (libraryShown = !libraryShown)}>Library</Button>
       {#if banner}
         <p class="notice" role="status" title={banner}>{banner}</p>
       {/if}
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
       {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
       <button type="button" class="settings-button" onclick={() => (settingsOpen = true)}>Settings</button>
+      {#if header.state}<RecordButton bar={header.state.record} {header} />{/if}
     </header>
     {#snippet deckRegions(deck: number)}
       <section
@@ -267,6 +292,11 @@
         <SamplerStrip sampler={instruments.sampler} onclose={() => (samplerOpen = false)} />
       </section>
     {/if}
+    {#if libraryShown}
+      <section class="region library-band" aria-label="Library band">
+        <Library />
+      </section>
+    {/if}
   </main>
   {#if settingsOpen}<SettingsOverlay onclose={() => (settingsOpen = false)} />{/if}
 {/if}
@@ -278,15 +308,25 @@
     /* The two middle columns are the mixer (492 px with the line between them); a deck's header
        runs to the centre line over half of it. */
     grid-template-columns: minmax(0, 1fr) 246px 245px minmax(0, 1fr);
-    grid-template-rows: 44px 104px minmax(180px, 1fr) 372px;
+    grid-template-rows: 44px 104px minmax(150px, 0.6fr) 372px minmax(220px, 1fr);
     grid-template-areas:
       'top top top top'
       'head-a head-a head-b head-b'
       'wave wave wave wave'
-      'deck-a mixer mixer deck-b';
+      'deck-a mixer mixer deck-b'
+      'lib lib lib lib';
     gap: var(--om-border-width);
     height: 100%;
     background: var(--om-border);
+  }
+
+  /* The library hidden (the top bar's button): the stage takes its height. */
+  .shell.library-hidden {
+    grid-template-rows: 44px 104px minmax(180px, 1fr) 372px;
+  }
+
+  .library-band {
+    grid-area: lib;
   }
 
   .top-bar {
