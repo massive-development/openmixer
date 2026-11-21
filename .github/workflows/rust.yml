@@ -49,7 +49,8 @@ jobs:
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
           # libwebkit2gtk-4.1-dev (it brings GTK 3, libsoup 3 and JavaScriptCore): the Tauri window,
           # om-ui-tauri, is a workspace member, so the workspace-wide clippy and test build it.
-          # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
+          # The rest is left over from the retired GPUI window (X11, Wayland, Vulkan, fontconfig);
+          # webkit2gtk brings most of it back, so trimming the list is a follow-up.
           sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev
@@ -61,6 +62,9 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo clippy (headless binary)
+        run: cargo clippy -p openmixer --no-default-features --all-targets -- -D warnings
 
   test:
     name: test (ubuntu-24.04)
@@ -88,15 +92,17 @@ jobs:
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
           # libwebkit2gtk-4.1-dev (it brings GTK 3, libsoup 3 and JavaScriptCore): the Tauri window,
           # om-ui-tauri, is a workspace member, so the workspace-wide clippy and test build it.
-          # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
+          # The rest is left over from the retired GPUI window (X11, Wayland, Vulkan, fontconfig);
+          # webkit2gtk brings most of it back, so trimming the list is a follow-up.
           sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 
       - uses: Swatinem/rust-cache@v2
 
+      # The binary's window tests need a display and the built front end, so the `web` job runs them.
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude openmixer
 
       - name: cargo test (headless binary)
         run: cargo test -p openmixer --no-default-features
@@ -129,8 +135,8 @@ jobs:
       - name: Install Linux audio and window dependencies
         run: |
           sudo apt-get update
-          # The `check` job's packages (the binary builds GPUI by default and the Tauri window with
-          # `gui-tauri`), plus xvfb: the window tests need a display.
+          # The `check` job's packages (the binary builds the Tauri window by default), plus xvfb:
+          # the window tests need a display.
           sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev xvfb
@@ -162,46 +168,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: cargo test (Tauri window under Xvfb)
-        run: xvfb-run -a cargo test -p openmixer --features gui-tauri
-
-  # The GPUI window opens and renders frames on a software Vulkan driver (lavapipe) under Xvfb:
-  # `--smoke` exits 0 after a fixed number of frames and a library ingest, on the silent mock device.
-  # `cargo test` never opens this window, so without this job a window that fails to start would pass CI.
-  gpui-smoke:
-    name: gpui window smoke (linux)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Read toolchain from rust-toolchain.toml
-        id: tc
-        shell: bash
-        run: |
-          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.tc.outputs.channel }}
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
-            libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
-            libvulkan-dev libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev xvfb mesa-vulkan-drivers vulkan-tools
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: gpui-smoke
-
-      - name: Vulkan driver
-        run: vulkaninfo --summary
-
-      - name: openmixer --mock-device --smoke (GPUI window under Xvfb)
-        run: xvfb-run -a -s "-screen 0 1920x1080x24" cargo run -p openmixer -- --mock-device --smoke
+        run: xvfb-run -a cargo test -p openmixer
 
   deny:
     name: cargo deny (licences and bans)
@@ -325,7 +292,7 @@ jobs:
         run: |
           sudo apt-get update
           # libclang-dev: bindgen (rubberband-sys, via om-stretch) needs libclang at build time.
-          # The rest is the GPUI window (om-ui-gpui is a workspace member and a default feature).
+          # The rest is left over from the retired GPUI window; the soak and the gate run headless.
           sudo apt-get install -y -o Acquire::Retries=3 libasound2-dev pkg-config libclang-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libwayland-dev \
             libvulkan-dev libssl-dev libdbus-1-dev
@@ -336,4 +303,4 @@ jobs:
         run: cargo test -p om-audio --test soak -- --ignored --nocapture
 
       - name: ui gate (openmixer, 10 minutes)
-        run: cargo test -p openmixer --test ui_gate -- --ignored
+        run: cargo test -p openmixer --no-default-features --test ui_gate -- --ignored

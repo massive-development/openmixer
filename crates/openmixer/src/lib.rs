@@ -26,3 +26,4 @@ pub mod record_service;
 pub mod sampler_demo;
 pub mod startup;
 pub mod stems_host;
+pub mod wiring;

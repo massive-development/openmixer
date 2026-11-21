@@ -36,8 +36,8 @@ body:
     id: window
     attributes:
       label: Window
-      description: The installers open the web window; a default cargo build opens the GPUI window.
-      options: ["Web window (installer, or --ui=tauri)", "GPUI window (cargo build)", "Headless", "Not sure"]
+      description: The installers and a default cargo build open the Tauri window.
+      options: ["Window (installer or cargo build)", "Headless", "Not sure"]
   - type: textarea
     id: hardware
     attributes:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the installers for the OS it runs on: Linux .deb, .rpm and .AppImage; Windows .msi and
-# setup .exe (run from Git Bash); macOS .app and .dmg. The app is the Tauri window with no GPUI
-# (`--no-default-features --features tauri-default`). Packages land in target/packages/<os>/.
+# setup .exe (run from Git Bash); macOS .app and .dmg. The app is the Tauri window
+# (the default `gui-tauri` feature). Packages land in target/packages/<os>/.
 #
 #   tools/package.sh                   # this OS, every bundle type
 #   tools/package.sh --bundles deb     # some bundle types (comma separated)
@@ -51,7 +51,7 @@ host_os() {
 
 # Real-time audio priority over D-Bus exists only on Linux (see om-audio).
 features() {
-    if [ "$1" = linux ]; then echo "tauri-default,realtime-dbus"; else echo "tauri-default"; fi
+    if [ "$1" = linux ]; then echo "gui-tauri,realtime-dbus"; else echo "gui-tauri"; fi
 }
 
 # The front end is embedded at compile time, so it is built first.

@@ -150,7 +150,7 @@ fn info_of(view: DeckView, grid: Option<&dyn BeatGrid>, hotcues: Vec<Option<i64>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decks::DeckSource;
+    use crate::decks::PublishedDeck;
     use om_analysis::{WaveformData, WaveformLevel, WaveformPoint};
     use om_engine::grid::FixedTempoGrid;
     use om_ui::widgets::deck::TrackInfo;
@@ -164,49 +164,30 @@ mod tests {
         Arc::new(WaveformData::new(48_000.0, 2560, base))
     }
 
-    /// A loader that already holds `0`'s waveform on deck 0.
-    struct Loaded(Arc<WaveformData>);
-
-    impl DeckSource for Loaded {
-        fn pump(&mut self, _: &DjEngine, _: &om_ui::library::LibraryServices) {}
-
-        fn track_id(&self, deck: usize) -> Option<i64> {
-            (deck == 0).then_some(7)
-        }
-
-        fn waveform(&self, deck: usize) -> Option<&Arc<WaveformData>> {
-            (deck == 0).then_some(&self.0)
-        }
-
-        fn track_info(&self, _: usize) -> TrackInfo {
-            TrackInfo::default()
-        }
-
-        fn load_file(
-            &mut self,
-            _: &DjEngine,
-            _: &mut om_ui::library::LibraryServices,
-            _: usize,
-            _: &std::path::Path,
-        ) -> Result<(), String> {
-            Ok(())
-        }
+    /// What the control thread would publish: deck 0 holds `waveform` as track 7.
+    fn published(waveform: Arc<WaveformData>) -> Vec<PublishedDeck> {
+        let loaded = PublishedDeck {
+            track_id: Some(7),
+            waveform: Some(waveform),
+            track: TrackInfo::default(),
+        };
+        vec![loaded, PublishedDeck::default()]
     }
 
     #[test]
     fn peaks_read_before_any_tick_carry_the_generation_the_info_names() {
         let engine = Arc::new(DjEngine::new(2).0);
         let decks = Decks::new(&engine);
-        let changes = decks.install(&engine, Box::new(Loaded(waveform())));
+        let changes = decks.publish(&engine, published(waveform()));
         let peaks = deck_peaks(&decks, &engine, 0).unwrap();
         let generation = u64::from_le_bytes(peaks[..PEAKS_HEADER_LEN].try_into().unwrap());
         let info = deck_info(&decks, &engine, 0).unwrap();
         assert_eq!(generation, info.peaks_generation);
         assert_eq!(generation, 1, "the generation moved with the waveform");
         assert!(peaks.len() > PEAKS_HEADER_LEN && !info.levels.is_empty());
-        // The install reports deck 0's change itself, so the tick has nothing left to say.
+        // The publish reports deck 0's change itself, so the tick has nothing left to say.
         assert_eq!(changes.iter().map(|c| c.deck).collect::<Vec<_>>(), [0]);
-        assert!(decks.tick(&engine, None).is_empty());
+        assert!(decks.tick(&engine).is_empty());
     }
 
     fn view() -> DeckView {

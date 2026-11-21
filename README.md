@@ -18,9 +18,7 @@ OpenMixer is a clean-room implementation ([ADR 0001](docs/adr/0001-clean-room-do
 
 ## Technology
 
-Rust, with a [GPUI](https://www.gpui.rs/) window on `gpui-kit` and `gpui-component`. Knobs, faders, meters, waveforms and deck controls are drawn by OpenMixer's own code. The real-time engine never allocates, locks or makes syscalls on the audio thread. See [ADR 0004](docs/adr/0004-stack-rust-gpui.md) for the stack and [docs/crates.md](docs/crates.md) for what each crate owns.
-
-A web front end in a Tauri v2 window ([ADR 0009](docs/adr/0009-web-front-end-tauri-trial.md)) is the direction for the interface. It currently covers the decks screen, sits behind the `gui-tauri` feature, and GPUI remains the default window until the cut-over. Details: [docs/features/tauri-trial.md](docs/features/tauri-trial.md).
+Rust, with a [Tauri v2](https://tauri.app/) window and a Svelte front end ([ADR 0009](docs/adr/0009-web-front-end-tauri-trial.md)). The real-time engine never allocates, locks or makes syscalls on the audio thread. See [docs/crates.md](docs/crates.md) for what each crate owns.
 
 ## Building
 
@@ -29,8 +27,6 @@ Install Rust with [rustup](https://rustup.rs/); the toolchain is pinned in `rust
 ```bash
 sudo apt-get install pkg-config libasound2-dev libclang-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 ```
-
-The GPUI window also needs the packages listed in the `check` job of [`.github/workflows/rust.yml`](.github/workflows/rust.yml).
 
 ```bash
 git clone https://github.com/massive-development/openmixer.git
@@ -58,20 +54,19 @@ crates/
 ├── om-stems/      Stem separation pipeline and verified model downloads
 ├── om-plugins/    Plugin API, C-ABI loading and CLAP hosting
 ├── om-ui/         UI logic without a window: themes, preferences, view models
-├── om-ui-gpui/    GPUI window (default)
 ├── om-ui-bridge/  Wire formats for the web front end
-├── om-ui-tauri/   Tauri v2 window and Svelte front end (gui-tauri feature)
+├── om-ui-tauri/   Tauri v2 window and Svelte front end (the default window)
 ├── om-testing/    Shared test helpers
 └── openmixer/     Binary and composition root
 examples/          Example plugins (in-process, C-ABI, CLAP)
 fixtures/          Small test inputs
 resources/         Controller maps, fonts and built-in themes
-tools/             Screenshot, packaging and benchmark scripts
+tools/             Packaging, UI drive and benchmark scripts
 ```
 
 ## Status
 
-Pre-release. On Linux the audio engine, analysis, library, MIDI mapping, plugins and the GPUI window work and are tested headlessly. The interface and stem separation are still in progress, and nothing has yet been confirmed on real hardware or by ear. Built-in themes: Midnight Glass (default), Daylight Frost and Harbour Night.
+Pre-release. On Linux the audio engine, analysis, library, MIDI mapping, plugins and the Tauri window's decks screen work and are tested headlessly. The interface and stem separation are still in progress, and nothing has yet been confirmed on real hardware or by ear. Built-in themes: Midnight Glass (default), Daylight Frost and Harbour Night.
 
 What is planned is in [ROADMAP.md](ROADMAP.md). Work that is built but not yet verified is tracked in [Known gaps](https://github.com/massive-development/openmixer/issues/283), and [docs/testing/hardware-checklist.md](docs/testing/hardware-checklist.md) lists what to check on a real device.
 

@@ -28,7 +28,7 @@ The first users are the project owner and other working DJs. Not hobbyists tryin
 ## How this changes the work
 
 - **No area waits for another.** Interface and experience work runs alongside engine work from now on; "UI" is not one wave that opens after the engine is done. See `ROADMAP.md` (tracks).
-- **The window is the product, so it is verified as one.** A change to what a DJ sees ships with a screenshot (`tools/screenshots.sh`) looked at by eye, and real music for anything waveform or library related. Logic-layer tests are necessary, not sufficient.
+- **The window is the product, so it is verified as one.** A change to what a DJ sees ships with a screenshot of the window looked at by eye, and real music for anything waveform or library related. Logic-layer tests are necessary, not sufficient.
 - **Layout and look are allowed to change.** The layout engine, the theme tokens and the controls are tools, not commitments. Replace a layout when a better one is found; keep the tests honest about what must hold (nothing overlaps, nothing is clipped, the minimum window works).
 - **Benchmark against the real thing.** Judge a screen by opening a competitor's program with the same track loaded and asking what a DJ would notice first.
 

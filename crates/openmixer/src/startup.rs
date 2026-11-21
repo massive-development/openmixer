@@ -1,4 +1,4 @@
-//! Start-up steps both windows share (GPUI in the binary's `gui.rs`, Tauri in `gui_tauri.rs`): the
+//! Start-up steps the window uses (Tauri, in the binary's `gui_tauri.rs`): the
 //! output (cpal, or the silent mock), starting an output on the engine once the preferences reached it, and the
 //! demo library's tracks and decks (always in the scratch folder).
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Measures one window's CPU and memory for the Tauri trial (ADR 0009, plan Task 11). Linux only.
 #
-# Usage: tools/ui-bench.sh <gpui|tauri> <seconds> [extra openmixer args...]
+# Usage: tools/ui-bench.sh tauri <seconds> [extra openmixer args...]
 #        tools/ui-bench.sh --self-test
 #
 # Starts the already-built binary in OPENMIXER_BIN (default target/debug/openmixer; this script
@@ -143,7 +143,7 @@ report_fields() {
 }
 
 usage() {
-  echo "usage: tools/ui-bench.sh <gpui|tauri> <seconds> [extra openmixer args...] | --self-test" >&2
+  echo "usage: tools/ui-bench.sh tauri <seconds> [extra openmixer args...] | --self-test" >&2
   exit 2
 }
 
@@ -159,7 +159,7 @@ fi
 ui=$1
 seconds=$2
 shift 2
-[[ $ui == gpui || $ui == tauri ]] || usage
+[[ $ui == tauri ]] || usage
 [[ $seconds =~ ^[0-9]+$ ]] && ((seconds >= 1 && seconds <= 600)) || die "seconds must be 1 to 600"
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

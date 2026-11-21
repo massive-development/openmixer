@@ -1,6 +1,6 @@
 # OpenMixer - Agent Instructions
 
-Clean-room, original DJ software in Rust with GPUI (ADR 0001, 0004). Detail lives in `docs/`; read a linked doc only when you touch that area. Directory tree: [docs/project-structure.md](docs/project-structure.md).
+Clean-room, original DJ software in Rust with a Tauri window (ADR 0001, 0009). Detail lives in `docs/`; read a linked doc only when you touch that area. Directory tree: [docs/project-structure.md](docs/project-structure.md).
 
 ## Crates
 
@@ -10,8 +10,8 @@ Dependencies point toward `om-core`: `openmixer` -> `om-ui`/`om-audio` -> `om-li
 - `om-engine`: audio thread (decks, mixer, FX, sync, sampler, recorder, loudness).
 - `om-audio`, `om-dsp`, `om-stretch`: device layer, DSP, key-lock (FFI `unsafe` only in `om-stretch/src/ffi.rs`).
 - `om-analysis`, `om-library`, `om-midi`, `om-plugins`, `om-stems`, `om-automix`: control-side services.
-- `om-ui` (no window), `om-ui-gpui` (GPUI), `openmixer` (binary, composition root).
-- `om-ui-bridge` (headless wire formats for a web front end), `om-ui-tauri` (Tauri v2 window and Svelte front end in `web/`): ADR 0009 (accepted; GPUI stays the default window until the cut-over), `gui-tauri` feature, off by default.
+- `om-ui` (no window), `openmixer` (binary, composition root).
+- `om-ui-bridge` (headless wire formats for a web front end), `om-ui-tauri` (Tauri v2 window and Svelte front end in `web/`): ADR 0009 (accepted; the only window), `gui-tauri` feature, on by default.
 
 Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/features/sampler.md), [stems](docs/features/stems.md), [recording](docs/features/recording.md), [automix](docs/features/automix.md), [mapping editor](docs/features/mapping-editor.md), [web front end](docs/features/tauri-trial.md). Control paths, adding a control id, demo flags: [docs/guidelines/control-ids.md](docs/guidelines/control-ids.md).
 
@@ -23,7 +23,7 @@ Per-crate detail: [docs/crates.md](docs/crates.md). Features: [sampler](docs/fea
 - **Rust:** `unsafe` only in the listed per-module exceptions with `// SAFETY:` and a leak check; no `unwrap`/`expect` on file, MIDI or user input; `thiserror` in libraries, `AppError` in the binary; `tracing` for logs. [Full standards](docs/guidelines/rust.md).
 - **Style of code:** one-line comments that say why; small functions (about 10 lines); one responsibility per module; engine, analysis, library and MIDI crates testable headless.
 - **Large new subsystem:** read and update `docs/DESIGN_PATTERNS.md` first.
-- **UI:** colours, sizes and fonts come from theme tokens, never literals; numbers use `font::numeral`. A UI change needs a screenshot you have looked at, judged as a DJ would. [Styling](docs/styling.md), [experience bar](docs/guidelines/experience-bar.md).
+- **UI:** colours, sizes and fonts come from theme tokens, never literals; A UI change needs a screenshot you have looked at, judged as a DJ would. [Styling](docs/styling.md), [experience bar](docs/guidelines/experience-bar.md).
 - **Web front end (Tauri):** styles only from `--om-*` variables; control ids, ranges and defaults come from Rust (`controls`), never typed in TypeScript; rebuild `web/dist` before a cargo build that should show front-end changes; run it only with `--mock-device` (without it, it opens the sound card). [Details](docs/features/tauri-trial.md).
 - **Extensibility:** do not hardcode what a plugin could replace; no signing or allow-lists on plugins. [Details](docs/guidelines/extensibility.md).
 - **Demo flags:** a new `--demo-*` flag goes in `openmixer::flags::DEMO_FLAGS` and never writes the user's files.
