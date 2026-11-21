@@ -1,8 +1,7 @@
 //! Segmented LED meter: the segment model (counts, dB per segment, zone colours, lit runs, the hold
 //! segment), a render-agnostic [`MeterPlan`], and the GPUI painter.
 //!
-//! Plan: `openmixer-workbench/docs/superpowers/plans/2026-10-24-ui-faders-meters.md` Phases 1.4 and 3. Conventions only
-//! (ADR 0001).
+//! Conventions only (ADR 0001).
 //!
 //! The look is the canvas "Meter" (`openmixer-workbench/docs/design-system`): a 4px well per side, segments in a grey
 //! ramp (muted text at the floor, secondary text at the mid threshold, ivory just under the high

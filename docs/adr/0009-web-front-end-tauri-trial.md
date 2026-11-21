@@ -6,7 +6,7 @@ Accepted (2026-11-16)
 
 Accepted by the project owner's decision after the decks slice was built and reviewed. The exit criteria were not measured; they remain below as targets for the migration, not as a gate.
 
-Proposed on 2026-11-15 as a trial, carried out by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md) (the first of four plans). That plan's measurement task (Task 11, steps 4 and 5) was not run: there is no GPUI baseline on real hardware, no run on a machine with a working GPU path under Linux, no maximised-window run, and the pointer interactions have not been exercised by hand.
+Proposed on 2026-11-15 as a trial: a decks-screen slice built beside the GPUI window (the first of four planned steps). The trial's measurements were not run: there is no GPUI baseline on real hardware, no run on a machine with a working GPU path under Linux, no maximised-window run, and the pointer interactions have not been exercised by hand.
 
 ## Context
 
@@ -107,6 +107,5 @@ What the trial window does not yet match or prove, so the measurements are read 
 
 ## References
 
-- Plan: [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md)
 - Spike source: `openmixer-tauri-spike/` beside this repo
 - ADR 0004 (Rust with GPUI; UI choice superseded in direction by this ADR), ADR 0008 (the Machined Faceplate), ADR 0005 (experience-first product bar)

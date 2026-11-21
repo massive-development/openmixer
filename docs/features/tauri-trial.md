@@ -2,13 +2,12 @@
 
 ## What it is
 
-A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. It was built as a trial by the plan [`docs/superpowers/plans/2026-11-15-tauri-frontend-slice.md`](../superpowers/plans/2026-11-15-tauri-frontend-slice.md), and [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) was accepted on 2026-11-16 by the project owner's decision: the web front end is the direction for the interface. GPUI stays the default and the only shipping window until the cut-over plan lands.
+A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) makes the web front end the direction for the interface. GPUI stays the default window until the cut-over.
 
 - Behind the `gui-tauri` cargo feature of `openmixer` (off by default) and the `--ui=tauri` flag.
 - Opens the stored output device (else the default output), as GPUI does; a device that does not open falls back to the silent mock with GPUI's no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. No MIDI, plugin state or settings page reach it yet, so the device cannot be changed from this window.
 - Loads tracks: each deck header's **Load** button opens the system file dialog, and a file dropped from the desktop lands on the deck under the pointer (header, panel or waveform lane; elsewhere, the half of the window it is in). See [Loading tracks](#loading-tracks).
 - The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app, with no GPUI.
-- The trial's measurement (plan Task 11, steps 4 and 5) was not run before acceptance; its exit criteria are kept in the ADR as targets for the migration. The only numbers so far are tooling checks under WSL software rendering.
 
 ## Build and run
 
@@ -333,10 +332,6 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 
 CI runs the front-end steps and the `gui-tauri` tests in the `web` job of `.github/workflows/rust.yml` (Linux, under Xvfb); see [build.md](../guidelines/build.md#tauri-window-web-front-end).
 
-## Known gaps
+## Known gaps and next steps
 
-See [ADR 0009, Known gaps of the slice](../adr/0009-web-front-end-tauri-trial.md#known-gaps-of-the-slice).
-
-## What the later plans add
-
-ADR 0009, Decision: plan 2, the library, sampler, FX, stems, automix bar and loudness; plan 3, settings, the mapping editor, plugin windows, media keys, OS file drop and shortcuts; plan 4, test tooling parity, the cut-over, removing `om-ui-gpui`, and installers.
+See [ADR 0009](../adr/0009-web-front-end-tauri-trial.md#known-gaps-of-the-slice) for the slice's known gaps and the steps that follow it.

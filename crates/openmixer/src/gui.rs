@@ -55,10 +55,10 @@ pub fn main(args: &[String]) -> ExitCode {
     // `--demo-library`: like the smoke run's library (generated tracks; here both decks are loaded) but the
     // window stays open; used by tools/screenshots.sh.
     // `--demo-automix`: the demo library of click tracks, automix on, deck A playing, so the
-    // automix bar shows the next track and its transition (see docs/screenshots/REVIEW.md).
+    // automix bar shows the next track and its transition.
     let automix_demo = args.iter().any(|a| a == "--demo-automix");
     // `--demo-record`: the demo library, and a recording started at once into a scratch folder, so
-    // the header shows a live Record button (see docs/screenshots/REVIEW.md). Never the user's folder.
+    // the header shows a live Record button. Never the user's folder.
     let demo_record = args.iter().any(|a| a == "--demo-record");
     // `--demo-scene=NAME` (DEMO / TEST ONLY): a staged state for screenshots, on the demo library
     // (see `openmixer::demo_scene` and `flags::DemoScene`).

@@ -177,7 +177,7 @@ END;
 INSERT INTO tracks_fts (tracks_fts) VALUES ('rebuild');
 "#;
 
-/// Stem cache index (Wave 7 S3). One row per cached separation of a track; the audio lives in
+/// Stem cache index. One row per cached separation of a track; the audio lives in
 /// `<data>/stems/<dir>/` and is owned by `om-stems`. Cascade-deleted with the track; the directory
 /// is removed by the stem service, not by SQLite.
 const SCHEMA_V8: &str = r#"

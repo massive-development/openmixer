@@ -1,347 +1,72 @@
 # Contributing to OpenMixer DJ
 
-Thank you for your interest in contributing to OpenMixer! This document outlines the conventions for both AI and human contributors.
+Thank you for your interest in OpenMixer. This page covers what every contribution needs. The detailed rules live in `docs/guidelines/` and are linked below.
 
-## Quick Start
+## Getting started
 
-### For AI Agents
+1. Set up the toolchain and system packages from the Building section of [README.md](README.md).
+2. Fork the repository and create a branch from `main` (`fix/...`, `feat/...`, `docs/...`).
+3. Read [docs/PRODUCT.md](docs/PRODUCT.md) if your change touches anything a DJ sees or reaches, and check [docs/adr/](docs/adr/INDEX.md) for decisions that apply.
 
-1. **Read `AGENTS.md` first** - Short rules, with links to the build guide (`docs/guidelines/build.md`)
-2. **Check the plan** - `ROADMAP.md` (task-level notes live in the [workbench](https://github.com/massive-development/openmixer-workbench))
-3. **Create/update tasks** - Use `todowrite` tool to track progress
-4. **Verify each change** - Run `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`
+## Clean-room rule
 
-### For Humans
+OpenMixer is a clean-room implementation ([ADR 0001](docs/adr/0001-clean-room-doctrine.md)). Every contribution must follow it.
 
-1. Set up development environment (see `AGENTS.md` and the Building section of `README.md`)
-2. Fork the repository
-3. Create a feature branch
-4. Follow the clean-room doctrine
+- Implement features independently. Workflows and common layout conventions are free to use.
+- Do not copy names, logos, artwork, icons, manual text, presets or pixel layouts from other DJ programs.
+- Do not copy Mixxx application code.
+- Do not bundle machine-learning model weights; they are downloaded on first use.
+- Record the source and licence of every bundled asset in [docs/legal/asset-provenance.csv](docs/legal/asset-provenance.csv).
 
-## Development Workflow
+## Sign-off
 
-### AI Agent Checklist
-
-**Before implementing:**
-- [ ] Read `AGENTS.md` for context
-- [ ] Identify the track (see `ROADMAP.md`), and the wave and todo number
-- [ ] Read `docs/PRODUCT.md` if the change touches what a DJ sees or reaches
-- [ ] Check ADRs for design decisions
-- [ ] Verify no existing implementation exists
-
-**While implementing:**
-- [ ] Follow existing code patterns
-- [ ] Add/expand tests
-- [ ] Keep audio-thread code allocation-, lock- and syscall-free, and check it in tests where the harness allows (the `alloc_guard` module in `om-engine`, active in debug builds)
-- [ ] Create evidence file: `.omo/evidence/task-<N>-openmixer-dj-app.*`
-
-**After completing:**
-- [ ] All tests pass
-- [ ] `cargo clippy` clean with `-D warnings`
-- [ ] Update ADR if design changes
-- [ ] Document in evidence file
-
-### Human Contributor Guidelines
-
-**Git Workflow:**
-```bash
-# Create feature branch
-git checkout -b feature/feature-name
-
-# Make changes with DCO sign-off
-git commit -s -m "feat: add feature description"
-
-# Push and create PR
-git push origin feature/feature-name
-```
-
-**DCO Sign-off:**
-All commits must include a `Signed-off-by` line to certify you have the right to submit the code under AGPLv3.
+OpenMixer is licensed under AGPLv3 with no contributor licence agreement ([ADR 0003](docs/adr/0003-pure-agpl-no-cla.md)). Every commit needs a [Developer Certificate of Origin](https://developercertificate.org/) sign-off:
 
 ```bash
-git commit -s -m "fix: description"
+git commit -s -m "fix: describe the change"
 ```
 
-## Pull Request Workflow (required)
+## Code standards
 
-All changes — including those by AI agents and maintainers — land through a pull request. Never merge a branch directly or push to `main`.
+The full rules are in [docs/guidelines/rust.md](docs/guidelines/rust.md). In short:
 
-1. Work on a feature branch (`wave2-mixer`, `docs/...`, `fix/...`) cut from `main`.
-2. Open a PR into `main` with `gh pr create --base main`. The description must include:
-   - **Summary:** what changed and why (link the issue).
-   - **Changes:** key files/crates modules added or modified.
-   - **Testing:** commands run and results (`cargo test --workspace`, `cargo clippy`, `cargo fmt --check`, `cargo deny check`, manual checks).
-   - **Follow-ups / known gaps:** anything left undone.
-3. Merge the PR (`gh pr merge --merge`) once the build and tests pass, so history stays traceable to a PR.
-4. Stack dependent work: when a PR builds on or touches the same files as an open PR, branch from that PR's branch and set `--base <that-branch>`. Keep the stack current by merging the parent branch into the child (merge commits, never force-push), so merging in order needs no rebase. After the parent merges, retarget the child with `gh pr edit --base main`. Use plain merge commits, not squash, so stacked history stays intact. GitHub stacks are the preferred way to manage these: install `gh extension install github/gh-stack`, then `gh stack init`, `gh stack add` and `gh stack submit`; `gh stack link <pr>...` links PRs that already exist. Update a stacked branch by merging the parent in and pushing normally; do not use `gh stack rebase` or `gh stack sync`, which rewrite pushed history.
+- **Real-time safety.** Code on the audio thread does not allocate, lock, block or perform I/O. It talks to the rest of the app through `rtrb` queues and atomics.
+- **Unsafe code** is allowed only in per-module exceptions, each `unsafe` block carries a `// SAFETY:` comment, and any new FFI or plugin load path needs a leak check.
+- **No warnings.** `cargo clippy --workspace --all-targets -- -D warnings` must pass. An `#[allow]` needs its reason written next to it.
+- **Errors** use `thiserror` in library crates. Avoid `unwrap()` and `expect()` outside tests.
+- **Comments** are short and say why, not what. A function that needs a long comment should be split.
+- **Modules and crates** have one focused responsibility. Dependencies point toward `om-core`, and library crates never depend on the UI or the binary.
+- **Patterns.** Reuse the patterns in [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md), and add an entry when you introduce a new one.
+- **Extensibility.** Don't hard-code what a plugin could reasonably replace, and don't block users from loading their own plugins. See [docs/guidelines/extensibility.md](docs/guidelines/extensibility.md).
+- **Style.** Standard Rust naming, and `cargo fmt --all` before committing.
 
-## Rust Standards & Memory Safety (required)
+## Tests
 
-All code must follow idiomatic Rust (edition 2021, MSRV per `rust-version` in the workspace `Cargo.toml`). The Rust API Guidelines and the Rust reference are the reference. Unsafe or leaking code is not acceptable.
+Put unit tests in a `#[cfg(test)]` module next to the code and integration tests in the crate's `tests/` directory. Use the shared helpers in `crates/om-testing` (fixtures, signals, temporary directories, bounded waits) rather than writing new ones. Tests must run in parallel and must not sleep to synchronise; long timing tests are `#[ignore]`d and run in the weekly CI job.
 
-- **Unsafe policy:** `unsafe` is allowed where necessary, anywhere in the repo, provided there are no memory leaks. The workspace `unsafe_code = "forbid"` lint stays on, so each use is a per-module `#[allow(unsafe_code)]` exception, and every `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on. Current exception modules: `om-stretch/src/ffi.rs` (Rubber Band R3 binding behind a `Stretcher` trait, see `openmixer-workbench/docs/spikes/DECISIONS.md`); in `om-plugins` (under that crate's `deny`) `abi.rs` and `loader.rs` (C ABI) and, with feature `clap`, `clap/entry.rs`, `clap/gui_parent.rs` and `clap/fds.rs` (CLAP hosting, ADR 0007); plus the test and example plugin fixtures under `examples/plugins/` and `crates/om-plugins/tests/clap_leak.rs`. Any new FFI or load/teardown path needs a leak check (a counting allocator or valgrind; see `tools/clap_leak_check.sh` and `crates/om-plugins/tests/clap_leak.rs`).
-- **Ownership:** let ownership and borrowing express lifetimes. Use `Box`, `Arc` or `Rc` only where ownership is genuinely needed; no `Box::leak` or `mem::forget` to silence the borrow checker.
-- **Idioms:** iterators over index loops where clearer, `?` for error propagation, enums with exhaustive `match`, `#[must_use]` where a result must not be ignored, `Option`/`Result` instead of sentinel values.
-- **Errors:** `thiserror` in library crates; the `openmixer` binary has its own `AppError` (`anyhow` is not a dependency). Avoid `unwrap()` and `expect()` outside tests and documented invariants.
-- **Concurrency:** the audio thread communicates through `rtrb` SPSC queues and atomics (the `EngineSnapshot` is pulled from them; `arc-swap` is not used). No allocation, locks, channels that may block, or I/O on the audio thread. Document thread ownership in module docs.
-- **Bounds & lifetime safety:** no unchecked indexing of untrusted data (use `get`); no `get_unchecked` outside the FFI crate. In per-sample audio and analysis loops use `zip`/`iter` over pre-sliced buffers so bounds checks drop out (#226), and check the change with the `divan` benches (`cargo bench -p om-engine`, `-p om-analysis`).
-- **Warnings:** code must compile warning-free; `cargo clippy --workspace --all-targets -- -D warnings` must pass. Do not add `#[allow(...)]` to pass the check unless the reason is written next to it.
-- **Verification before opening a PR:** `cargo fmt --all --check`, `cargo clippy`, `cargo test --workspace` and `cargo deny check` must pass. Report the results in the PR's Testing section. Sanitizer and Miri runs for the FFI crate and concurrent code are planned.
-- **Check current guidance:** when unsure about an API or idiom, consult the std docs, the crate's docs.rs page or the GPUI sources rather than reusing older patterns from memory.
-- **Adopting crates:** well-established crates (cpal, symphonia, rusqlite, midir and similar) are adopted directly. Reserve spikes for genuine unknowns.
-
-## Comments & Function Size (required)
-
-- **Comments are short.** One line, stating *why* (not what). No paragraph or block comments describing what code does.
-- **Long explanation = refactor.** If a function needs a long comment to be understood, split it into smaller, well-named functions instead.
-- **Rule of 10 (goal, not a requirement):** aim for functions of about 10 lines or fewer. Exceed it only when splitting would hurt clarity.
-- Prefer self-describing names over comments. Delete comments that restate the code.
-
-## Modularity (required)
-
-- **No monolithic files.** One focused responsibility per module; split anything that grows large or mixes concerns.
-- **Use crates for boundaries.** Put reusable code in a workspace crate under `crates/om-<area>/` and depend on it where needed, instead of duplicating code or piling it into the `openmixer` binary.
-- **Keep dependencies one-way.** Dependencies point toward `om-core`; the binary is the only composition root. Libraries must not depend on the binary or the UI crate and must be testable without a window.
-
-## Architecture & Design Patterns (required)
-
-Before starting any large implementation (a new subsystem, a cross-cutting feature, or a new crate):
-
-1. Read `docs/DESIGN_PATTERNS.md` and review how similar code is already structured.
-2. Reuse an existing pattern wherever it fits rather than inventing a new one.
-3. If a different pattern would improve long-term maintainability (code growth, new features, scaling, testability), pick it deliberately and note the trade-off in the PR.
-4. Document every new pattern you introduce in `docs/DESIGN_PATTERNS.md` (use its entry template) in the same PR, so later agents can find and reuse it.
-
-## Experience bar (required for anything a DJ sees)
-
-`docs/PRODUCT.md` is the bar and ADR 0005 the decision. Interface work is not a wave and is not finished when the logic tests pass.
-
-- **Look at it.** A PR that changes what the window shows includes a screenshot from `tools/screenshots.sh`, and you have looked at it (not just that it rendered). Say what you saw and what is still wrong.
-- **Use real music** for anything involving waveforms, the library, analysis or colour. The demo tracks are sine waves and hide most defects.
-- **Judge it as a DJ would.** At the default window size and the minimum (`MIN_WINDOW`), can a DJ read the playing deck's BPM, key, time and phrase position at a glance, and reach EQ, transport and pads without looking? If not, say so in the PR.
-- **Layout and look may change.** Replace a layout or control when a better one is found. Keep the tests that guard function (no overlap, no clipping, the minimum window); update the ones that only recorded the old arrangement.
-- **Tokens, not literals** still applies (see `docs/styling.md`); if the look you need has no token, add one.
-- **Clean-room still applies.** Borrow the reason a layout works, not another product's names, icons, artwork or pixel layout.
-
-## Token Efficiency & Knowledge Reuse (required)
-
-Consult existing knowledge before computing or exploring. As the codebase grows, keep context small.
-
-1. **Knowledge first:** check, in order, before searching or reading code: `graphify-out/` (query the graph first, e.g. `/graphify query`), any available knowledge base, then `docs/DESIGN_PATTERNS.md`.
-2. **Read narrowly:** read only the needed line ranges or symbols, not whole files; prefer grep/glob to locate code. Do not re-read files already in context.
-3. **Delegate broad searches** to a search subagent so only conclusions return to the main context.
-4. **Keep the graph fresh:** after structural changes (new crates, moved modules) re-run graphify locally (`graphify-out/` is git-ignored). Document durable findings in `docs/` rather than rediscovering them.
-5. **Don't recompute:** reuse existing results (test output, benchmarks, analysis) instead of re-running or re-deriving them.
-6. **Keep outputs lean:** trim command output (`| tail`, `-q`), and keep PR descriptions and reports concise.
-
-## Extensibility & User Freedom (required)
-
-Users must always be able to modify OpenMixer with external plugins. Nothing may be locked down.
-
-- **Extension points by default:** new features expose hooks for external plugins — audio pre/post-processing (per deck, channel and master), effects, analysis, library import/export, controller mappings, and UI/theming (colours, layouts, design tokens, skins).
-- **No hardcoded restrictions:** don't hardcode behaviour, limits, themes or signal paths that a plugin could reasonably replace or extend. Prefer registries, traits and data-driven configuration (JSON/files) over fixed code paths.
-- **Stable plugin API:** keep extension interfaces small, documented and versioned; don't break them silently. Plugins must not need to modify core source. The plugin API exists in `om-plugins`: in-process plugins, a versioned C ABI, and CLAP hosting behind the `clap` feature (ADR 0007; plugin delay compensation deferred).
-- **No gatekeeping:** don't add signing, allow-lists or sandbox rules that stop users loading their own plugins (opt-in safety warnings are fine). Respect AGPLv3 obligations for plugins linked into the app.
-- **PR check:** every PR must state whether it adds, changes or could block an extension point.
-
-## CI Workflow Changes (required)
-
-Any change to `.github/workflows/` must be tested locally with [`act`](https://github.com/nektos/act) before opening the PR.
-
-1. Run the affected job(s): `act -j <job> [-W .github/workflows/<file>.yml]` (add `--container-architecture linux/amd64` if needed). List jobs with `act -l`.
-2. Fix failures locally; don't push to find out.
-3. Put the `act` command and result in the PR's Testing section. Note anything `act` can't cover (e.g. macOS/Windows runners, secrets).
-
-## Code Style
-
-### Naming Conventions
-
-Standard Rust naming, enforced in review and by clippy:
-
-- **Types, traits, enum variants:** `PascalCase`
-- **Functions, methods, modules, fields:** `snake_case`
-- **Constants and statics:** `SCREAMING_SNAKE_CASE`
-- **Files:** `snake_case.rs`
-- **Crates:** `om-<area>` (hyphenated in `Cargo.toml`, underscored in code)
-
-### Formatting
-
-Run `cargo fmt --all` before committing; CI runs `cargo fmt --all --check`. Formatting settings live in `rustfmt.toml`.
-
-### File Organization
-
-```
-crates/
-├── om-core/          # Parameters, state snapshots, commands (no I/O)
-├── om-dsp/           # Filters, EQ, meters, crossfader curves
-├── om-engine/        # Audio-thread engine (decks, mixer, FX, sync, sampler, recorder, loudness)
-├── om-audio/         # Device layer (cpal), mock device, output router
-├── om-stretch/       # Rubber Band R3 key-lock via FFI
-├── om-analysis/      # BPM, key, waveform and structure analysis; job service and cache
-├── om-library/       # SQLite library, ingest, import, search, prep queue
-├── om-automix/       # Automix planner, controller and queue (control side)
-├── om-midi/          # MIDI (midir) input, mapping, learn and feedback
-├── om-stems/         # Stem separation pipeline, manifests, downloads
-├── om-plugins/       # Plugin API, registry, C-ABI loader, CLAP host (feature `clap`)
-├── om-ui/            # UI logic and view models (no window)
-├── om-ui-gpui/       # GPUI window (gpui-kit, gpui-component)
-├── om-ui-bridge/     # Wire formats for the web front end (ADR 0009; no window)
-├── om-ui-tauri/      # Tauri v2 window and Svelte front end (feature `gui-tauri` of openmixer)
-├── om-testing/       # Test helpers (dev-dependency only)
-└── openmixer/        # Binary: composition root, preferences
-```
-
-### Comment Requirements
-
-See "Comments & Function Size" above. Each crate's `lib.rs` (or `main.rs`) has a `//!` module doc and `#![forbid(unsafe_code)]`, except the crates with per-module unsafe exceptions (`om-stretch`, `om-plugins`; see the unsafe policy above). Crate docs are short and name the crate's threading rules. Public items get at most a one-line `///` summary, and only when the name does not already say it.
-
-## Testing
-
-### Test Types
-
-| Type | File Location | Description |
-|------|--------------|-------------|
-| Unit | `crates/<crate>/src/` (`#[cfg(test)]` modules) or `crates/<crate>/tests/` | Logic verification |
-| Golden | `tests/golden/` (planned) | DSP correctness; reference vectors |
-| Metric | `tests/metrics/` (planned) | Accuracy thresholds |
-| Screenshot | `tests/screenshots/` (planned) | UI verification |
-
-### Adding Tests
-
-Tests use the built-in `cargo test` harness. Put unit tests in a `#[cfg(test)] mod tests` block next to the code, or integration tests in the crate's `tests/` directory.
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn descriptive_behaviour_name() {
-        // assert! for preconditions and plain checks; compare floats with a tolerance
-        assert!((0.1_f32 + 0.2 - 0.3).abs() < 1e-6);
-    }
-}
-```
-
-- Use a unique temporary directory per test so `cargo test` can run tests in parallel.
-- Do not sleep to synchronise: use channels, condition variables or bounded waits.
-- Long tests that use real threads or timing are `#[ignore]`d and run by a dedicated CI job (the weekly `soak` job runs the 10-minute soaks) so the fast run stays fast.
-- Name tests for the behaviour they check; use `cargo test -- --list` to see what exists.
-
-### Test Support
-
-`crates/om-testing` holds the shared helpers: WAV fixtures (`wav`), deterministic signals (`signals`), a synthetic music-like track (`mix`), level measures (`level`), condition waits (`wait`: `wait_until`, `assert_eventually!`) and a temporary directory (`fs::TempDir`). Use them rather than copying a generator or poll loop into a crate. It is a dev-dependency only; never add it as a normal dependency.
-
-### Verification Commands
+Before opening a pull request, run:
 
 ```bash
-cargo build --workspace
-cargo bench -p om-engine                    # divan benches (also -p om-analysis)
-cargo test --workspace                      # everything
-cargo test -p om-engine                     # one crate
-cargo test --workspace mixer                # by name filter
-cargo test --workspace -- --list            # list tests
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 cargo deny check
-cargo run -p openmixer -- --smoke           # startup check
-
-# Leaks (Linux, requires valgrind)
-valgrind --leak-check=full --error-exitcode=1 ./target/debug/openmixer --headless --smoke
 ```
 
-## Build Requirements
+More commands (soak and UI gates, benchmarks, optional features) are in [docs/guidelines/build.md](docs/guidelines/build.md).
 
-### Minimum System
+## Pull requests
 
-- **Rust** toolchain pinned in `rust-toolchain.toml` (1.95, the workspace MSRV; installed with rustup; `rustfmt` and `clippy` included)
-- **Linux audio:** `pkg-config` and `libasound2-dev` (see the Building section of `README.md`); `libclang-dev` for the Rubber Band bindings; the GPUI packages from `openmixer-workbench/docs/spikes/gpui.md`; `libdbus-1-dev` for the real-time priority feature `realtime-dbus` (on by default; `--no-default-features` builds without it); `libwebkit2gtk-4.1-dev` because the Tauri window crate `om-ui-tauri` is a workspace member
-- **cargo-deny** for `cargo deny check`
-- **sccache (optional, Linux):** `~/.cargo/config.toml` with `[build]`, `rustc-wrapper = "sccache"` and `incremental = false` shares compiled dependencies between worktrees.
-- **Cost rule for agents:** while working, `cargo check -p <crate>` and tests of the touched crates with `-j 4`; full clippy, workspace tests and `cargo deny check` once per PR, at the end; at most two parallel agents on the 12-core shared host.
-- **Audio libraries:** see `docs/dependencies.md`
+Every change lands through a pull request into `main`. The full process, including stacked PRs and CI workflow changes, is in [docs/guidelines/pull-requests.md](docs/guidelines/pull-requests.md). A pull request should:
 
-### Debug Build
+- Explain what changed and why, and link the issue.
+- List the commands you ran and their results.
+- Include tests for new behaviour.
+- Say whether it adds, changes or could block a plugin extension point.
+- Include a screenshot you have looked at if it changes what the window shows, and use real music for anything involving waveforms, the library or analysis. See [docs/guidelines/experience-bar.md](docs/guidelines/experience-bar.md).
+- Update or add an ADR in `docs/adr/` when it changes an architectural decision.
+- Show that it was tested locally with [`act`](https://github.com/nektos/act) if it changes `.github/workflows/`.
 
-```bash
-cargo build
-cargo run -p openmixer -- --smoke
+## Questions
 
-# Memory leak detection (Linux; headless, no window)
-valgrind --leak-check=full ./target/debug/openmixer --headless --smoke
-```
-
-## Documentation
-
-### Architecture Decision Records (ADRs)
-
-When making architectural decisions:
-
-1. Create `docs/adr/NNNN-title.md`
-2. Follow ADR template:
-   - Status (Proposed/Accepted/Rejected/Superseded)
-   - Context
-   - Decision
-   - Consequences
-3. Update `docs/adr/INDEX.md`
-
-### Evidence Files
-
-After each major task:
-
-```
-.omo/evidence/task-<N>-openmixer-dj-app.md
-
-## Task N: Description
-
-**Status:** Complete
-
-**Files changed:**
-- crates/om-engine/...
-
-**Tests:**
-- All pass
-
-**Evidence:**
-- Test results
-- Screenshot (if UI)
-- Performance metrics
-```
-
-## Clean-Room Compliance
-
-**Never:**
-- Copy djay/Algoriddim names/logos/artwork
-- Copy Mixxx application code
-- Bundle ML model weights
-- Integrate Spotify
-
-**Always:**
-- Use generic names ("Deck", not "Deck 1")
-- Implement features independently
-- Download weights on first run
-- Document asset provenance (see `docs/legal/asset-provenance.csv`)
-
-## PR Requirements
-
-All pull requests must:
-
-1. Pass all CI checks
-2. Include tests
-3. Have evidence file (for AI work)
-4. Update ADR if applicable
-5. Follow code style
-6. For changes to what the window shows: a screenshot you have looked at, and real music where it applies ("Experience bar")
-
-## Support
-
-**Documentation:**
-- `AGENTS.md` - Agent entry point; links to the build, PR and style guides in `docs/`
-- `README.md` - Project overview
-- original design and early plans (historical): the [workbench](https://github.com/massive-development/openmixer-workbench)
-- `docs/adr/` - Architecture decisions
-- `docs/legal/` - Legal documentation
-
----
-
-*Thank you for contributing to OpenMixer!*
+Open an [issue](https://github.com/massive-development/openmixer/issues/new/choose) for bugs and feature requests. Report security problems privately as described in [SECURITY.md](SECURITY.md). For anything else, write to contact@openmixer.dev.

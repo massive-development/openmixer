@@ -52,6 +52,25 @@ cargo test -p om-engine -p om-analysis --features om-engine/ffmpeg,om-analysis/f
 
 Sanitizer and Miri runs for concurrent code are planned; the current real-time check is `assert_no_alloc` in tests.
 
+## Running and checking
+
+```bash
+cargo run -p openmixer -- --mock-device        # the window on a silent mock device; use --release to judge smoothness
+cargo run -p openmixer -- --headless --smoke   # startup check, no window
+cargo test -p openmixer --no-default-features  # headless binary, no window libraries
+
+# UI gate: scripted DJ over the composition on a paced mock device, no display (8 s; 10-minute run is --ignored)
+cargo test -p openmixer --test ui_gate
+cargo test -p openmixer --test ui_gate -- --ignored --nocapture
+
+# Memory leaks (requires valgrind; headless)
+valgrind --leak-check=full ./target/debug/openmixer --headless --smoke
+```
+
+Cargo features of the `openmixer` binary, off by default: `clap` (CLAP plugin hosting, ADR 0007), `onnx` (real stem separation through ONNX Runtime), `ffmpeg` (decode fallback) and `gui-tauri` (the Tauri window, opened with `--ui=tauri`). `realtime-dbus` is on by default (real-time priority for the audio callback on Linux); `--no-default-features` turns it off along with the window.
+
+Environment variables: `OPENMIXER_FRAME_STATS=1` prints frame-time percentiles every five seconds. `OPENMIXER_PREFS` (preferences file), `OPENMIXER_LIBRARY_DB` (library database), `OPENMIXER_THEME` (theme id), `OPENMIXER_WINDOW=WIDTHxHEIGHT` (window size), `OPENMIXER_WAVE_STYLE` (waveform style), `OPENMIXER_MOCK_STEMS` (mock stem separator), `OPENMIXER_DEMO_TRACK` (a real file for the demo deck) and `OPENMIXER_FFMPEG` (the `ffmpeg` executable).
+
 ## Build setup and cost rule
 
 - **sccache (Linux, optional):** to share compiled dependencies between worktrees, install `sccache` and put this in `~/.cargo/config.toml`:

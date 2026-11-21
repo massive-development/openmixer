@@ -1,6 +1,5 @@
 //! Fader taper and dB scale marks, toolkit-free so both windows share one definition.
 //!
-//! Plan: `openmixer-workbench/docs/superpowers/plans/2026-10-24-ui-faders-meters.md` (option 3 of its taper decision).
 //! The stored parameter stays a LINEAR gain; a [`FaderLaw`] maps it to where the cap sits on screen
 //! and back. Nothing here changes what a stored value sounds like. Conventions only (ADR 0001).
 //! The GPUI painters (`om-ui-gpui/src/fader_paint.rs`) and the web window's control specs

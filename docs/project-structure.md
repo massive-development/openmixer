@@ -12,10 +12,9 @@ openmixer/
 │   ├── adr/                  # Architecture Decision Records
 │   ├── controllers/          # Controller map notes
 │   ├── features/             # Feature notes: automix, mapping editor, recording, sampler, stems, web front end
-│   ├── guidelines/           # Build, control ids, experience bar, extensibility, knowledge reuse, pull requests, Rust
+│   ├── guidelines/           # Build, control ids, experience bar, extensibility, pull requests, Rust
 │   ├── legal/                # Legal documentation and the asset provenance record
 │   ├── screenshots/          # Staged window screenshots and REVIEW.md
-│   ├── superpowers/plans/    # Implementation plans (the Tauri front-end slice)
 │   └── testing/              # Hardware checklist (after the platform refresh)
 ├── examples/plugins/         # Example plugins: gain-plugin, gain-plugin-cdylib, param-plugin-cdylib, clap-gain-fixture
 ├── fixtures/                 # Small test inputs: controller maps and traces, library exports; ui-bridge/ golden packet, meter, fader law and knob text tables

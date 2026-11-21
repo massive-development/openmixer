@@ -1,247 +1,97 @@
 # OpenMixer DJ
 
-OpenMixer DJ is a free, open-source DJ application: Linux first, with Windows and macOS support to follow. Website: [openmixer.dev](https://openmixer.dev).
+OpenMixer DJ is a free, open-source DJ application: Linux first, with Windows and macOS to follow. Website: [openmixer.dev](https://openmixer.dev).
 
 OpenMixer DJ is not affiliated with [openmixer.org](https://openmixer.org), a live-sound mixing console, or with the OpenMixer routing mixer from Stanford's CCRMA.
 
-## Screenshots
+![Main window, dark theme](docs/screenshots/main-dark.png)
 
-Regenerate with `tools/screenshots.sh` (see `docs/screenshots/REVIEW.md` for known visual defects).
+| Daylight theme | Meters lit | Sampler | Stems |
+|---|---|---|---|
+| ![Main window, daylight](docs/screenshots/main-daylight.png) | ![Meters lit, dark](docs/screenshots/meters-lit-dark.png) | ![Sampler open, dark](docs/screenshots/sampler-open-dark.png) | ![Stems page](docs/screenshots/stems-page.png) |
 
-- Main window, dark theme: ![Main window, dark](docs/screenshots/main-dark.png)
-- Main window, daylight theme: ![Main window, daylight](docs/screenshots/main-daylight.png)
-- Deck looped, meters lit: ![Meters lit, dark](docs/screenshots/meters-lit-dark.png)
-- Sampler drawer open: ![Sampler open, dark](docs/screenshots/sampler-open-dark.png)
-- Stems tab: ![Stems page](docs/screenshots/stems-page.png)
+## Goals
 
-Built-in themes: Midnight Glass (`dark`, the default), Daylight Frost (`daylight`) and Harbour Night (`harbour`). Pick one under Settings, Appearance. Harbour Night has no screenshot yet.
+A program a working DJ would choose over what they use now: multi-deck mixing, effects, sync, BPM and key analysis, stem separation, Automix and controller support, with an interface that reads at a glance. The product bar is in [docs/PRODUCT.md](docs/PRODUCT.md).
 
-## Mission
-
-OpenMixer is a clean-room, legally original implementation of professional DJ software features. Our goal is a program a working DJ would choose over what they use now: djay-Pro-class capability (multi-deck mixing, effects, sync, BPM/key analysis, stem separation, Automix, controller support) with an interface that reads at a glance, all without copying any copyrighted expression from existing applications. The bar is in [docs/PRODUCT.md](docs/PRODUCT.md).
-
-## Clean-Room Statement
-
-OpenMixer is built under a strict clean-room doctrine:
-
-- **Functional features are free** - mixing workflows, deck layouts, BPM detection, sync mechanisms, and other operational concepts are methods of operation, not copyrightable expression
-- **Expression is not copied** - no names, logos, artwork, icons, screenshots, manual text, sound packs, FX presets, or pixel-copying of screen layouts
-- **No Mixxx code** - while we use the same open-source audio libraries (GPL-licensed), our implementation is entirely original
-- **No proprietary assets** - AI model weights are downloaded on first use from official sources with licenses shown; no content is bundled
+OpenMixer is a clean-room implementation ([ADR 0001](docs/adr/0001-clean-room-doctrine.md)). Features and workflows are methods of operation and free to implement; names, logos, artwork, icons, manual text, sound packs, presets and pixel layouts of other DJ programs are not copied. No Mixxx code is used. AI model weights are downloaded on first use from their official sources, with their licences shown, and are not bundled.
 
 ## Technology
 
-OpenMixer is written in Rust (toolchain and MSRV 1.95, pinned in `rust-toolchain.toml`) with [GPUI](https://www.gpui.rs/) for the UI. The workspace uses `gpui-pre` 0.3.10 (imported as `gpui`) and `gpui-kit` 0.8.1, and the app chrome (buttons, inputs, the library table, tabs, dialogs, toasts) is built on `gpui-component`; knobs, faders, meters, waveforms and the deck controls are painted by our own code. The stack decision is in [ADR 0004](docs/adr/0004-stack-rust-gpui.md); the platform refresh decisions are in `openmixer-workbench/docs/spikes/DECISIONS.md`.
+Rust, with a [GPUI](https://www.gpui.rs/) window on `gpui-kit` and `gpui-component`. Knobs, faders, meters, waveforms and deck controls are drawn by OpenMixer's own code. The real-time engine never allocates, locks or makes syscalls on the audio thread. See [ADR 0004](docs/adr/0004-stack-rust-gpui.md) for the stack and [docs/crates.md](docs/crates.md) for what each crate owns.
 
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [README.md](README.md) | Project overview (this file) |
-| [docs/PRODUCT.md](docs/PRODUCT.md) | **What the product has to be: the bar every area is measured against** |
-| [ROADMAP.md](ROADMAP.md) | Tracks, waves and key decisions |
-| [AGENTS.md](AGENTS.md) | **Agent and developer setup and implementation guide** |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
-| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately (security@openmixer.dev) |
-| Contact | contact@openmixer.dev for anything that is not a bug report or a vulnerability |
-| [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md) | Design patterns in use and when to reuse them |
-| [docs/adr/INDEX.md](docs/adr/INDEX.md) | Architecture decisions |
-| [Workbench](https://github.com/massive-development/openmixer-workbench) | Planning, spikes, design research and progress tracking (separate repository) |
-| [docs/testing/hardware-checklist.md](docs/testing/hardware-checklist.md) | What a person has to confirm on real hardware after the platform refresh |
-| [docs/legal/](docs/legal/) | Legal documentation |
+A web front end in a Tauri v2 window ([ADR 0009](docs/adr/0009-web-front-end-tauri-trial.md)) is the direction for the interface. It currently covers the decks screen, sits behind the `gui-tauri` feature, and GPUI remains the default window until the cut-over. Details: [docs/features/tauri-trial.md](docs/features/tauri-trial.md).
 
 ## Building
 
-### Prerequisites
+Install Rust with [rustup](https://rustup.rs/); the toolchain is pinned in `rust-toolchain.toml`. On Ubuntu or Debian:
 
-Install the Rust toolchain with [rustup](https://rustup.rs/). The toolchain version is pinned in `rust-toolchain.toml`; `rustfmt` and `clippy` are installed with it.
-
-**Ubuntu/Debian:**
 ```bash
 sudo apt-get install pkg-config libasound2-dev libclang-dev libdbus-1-dev libwebkit2gtk-4.1-dev
 ```
 
-GPUI system dependencies are documented in `openmixer-workbench/docs/spikes/gpui.md`. Rubber Band's bindings need `libclang-dev` at build time (bindgen). `libwebkit2gtk-4.1-dev` is for the Tauri window (`om-ui-tauri`, the web front end of ADR 0009): the crate is a workspace member, so workspace builds need it even though the `gui-tauri` feature is off by default. Its front end needs Node 22.12 or newer, or 24, with npm; see `docs/guidelines/build.md`.
-
-Optional: `sccache` shares compiled dependencies between worktrees (setup in `docs/guidelines/build.md`); `libdbus-1-dev` is required on Linux by the default `realtime-dbus` feature (real-time priority for the audio callback); `--no-default-features` builds without it.
-
-**macOS and Windows:** not runtime targets yet (Windows and macOS support is later). CI checks Linux only, so no extra system packages are listed for them yet.
-
-Optional, for the licence and ban policy check:
-```bash
-cargo install cargo-deny
-```
-
-### Build Steps
+The GPUI window also needs the packages listed in the `check` job of [`.github/workflows/rust.yml`](.github/workflows/rust.yml).
 
 ```bash
-# Clone the repository
 git clone https://github.com/massive-development/openmixer.git
 cd openmixer
-
-# Build the workspace
 cargo build
-
-# Run tests
 cargo test --workspace
-
-# Engine soak: 30 s paced mix with a scripted DJ (also in cargo test --workspace)
-cargo test -p om-audio --test soak
-# 10-minute soak (Wave 2 gate; only the weekly CI job runs it): takes 10 minutes of wall time
-cargo test -p om-audio --test soak -- --ignored --nocapture
-
-# UI gate: scripted DJ over the composition on a paced mock device, no display (8 s; 10-minute run is --ignored)
-cargo test -p openmixer --test ui_gate
-cargo test -p openmixer --test ui_gate -- --ignored --nocapture
-
-# Format, lint and policy checks (same as CI)
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo deny check
-
-# Benchmarks (divan): audio-thread and analysis hot loops, deck varispeed
-cargo bench -p om-engine
-cargo bench -p om-analysis
-
-# Headless binary (no window, no GPUI system libraries at run time)
-cargo test -p openmixer --no-default-features
+cargo run -p openmixer -- --mock-device     # open the window without a sound card
 ```
 
-### Running on WSL
+Lint gates, soak and UI tests, benchmarks, optional features (`clap`, `onnx`, `ffmpeg`, `gui-tauri`), environment variables and the Tauri window are covered in [docs/guidelines/build.md](docs/guidelines/build.md). Build problems, including WSL, are in [docs/troubleshooting.md](docs/troubleshooting.md).
 
-GPUI renders through Vulkan, so the GUI on WSL depends on a working Vulkan driver as well as the display path. WSLg Vulkan can be fragile; check it with `vulkaninfo --summary` (from `vulkan-tools`) before debugging the app itself.
-
-To run the GUI on Windows Subsystem for Linux (WSL):
-
-**Windows 11 (WSLg):**
-```bash
-# Edit /etc/wsl.conf
-[guiApplications]
-enabled=true
-
-# Restart WSL
-wsl --shutdown
-```
-
-**Windows 10 or custom XServer:**
-```bash
-# Install and run VcXsrv or Xming on Windows
-# Set DISPLAY environment variable
-export DISPLAY=127.0.0.1:0
-
-```
-
-### Running
-
-```bash
-cargo run -p openmixer -- --mock-device              # the window (dev builds optimise the UI crates; use --release to judge smoothness)
-cargo run -p openmixer -- --headless --smoke         # startup check, no window
-cargo run -p openmixer -- --version
-
-# Tauri window (web front end, ADR 0009): build the front end first, then the binary
-(cd crates/om-ui-tauri/web && npm ci && npm run build)
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-library
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke   # exits 0 once the page has a packet and has painted
-tools/package.sh                      # installers of the Tauri window for this OS into target/packages/ (--docker for Linux in a container)
-```
-
-The Tauri window is the web front end that ADR 0009 accepted as the direction for the interface; it sits behind the `gui-tauri` feature and is not yet the product's interface. It shows the decks screen only: two deck headers with overviews, GPU-drawn waveform lanes, transport, hot cues, loops, the two-channel mixer and meters, on the real engine, with tracks loaded from a Load button or dropped onto a deck; it opens the output device as GPUI does, and `tools/package.sh` builds installers of it (signed where the keys are set; see the feature page) (Linux locally; Windows and macOS through `.github/workflows/package.yml`). GPUI stays the default window of a cargo build until the cut-over plan lands. ADR 0009 was accepted by the owner's decision; its exit criteria were not measured and are kept as targets for the migration. Details: [docs/features/tauri-trial.md](docs/features/tauri-trial.md).
-
-The GPUI window is the default build and needs the `-dev` packages listed in the `check` job of `.github/workflows/rust.yml` (on Linux: `libxkbcommon-x11-dev`, Wayland, fontconfig, freetype, Vulkan). `--no-default-features` builds the headless binary without it. The staged screenshots were checked by eye (see `docs/screenshots/REVIEW.md`); a live window on a real display, at the minimum size, has not been checked.
-
-Set `OPENMIXER_FRAME_STATS=1` to print frame-time percentiles to the terminal every five seconds. Other environment variables: `OPENMIXER_PREFS` (preferences file), `OPENMIXER_LIBRARY_DB` (library database), `OPENMIXER_THEME` (theme id for the session), `OPENMIXER_WINDOW=WIDTHxHEIGHT` (window size), `OPENMIXER_WAVE_STYLE` (waveform style), `OPENMIXER_MOCK_STEMS` (mock stem separator), `OPENMIXER_DEMO_TRACK` (a real file for the demo deck) and `OPENMIXER_FFMPEG` (the `ffmpeg` executable).
-
-Optional cargo features of the `openmixer` binary, all off by default: `clap` (CLAP plugin hosting through `om-plugins`, ADR 0007; Linux first), `onnx` (real stem separation through ONNX Runtime), `ffmpeg` (decode fallback) and `gui-tauri` (the Tauri window, the web front end of ADR 0009, opened with `--ui=tauri`). `realtime-dbus` is on by default (Linux real-time priority; needs `libdbus-1-dev`); `--no-default-features` turns it off along with the window.
-
-### Debug Build
-
-```bash
-cargo build
-cargo run -p openmixer -- --smoke
-
-# Check for memory leaks (Linux, requires valgrind; headless, no window)
-valgrind --leak-check=full ./target/debug/openmixer --headless --smoke
-```
-
-## Architecture
-
-A Cargo workspace. Dependency arrows point toward `om-core`, which has no I/O.
+## Project layout
 
 ```
 crates/
-├── om-core/      # Typed control surface (ParamId, Command), pulled engine snapshot, job queue, routing; no I/O
-├── om-dsp/       # Filters, EQ, sweep filter, meters and crossfader curves
-├── om-engine/    # Audio-thread engine: decks (rubato varispeed), mixer, FX racks, sync, quantizer, loops, sampler, recorder and EBU R128 loudness meter
-├── om-audio/     # Device layer over cpal, a headless mock device, the output router; `realtime-dbus` feature (real-time priority on Linux)
-├── om-stretch/   # Rubber Band R3 key-lock time-stretch via FFI (unsafe confined to `ffi.rs`)
-├── om-analysis/  # BPM, key, waveform and structure analysis; job service and SQLite cache
-├── om-library/   # SQLite library, metadata ingest, iTunes and Rekordbox import, search, prep queue
-├── om-automix/   # Automix planner, controller and queue (control side only; no audio thread)
-├── om-midi/      # Controller maps, MIDI learn, feedback, trace replay; `midir` and mock backends
-├── om-stems/     # Stem separation pipeline (rubato resampling), model manifests, licence-gated verified downloads; ONNX backend behind the `onnx` feature (off by default)
-├── om-plugins/   # In-process plugin API and registry; C-ABI shared-library loading; CLAP hosting behind the `clap` feature
-├── om-ui/        # UI logic without a window: themes, preferences, mixer, deck and library view models
-├── om-ui-gpui/   # GPUI window on gpui-kit and gpui-component (the openmixer `gui` feature, on by default)
-├── om-ui-bridge/ # ADR 0009: wire formats for a web front end: snapshot packet, waveform peaks, theme CSS, control specs and dispatch
-├── om-ui-tauri/  # Tauri v2 window and Svelte front end, the web front end (ADR 0009; the openmixer `gui-tauri` feature, off by default)
-├── om-testing/   # Test-only helpers shared by the crates (WAV fixtures, signal generators); dev-dependency only
-└── openmixer/    # Binary and composition root: --smoke, --mock-device, settings, plugins
-examples/plugins/gain-plugin/           # Example in-process plugin
-examples/plugins/gain-plugin-cdylib/    # Example C-ABI plugin (ABI 1), built as a shared library
-examples/plugins/param-plugin-cdylib/   # Example C-ABI plugin (ABI 2: prepare, parameters)
-examples/plugins/clap-gain-fixture/     # CLAP test fixture plugin (built with clack-plugin)
-fixtures/                               # Small test inputs: controller maps and traces, library exports, the web front end's golden packet
-resources/controllers/                  # Generic controller maps
-resources/fonts/                        # Bundled Sansation, Source Sans 3 (SIL OFL 1.1), Ubuntu Mono (UFL 1.0)
-resources/themes/                       # Built-in theme JSON
-tools/                                  # Helpers: issue heatmap, screenshots, htdemucs export and reference, CLAP leak check, UI bench and UI drive (Tauri window)
+├── om-core/       Typed control surface (ParamId, Command), engine snapshot, routing; no I/O
+├── om-dsp/        Filters, EQ, meters and crossfader curves
+├── om-engine/     Audio-thread engine: decks, mixer, FX, sync, loops, sampler, recorder, loudness
+├── om-audio/      Device layer over cpal, a headless mock device, the output router
+├── om-stretch/    Rubber Band key-lock time-stretch (FFI)
+├── om-analysis/   BPM, key, waveform and structure analysis with a SQLite cache
+├── om-library/    Track library, metadata ingest, iTunes and Rekordbox import, search
+├── om-automix/    Automix planner, controller and queue
+├── om-midi/       Controller maps, MIDI learn and feedback
+├── om-stems/      Stem separation pipeline and verified model downloads
+├── om-plugins/    Plugin API, C-ABI loading and CLAP hosting
+├── om-ui/         UI logic without a window: themes, preferences, view models
+├── om-ui-gpui/    GPUI window (default)
+├── om-ui-bridge/  Wire formats for the web front end
+├── om-ui-tauri/   Tauri v2 window and Svelte front end (gui-tauri feature)
+├── om-testing/    Shared test helpers
+└── openmixer/     Binary and composition root
+examples/          Example plugins (in-process, C-ABI, CLAP)
+fixtures/          Small test inputs
+resources/         Controller maps, fonts and built-in themes
+tools/             Screenshot, packaging and benchmark scripts
 ```
-
-Real-time audio code lives in `om-engine` and `om-audio`. It must not allocate, take locks or make syscalls on the audio thread. The UI sends typed `Command::Param`s to the router through `CommandSink`. MIDI mappings and plugins use the string façade, which parses each id once at the router. Readers pull an `EngineSnapshot` built from the engine's atomics. `docs/crates.md` lists what each crate owns and `docs/guidelines/control-ids.md` how to add a control id.
-
-## Implementation Waves
-
-![OpenMixer issue heatmap](https://raw.githubusercontent.com/massive-development/openmixer/badges/issue-heatmap.svg)
-
-| Wave | Focus | Status |
-|------|-------|--------|
-| 1 | Foundation, build system, CI, test harness | ✅ Done |
-| 2 | Audio engine (device, decks, mixer, FX, sync, MIDI input, soak gate) | 🟡 Partial: the debug panel (26a) is partial (no faders, EQ or meters on it); FFmpeg (8b) is an optional decode fallback; the 10-minute soak runs on the weekly CI job (passing since 2026-11-01) |
-| 3 | Analysis pipeline | 🟡 Partial: stem separation runs on the mock separator; the htdemucs export and a real-model run (19) are open |
-| 4 | Library and data | 🟡 Done except crates and tags, the Traktor and Serato importers, smart filters and ranking |
-| 5 | User interface | 🟡 Partial: LookAndFeel (25) is partly restyled; decks, mixer and settings partial; stem pads (30) done at logic and view level |
-| 6 | Hardware I/O | 🟡 Partial: MIDI input and mapping are done (32 and 33 are in Wave 2); the mapping editor (36) is in at logic and view level (Settings > Mapping, MIDI learn into it; not verified with hardware); generic controller maps (34) are built and not verified with a device, named-controller maps and HID (35) are open |
-| 7 | Intelligence (stems, Automix, sampler) | 🟡 Partial: stem playback and the 8-pad sampler (engine, sample bank, pad strip; not heard) are in; Automix is in (planner, controller, library queue, Automix settings page, main-window bar; not heard, mock device only); stem separation is unproven; stem transitions are tested on the engine, not heard |
-| 8 | Pro features (recording, broadcast, DVS, video) | 🟡 Partial: mix recording (master-output WAV, ids, prefs, Recording settings tab, header Record button and `r` shortcut; not heard); broadcast, DVS and video not started |
-| 9 | Release | ⬜ Not started |
-
-The engine, analysis, library and MIDI work is verified headlessly on Linux; the Wave 5 UI is partial. Task-level planning lives in the [workbench](https://github.com/massive-development/openmixer-workbench).
-
-**Platform refresh (issues #218 to #229, #241, #250):** done and tested headlessly, not yet confirmed on real hardware. It moved the UI to `gpui-pre` 0.3.10 with `gpui-kit` and `gpui-component`, the toolchain to Rust 1.95, MIDI to `midir`, resampling and deck varispeed to `rubato`, added EBU R128 loudness metering (`ebur128`, with a panel in the mixer), OS media keys (`souvlaki`), GPUI file pickers, clipboard and notifications, SQLite `synchronous=NORMAL` in WAL mode for the library and analysis cache, hot-loop bounds-check work with `divan` benches, and CLAP plugin hosting behind the `clap` feature (ADR 0007; plugin delay compensation deferred). Real-time priority for the audio callback (issue #244) is on by default through the `realtime-dbus` feature and not yet confirmed on a device. The list of things a person has to check is `docs/testing/hardware-checklist.md`.
-
-See the [workbench](https://github.com/massive-development/openmixer-workbench) for the task list and per-task progress.
-
-## Important Notices
-
-- **No Spotify integration** - Spotify's terms of service prohibit DJ mixing operations
-- **No mobile/web app** - the current development focuses on desktop platforms
-- **Stems are precomputed** - stem separation runs offline; real-time separation is not promised
-
-## License
-
-OpenMixer is released under the GNU Affero General Public License v3.0 (AGPLv3). See [LICENSE](LICENSE) for details.
-
-## Contributing
-
-For contributors, see [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and feature requests go in [issues](https://github.com/massive-development/openmixer/issues/new/choose); security problems go through [SECURITY.md](SECURITY.md). All contributions must follow the clean-room doctrine outlined in [docs/adr/0001-clean-room-doctrine.md](docs/adr/0001-clean-room-doctrine.md).
 
 ## Status
 
-**Current State:** Works, verified headlessly on Linux: the audio engine (two decks, mixer, FX racks, sync, key-lock), analysis (BPM, key, waveform, structure), the library (ingest, import, search, prep queue), MIDI (`midir`, mapping and feedback), in-process and C-ABI plugins, loudness metering, and the GPUI app on Linux. Partial: the UI (decks, mixer, settings, debug panel) and stems (mock separator only). The staged screenshots were checked by eye; a live window on a real display has not been. A Tauri v2 window for the decks screen (`gui-tauri` feature; installers via `tools/package.sh`) is built, and ADR 0009 accepted the web front end as the direction for the interface on 2026-11-16 (owner decision; exit criteria not measured); GPUI stays the default until the cut-over. Windows and macOS support is later. **Next:** the Before-Wave-7 list in `openmixer-workbench/TODO.md`, then Wave 7. See `openmixer-workbench/docs/spikes/DECISIONS.md`.
+Pre-release. On Linux the audio engine, analysis, library, MIDI mapping, plugins and the GPUI window work and are tested headlessly. The interface and stem separation are still in progress, and nothing has yet been confirmed on real hardware or by ear. Built-in themes: Midnight Glass (default), Daylight Frost and Harbour Night.
 
-**Known gaps** (what is built but not yet verified on real hardware, by ear or on a live display, and what is deferred) are tracked in one issue: [Known gaps: unverified and deferred work](https://github.com/massive-development/openmixer/issues/283). [`docs/testing/hardware-checklist.md`](docs/testing/hardware-checklist.md) lists what to confirm on hardware.
+What is planned is in [ROADMAP.md](ROADMAP.md). Work that is built but not yet verified is tracked in [Known gaps](https://github.com/massive-development/openmixer/issues/283), and [docs/testing/hardware-checklist.md](docs/testing/hardware-checklist.md) lists what to check on a real device.
 
----
+Not planned: Spotify integration (its terms prohibit DJ mixing), mobile apps, and real-time stem separation (stems are computed ahead of time).
 
-Built with ❤️ for the DJ community.
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/PRODUCT.md](docs/PRODUCT.md) | The product bar every area is measured against |
+| [ROADMAP.md](ROADMAP.md) | Tracks, milestones and key decisions |
+| [docs/adr/](docs/adr/INDEX.md) | Architecture decision records |
+| [docs/DESIGN_PATTERNS.md](docs/DESIGN_PATTERNS.md) | Design patterns in use and when to reuse them |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+| [SECURITY.md](SECURITY.md) | Reporting a vulnerability |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and feature requests go in [issues](https://github.com/massive-development/openmixer/issues/new/choose); security reports go through [SECURITY.md](SECURITY.md). For anything else, write to contact@openmixer.dev.
+
+## License
+
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
