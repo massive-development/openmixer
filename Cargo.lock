@@ -3159,6 +3159,7 @@ dependencies = [
  "om-analysis",
  "om-core",
  "om-engine",
+ "om-library",
  "om-testing",
  "om-ui",
  "om-ui-bridge",

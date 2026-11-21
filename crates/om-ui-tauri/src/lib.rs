@@ -12,6 +12,9 @@ mod controls;
 mod deck_info;
 mod decks;
 mod drive;
+mod header;
+mod library;
+mod library_commands;
 mod pacer;
 mod smoke;
 mod stream;
@@ -28,6 +31,14 @@ pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
 };
+pub use header::{
+    automix_dto, install_header, next_length, record_dto, AutomixAction, AutomixBarDto, HeaderHost,
+    HeaderParts, HeaderState, RecordBarDto, TickSetup, Ticker,
+};
+pub use library::{
+    AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
+    MAX_VIEW_ROWS,
+};
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
 pub use strip_ink::{strip_ink_dto, StripInkDto};
@@ -36,6 +47,7 @@ use bench::BenchRun;
 use commands::ShellState;
 use control_loop::ControlLoop;
 use decks::Decks;
+use library::LibraryQueue;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use std::path::PathBuf;
@@ -137,7 +149,12 @@ pub fn run(
     let smoke_play = options.smoke && library.is_some();
     let (bench, bench_wait) = bench_run(&options);
     let (state, ready_wait) = shared.shell_state(theme, &options, smoke_play, bench.clone());
-    let app = build_app(Arc::clone(&engine), router, state)?;
+    let header = header::take_installed();
+    let (host, tick) = match header {
+        Some(parts) => (Some(parts.host), parts.tick),
+        None => (None, None),
+    };
+    let app = build_app(Arc::clone(&engine), router, state, host)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
     }
@@ -145,7 +162,7 @@ pub fn run(
         smoke::spawn_watchdog(app.handle().clone(), wait, smoke::bench_timeout(seconds))?;
     }
     let drive_state = options.drive_out.as_ref().map(|d| d.state.clone());
-    let control = shared.spawn_control(&app, engine, library, drive_state)?;
+    let control = shared.spawn_control(&app, engine, library, tick, drive_state)?;
     let code = app.run_return(|_, _| {});
     shared.shut_down(control);
     bench_outcome(bench.as_deref())?;
@@ -182,6 +199,7 @@ struct Shared {
     ready: Arc<AtomicBool>,
     streams: Arc<StreamSlot>,
     decks: Arc<Decks>,
+    library: Arc<LibraryQueue>,
     stop: Arc<AtomicBool>,
 }
 
@@ -191,6 +209,7 @@ impl Shared {
             ready: Arc::new(AtomicBool::new(false)),
             streams: Arc::new(StreamSlot::default()),
             decks: Arc::new(Decks::new(engine)),
+            library: Arc::default(),
             stop: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -221,6 +240,7 @@ impl Shared {
             ready_signal,
             streams: Arc::clone(&self.streams),
             decks: Arc::clone(&self.decks),
+            library: Arc::clone(&self.library),
         };
         (state, ready_wait)
     }
@@ -230,12 +250,15 @@ impl Shared {
         app: &App,
         engine: Arc<DjEngine>,
         setup: Option<LibrarySetup>,
+        tick: Option<TickSetup>,
         drive_state: Option<PathBuf>,
     ) -> Result<JoinHandle<()>, ShellError> {
         let control = ControlLoop {
             engine,
             decks: Arc::clone(&self.decks),
+            library: Arc::clone(&self.library),
             setup,
+            tick,
             stop: Arc::clone(&self.stop),
             drive_state,
         };
@@ -268,12 +291,14 @@ fn build_app(
     engine: Arc<DjEngine>,
     router: Arc<ParameterRouter>,
     state: ShellState,
+    header: Option<Arc<dyn HeaderHost>>,
 ) -> Result<App, ShellError> {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(engine)
         .manage(router)
         .manage(state)
+        .manage(header::HeaderSlot(header))
         .invoke_handler(tauri::generate_handler![
             commands::theme_css,
             commands::run_config,
@@ -289,6 +314,29 @@ fn build_app(
             commands::deck_info,
             commands::load_file,
             commands::ui_layout,
+            library_commands::library_view,
+            library_commands::library_search,
+            library_commands::library_clear_search,
+            library_commands::library_select_sidebar,
+            library_commands::library_sort,
+            library_commands::library_select_row,
+            library_commands::library_key,
+            library_commands::library_activate,
+            library_commands::library_load,
+            library_commands::library_analyse,
+            library_commands::library_stems,
+            library_commands::library_name,
+            library_commands::library_delete_playlist,
+            library_commands::library_remove_from_playlist,
+            library_commands::library_drop_on_playlist,
+            library_commands::library_drop_playlist,
+            library_commands::library_drop_on_row,
+            library_commands::library_copy,
+            header::header_state,
+            header::automix_enable,
+            header::automix_length,
+            header::automix_press,
+            header::record_toggle,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)
