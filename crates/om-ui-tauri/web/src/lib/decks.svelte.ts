@@ -23,6 +23,11 @@ export class DeckData {
     });
   }
 
+  /** Reads every deck's ink again, after a theme switch. */
+  reloadInks(): void {
+    for (let deck = 0; deck < this.inks.length; deck++) void this.loadInk(deck);
+  }
+
   private async load(deck: number): Promise<void> {
     const request = ++this.requests[deck];
     try {

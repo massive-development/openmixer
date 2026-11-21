@@ -16,6 +16,7 @@ mod header;
 mod library;
 mod library_commands;
 mod pacer;
+mod settings;
 mod smoke;
 mod stream;
 mod stream_slot;
@@ -38,6 +39,11 @@ pub use header::{
 pub use library::{
     AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
     MAX_VIEW_ROWS,
+};
+pub use settings::{
+    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, AutomixChange,
+    AutomixPage, FormatChoice, LengthChoice, QueueSource, RecordChange, RecordPage, SettingsHost,
+    ThemeChoice,
 };
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
@@ -142,6 +148,7 @@ pub fn run(
     router: Arc<ParameterRouter>,
     theme: ShellTheme,
     library: Option<LibrarySetup>,
+    settings: Option<Box<dyn SettingsHost>>,
     options: RunOptions,
 ) -> Result<(), ShellError> {
     let shared = Shared::new(&engine);
@@ -154,6 +161,7 @@ pub fn run(
         Some(parts) => (Some(parts.host), parts.tick),
         None => (None, None),
     };
+    settings::install(settings);
     let app = build_app(Arc::clone(&engine), router, state, host)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
@@ -164,6 +172,7 @@ pub fn run(
     let drive_state = options.drive_out.as_ref().map(|d| d.state.clone());
     let control = shared.spawn_control(&app, engine, library, tick, drive_state)?;
     let code = app.run_return(|_, _| {});
+    settings::uninstall();
     shared.shut_down(control);
     bench_outcome(bench.as_deref())?;
     smoke::outcome(options.smoke && !shared.ready.load(Ordering::Acquire), code)
@@ -223,8 +232,7 @@ impl Shared {
     ) -> (ShellState, Receiver<()>) {
         let (ready_signal, ready_wait) = mpsc::channel();
         let state = ShellState {
-            theme_css: theme.css,
-            strip_inks: theme.strip_inks,
+            theme: Mutex::new(theme),
             config: RunConfig {
                 smoke: options.smoke,
                 bench_seconds: options.bench_seconds,
@@ -337,6 +345,15 @@ fn build_app(
             header::automix_length,
             header::automix_press,
             header::record_toggle,
+            commands::audio_settings,
+            commands::audio_change,
+            commands::appearance_settings,
+            commands::appearance_change,
+            commands::automix_settings,
+            commands::automix_change,
+            commands::record_settings,
+            commands::record_change,
+            header::automix_playlists,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)

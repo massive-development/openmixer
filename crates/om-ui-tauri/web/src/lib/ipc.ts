@@ -308,3 +308,136 @@ export const automixPress = (action: AutomixAction): Promise<void> => invoke<voi
 
 /** Starts or stops the mix recording. */
 export const recordToggle = (): Promise<void> => invoke<void>('record_toggle');
+/** The audio settings page: what the device offers and the current pick (`SettingsHost`). */
+export interface AudioPage {
+  deviceTypes: string[];
+  deviceType: string;
+  devices: string[];
+  device: string;
+  sampleRates: number[];
+  sampleRate: number;
+  bufferSizes: number[];
+  bufferSize: number;
+  /** Output pair labels of the open device ("Outputs 1-2"). */
+  pairs: string[];
+  masterPair: number;
+  /** The headphone cue pair; null for none. */
+  cuePair: number | null;
+  /** The latency and load readout, or why no device runs. */
+  stats: string;
+  /** The silent mock runs: no change reaches a sound card. */
+  mock: boolean;
+}
+
+/** One edit of the audio page, as the shell reads it. */
+export type AudioChange =
+  | { field: 'deviceType'; value: string }
+  | { field: 'device'; value: string }
+  | { field: 'sampleRate'; value: number }
+  | { field: 'bufferSize'; value: number }
+  | { field: 'masterPair'; value: number }
+  | { field: 'cuePair'; value: number | null };
+
+/** The audio settings page as it stands. */
+export const audioSettings = (): Promise<AudioPage> => invoke<AudioPage>('audio_settings');
+
+/** Applies one edit (saved and pushed into the engine); the page afterwards, or the reason it was refused. */
+export const audioChange = (change: AudioChange): Promise<AudioPage> => invoke<AudioPage>('audio_change', { change });
+
+/** One theme the picker offers. */
+export interface ThemeChoice {
+  id: string;
+  name: string;
+}
+
+/** The appearance page: the themes and the density choice. */
+export interface AppearancePage {
+  themes: ThemeChoice[];
+  theme: string;
+  density: 'automatic' | 'roomy' | 'compact';
+}
+
+/** One edit of the appearance page, as the shell reads it. */
+export type AppearanceChange = { field: 'theme'; value: string } | { field: 'density'; value: AppearancePage['density'] };
+
+/** What an appearance edit leaves the window to apply. */
+export interface AppearanceResult {
+  page: AppearancePage;
+  css: string;
+  stripInks: StripInk[];
+}
+
+/** The appearance settings page as it stands. */
+export const appearanceSettings = (): Promise<AppearancePage> => invoke<AppearancePage>('appearance_settings');
+
+/** Applies one edit; the page and the theme CSS to show, or the reason it was refused. */
+export const appearanceChange = (change: AppearanceChange): Promise<AppearanceResult> =>
+  invoke<AppearanceResult>('appearance_change', { change });
+
+/** Where the automix queue picks from. */
+export interface QueueSource {
+  kind: 'library' | 'playlist' | 'search';
+  /** The playlist id, for `playlist`. */
+  playlist?: number;
+}
+
+/** The Automix settings page: the stored settings and the words for their choices. */
+export interface AutomixPage {
+  enabled: boolean;
+  style: number;
+  styles: string[];
+  lengthBeats: number;
+  lengths: { beats: number; label: string }[];
+  queue: QueueSource;
+  smart: boolean;
+  minBpmGapPercent: number;
+  maxBpmGapPercent: number;
+  autostartAtEnd: boolean;
+}
+
+/** One edit of the Automix page. */
+export type AutomixChange =
+  | { field: 'enabled'; value: boolean }
+  | { field: 'style'; value: number }
+  | { field: 'lengthBeats'; value: number }
+  | { field: 'queue'; value: QueueSource }
+  | { field: 'smart'; value: boolean }
+  | { field: 'minBpmGapPercent'; value: number }
+  | { field: 'autostartAtEnd'; value: boolean };
+
+/** A playlist the automix queue can play, labelled `Folder / Name`. */
+export interface PlaylistChoice {
+  id: number;
+  label: string;
+}
+
+export const automixSettings = (): Promise<AutomixPage> => invoke<AutomixPage>('automix_settings');
+
+/** Applies one edit (stored, pushed to the controller, saved); the page as it stands, or why it was refused. */
+export const automixChange = (change: AutomixChange): Promise<AutomixPage> =>
+  invoke<AutomixPage>('automix_change', { change });
+
+/** The library's playlists, for the queue source; rejects when no library is open. */
+export const automixPlaylists = (): Promise<PlaylistChoice[]> => invoke<PlaylistChoice[]>('automix_playlists');
+
+/** The Recording settings page. */
+export interface RecordPage {
+  /** The stored folder; empty means the default. */
+  folder: string;
+  /** Where an empty folder records to. */
+  defaultFolder: string;
+  format: string;
+  formats: { id: string; label: string }[];
+  stopOnLowDisk: boolean;
+}
+
+/** One edit of the Recording page. */
+export type RecordChange =
+  | { field: 'folder'; value: string }
+  | { field: 'format'; value: string }
+  | { field: 'stopOnLowDisk'; value: boolean };
+
+export const recordSettings = (): Promise<RecordPage> => invoke<RecordPage>('record_settings');
+
+/** Applies one edit (stored, pushed to the recorder, saved); the page as it stands, or why it was refused. */
+export const recordChange = (change: RecordChange): Promise<RecordPage> => invoke<RecordPage>('record_change', { change });

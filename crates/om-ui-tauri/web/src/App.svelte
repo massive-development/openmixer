@@ -27,6 +27,8 @@
   } from './lib/ipc';
   import Button from './lib/controls/Button.svelte';
   import Library from './lib/library/Library.svelte';
+  import { themeEpoch } from './lib/themeEpoch.svelte';
+  import SettingsOverlay from './lib/settings/SettingsOverlay.svelte';
   import Mixer from './lib/mixer/Mixer.svelte';
   import { firstSnapshot, type Snapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
@@ -55,6 +57,14 @@
   // The mock-device notice, when the run has one (`om_ui::labels`, by GPUI's rule).
   let banner: string | null = $state(null);
   const decks = new DeckData();
+  // After a theme switch the decks read their ink again.
+  let seenEpoch = themeEpoch.n;
+  $effect(() => {
+    const epoch = themeEpoch.n;
+    if (epoch === seenEpoch) return;
+    seenEpoch = epoch;
+    decks.reloadInks();
+  });
   // The open dialog, files dropped on a deck, and why a load failed.
   const loading = new Loading();
   // The top bar's Automix strip and Record button.
@@ -63,6 +73,8 @@
   const sliders = new LaneSliders();
   // The library band under the decks; the top bar's Library button hides it and the stage grows.
   let libraryShown = $state(true);
+  // The settings overlay.
+  let settingsOpen = $state(false);
   let hud: HTMLElement | undefined = $state();
   // The frame counter, only for a bench run or `--debug-panel`.
   let hudShown = $state(false);
@@ -193,6 +205,7 @@
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
       {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
       {#if header.state}<RecordButton bar={header.state.record} {header} />{/if}
+      <button type="button" class="settings-button" onclick={() => (settingsOpen = true)}>Settings</button>
     </header>
     {#snippet deckRegions(deck: number)}
       <section
@@ -243,6 +256,7 @@
       </section>
     {/if}
   </main>
+  {#if settingsOpen}<SettingsOverlay onclose={() => (settingsOpen = false)} />{/if}
 {/if}
 
 <style>
@@ -308,6 +322,23 @@
     font-size: var(--om-type-label);
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .settings-button {
+    margin-left: auto;
+    padding: var(--om-density-space-1) var(--om-inner-gap);
+    border: 1px solid var(--om-border);
+    border-radius: var(--om-control-radius);
+    background: var(--om-surface-raised);
+    color: var(--om-text-secondary);
+    font: inherit;
+    font-size: var(--om-type-label);
+    cursor: pointer;
+  }
+
+  .settings-button:focus-visible {
+    outline: none;
+    box-shadow: var(--om-focus-ring);
   }
 
   .hud {

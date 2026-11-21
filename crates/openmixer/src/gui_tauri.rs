@@ -13,18 +13,19 @@
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
 use crate::gui_tauri_header::TauriHeader;
+use crate::gui_tauri_settings::TauriSettings;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
 use om_ui_tauri::{
-    install_header, DeckLibrary, DriveOut, HeaderParts, LibrarySetup, RunOptions, ShellError,
-    ShellTheme, TickSetup, DEFAULT_FPS_CAP,
+    install_header, DeckLibrary, DriveOut, HeaderParts, LibrarySetup, RunOptions, SettingsHost,
+    ShellError, ShellTheme, TickSetup, DEFAULT_FPS_CAP,
 };
 use openmixer::audio_settings::SharedOutput;
 use openmixer::automix_settings::apply_automix_prefs;
-use openmixer::composition::{library_options, AppComposition};
+use openmixer::composition::{library_options, prefs_save_target, AppComposition};
 use openmixer::flags::DemoScene;
 use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
@@ -248,11 +249,30 @@ fn run_window(
     };
     let router = Arc::clone(&composition.router);
     install_header(HeaderParts {
-        host: Arc::new(header_host(&composition, &device, &router)),
+        host: Arc::new(header_host(&composition, &router)),
         tick: Some(automix_tick(&composition)),
     });
     let theme = shell_theme(&composition, engine.num_decks());
-    let result = om_ui_tauri::run(Arc::clone(&engine), router, theme, library, options);
+    let prefs_file = prefs_save_target(
+        device.demo_run,
+        om_ui::preferences::default_file(),
+        &library_smoke::scratch_dir(),
+    );
+    let settings: Box<dyn SettingsHost> = Box::new(TauriSettings::new(
+        composition,
+        output.clone(),
+        prefs_file,
+        device.mock,
+        engine.num_decks(),
+    ));
+    let result = om_ui_tauri::run(
+        Arc::clone(&engine),
+        router,
+        theme,
+        library,
+        Some(settings),
+        options,
+    );
     let played = round_trip.then(|| deck_a_playing(&engine));
     output.lock().stop();
     if result.is_ok() && window.frames.bench_seconds.is_some() {
@@ -262,20 +282,14 @@ fn run_window(
 }
 
 /// The header's host over the composition's automix and recorder. The stored Automix settings are
-/// pushed into the service first, as every start does; a demo run saves nothing.
-fn header_host(
-    composition: &AppComposition,
-    device: &Device,
-    router: &Arc<ParameterRouter>,
-) -> TauriHeader {
+/// pushed into the service first, as every start does.
+fn header_host(composition: &AppComposition, router: &Arc<ParameterRouter>) -> TauriHeader {
     apply_automix_prefs(&composition.automix, &composition.prefs.automix, None);
     TauriHeader::new(
         Arc::clone(&composition.engine),
         Arc::clone(router),
         Arc::clone(&composition.automix),
         Arc::clone(&composition.record),
-        composition.prefs.automix.clone(),
-        (!device.demo_run).then(om_ui::preferences::default_file),
     )
 }
 
@@ -384,7 +398,7 @@ fn load_demo_decks(
 
 /// The active theme (the saved one, or `OPENMIXER_THEME`) as CSS at the opening density, and the
 /// waveform lane ink of each of the engine's `decks`.
-fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
+pub(crate) fn shell_theme(composition: &AppComposition, decks: usize) -> ShellTheme {
     let tokens = composition.themes.current();
     let density = resolve_density(composition.prefs.density, tokens, WINDOW_SIZE);
     ShellTheme {
