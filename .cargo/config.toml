@@ -1,4 +1,4 @@
-# Keep parallel rustc/linker memory bounded so long builds (gpui, rubberband-sys) cannot exhaust the WSL VM.
+# Keep parallel rustc/linker memory bounded so long builds (tauri, rubberband-sys) cannot exhaust the WSL VM.
 [build]
 jobs = 4
 # One target dir for the root workspace and the three spikes (each spike is its own Cargo workspace and
@@ -9,7 +9,7 @@ target-dir = "target"
 debug = "line-tables-only"
 
 # Dependencies need no debug info of their own (most of a debug target dir) and run optimised: an
-# unoptimised GPUI window ran at 12 fps against 60 in release (measured with OPENMIXER_FRAME_STATS=1).
+# unoptimised dependencies made the old GPUI window run at 12 fps against 60 in release.
 [profile.dev.package."*"]
 debug = false
 opt-level = 2
@@ -18,5 +18,3 @@ opt-level = 2
 [profile.dev.package.om-ui]
 opt-level = 2
 
-[profile.dev.package.om-ui-gpui]
-opt-level = 2

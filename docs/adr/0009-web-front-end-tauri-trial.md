@@ -4,6 +4,8 @@
 
 Accepted (2026-11-16)
 
+Amended 2026-11-21: **GPUI removed (2026-11-21).** The window is Tauri only: `om-ui-gpui` and the binary's `gui.rs` were deleted ahead of the porting plans above, by the owner's decision to cut the bloat. The last commit that still has them is `117ea60`; read old code with `git show 117ea60:crates/om-ui-gpui/<path>`. The GPUI-free glue moved to `om-ui` (`library::hub`) and `openmixer::wiring`. Features the Tauri window does not have yet (library, stems, Automix, sampler, recording, MIDI and mapping pages, plugins, media keys) are ported from that code.
+
 Accepted by the project owner's decision after the decks slice was built and reviewed. The exit criteria were not measured; they remain below as targets for the migration, not as a gate.
 
 Proposed on 2026-11-15 as a trial: a decks-screen slice built beside the GPUI window (the first of four planned steps). The trial's measurements were not run: there is no GPUI baseline on real hardware, no run on a machine with a working GPU path under Linux, no maximised-window run, and the pointer interactions have not been exercised by hand.

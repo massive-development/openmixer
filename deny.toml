@@ -1,7 +1,7 @@
 [advisories]
 version = 2
-# Unmaintained advisories are checked for workspace crates only: GPUI's transitive tree (zbus/zvariant,
-# async-std, instant, ttf-parser, rustybuzz, ...) is upstream's, and we cannot replace it. Vulnerabilities
+# Unmaintained advisories are checked for workspace crates only: Tauri's transitive tree (the GTK 3 and
+# WebKit bindings, ...) is upstream's, and we cannot replace it. Vulnerabilities
 # and unsound advisories are still denied for the whole tree.
 unmaintained = "workspace"
 
@@ -28,14 +28,14 @@ allow = [
     # GPL-2.0-or-later: Rubber Band (rubberband-sys, via om-stretch). Chosen in
     # openmixer-workbench/docs/spikes/DECISIONS.md (time-stretch: Rubber Band R3 behind a Stretcher trait).
     "GPL-2.0-or-later",
-    # Apache-2.0 WITH LLVM-exception: ar_archive_writer (build-time, via gpui's stacker/psm chain).
+    # Apache-2.0 WITH LLVM-exception: ar_archive_writer (build-time).
     "Apache-2.0 WITH LLVM-exception",
-    # CC0-1.0: tiny-keccak (gpui's ahash chain, via zed-xim); a public-domain dedication.
+    # CC0-1.0: tiny-keccak (a hashing dependency); a public-domain dedication.
     "CC0-1.0",
-    # 0BSD: enum-iterator (and its derive), via gpui-component (the P5 chrome); a public-domain
+    # 0BSD: enum-iterator (and its derive), a public-domain
     # equivalent, permissive and compatible with AGPL-3.0 distribution.
     "0BSD",
-    # NCSA: libfuzzer-sys (via gpui's image/rav1e chain, dev-only in practice); OSI-approved permissive.
+    # NCSA: libfuzzer-sys (dev-only in practice); OSI-approved permissive.
     "NCSA",
 ]
 confidence-threshold = 0.8

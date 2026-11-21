@@ -4,7 +4,7 @@
 Usage: tools/ui-drive.py [--only GROUP] [--verbose]
 
 Linux and X11 only (WSLg works); Python standard library only. It never builds: it starts the
-already-built OPENMIXER_BIN (default target/debug/openmixer, built with --features gui-tauri) with
+already-built OPENMIXER_BIN (default target/debug/openmixer, default build) with
 --ui=tauri --mock-device --ui-drive-out=<temp>/drive.json and WAYLAND_DISPLAY empty, reads the
 controls' rectangles and specs from that file and the engine's state from <temp>/drive.json.state
 (10 Hz), and presses, drags, scrolls and types with XTest at the controls' screen coordinates.
@@ -1058,7 +1058,7 @@ def main():
         print("ui-drive: Linux only", file=sys.stderr)
         return 2
     if not os.access(binary, os.X_OK):
-        print(f"ui-drive: no binary at {binary} (build with --features gui-tauri)", file=sys.stderr)
+        print(f"ui-drive: no binary at {binary} (build the default window first)", file=sys.stderr)
         return 2
     if subprocess.run(["pgrep", "-x", "openmixer"], capture_output=True).returncode == 0:
         print("ui-drive: another openmixer is running; close it first", file=sys.stderr)

@@ -1,6 +1,6 @@
 # Screenshots
 
-The PNGs in this folder are captured from the real window with `tools/screenshots.sh` (debug build, X11, 1280x800, `--mock-device`, generated demo tracks). Capture with a neutral `TMPDIR`: the MIDI, Library and Mapping tabs print temporary paths, so a home folder name would end up in the picture.
+The PNGs in this folder are captured from the GPUI window (since removed, with `tools/screenshots.sh`) (debug build, X11, 1280x800, `--mock-device`, generated demo tracks). Capture with a neutral `TMPDIR`: the MIDI, Library and Mapping tabs print temporary paths, so a home folder name would end up in the picture.
 
 The captures were last checked by eye on 2026-11-12. Some of them predate the latest fixes, so a few of the issues below are fixed in code but still visible in the images.
 

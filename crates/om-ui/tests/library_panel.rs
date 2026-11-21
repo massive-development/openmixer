@@ -10,9 +10,9 @@ use std::sync::Arc;
 use om_engine::DjEngine;
 use om_library::TrackRecord;
 use om_testing::wav::write_pcm16_wav;
+use om_ui::library::hub::{KeyOutcome, LibraryHub, LibraryPanel, SharedHub};
 use om_ui::library::{describe_track_drag, LibraryServices, Options};
 use om_ui::sidebar::SidebarKind;
-use om_ui_gpui::library::{KeyOutcome, LibraryHub, LibraryPanel, SharedHub};
 use tempfile::TempDir;
 
 /// A 16-bit mono WAV with a short tone, enough for the loader to decode.

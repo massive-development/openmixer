@@ -1,13 +1,10 @@
 #![forbid(unsafe_code)]
 
-//! `openmixer` binary. Headless flags run the engine and composition without a window; the GPUI window
-//! is on by default behind the `gui` feature (see `gui.rs`). `--headless --smoke` is the start-up check that
-//! opens no window; without the feature (`--no-default-features`) `--headless` is implied. The Tauri trial
-//! window (ADR 0009) opens with `--ui=tauri` when built with the `gui-tauri` feature (see `gui_tauri.rs`),
-//! and without the flag in the installers' build (`tauri-default`, see `tools/package.sh`).
+//! `openmixer` binary. Headless flags run the engine and composition without a window; the Tauri window
+//! (ADR 0009) is the only window and opens by default behind the `gui-tauri` feature (see `gui_tauri.rs`).
+//! `--headless --smoke` is the start-up check that opens no window; without the feature
+//! (`--no-default-features`) `--headless` is implied. `--ui=tauri` is still accepted and changes nothing.
 
-#[cfg(feature = "gui")]
-mod gui;
 #[cfg(feature = "gui-tauri")]
 mod gui_tauri;
 
@@ -26,11 +23,10 @@ fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let headless = args.iter().any(|a| a == "--headless");
     args.retain(|a| a != "--headless");
-    // The packaged build (`tauri-default`) opens the Tauri window with no flag.
-    let tauri = cfg!(feature = "tauri-default") || args.iter().any(|a| a == "--ui=tauri");
+    // The window is the default build; the old opt-in flag is dropped so scripts that pass it still run.
     args.retain(|a| a != "--ui=tauri");
-    if !tauri && args.iter().any(|a| is_tauri_only(a)) {
-        eprintln!("openmixer: --ui-bench, --ui-fps-cap and --ui-drive-out need --ui=tauri");
+    if headless && args.iter().any(|a| is_window_only(a)) {
+        eprintln!("openmixer: --ui-bench, --ui-fps-cap and --ui-drive-out need the window");
         return ExitCode::FAILURE;
     }
     if args.iter().any(|a| a == "--version") {
@@ -38,24 +34,17 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     #[cfg(feature = "gui-tauri")]
-    if tauri && !headless {
+    if !headless {
         return gui_tauri::main(&args);
     }
     #[cfg(not(feature = "gui-tauri"))]
-    if tauri && !headless {
-        eprintln!("openmixer: --ui=tauri needs the gui-tauri feature (cargo run -p openmixer --features gui-tauri)");
-        return ExitCode::FAILURE;
-    }
-    #[cfg(feature = "gui")]
-    if !headless && (args.is_empty() || args.iter().any(|a| a.starts_with("--"))) {
-        return gui::main(&args);
-    }
-    #[cfg(not(feature = "gui"))]
     if args
         .iter()
-        .any(|a| a == "--mock-device" || a == "--debug-panel")
+        .any(|a| a == "--mock-device" || a == "--debug-panel" || is_window_only(a))
     {
-        eprintln!("openmixer: --mock-device and --debug-panel need the window (build without --no-default-features)");
+        eprintln!(
+            "openmixer: the window flags need the window (build without --no-default-features)"
+        );
         return ExitCode::FAILURE;
     }
     match args.first().map(String::as_str) {
@@ -78,8 +67,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// The Tauri trial's frame and drive flags, which no other window reads.
-fn is_tauri_only(arg: &str) -> bool {
+/// The window's frame and drive flags, which the headless run does not read.
+fn is_window_only(arg: &str) -> bool {
     ["--ui-bench", "--ui-fps-cap", "--ui-drive-out"]
         .iter()
         .any(|flag| arg.starts_with(flag))
@@ -136,17 +125,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_tauri_only_flags_are_recognised_with_or_without_a_value() {
+    fn the_window_only_flags_are_recognised_with_or_without_a_value() {
         for arg in [
             "--ui-bench=5",
             "--ui-fps-cap=30",
             "--ui-drive-out=/tmp/d.json",
             "--ui-drive-out",
         ] {
-            assert!(is_tauri_only(arg), "{arg}");
+            assert!(is_window_only(arg), "{arg}");
         }
         for arg in ["--ui=tauri", "--mock-device", "--demo-library", "--smoke"] {
-            assert!(!is_tauri_only(arg), "{arg}");
+            assert!(!is_window_only(arg), "{arg}");
         }
     }
 }

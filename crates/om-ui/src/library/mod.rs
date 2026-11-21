@@ -1,7 +1,9 @@
 //! Library UI logic, without a window: the services that own the library, analysis, the prep queue
 //! and the watch folders; the track table and its sources; the browser; the track loader; and the
-//! library settings page. The gpui front end renders these models.
+//! library settings page. The window front ends render these models. `hub` is the window-side glue (shared
+//! services, loader and the browser's actions as plain calls).
 
+pub mod hub;
 mod mix_match;
 mod services;
 mod track_drag;

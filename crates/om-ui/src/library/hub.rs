@@ -1,4 +1,4 @@
-//! Library glue for the window, with no gpui types: the shared services and track loader, and the
+//! Library glue for the window, with no window types: the shared services and track loader, and the
 //! browser's actions as plain calls. The window's events, the deck drop target and the `--smoke`
 //! check all go through [`LibraryPanel`], so the behaviour is testable without a window.
 //!
@@ -10,18 +10,18 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::library::{
+    columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, LoadError,
+    MixLevel, SearchFeed, TrackLoader, STEMS_COLUMN,
+};
+use crate::settings::{LibraryControl, SettingsError, SettingsResult};
+use crate::sidebar::SidebarNode;
+use crate::stems::{ModelState, StemHost, StemJob, StemQueue};
+use crate::widgets::deck::TrackInfo;
 use om_analysis::WaveformData;
 use om_core::jobs::JobHandle;
 use om_engine::DjEngine;
 use om_library::{PrepStatus, TrackRecord};
-use om_ui::library::{
-    columns, describe_track_drag, parse_track_drag, LibraryBrowser, LibraryServices, LoadError,
-    MixLevel, SearchFeed, TrackLoader, STEMS_COLUMN,
-};
-use om_ui::settings::{LibraryControl, SettingsError, SettingsResult};
-use om_ui::sidebar::SidebarNode;
-use om_ui::stems::{ModelState, StemHost, StemJob, StemQueue};
-use om_ui::widgets::deck::TrackInfo;
 use std::path::PathBuf;
 
 /// Auto-prepare: the tracks whose analysis finished this tick are queued for stems when the
@@ -174,7 +174,7 @@ impl LibraryHub {
     /// Wraps the services with a loader for `num_decks` decks.
     pub fn shared(mut services: LibraryServices, num_decks: usize) -> SharedHub {
         let loader = TrackLoader::new(&mut services, num_decks);
-        let stems = StemQueue::new(om_ui::stems::watermark_of(services.library()));
+        let stems = StemQueue::new(crate::stems::watermark_of(services.library()));
         Rc::new(RefCell::new(Self {
             services,
             loader,
