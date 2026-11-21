@@ -8,6 +8,7 @@
 
 use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed, PublishedDeck};
 use crate::drive::{drive_state, write_json_atomic};
+use crate::header::{TickSetup, Ticker};
 use crate::library::LibraryQueue;
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 /// Name of the control thread.
 pub const CONTROL_THREAD: &str = "om-ui-control";
@@ -31,6 +33,8 @@ pub(crate) struct ControlLoop {
     /// Calls the commands made on the library browser, run here.
     pub(crate) library: Arc<LibraryQueue>,
     pub(crate) setup: Option<LibrarySetup>,
+    /// Builds the step run beside the library (automix); `None` runs none.
+    pub(crate) tick: Option<TickSetup>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The drive run's state file (`<path>.state`); `None` writes nothing.
     pub(crate) drive_state: Option<PathBuf>,
@@ -51,10 +55,16 @@ impl ControlLoop {
 
     fn run(mut self, emit: impl Fn(DeckChanged), failed: impl Fn(LoadFailed)) {
         let mut panel = self.attach_library(&emit);
+        let mut ticker = panel
+            .as_ref()
+            .zip(self.tick.take())
+            .map(|(panel, setup)| setup(panel.hub()));
+        let started = Instant::now();
         let mut pacer = Pacer::new(CONTROL_HZ);
         let mut ticks: u64 = 0;
         while !self.stop.load(Ordering::Acquire) {
-            let (failures, changes) = self.step(panel.as_mut());
+            let now = started.elapsed().as_secs_f64();
+            let (failures, changes) = self.step(panel.as_mut(), ticker.as_mut(), now);
             failures.into_iter().for_each(&failed);
             changes.into_iter().for_each(&emit);
             if ticks.is_multiple_of(STATE_EVERY) {
@@ -67,8 +77,14 @@ impl ControlLoop {
         self.library.discard();
     }
 
-    // One tick: the library calls, the queued loads, the panel's own tick, then what the decks show.
-    fn step(&self, panel: Option<&mut LibraryPanel>) -> (Vec<LoadFailed>, Vec<DeckChanged>) {
+    // One tick: the library calls, the queued loads, the panel's own tick, the header's step
+    // (automix), then what the decks show.
+    fn step(
+        &self,
+        panel: Option<&mut LibraryPanel>,
+        ticker: Option<&mut Ticker>,
+        now: f64,
+    ) -> (Vec<LoadFailed>, Vec<DeckChanged>) {
         let Some(panel) = panel else {
             self.library.discard();
             return (self.decks.run_loads(None), self.decks.tick(&self.engine));
@@ -76,6 +92,11 @@ impl ControlLoop {
         self.library.run(panel);
         let failures = self.run_loads(panel);
         panel.tick();
+        // Automix steps after the panel has pumped the loader, before the decks are published, so a
+        // track it just loaded shows at once.
+        if let Some(ticker) = ticker {
+            ticker(&self.engine, now);
+        }
         let shown = published(panel, self.engine.num_decks());
         (failures, self.decks.publish(&self.engine, shown))
     }
@@ -147,6 +168,7 @@ mod tests {
             decks: Arc::new(Decks::new(engine)),
             library: Arc::default(),
             setup,
+            tick: None,
             stop: Arc::new(AtomicBool::new(false)),
             drive_state: None,
         }
@@ -209,6 +231,45 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(state["decks"].as_array().map(Vec::len), Some(2));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_header_step_is_built_and_run_on_the_control_thread_beside_the_library() {
+        let engine = Arc::new(DjEngine::new(2).0);
+        let engine_for_setup = Arc::clone(&engine);
+        let setup: LibrarySetup = Box::new(move || {
+            let mut services = om_ui::library::LibraryServices::create(
+                om_ui::library::Options::for_path(":memory:"),
+            )
+            .ok()?;
+            let loader =
+                om_ui::library::TrackLoader::new(&mut services, engine_for_setup.num_decks());
+            Some(crate::decks::DeckLibrary { services, loader })
+        });
+        let mut control = control(&engine, Some(setup));
+        let steps = Arc::new(Mutex::new(Vec::<(Option<String>, f64)>::new()));
+        let sink = Arc::clone(&steps);
+        control.tick = Some(Box::new(move |hub| {
+            // The hub is the control thread's: the step can borrow it.
+            assert!(hub.borrow().loader.loaded_track(0).is_none());
+            Box::new(move |_, now| {
+                let name = std::thread::current().name().map(str::to_owned);
+                sink.lock().unwrap().push((name, now));
+            })
+        }));
+        let stop = Arc::clone(&control.stop);
+        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let stepped = || steps.lock().unwrap().len() >= 3;
+        assert!(wait_until(
+            Duration::from_secs(5),
+            Duration::from_millis(5),
+            stepped
+        ));
+        stop.store(true, Ordering::Release);
+        handle.join().unwrap();
+        let steps = steps.lock().unwrap();
+        assert_eq!(steps[0].0.as_deref(), Some(CONTROL_THREAD));
+        assert!(steps.windows(2).all(|w| w[1].1 >= w[0].1), "time moves on");
     }
 
     #[test]

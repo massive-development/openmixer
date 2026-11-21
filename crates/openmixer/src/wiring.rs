@@ -6,10 +6,11 @@ use crate::app_targets::AudioDeviceControl;
 use crate::audio_settings::SharedOutput;
 use crate::automix_host::AppAutomixHost;
 use crate::automix_queue::LibraryQueue;
-use crate::automix_service::AutomixRunner;
+use crate::automix_service::{AutomixRunner, AutomixShared};
 use crate::automix_settings::queue_source;
 use crate::composition::AppComposition;
 use om_automix::queue::QueueConfig;
+use om_core::CommandSink;
 use om_engine::DjEngine;
 use om_ui::library::hub::{LibraryHub, SharedHub};
 use om_ui::library::StemSource;
@@ -51,10 +52,27 @@ pub fn automix_runner(
     prefs: &AutomixPrefs,
     seed: u64,
 ) -> AutomixRunner {
-    let mut runner = AutomixRunner::new(
+    automix_runner_over(
         composition.automix.clone(),
         composition.automix_sink.clone(),
-    );
+        engine,
+        hub,
+        prefs,
+        seed,
+    )
+}
+
+/// [`automix_runner`] from the two parts it takes off the composition, which are `Send` where the
+/// composition is not: a front end that builds the runner on its own thread captures these.
+pub fn automix_runner_over(
+    automix: Arc<AutomixShared>,
+    sink: Arc<dyn CommandSink>,
+    engine: &Arc<DjEngine>,
+    hub: Option<&SharedHub>,
+    prefs: &AutomixPrefs,
+    seed: u64,
+) -> AutomixRunner {
+    let mut runner = AutomixRunner::new(Arc::clone(&automix), sink);
     if let Some(hub) = hub {
         let queue = LibraryQueue::shared(
             hub.borrow().services.library_handle(),
@@ -67,7 +85,7 @@ pub fn automix_runner(
         )
         .with_search_feed(Arc::clone(&hub.borrow().search_feed));
         let host = AppAutomixHost::new(Arc::clone(engine), Rc::clone(hub), queue)
-            .with_shared_queue(composition.automix.queue_settings());
+            .with_shared_queue(automix.queue_settings());
         runner.set_host(Box::new(host));
     }
     runner

@@ -3,6 +3,10 @@
   import { deckName } from './lib/a11y';
   import DeckHeader from './lib/deck/DeckHeader.svelte';
   import DeckPanel from './lib/deck/DeckPanel.svelte';
+  import AutomixBar from './lib/header/AutomixBar.svelte';
+  import { Header } from './lib/header/header.svelte';
+  import { isRecordKey, takesTyping } from './lib/header/keys';
+  import RecordButton from './lib/header/RecordButton.svelte';
   import { DeckData } from './lib/decks.svelte';
   import { DECK_ATTRIBUTE, Loading } from './lib/loading.svelte';
   import { setText } from './lib/dom';
@@ -13,6 +17,7 @@
     control,
     isSmokePlay,
     loadControls,
+    recordToggle,
     ready,
     runConfig,
     startStream,
@@ -52,6 +57,8 @@
   const decks = new DeckData();
   // The open dialog, files dropped on a deck, and why a load failed.
   const loading = new Loading();
+  // The top bar's Automix strip and Record button.
+  const header = new Header();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
   // The library band under the decks; the top bar's Library button hides it and the stage grows.
@@ -147,6 +154,13 @@
     }
   }
 
+  // `r` toggles recording, unless a text field takes the key (the Settings card, a search box).
+  function recordKey(event: KeyboardEvent): void {
+    if (!header.state || !isRecordKey(event) || takesTyping(event.target as HTMLElement | null)) return;
+    event.preventDefault();
+    void header.press(recordToggle);
+  }
+
   onMount(() => {
     const stop = decks.start(DECKS.length);
     const stopLoading = loading.start(DECKS.length).catch((error: unknown) => {
@@ -154,12 +168,16 @@
       return () => {};
     });
     void start();
+    const stopHeader = header.start();
     return () => {
+      stopHeader();
       void stop.then((unlisten) => unlisten());
       void stopLoading.then((unlisten) => unlisten());
     };
   });
 </script>
+
+<svelte:window onkeydown={recordKey} />
 
 {#if themed}
   <!-- Source order is the reading and Tab order (deck A, mixer, deck B; a deck's header before its
@@ -167,12 +185,14 @@
   <main class="shell" class:library-hidden={!libraryShown}>
     <header class="top-bar">
       <h1 class="wordmark">OPENMIXER</h1>
+      {#if header.state}<AutomixBar bar={header.state.automix} {header} />{/if}
       <Button on={libraryShown} pressed={libraryShown} onpress={() => (libraryShown = !libraryShown)}>Library</Button>
       {#if banner}
         <p class="notice" role="status" title={banner}>{banner}</p>
       {/if}
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
       {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
+      {#if header.state}<RecordButton bar={header.state.record} {header} />{/if}
     </header>
     {#snippet deckRegions(deck: number)}
       <section
