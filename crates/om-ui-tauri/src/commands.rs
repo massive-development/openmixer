@@ -9,10 +9,13 @@ use crate::devices::{
     DevicesHost, MappingChange, MappingPage, MidiChange, MidiPage, PluginsChange, PluginsPage, View,
 };
 use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
-use crate::settings::{with_host, AudioChange, AudioPage};
+use crate::settings::{
+    with_host, AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage,
+};
 use crate::stream::{PacketSink, StreamConfig};
 use crate::stream_slot::StreamSlot;
 use crate::strip_ink::StripInkDto;
+use crate::ShellTheme;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
 use om_ui::binding::MixerBinding;
@@ -22,14 +25,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::{AppHandle, State};
 
 /// What the commands share for the life of the window.
 pub(crate) struct ShellState {
-    pub(crate) theme_css: String,
-    pub(crate) strip_inks: Vec<StripInkDto>,
+    /// The active theme; an appearance edit replaces it.
+    pub(crate) theme: Mutex<ShellTheme>,
     pub(crate) config: RunConfig,
     /// Set for a `--ui-bench` run.
     pub(crate) bench: Option<Arc<BenchRun>>,
@@ -57,7 +60,7 @@ pub struct WaveformStyle {
 /// The active theme as one `:root` block of `--om-*` variables.
 #[tauri::command]
 pub fn theme_css(state: State<'_, ShellState>) -> String {
-    state.theme_css.clone()
+    crate::lock(&state.theme).css.clone()
 }
 
 /// How the shell runs the window, as the front end reads it once at start.
@@ -136,7 +139,7 @@ pub fn waveform_style() -> WaveformStyle {
 /// Deck `deck`'s waveform lane colours and marker sizes.
 #[tauri::command]
 pub fn strip_ink(deck: usize, state: State<'_, ShellState>) -> Result<StripInkDto, String> {
-    state
+    crate::lock(&state.theme)
         .strip_inks
         .get(deck)
         .cloned()
@@ -305,6 +308,27 @@ pub fn open_plugin_window(
     let source = with_devices(|d| d.plugin_window(&id))?
         .ok_or_else(|| "This plugin has no window of its own; use Parameters.".to_owned())?;
     crate::plugin_window::open(&app, &window, &id, source)
+}
+
+/// The appearance settings page as it stands.
+#[tauri::command]
+pub fn appearance_settings() -> Result<AppearancePage, String> {
+    with_host(|host| host.appearance())
+}
+
+/// One edit of the appearance page; the shell keeps the new theme for `theme_css` and `strip_ink`
+/// and returns it so the front end can switch at once.
+#[tauri::command]
+pub fn appearance_change(
+    change: AppearanceChange,
+    state: State<'_, ShellState>,
+) -> Result<AppearanceResult, String> {
+    let result = with_host(|host| host.change_appearance(change))??;
+    *crate::lock(&state.theme) = ShellTheme {
+        css: result.css.clone(),
+        strip_inks: result.strip_inks.clone(),
+    };
+    Ok(result)
 }
 
 /// Raw packets into the front end's channel; a failed send means the webview is gone.

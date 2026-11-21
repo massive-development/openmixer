@@ -65,6 +65,39 @@ pub enum AudioChange {
     CuePair(Option<usize>),
 }
 
+/// One theme the picker offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ThemeChoice {
+    pub id: String,
+    pub name: String,
+}
+
+/// The appearance page: the themes and the density choice (`automatic`, `roomy` or `compact`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct AppearancePage {
+    pub themes: Vec<ThemeChoice>,
+    pub theme: String,
+    pub density: String,
+}
+
+/// One edit of the appearance page.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "field", content = "value", rename_all = "camelCase")]
+pub enum AppearanceChange {
+    Theme(String),
+    Density(String),
+}
+
+/// What an appearance edit leaves the window to apply: the page, the theme's CSS and each deck's
+/// lane ink.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceResult {
+    pub page: AppearancePage,
+    pub css: String,
+    pub strip_inks: Vec<crate::StripInkDto>,
+}
+
 /// What the app offers the settings pages. The app's composition (library, plugins) cannot leave
 /// the thread that built it, so a host is not `Send`: [`run`](crate::run) keeps it on the main
 /// thread, where Tauri runs the synchronous commands, and nothing else reaches it.
@@ -78,6 +111,11 @@ pub trait SettingsHost {
     fn devices(&self) -> Option<&dyn DevicesHost> {
         None
     }
+    /// The appearance page as it stands.
+    fn appearance(&self) -> AppearancePage;
+    /// Applies one edit (saved, and the theme switched in the composition); the page and the
+    /// theme to show, or the reason it was refused.
+    fn change_appearance(&self, change: AppearanceChange) -> Result<AppearanceResult, String>;
 }
 
 #[cfg(test)]
@@ -92,6 +130,13 @@ mod tests {
         let c: AudioChange = serde_json::from_str(r#"{"field":"cuePair","value":null}"#).unwrap();
         assert_eq!(c, AudioChange::CuePair(None));
         assert!(serde_json::from_str::<AudioChange>(r#"{"field":"bogus","value":1}"#).is_err());
+    }
+
+    #[test]
+    fn an_appearance_change_reads_its_field_and_value() {
+        let c: AppearanceChange =
+            serde_json::from_str(r#"{"field":"density","value":"compact"}"#).unwrap();
+        assert_eq!(c, AppearanceChange::Density("compact".into()));
     }
 
     #[test]

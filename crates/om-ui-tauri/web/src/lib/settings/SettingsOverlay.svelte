@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import AppearancePage from './AppearancePage.svelte';
   import AudioPage from './AudioPage.svelte';
   import MappingPage from './MappingPage.svelte';
   import MidiPage from './MidiPage.svelte';
@@ -15,6 +16,7 @@
   // Pages added by later settings work join this list; the Audio page is the first.
   const PAGES = [
     { id: 'audio', label: 'Audio' },
+    { id: 'appearance', label: 'Appearance' },
     { id: 'midi', label: 'MIDI' },
     { id: 'mapping', label: 'Mapping' },
     { id: 'plugins', label: 'Plugins' },
@@ -49,7 +51,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{/if}
       </section>
     </div>
   </div>

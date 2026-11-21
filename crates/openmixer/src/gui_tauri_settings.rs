@@ -4,8 +4,14 @@
 
 use crate::gui_tauri_devices::Devices;
 use om_ui::preferences::Preferences;
-use om_ui::settings::{stats_text, AudioSettingsModel, AudioSettingsPage, SettingsResult};
-use om_ui_tauri::{AudioChange, AudioPage, DevicesHost, SettingsHost};
+use om_ui::settings::{
+    stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, SettingsResult,
+};
+use om_ui::theme::DensityChoice;
+use om_ui_tauri::{
+    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, DevicesHost,
+    SettingsHost, ThemeChoice,
+};
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::AppComposition;
@@ -13,8 +19,9 @@ use std::cell::{RefCell, RefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-/// The shared composition and where a changed preferences copy goes: kept, saved and pushed into
-/// the subsystems. The settings pages share one store.
+/// The shared composition and where the preferences are saved. The settings pages share one
+/// store, and every page edits the composition's own preferences, so a page never saves a section
+/// another page changed since it last looked.
 pub struct PrefsStore {
     composition: Rc<RefCell<AppComposition>>,
     output: SharedOutput,
@@ -38,14 +45,17 @@ impl PrefsStore {
         &self.composition
     }
 
-    /// Keeps `prefs` as the preferences, saves the file and pushes the changed sections.
-    pub fn commit(&self, prefs: Preferences) {
+    /// Runs `edit` on the composition's preferences; when it says it changed something, they are
+    /// saved and applied.
+    pub fn edit_prefs(&self, edit: impl FnOnce(&mut Preferences) -> bool) {
         let mut composition = self.composition.borrow_mut();
-        self.keep(&mut composition, prefs);
+        if edit(&mut composition.prefs) {
+            self.save_and_apply(&mut composition);
+        }
     }
 
-    fn keep(&self, composition: &mut AppComposition, prefs: Preferences) {
-        composition.prefs = prefs;
+    /// Saves the composition's preferences and pushes the changed sections into the subsystems.
+    fn save_and_apply(&self, composition: &mut AppComposition) {
         if !composition.prefs_replaceable {
             eprintln!(
                 "openmixer: not saving preferences: {} could not be read, so it is left as it is",
@@ -64,18 +74,20 @@ impl PrefsStore {
 pub struct TauriSettings {
     store: Rc<PrefsStore>,
     output: SharedOutput,
-    devices: Devices,
     mock: bool,
+    decks: usize,
+    devices: Devices,
 }
 
 impl TauriSettings {
-    pub fn new(store: Rc<PrefsStore>, output: SharedOutput, mock: bool) -> Self {
+    pub fn new(store: Rc<PrefsStore>, output: SharedOutput, mock: bool, decks: usize) -> Self {
         let devices = Devices::new(Rc::clone(&store));
         Self {
             store,
             output,
-            devices,
             mock,
+            decks,
+            devices,
         }
     }
 
@@ -83,20 +95,57 @@ impl TauriSettings {
         self.store.composition().borrow_mut()
     }
 
-    /// Runs `edit` on a copy of the preferences; a changed copy is kept, saved and applied.
+    /// Runs `edit` on the composition's own preferences, the one copy every settings page edits, so
+    /// a page never saves a section another page changed since it last looked. A change is saved
+    /// and applied.
     fn edit(
         &self,
         edit: impl FnOnce(&mut AudioSettingsPage<'_>) -> SettingsResult,
     ) -> Result<(), String> {
         let mut composition = self.composition();
-        let mut prefs = composition.prefs.clone();
         let mut model = self.output.clone();
-        let changed =
-            edit(&mut AudioSettingsPage::new(&mut prefs, &mut model)).map_err(|e| e.to_string())?;
+        let changed = edit(&mut AudioSettingsPage::new(
+            &mut composition.prefs,
+            &mut model,
+        ))
+        .map_err(|e| e.to_string())?;
         if changed {
-            self.store.keep(&mut composition, prefs);
+            self.store.save_and_apply(&mut composition);
         }
         Ok(())
+    }
+
+    /// The appearance page over the composition's own preferences (see [`Self::edit`]).
+    fn edit_appearance(
+        &self,
+        edit: impl FnOnce(&mut AppearanceSettingsPage<'_>) -> SettingsResult,
+    ) -> Result<(), String> {
+        let mut composition = self.composition();
+        let changed = {
+            let c = &mut *composition;
+            let mut page = AppearanceSettingsPage::new(&mut c.prefs, &c.themes);
+            edit(&mut page).map_err(|e| e.to_string())?
+        };
+        if changed {
+            self.store.save_and_apply(&mut composition);
+        }
+        Ok(())
+    }
+
+    fn appearance_page(&self) -> AppearancePage {
+        let composition = self.store.composition().borrow();
+        let mut prefs = composition.prefs.clone();
+        let theme = prefs.theme.clone();
+        let page = AppearanceSettingsPage::new(&mut prefs, &composition.themes);
+        AppearancePage {
+            themes: page
+                .choices()
+                .into_iter()
+                .map(|(id, name)| ThemeChoice { id, name })
+                .collect(),
+            theme,
+            density: density_name(page.density()).to_owned(),
+        }
     }
 
     fn page(&self) -> AudioPage {
@@ -123,13 +172,48 @@ impl TauriSettings {
     }
 }
 
+fn density_name(choice: DensityChoice) -> &'static str {
+    match choice {
+        DensityChoice::Automatic => "automatic",
+        DensityChoice::Roomy => "roomy",
+        DensityChoice::Compact => "compact",
+    }
+}
+
+fn density_of(name: &str) -> Result<DensityChoice, String> {
+    DensityChoice::ALL
+        .into_iter()
+        .find(|c| density_name(*c) == name)
+        .ok_or_else(|| format!("unknown density '{name}'"))
+}
+
 impl SettingsHost for TauriSettings {
-    fn audio(&self) -> AudioPage {
-        self.page()
+    fn appearance(&self) -> AppearancePage {
+        self.appearance_page()
+    }
+
+    fn change_appearance(&self, change: AppearanceChange) -> Result<AppearanceResult, String> {
+        match change {
+            AppearanceChange::Theme(id) => self.edit_appearance(|page| page.pick(&id))?,
+            AppearanceChange::Density(name) => {
+                let choice = density_of(&name)?;
+                self.edit_appearance(|page| Ok(page.pick_density(choice)))?;
+            }
+        }
+        let theme = crate::gui_tauri::shell_theme(&self.store.composition().borrow(), self.decks);
+        Ok(AppearanceResult {
+            page: self.appearance_page(),
+            css: theme.css,
+            strip_inks: theme.strip_inks,
+        })
     }
 
     fn devices(&self) -> Option<&dyn DevicesHost> {
         Some(&self.devices)
+    }
+
+    fn audio(&self) -> AudioPage {
+        self.page()
     }
 
     fn change_audio(&self, change: AudioChange) -> Result<AudioPage, String> {

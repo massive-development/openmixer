@@ -67,12 +67,8 @@ impl Devices {
         self.composition().borrow().prefs.clone()
     }
 
-    /// Runs `edit` on a copy of the preferences; a changed copy is kept, saved and applied.
     fn edit_prefs(&self, edit: impl FnOnce(&mut Preferences) -> bool) {
-        let mut prefs = self.prefs();
-        if edit(&mut prefs) {
-            self.store.commit(prefs);
-        }
+        self.store.edit_prefs(edit);
     }
 
     // ---- MIDI ----
@@ -116,31 +112,30 @@ impl Devices {
 
     /// Saves the live map after a learn and makes its file the map in use.
     fn save_learned(&self, midi: &MidiService, label: &str) -> Notice {
-        let mut prefs = self.prefs();
-        let saved = MidiSettingsPage::new(&mut prefs, midi).save_learned_map(midi);
+        let mut saved = None;
+        self.edit_prefs(|prefs| {
+            let result = MidiSettingsPage::new(prefs, midi).save_learned_map(midi);
+            let changed = matches!(result, Ok((_, true)));
+            saved = Some(result);
+            changed
+        });
         match saved {
-            Ok((file, changed)) => {
-                if changed {
-                    self.store.commit(prefs);
-                }
-                Notice::info(format!(
-                    "Learned a control for {label} and saved to {}",
-                    file.display()
-                ))
-            }
-            Err(error) => Notice::error(format!(
+            Some(Ok((file, _))) => Notice::info(format!(
+                "Learned a control for {label} and saved to {}",
+                file.display()
+            )),
+            Some(Err(error)) => Notice::error(format!(
                 "Learned a control for {label}, but the map was not saved: {error}"
             )),
+            None => Notice::error("MIDI is not available"),
         }
     }
 
     fn set_map_file(&self, file: Option<PathBuf>) {
-        self.edit_prefs(|prefs| {
-            let Some(midi) = self.midi_service() else {
-                return false;
-            };
-            MidiSettingsPage::new(prefs, &*midi).set_map_file(file)
-        });
+        // Read before the edit: the edit holds the composition.
+        if let Some(midi) = self.midi_service() {
+            self.edit_prefs(|prefs| MidiSettingsPage::new(prefs, &*midi).set_map_file(file));
+        }
         // The editor keeps the path it was made with.
         *self.mapping.borrow_mut() = None;
     }
