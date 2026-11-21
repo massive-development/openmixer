@@ -6,6 +6,7 @@ use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
 use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
+use crate::settings::{with_host, AudioChange, AudioPage};
 use crate::stream::{PacketSink, StreamConfig};
 use crate::stream_slot::StreamSlot;
 use crate::strip_ink::StripInkDto;
@@ -234,6 +235,18 @@ pub fn deck_info(
 #[tauri::command]
 pub fn load_file(deck: usize, path: String, state: State<'_, ShellState>) -> Result<(), String> {
     state.decks.request_load(deck, PathBuf::from(path))
+}
+
+/// The audio settings page as it stands.
+#[tauri::command]
+pub fn audio_settings() -> Result<AudioPage, String> {
+    with_host(|host| host.audio())
+}
+
+/// One edit of the audio page: saved and applied, then the page as it stands.
+#[tauri::command]
+pub fn audio_change(change: AudioChange) -> Result<AudioPage, String> {
+    with_host(|host| host.change_audio(change))?
 }
 
 /// Raw packets into the front end's channel; a failed send means the webview is gone.
