@@ -1,15 +1,18 @@
-//! The control thread (`om-ui-control`): builds the library when there is one, then at 30 Hz runs
-//! the loads the front end queued, pumps the library and the track loader and reports the decks
-//! that changed and the loads that failed; in a `--ui-drive-out`
-//! run it also rewrites the engine's state file every third tick (10 Hz). It owns the library
-//! services; nothing here runs on the audio thread or waits on a plugin.
+//! The control thread (`om-ui-control`): builds the library hub when there is one (the services,
+//! the track loader and the browser's [`LibraryPanel`]), then at 30 Hz runs the library calls and
+//! the loads the front end queued, ticks the panel (which pumps the library and the track loader),
+//! publishes what the decks show and reports the decks that changed and the loads that failed; in
+//! a `--ui-drive-out` run it also rewrites the engine's state file every third tick (10 Hz). The
+//! hub is not `Send`, so it lives on this thread alone; nothing here runs on the audio thread or
+//! waits on a plugin.
 
-use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed};
+use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed, PublishedDeck};
 use crate::drive::{drive_state, write_json_atomic};
+use crate::library::LibraryQueue;
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
-use om_ui::library::LibraryServices;
-use std::path::PathBuf;
+use om_ui::library::hub::{LibraryHub, LibraryPanel};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -25,6 +28,8 @@ const STATE_EVERY: u64 = 3;
 pub(crate) struct ControlLoop {
     pub(crate) engine: Arc<DjEngine>,
     pub(crate) decks: Arc<Decks>,
+    /// Calls the commands made on the library browser, run here.
+    pub(crate) library: Arc<LibraryQueue>,
     pub(crate) setup: Option<LibrarySetup>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The drive run's state file (`<path>.state`); `None` writes nothing.
@@ -45,16 +50,12 @@ impl ControlLoop {
     }
 
     fn run(mut self, emit: impl Fn(DeckChanged), failed: impl Fn(LoadFailed)) {
-        let mut services = self.attach_library(&emit);
+        let mut panel = self.attach_library(&emit);
         let mut pacer = Pacer::new(CONTROL_HZ);
         let mut ticks: u64 = 0;
         while !self.stop.load(Ordering::Acquire) {
-            let failures = self.decks.run_loads(&self.engine, services.as_mut());
+            let (failures, changes) = self.step(panel.as_mut());
             failures.into_iter().for_each(&failed);
-            if let Some(services) = services.as_mut() {
-                services.pump();
-            }
-            let changes = self.decks.tick(&self.engine, services.as_ref());
             changes.into_iter().for_each(&emit);
             if ticks.is_multiple_of(STATE_EVERY) {
                 self.write_drive_state();
@@ -62,6 +63,42 @@ impl ControlLoop {
             ticks = ticks.wrapping_add(1);
             pacer.wait();
         }
+        // Whoever still waits on the library finds it closed.
+        self.library.discard();
+    }
+
+    // One tick: the library calls, the queued loads, the panel's own tick, then what the decks show.
+    fn step(&self, panel: Option<&mut LibraryPanel>) -> (Vec<LoadFailed>, Vec<DeckChanged>) {
+        let Some(panel) = panel else {
+            self.library.discard();
+            return (
+                self.decks.run_loads(None),
+                self.decks.tick(&self.engine),
+            );
+        };
+        self.library.run(panel);
+        let failures = self.run_loads(panel);
+        panel.tick();
+        let shown = published(panel, self.engine.num_decks());
+        (failures, self.decks.publish(&self.engine, shown))
+    }
+
+    // A file the front end chose goes into the library first (so it is analysed like any track),
+    // then onto its deck; the browser hears of the new track.
+    fn run_loads(&self, panel: &LibraryPanel) -> Vec<LoadFailed> {
+        let hub = panel.hub();
+        let mut load = |deck: usize, path: &Path| {
+            let mut hub = hub.borrow_mut();
+            let LibraryHub {
+                services, loader, ..
+            } = &mut *hub;
+            loader
+                .load_file(&self.engine, services, deck, path, false)
+                .map_err(|e| e.to_string())?;
+            services.notify_library_changed();
+            Ok(())
+        };
+        self.decks.run_loads(Some(&mut load))
     }
 
     // A drive run's state file; a failed write is retried on the next round, so it only logs.
@@ -78,14 +115,26 @@ impl ControlLoop {
         }
     }
 
-    // The services are built here because they cannot move between threads; the decks the loader
-    // already holds are reported at once.
-    fn attach_library(&mut self, emit: &impl Fn(DeckChanged)) -> Option<LibraryServices> {
+    // The hub is built here because it cannot move between threads; the decks the loader already
+    // holds are reported at once.
+    fn attach_library(&mut self, emit: &impl Fn(DeckChanged)) -> Option<LibraryPanel> {
         let library = self.setup.take().and_then(|setup| setup())?;
-        let changes = self.decks.install(&self.engine, Box::new(library.loader));
+        let hub = LibraryHub::from_parts(library.services, library.loader);
+        let panel = LibraryPanel::new(hub, Arc::clone(&self.engine));
+        let changes = self
+            .decks
+            .publish(&self.engine, published(&panel, self.engine.num_decks()));
         changes.into_iter().for_each(emit);
-        Some(library.services)
+        Some(panel)
     }
+}
+
+/// Each deck's track, waveform and header text, copied off the loader.
+fn published(panel: &LibraryPanel, num_decks: usize) -> Vec<PublishedDeck> {
+    let hub = panel.hub().borrow();
+    (0..num_decks)
+        .map(|deck| PublishedDeck::of(&hub.loader, deck))
+        .collect()
 }
 
 #[cfg(test)]
@@ -99,6 +148,7 @@ mod tests {
         ControlLoop {
             engine: Arc::clone(engine),
             decks: Arc::new(Decks::new(engine)),
+            library: Arc::default(),
             setup,
             stop: Arc::new(AtomicBool::new(false)),
             drive_state: None,

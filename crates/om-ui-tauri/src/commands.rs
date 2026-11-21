@@ -5,6 +5,7 @@ use crate::bench::BenchRun;
 use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
+use crate::library::LibraryQueue;
 use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
 use crate::stream::{PacketSink, StreamConfig};
 use crate::stream_slot::StreamSlot;
@@ -34,6 +35,8 @@ pub(crate) struct ShellState {
     pub(crate) ready_signal: Sender<()>,
     pub(crate) streams: Arc<StreamSlot>,
     pub(crate) decks: Arc<Decks>,
+    /// Calls on the library browser, which the control thread answers.
+    pub(crate) library: Arc<LibraryQueue>,
     /// `--ui-drive-out`: where `ui_layout` writes the layout map; `None` refuses it.
     pub(crate) drive_layout: Option<PathBuf>,
 }
