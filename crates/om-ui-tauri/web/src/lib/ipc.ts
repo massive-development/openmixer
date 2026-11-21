@@ -282,3 +282,33 @@ export const audioSettings = (): Promise<AudioPage> => invoke<AudioPage>('audio_
 
 /** Applies one edit (saved and pushed into the engine); the page afterwards, or the reason it was refused. */
 export const audioChange = (change: AudioChange): Promise<AudioPage> => invoke<AudioPage>('audio_change', { change });
+
+/** One theme the picker offers. */
+export interface ThemeChoice {
+  id: string;
+  name: string;
+}
+
+/** The appearance page: the themes and the density choice. */
+export interface AppearancePage {
+  themes: ThemeChoice[];
+  theme: string;
+  density: 'automatic' | 'roomy' | 'compact';
+}
+
+/** One edit of the appearance page, as the shell reads it. */
+export type AppearanceChange = { field: 'theme'; value: string } | { field: 'density'; value: AppearancePage['density'] };
+
+/** What an appearance edit leaves the window to apply. */
+export interface AppearanceResult {
+  page: AppearancePage;
+  css: string;
+  stripInks: StripInk[];
+}
+
+/** The appearance settings page as it stands. */
+export const appearanceSettings = (): Promise<AppearancePage> => invoke<AppearancePage>('appearance_settings');
+
+/** Applies one edit; the page and the theme CSS to show, or the reason it was refused. */
+export const appearanceChange = (change: AppearanceChange): Promise<AppearanceResult> =>
+  invoke<AppearanceResult>('appearance_change', { change });

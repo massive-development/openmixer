@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { deckName, Paced } from '../a11y';
   import { interpolate } from '../clock';
+  import { themeEpoch } from '../themeEpoch.svelte';
   import DeckTag from '../deck/DeckTag.svelte';
   import {
     control,
@@ -197,6 +198,15 @@
     lane.levels = levels;
     dirty = true;
   }
+
+  // A theme switch: every lane takes the new ink (not at the first run, which loads its own).
+  let seenEpoch = themeEpoch.n;
+  $effect(() => {
+    const epoch = themeEpoch.n;
+    if (epoch === seenEpoch) return;
+    seenEpoch = epoch;
+    lanes.forEach((_, deck) => void loadInk(deck));
+  });
 
   async function loadInk(deck: number): Promise<void> {
     try {

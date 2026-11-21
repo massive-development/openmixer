@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import AppearancePage from './AppearancePage.svelte';
   import AudioPage from './AudioPage.svelte';
 
   interface Props {
@@ -10,7 +11,10 @@
   let dialog: HTMLElement | undefined = $state();
 
   // Pages added by later settings work join this list; the Audio page is the first.
-  const PAGES = [{ id: 'audio', label: 'Audio' }];
+  const PAGES = [
+    { id: 'audio', label: 'Audio' },
+    { id: 'appearance', label: 'Appearance' },
+  ];
   let page = $state('audio');
 
   function key(event: KeyboardEvent): void {
@@ -41,7 +45,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{/if}
       </section>
     </div>
   </div>

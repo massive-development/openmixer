@@ -3,8 +3,14 @@
 //! `apply_changes` does.
 
 use om_ui::preferences::Preferences;
-use om_ui::settings::{stats_text, AudioSettingsModel, AudioSettingsPage, SettingsResult};
-use om_ui_tauri::{AudioChange, AudioPage, SettingsHost};
+use om_ui::settings::{
+    stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, SettingsResult,
+};
+use om_ui::theme::DensityChoice;
+use om_ui_tauri::{
+    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, SettingsHost,
+    ThemeChoice,
+};
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::SharedOutput;
 use openmixer::composition::AppComposition;
@@ -16,6 +22,7 @@ pub struct TauriSettings {
     output: SharedOutput,
     prefs_file: PathBuf,
     mock: bool,
+    decks: usize,
 }
 
 impl TauriSettings {
@@ -24,12 +31,14 @@ impl TauriSettings {
         output: SharedOutput,
         prefs_file: PathBuf,
         mock: bool,
+        decks: usize,
     ) -> Self {
         Self {
             composition: RefCell::new(composition),
             output,
             prefs_file,
             mock,
+            decks,
         }
     }
 
@@ -51,6 +60,39 @@ impl TauriSettings {
             self.keep(&mut composition, prefs);
         }
         Ok(())
+    }
+
+    /// The appearance page over a copy of the preferences; a changed copy is kept and applied.
+    fn edit_appearance(
+        &self,
+        edit: impl FnOnce(&mut AppearanceSettingsPage<'_>) -> SettingsResult,
+    ) -> Result<(), String> {
+        let mut composition = self.composition();
+        let mut prefs = composition.prefs.clone();
+        let changed = {
+            let mut page = AppearanceSettingsPage::new(&mut prefs, &composition.themes);
+            edit(&mut page).map_err(|e| e.to_string())?
+        };
+        if changed {
+            self.keep(&mut composition, prefs);
+        }
+        Ok(())
+    }
+
+    fn appearance_page(&self) -> AppearancePage {
+        let composition = self.composition.borrow();
+        let mut prefs = composition.prefs.clone();
+        let theme = prefs.theme.clone();
+        let page = AppearanceSettingsPage::new(&mut prefs, &composition.themes);
+        AppearancePage {
+            themes: page
+                .choices()
+                .into_iter()
+                .map(|(id, name)| ThemeChoice { id, name })
+                .collect(),
+            theme,
+            density: density_name(page.density()).to_owned(),
+        }
     }
 
     fn keep(&self, composition: &mut AppComposition, prefs: Preferences) {
@@ -93,7 +135,42 @@ impl TauriSettings {
     }
 }
 
+fn density_name(choice: DensityChoice) -> &'static str {
+    match choice {
+        DensityChoice::Automatic => "automatic",
+        DensityChoice::Roomy => "roomy",
+        DensityChoice::Compact => "compact",
+    }
+}
+
+fn density_of(name: &str) -> Result<DensityChoice, String> {
+    DensityChoice::ALL
+        .into_iter()
+        .find(|c| density_name(*c) == name)
+        .ok_or_else(|| format!("unknown density '{name}'"))
+}
+
 impl SettingsHost for TauriSettings {
+    fn appearance(&self) -> AppearancePage {
+        self.appearance_page()
+    }
+
+    fn change_appearance(&self, change: AppearanceChange) -> Result<AppearanceResult, String> {
+        match change {
+            AppearanceChange::Theme(id) => self.edit_appearance(|page| page.pick(&id))?,
+            AppearanceChange::Density(name) => {
+                let choice = density_of(&name)?;
+                self.edit_appearance(|page| Ok(page.pick_density(choice)))?;
+            }
+        }
+        let theme = crate::gui_tauri::shell_theme(&self.composition.borrow(), self.decks);
+        Ok(AppearanceResult {
+            page: self.appearance_page(),
+            css: theme.css,
+            strip_inks: theme.strip_inks,
+        })
+    }
+
     fn audio(&self) -> AudioPage {
         self.page()
     }

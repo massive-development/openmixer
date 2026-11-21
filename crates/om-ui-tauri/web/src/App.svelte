@@ -20,6 +20,7 @@
     uiLayout,
     type Controls,
   } from './lib/ipc';
+  import { themeEpoch } from './lib/themeEpoch.svelte';
   import SettingsOverlay from './lib/settings/SettingsOverlay.svelte';
   import Mixer from './lib/mixer/Mixer.svelte';
   import { firstSnapshot, type Snapshot } from './lib/packet';
@@ -49,6 +50,14 @@
   // The mock-device notice, when the run has one (`om_ui::labels`, by GPUI's rule).
   let banner: string | null = $state(null);
   const decks = new DeckData();
+  // After a theme switch the decks read their ink again.
+  let seenEpoch = themeEpoch.n;
+  $effect(() => {
+    const epoch = themeEpoch.n;
+    if (epoch === seenEpoch) return;
+    seenEpoch = epoch;
+    decks.reloadInks();
+  });
   // The open dialog, files dropped on a deck, and why a load failed.
   const loading = new Loading();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
