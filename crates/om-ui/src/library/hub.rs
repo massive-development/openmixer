@@ -174,6 +174,12 @@ impl LibraryHub {
     /// Wraps the services with a loader for `num_decks` decks.
     pub fn shared(mut services: LibraryServices, num_decks: usize) -> SharedHub {
         let loader = TrackLoader::new(&mut services, num_decks);
+        Self::from_parts(services, loader)
+    }
+
+    /// Wraps services and a loader that already hold decks (the demo loads two before the window
+    /// opens).
+    pub fn from_parts(services: LibraryServices, loader: TrackLoader) -> SharedHub {
         let stems = StemQueue::new(crate::stems::watermark_of(services.library()));
         Rc::new(RefCell::new(Self {
             services,

@@ -9,6 +9,7 @@ use crate::devices::{
     DevicesHost, MappingChange, MappingPage, MidiChange, MidiPage, PluginsChange, PluginsPage, View,
 };
 use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
+use crate::library::LibraryQueue;
 use crate::settings::{
     with_host, AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage,
 };
@@ -41,6 +42,8 @@ pub(crate) struct ShellState {
     pub(crate) ready_signal: Sender<()>,
     pub(crate) streams: Arc<StreamSlot>,
     pub(crate) decks: Arc<Decks>,
+    /// Calls on the library browser, which the control thread answers.
+    pub(crate) library: Arc<LibraryQueue>,
     /// `--ui-drive-out`: where `ui_layout` writes the layout map; `None` refuses it.
     pub(crate) drive_layout: Option<PathBuf>,
 }

@@ -15,6 +15,7 @@ workspace = true
 om-analysis.workspace = true
 om-core.workspace = true
 om-engine.workspace = true
+om-library.workspace = true
 om-ui.workspace = true
 om-ui-bridge.workspace = true
 serde = { version = "1", features = ["derive"] }
