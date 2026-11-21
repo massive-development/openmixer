@@ -354,3 +354,68 @@ export function onSamplerState(cb: (state: SamplerState) => void): Promise<Unlis
 export function onStemsState(cb: (state: StemsState) => void): Promise<UnlistenFn> {
   return listen<StemsState>('stems-state', (event) => cb(event.payload));
 }
+/** The audio settings page: what the device offers and the current pick (`SettingsHost`). */
+export interface AudioPage {
+  deviceTypes: string[];
+  deviceType: string;
+  devices: string[];
+  device: string;
+  sampleRates: number[];
+  sampleRate: number;
+  bufferSizes: number[];
+  bufferSize: number;
+  /** Output pair labels of the open device ("Outputs 1-2"). */
+  pairs: string[];
+  masterPair: number;
+  /** The headphone cue pair; null for none. */
+  cuePair: number | null;
+  /** The latency and load readout, or why no device runs. */
+  stats: string;
+  /** The silent mock runs: no change reaches a sound card. */
+  mock: boolean;
+}
+
+/** One edit of the audio page, as the shell reads it. */
+export type AudioChange =
+  | { field: 'deviceType'; value: string }
+  | { field: 'device'; value: string }
+  | { field: 'sampleRate'; value: number }
+  | { field: 'bufferSize'; value: number }
+  | { field: 'masterPair'; value: number }
+  | { field: 'cuePair'; value: number | null };
+
+/** The audio settings page as it stands. */
+export const audioSettings = (): Promise<AudioPage> => invoke<AudioPage>('audio_settings');
+
+/** Applies one edit (saved and pushed into the engine); the page afterwards, or the reason it was refused. */
+export const audioChange = (change: AudioChange): Promise<AudioPage> => invoke<AudioPage>('audio_change', { change });
+
+/** One theme the picker offers. */
+export interface ThemeChoice {
+  id: string;
+  name: string;
+}
+
+/** The appearance page: the themes and the density choice. */
+export interface AppearancePage {
+  themes: ThemeChoice[];
+  theme: string;
+  density: 'automatic' | 'roomy' | 'compact';
+}
+
+/** One edit of the appearance page, as the shell reads it. */
+export type AppearanceChange = { field: 'theme'; value: string } | { field: 'density'; value: AppearancePage['density'] };
+
+/** What an appearance edit leaves the window to apply. */
+export interface AppearanceResult {
+  page: AppearancePage;
+  css: string;
+  stripInks: StripInk[];
+}
+
+/** The appearance settings page as it stands. */
+export const appearanceSettings = (): Promise<AppearancePage> => invoke<AppearancePage>('appearance_settings');
+
+/** Applies one edit; the page and the theme CSS to show, or the reason it was refused. */
+export const appearanceChange = (change: AppearanceChange): Promise<AppearanceResult> =>
+  invoke<AppearanceResult>('appearance_change', { change });

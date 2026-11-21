@@ -23,6 +23,8 @@
     uiLayout,
     type Controls,
   } from './lib/ipc';
+  import { themeEpoch } from './lib/themeEpoch.svelte';
+  import SettingsOverlay from './lib/settings/SettingsOverlay.svelte';
   import Mixer from './lib/mixer/Mixer.svelte';
   import { firstSnapshot, type Snapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
@@ -57,6 +59,14 @@
   let samplerOpen = $state(false);
   // Deck A's drawer starts on stems for a staged scene.
   let openStems = $state(false);
+  // After a theme switch the decks read their ink again.
+  let seenEpoch = themeEpoch.n;
+  $effect(() => {
+    const epoch = themeEpoch.n;
+    if (epoch === seenEpoch) return;
+    seenEpoch = epoch;
+    decks.reloadInks();
+  });
   // The open dialog, files dropped on a deck, and why a load failed.
   const loading = new Loading();
   // A file dropped on the sampler lands on the pad under it, else on the selected pad.
@@ -70,6 +80,8 @@
   };
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
+  // The settings overlay.
+  let settingsOpen = $state(false);
   let hud: HTMLElement | undefined = $state();
   // The frame counter, only for a bench run or `--debug-panel`.
   let hudShown = $state(false);
@@ -203,6 +215,7 @@
       {/if}
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
       {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
+      <button type="button" class="settings-button" onclick={() => (settingsOpen = true)}>Settings</button>
     </header>
     {#snippet deckRegions(deck: number)}
       <section
@@ -255,6 +268,7 @@
       </section>
     {/if}
   </main>
+  {#if settingsOpen}<SettingsOverlay onclose={() => (settingsOpen = false)} />{/if}
 {/if}
 
 <style>
@@ -341,6 +355,23 @@
     z-index: 5;
     height: min(180px, 100%);
     min-height: 0;
+  }
+
+  .settings-button {
+    margin-left: auto;
+    padding: var(--om-density-space-1) var(--om-inner-gap);
+    border: 1px solid var(--om-border);
+    border-radius: var(--om-control-radius);
+    background: var(--om-surface-raised);
+    color: var(--om-text-secondary);
+    font: inherit;
+    font-size: var(--om-type-label);
+    cursor: pointer;
+  }
+
+  .settings-button:focus-visible {
+    outline: none;
+    box-shadow: var(--om-focus-ring);
   }
 
   .hud {
