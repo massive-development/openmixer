@@ -24,14 +24,12 @@ serde_json.workspace = true
 base64 = "0.22"
 # The example plugin, compiled in as a built-in the Plugins page can load and unload.
 gain-plugin = { path = "../../examples/plugins/gain-plugin" }
-# The GPUI window. On by default; `--no-default-features` builds the headless binary.
-om-ui-gpui = { workspace = true, optional = true }
-# The Tauri trial window (ADR 0009), off by default: `--features gui-tauri`, then `--ui=tauri`.
+# The Tauri window (ADR 0009), on by default; `--no-default-features` builds the headless binary.
 om-ui-tauri = { workspace = true, optional = true }
 om-ui-bridge = { workspace = true, optional = true }
 
 [features]
-default = ["gui", "realtime-dbus"]
+default = ["gui-tauri", "realtime-dbus"]
 # Real stem separation through ONNX Runtime (see om-stems). Off by default: no runtime, no network.
 onnx = ["om-stems/onnx"]
 # Decode fallback that runs the `ffmpeg` executable for formats symphonia lacks (see om-engine). Off by default.
@@ -41,14 +39,10 @@ clap = ["om-plugins/clap"]
 # Real-time priority for the audio callback on Linux (cpal asks rtkit over D-Bus). On by default;
 # builds libdbus, so Linux needs `libdbus-1-dev`. `--no-default-features` builds without it.
 realtime-dbus = ["om-audio/realtime-dbus"]
-# The window. Off (`--no-default-features`) leaves only the headless flags: --smoke and --version.
-gui = ["dep:om-ui-gpui"]
-# Trial (ADR 0009): the Tauri v2 window beside GPUI, opened with `--ui=tauri`. Linux needs
-# `libwebkit2gtk-4.1-dev`; the front end is built with Node (`crates/om-ui-tauri/web`).
+# The window: the Tauri v2 shell (ADR 0009). Linux needs `libwebkit2gtk-4.1-dev`; the front end is built
+# with Node (`crates/om-ui-tauri/web`). Off (`--no-default-features`) leaves only the headless flags:
+# --smoke and --version.
 gui-tauri = ["dep:om-ui-tauri", "dep:om-ui-bridge"]
-# The installers' build (`tools/package.sh`): the Tauri window opens without `--ui=tauri`. Built with
-# `--no-default-features`, so the packages carry no GPUI.
-tauri-default = ["gui-tauri"]
 
 [lints]
 workspace = true

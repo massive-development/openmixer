@@ -1,8 +1,8 @@
 # Alpha gate session (about 45 minutes, Linux, real sound card)
 
-This is the short, ordered version of the alpha gate in issue #128. Run it on a native Linux install with a real sound card and headphones or monitors, on the installed package or `cargo run --release -p openmixer --features gui-tauri -- --ui=tauri`. Tick a box only after you saw or heard it. Write what you saw next to any failure and open an issue per failure. The longer checklist for the GPUI window and for optional features is [hardware-checklist.md](hardware-checklist.md).
+This is the short, ordered version of the alpha gate in issue #128. Run it on a native Linux install with a real sound card and headphones or monitors, on the installed package or `cargo run --release -p openmixer`. Tick a box only after you saw or heard it. Write what you saw next to any failure and open an issue per failure. The longer checklist for optional features is [hardware-checklist.md](hardware-checklist.md).
 
-The Tauri window has the decks, mixer and meters, and Load by dialog or drop. It has no settings page, library browser, stems, Automix, sampler, MIDI or cue output yet (see "Known limits" in the release notes), so those gates move to the GPUI window until they exist in Tauri (items 6 and 7).
+The Tauri window has the decks, mixer and meters, and Load by dialog or drop. It has no settings page, library browser, stems, Automix, sampler, MIDI or cue output yet (see "Known limits" in the release notes). The GPUI window that used to cover them was removed, so those gates (items 6 and 7) wait until the features are ported to the Tauri window; the last commit with GPUI is recorded in the Tauri parity notes.
 
 Use scratch data so your own files stay untouched:
 
@@ -47,9 +47,9 @@ Have two or three real tracks of different tempo and key ready (WAV, FLAC or MP3
 - [ ] Quit and restart: nothing crashes, the window state is sane.
 - [ ] Unplug the output device while playing, then plug it in again. Note what happens (the app must not crash).
 
-## 6. GPUI window only: stems, Automix, sampler, recording (#131, #132, #147, #148)
+## 6. Not in the Tauri window yet: stems, Automix, sampler, recording (#131, #132, #147, #148)
 
-Needs `cargo run --release -p openmixer --features onnx` and the htdemucs model.
+Skip until each lands in the Tauri window. Needs `cargo run --release -p openmixer --features onnx` and the htdemucs model.
 
 - [ ] Stems: separate one real track; listen for seams and clicks, mute and solo each stem.
 - [ ] Automix: one transition on real decks, listen for phase, EQ and bass swap.
@@ -58,7 +58,7 @@ Needs `cargo run --release -p openmixer --features onnx` and the htdemucs model.
 
 ## 7. Headphone cue and MIDI (#135, #146)
 
-- [ ] GPUI window with two devices: the cue stream plays on the second device (it failed on WSLg).
+- [ ] With two devices (once the cue output is in the Tauri window): the cue stream plays on the second device (it failed on WSLg).
 - [ ] With a class-compliant MIDI controller: it appears in the input list and the generic map moves the right controls.
 
 ## Report

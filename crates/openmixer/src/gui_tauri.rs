@@ -1,6 +1,5 @@
-//! `--features gui-tauri`, `--ui=tauri` (trial, ADR 0009): the Tauri window over the composition the
-//! GPUI window uses (`gui.rs`). It opens the stored output device (else the default one) as GPUI
-//! does; `--mock-device`, `--smoke` and the demo flags run on the silent mock instead, and a device
+//! `--features gui-tauri` (the default build, ADR 0009): the Tauri window over the app composition. It
+//! opens the stored output device (else the default one); `--mock-device`, `--smoke` and the demo flags run on the silent mock instead, and a device
 //! that does not open falls back to the mock with a notice. `--demo-library` loads two generated tracks into decks A and B from a library in the
 //! scratch folder (`--demo-scene=NAME` also stages the scene); without a demo flag a plain run opens
 //! the user's library with empty decks (the front end loads files into them), and the smoke,

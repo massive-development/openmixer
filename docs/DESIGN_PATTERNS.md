@@ -116,18 +116,6 @@ pub trait AudioCallback: Send {
 - **Reuse when:** adding any widget. Read tokens at render time, so a theme switch needs no rebuild.
 - **Notes:** UI thread only. Precedence per id: User > Plugin > BuiltIn; a missing key inherits the built-in dark theme, and an invalid value rejects that file only. The built-in theme is compiled in and tested to match its shipped file.
 
-### Type tiers and one numeral helper
-- **Where:** `om-ui` `theme/typography.rs` (`TypeRole`, `FontSlot`, `ThemeTokens::type_style`); `om-ui-gpui` `font.rs` (`TypeExt::type_role`, `numeral`), checked by `tests/type_lint.rs`.
-- **Why:** text takes its family, size, weight and line height from one named tier, so the DESIGN.md rules (Sansation 21 px and up, labels 11, prose 12, every number in mono) hold by construction and are checked in one place.
-- **Reuse when:** drawing any text. Pick a tier with `type_role`; draw a value with `numeral` (or a wrapper that calls it, such as `controls::value_caption`), and add its source to the lint's audit list if it is new.
-- **Notes:** sizes are theme tokens (`type` section) range-checked to the rule floors; families are theme keys (`font.display`, `font.body`, `font.mono`). GPUI has no letter-spacing, so the tiers carry none.
-
-### Control faces: one state model, static parts, a forcing gallery
-- **Where:** `om-ui` `style/face.rs` (`Face`, `FaceStyle`, `FaceTokens`, `tint`); `om-ui-gpui` `paint.rs` (`face`, `face_shadows`, `paint_raised`, `focus_layer`), `parts.rs` (button, pad, segmented, deck tag, state words), `controls::face_button`, and `gallery.rs` with `examples/controls_gallery.rs`.
-- **Why:** every pressable control takes the same states (rest, hover, pressed, on, on + hover, playing, disabled, keyboard focus) from one model built from tokens, so the canvas "States" rules hold everywhere and a state is never a one-off colour. Builders draw one fixed state with no behaviour, so the gallery can force hover, press and focus, and the interactive control is the same builder plus `hover`/`active` refinements and a focus ring layer.
-- **Reuse when:** adding a control: build its look from `LookAndFeel::face` (or a `FaceTokens` method), draw it with `paint::face`, add a static builder to `parts`, a row to the gallery, and wire input in `controls`.
-- **Notes:** depth is a 1px border plus inset shadows pulled in by the edge width (GPUI paints borders over inset shadows); the focus ring is painted 2px outside the bounds by a canvas, so a clipping ancestor cuts it. Focus handles live in a per-id map so a ring can ask whether its control has keyboard focus.
-
 ### Prefetched jump slot (two-slot handoff)
 - **Where:** `om-engine` loop prefetch (`deck/prefetch.rs`)
 - **Why:** the audio thread jumps (loop wrap) without waiting for the decoder to refill the ring.
@@ -289,7 +277,7 @@ pub trait AudioCallback: Send {
 - **Notes:** the layout function is pure and unit-tested. Decks the engine lacks are skipped.
 
 ### Mixer widgets: binding + descriptor-built FX controls
-- **Where:** `om-ui` (`binding.rs`, `widgets/mixer.rs`, `widgets/fx_panel.rs`, `meter.rs`); drawn by `om-ui-gpui`
+- **Where:** `om-ui` (`binding.rs`, `widgets/mixer.rs`, `widgets/fx_panel.rs`, `meter.rs`); drawn by the web front end
 - **Why:** widgets read snapshots and send commands; they never write engine state directly. FX controls are built from parameter descriptors, so a new effect gets controls with no UI code.
 - **Reuse when:** adding a control surface for another engine object, or another meter.
 - **Notes:** the meter ballistics are a plain struct (peak, release, hold, clip latch, dt-based) with no drawing code, so tests use synthetic levels. Thresholds and colours are theme tokens.
@@ -301,7 +289,7 @@ pub trait AudioCallback: Send {
 - **Notes:** the UI thread owns the library connection and the prep queue (a timer calls `pump()`). Watch folders have their own thread and connection and only bump an atomic counter. Widgets never open databases.
 
 ### Widgets send commands only (DeckBinding, MixerBinding)
-- **Where:** `om-ui` `widgets/` and `binding.rs`; drawn by `om-ui-gpui`
+- **Where:** `om-ui` `widgets/` and `binding.rs`; drawn by the web front end
 - **Why:** in the production window every control sends a `Command::Param` (a `ParamId` built from the typed enums, never a string) through the router's `CommandSink`. Reads come from a pulled `EngineSnapshot`. MIDI mappings use the string façade for the same ids.
 - **Reuse when:** any new control surface. Tests build the binding with `new` (the string recording rig) or with a recording `CommandSink` in `sink`, and assert both the write and the engine's resulting state.
 - **Notes:** toggles send the opposite of the engine state and mirror it back when the snapshot changes.
@@ -385,17 +373,11 @@ pub trait AudioCallback: Send {
 - **Reuse when:** a feature has to observe the audio the callback produces (meters, recording, analysis of the live output) without touching the render path's real-time rules.
 - **Notes:** off by default (one relaxed load per block, no thread until `enable()`); results come back through atomics (`LoudnessControl::reading`) or a status call, never a lock the callback takes. `assert_no_alloc` tests cover the tap (`om-engine/tests/loudness_alloc.rs`, the recorder tests).
 
-### Theme bridge to a component library (`theme_bridge`)
-- **Where:** `om-ui-gpui/src/theme_bridge.rs` (`apply`).
-- **Why:** `gpui-component` draws its own buttons, inputs, tables, tabs, dialogs and toasts from its `Theme`. The bridge maps om-ui's `ThemeTokens` (and the derived `LookAndFeel` styles) onto that theme, so the tokens stay the single source of colour and a theme switch re-skins both our painted controls and the library's widgets.
-- **Reuse when:** adopting a third-party widget library: map roles to tokens in one adapter and add no colours there (`tests/style_lint.rs` keeps raw colour calls out of views).
-- **Notes:** runs at start-up and on every theme change, on the window thread. Custom-painted controls (knobs, faders, meters, waveform) do not go through it.
-
 ### Front-end bridge (ADR 0009)
-- **Where:** `om-ui-bridge` (toolkit-free) and `om-ui-tauri` (the Tauri v2 window and its Svelte front end in `web/`), behind the `gui-tauri` feature of `openmixer`. The binary's `gui_tauri.rs` composes the window from the start-up steps the GPUI window also uses (`openmixer::startup`). Full description: `docs/features/tauri-trial.md`.
+- **Where:** `om-ui-bridge` (toolkit-free) and `om-ui-tauri` (the Tauri v2 window and its Svelte front end in `web/`), behind the `gui-tauri` feature of `openmixer`. The binary's `gui_tauri.rs` composes the window from the start-up steps in `openmixer::startup`. Full description: `docs/features/tauri-trial.md`.
 - **Why:** a web front end must not reach into the engine or restate what Rust already knows. `om-ui-bridge` turns engine state into wire formats (`pack_snapshot`, `pack_peaks`, `theme_css`), lists the front end's controls with ids and ranges read off the `om-ui` widget models (`slice_controls`), and turns (id, value) into one `ParamId` dispatch (`dispatch_control`). `om-ui-tauri` is a thin shell: the window, the Tauri commands, the stream thread and the control thread.
-- **Reuse when:** any window that is not GPUI needs engine state or sends controls; put the conversion in `om-ui-bridge` and keep the shell thin. When the front end needs a value the GPUI window computes (a range, a band height, a meter scale, a lane colour), take it from the `om-ui` model the GPUI window uses, never a copy typed in TypeScript.
-- **Rule:** `om-ui-bridge` has no window dependency (no Tauri, no GPUI, no webview) and is tested headless. Shared formats are pinned by fixtures both sides test: `fixtures/ui-bridge/snapshot-v2.bin` (packet), `fixtures/ui-bridge/meter-table.txt` (meter scale), `fixtures/ui-bridge/fader-law.txt` (fader taper) and `fixtures/ui-bridge/knob-text.txt` (knob captions).
+- **Reuse when:** any window needs engine state or sends controls; put the conversion in `om-ui-bridge` and keep the shell thin. When the front end needs a value the app already computes (a range, a band height, a meter scale, a lane colour), take it from the `om-ui` model that computes it, never a copy typed in TypeScript.
+- **Rule:** `om-ui-bridge` has no window dependency (no Tauri, no webview) and is tested headless. Shared formats are pinned by fixtures both sides test: `fixtures/ui-bridge/snapshot-v2.bin` (packet), `fixtures/ui-bridge/meter-table.txt` (meter scale), `fixtures/ui-bridge/fader-law.txt` (fader taper) and `fixtures/ui-bridge/knob-text.txt` (knob captions).
 - **Notes:** data flows one way in each direction. Out: the `om-ui-stream` thread reads `DjEngine::snapshot()` at 30 Hz and sends a little-endian binary packet (version 2) through a Tauri channel; the front end interpolates between packets. Bulk data is sent on request: peaks (four bytes per point) and track info when `deck-changed` fires, the theme CSS and lane ink once at start. In: the front end sends (id, value); the `control` command parses the id with `ParamId` and dispatches it, on Tauri's main thread, never the audio thread. Unknown ids and non-finite values are refused with an error and nothing is dispatched.
 
 ## Idioms and their Rust equivalents
@@ -412,4 +394,4 @@ What the code uses in place of common object-oriented patterns.
 - **Pimpl:** a private module inside the crate.
 - **Framework result types and logger:** `Result<T, E>` with `thiserror` enums per crate (see "Typed error enums"), and `tracing` for logging.
 - **Leak detector macros:** no equivalent needed; ownership makes leaks rare and `assert_no_alloc` covers the audio thread.
-- **Message-thread-only checks and `VBlankAttachment`:** the GPUI frame loop; state that is UI-only lives on the UI thread by construction.
+- **Message-thread-only checks and `VBlankAttachment`:** the web front end's animation loop; state that is UI-only lives on the UI thread by construction.

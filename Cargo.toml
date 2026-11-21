@@ -13,7 +13,6 @@ members = [
     "crates/om-ui",
     "crates/om-plugins",
     "crates/om-stems",
-    "crates/om-ui-gpui",
     "crates/om-ui-bridge",
     "crates/om-ui-tauri",
     "crates/om-testing",
@@ -45,7 +44,6 @@ om-automix = { path = "crates/om-automix" }
 om-stretch = { path = "crates/om-stretch" }
 om-testing = { path = "crates/om-testing" }
 om-ui = { path = "crates/om-ui" }
-om-ui-gpui = { path = "crates/om-ui-gpui" }
 om-ui-bridge = { path = "crates/om-ui-bridge" }
 om-ui-tauri = { path = "crates/om-ui-tauri" }
 audioadapter-buffers = "5.1"

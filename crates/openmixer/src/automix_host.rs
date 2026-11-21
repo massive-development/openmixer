@@ -234,8 +234,7 @@ impl<L: AutomixLibrary + 'static> AutomixHost for AppAutomixHost<L> {
     }
 }
 
-#[cfg(feature = "gui")]
-impl AutomixLibrary for om_ui_gpui::library::LibraryHub {
+impl AutomixLibrary for om_ui::library::hub::LibraryHub {
     fn parts(&self) -> (&LibraryServices, &TrackLoader) {
         (&self.services, &self.loader)
     }

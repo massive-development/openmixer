@@ -1,7 +1,7 @@
 # References
 
 - Design (historical): `openmixer-workbench/docs/superpowers/specs/2026-10-18-rust-rewrite-design.md`
-- ADR 0004 (Rust with GPUI): `docs/adr/0004-stack-rust-gpui.md`
+- ADR 0004 (Rust with GPUI; the GPUI part is superseded by ADR 0009): `docs/adr/0004-stack-rust-gpui.md`
 - cpal: https://docs.rs/cpal
 - rtrb: https://docs.rs/rtrb
 - rubato: https://docs.rs/rubato

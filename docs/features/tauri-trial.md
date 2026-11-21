@@ -2,12 +2,12 @@
 
 ## What it is
 
-A second window for the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine beside the GPUI window. [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) makes the web front end the direction for the interface. GPUI stays the default window until the cut-over.
+The app's window: the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine. [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) makes the web front end the interface; the GPUI window was removed on 2026-11-21, so this is the only window. (The file keeps its name from the trial.)
 
-- Behind the `gui-tauri` cargo feature of `openmixer` (off by default) and the `--ui=tauri` flag.
-- Opens the stored output device (else the default output), as GPUI does; a device that does not open falls back to the silent mock with GPUI's no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. No MIDI, plugin state or settings page reach it yet, so the device cannot be changed from this window.
+- Behind the `gui-tauri` cargo feature of `openmixer`, on by default. `--no-default-features` builds the headless binary. The old `--ui=tauri` flag is still accepted and does nothing.
+- Opens the stored output device (else the default output); a device that does not open falls back to the silent mock with a no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. No MIDI, plugin state or settings page reach it yet, so the device cannot be changed from this window.
 - Loads tracks: each deck header's **Load** button opens the system file dialog, and a file dropped from the desktop lands on the deck under the pointer (header, panel or waveform lane; elsewhere, the half of the window it is in). See [Loading tracks](#loading-tracks).
-- The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app, with no GPUI.
+- The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app.
 
 ## Build and run
 
@@ -15,10 +15,10 @@ Linux packages: `libwebkit2gtk-4.1-dev` on top of the usual ones (see [build.md]
 
 ```bash
 cd crates/om-ui-tauri/web && npm ci && npm run build && cd -    # writes web/dist
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-library
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --demo-scene=cues
-cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
+cargo run -p openmixer -- --mock-device
+cargo run -p openmixer -- --mock-device --demo-library
+cargo run -p openmixer -- --mock-device --demo-scene=cues
+cargo run -p openmixer -- --mock-device --smoke
 ```
 
 - `npm run build` first runs `npm run fonts`, which copies `resources/fonts/` into `web/public/fonts/` (ignored by git), then `vite build` into `web/dist/` (ignored by git).
@@ -34,7 +34,7 @@ cargo run -p openmixer --features gui-tauri -- --ui=tauri --mock-device --smoke
 | `om-ui-bridge` | Toolkit-free conversions, tested headless, no `unsafe`: the snapshot packet (`pack_snapshot`, `packet_len`), packed waveform peaks (`pack_peaks`, `peak_levels`), the slice's control keys and ids (`slice_control_ids`) and their specs from the GPUI widget models (`slice_controls`), a knob's printed value (`caption_text`), validated dispatch (`dispatch_control`), and theme tokens as CSS (`theme_css`). Errors: `BridgeError`. | `om-core`, `om-analysis`, `om-ui` |
 | `om-ui-tauri` | The Tauri v2 window: the commands, the `deck-changed` event, the stream thread, the control thread that pumps the demo library and track loader, strip ink, the bench report, the `--ui-drive-out` layout map and state file, and the smoke watchdog. The Svelte front end is in `web/`, the icons in `icons/`. No `unsafe`. Errors: `ShellError`, `BenchError`, `DriveError`. | `om-ui-bridge`, `om-engine`, `om-ui`, `om-analysis`, `om-core`, `tauri` 2 |
 
-The composition (engine, router, theme, demo library) comes from the binary: `crates/openmixer/src/gui_tauri.rs`, using the start-up steps the GPUI window also uses (`openmixer::startup`: mock output, starting the output, demo tracks and decks). `main.rs` dispatches `--ui=tauri` to it.
+The composition (engine, router, theme, demo library) comes from the binary: `crates/openmixer/src/gui_tauri.rs`, using the start-up steps in `openmixer::startup` (mock output, starting the output, demo tracks and decks), and `openmixer::wiring` for the stems host, the automix runner and saved preferences. `main.rs` dispatches to it unless `--headless` is given.
 
 ## Data flow
 
@@ -249,11 +249,11 @@ gh attestation verify OpenMixer_0.1.0_amd64.deb --repo massive-development/openm
 
 | Flag | Values | Notes and errors |
 |---|---|---|
-| `--ui=tauri` | | Needs a build with `--features gui-tauri` (else: "--ui=tauri needs the gui-tauri feature"). Implied by the installers' `tauri-default` feature. Ignored with `--headless`. |
-| `--ui-bench=SECONDS` | 1 to 600 | Records the lanes' drawn frames for that long after a 3 s warm-up from the first snapshot, writes the report and exits 0. The file is `OPENMIXER_BENCH_OUT` when set and not empty, else `ui-bench.json` in the scratch folder. Refused with `--smoke`, without `--ui=tauri`, or out of range ("--ui-bench needs a whole number from 1 to 600"). |
-| `--ui-fps-cap=N` | 0 to 1000, default 60 | 0 is uncapped. Needs `--ui=tauri`. |
-| `--debug-panel` | | Shows the frame counter in the top bar (`run_config().hud`); a bench run shows it too. GPUI's flag of the same name shows its device and latency panel. |
-| `--ui-drive-out=PATH` | a file in a folder that exists | For `tools/ui-drive.py`: the front end sends its layout map once the layout settles (and after a resize) and the shell writes it to `PATH`; the control thread rewrites the engine's state to `PATH.state` at 10 Hz. Needs `--ui=tauri`. Refused without a path, for a folder, or when the folder is missing. Nothing is written without it. |
+| `--ui=tauri` | | Accepted and ignored (the window is the default). |
+| `--ui-bench=SECONDS` | 1 to 600 | Records the lanes' drawn frames for that long after a 3 s warm-up from the first snapshot, writes the report and exits 0. The file is `OPENMIXER_BENCH_OUT` when set and not empty, else `ui-bench.json` in the scratch folder. Refused with `--smoke`, or out of range ("--ui-bench needs a whole number from 1 to 600"). |
+| `--ui-fps-cap=N` | 0 to 1000, default 60 | 0 is uncapped. |
+| `--debug-panel` | | Shows the frame counter in the top bar (`run_config().hud`); a bench run shows it too. |
+| `--ui-drive-out=PATH` | a file in a folder that exists | For `tools/ui-drive.py`: the front end sends its layout map once the layout settles (and after a resize) and the shell writes it to `PATH`; the control thread rewrites the engine's state to `PATH.state` at 10 Hz. Refused without a path, for a folder, or when the folder is missing. Nothing is written without it. |
 | `--smoke` | | Exits 0 ("openmixer tauri smoke ok") once the front end has received a valid packet, painted and called `ready`. With a demo library the front end first waits for deck A's track and sends `deck0.play`; the run fails unless the engine then reports deck A playing ("openmixer tauri control round trip ok"). Fails after 60 s without `ready`. |
 
 ## Driving the window
@@ -261,7 +261,7 @@ gh attestation verify OpenMixer_0.1.0_amd64.deb --repo massive-development/openm
 `tools/ui-drive.py` presses, drags, scrolls and types into the running window with real X input and checks every interaction against the engine's state. Linux only (X11, or WSLg's X server), Python 3 standard library only (`libX11` and `libXtst` through `ctypes`, plus `xwininfo` and `xprop`); it never builds.
 
 ```bash
-npm run build --prefix crates/om-ui-tauri/web && cargo build -p openmixer --features gui-tauri
+npm run build --prefix crates/om-ui-tauri/web && cargo build -p openmixer
 python3 tools/ui-drive.py                 # the whole suite, about 2.5 minutes
 python3 tools/ui-drive.py --only knobs    # one group: buttons, knobs, faders, tempo, hotcues, loops,
                                           # overview, lanes, wheel, keys, disabled
@@ -293,9 +293,8 @@ python3 tools/ui-drive.py --verbose       # also the values read during slow dra
 ## Measuring
 
 ```bash
-tools/ui-bench.sh <gpui|tauri> <seconds> [extra openmixer args...]
+tools/ui-bench.sh tauri <seconds> [extra openmixer args...]
 tools/ui-bench.sh tauri 20 --demo-library --ui-fps-cap=60
-tools/ui-bench.sh gpui 20 --demo-library
 tools/ui-bench.sh --self-test
 ```
 
@@ -324,7 +323,7 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 |---|---|
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-bridge` | Packet layout and golden file, peaks, control keys, specs (law, ticks, snap, readout), knob captions and dispatch, theme CSS; `tests/meter_table.rs` checks `fixtures/ui-bridge/meter-table.txt` against `om_ui::meter::MeterScale`, `tests/fader_law_table.rs` checks `fixtures/ui-bridge/fader-law.txt` against the specs and `om_ui::fader_law::FaderLaw`, `tests/knob_text_table.rs` checks `fixtures/ui-bridge/knob-text.txt` against `caption_text` and the specs' readouts |
 | `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p om-ui-tauri` | Stream, pacer, stream slot, control loop, deck changes, deck info, controls, strip ink, bench report, smoke verdict, the drive layout map and state file; headless |
-| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer --features gui-tauri` | The flag parsing in `gui_tauri.rs` (with the banner rule and the frame counter flag), and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
+| `nice -n 19 env CARGO_BUILD_JOBS=3 cargo test -p openmixer` | The flag parsing in `gui_tauri.rs` (with the banner rule and the frame counter flag), and `tests/tauri_window.rs`: window smoke, stream smoke with the demo library, the control round trip and the refusal without `--mock-device`. Needs a display (WSLg, or `xvfb-run -a`) and a built `web/dist` |
 | `npm test` in `crates/om-ui-tauri/web` | Vitest over `src/**/*.test.ts`: packet decode and interpolation against the golden packet, the meter table, the fader law table, the knob text table, IPC, bench, the frame counter, controls (law, snap, fine drag, a drag that is no click), keys, names and spoken knob values, overview, pads, Cue's writes, theme, lanes (scrub, lane keys), the drive layout map |
 | `python3 tools/ui-drive.py` | Real pointer and key input into a built window, checked against the engine (see Driving the window); needs a display, not run in CI |
 | `npm run check` | `svelte-check` with warnings as errors |

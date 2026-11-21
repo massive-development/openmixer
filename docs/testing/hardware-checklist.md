@@ -10,7 +10,7 @@ export OPENMIXER_LIBRARY_DB=/tmp/om-check/library.db
 mkdir -p /tmp/om-check
 ```
 
-Build the full app once (Linux build needs the GPUI dependencies):
+Build the full app once (Linux build needs `libwebkit2gtk-4.1-dev`):
 
 ```bash
 cargo build -p openmixer --features clap
@@ -25,10 +25,10 @@ cargo build -p openmixer --features clap
 
 ## 1. Window and look (UI rewrite: #223, #229, #222 UI, CLAP panel)
 
-The UI moved from hand-built widgets to gpui-component. Visual parity has not been compared.
+The window is the Tauri window with a Svelte front end; the GPUI window these checks were written for is gone, so some items below name features it had that Tauri lacks (settings tabs, library table, dialogs, toasts). Skip those until they are ported.
 
 - [ ] The window opens at the default size (1920x1080, shrunk to fit the display) and at the minimum, 1280x720 (`OPENMIXER_WINDOW=1280x720`), without clipping.
-- [ ] Capture the scenes and compare them with `docs/screenshots/`: `OUT_DIR=/tmp/om-scenes tools/screenshots.sh` (needs `DISPLAY`, ImageMagick and `xwininfo`). Look for: spacing, fonts, colours, dark and daylight themes, the settings tabs, the library table, dialogs.
+- [ ] Capture the window (`import -silent`, ImageMagick) and compare it with `docs/screenshots/` (captured from the retired GPUI window, so layout differs). Look for: spacing, fonts, colours, dark and daylight themes, the settings tabs, the library table, dialogs.
 - [ ] Dark and daylight themes both apply to the buttons, inputs, table, tabs, dialogs and toasts (the component theme follows the om-ui tokens).
 - [ ] Library: the track table scrolls smoothly with a large library, sort arrows show, row selection works, the sidebar tree selects folders and playlists.
 - [ ] Buttons fire on click release (this changed from press); a drag off the button cancels.

@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded by ADR 0009 for the interface (2026-11-16), and `om-ui-gpui` was removed on 2026-11-21. The rest of this ADR (Rust, the engine and library stack) stands.
+
 Accepted (supersedes ADR 0002). The project moved from C++/JUCE to Rust; the tag `cpp-final` preserves the old code.
 
 Superseded in part (2026-10-27): the stack table and consequences below are the 2026-10-18 decision and are left as written. What changed since, checked against the tree:
