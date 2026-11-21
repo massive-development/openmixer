@@ -25,10 +25,10 @@
     uiLayout,
     type Controls,
   } from './lib/ipc';
-  import Button from './lib/controls/Button.svelte';
-  import Library from './lib/library/Library.svelte';
   import { themeEpoch } from './lib/themeEpoch.svelte';
   import SettingsOverlay from './lib/settings/SettingsOverlay.svelte';
+  import Button from './lib/controls/Button.svelte';
+  import Library from './lib/library/Library.svelte';
   import Mixer from './lib/mixer/Mixer.svelte';
   import { firstSnapshot, type Snapshot } from './lib/packet';
   import { afterFirstPaint } from './lib/paint';
@@ -71,10 +71,10 @@
   const header = new Header();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
   const sliders = new LaneSliders();
-  // The library band under the decks; the top bar's Library button hides it and the stage grows.
-  let libraryShown = $state(true);
   // The settings overlay.
   let settingsOpen = $state(false);
+  // The library band under the decks; the top bar's Library button hides it and the stage grows.
+  let libraryShown = $state(true);
   let hud: HTMLElement | undefined = $state();
   // The frame counter, only for a bench run or `--debug-panel`.
   let hudShown = $state(false);

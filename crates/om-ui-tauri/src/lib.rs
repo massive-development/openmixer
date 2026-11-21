@@ -156,12 +156,12 @@ pub fn run(
     let smoke_play = options.smoke && library.is_some();
     let (bench, bench_wait) = bench_run(&options);
     let (state, ready_wait) = shared.shell_state(theme, &options, smoke_play, bench.clone());
+    settings::install(settings);
     let header = header::take_installed();
     let (host, tick) = match header {
         Some(parts) => (Some(parts.host), parts.tick),
         None => (None, None),
     };
-    settings::install(settings);
     let app = build_app(Arc::clone(&engine), router, state, host)?;
     if options.smoke {
         smoke::spawn_watchdog(app.handle().clone(), ready_wait, SMOKE_TIMEOUT)?;
