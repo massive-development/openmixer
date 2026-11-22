@@ -4,11 +4,12 @@
 
 use om_ui::settings::{
     stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage, SettingsResult,
+    StemsSettingsPage,
 };
 use om_ui::theme::DensityChoice;
 use om_ui_tauri::{
     AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, SettingsHost,
-    ThemeChoice,
+    StemsPrefsChange, StemsPrefsPage, ThemeChoice,
 };
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::SharedOutput;
@@ -172,6 +173,37 @@ impl SettingsHost for TauriSettings {
             css: theme.css,
             strip_inks: theme.strip_inks,
         })
+    }
+
+    fn stems_prefs(&self) -> StemsPrefsPage {
+        let stems = &self.composition.borrow().prefs.stems;
+        StemsPrefsPage {
+            max_cache_gb: stems.max_cache_gb,
+            max_cache_limit: StemsSettingsPage::MAX_CACHE_GB,
+            auto_prepare: stems.auto_prepare,
+            auto_load: stems.auto_load,
+        }
+    }
+
+    fn change_stems_prefs(&self, change: StemsPrefsChange) -> Result<StemsPrefsPage, String> {
+        let mut composition = self.composition();
+        let changed = match change {
+            StemsPrefsChange::MaxCacheGb(gb) => {
+                let clamped = gb.clamp(1, StemsSettingsPage::MAX_CACHE_GB);
+                std::mem::replace(&mut composition.prefs.stems.max_cache_gb, clamped) != clamped
+            }
+            StemsPrefsChange::AutoPrepare(on) => {
+                std::mem::replace(&mut composition.prefs.stems.auto_prepare, on) != on
+            }
+            StemsPrefsChange::AutoLoad(on) => {
+                std::mem::replace(&mut composition.prefs.stems.auto_load, on) != on
+            }
+        };
+        if changed {
+            self.save_and_apply(&mut composition);
+        }
+        drop(composition);
+        Ok(self.stems_prefs())
     }
 
     fn audio(&self) -> AudioPage {

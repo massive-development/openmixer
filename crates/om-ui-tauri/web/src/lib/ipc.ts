@@ -481,3 +481,49 @@ export const automixPress = (action: AutomixAction): Promise<void> => invoke<voi
 
 /** Starts or stops the mix recording. */
 export const recordToggle = (): Promise<void> => invoke<void>('record_toggle');
+
+/** The stems preferences. */
+export interface StemsPrefs {
+  maxCacheGb: number;
+  maxCacheLimit: number;
+  autoPrepare: boolean;
+  autoLoad: boolean;
+}
+
+/** One edit of the stems preferences. */
+export type StemsPrefsChange =
+  | { field: 'maxCacheGb'; value: number }
+  | { field: 'autoPrepare'; value: boolean }
+  | { field: 'autoLoad'; value: boolean };
+
+/** What the stem host reports: the model, its licence and the cache. */
+export interface StemsHostFacts {
+  available: boolean;
+  state: 'unavailable' | 'notInstalled' | 'licenceNotAccepted' | 'downloading' | 'preparing' | 'installed' | 'failed';
+  /** The state in words. */
+  line: string;
+  /** Download progress, 0..1. */
+  progress: number | null;
+  ready: boolean;
+  licence: { name: string; text: string } | null;
+  cacheBytes: number;
+  /** Separations queued or running. */
+  inFlight: number;
+}
+
+/** The stems settings page. */
+export interface StemsPage {
+  prefs: StemsPrefs;
+  host: StemsHostFacts;
+  /** `1.5 GB of 20.0 GB used`. */
+  usage: string;
+}
+
+export const stemsSettings = (): Promise<StemsPage> => invoke<StemsPage>('stems_settings');
+export const stemsSettingsChange = (change: StemsPrefsChange): Promise<StemsPage> =>
+  invoke<StemsPage>('stems_settings_change', { change });
+/** The user accepted the licence: the model download starts. */
+export const stemsAcceptDownload = (): Promise<void> => invoke<void>('stems_accept_download');
+export const stemsCancelDownload = (): Promise<void> => invoke<void>('stems_cancel_download');
+/** Removes every stem set; how many went. */
+export const stemsClearCache = (): Promise<number> => invoke<number>('stems_clear_cache');

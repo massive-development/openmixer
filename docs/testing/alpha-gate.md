@@ -2,7 +2,7 @@
 
 This is the short, ordered version of the alpha gate in issue #128. Run it on a native Linux install with a real sound card and headphones or monitors, on the installed package or `cargo run --release -p openmixer`. Tick a box only after you saw or heard it. Write what you saw next to any failure and open an issue per failure. The longer checklist for optional features is [hardware-checklist.md](hardware-checklist.md).
 
-The Tauri window has the decks, mixer and meters, and Load by dialog or drop. It has the Automix bar and the Record button, and no settings page, library browser, stems, sampler, MIDI or cue output yet (see "Known limits" in the release notes). The GPUI window that used to cover them was removed, so those gates (items 6 and 7) wait until the features are ported to the Tauri window; the last commit with GPUI is recorded in the Tauri parity notes.
+The Tauri window has the decks, mixer and meters, and Load by dialog or drop. It has the Automix bar and the Record button, and the stems and sampler; it has no library browser, MIDI or cue output yet (see "Known limits" in the release notes). The GPUI window that used to cover them was removed, so those gates (items 6 and 7) wait until the features are ported to the Tauri window; the last commit with GPUI is recorded in the Tauri parity notes.
 
 Use scratch data so your own files stay untouched:
 
@@ -47,9 +47,9 @@ Have two or three real tracks of different tempo and key ready (WAV, FLAC or MP3
 - [ ] Quit and restart: nothing crashes, the window state is sane.
 - [ ] Unplug the output device while playing, then plug it in again. Note what happens (the app must not crash).
 
-## 6. Stems, Automix, sampler, recording (Automix and recording are in the Tauri window; stems and sampler are not yet) (#131, #132, #147, #148)
+## 6. Stems, Automix, sampler, recording (all four are in the Tauri window) (#131, #132, #147, #148)
 
-Skip stems and the sampler until they land in the Tauri window; Automix and recording can be run now (top bar). Needs `cargo run --release -p openmixer --features onnx` and the htdemucs model.
+Stems are in each deck's Stems tab and the sampler is in the drawer; Automix and recording are in the top bar. The htdemucs model downloads from Settings, Stems. Needs `cargo run --release -p openmixer --features onnx` and the htdemucs model.
 
 - [ ] Stems: separate one real track; listen for seams and clicks, mute and solo each stem.
 - [ ] Automix: one transition on real decks, listen for phase, EQ and bass swap.

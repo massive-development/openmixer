@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import AppearancePage from './AppearancePage.svelte';
   import AudioPage from './AudioPage.svelte';
+  import StemsPage from './StemsPage.svelte';
 
   interface Props {
     onclose: () => void;
@@ -14,6 +15,7 @@
   const PAGES = [
     { id: 'audio', label: 'Audio' },
     { id: 'appearance', label: 'Appearance' },
+    { id: 'stems', label: 'Stems' },
   ];
   let page = $state('audio');
 
@@ -45,7 +47,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'stems'}<StemsPage />{/if}
       </section>
     </div>
   </div>
