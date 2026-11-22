@@ -251,6 +251,67 @@ export function onDeckChanged(cb: (change: DeckChanged) => void): Promise<Unlist
   return listen<DeckChanged>('deck-changed', (event) => cb(event.payload));
 }
 
+/** The top bar's Automix strip, as `om_ui::automix_bar` decides it. */
+export interface AutomixBarState {
+  enabled: boolean;
+  /** A pick is loading, armed or mixing: the state word, progress, Skip and Cancel show. */
+  running: boolean;
+  state: string;
+  /** `Next: <title> · <bpm> BPM · <key>`, or `Next: Nothing queued`. */
+  next: string;
+  /** 0 to 1 through the running transition. */
+  progress: number;
+  /** `12 beats left`; empty when no deck leads. */
+  remaining: string;
+  /** The last error or the reason a plan was dropped; empty when none. */
+  error: string;
+  lengthBeats: number;
+  /** `16 beats`, or `Auto`. */
+  lengthLabel: string;
+  /** The length a press of the chip steps to. */
+  nextLengthBeats: number;
+  canStart: boolean;
+  canSkip: boolean;
+  canCancel: boolean;
+}
+
+/** The Record button. */
+export interface RecordBarState {
+  recording: boolean;
+  failed: boolean;
+  /** `Record`, the elapsed time while recording, or `Stopped` after a failure. */
+  label: string;
+  /** `12.3 MB` written so far. */
+  size: string;
+  /** `12 frames dropped`; empty when none were. */
+  warning: string;
+  droppedFrames: number;
+  peakLeft: number;
+  peakRight: number;
+  error: string;
+}
+
+export interface HeaderState {
+  automix: AutomixBarState;
+  record: RecordBarState;
+}
+
+export type AutomixAction = 'start' | 'skip' | 'cancel';
+
+/** Both header parts as the app has them now; rejects when the run has no automix or recorder. */
+export const headerState = (): Promise<HeaderState> => invoke<HeaderState>('header_state');
+
+/** The Off | On switch. */
+export const automixEnable = (on: boolean): Promise<void> => invoke<void>('automix_enable', { on });
+
+/** The length chip: a transition length in beats (0 is Auto). */
+export const automixLength = (beats: number): Promise<void> => invoke<void>('automix_length', { beats });
+
+/** Start, Skip or Cancel. */
+export const automixPress = (action: AutomixAction): Promise<void> => invoke<void>('automix_press', { action });
+
+/** Starts or stops the mix recording. */
+export const recordToggle = (): Promise<void> => invoke<void>('record_toggle');
 /** One sampler pad as the strip draws it. */
 export interface Pad {
   pad: number;
@@ -420,67 +481,73 @@ export const appearanceSettings = (): Promise<AppearancePage> => invoke<Appearan
 export const appearanceChange = (change: AppearanceChange): Promise<AppearanceResult> =>
   invoke<AppearanceResult>('appearance_change', { change });
 
-/** The top bar's Automix strip, as `om_ui::automix_bar` decides it. */
-export interface AutomixBarState {
+/** Where the automix queue picks from. */
+export interface QueueSource {
+  kind: 'library' | 'playlist' | 'search';
+  /** The playlist id, for `playlist`. */
+  playlist?: number;
+}
+
+/** The Automix settings page: the stored settings and the words for their choices. */
+export interface AutomixPage {
   enabled: boolean;
-  /** A pick is loading, armed or mixing: the state word, progress, Skip and Cancel show. */
-  running: boolean;
-  state: string;
-  /** `Next: <title> · <bpm> BPM · <key>`, or `Next: Nothing queued`. */
-  next: string;
-  /** 0 to 1 through the running transition. */
-  progress: number;
-  /** `12 beats left`; empty when no deck leads. */
-  remaining: string;
-  /** The last error or the reason a plan was dropped; empty when none. */
-  error: string;
+  style: number;
+  styles: string[];
   lengthBeats: number;
-  /** `16 beats`, or `Auto`. */
-  lengthLabel: string;
-  /** The length a press of the chip steps to. */
-  nextLengthBeats: number;
-  canStart: boolean;
-  canSkip: boolean;
-  canCancel: boolean;
+  lengths: { beats: number; label: string }[];
+  queue: QueueSource;
+  smart: boolean;
+  minBpmGapPercent: number;
+  maxBpmGapPercent: number;
+  autostartAtEnd: boolean;
 }
 
-/** The Record button. */
-export interface RecordBarState {
-  recording: boolean;
-  failed: boolean;
-  /** `Record`, the elapsed time while recording, or `Stopped` after a failure. */
+/** One edit of the Automix page. */
+export type AutomixChange =
+  | { field: 'enabled'; value: boolean }
+  | { field: 'style'; value: number }
+  | { field: 'lengthBeats'; value: number }
+  | { field: 'queue'; value: QueueSource }
+  | { field: 'smart'; value: boolean }
+  | { field: 'minBpmGapPercent'; value: number }
+  | { field: 'autostartAtEnd'; value: boolean };
+
+/** A playlist the automix queue can play, labelled `Folder / Name`. */
+export interface PlaylistChoice {
+  id: number;
   label: string;
-  /** `12.3 MB` written so far. */
-  size: string;
-  /** `12 frames dropped`; empty when none were. */
-  warning: string;
-  droppedFrames: number;
-  peakLeft: number;
-  peakRight: number;
-  error: string;
 }
 
-export interface HeaderState {
-  automix: AutomixBarState;
-  record: RecordBarState;
+export const automixSettings = (): Promise<AutomixPage> => invoke<AutomixPage>('automix_settings');
+
+/** Applies one edit (stored, pushed to the controller, saved); the page as it stands, or why it was refused. */
+export const automixChange = (change: AutomixChange): Promise<AutomixPage> =>
+  invoke<AutomixPage>('automix_change', { change });
+
+/** The library's playlists, for the queue source; rejects when no library is open. */
+export const automixPlaylists = (): Promise<PlaylistChoice[]> => invoke<PlaylistChoice[]>('automix_playlists');
+
+/** The Recording settings page. */
+export interface RecordPage {
+  /** The stored folder; empty means the default. */
+  folder: string;
+  /** Where an empty folder records to. */
+  defaultFolder: string;
+  format: string;
+  formats: { id: string; label: string }[];
+  stopOnLowDisk: boolean;
 }
 
-export type AutomixAction = 'start' | 'skip' | 'cancel';
+/** One edit of the Recording page. */
+export type RecordChange =
+  | { field: 'folder'; value: string }
+  | { field: 'format'; value: string }
+  | { field: 'stopOnLowDisk'; value: boolean };
 
-/** Both header parts as the app has them now; rejects when the run has no automix or recorder. */
-export const headerState = (): Promise<HeaderState> => invoke<HeaderState>('header_state');
+export const recordSettings = (): Promise<RecordPage> => invoke<RecordPage>('record_settings');
 
-/** The Off | On switch. */
-export const automixEnable = (on: boolean): Promise<void> => invoke<void>('automix_enable', { on });
-
-/** The length chip: a transition length in beats (0 is Auto). */
-export const automixLength = (beats: number): Promise<void> => invoke<void>('automix_length', { beats });
-
-/** Start, Skip or Cancel. */
-export const automixPress = (action: AutomixAction): Promise<void> => invoke<void>('automix_press', { action });
-
-/** Starts or stops the mix recording. */
-export const recordToggle = (): Promise<void> => invoke<void>('record_toggle');
+/** Applies one edit (stored, pushed to the recorder, saved); the page as it stands, or why it was refused. */
+export const recordChange = (change: RecordChange): Promise<RecordPage> => invoke<RecordPage>('record_change', { change });
 
 /** The stems preferences. */
 export interface StemsPrefs {

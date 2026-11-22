@@ -272,7 +272,7 @@ fn run_window(
     };
     let router = Arc::clone(&composition.router);
     install_header(HeaderParts {
-        host: Arc::new(header_host(&composition, &device, &router)),
+        host: Arc::new(header_host(&composition, &router)),
         tick: Some(automix_tick(&composition)),
     });
     let theme = shell_theme(&composition, engine.num_decks());
@@ -382,20 +382,14 @@ fn configure_stems(
 }
 
 /// The header's host over the composition's automix and recorder. The stored Automix settings are
-/// pushed into the service first, as every start does; a demo run saves nothing.
-fn header_host(
-    composition: &AppComposition,
-    device: &Device,
-    router: &Arc<ParameterRouter>,
-) -> TauriHeader {
+/// pushed into the service first, as every start does.
+fn header_host(composition: &AppComposition, router: &Arc<ParameterRouter>) -> TauriHeader {
     apply_automix_prefs(&composition.automix, &composition.prefs.automix, None);
     TauriHeader::new(
         Arc::clone(&composition.engine),
         Arc::clone(router),
         Arc::clone(&composition.automix),
         Arc::clone(&composition.record),
-        composition.prefs.automix.clone(),
-        (!device.demo_run).then(om_ui::preferences::default_file),
     )
 }
 

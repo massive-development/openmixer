@@ -239,8 +239,8 @@
       {/if}
       <!-- A frame counter for whoever tunes the window, not part of the instrument. -->
       {#if hudShown}<span class="hud num" bind:this={hud} aria-hidden="true"></span>{/if}
-      <button type="button" class="settings-button" onclick={() => (settingsOpen = true)}>Settings</button>
       {#if header.state}<RecordButton bar={header.state.record} {header} />{/if}
+      <button type="button" class="settings-button" onclick={() => (settingsOpen = true)}>Settings</button>
     </header>
     {#snippet deckRegions(deck: number)}
       <section

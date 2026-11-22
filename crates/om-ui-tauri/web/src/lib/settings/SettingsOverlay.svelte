@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import AppearancePage from './AppearancePage.svelte';
   import AudioPage from './AudioPage.svelte';
+  import AutomixPage from './AutomixPage.svelte';
+  import RecordingPage from './RecordingPage.svelte';
   import MappingPage from './MappingPage.svelte';
   import MidiPage from './MidiPage.svelte';
   import PluginsPage from './PluginsPage.svelte';
@@ -18,6 +20,8 @@
   const PAGES = [
     { id: 'audio', label: 'Audio' },
     { id: 'appearance', label: 'Appearance' },
+    { id: 'automix', label: 'Automix' },
+    { id: 'recording', label: 'Recording' },
     { id: 'midi', label: 'MIDI' },
     { id: 'mapping', label: 'Mapping' },
     { id: 'plugins', label: 'Plugins' },
@@ -53,7 +57,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{:else if page === 'stems'}<StemsPage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{:else if page === 'automix'}<AutomixPage />{:else if page === 'recording'}<RecordingPage />{:else if page === 'stems'}<StemsPage />{/if}
       </section>
     </div>
   </div>

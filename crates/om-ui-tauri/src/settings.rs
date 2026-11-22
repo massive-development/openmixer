@@ -3,6 +3,7 @@
 //! crate only carries the page's data to the front end and one change back.
 
 use crate::devices::DevicesHost;
+use om_ui::preferences::AutomixPrefs;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
@@ -122,6 +123,81 @@ pub struct AppearanceResult {
     pub strip_inks: Vec<crate::StripInkDto>,
 }
 
+/// One transition length the Automix page offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LengthChoice {
+    pub beats: i32,
+    pub label: String,
+}
+
+/// Where the automix queue picks from: `library`, `playlist` (with `playlist`) or `search`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueSource {
+    pub kind: String,
+    #[serde(default)]
+    pub playlist: i64,
+}
+
+/// The Automix page: the stored settings and the words for their choices.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomixPage {
+    pub enabled: bool,
+    /// `automix.style` code and the labels in code order.
+    pub style: i32,
+    pub styles: Vec<String>,
+    pub length_beats: i32,
+    pub lengths: Vec<LengthChoice>,
+    pub queue: QueueSource,
+    pub smart: bool,
+    /// Largest tempo gap a beat-matched style accepts, in percent.
+    pub min_bpm_gap_percent: i32,
+    pub max_bpm_gap_percent: i32,
+    pub autostart_at_end: bool,
+}
+
+/// One edit of the Automix page.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "field", content = "value", rename_all = "camelCase")]
+pub enum AutomixChange {
+    Enabled(bool),
+    Style(i32),
+    LengthBeats(i32),
+    Queue(QueueSource),
+    Smart(bool),
+    MinBpmGapPercent(i32),
+    AutostartAtEnd(bool),
+}
+
+/// One recording format the page offers: the stored code and its label.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FormatChoice {
+    pub id: String,
+    pub label: String,
+}
+
+/// The Recording page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordPage {
+    /// The stored folder; empty means the default.
+    pub folder: String,
+    /// Where an empty folder records to.
+    pub default_folder: String,
+    pub format: String,
+    pub formats: Vec<FormatChoice>,
+    pub stop_on_low_disk: bool,
+}
+
+/// One edit of the Recording page.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "field", content = "value", rename_all = "camelCase")]
+pub enum RecordChange {
+    Folder(String),
+    Format(String),
+    StopOnLowDisk(bool),
+}
+
 /// What the app offers the settings pages. The app's composition (library, plugins) cannot leave
 /// the thread that built it, so a host is not `Send`: [`run`](crate::run) keeps it on the main
 /// thread, where Tauri runs the synchronous commands, and nothing else reaches it.
@@ -144,6 +220,18 @@ pub trait SettingsHost {
     fn stems_prefs(&self) -> StemsPrefsPage;
     /// Applies one edit (saved); the preferences afterwards, or why it was refused.
     fn change_stems_prefs(&self, change: StemsPrefsChange) -> Result<StemsPrefsPage, String>;
+    /// The Automix page as it stands.
+    fn automix(&self) -> AutomixPage;
+    /// The stored Automix settings, for the top bar's strip (it shows the length).
+    fn automix_prefs(&self) -> AutomixPrefs;
+    /// Applies one edit to the stored settings and the running controller, and saves; the page as
+    /// it stands afterwards, or the reason it was refused. The top bar's switch and length chip
+    /// use this too, so every part edits one copy of the preferences.
+    fn change_automix(&self, change: AutomixChange) -> Result<AutomixPage, String>;
+    /// The Recording page as it stands.
+    fn record(&self) -> RecordPage;
+    /// Applies one edit (saved, and pushed to the recorder for the next recording).
+    fn change_record(&self, change: RecordChange) -> Result<RecordPage, String>;
 }
 
 #[cfg(test)]
@@ -175,6 +263,34 @@ mod tests {
         let c: StemsPrefsChange =
             serde_json::from_str(r#"{"field":"autoPrepare","value":true}"#).unwrap();
         assert_eq!(c, StemsPrefsChange::AutoPrepare(true));
+    }
+
+    #[test]
+    fn an_automix_change_reads_its_field_and_value() {
+        let c: AutomixChange =
+            serde_json::from_str(r#"{"field":"lengthBeats","value":16}"#).unwrap();
+        assert_eq!(c, AutomixChange::LengthBeats(16));
+        let c: AutomixChange =
+            serde_json::from_str(r#"{"field":"queue","value":{"kind":"playlist","playlist":7}}"#)
+                .unwrap();
+        assert_eq!(
+            c,
+            AutomixChange::Queue(QueueSource {
+                kind: "playlist".into(),
+                playlist: 7
+            })
+        );
+        let c: AutomixChange =
+            serde_json::from_str(r#"{"field":"queue","value":{"kind":"search"}}"#).unwrap();
+        assert!(matches!(c, AutomixChange::Queue(q) if q.playlist == 0));
+    }
+
+    #[test]
+    fn a_record_change_reads_its_field_and_value() {
+        let c: RecordChange =
+            serde_json::from_str(r#"{"field":"stopOnLowDisk","value":false}"#).unwrap();
+        assert_eq!(c, RecordChange::StopOnLowDisk(false));
+        assert!(serde_json::from_str::<RecordChange>(r#"{"field":"bogus","value":1}"#).is_err());
     }
 
     #[test]
