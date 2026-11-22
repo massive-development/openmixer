@@ -167,6 +167,10 @@ export interface RunConfig {
   hud: boolean;
   /** A `--ui-drive-out` run: the front end sends its layout map through `uiLayout`. */
   drive: boolean;
+  /** Start with the sampler drawer open (`--demo-scene=sampler`). */
+  samplerOpen: boolean;
+  /** Start deck A on its stems tab (`--demo-scene=stems`). */
+  stemsTab: boolean;
 }
 
 /** The shell's run options. */
@@ -308,6 +312,109 @@ export const automixPress = (action: AutomixAction): Promise<void> => invoke<voi
 
 /** Starts or stops the mix recording. */
 export const recordToggle = (): Promise<void> => invoke<void>('record_toggle');
+/** One sampler pad as the strip draws it. */
+export interface Pad {
+  pad: number;
+  /** The key that presses it (`1` to `8`). */
+  key: string;
+  name: string;
+  loaded: boolean;
+  missing: boolean;
+  loading: boolean;
+  playing: boolean;
+  gain: number;
+  /** Semitones. */
+  pitch: number;
+  mode: 'one-shot' | 'gate' | 'loop';
+  selected: boolean;
+}
+
+/** The sampler: its pads, the selected pad's caption and the ranges its controls take. */
+export interface SamplerState {
+  /** False when the app has no sample bank. */
+  available: boolean;
+  pads: Pad[];
+  selected: number;
+  caption: string;
+  modeHint: string;
+  /** The last problem a sampler action had, until the next action. */
+  status: string | null;
+  maxGain: number;
+  maxPitch: number;
+  /** The velocity a click or key press hits a pad with. */
+  pressVelocity: number;
+}
+
+/** One stem of a deck. */
+export interface Stem {
+  name: string;
+  muted: boolean;
+  soloed: boolean;
+  volume: number;
+  /** -1 low-pass to +1 high-pass, 0 off. */
+  filter: number;
+  /** How loud the stem sounds, 0..1. */
+  level: number;
+}
+
+/** A deck's stems: whether it plays from them and what the track's separation is doing. */
+export interface StemsState {
+  deck: number;
+  live: boolean;
+  /** The loaded track has a complete cached set to load. */
+  cached: boolean;
+  /** The track can be separated (a stem host and a library track). */
+  canPrepare: boolean;
+  /** `None`, `Preparing 42%`, `Ready` or `Failed`. */
+  label: string;
+  preparing: number | null;
+  /** Why the last stems action did not happen. */
+  note: string | null;
+  stems: Stem[];
+  maxVolume: number;
+  filterDetent: number;
+}
+
+const failed =
+  (name: string) =>
+  (error: unknown): void =>
+    console.error(`openmixer: ${name}`, error);
+
+/** Runs a shell command whose failure is only logged; the shell's state event carries the reason. */
+function fire(name: string, args?: Record<string, unknown>): void {
+  invoke<void>(name, args).catch(failed(name));
+}
+
+export const samplerState = (): Promise<SamplerState> => invoke<SamplerState>('sampler_state');
+export const samplerPress = (pad: number, velocity: number): void => fire('sampler_press', { pad, velocity });
+export const samplerRelease = (): void => fire('sampler_release');
+export const samplerSelect = (pad: number): void => fire('sampler_select', { pad });
+export const samplerCycleMode = (): void => fire('sampler_cycle_mode');
+export const samplerSetGain = (gain: number): void => fire('sampler_set_gain', { gain });
+export const samplerSetPitch = (semitones: number): void => fire('sampler_set_pitch', { semitones });
+export const samplerLoad = (pad: number, path: string): void => fire('sampler_load', { pad, path });
+export const samplerClear = (pad: number): void => fire('sampler_clear', { pad });
+export const samplerStopAll = (): void => fire('sampler_stop_all');
+
+export const stemsState = (deck: number): Promise<StemsState | null> => invoke<StemsState | null>('stems_state', { deck });
+export const stemVolume = (deck: number, stem: number, gain: number): void => fire('stem_volume', { deck, stem, gain });
+export const stemFilter = (deck: number, stem: number, position: number): void =>
+  fire('stem_filter', { deck, stem, position });
+export const stemMute = (deck: number, stem: number): void => fire('stem_mute', { deck, stem });
+export const stemSolo = (deck: number, stem: number): void => fire('stem_solo', { deck, stem });
+export const stemAllOn = (deck: number): void => fire('stem_all_on', { deck });
+export const stemToggle = (deck: number): void => fire('stem_toggle', { deck });
+export const stemPrepare = (deck: number): void => fire('stem_prepare', { deck });
+
+/** The sampler changed. */
+export function onSamplerState(cb: (state: SamplerState) => void): Promise<UnlistenFn> {
+  return listen<SamplerState>('sampler-state', (event) => cb(event.payload));
+}
+
+/** A deck's stems changed. */
+export function onStemsState(cb: (state: StemsState) => void): Promise<UnlistenFn> {
+  return listen<StemsState>('stems-state', (event) => cb(event.payload));
+}
 /** The audio settings page: what the device offers and the current pick (`SettingsHost`). */
 export interface AudioPage {
   deviceTypes: string[];

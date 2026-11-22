@@ -5,7 +5,7 @@
 The app's window: the decks screen (waveforms, deck headers, transport, hot cues, loops, mixer and meters), built with Tauri v2 and a Svelte 5 front end, running on the real engine. [ADR 0009](../adr/0009-web-front-end-tauri-trial.md) makes the web front end the interface; the GPUI window was removed on 2026-11-21, so this is the only window. (The file keeps its name from the trial.)
 
 - Behind the `gui-tauri` cargo feature of `openmixer`, on by default. `--no-default-features` builds the headless binary. The old `--ui=tauri` flag is still accepted and does nothing.
-- Opens the stored output device (else the default output); a device that does not open falls back to the silent mock with a no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. The **Settings** button in the top bar opens the settings overlay; its Audio page changes the audio system, output device, sample rate, buffer size, master output and headphone cue pair (see [Settings](#settings)). No MIDI or plugin state reaches this window yet.
+- Opens the stored output device (else the default output); a device that does not open falls back to the silent mock with a no-device notice. `--mock-device`, `--smoke`, `--ui-bench`, `--ui-drive-out` and the demo flags always run on the mock, so tests and tooling never reach a sound card. The **Settings** button in the top bar opens the settings overlay; its Audio page changes the audio system, output device, sample rate, buffer size, master output and headphone cue pair (see [Settings](#settings)). The MIDI, Mapping and Plugins pages run the controller and the plugins (see [Settings](#settings)).
 - Loads tracks: each deck header's **Load** button opens the system file dialog, and a file dropped from the desktop lands on the deck under the pointer (header, panel or waveform lane; elsewhere, the half of the window it is in). See [Loading tracks](#loading-tracks).
 - The installers (`tools/package.sh`, [Installers](#installers)) build this window as the app.
 
@@ -139,10 +139,18 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `header_state` | `headerState()` | the top bar's Automix strip and Record button, 10 Hz |
 | `automix_enable`, `automix_length`, `automix_press`, `record_toggle` | `automixEnable(on)`, `automixLength(beats)`, `automixPress(action)`, `recordToggle()` | the strip's switch, length chip and Start/Skip/Cancel, and Record; the first two edit the Automix settings through the settings host |
 | `load_file` | `loadFile(deck, path)` | nothing (queued for the control thread); an error for an unknown deck |
+| `sampler_state` | `samplerState()` | `SamplerState`: the eight pads, the selected pad's caption and the ranges of its controls |
+| `sampler_press`, `sampler_release` | `samplerPress(pad, velocity)`, `samplerRelease()` | nothing; a press selects the pad and holds it until the release (a gate pad plays while held) |
+| `sampler_select`, `sampler_cycle_mode`, `sampler_set_gain`, `sampler_set_pitch`, `sampler_load`, `sampler_clear`, `sampler_stop_all` | `samplerSelect`, `samplerCycleMode`, `samplerSetGain`, `samplerSetPitch`, `samplerLoad(pad, path)`, `samplerClear`, `samplerStopAll` | nothing, or why the bank refused; the reason also shows in the strip's caption |
+| `stems_state` | `stemsState(deck)` | `StemsState`: live or not, cached, the separation label and progress, the note, the four stems |
+| `stem_volume`, `stem_filter`, `stem_mute`, `stem_solo`, `stem_all_on` | `stemVolume(deck, stem, gain)` and the like | nothing; through `om_ui::stem_binding::StemBinding` (solo restores the mutes from before it) |
+| `stem_toggle`, `stem_prepare` | `stemToggle(deck)`, `stemPrepare(deck)` | nothing (queued for the control thread, which owns the library and the stem host); a refusal (a playing deck, no cached set, no model) shows as the stems note |
+| event `sampler-state` | `onSamplerState(cb)` | `SamplerState`, when it changed |
+| event `stems-state` | `onStemsState(cb)` | `StemsState` of one deck, when it changed |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
 | event `load-failed` | `onLoadFailed(cb)` | `{ deck, file, reason }` |
 
-The window's capability (`capabilities/default.json`) grants `core:default` and `dialog:allow-open` (the Load button's file dialog, `tauri-plugin-dialog`) to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images, inline styles (`style-src 'unsafe-inline'`) and the IPC endpoint.
+The window's capability (`capabilities/default.json`) grants `core:default`, `dialog:allow-open` (the Load button's file dialog and the map import, `tauri-plugin-dialog`) and `dialog:allow-save` (the map export) to the `main` window; the app's own commands are allowed by `tauri-build`. The content security policy in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images, inline styles (`style-src 'unsafe-inline'`) and the IPC endpoint.
 
 ## Rendering, as implemented
 
@@ -179,6 +187,8 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/controls/` | `Knob`, `Fader`, `Button`, `Meter`; `readout.ts` (a knob's printed value, `om_ui_bridge::caption_text`), `drag.ts` (drag travel and Shift's fine mode, hold while the engine catches up), `keys.ts` (slider keys, through the law), `range.ts` (value and travel through the spec's `law`), `snap.ts` (a dragged knob's detent pull) |
 | `lib/deck/` | `DeckHeader`, `Overview`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`; `overview.ts`, `pads.ts`, `transport.ts` (Cue's writes, sent in order) |
 | `lib/mixer/` | `Mixer`, `ChannelStrip` |
+| `lib/sampler/`, `lib/instruments.svelte.ts` | `SamplerStrip` (the pad drawer over the foot of the waveforms: a 4x2 grid, keys 1 to 8, mode, stop, load by dialog or drop, clear, gain and pitch), `pads.ts` (key to pad, read-outs); `Instruments` follows `sampler-state` and `stems-state` |
+| `lib/deck/StemsPanel.svelte` | The deck's Stems tab: Load stems or Stems off, Prepare, All on, and per stem mute, solo, volume and filter |
 | `lib/waveform/` | `Waveforms.svelte` (lanes and overlays), `LaneSlider.svelte` and `sliders.svelte.ts` (each lane's keyboard slider and what it shares with the lanes), `gl.ts`, `shader.ts`, `view.ts` (zoom, level choice, grid, frame cap), `scrub.ts`, `lanekeys.ts` (`laneKey`: what a key does to a lane) |
 | `lib/icons/` | `icons.ts`, `Icon.svelte`, `LICENSE-LUCIDE` |
 | `lib/library/` | The library browser: `Library.svelte` (toolbar, search box, status and analysis line, keys), `Sidebar.svelte`, `TrackTable.svelte` (virtualised rows), `browser.svelte.ts` (the view and its row window), `ipc.ts`, `rows.ts` (row window, column widths, sort glyph) and `drag.ts` (pointer drags of tracks and playlists) |
@@ -222,7 +232,11 @@ The overlay (`lib/settings/`) opens from the top bar and closes with Escape, its
 - **Saving:** demo runs write to the scratch folder's `preferences.json`, never the user's file (`prefs_save_target`); a preferences file that could not be read is left as it is.
 - **Automix page:** `AutomixSettingsPage` over the composition's preferences, pushed into the controller through `AppAutomixSettings` (so a style, length, queue or tempo-gap edit applies to the running automix). The queue source is the whole library, the library browser's current search, or a playlist (listed through the control thread). The top bar's Off | On switch and length chip go through the same host, so the strip, this page and the preferences file always agree.
 - **Recording page:** `RecordSettingsPage` with the folder (typed, or Browse), the format (16-bit, 24-bit, 32-bit float) and the low-disk stop; an edit reaches the next recording, not one in progress.
-- **Not here yet:** the MIDI, plugins and stems pages; each is a later page of this overlay.
+- **MIDI, Mapping and Plugins pages:** `om_ui_tauri::DevicesHost` (`devices.rs`) is their seam, reached through `SettingsHost::devices`; `openmixer::gui_tauri_devices::Devices` implements it over the same `om-ui` logic the GPUI tabs used (`MidiSettingsPage`, `MappingEditorPage`, the plugin host over the composition). Every call answers with the whole page and an optional notice, so the front end holds no state of its own (`lib/settings/devices.ts`, `pager.svelte.ts`: calls run one at a time and a poll waits for an edit). The window attaches MIDI before the audio starts: the system backend on a real run, a mock controller under `--mock-device`, the smoke, bench and demo runs, and `--demo-map` (which also loads the demo map into the scratch folder).
+  - *MIDI:* the input list (polled each second, so a controller plugged in with the page open appears), All inputs and per-device switches, the map file (load with a file dialog, load the current map, use the default) and MIDI learn for the `learnable_targets`; a learn that ends saves the live map and says so, or says no control arrived.
+  - *Mapping:* the binding table with its filter, the edit form (the parse error shows as it is typed, and Apply refuses the same form), add, duplicate, delete, learn selected or new, undo and redo, save, import and export through file dialogs, reset (asks first), conflicts with keep-first or keep-second, and the MIDI monitor (polled twice a second).
+  - *Plugins:* loaded plugins with their latency, an own-window button, a generic parameter panel with a slider and reset per parameter, unload; the built-ins; the folder reload; and with the `clap` feature the CLAP consent (standard folders, the in-process warning) and the `.clap` files found. A plugin's own window opens by `plugin_window.rs`: embedded in a window of its own on X11, floating on Wayland, else the parameter panel. That window code is unverified on a display, as it was under GPUI (ADR 0007).
+- **Not here yet:** the stems page, a later page of this overlay. Plugin themes are counted on the Plugins page; loading a plugin does not refresh the theme list in Appearance until the next start.
 
 ## Loading tracks
 
@@ -366,6 +380,15 @@ The frame figures count drawn animation callbacks, not presented frames. The onl
 | `tools/ui-bench.sh --self-test` | The bench script's arithmetic on a fake `/proc` |
 
 CI runs the front-end steps and the `gui-tauri` tests in the `web` job of `.github/workflows/rust.yml` (Linux, under Xvfb); see [build.md](../guidelines/build.md#tauri-window-web-front-end).
+
+## Sampler and stems
+
+The sampler and the deck stems port GPUI's views over the same headless models: `om_ui::sampler_binding::SamplerBinding` with the `SampleBank`, and one `om_ui::stem_binding::StemBinding` per deck. `om-ui-tauri/src/instruments.rs` holds their wire forms and the control thread's step; the Tauri commands write through the bindings and never touch the audio thread.
+
+- The binary opens the bank after the device starts (`AppComposition::attach_samples`) and hands it to `om_ui_tauri::run`; the control timer already pumps its decodes. The stems host comes from `attach_stems_for`, which puts the cache beside the library file the control thread opens, and goes into `DeckLibrary::stems`. A demo or a check keeps its bank, library and stems in the scratch folder, never the user's.
+- The control thread runs the queued `Load stems`, `Stems off` and `Prepare` actions (they need the library services, which stay on it), then compares the sampler and each deck's stems with what it last sent and emits an event for each that changed (at most 30 Hz).
+- `--demo-scene=sampler` opens the drawer; `--demo-scene=stems` (with the mock separator, implied) separates deck A's track, loads its stems and opens deck A's Stems tab. `--demo-library --mock-stems` leaves the stems to the Prepare and Load stems buttons.
+- Not yet: the stem model's download and licence (the Settings page), automatic separation of new tracks (`auto_prepare`), the Prepare action on library rows (the library browser), and a MIDI learn list for the pads.
 
 ## Known gaps and next steps
 

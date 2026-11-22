@@ -13,12 +13,15 @@
 //! control thread rewrite the engine's state to `<path>.state` at 10 Hz; nothing is written without it.
 
 use crate::gui_tauri_header::TauriHeader;
-use crate::gui_tauri_settings::TauriSettings;
+use crate::gui_tauri_settings::{PrefsStore, TauriSettings};
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
+use om_ui::library::StemSource;
 use om_ui::library::{LibraryServices, TrackLoader};
 use om_ui::main_layout::resolve_density;
 use om_ui::preferences::LibraryPrefs;
+use om_ui::sample_bank::SampleBank;
+use om_ui::stems::{StemHost, StemJob, StemLabel, StemQueue};
 use om_ui_tauri::{
     install_header, DeckLibrary, DriveOut, HeaderParts, LibrarySetup, RunOptions, SettingsHost,
     ShellError, ShellTheme, TickSetup, DEFAULT_FPS_CAP,
@@ -30,10 +33,13 @@ use openmixer::flags::DemoScene;
 use openmixer::startup::{
     demo_user_track, ingest_demo_tracks, load_demo_deck_b, open_output, start_output,
 };
+use openmixer::stems_host::StemsHost;
 use openmixer::{demo_scene, library_smoke, wiring, AppError};
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// The size the faceplate was designed for; it picks the density an `Automatic` choice gets. The
@@ -64,12 +70,16 @@ struct Window<'a> {
     hud: bool,
     /// Open the user's library (a plain run); the checks and the demos never touch it.
     user_library: bool,
+    /// Separate with the mock instead of an installed model (`--mock-stems`).
+    mock_stems: bool,
 }
 
 /// The output choice: the silent mock or the sound card, and whether a demo is staged (no notice).
 struct Device {
     mock: bool,
     demo_run: bool,
+    /// `--demo-map`: the mock controller and the demo map, so the mapping editor has bindings.
+    demo_map: bool,
 }
 
 /// What a demo run stages: the scene, and the user's file for `--demo-scene=track`.
@@ -96,18 +106,23 @@ pub fn main(args: &[String]) -> ExitCode {
         std::env::var_os(BENCH_OUT_ENV),
         &library_smoke::scratch_dir(),
     );
-    let scratch = demo.as_ref().map(|_| library_smoke::scratch_dir());
+    // Demos and checks keep their library, samples and stems in a scratch folder, never the user's.
+    let user_library = !mock_of_checks(args, smoke, demo.is_some());
+    let scratch = (demo.is_some() || !user_library).then(library_smoke::scratch_dir);
     let window = Window {
         smoke,
         frames,
         out: &out,
         drive,
         hud: hud_of(args, frames),
-        user_library: !mock_of_checks(args, smoke, demo.is_some()),
+        user_library,
+        mock_stems: openmixer::flags::mock_stems(args)
+            || demo.as_ref().and_then(|d| d.scene) == Some(DemoScene::Stems),
     };
     let device = Device {
         mock: mock_of(args, smoke, demo.is_some()),
         demo_run: openmixer::flags::demo_run(args),
+        demo_map: openmixer::flags::demo_map(args),
     };
     let result = run_window(window, device, demo, scratch.as_deref());
     // The library closed with the control thread; the scratch folder goes with the run, unless
@@ -227,15 +242,21 @@ fn run_window(
     scratch: Option<&Path>,
 ) -> ExitCode {
     let mut composition = AppComposition::with_defaults();
+    // Before the audio start, so the first preferences push opens the stored inputs.
+    attach_midi(&mut composition, &device);
     let Some((output, banner)) = start_audio(&mut composition, &device) else {
         return ExitCode::FAILURE;
     };
     let engine = Arc::clone(&composition.engine);
     let round_trip = window.smoke && demo.is_some();
+    let scene = demo.as_ref().and_then(|d| d.scene);
+    let library_db = library_db_path(&composition, scratch);
+    let stems = attach_stems(&mut composition, &library_db, window.mock_stems);
+    let samples = attach_samples(&mut composition, scratch, demo.is_some());
     let prefs = &composition.prefs.library;
     let library = match demo.zip(scratch) {
-        Some((demo, root)) => Some(demo_library(root, prefs, Arc::clone(&engine), demo)),
-        None if window.user_library => Some(user_library(prefs, Arc::clone(&engine))),
+        Some((demo, root)) => Some(demo_library(root, prefs, Arc::clone(&engine), demo, stems)),
+        None if window.user_library => Some(user_library(prefs, Arc::clone(&engine), stems)),
         None => None,
     };
     let options = RunOptions {
@@ -246,6 +267,8 @@ fn run_window(
         bench_out: window.out.to_path_buf(),
         fps_cap: window.frames.fps_cap,
         drive_out: window.drive,
+        sampler_open: scene == Some(DemoScene::Sampler),
+        stems_tab: scene == Some(DemoScene::Stems),
     };
     let router = Arc::clone(&composition.router);
     install_header(HeaderParts {
@@ -258,10 +281,14 @@ fn run_window(
         om_ui::preferences::default_file(),
         &library_smoke::scratch_dir(),
     );
-    let settings: Box<dyn SettingsHost> = Box::new(TauriSettings::new(
-        composition,
+    let store = Rc::new(PrefsStore::new(
+        Rc::new(RefCell::new(composition)),
         output.clone(),
         prefs_file,
+    ));
+    let settings: Box<dyn SettingsHost> = Box::new(TauriSettings::new(
+        store,
+        output.clone(),
         device.mock,
         engine.num_decks(),
     ));
@@ -270,6 +297,7 @@ fn run_window(
         router,
         theme,
         library,
+        samples,
         Some(settings),
         options,
     );
@@ -279,6 +307,78 @@ fn run_window(
         println!("openmixer tauri bench written to {}", window.out.display());
     }
     report(result, window.smoke, played)
+}
+
+/// Where the library file is: the scratch folder's for a demo or a check, else the user's.
+fn library_db_path(composition: &AppComposition, scratch: Option<&Path>) -> String {
+    match scratch {
+        Some(root) => root.join("library.db").to_string_lossy().into_owned(),
+        None => library_options(&composition.prefs.library, None).db_path,
+    }
+}
+
+/// What the window hands the control thread for stems: the host that separates, and the loader's
+/// settings (the cache, whether a track's stems load with it, the sink that loads them).
+struct StemsSetup {
+    host: StemsHost,
+    auto_load: bool,
+    sink: Arc<dyn om_core::CommandSink>,
+}
+
+/// Attaches the stems host beside the library file; a problem only turns the stems off.
+fn attach_stems(
+    composition: &mut AppComposition,
+    library_db: &str,
+    mock: bool,
+) -> Option<StemsSetup> {
+    if let Err(error) = composition.attach_stems_for(library_db.to_owned(), mock) {
+        eprintln!("openmixer: stems unavailable: {error}");
+        return None;
+    }
+    Some(StemsSetup {
+        host: composition.take_stems_host()?,
+        auto_load: composition.prefs.stems.auto_load,
+        sink: composition.stem_command_sink(),
+    })
+}
+
+/// Starts the sample bank once the device runs (decodes use its rate). A demo writes its eight
+/// generated samples first; a check keeps its bank in the scratch folder, never the user's.
+fn attach_samples(
+    composition: &mut AppComposition,
+    scratch: Option<&Path>,
+    demo: bool,
+) -> Option<Arc<SampleBank>> {
+    let dir = scratch.map(|root| root.join("samples"));
+    if let (true, Some(dir)) = (demo, &dir) {
+        if let Err(error) = openmixer::sampler_demo::write_demo_bank(dir) {
+            eprintln!("openmixer: demo samples: {error}");
+        }
+    }
+    composition.attach_samples(dir);
+    composition.services.samples.clone()
+}
+
+/// Hands `stems` to the loader and the library setup's host.
+fn configure_stems(
+    loader: &mut TrackLoader,
+    stems: Option<StemsSetup>,
+) -> Option<Box<dyn StemHost>> {
+    let StemsSetup {
+        host,
+        auto_load,
+        sink,
+    } = stems?;
+    let source = host.cache_root().map(|root| {
+        let (sep_id, version) = StemHost::separator(&host);
+        StemSource {
+            root,
+            sep_id,
+            version,
+        }
+    });
+    loader.configure_stems(source, auto_load, Some(sink));
+    Some(Box::new(host))
 }
 
 /// The header's host over the composition's automix and recorder. The stored Automix settings are
@@ -321,6 +421,40 @@ fn deck_a_playing(engine: &DjEngine) -> bool {
     engine.snapshot().decks.first().is_some_and(|d| d.playing)
 }
 
+/// MIDI: the system backend on a real run; a mock controller on the runs that stay off hardware,
+/// so none of them opens a device. `--demo-map` also loads the demo map into a scratch file.
+fn attach_midi(composition: &mut AppComposition, device: &Device) {
+    if device.mock || device.demo_map {
+        let midi = om_midi::MockBackend::new();
+        midi.add_input("Mock controller");
+        composition.attach_midi(Box::new(midi));
+    } else {
+        match om_midi::system_backend() {
+            Ok(backend) => composition.attach_midi(backend),
+            Err(error) => eprintln!("openmixer: MIDI unavailable: {error}"),
+        }
+    }
+    if device.demo_map {
+        load_demo_map(composition);
+    }
+}
+
+/// Saves from the editor go to a temporary file, never the user's map.
+fn load_demo_map(composition: &mut AppComposition) {
+    let dir = library_smoke::scratch_dir().join("map");
+    match openmixer::demo_map::write_demo_map(&dir) {
+        Ok(path) => {
+            if let Some(service) = &composition.services.midi {
+                if let Err(error) = service.load_map_file(&path) {
+                    eprintln!("openmixer: demo map: {error}");
+                }
+            }
+            composition.prefs.midi.map_file = path.to_string_lossy().into_owned();
+        }
+        Err(error) => eprintln!("openmixer: demo map: {error}"),
+    }
+}
+
 /// The engine on the chosen output with the preferences applied, and the notice the top bar shows;
 /// `None` once it said why it could not start.
 fn start_audio(
@@ -350,6 +484,7 @@ fn demo_library(
     prefs: &LibraryPrefs,
     engine: Arc<DjEngine>,
     demo: Demo,
+    stems: Option<StemsSetup>,
 ) -> LibrarySetup {
     let root = root.to_path_buf();
     let options_prefs = prefs.clone();
@@ -359,23 +494,47 @@ fn demo_library(
             .map_err(|error| eprintln!("openmixer: library unavailable: {error}"))
             .ok()?;
         let mut loader = TrackLoader::new(&mut services, engine.num_decks());
+        let mut stems = configure_stems(&mut loader, stems);
         if let Err(error) = load_demo_decks(&mut services, &mut loader, &engine, &root, &demo) {
             eprintln!("openmixer: demo decks: {error}");
         }
-        Some(DeckLibrary { services, loader })
+        if demo.scene == Some(DemoScene::Stems) {
+            if let Err(error) = demo_stems(
+                &services,
+                &mut loader,
+                &engine,
+                stems.as_mut().map(|host| &mut **host as &mut dyn StemHost),
+            ) {
+                eprintln!("openmixer: demo stems: {error}");
+            }
+        }
+        Some(DeckLibrary {
+            services,
+            loader,
+            stems,
+        })
     })
 }
 
 /// Opens the user's library (as the GPUI window does) on the control thread, with empty decks: the
 /// front end loads files into them.
-fn user_library(prefs: &LibraryPrefs, engine: Arc<DjEngine>) -> LibrarySetup {
+fn user_library(
+    prefs: &LibraryPrefs,
+    engine: Arc<DjEngine>,
+    stems: Option<StemsSetup>,
+) -> LibrarySetup {
     let prefs = prefs.clone();
     Box::new(move || {
         let mut services = LibraryServices::create(library_options(&prefs, None))
             .map_err(|error| eprintln!("openmixer: library unavailable: {error}"))
             .ok()?;
-        let loader = TrackLoader::new(&mut services, engine.num_decks());
-        Some(DeckLibrary { services, loader })
+        let mut loader = TrackLoader::new(&mut services, engine.num_decks());
+        let stems = configure_stems(&mut loader, stems);
+        Some(DeckLibrary {
+            services,
+            loader,
+            stems,
+        })
     })
 }
 
@@ -394,6 +553,44 @@ fn load_demo_decks(
         demo_scene::apply(scene, engine);
     }
     Ok(())
+}
+
+/// `--demo-scene=stems` (with the mock separator): separates deck A's track, waits for the job for
+/// a bounded time, then loads its stems so the stem controls are live.
+fn demo_stems(
+    services: &LibraryServices,
+    loader: &mut TrackLoader,
+    engine: &DjEngine,
+    host: Option<&mut dyn StemHost>,
+) -> Result<(), String> {
+    let track = loader
+        .loaded_track(0)
+        .cloned()
+        .ok_or("deck A has no track")?;
+    let host = host.ok_or("no stems host")?;
+    let job = StemJob {
+        track_id: track.id,
+        path: PathBuf::from(&track.path),
+        content_hash: track.content_hash.clone(),
+    };
+    let (sep_id, version) = host.separator();
+    let mut queue = StemQueue::default();
+    queue
+        .prepare(host, services.library(), std::slice::from_ref(&job))
+        .map_err(|error| error.to_string())?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        match queue.label(services.library(), track.id, (&sep_id, version)) {
+            StemLabel::Ready => break,
+            StemLabel::Failed => return Err("separation failed".into()),
+            _ if std::time::Instant::now() > deadline => return Err("separation timed out".into()),
+            _ => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    loader
+        .toggle_stems(engine, services, 0)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 /// The active theme (the saved one, or `OPENMIXER_THEME`) as CSS at the opening density, and the

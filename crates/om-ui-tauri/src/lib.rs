@@ -11,11 +11,14 @@ mod control_loop;
 mod controls;
 mod deck_info;
 mod decks;
+mod devices;
 mod drive;
 mod header;
+mod instruments;
 mod library;
 mod library_commands;
 mod pacer;
+mod plugin_window;
 mod settings;
 mod smoke;
 mod stream;
@@ -28,6 +31,11 @@ pub use control_loop::CONTROL_THREAD;
 pub use controls::{control_dtos, ControlDto};
 pub use deck_info::{DeckInfo, PeakLevelDto, PEAKS_HEADER_LEN};
 pub use decks::{DeckChanged, DeckLibrary, LibrarySetup, LoadFailed};
+pub use devices::{
+    Choice, ClapSection, DevicesHost, MappingChange, MappingConflict, MappingFilter, MappingForm,
+    MappingPage, MappingRow, MidiChange, MidiPage, Notice, PluginParam, PluginRow, PluginsChange,
+    PluginsPage, View,
+};
 pub use drive::{
     drive_state, parse_layout, write_json_atomic, ControlRect, DriveError, DriveLayout, DriveOut,
     DriveState, LayoutMap, Viewport,
@@ -36,6 +44,7 @@ pub use header::{
     automix_dto, install_header, next_length, record_dto, AutomixAction, AutomixBarDto, HeaderHost,
     HeaderParts, HeaderState, RecordBarDto, TickSetup, Ticker,
 };
+pub use instruments::{PadDto, SamplerDto, StemDto, StemsDto, SAMPLER_EVENT, STEMS_EVENT};
 pub use library::{
     AnalysisDto, ColumnDto, LibraryView, NamingDto, RowDto, SidebarDto, TrackAnalysisDto,
     MAX_VIEW_ROWS,
@@ -53,9 +62,13 @@ use bench::BenchRun;
 use commands::ShellState;
 use control_loop::ControlLoop;
 use decks::Decks;
+use instruments::{InstrumentEvent, Instruments};
 use library::LibraryQueue;
 use om_core::ParameterRouter;
 use om_engine::DjEngine;
+use om_ui::sample_bank::SampleBank;
+use om_ui::sampler_binding::SamplerBinding;
+use om_ui::stem_binding::StemBinding;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
@@ -92,6 +105,10 @@ pub struct RunOptions {
     /// `--ui-drive-out`: where the front end's layout map and the engine's state go; `None` writes
     /// neither.
     pub drive_out: Option<DriveOut>,
+    /// Open the sampler drawer at start (`--demo-scene=sampler`).
+    pub sampler_open: bool,
+    /// Start deck A on its stems tab (`--demo-scene=stems`).
+    pub stems_tab: bool,
 }
 
 impl Default for RunOptions {
@@ -104,6 +121,8 @@ impl Default for RunOptions {
             bench_out: std::env::temp_dir().join("openmixer-ui-bench.json"),
             fps_cap: DEFAULT_FPS_CAP,
             drive_out: None,
+            sampler_open: false,
+            stems_tab: false,
         }
     }
 }
@@ -148,10 +167,11 @@ pub fn run(
     router: Arc<ParameterRouter>,
     theme: ShellTheme,
     library: Option<LibrarySetup>,
+    samples: Option<Arc<SampleBank>>,
     settings: Option<Box<dyn SettingsHost>>,
     options: RunOptions,
 ) -> Result<(), ShellError> {
-    let shared = Shared::new(&engine);
+    let shared = Shared::new(&engine, &router, samples);
     // A smoke run with a library proves a control round trip on the deck it loads.
     let smoke_play = options.smoke && library.is_some();
     let (bench, bench_wait) = bench_run(&options);
@@ -208,13 +228,30 @@ struct Shared {
     ready: Arc<AtomicBool>,
     streams: Arc<StreamSlot>,
     decks: Arc<Decks>,
+    instruments: Arc<Instruments>,
     library: Arc<LibraryQueue>,
     stop: Arc<AtomicBool>,
 }
 
 impl Shared {
-    fn new(engine: &DjEngine) -> Self {
+    fn new(
+        engine: &Arc<DjEngine>,
+        router: &Arc<ParameterRouter>,
+        samples: Option<Arc<SampleBank>>,
+    ) -> Self {
+        let sampler = samples.map(|bank| {
+            SamplerBinding::new(
+                Arc::clone(engine),
+                Some(router.clone()),
+                router.clone(),
+                Some(bank),
+            )
+        });
+        let stems = (0..engine.num_decks())
+            .map(|deck| StemBinding::typed(Arc::clone(engine), Arc::clone(router), deck))
+            .collect();
         Self {
+            instruments: Arc::new(Instruments::new(sampler, stems)),
             ready: Arc::new(AtomicBool::new(false)),
             streams: Arc::new(StreamSlot::default()),
             decks: Arc::new(Decks::new(engine)),
@@ -240,6 +277,8 @@ impl Shared {
                 banner: options.banner.clone(),
                 hud: options.hud,
                 drive: options.drive_out.is_some(),
+                sampler_open: options.sampler_open,
+                stems_tab: options.stems_tab,
             },
             drive_layout: options.drive_out.as_ref().map(|d| d.layout.clone()),
             bench,
@@ -248,6 +287,7 @@ impl Shared {
             ready_signal,
             streams: Arc::clone(&self.streams),
             decks: Arc::clone(&self.decks),
+            instruments: Arc::clone(&self.instruments),
             library: Arc::clone(&self.library),
         };
         (state, ready_wait)
@@ -269,6 +309,7 @@ impl Shared {
             tick,
             stop: Arc::clone(&self.stop),
             drive_state,
+            instruments: Arc::clone(&self.instruments),
         };
         let handle = app.handle().clone();
         let emit = move |change: DeckChanged| {
@@ -283,7 +324,19 @@ impl Shared {
                 tracing::debug!(%error, "load-failed not delivered");
             }
         };
-        control.spawn(emit, failed).map_err(ShellError::Control)
+        let handle = app.handle().clone();
+        let instrument = move |event: InstrumentEvent| {
+            let sent = match event {
+                InstrumentEvent::Sampler(state) => handle.emit(SAMPLER_EVENT, state),
+                InstrumentEvent::Stems(state) => handle.emit(STEMS_EVENT, state),
+            };
+            if let Err(error) = sent {
+                tracing::debug!(%error, "instrument state not delivered");
+            }
+        };
+        control
+            .spawn(emit, failed, instrument)
+            .map_err(ShellError::Control)
     }
 
     fn shut_down(&self, control: JoinHandle<()>) {
@@ -322,6 +375,35 @@ fn build_app(
             commands::deck_info,
             commands::load_file,
             commands::ui_layout,
+            commands::sampler_state,
+            commands::sampler_press,
+            commands::sampler_release,
+            commands::sampler_select,
+            commands::sampler_cycle_mode,
+            commands::sampler_set_gain,
+            commands::sampler_set_pitch,
+            commands::sampler_load,
+            commands::sampler_clear,
+            commands::sampler_stop_all,
+            commands::stems_state,
+            commands::stem_volume,
+            commands::stem_filter,
+            commands::stem_mute,
+            commands::stem_solo,
+            commands::stem_all_on,
+            commands::stem_toggle,
+            commands::stem_prepare,
+            commands::audio_settings,
+            commands::audio_change,
+            commands::midi_page,
+            commands::midi_change,
+            commands::mapping_page,
+            commands::mapping_change,
+            commands::plugins_page,
+            commands::plugins_change,
+            commands::open_plugin_window,
+            commands::appearance_settings,
+            commands::appearance_change,
             library_commands::library_view,
             library_commands::library_search,
             library_commands::library_clear_search,
@@ -345,10 +427,6 @@ fn build_app(
             header::automix_length,
             header::automix_press,
             header::record_toggle,
-            commands::audio_settings,
-            commands::audio_change,
-            commands::appearance_settings,
-            commands::appearance_change,
             commands::automix_settings,
             commands::automix_change,
             commands::record_settings,

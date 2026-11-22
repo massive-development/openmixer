@@ -51,6 +51,8 @@ export class Loading {
   /** The deck a drag over the window would drop onto; null while nothing is dragged. */
   target: number | null = $state(null);
   notes: (string | null)[] = $state([]);
+  /** Takes a dropped file first; true when it was meant for something other than a deck (the sampler). */
+  onDrop: ((path: string, x: number, y: number) => boolean) | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
 
   /** Follows drags and failed loads for `count` decks; resolves with the unlisten call. */
@@ -69,7 +71,7 @@ export class Loading {
       if (payload.type === 'drop') {
         this.target = null;
         const first = payload.paths[0];
-        if (first) this.load(deck, first);
+        if (first && !this.onDrop?.(first, x, y)) this.load(deck, first);
       } else this.target = deck;
     });
     return () => {

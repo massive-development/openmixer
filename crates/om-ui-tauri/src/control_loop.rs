@@ -9,6 +9,7 @@
 use crate::decks::{DeckChanged, Decks, LibrarySetup, LoadFailed, PublishedDeck};
 use crate::drive::{drive_state, write_json_atomic};
 use crate::header::{TickSetup, Ticker};
+use crate::instruments::{InstrumentEvent, Instruments, Reported};
 use crate::library::LibraryQueue;
 use crate::pacer::Pacer;
 use om_engine::DjEngine;
@@ -38,6 +39,8 @@ pub(crate) struct ControlLoop {
     pub(crate) stop: Arc<AtomicBool>,
     /// The drive run's state file (`<path>.state`); `None` writes nothing.
     pub(crate) drive_state: Option<PathBuf>,
+    /// The sampler and stems the front end drives; reported through `instrument`.
+    pub(crate) instruments: Arc<Instruments>,
 }
 
 impl ControlLoop {
@@ -47,13 +50,20 @@ impl ControlLoop {
         self,
         emit: impl Fn(DeckChanged) + Send + 'static,
         failed: impl Fn(LoadFailed) + Send + 'static,
+        instrument: impl Fn(InstrumentEvent) + Send + 'static,
     ) -> std::io::Result<JoinHandle<()>> {
         std::thread::Builder::new()
             .name(CONTROL_THREAD.into())
-            .spawn(move || self.run(emit, failed))
+            .spawn(move || self.run(emit, failed, instrument))
     }
 
-    fn run(mut self, emit: impl Fn(DeckChanged), failed: impl Fn(LoadFailed)) {
+    fn run(
+        mut self,
+        emit: impl Fn(DeckChanged),
+        failed: impl Fn(LoadFailed),
+        instrument: impl Fn(InstrumentEvent),
+    ) {
+        let mut reported = Reported::default();
         let mut panel = self.attach_library(&emit);
         let mut ticker = panel
             .as_ref()
@@ -67,6 +77,8 @@ impl ControlLoop {
             let (failures, changes) = self.step(panel.as_mut(), ticker.as_mut(), now);
             failures.into_iter().for_each(&failed);
             changes.into_iter().for_each(&emit);
+            let events = self.instruments.tick(panel.as_mut(), &mut reported);
+            events.into_iter().for_each(&instrument);
             if ticks.is_multiple_of(STATE_EVERY) {
                 self.write_drive_state();
             }
@@ -138,6 +150,7 @@ impl ControlLoop {
     fn attach_library(&mut self, emit: &impl Fn(DeckChanged)) -> Option<LibraryPanel> {
         let library = self.setup.take().and_then(|setup| setup())?;
         let hub = LibraryHub::from_parts(library.services, library.loader);
+        hub.borrow_mut().stem_host = library.stems;
         let panel = LibraryPanel::new(hub, Arc::clone(&self.engine));
         let changes = self
             .decks
@@ -171,6 +184,7 @@ mod tests {
             tick: None,
             stop: Arc::new(AtomicBool::new(false)),
             drive_state: None,
+            instruments: Arc::new(Instruments::new(None, Vec::new())),
         }
     }
 
@@ -185,7 +199,7 @@ mod tests {
             let name = std::thread::current().name().map(str::to_owned);
             sink.lock().unwrap().push((c, name));
         };
-        let handle = control.spawn(emit, |_| {}).unwrap();
+        let handle = control.spawn(emit, |_| {}, |_| {}).unwrap();
         engine.deck(0).set_hotcue(0, 1_000);
         let emitted = || !seen.lock().unwrap().is_empty();
         assert!(wait_until(
@@ -215,7 +229,7 @@ mod tests {
         let mut control = control(&engine, None);
         control.drive_state = Some(path.clone());
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         let written = || {
             std::fs::read(&path)
                 .is_ok_and(|b| serde_json::from_slice::<serde_json::Value>(&b).is_ok())
@@ -244,7 +258,11 @@ mod tests {
             .ok()?;
             let loader =
                 om_ui::library::TrackLoader::new(&mut services, engine_for_setup.num_decks());
-            Some(crate::decks::DeckLibrary { services, loader })
+            Some(crate::decks::DeckLibrary {
+                services,
+                loader,
+                stems: None,
+            })
         });
         let mut control = control(&engine, Some(setup));
         let steps = Arc::new(Mutex::new(Vec::<(Option<String>, f64)>::new()));
@@ -258,7 +276,7 @@ mod tests {
             })
         }));
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         let stepped = || steps.lock().unwrap().len() >= 3;
         assert!(wait_until(
             Duration::from_secs(5),
@@ -283,7 +301,7 @@ mod tests {
         });
         let control = control(&engine, Some(setup));
         let stop = Arc::clone(&control.stop);
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         assert!(wait_until(
             Duration::from_secs(5),
             Duration::from_millis(2),
@@ -312,7 +330,11 @@ mod tests {
                 services.library().tracks().insert(&track).ok()?;
             }
             let loader = om_ui::library::TrackLoader::new(&mut services, 2);
-            Some(crate::decks::DeckLibrary { services, loader })
+            Some(crate::decks::DeckLibrary {
+                services,
+                loader,
+                stems: None,
+            })
         })
     }
 
@@ -321,7 +343,7 @@ mod tests {
         let engine = Arc::new(DjEngine::new(2).0);
         let control = control(&engine, Some(two_tracks()));
         let (stop, queue) = (Arc::clone(&control.stop), Arc::clone(&control.library));
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         let first = queue
             .call(|panel| {
                 let name = std::thread::current().name().map(str::to_owned);
@@ -368,7 +390,7 @@ mod tests {
         let engine = Arc::new(DjEngine::new(2).0);
         let control = control(&engine, None);
         let (stop, queue) = (Arc::clone(&control.stop), Arc::clone(&control.library));
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         assert_eq!(queue.call(|_| ()), Err("no library is open".to_owned()));
         stop.store(true, Ordering::Release);
         handle.join().unwrap();
@@ -393,7 +415,11 @@ mod tests {
             };
             services.library().tracks().insert(&track).ok()?;
             let loader = om_ui::library::TrackLoader::new(&mut services, 2);
-            Some(crate::decks::DeckLibrary { services, loader })
+            Some(crate::decks::DeckLibrary {
+                services,
+                loader,
+                stems: None,
+            })
         });
         let engine = Arc::new(DjEngine::new(2).0);
         let control = control(&engine, Some(setup));
@@ -402,7 +428,7 @@ mod tests {
             Arc::clone(&control.library),
             Arc::clone(&control.decks),
         );
-        let handle = control.spawn(|_| {}, |_| {}).unwrap();
+        let handle = control.spawn(|_| {}, |_| {}, |_| {}).unwrap();
         let id = queue
             .call(|panel| panel.row(0).map(|row| row.track_id))
             .unwrap()

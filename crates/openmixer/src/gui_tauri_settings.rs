@@ -2,8 +2,9 @@
 //! `om-ui` settings pages over the shared output), saved and pushed into the subsystems as GPUI's
 //! `apply_changes` does.
 
+use crate::gui_tauri_devices::Devices;
 use om_ui::preferences::RECORD_FORMATS;
-use om_ui::preferences::{AutomixPrefs, MAX_BPM_GAP_PERCENT};
+use om_ui::preferences::{AutomixPrefs, Preferences, MAX_BPM_GAP_PERCENT};
 use om_ui::settings::{
     length_label, stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage,
     AutomixSettingsPage, QueueChoice, RecordSettingsPage, SettingsResult, LENGTH_CHOICES,
@@ -12,8 +13,8 @@ use om_ui::settings::{
 use om_ui::theme::DensityChoice;
 use om_ui_tauri::{
     AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, AutomixChange,
-    AutomixPage, FormatChoice, LengthChoice, QueueSource, RecordChange, RecordPage, SettingsHost,
-    ThemeChoice,
+    AutomixPage, DevicesHost, FormatChoice, LengthChoice, QueueSource, RecordChange, RecordPage,
+    SettingsHost, ThemeChoice,
 };
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::SharedOutput;
@@ -22,86 +23,40 @@ use openmixer::composition::AppComposition;
 use openmixer::record_service::{default_folder, AppRecordHost};
 use std::cell::{RefCell, RefMut};
 use std::path::PathBuf;
+use std::rc::Rc;
 
-pub struct TauriSettings {
-    composition: RefCell<AppComposition>,
+/// The shared composition and where the preferences are saved. The settings pages share one
+/// store, and every page edits the composition's own preferences, so a page never saves a section
+/// another page changed since it last looked.
+pub struct PrefsStore {
+    composition: Rc<RefCell<AppComposition>>,
     output: SharedOutput,
     prefs_file: PathBuf,
-    mock: bool,
-    decks: usize,
 }
 
-impl TauriSettings {
+impl PrefsStore {
     pub fn new(
-        composition: AppComposition,
+        composition: Rc<RefCell<AppComposition>>,
         output: SharedOutput,
         prefs_file: PathBuf,
-        mock: bool,
-        decks: usize,
     ) -> Self {
         Self {
-            composition: RefCell::new(composition),
+            composition,
             output,
             prefs_file,
-            mock,
-            decks,
         }
     }
 
-    fn composition(&self) -> RefMut<'_, AppComposition> {
-        self.composition.borrow_mut()
+    pub fn composition(&self) -> &Rc<RefCell<AppComposition>> {
+        &self.composition
     }
 
-    /// Runs `edit` on the composition's own preferences, the one copy every settings page edits, so
-    /// a page never saves a section another page changed since it last looked. A change is saved
-    /// and applied.
-    fn edit(
-        &self,
-        edit: impl FnOnce(&mut AudioSettingsPage<'_>) -> SettingsResult,
-    ) -> Result<(), String> {
-        let mut composition = self.composition();
-        let mut model = self.output.clone();
-        let changed = edit(&mut AudioSettingsPage::new(
-            &mut composition.prefs,
-            &mut model,
-        ))
-        .map_err(|e| e.to_string())?;
-        if changed {
+    /// Runs `edit` on the composition's preferences; when it says it changed something, they are
+    /// saved and applied.
+    pub fn edit_prefs(&self, edit: impl FnOnce(&mut Preferences) -> bool) {
+        let mut composition = self.composition.borrow_mut();
+        if edit(&mut composition.prefs) {
             self.save_and_apply(&mut composition);
-        }
-        Ok(())
-    }
-
-    /// The appearance page over the composition's own preferences (see [`Self::edit`]).
-    fn edit_appearance(
-        &self,
-        edit: impl FnOnce(&mut AppearanceSettingsPage<'_>) -> SettingsResult,
-    ) -> Result<(), String> {
-        let mut composition = self.composition();
-        let changed = {
-            let c = &mut *composition;
-            let mut page = AppearanceSettingsPage::new(&mut c.prefs, &c.themes);
-            edit(&mut page).map_err(|e| e.to_string())?
-        };
-        if changed {
-            self.save_and_apply(&mut composition);
-        }
-        Ok(())
-    }
-
-    fn appearance_page(&self) -> AppearancePage {
-        let composition = self.composition.borrow();
-        let mut prefs = composition.prefs.clone();
-        let theme = prefs.theme.clone();
-        let page = AppearanceSettingsPage::new(&mut prefs, &composition.themes);
-        AppearancePage {
-            themes: page
-                .choices()
-                .into_iter()
-                .map(|(id, name)| ThemeChoice { id, name })
-                .collect(),
-            theme,
-            density: density_name(page.density()).to_owned(),
         }
     }
 
@@ -120,9 +75,87 @@ impl TauriSettings {
         let device: &mut dyn AudioDeviceControl = &mut *settings;
         composition.apply_preferences(&pairs, Some(device), None);
     }
+}
+
+pub struct TauriSettings {
+    store: Rc<PrefsStore>,
+    output: SharedOutput,
+    mock: bool,
+    decks: usize,
+    devices: Devices,
+}
+
+impl TauriSettings {
+    pub fn new(store: Rc<PrefsStore>, output: SharedOutput, mock: bool, decks: usize) -> Self {
+        let devices = Devices::new(Rc::clone(&store));
+        Self {
+            store,
+            output,
+            mock,
+            decks,
+            devices,
+        }
+    }
+
+    fn composition(&self) -> RefMut<'_, AppComposition> {
+        self.store.composition().borrow_mut()
+    }
+
+    /// Runs `edit` on the composition's own preferences, the one copy every settings page edits, so
+    /// a page never saves a section another page changed since it last looked. A change is saved
+    /// and applied.
+    fn edit(
+        &self,
+        edit: impl FnOnce(&mut AudioSettingsPage<'_>) -> SettingsResult,
+    ) -> Result<(), String> {
+        let mut composition = self.composition();
+        let mut model = self.output.clone();
+        let changed = edit(&mut AudioSettingsPage::new(
+            &mut composition.prefs,
+            &mut model,
+        ))
+        .map_err(|e| e.to_string())?;
+        if changed {
+            self.store.save_and_apply(&mut composition);
+        }
+        Ok(())
+    }
+
+    /// The appearance page over the composition's own preferences (see [`Self::edit`]).
+    fn edit_appearance(
+        &self,
+        edit: impl FnOnce(&mut AppearanceSettingsPage<'_>) -> SettingsResult,
+    ) -> Result<(), String> {
+        let mut composition = self.composition();
+        let changed = {
+            let c = &mut *composition;
+            let mut page = AppearanceSettingsPage::new(&mut c.prefs, &c.themes);
+            edit(&mut page).map_err(|e| e.to_string())?
+        };
+        if changed {
+            self.store.save_and_apply(&mut composition);
+        }
+        Ok(())
+    }
+
+    fn appearance_page(&self) -> AppearancePage {
+        let composition = self.store.composition().borrow();
+        let mut prefs = composition.prefs.clone();
+        let theme = prefs.theme.clone();
+        let page = AppearanceSettingsPage::new(&mut prefs, &composition.themes);
+        AppearancePage {
+            themes: page
+                .choices()
+                .into_iter()
+                .map(|(id, name)| ThemeChoice { id, name })
+                .collect(),
+            theme,
+            density: density_name(page.density()).to_owned(),
+        }
+    }
 
     fn page(&self) -> AudioPage {
-        let mut prefs = self.composition.borrow().prefs.clone();
+        let mut prefs = self.store.composition().borrow().prefs.clone();
         let mut writer = self.output.clone();
         let page = AudioSettingsPage::new(&mut prefs, &mut writer);
         let model = self.output.clone();
@@ -173,7 +206,7 @@ impl SettingsHost for TauriSettings {
                 self.edit_appearance(|page| Ok(page.pick_density(choice)))?;
             }
         }
-        let theme = crate::gui_tauri::shell_theme(&self.composition.borrow(), self.decks);
+        let theme = crate::gui_tauri::shell_theme(&self.store.composition().borrow(), self.decks);
         Ok(AppearanceResult {
             page: self.appearance_page(),
             css: theme.css,
@@ -181,16 +214,20 @@ impl SettingsHost for TauriSettings {
         })
     }
 
+    fn devices(&self) -> Option<&dyn DevicesHost> {
+        Some(&self.devices)
+    }
+
     fn audio(&self) -> AudioPage {
         self.page()
     }
 
     fn automix(&self) -> AutomixPage {
-        automix_page(&self.composition.borrow().prefs.automix)
+        automix_page(&self.composition().prefs.automix)
     }
 
     fn automix_prefs(&self) -> AutomixPrefs {
-        self.composition.borrow().prefs.automix.clone()
+        self.composition().prefs.automix.clone()
     }
 
     fn change_automix(&self, change: AutomixChange) -> Result<AutomixPage, String> {
@@ -222,13 +259,13 @@ impl SettingsHost for TauriSettings {
             .map_err(|e| e.to_string())?
         };
         if changed {
-            self.save_and_apply(&mut composition);
+            self.store.save_and_apply(&mut composition);
         }
         Ok(automix_page(&composition.prefs.automix))
     }
 
     fn record(&self) -> RecordPage {
-        record_page(&self.composition.borrow().prefs.record)
+        record_page(&self.composition().prefs.record)
     }
 
     fn change_record(&self, change: RecordChange) -> Result<RecordPage, String> {
@@ -244,7 +281,7 @@ impl SettingsHost for TauriSettings {
             .map_err(|e| e.to_string())?
         };
         if changed {
-            self.save_and_apply(&mut composition);
+            self.store.save_and_apply(&mut composition);
         }
         Ok(record_page(&composition.prefs.record))
     }
