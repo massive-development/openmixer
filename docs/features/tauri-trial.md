@@ -379,7 +379,7 @@ The sampler and the deck stems port GPUI's views over the same headless models: 
 - The control thread runs the queued `Load stems`, `Stems off` and `Prepare` actions (they need the library services, which stay on it), then compares the sampler and each deck's stems with what it last sent and emits an event for each that changed (at most 30 Hz).
 - `--demo-scene=sampler` opens the drawer; `--demo-scene=stems` (with the mock separator, implied) separates deck A's track, loads its stems and opens deck A's Stems tab. `--demo-library --mock-stems` leaves the stems to the Prepare and Load stems buttons.
 - The Stems settings page holds the model download behind its licence, the cache cap and the Auto-prepare switch (the hub's `on_analysed` hook separates each newly analysed track while it is on). Auto-load applies from the next start.
-- Not yet: the Prepare action on library rows (the library browser). The pads are already in `om_ui::settings::midi::learnable_targets`, so they appear in MIDI learn when the Tauri MIDI page lands.
+- The library browser's Split stems button prepares the selected rows (Cancel stems appears while jobs run); the deck's Prepare does the same for the loaded track. Not yet: auto-load without a restart. The pads are already in `om_ui::settings::midi::learnable_targets`, so they appear in MIDI learn when the Tauri MIDI page lands.
 
 ## Known gaps and next steps
 
