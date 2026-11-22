@@ -1,11 +1,12 @@
 {
   "identifier": "default",
-  "description": "The main window: core defaults, and the open-file dialog the decks load from; the app's own commands are allowed by tauri-build.",
+  "description": "The main window: core defaults, and the open-file dialog the decks load from and the file dialogs of the MIDI map import and export; the app's own commands are allowed by tauri-build.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }
