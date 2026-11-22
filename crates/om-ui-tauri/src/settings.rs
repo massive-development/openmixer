@@ -2,6 +2,7 @@
 //! the preferences, the output device and the subsystems, so it implements [`SettingsHost`]; this
 //! crate only carries the page's data to the front end and one change back.
 
+use crate::devices::DevicesHost;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
@@ -130,6 +131,10 @@ pub trait SettingsHost {
     /// Applies one edit, saves the preferences and pushes them to the subsystems; the page as it
     /// stands afterwards, or the reason the edit was refused (shown as is).
     fn change_audio(&self, change: AudioChange) -> Result<AudioPage, String>;
+    /// The MIDI, mapping and plugins pages; none where the app has no such services.
+    fn devices(&self) -> Option<&dyn DevicesHost> {
+        None
+    }
     /// The appearance page as it stands.
     fn appearance(&self) -> AppearancePage;
     /// Applies one edit (saved, and the theme switched in the composition); the page and the

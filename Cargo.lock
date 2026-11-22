@@ -3163,6 +3163,7 @@ dependencies = [
  "om-testing",
  "om-ui",
  "om-ui-bridge",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "tauri",

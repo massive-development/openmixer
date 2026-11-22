@@ -1,0 +1,133 @@
+/* Shared by the settings pages: styles only from the theme's --om-* variables. */
+.s-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--om-gap);
+}
+
+.s-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--om-inner-gap);
+}
+
+.s-title {
+  margin: 0;
+  font-size: var(--om-type-label);
+  color: var(--om-text-secondary);
+}
+
+.s-note,
+.s-notice {
+  margin: 0;
+  color: var(--om-text-muted);
+  font-size: var(--om-type-label);
+}
+
+.s-notice.error,
+.s-error {
+  margin: 0;
+  color: var(--om-warning);
+  font-size: var(--om-type-label);
+}
+
+.s-btn {
+  padding: var(--om-density-space-1) var(--om-inner-gap);
+  border: 1px solid var(--om-border);
+  border-radius: var(--om-control-radius);
+  background: var(--om-surface-raised);
+  color: var(--om-text-secondary);
+  font: inherit;
+  font-size: var(--om-type-label);
+  cursor: pointer;
+}
+
+.s-btn:hover:not(:disabled) {
+  background: var(--om-surface-hover);
+  color: var(--om-text-primary);
+}
+
+.s-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.s-btn.on {
+  color: var(--om-text-primary);
+  border-color: var(--om-text-secondary);
+}
+
+.s-btn:focus-visible,
+.s-field:focus-visible {
+  outline: none;
+  box-shadow: var(--om-focus-ring);
+}
+
+.s-field {
+  padding: var(--om-density-space-1) var(--om-inner-gap);
+  border: 1px solid var(--om-border);
+  border-radius: var(--om-control-radius);
+  background: var(--om-well);
+  color: var(--om-text-primary);
+  font: inherit;
+  min-width: 0;
+}
+
+/* Native select chrome ignores the theme in WebKitGTK; draw the box and a chevron from tokens. */
+select.s-field {
+  appearance: none;
+  background-color: var(--om-surface-raised);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--om-text-secondary) 50%),
+    linear-gradient(135deg, var(--om-text-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 9px) 50%;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+
+.s-check input {
+  accent-color: var(--om-accent-0);
+}
+
+.s-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--om-inner-gap);
+  font-size: var(--om-type-label);
+  color: var(--om-text-primary);
+}
+
+.s-list {
+  border: 1px solid var(--om-border);
+  border-radius: var(--om-control-radius);
+  overflow-y: auto;
+}
+
+.s-list-item {
+  display: block;
+  width: 100%;
+  padding: var(--om-density-space-1) var(--om-inner-gap);
+  border: 0;
+  background: var(--om-surface-raised);
+  color: var(--om-text-primary);
+  font: inherit;
+  font-size: var(--om-type-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.s-list-item[aria-selected='true'] {
+  background: var(--om-accent-0);
+  color: var(--om-on-accent);
+}
+
+.s-list-item:focus-visible {
+  outline: none;
+  box-shadow: var(--om-focus-ring);
+}

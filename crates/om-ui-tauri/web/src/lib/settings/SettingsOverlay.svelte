@@ -2,6 +2,9 @@
   import { onMount } from 'svelte';
   import AppearancePage from './AppearancePage.svelte';
   import AudioPage from './AudioPage.svelte';
+  import MappingPage from './MappingPage.svelte';
+  import MidiPage from './MidiPage.svelte';
+  import PluginsPage from './PluginsPage.svelte';
   import StemsPage from './StemsPage.svelte';
 
   interface Props {
@@ -15,6 +18,9 @@
   const PAGES = [
     { id: 'audio', label: 'Audio' },
     { id: 'appearance', label: 'Appearance' },
+    { id: 'midi', label: 'MIDI' },
+    { id: 'mapping', label: 'Mapping' },
+    { id: 'plugins', label: 'Plugins' },
     { id: 'stems', label: 'Stems' },
   ];
   let page = $state('audio');
@@ -47,7 +53,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'stems'}<StemsPage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{:else if page === 'stems'}<StemsPage />{/if}
       </section>
     </div>
   </div>
@@ -64,8 +70,9 @@
   }
 
   .dialog {
-    width: min(720px, 92vw);
-    max-height: 86vh;
+    width: min(920px, 94vw);
+    /* One height for every page, so the page list does not move under the pointer. */
+    height: min(680px, 86vh);
     display: flex;
     flex-direction: column;
     border: 1px solid var(--om-border);
@@ -95,6 +102,7 @@
   }
 
   .body {
+    flex: 1;
     display: grid;
     grid-template-columns: 160px minmax(0, 1fr);
     min-height: 0;
