@@ -7,6 +7,7 @@
   import MappingPage from './MappingPage.svelte';
   import MidiPage from './MidiPage.svelte';
   import PluginsPage from './PluginsPage.svelte';
+  import StemsPage from './StemsPage.svelte';
 
   interface Props {
     onclose: () => void;
@@ -24,6 +25,7 @@
     { id: 'midi', label: 'MIDI' },
     { id: 'mapping', label: 'Mapping' },
     { id: 'plugins', label: 'Plugins' },
+    { id: 'stems', label: 'Stems' },
   ];
   let page = $state('audio');
 
@@ -55,7 +57,7 @@
         {/each}
       </nav>
       <section class="page">
-        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{:else if page === 'automix'}<AutomixPage />{:else if page === 'recording'}<RecordingPage />{/if}
+        {#if page === 'audio'}<AudioPage />{:else if page === 'appearance'}<AppearancePage />{:else if page === 'midi'}<MidiPage />{:else if page === 'mapping'}<MappingPage />{:else if page === 'plugins'}<PluginsPage />{:else if page === 'automix'}<AutomixPage />{:else if page === 'recording'}<RecordingPage />{:else if page === 'stems'}<StemsPage />{/if}
       </section>
     </div>
   </div>

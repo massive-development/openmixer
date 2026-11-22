@@ -145,6 +145,8 @@ Nothing in the web window runs on the audio thread or waits on a plugin.
 | `stems_state` | `stemsState(deck)` | `StemsState`: live or not, cached, the separation label and progress, the note, the four stems |
 | `stem_volume`, `stem_filter`, `stem_mute`, `stem_solo`, `stem_all_on` | `stemVolume(deck, stem, gain)` and the like | nothing; through `om_ui::stem_binding::StemBinding` (solo restores the mutes from before it) |
 | `stem_toggle`, `stem_prepare` | `stemToggle(deck)`, `stemPrepare(deck)` | nothing (queued for the control thread, which owns the library and the stem host); a refusal (a playing deck, no cached set, no model) shows as the stems note |
+| `stems_settings`, `stems_settings_change` | `stemsSettings()`, `stemsSettingsChange(change)` | `StemsPage`: the saved prefs (cache cap, auto-prepare, auto-load) with the host's facts (model state, licence text, cache size, jobs in flight); a change saves the prefs and pushes the cap and auto-prepare to the stem host |
+| `stems_accept_download`, `stems_cancel_download`, `stems_clear_cache` | `stemsAcceptDownload()`, `stemsCancelDownload()`, `stemsClearCache()` | the refreshed `StemsPage` (run on the control thread through the library panel) |
 | event `sampler-state` | `onSamplerState(cb)` | `SamplerState`, when it changed |
 | event `stems-state` | `onStemsState(cb)` | `StemsState` of one deck, when it changed |
 | event `deck-changed` | `onDeckChanged(cb)` | `{ deck, generation }` |
@@ -188,6 +190,7 @@ All under `crates/om-ui-tauri/web/src/`.
 | `lib/deck/` | `DeckHeader`, `Overview`, `DeckPanel`, `DeckTag`, `HotcuePads`, `LoopRow`, `Transport`; `overview.ts`, `pads.ts`, `transport.ts` (Cue's writes, sent in order) |
 | `lib/mixer/` | `Mixer`, `ChannelStrip` |
 | `lib/sampler/`, `lib/instruments.svelte.ts` | `SamplerStrip` (the pad drawer over the foot of the waveforms: a 4x2 grid, keys 1 to 8, mode, stop, load by dialog or drop, clear, gain and pitch), `pads.ts` (key to pad, read-outs); `Instruments` follows `sampler-state` and `stems-state` |
+| `lib/settings/StemsPage.svelte` | The Stems settings page: model state, licence and Accept and download, cache cap, auto-prepare, auto-load (from the next start), Clear stem cache |
 | `lib/deck/StemsPanel.svelte` | The deck's Stems tab: Load stems or Stems off, Prepare, All on, and per stem mute, solo, volume and filter |
 | `lib/waveform/` | `Waveforms.svelte` (lanes and overlays), `LaneSlider.svelte` and `sliders.svelte.ts` (each lane's keyboard slider and what it shares with the lanes), `gl.ts`, `shader.ts`, `view.ts` (zoom, level choice, grid, frame cap), `scrub.ts`, `lanekeys.ts` (`laneKey`: what a key does to a lane) |
 | `lib/icons/` | `icons.ts`, `Icon.svelte`, `LICENSE-LUCIDE` |
@@ -388,7 +391,8 @@ The sampler and the deck stems port GPUI's views over the same headless models: 
 - The binary opens the bank after the device starts (`AppComposition::attach_samples`) and hands it to `om_ui_tauri::run`; the control timer already pumps its decodes. The stems host comes from `attach_stems_for`, which puts the cache beside the library file the control thread opens, and goes into `DeckLibrary::stems`. A demo or a check keeps its bank, library and stems in the scratch folder, never the user's.
 - The control thread runs the queued `Load stems`, `Stems off` and `Prepare` actions (they need the library services, which stay on it), then compares the sampler and each deck's stems with what it last sent and emits an event for each that changed (at most 30 Hz).
 - `--demo-scene=sampler` opens the drawer; `--demo-scene=stems` (with the mock separator, implied) separates deck A's track, loads its stems and opens deck A's Stems tab. `--demo-library --mock-stems` leaves the stems to the Prepare and Load stems buttons.
-- Not yet: the stem model's download and licence (the Settings page), automatic separation of new tracks (`auto_prepare`), the Prepare action on library rows (the library browser), and a MIDI learn list for the pads.
+- The Stems settings page holds the model download behind its licence, the cache cap and the Auto-prepare switch (the hub's `on_analysed` hook separates each newly analysed track while it is on). Auto-load applies from the next start.
+- The library browser's Split stems button prepares the selected rows (Cancel stems appears while jobs run); the deck's Prepare does the same for the loaded track. Not yet: auto-load without a restart. The pads are already in `om_ui::settings::midi::learnable_targets`, so they appear in MIDI learn when the Tauri MIDI page lands.
 
 ## Known gaps and next steps
 

@@ -89,6 +89,30 @@ pub enum AppearanceChange {
     Density(String),
 }
 
+/// The stems preferences the settings host keeps (the model, licence and cache belong to the
+/// stem host on the control thread; see `stems_settings`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StemsPrefsPage {
+    /// The cache cap in GB.
+    pub max_cache_gb: i32,
+    /// The largest cap the page takes.
+    pub max_cache_limit: i32,
+    /// Prepare stems for tracks analysed after the library opened.
+    pub auto_prepare: bool,
+    /// Load a track's cached stems with it, when the deck is stopped (from the next start).
+    pub auto_load: bool,
+}
+
+/// One edit of the stems preferences.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "field", content = "value", rename_all = "camelCase")]
+pub enum StemsPrefsChange {
+    MaxCacheGb(i32),
+    AutoPrepare(bool),
+    AutoLoad(bool),
+}
+
 /// What an appearance edit leaves the window to apply: the page, the theme's CSS and each deck's
 /// lane ink.
 #[derive(Debug, Clone, Serialize)]
@@ -192,6 +216,10 @@ pub trait SettingsHost {
     /// Applies one edit (saved, and the theme switched in the composition); the page and the
     /// theme to show, or the reason it was refused.
     fn change_appearance(&self, change: AppearanceChange) -> Result<AppearanceResult, String>;
+    /// The stems preferences as they stand.
+    fn stems_prefs(&self) -> StemsPrefsPage;
+    /// Applies one edit (saved); the preferences afterwards, or why it was refused.
+    fn change_stems_prefs(&self, change: StemsPrefsChange) -> Result<StemsPrefsPage, String>;
     /// The Automix page as it stands.
     fn automix(&self) -> AutomixPage;
     /// The stored Automix settings, for the top bar's strip (it shows the length).
@@ -225,6 +253,16 @@ mod tests {
         let c: AppearanceChange =
             serde_json::from_str(r#"{"field":"density","value":"compact"}"#).unwrap();
         assert_eq!(c, AppearanceChange::Density("compact".into()));
+    }
+
+    #[test]
+    fn a_stems_change_reads_its_field_and_value() {
+        let c: StemsPrefsChange =
+            serde_json::from_str(r#"{"field":"maxCacheGb","value":40}"#).unwrap();
+        assert_eq!(c, StemsPrefsChange::MaxCacheGb(40));
+        let c: StemsPrefsChange =
+            serde_json::from_str(r#"{"field":"autoPrepare","value":true}"#).unwrap();
+        assert_eq!(c, StemsPrefsChange::AutoPrepare(true));
     }
 
     #[test]

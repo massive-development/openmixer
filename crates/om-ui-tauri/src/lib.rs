@@ -21,6 +21,7 @@ mod pacer;
 mod plugin_window;
 mod settings;
 mod smoke;
+mod stems_settings;
 mod stream;
 mod stream_slot;
 mod strip_ink;
@@ -52,7 +53,7 @@ pub use library::{
 pub use settings::{
     AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, AutomixChange,
     AutomixPage, FormatChoice, LengthChoice, QueueSource, RecordChange, RecordPage, SettingsHost,
-    ThemeChoice,
+    StemsPrefsChange, StemsPrefsPage, ThemeChoice,
 };
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
 pub use stream::{run_stream, spawn_stream, PacketSink, StreamConfig, STREAM_THREAD};
@@ -393,6 +394,11 @@ fn build_app(
             commands::stem_all_on,
             commands::stem_toggle,
             commands::stem_prepare,
+            stems_settings::stems_settings,
+            stems_settings::stems_settings_change,
+            stems_settings::stems_accept_download,
+            stems_settings::stems_cancel_download,
+            stems_settings::stems_clear_cache,
             commands::audio_settings,
             commands::audio_change,
             commands::midi_page,

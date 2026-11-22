@@ -7,14 +7,14 @@ use om_ui::preferences::RECORD_FORMATS;
 use om_ui::preferences::{AutomixPrefs, Preferences, MAX_BPM_GAP_PERCENT};
 use om_ui::settings::{
     length_label, stats_text, AppearanceSettingsPage, AudioSettingsModel, AudioSettingsPage,
-    AutomixSettingsPage, QueueChoice, RecordSettingsPage, SettingsResult, LENGTH_CHOICES,
-    RECORD_FORMAT_LABELS, STYLE_LABELS,
+    AutomixSettingsPage, QueueChoice, RecordSettingsPage, SettingsResult, StemsSettingsPage,
+    LENGTH_CHOICES, RECORD_FORMAT_LABELS, STYLE_LABELS,
 };
 use om_ui::theme::DensityChoice;
 use om_ui_tauri::{
     AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, AutomixChange,
     AutomixPage, DevicesHost, FormatChoice, LengthChoice, QueueSource, RecordChange, RecordPage,
-    SettingsHost, ThemeChoice,
+    SettingsHost, StemsPrefsChange, StemsPrefsPage, ThemeChoice,
 };
 use openmixer::app_targets::AudioDeviceControl;
 use openmixer::audio_settings::SharedOutput;
@@ -212,6 +212,37 @@ impl SettingsHost for TauriSettings {
             css: theme.css,
             strip_inks: theme.strip_inks,
         })
+    }
+
+    fn stems_prefs(&self) -> StemsPrefsPage {
+        let stems = &self.store.composition().borrow().prefs.stems;
+        StemsPrefsPage {
+            max_cache_gb: stems.max_cache_gb,
+            max_cache_limit: StemsSettingsPage::MAX_CACHE_GB,
+            auto_prepare: stems.auto_prepare,
+            auto_load: stems.auto_load,
+        }
+    }
+
+    fn change_stems_prefs(&self, change: StemsPrefsChange) -> Result<StemsPrefsPage, String> {
+        let mut composition = self.composition();
+        let changed = match change {
+            StemsPrefsChange::MaxCacheGb(gb) => {
+                let clamped = gb.clamp(1, StemsSettingsPage::MAX_CACHE_GB);
+                std::mem::replace(&mut composition.prefs.stems.max_cache_gb, clamped) != clamped
+            }
+            StemsPrefsChange::AutoPrepare(on) => {
+                std::mem::replace(&mut composition.prefs.stems.auto_prepare, on) != on
+            }
+            StemsPrefsChange::AutoLoad(on) => {
+                std::mem::replace(&mut composition.prefs.stems.auto_load, on) != on
+            }
+        };
+        if changed {
+            self.store.save_and_apply(&mut composition);
+        }
+        drop(composition);
+        Ok(self.stems_prefs())
     }
 
     fn devices(&self) -> Option<&dyn DevicesHost> {
