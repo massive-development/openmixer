@@ -5,13 +5,16 @@
 //! owns the automix service, the recorder and the preferences; its methods are called from Tauri's
 //! command threads and must not block on the audio thread or the library.
 
+use crate::commands::ShellState;
+use crate::settings::{with_host, AutomixChange};
 use om_core::{AutomixSnapshot, RecordSnapshot};
 use om_engine::DjEngine;
 use om_ui::automix_bar::AutomixBar;
-use om_ui::library::hub::SharedHub;
+use om_ui::library::hub::{SharedHub, SidebarLine};
 use om_ui::preferences::AutomixPrefs;
 use om_ui::record_bar::RecordBar;
 use om_ui::settings::{length_label, LENGTH_CHOICES};
+use om_ui::sidebar::SidebarKind;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::State;
@@ -37,16 +40,14 @@ impl AutomixAction {
     }
 }
 
-/// What the app gives the header: the two snapshots and the four things a press can do.
+/// What the app gives the header: the two snapshots and the presses. The Off | On switch and the
+/// length chip are edits of the Automix settings, so they go through the settings host (one copy
+/// of the preferences, whichever part edits it), not through here.
 pub trait HeaderHost: Send + Sync {
-    /// The automix controller's snapshot and the stored Automix settings.
-    fn automix(&self) -> (AutomixSnapshot, AutomixPrefs);
+    /// The automix controller's snapshot.
+    fn automix(&self) -> AutomixSnapshot;
     /// The recorder's snapshot and the last start or stop failure (empty when none).
     fn record(&self) -> (RecordSnapshot, String);
-    /// The Off | On switch: turns the running controller on or off and stores the choice.
-    fn set_automix_enabled(&self, on: bool);
-    /// The length chip: stores the transition length (a `LENGTH_CHOICES` value) and applies it.
-    fn set_automix_length(&self, beats: i32);
     /// Start, Skip or Cancel.
     fn press_automix(&self, action: AutomixAction);
     /// The Record button and the `r` key: `record.toggle`.
@@ -152,12 +153,11 @@ pub fn record_dto(snapshot: &RecordSnapshot, error: &str) -> RecordBarDto {
     }
 }
 
-/// The header as `host` has it now.
-pub fn state(host: &dyn HeaderHost) -> HeaderState {
-    let (automix, prefs) = host.automix();
+/// The header as `host` has it now, with the stored Automix settings.
+pub fn state(host: &dyn HeaderHost, prefs: &AutomixPrefs) -> HeaderState {
     let (record, error) = host.record();
     HeaderState {
-        automix: automix_dto(&automix, &prefs),
+        automix: automix_dto(&host.automix(), prefs),
         record: record_dto(&record, &error),
     }
 }
@@ -195,14 +195,17 @@ pub(crate) fn take_installed() -> Option<HeaderParts> {
 /// The header as it stands now, 10 Hz from the front end.
 #[tauri::command]
 pub fn header_state(slot: State<'_, HeaderSlot>) -> Result<HeaderState, String> {
-    slot.host().map(state)
+    let host = slot.host()?;
+    // The strip shows the stored length; without a settings host it shows the defaults.
+    let prefs = with_host(|settings| settings.automix_prefs()).unwrap_or_default();
+    Ok(state(host, &prefs))
 }
 
 /// The Off | On switch.
 #[tauri::command]
 pub fn automix_enable(on: bool, slot: State<'_, HeaderSlot>) -> Result<(), String> {
-    slot.host()?.set_automix_enabled(on);
-    Ok(())
+    slot.host()?;
+    with_host(|settings| settings.change_automix(AutomixChange::Enabled(on)))?.map(drop)
 }
 
 /// The length chip: `beats` must be one of the usual choices.
@@ -211,8 +214,51 @@ pub fn automix_length(beats: i32, slot: State<'_, HeaderSlot>) -> Result<(), Str
     if !LENGTH_CHOICES.contains(&beats) {
         return Err(format!("{beats} beats is not a transition length"));
     }
-    slot.host()?.set_automix_length(beats);
-    Ok(())
+    slot.host()?;
+    with_host(|settings| settings.change_automix(AutomixChange::LengthBeats(beats)))?.map(drop)
+}
+
+/// A playlist the automix queue can play, labelled `Folder / Name`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistChoice {
+    pub id: i64,
+    pub label: String,
+}
+
+/// The library's playlists for the Automix page's queue source, in tree order.
+#[tauri::command(async)]
+pub fn automix_playlists(state: State<'_, ShellState>) -> Result<Vec<PlaylistChoice>, String> {
+    state
+        .library
+        .call(|panel| playlist_choices(&panel.sidebar_lines()))
+}
+
+/// The playlists among the sidebar's lines (not folders), each labelled with the folders above it.
+pub fn playlist_choices(lines: &[SidebarLine]) -> Vec<PlaylistChoice> {
+    let mut folders: Vec<(usize, &str)> = Vec::new();
+    let mut out = Vec::new();
+    for line in lines {
+        while folders
+            .last()
+            .is_some_and(|(depth, _)| *depth >= line.depth)
+        {
+            folders.pop();
+        }
+        match line.node.kind {
+            SidebarKind::Folder => folders.push((line.depth, &line.node.label)),
+            SidebarKind::Playlist => {
+                let mut label: Vec<&str> = folders.iter().map(|(_, name)| *name).collect();
+                label.push(&line.node.label);
+                out.push(PlaylistChoice {
+                    id: line.node.playlist_id,
+                    label: label.join(" / "),
+                });
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Start, Skip or Cancel.
@@ -324,6 +370,44 @@ mod tests {
         );
         assert_eq!((failed.failed, failed.label.as_str()), (true, "Stopped"));
         assert_eq!(failed.error, "disk full");
+    }
+
+    fn line(kind: SidebarKind, depth: usize, label: &str, id: i64) -> SidebarLine {
+        SidebarLine {
+            depth,
+            node: om_ui::sidebar::SidebarNode {
+                kind,
+                label: label.to_owned(),
+                playlist_id: id,
+                path: String::new(),
+                children: Vec::new(),
+            },
+            selected: false,
+        }
+    }
+
+    #[test]
+    fn playlists_are_listed_with_the_folders_above_them() {
+        let lines = [
+            line(SidebarKind::AllTracks, 0, "All tracks", 0),
+            line(SidebarKind::PlaylistGroup, 0, "Playlists", 0),
+            line(SidebarKind::Playlist, 1, "Warm up", 3),
+            line(SidebarKind::Folder, 1, "Sets", 9),
+            line(SidebarKind::Folder, 2, "Club", 10),
+            line(SidebarKind::Playlist, 3, "Peak", 4),
+            line(SidebarKind::Playlist, 2, "Closing", 5),
+            line(SidebarKind::WatchGroup, 0, "Watched", 0),
+        ];
+        let choices = playlist_choices(&lines);
+        let labels: Vec<(i64, &str)> = choices.iter().map(|c| (c.id, c.label.as_str())).collect();
+        assert_eq!(
+            labels,
+            [
+                (3, "Warm up"),
+                (4, "Sets / Club / Peak"),
+                (5, "Sets / Closing")
+            ]
+        );
     }
 
     #[test]

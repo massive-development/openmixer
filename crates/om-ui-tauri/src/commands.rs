@@ -13,6 +13,7 @@ use crate::instruments::{Instruments, SamplerDto, StemAction, StemsDto};
 use crate::library::LibraryQueue;
 use crate::settings::{
     with_host, AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage,
+    AutomixChange, AutomixPage, RecordChange, RecordPage,
 };
 use crate::stream::{PacketSink, StreamConfig};
 use crate::stream_slot::StreamSlot;
@@ -412,6 +413,30 @@ pub fn audio_settings() -> Result<AudioPage, String> {
 #[tauri::command]
 pub fn audio_change(change: AudioChange) -> Result<AudioPage, String> {
     with_host(|host| host.change_audio(change))?
+}
+
+/// The Automix settings page as it stands.
+#[tauri::command]
+pub fn automix_settings() -> Result<AutomixPage, String> {
+    with_host(|host| host.automix())
+}
+
+/// One edit of the Automix page: stored, pushed to the running controller and saved.
+#[tauri::command]
+pub fn automix_change(change: AutomixChange) -> Result<AutomixPage, String> {
+    with_host(|host| host.change_automix(change))?
+}
+
+/// The Recording settings page as it stands.
+#[tauri::command]
+pub fn record_settings() -> Result<RecordPage, String> {
+    with_host(|host| host.record())
+}
+
+/// One edit of the Recording page: stored, pushed to the recorder and saved.
+#[tauri::command]
+pub fn record_change(change: RecordChange) -> Result<RecordPage, String> {
+    with_host(|host| host.change_record(change))?
 }
 
 /// Runs `f` on the app's MIDI, mapping and plugins host.

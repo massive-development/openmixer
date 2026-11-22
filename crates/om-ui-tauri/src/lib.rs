@@ -50,7 +50,8 @@ pub use library::{
     MAX_VIEW_ROWS,
 };
 pub use settings::{
-    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, SettingsHost,
+    AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage, AutomixChange,
+    AutomixPage, FormatChoice, LengthChoice, QueueSource, RecordChange, RecordPage, SettingsHost,
     ThemeChoice,
 };
 pub use smoke::{bench_timeout, SMOKE_TIMEOUT};
@@ -426,6 +427,11 @@ fn build_app(
             header::automix_length,
             header::automix_press,
             header::record_toggle,
+            commands::automix_settings,
+            commands::automix_change,
+            commands::record_settings,
+            commands::record_change,
+            header::automix_playlists,
         ])
         .build(tauri::generate_context!())?;
     Ok(app)
