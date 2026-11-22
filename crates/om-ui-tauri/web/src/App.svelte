@@ -8,12 +8,15 @@
   import { isRecordKey, takesTyping } from './lib/header/keys';
   import RecordButton from './lib/header/RecordButton.svelte';
   import { DeckData } from './lib/decks.svelte';
+  import { Instruments } from './lib/instruments.svelte';
+  import SamplerStrip from './lib/sampler/SamplerStrip.svelte';
   import { DECK_ATTRIBUTE, Loading } from './lib/loading.svelte';
   import { setText } from './lib/dom';
   import { benchStats, FrameRecorder } from './lib/bench';
   import { CONTROL_ATTRIBUTE, layoutMap } from './lib/drive';
   import {
     benchDone,
+    samplerLoad,
     control,
     isSmokePlay,
     loadControls,
@@ -57,6 +60,12 @@
   // The mock-device notice, when the run has one (`om_ui::labels`, by GPUI's rule).
   let banner: string | null = $state(null);
   const decks = new DeckData();
+  // The sampler's pads and each deck's stems, as the shell reports them.
+  const instruments = new Instruments();
+  // The sampler drawer over the foot of the waveforms.
+  let samplerOpen = $state(false);
+  // Deck A's drawer starts on stems for a staged scene.
+  let openStems = $state(false);
   // After a theme switch the decks read their ink again.
   let seenEpoch = themeEpoch.n;
   $effect(() => {
@@ -67,6 +76,15 @@
   });
   // The open dialog, files dropped on a deck, and why a load failed.
   const loading = new Loading();
+  // A file dropped on the sampler lands on the pad under it, else on the selected pad.
+  loading.onDrop = (path, x, y) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el?.closest('[data-sampler]')) return false;
+    const hit = el.closest('[data-pad]')?.getAttribute('data-pad');
+    const pad = hit === null || hit === undefined ? instruments.sampler?.selected : Number(hit);
+    if (pad !== undefined) samplerLoad(pad, path);
+    return true;
+  };
   // The top bar's Automix strip and Record button.
   const header = new Header();
   // Each lane's keyboard slider follows its deck's overview in the tab order.
@@ -141,6 +159,8 @@
       fpsCap = config.fpsCap;
       banner = config.banner;
       hudShown = config.hud;
+      samplerOpen = config.samplerOpen;
+      if (config.stemsTab) openStems = true;
       if (config.hud) ticker.onHud((text) => setText(hud, text));
       applyThemeCss(document, await themeCss());
       controls = await loadControls().catch((error: unknown) => {
@@ -179,9 +199,14 @@
       console.error('openmixer: file loading', error);
       return () => {};
     });
+    const stopInstruments = instruments.start(DECKS.length).catch((error: unknown) => {
+      console.error('openmixer: sampler and stems', error);
+      return () => {};
+    });
     void start();
     const stopHeader = header.start();
     return () => {
+      void stopInstruments.then((unlisten) => unlisten());
       stopHeader();
       void stop.then((unlisten) => unlisten());
       void stopLoading.then((unlisten) => unlisten());
@@ -197,6 +222,16 @@
   <main class="shell" class:library-hidden={!libraryShown}>
     <header class="top-bar">
       <h1 class="wordmark">OPENMIXER</h1>
+      <button
+        type="button"
+        class="drawer-toggle"
+        class:on={samplerOpen}
+        aria-pressed={samplerOpen}
+        aria-controls="sampler-drawer"
+        onclick={() => (samplerOpen = !samplerOpen)}
+      >
+        Sampler
+      </button>
       {#if header.state}<AutomixBar bar={header.state.automix} {header} />{/if}
       <Button on={libraryShown} pressed={libraryShown} onpress={() => (libraryShown = !libraryShown)}>Library</Button>
       {#if banner}
@@ -238,6 +273,8 @@
           info={decks.infos[deck] ?? null}
           ink={decks.inks[deck] ?? null}
           {snapshot}
+          stems={instruments.stems[deck] ?? null}
+          startOnStems={deck === 0 && openStems}
           mirrored={deck === 1}
         />
       </section>
@@ -250,6 +287,11 @@
     <section class="waveforms" aria-label="Waveforms">
       <Waveforms {snapshot} {fpsCap} {sliders} />
     </section>
+    {#if samplerOpen}
+      <section class="sampler-drawer" id="sampler-drawer" aria-label="Sampler">
+        <SamplerStrip sampler={instruments.sampler} onclose={() => (samplerOpen = false)} />
+      </section>
+    {/if}
     {#if libraryShown}
       <section class="region library-band" aria-label="Library band">
         <Library />
@@ -322,6 +364,37 @@
     font-size: var(--om-type-label);
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .drawer-toggle {
+    margin-left: var(--om-gap);
+    min-height: var(--om-min-pointer-target);
+    padding: 0 var(--om-inner-gap);
+    border: var(--om-border-width) solid var(--om-border);
+    border-radius: var(--om-control-radius);
+    background: var(--om-surface-raised);
+    color: var(--om-text-secondary);
+    font-family: var(--om-font-body);
+    font-size: var(--om-type-label);
+    font-weight: 500;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .drawer-toggle.on {
+    color: var(--om-text-primary);
+    border-color: var(--om-border-strong);
+    background: var(--om-surface-hover);
+    box-shadow: inset 0 calc(-1 * var(--om-inset-small)) 0 currentColor;
+  }
+
+  /* Over the foot of the waveforms, in the same grid area, so opening it moves nothing else. */
+  .sampler-drawer {
+    grid-area: wave;
+    align-self: end;
+    z-index: 5;
+    height: min(180px, 100%);
+    min-height: 0;
   }
 
   .settings-button {

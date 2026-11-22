@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 pub struct DeckLibrary {
     pub services: LibraryServices,
     pub loader: TrackLoader,
+    /// Separates tracks into stems (the model, the cache); `None` when the app has none.
+    pub stems: Option<Box<dyn om_ui::stems::StemHost>>,
 }
 
 /// Builds the [`DeckLibrary`] on the control thread, where it then lives.

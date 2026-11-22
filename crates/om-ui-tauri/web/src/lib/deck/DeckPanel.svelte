@@ -3,12 +3,13 @@
   import Fader from '../controls/Fader.svelte';
   import { setText } from '../dom';
   import { formatBpm, formatPitch, formatTime } from '../format';
-  import type { Controls, DeckInfo, StripInk } from '../ipc';
+  import type { Controls, DeckInfo, StemsState, StripInk } from '../ipc';
   import type { Snapshot } from '../packet';
   import { ticker } from '../ticker';
   import DeckTag from './DeckTag.svelte';
   import HotcuePads from './HotcuePads.svelte';
   import LoopRow from './LoopRow.svelte';
+  import StemsPanel from './StemsPanel.svelte';
   import Transport from './Transport.svelte';
 
   interface Props {
@@ -17,11 +18,21 @@
     info: DeckInfo | null;
     ink: StripInk | null;
     snapshot: Snapshot | null;
+    /** The deck's stems; null until the shell reports them. */
+    stems?: StemsState | null;
+    /** The drawer opens on stems (a staged scene). */
+    startOnStems?: boolean;
     /** Deck B's panel mirrors deck A's: the tempo fader is on each panel's outer edge. */
     mirrored?: boolean;
   }
 
-  let { deck, controls, info, ink, snapshot, mirrored = false }: Props = $props();
+  let { deck, controls, info, ink, snapshot, stems = null, startOnStems = false, mirrored = false }: Props = $props();
+
+  // The drawer under the read-outs: the hot cue pads or the stems.
+  let tab: 'cues' | 'stems' = $state('cues');
+  $effect(() => {
+    if (startOnStems) tab = 'stems';
+  });
 
   let elapsedEl: HTMLElement;
 
@@ -74,8 +85,20 @@
         <span class="label">Elapsed</span>
         <b class="num" bind:this={elapsedEl}>--</b>
       </div>
+      <div class="tabs" role="group" aria-label="Deck drawer">
+        <button type="button" class="tab" class:on={tab === 'cues'} aria-pressed={tab === 'cues'} onclick={() => (tab = 'cues')}>
+          Cues
+        </button>
+        <button type="button" class="tab" class:on={tab === 'stems'} aria-pressed={tab === 'stems'} onclick={() => (tab = 'stems')}>
+          Stems
+        </button>
+      </div>
     </div>
-    <HotcuePads {deck} {controls} {info} {ink} {loaded} />
+    {#if tab === 'stems'}
+      <StemsPanel {deck} {stems} tint={ink?.cues[0] ?? null} {loaded} />
+    {:else}
+      <HotcuePads {deck} {controls} {info} {ink} {loaded} />
+    {/if}
     <LoopRow {deck} {controls} {info} {frame} />
     <Transport {deck} {controls} {frame} {mirrored} />
   </div>
@@ -136,6 +159,38 @@
   .mirrored .readouts {
     flex-direction: row-reverse;
     text-align: right;
+  }
+
+  .tabs {
+    display: flex;
+    gap: var(--om-inner-gap);
+    margin-left: auto;
+  }
+
+  .mirrored .tabs {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .tab {
+    min-height: var(--om-min-pointer-target);
+    padding: 0 var(--om-inner-gap);
+    border: var(--om-border-width) solid var(--om-border);
+    border-radius: var(--om-control-radius);
+    background: var(--om-surface-raised);
+    color: var(--om-text-secondary);
+    font-family: var(--om-font-body);
+    font-size: var(--om-type-label);
+    font-weight: 500;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .tab.on {
+    color: var(--om-text-primary);
+    border-color: var(--om-border-strong);
+    background: var(--om-surface-hover);
+    box-shadow: inset 0 calc(-1 * var(--om-inset-small)) 0 currentColor;
   }
 
   .label {

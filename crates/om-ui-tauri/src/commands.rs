@@ -6,6 +6,7 @@ use crate::controls::{control_dtos, ControlDto};
 use crate::deck_info::{self, DeckInfo};
 use crate::decks::Decks;
 use crate::drive::{parse_layout, write_json_atomic, DriveLayout};
+use crate::instruments::{Instruments, SamplerDto, StemAction, StemsDto};
 use crate::library::LibraryQueue;
 use crate::settings::{
     with_host, AppearanceChange, AppearancePage, AppearanceResult, AudioChange, AudioPage,
@@ -39,6 +40,7 @@ pub(crate) struct ShellState {
     pub(crate) ready_signal: Sender<()>,
     pub(crate) streams: Arc<StreamSlot>,
     pub(crate) decks: Arc<Decks>,
+    pub(crate) instruments: Arc<Instruments>,
     /// Calls on the library browser, which the control thread answers.
     pub(crate) library: Arc<LibraryQueue>,
     /// `--ui-drive-out`: where `ui_layout` writes the layout map; `None` refuses it.
@@ -79,6 +81,10 @@ pub struct RunConfig {
     pub hud: bool,
     /// A `--ui-drive-out` run: the front end sends its layout map through `ui_layout`.
     pub drive: bool,
+    /// Start with the sampler drawer open.
+    pub sampler_open: bool,
+    /// Start deck A on its stems tab.
+    pub stems_tab: bool,
 }
 
 /// The run's smoke, bench and frame-cap settings.
@@ -243,6 +249,156 @@ pub fn load_file(deck: usize, path: String, state: State<'_, ShellState>) -> Res
     state.decks.request_load(deck, PathBuf::from(path))
 }
 
+/// The sampler's pads and the selected pad's controls, as the strip draws them.
+#[tauri::command]
+pub fn sampler_state(state: State<'_, ShellState>) -> SamplerDto {
+    state.instruments.sampler_dto()
+}
+
+/// Presses `pad` (and selects it) with `velocity`; it is held until `sampler_release`.
+#[tauri::command]
+pub fn sampler_press(
+    pad: usize,
+    velocity: f32,
+    state: State<'_, ShellState>,
+) -> Result<(), String> {
+    let velocity = velocity.clamp(0.0, 1.0);
+    state.instruments.sampler_action(|s| {
+        if s.press_held(pad, velocity) {
+            Ok(())
+        } else {
+            Err(format!("no pad {pad}"))
+        }
+    })
+}
+
+/// Lets go of the held pad; a gate pad's voices end, the other modes ignore it.
+#[tauri::command]
+pub fn sampler_release(state: State<'_, ShellState>) -> Result<(), String> {
+    state
+        .instruments
+        .sampler_action(|s| -> Result<_, String> { Ok(s.release_held()) })
+}
+
+/// Selects `pad` without playing it.
+#[tauri::command]
+pub fn sampler_select(pad: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.sampler_action(|s| {
+        if s.select(pad) {
+            Ok(())
+        } else {
+            Err(format!("no pad {pad}"))
+        }
+    })
+}
+
+/// Moves the selected pad to its next mode (one-shot, gate, loop).
+#[tauri::command]
+pub fn sampler_cycle_mode(state: State<'_, ShellState>) -> Result<(), String> {
+    state
+        .instruments
+        .sampler_action(|s| s.cycle_mode(s.selected()))
+}
+
+/// Sets the selected pad's gain (linear; the engine clamps it to its ceiling).
+#[tauri::command]
+pub fn sampler_set_gain(gain: f32, state: State<'_, ShellState>) -> Result<(), String> {
+    state
+        .instruments
+        .sampler_action(|s| s.set_gain(s.selected(), gain))
+}
+
+/// Sets the selected pad's pitch in semitones (the engine clamps it to its limit).
+#[tauri::command]
+pub fn sampler_set_pitch(semitones: f32, state: State<'_, ShellState>) -> Result<(), String> {
+    state
+        .instruments
+        .sampler_action(|s| s.set_pitch(s.selected(), semitones))
+}
+
+/// Copies the audio file at `path` into the bank and decodes it onto `pad`.
+#[tauri::command]
+pub fn sampler_load(pad: usize, path: String, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.load_pad(pad, &PathBuf::from(path))
+}
+
+/// Empties `pad`.
+#[tauri::command]
+pub fn sampler_clear(pad: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.sampler_action(|s| s.clear(pad))
+}
+
+/// Stops every sounding pad.
+#[tauri::command]
+pub fn sampler_stop_all(state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.sampler_action(|s| -> Result<(), String> {
+        s.stop_all();
+        Ok(())
+    })
+}
+
+/// Deck `deck`'s stems as the control thread last reported them.
+#[tauri::command]
+pub fn stems_state(deck: usize, state: State<'_, ShellState>) -> Option<StemsDto> {
+    state.instruments.stems_latest(deck)
+}
+
+/// Sets one stem's volume (linear gain, clamped to the engine's range).
+#[tauri::command]
+pub fn stem_volume(
+    deck: usize,
+    stem: usize,
+    gain: f64,
+    state: State<'_, ShellState>,
+) -> Result<(), String> {
+    state
+        .instruments
+        .stem_write(deck, |b| b.set_volume(stem, gain))
+}
+
+/// Sets one stem's sweep filter, -1 (low-pass) to +1 (high-pass).
+#[tauri::command]
+pub fn stem_filter(
+    deck: usize,
+    stem: usize,
+    position: f64,
+    state: State<'_, ShellState>,
+) -> Result<(), String> {
+    state
+        .instruments
+        .stem_write(deck, |b| b.set_filter(stem, position))
+}
+
+/// Flips one stem's mute.
+#[tauri::command]
+pub fn stem_mute(deck: usize, stem: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.stem_write(deck, |b| b.toggle_mute(stem))
+}
+
+/// Solos one stem, or ends the solo when it already is the one.
+#[tauri::command]
+pub fn stem_solo(deck: usize, stem: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.stem_write(deck, |b| b.solo(stem))
+}
+
+/// Unmutes every stem at unity gain with the filters off.
+#[tauri::command]
+pub fn stem_all_on(deck: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.stem_write(deck, |b| b.all_on())
+}
+
+/// 'Load stems' / 'Stems off' for the deck's track; the control thread runs it within a tick.
+#[tauri::command]
+pub fn stem_toggle(deck: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.queue(StemAction::Toggle(deck))
+}
+
+/// Separates the deck's track into stems; progress shows in `stems_state`.
+#[tauri::command]
+pub fn stem_prepare(deck: usize, state: State<'_, ShellState>) -> Result<(), String> {
+    state.instruments.queue(StemAction::Prepare(deck))
+}
+
 /// The audio settings page as it stands.
 #[tauri::command]
 pub fn audio_settings() -> Result<AudioPage, String> {
@@ -297,6 +453,8 @@ mod tests {
             banner: banner.map(str::to_owned),
             hud: true,
             drive: false,
+            sampler_open: false,
+            stems_tab: false,
         };
         serde_json::to_string(&config).unwrap()
     }
